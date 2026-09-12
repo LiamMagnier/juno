@@ -945,7 +945,15 @@ export function MessageItem({
               : null;
 
   return (
-    <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
+    <div
+      // NAMED, so the thought panel can find this turn's citation chips. A jump
+      // from a source row queries `[data-juno-message="…"] [data-cite="n"]`, and
+      // without the scope it would land on the first matching chip in the whole
+      // transcript — a different answer's source, confidently scrolled to.
+      data-juno-message={message.id}
+      // …and the target must not land under the transcript's sticky header band.
+      className={cn("group flex scroll-mt-24 flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}
+    >
       {/* Turn marker — see the note on the user branch. */}
       <h2 className="sr-only">Juno replied</h2>
       {/*
@@ -966,6 +974,8 @@ export function MessageItem({
             events={view.activity}
             reasoning={view.reasoning}
             reasoningParts={view.reasoningParts}
+            // For a source step's citation chip only — see ActivityTimeline.
+            sources={sources}
             streaming={message.streaming}
             // Threaded down to the panel's Notice block. Resolved here, once, so
             // the inline finish row below and the panel cannot word it differently.

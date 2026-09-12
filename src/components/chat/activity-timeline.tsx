@@ -4,7 +4,6 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
-import { ThinkingState } from "@/components/aicss/thinking-state";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
   ThoughtProcessPanel,
@@ -19,7 +18,7 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { Pressable } from "@/components/ui/pressable";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
-import type { ClientActivityEvent } from "@/types/chat";
+import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
 /**
  * WHAT THE RUN IS DOING, RIGHT NOW — one sentence, computed once.
@@ -109,6 +108,7 @@ export function ActivityTimeline({
   events,
   reasoning,
   reasoningParts,
+  sources,
   streaming,
   finishNote,
 }: {
@@ -120,6 +120,11 @@ export function ActivityTimeline({
   /** Discrete summary parts, when the provider sent them. Passed straight
    *  through — this component derives nothing from them. */
   reasoningParts?: string[] | null;
+  /** The message's own source list. Forwarded into `buildRun` for ONE purpose:
+   *  a source step's `citeIndex`, which is meaningful only when the model was
+   *  handed a numbered corpus (`ClientSource.cited`). Nothing else reads it —
+   *  the run's own `visit` events remain the only claim about what was read. */
+  sources?: ClientSource[];
   streaming?: boolean;
   /** The finish-reason sentence message-item already resolved. Passed straight
    *  through to the panel's Notice block; this row does not render it (the
@@ -175,7 +180,10 @@ export function ActivityTimeline({
   // instance inside the panel would calibrate whenever the sheet was opened and
   // read 0.0s next to this row's 8.4s.
   const { nowServer, anchorT0 } = useRunClock(list, streaming);
-  const run = React.useMemo(() => buildRun(list, nowServer, anchorT0), [list, nowServer, anchorT0]);
+  const run = React.useMemo(
+    () => buildRun(list, nowServer, anchorT0, { sources, reasoning, reasoningParts }),
+    [list, nowServer, anchorT0, sources, reasoning, reasoningParts],
+  );
 
   if (!hasEvents && !hasReasoning) return null;
 
@@ -285,29 +293,39 @@ export function ActivityTimeline({
             stops the surrounding live region announcing every clock tick. */}
         {streaming ? (
           <>
-            <ThinkingDots className="text-muted-foreground/65" />
-            {/* AIcss's Thinking State in place of `animate-status-glow`. Both say
-                "still here" without spending coral on it, but the glow breathed
-                the whole line's opacity — which dims the sentence you are trying
-                to read — where the shine moves a valley of alpha THROUGH the
-                text at full weight. Same node, same slot; on settle it simply
-                stops rather than fading to a different colour. */}
-            {live.warning ? (
-              <span key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6 text-warning">
-                {live.message}
-                {run.elapsedMs !== null && (
-                  <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
-                )}
+            {/* ONE BREATHING ELEMENT ON SCREEN AT A TIME. While the panel is
+                open it owns the live signature — same mark, same period, one
+                column over — and this strip stands down to a static primary
+                dot in the same 18px slot. Two matrices running the same loop
+                three hundred pixels apart is two indicators for one state, and
+                the eye reads them as two things happening. */}
+            {open ? (
+              <span aria-hidden="true" className="flex size-4.5 shrink-0 items-center justify-center">
+                <span className="size-1.5 rounded-full bg-primary/70 ring-2 ring-primary/20" />
               </span>
             ) : (
-              <ThinkingState key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6">
-                {live.message}
-                {liveSources && <span className="whitespace-nowrap tabular-nums"> · {liveSources}</span>}
-                {run.elapsedMs !== null && (
-                  <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
-                )}
-              </ThinkingState>
+              <ThinkingDots className="text-muted-foreground/65" />
             )}
+            {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep — a second
+                looping thing beside the matrix, moving a valley of alpha
+                through a sentence the reader is trying to read. The matrix
+                already says "still here"; the sentence's job is to say WHAT. */}
+            <span
+              key={copyKey}
+              aria-hidden="true"
+              className={cn(
+                "min-w-0 truncate text-body-lg leading-6",
+                live.warning ? "text-warning" : "text-foreground/85"
+              )}
+            >
+              {live.message}
+              {!live.warning && liveSources && (
+                <span className="whitespace-nowrap tabular-nums"> · {liveSources}</span>
+              )}
+              {run.elapsedMs !== null && (
+                <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
+              )}
+            </span>
           </>
         ) : (
           <>
@@ -371,10 +389,10 @@ export function ActivityTimeline({
         ? createPortal(
             <ThoughtProcessPanel
               id={panelDomId}
+              messageId={messageId}
               onClose={() => panel.setOpenId(null)}
               run={run}
               reasoning={reasoning}
-              reasoningParts={reasoningParts}
               streaming={streaming}
               // Computed ONCE, above, and handed down — the same argument as
               // `run`: the strip and the panel must be incapable of disagreeing

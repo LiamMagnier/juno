@@ -23,7 +23,9 @@ import {
   TOOL_ARGS_NOTE,
   TOOL_RESULT_NOTE,
   toRunMarkdown,
+  toRunSummary,
   toSourcesMarkdown,
+  toStepMarkdown,
   toolArgsLabel,
   toolResultLabel,
 } from "@/lib/run-receipt";
@@ -344,4 +346,244 @@ test("Tools sits between Sources and Reasoning, as it does on screen", () => {
   const tools = md.indexOf("## Tools");
   const reasoning = md.indexOf("## Reasoning");
   assert.ok(sources >= 0 && tools > sources && reasoning > tools);
+});
+
+// ─────────────────────────────────────────────── buildRun · the spine's steps
+//
+// `steps` is the panel's only noun. What matters here is not that it exists but
+// that it refuses to invent: a step with no measured duration carries `ms: null`
+// rather than 0, a source that was never a numbered citation carries
+// `citeIndex: null` rather than a plausible index, and no two steps are ever
+// running at once.
+
+test("every kind lands on one Step shape, in phase order", () => {
+  const run = buildRun(
+    [
+      ev({ kind: "search", title: "Searching the web", detail: "retry budgets" }),
+      ev({ kind: "visit", title: "Read source", detail: "Reliability at scale", url: "https://nature.com/a" }),
+      toolRow({ server: "Linear", name: "create_issue", args: "{}", result: "r", status: "ok", durationMs: 1400 }, 10),
+      ev({ kind: "warning", title: "Linear did not respond in time", createdAt: iso(12) }),
+      ev({ kind: "write", title: "Writing", createdAt: iso(100) }),
+      ev({ kind: "usage", title: "Usage", detail: "812 output · $0.04", createdAt: iso(200) }),
+    ],
+    null,
+  );
+
+  const kinds = run.steps.map((s) => `${s.phase}:${s.kind}`);
+  assert.deepEqual(kinds, [
+    "research:search",
+    "research:source",
+    "think:tool",
+    "think:notice",
+    "write:write",
+  ]);
+  assert.equal(run.steps.filter((s) => s.running).length, 0);
+  assert.equal(run.steps.find((s) => s.kind === "search")?.label, "Searched \u201Cretry budgets\u201D");
+  assert.equal(run.steps.find((s) => s.kind === "source")?.detail, "nature.com");
+  assert.equal(run.steps.find((s) => s.kind === "tool")?.ms, 1400);
+  assert.equal(run.steps.find((s) => s.kind === "notice")?.failed, true);
+  assert.equal(run.steps.find((s) => s.kind === "write")?.detail, "812 tokens");
+});
+
+test("a call that never reached the network has no figure at all — absent, not zero", () => {
+  const run = buildRun([toolRow({ server: "S", name: "t", argsNote: "unavailable", status: "failed" })], null);
+  const step = run.steps.find((s) => s.kind === "tool");
+  assert.equal(step?.ms, null);
+  assert.equal(step?.failed, true);
+});
+
+test("a listed source is marked and a read one is not", () => {
+  const run = buildRun(
+    [
+      ev({ kind: "visit", title: "Listed source", detail: "D", url: "https://d.test/1" }),
+      ev({ kind: "visit", title: "Read source", detail: "C", url: "https://c.test/1" }),
+    ],
+    null,
+  );
+  assert.deepEqual(
+    run.steps.filter((s) => s.kind === "source").map((s) => s.detail),
+    ["d.test · listed", "c.test"],
+  );
+});
+
+test("citeIndex is null unless the model was handed a numbered corpus", () => {
+  const events = [ev({ kind: "visit", title: "Visited source", detail: "A", url: "https://a.test/1" })];
+
+  // Native search: the model never saw an index, so a bracket in its text means
+  // nothing and a chip pointing at an arbitrary source is worse than no chip.
+  const ungrounded = buildRun(events, null, null, {
+    sources: [{ title: "A", url: "https://a.test/1", snippet: "" }],
+  });
+  assert.equal(ungrounded.steps.find((s) => s.kind === "source")?.source?.citeIndex, null);
+
+  const grounded = buildRun(events, null, null, {
+    sources: [{ title: "A", url: "https://a.test/1", snippet: "", cited: true }],
+  });
+  assert.equal(grounded.steps.find((s) => s.kind === "source")?.source?.citeIndex, 1);
+});
+
+test("a live run has exactly one running step and it carries no figure", () => {
+  const now = T0 + 4000;
+  const run = buildRun([ev({ kind: "model", title: "Selected model", detail: "Claude" })], now);
+  const running = run.steps.filter((s) => s.running);
+  assert.equal(running.length, 1);
+  assert.equal(running[0].ms, null);
+  assert.equal(running[0].label, "Thinking");
+});
+
+test("an empty live run says it is waiting rather than drawing a skeleton", () => {
+  const run = buildRun([], Date.now());
+  assert.equal(run.steps.length, 1);
+  assert.equal(run.steps[0].label, "Waiting for the model");
+});
+
+test("provider parts become think steps; an unbroken trace becomes one", () => {
+  const parts = ["**Weighing the benchmarks**\nThe 2026 figures are not comparable.", "**Choosing**\nGo with A."];
+  const withParts = buildRun([], null, T0, { reasoningParts: parts, reasoning: parts.join("\n\n") });
+  assert.deepEqual(
+    withParts.steps.filter((s) => s.kind === "think").map((s) => s.label),
+    ["Weighing the benchmarks", "Choosing"],
+  );
+
+  // Anthropic, Zhipu, Mistral, Google: one block, no boundaries on the wire.
+  // The panel must not re-split the prose to manufacture steps.
+  const flat = buildRun([], null, T0, { reasoning: "One unbroken block of thought." });
+  const think = flat.steps.filter((s) => s.kind === "think");
+  assert.equal(think.length, 1);
+  assert.equal(think[0].label, "Full reasoning trace");
+  assert.equal(think[0].detail, "This model streams one unbroken trace.");
+});
+
+// ──────────────────────────────────────────────────────── toRunSummary
+//
+// The one sentence the panel pins to the top when a run ends, and the second
+// line of the receipt. It is built only from counted facts: a clause with no
+// number behind it is not written.
+
+test("the summary names what was counted, with a conjunction before the last clause", () => {
+  const visits = ["nature.com/a", "nature.com/b", "arxiv.org/c"].map((u) =>
+    ev({ kind: "visit", title: "Read source", detail: u, url: `https://${u}` }),
+  );
+  const run = buildRun(
+    [
+      ev({ kind: "search", title: "Searching the web", detail: "q1" }),
+      ev({ kind: "search", title: "Searching the web", detail: "q2" }),
+      ...visits,
+      toolRow({ server: "Linear", name: "create_issue", args: "{}", result: "r", status: "ok" }, 10),
+      toolRow({ server: "Linear", name: "list_issues", args: "{}", result: "r", status: "ok" }, 20),
+      ev({ kind: "write", title: "Writing", createdAt: iso(100) }),
+      ev({ kind: "usage", title: "Usage", detail: "3,100 input · 812 output · $0.04", createdAt: iso(1100) }),
+    ],
+    null,
+  );
+
+  const summary = toRunSummary(run);
+  assert.match(summary, /^Thought for /);
+  assert.ok(summary.includes("ran 2 searches"));
+  // "across N domains" only when it says something the source count does not.
+  assert.ok(summary.includes("read 3 sources across 2 domains"));
+  assert.ok(summary.includes("called Linear twice"));
+  assert.ok(summary.endsWith("and wrote 812 tokens."));
+});
+
+test("domains are not named when every source had its own", () => {
+  const run = buildRun(
+    [
+      ev({ kind: "visit", title: "Read source", detail: "A", url: "https://a.test/1" }),
+      ev({ kind: "visit", title: "Read source", detail: "B", url: "https://b.test/1" }),
+      ev({ kind: "usage", title: "Usage", detail: "$0.01", createdAt: iso(500) }),
+    ],
+    null,
+  );
+  // Sentence-cased on the first clause, because it IS the first clause here.
+  assert.equal(toRunSummary(run), "Read 2 sources.");
+});
+
+test("more than one connector is counted, never listed", () => {
+  const run = buildRun(
+    [
+      toolRow({ server: "Linear", name: "a", args: "{}", result: "r", status: "ok" }),
+      toolRow({ server: "GitHub", name: "b", args: "{}", result: "r", status: "ok" }),
+      toolRow({ server: "Notion", name: "c", args: "{}", result: "r", status: "ok" }),
+      ev({ kind: "usage", title: "Usage", detail: "$0.01", createdAt: iso(500) }),
+    ],
+    null,
+  );
+  assert.equal(toRunSummary(run), "Called 3 connectors.");
+});
+
+test("a run that reported no usage says it stopped, and says it first", () => {
+  const run = buildRun(
+    [
+      ev({ kind: "search", title: "Searching the web", detail: "q" }),
+      ev({ kind: "write", title: "Writing", createdAt: iso(100) }),
+    ],
+    null,
+  );
+  const summary = toRunSummary(run);
+  assert.match(summary, /^Stopped after /);
+  assert.ok(summary.includes("ran 1 search"));
+});
+
+test("a run with nothing counted still answers, and never invents a clause", () => {
+  // A plain completion: a model event, a write, a usage with no token figure.
+  const run = buildRun(
+    [
+      ev({ kind: "model", title: "Selected model", detail: "Claude" }),
+      ev({ kind: "write", title: "Writing", createdAt: iso(100) }),
+      ev({ kind: "usage", title: "Usage", detail: "$0.01", createdAt: iso(2000) }),
+    ],
+    null,
+  );
+  const summary = toRunSummary(run);
+  // THINK was measured, so that is the one clause there is. Nothing says
+  // "read some sources" or "called a connector".
+  assert.match(summary, /^Thought for /);
+  assert.doesNotMatch(summary, /read|called|ran |wrote/);
+});
+
+test("a run with no events at all is honest about having nothing", () => {
+  const run = buildRun([], null);
+  assert.equal(toRunSummary(run), "Nothing was recorded for this run.");
+  // …and falls back to the finish note when that is the only true thing left.
+  assert.equal(toRunSummary(run, "Stopped by user."), "Stopped by user.");
+});
+
+test("the receipt opens with the same sentence the panel shows", () => {
+  const run = buildRun(
+    [
+      ev({ kind: "model", title: "Selected model", detail: "Claude Opus 5" }),
+      ev({ kind: "write", title: "Writing", createdAt: iso(100) }),
+      ev({ kind: "usage", title: "Usage", detail: "812 output · $0.04", createdAt: iso(1100) }),
+    ],
+    null,
+  );
+  const md = toRunMarkdown(run);
+  assert.equal(md.split("\n")[0], "# Run — Claude Opus 5");
+  assert.equal(md.split("\n")[1], toRunSummary(run));
+});
+
+// ──────────────────────────────────────────────────────── toStepMarkdown
+
+test("a copied step says what its row says, payload included", () => {
+  const run = buildRun(
+    [toolRow({ server: "Linear", name: "create_issue", args: '{"t":1}', result: "boom", status: "failed" })],
+    null,
+  );
+  const step = run.steps.find((s) => s.kind === "tool")!;
+  const md = toStepMarkdown(step);
+
+  assert.match(md, /^### Linear · create_issue\n/);
+  assert.match(md, /\nFailed\n/);
+  // No duration line: the call never reached the network, so there is no
+  // number — and a "Duration 0.0s" would read as "it answered instantly".
+  assert.doesNotMatch(md, /Duration/);
+  assert.ok(md.includes('```json\n{"t":1}\n```'));
+  assert.ok(md.includes("error:"));
+});
+
+test("a copied source step carries its URL", () => {
+  const run = buildRun([ev({ kind: "visit", title: "Read source", detail: "A", url: "https://a.test/1" })], null);
+  const md = toStepMarkdown(run.steps.find((s) => s.kind === "source")!);
+  assert.ok(md.includes("https://a.test/1"));
 });

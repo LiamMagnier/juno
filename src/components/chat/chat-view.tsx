@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { GitFork, GripVertical, Loader2 } from "lucide-react";
@@ -56,9 +55,6 @@ interface ChatViewProps {
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
-/* The shell's header row (app-shell.tsx) reserves this node for the chat's own
- * top actions. Named here and there, and nowhere else. */
-const TOP_ACTIONS_SLOT_ID = "juno-top-actions-slot";
 const CANVAS_WIDTH_KEY = "juno:canvas-width";
 const CANVAS_MIN_WIDTH = 420;
 const CHAT_MIN_WIDTH = 320;
@@ -107,19 +103,17 @@ function canvasWidthBounds(containerWidth: number) {
  * honest if the root font size is not 16px, where a hardcoded 480 would not be.
  */
 const THOUGHT_WIDTH_KEY = "juno:thought-width";
-/* The FLOOR, not a new default. The panel's own widest fixed element is the
- * 5rem (80px) label column of its `LEDGER` grid, shared by the ELAPSED, COST,
- * SETUP and TOOLS rows, plus the scroller's px-5 padding (40px both sides) and
- * two 12px gaps. (This comment previously said 4.5rem, which was never true of
- * any version of the panel — a rewrite that reads it as spec inherits a number
- * that was always wrong. It is 5rem; check `LEDGER` in
- * thought-process-panel.tsx before trusting this line again.)
+/* The FLOOR, not a new default. SAME NUMBER, TRUE REASON — this comment used
+ * to derive 400 from the 5rem label column of the panel's `LEDGER` grid, and
+ * `LEDGER` no longer exists: the panel is one spine of steps on one row recipe.
  *
- * 400, not 320. The panel's largest surface is now the model's own reasoning
- * prose in Newsreader, and below roughly 400px that column drops under ~45
- * characters — the point at which continuous reading starts costing more in
- * return sweeps than the narrow dock saves in chat width. The ledger was legible
- * at 320; a reading column is not. */
+ * The arithmetic that holds now: the spine's 20px marker column, its 10px
+ * gutter and the scroller's 12px inset on both sides leave the label column
+ * roughly 350px at the floor. Below that a reasoning paragraph — still the
+ * largest surface in the dock, and the reason the number is 400 rather than
+ * 320 — drops under ~45 characters, which is the point at which continuous
+ * reading costs more in return sweeps than the narrow dock saves in chat
+ * width. A ledger was legible at 320; a reading column is not. */
 const THOUGHT_MIN_WIDTH = 400;
 /* 30rem at the default 16px root — the width the dock already has. Used ONLY as
  * the starting point for a keyboard nudge (which needs a number to add to) and
@@ -250,19 +244,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // panel is portalled into. Only the ID is lifted — the run model and its one
   // clock stay in ActivityTimeline. See thought-panel-context.
   const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
+  /* Holds the last-open message id while the dock plays its slide-out, exactly
+   * as `closingArtifact` does for the canvas. Without it the column vanished in
+   * one frame and the chat snapped 480px wider while the canvas beside it — the
+   * same gesture, the neighbouring panel — played a 160ms fade-and-slide. Two
+   * docked right columns, two different products. */
+  const [closingThoughtId, setClosingThoughtId] = React.useState<string | null>(null);
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
   // Entrance animation, armed on mount and disarmed by the first drag.
   const [animateDock, setAnimateDock] = React.useState(true);
-  /**
-   * The shell's header row, when there is one, is where this chat's top actions
-   * belong — see the portal at the top of the render. Resolved after mount
-   * because AppShell renders it in the same commit as this component, and
-   * because the server has no DOM to find it in.
-   */
-  const [topActionsSlot, setTopActionsSlot] = React.useState<HTMLElement | null>(null);
-  React.useLayoutEffect(() => {
-    setTopActionsSlot(document.getElementById(TOP_ACTIONS_SLOT_ID));
-  }, []);
   const [memoryFlash, setMemoryFlash] = React.useState(false);
   const [memoryLeaving, setMemoryLeaving] = React.useState(false);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
@@ -974,17 +964,55 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // already reserves CHAT_MIN_WIDTH for what is left. So they are mutually
       // exclusive: the newest request wins and the other yields. Whichever the
       // user just asked for is the one they want to look at.
+      //
+      // No exit animation on this path: a dock the canvas EVICTED must not
+      // slide out across the canvas sliding in from the same edge. The reader
+      // asked for one thing; they should see one thing move.
       setThoughtOpenId(null);
+      setClosingThoughtId(null);
     }
   };
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
+      // Closing arms the exit; reopening (or opening another row's) cancels it,
+      // so a fast toggle never leaves a ghost column sliding out under the one
+      // sliding in. Decided out here rather than inside the updater: React runs
+      // an updater twice under StrictMode, and a setState in one runs twice too.
+      setClosingThoughtId(id ? null : thoughtOpenId);
       setThoughtOpenId(id);
       if (id) closeArtifact();
     },
-    [closeArtifact]
+    [closeArtifact, thoughtOpenId]
   );
+
+  // Clears on a 180ms timer: --dur-exit is 160ms, plus a frame.
+  React.useEffect(() => {
+    if (!closingThoughtId || thoughtOpenId) return;
+    const t = window.setTimeout(() => setClosingThoughtId(null), 180);
+    return () => window.clearTimeout(t);
+  }, [closingThoughtId, thoughtOpenId]);
+
+  /**
+   * PUT TEXT IN THE COMPOSER — the thought panel's "Ask to run again".
+   *
+   * Juno cannot dispatch a connector from the client, so the panel's honest
+   * verb is to write the request and let the person send it. This rides the
+   * composer's existing `juno:composer-seed` event rather than a new prop: that
+   * listener already exists for the empty state's suggestion chips, it is the
+   * house mechanism for exactly this, and an event has no stale-value problem —
+   * seeding the same failed call twice fires twice, where a prop carrying the
+   * same string would have to smuggle a nonce alongside it to be noticed.
+   *
+   * Below `lg` the dock covers the chat, so it has to hand the column back
+   * before the composer it just filled can be seen — the same rule the canvas
+   * quote flow follows.
+   */
+  const seedComposerDraft = React.useCallback((text: string) => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(max-width: 1023px)").matches) openThoughtPanel(null);
+    window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: text }));
+  }, [openThoughtPanel]);
 
   // SELF-HEAL. `openArtifact` is DERIVED from chat.artifacts, so every path that
   // replaces the transcript drops the canvas for free. `thoughtOpenId` is raw
@@ -998,7 +1026,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // sites at all.
   React.useEffect(() => {
     if (!thoughtOpenId) return;
-    if (!chat.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
+    if (!chat.messages.some((m) => m.id === thoughtOpenId)) {
+      // Reconciliation, not a gesture: the run this dock named no longer exists,
+      // so there is nothing to play an exit for.
+      setThoughtOpenId(null);
+      setClosingThoughtId(null);
+    }
   }, [chat.messages, thoughtOpenId]);
 
   // Esc closes the dock. The Sheet used to give us this for free; a docked,
@@ -1012,15 +1045,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // same time; both preventDefault on their own Escape but the native event
       // still bubbles up to window. Without this check one Escape dismisses the
       // palette AND destroys the panel the user is reading next to it.
-      if (e.key === "Escape" && !e.defaultPrevented) setThoughtOpenId(null);
+      if (e.key === "Escape" && !e.defaultPrevented) openThoughtPanel(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [thoughtOpenId]);
+  }, [thoughtOpenId, openThoughtPanel]);
 
   const thoughtPanel = React.useMemo(
-    () => ({ openId: thoughtOpenId, setOpenId: openThoughtPanel, container: thoughtContainer }),
-    [thoughtOpenId, openThoughtPanel, thoughtContainer]
+    () => ({
+      openId: thoughtOpenId,
+      setOpenId: openThoughtPanel,
+      container: thoughtContainer,
+      seedDraft: seedComposerDraft,
+    }),
+    [thoughtOpenId, openThoughtPanel, thoughtContainer, seedComposerDraft]
   );
 
   /* ─── The two docked columns ───────────────────────────────────────────────
@@ -1672,10 +1710,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     />
   );
 
-  /* Share + the incognito ghost. On chat routes these sit at the right of
-   * the column header band below, across from the conversation title; when a
-   * host shell renders `#juno-top-actions-slot` (Work's header row) they
-   * portal there instead. Either way the cluster is written once. */
+  /* Share + the incognito ghost, at the right of the column header band below,
+   * across from the conversation title.
+   *
+   * There used to be a second destination: a `#juno-top-actions-slot` node in
+   * the app shell that this cluster portalled into when the shell rendered one.
+   * The shell stopped rendering it when the header switcher was removed, so the
+   * lookup returned null on every route, every `!topActionsSlot` term was
+   * always true, and the portal never ran. Deleted rather than left as a seam
+   * the next reader has to prove dead a second time. */
   const topActionsSlotOwner = pathname === "/" || !!pathname?.startsWith("/chat");
   const actionsContent = (
     <div
@@ -1710,12 +1753,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     </div>
   );
 
-  const topActionsCluster = (
-    <div className={cn("hidden items-center gap-1.5 md:flex", privateMode && "pointer-events-none")}>
-      {actionsContent}
-    </div>
-  );
-
   // What the header band calls this conversation. Read from the app context
   // rather than a local copy so the AI rename lands here the moment the
   // sidebar gets it, on the same cross-fade.
@@ -1731,8 +1768,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       data-juno-chat-mount-id={chatMountId}
       className="relative flex h-full min-h-0 w-full overflow-hidden"
     >
-      {topActionsSlot && createPortal(topActionsCluster, topActionsSlot)}
-
       {/* Chat column */}
       {/* Below lg the canvas replaces the chat entirely — a split there leaves the
           chat column narrower than a phone. The thought dock follows the same
@@ -1753,7 +1788,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         {/* In incognito the band would be a title that is not a title
             ("Private chat") beside an invisible cluster, above the incognito
             header that already names the mode. Drop it entirely. */}
-        {topActionsSlotOwner && !topActionsSlot && !privateMode && (
+        {topActionsSlotOwner && !privateMode && (
           <div className="relative z-20 hidden h-14 shrink-0 items-center justify-between gap-4 px-4 md:flex md:px-6">
             {/* The page's visible <h1> from md up; the transcript's own
                 heading (message-list.tsx) leaves the tree at this width so
@@ -1768,7 +1803,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 />
               ) : null}
             </h1>
-            <div className="shrink-0">{topActionsCluster}</div>
+            <div className="hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
           </div>
         )}
 
@@ -1956,7 +1991,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
                 // The header band above draws the visible h1 from md up,
                 // except in incognito, where the band is dropped.
-                titleShownInHeader={topActionsSlotOwner && !topActionsSlot && !privateMode}
+                titleShownInHeader={topActionsSlotOwner && !privateMode}
               />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and horizontal padding as the
@@ -2067,24 +2102,38 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           the canvas does below: tailwindcss-animate makes it the slide's
           duration, which is the intent — so it must come off during a drag, or
           every pointer move would re-trigger a 400ms slide. */}
-      {thoughtOpenId && (
+      {(thoughtOpenId ?? closingThoughtId) && (
         <div
           ref={setThoughtContainer}
           style={thought.width != null ? ({ "--juno-thought-width": `${thought.width}px` } as React.CSSProperties) : undefined}
           className={cn(
-            "relative z-40 size-full shrink-0 border-border/70 bg-card",
+            "relative z-40 size-full shrink-0 bg-card",
             // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
             // silently overridden any drag below 416px and made the new minimum
             // unreachable. The real floor is enforced by thoughtWidthBounds.
-            "lg:min-w-0 lg:border-l",
+            //
+            // The left edge carries the resize affordance AT REST. The grip
+            // inside the handle stays hidden until hover, which meant nothing on
+            // screen ever said this column was draggable — and this is the one
+            // panel in the product whose default width is most often wrong for
+            // its content.
+            "lg:min-w-0 lg:border-l lg:border-border/70 lg:hover:border-border",
             // Undragged: the ORIGINAL default class, byte-for-byte.
             thought.width == null ? "lg:w-[30rem]" : "lg:w-[var(--juno-thought-width)]",
-            // The entrance is a MOUNT effect, so it is dropped for good the
-            // moment the user grabs the handle. Re-adding `animate-in` after a
-            // drag re-triggers it — the dock would replay its 400ms slide on
-            // every pointer-up. `duration-slow` travels with the animate-*
-            // classes it belongs to and is never left behind on its own.
-            animateDock && "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
+            thoughtOpenId
+              ? // The entrance is a MOUNT effect, so it is dropped for good the
+                // moment the user grabs the handle. Re-adding `animate-in` after
+                // a drag re-triggers it — the dock would replay its slide on
+                // every pointer-up.
+                //
+                // `slide-in-from-right-4` is tailwindcss-animate's hardcoded
+                // translate and `--motion-shift` cannot reach it, so the reduced
+                // tier needs its own fade or it gets the full 16px of travel.
+                animateDock &&
+                "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+              : // Leaving: absolute, so the chat reflows underneath while the
+                // exit plays — the same recipe the canvas beside it uses.
+                "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
             thought.resizing && "select-none"
           )}
         >
@@ -2095,7 +2144,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             {...thought.separatorProps}
             aria-label="Resize thought process panel"
             title="Drag to resize. Arrow keys adjust, Home resets."
-            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
+            /* The hairline under the pointer tints BEFORE the grip appears, so
+               the edge itself reads as draggable rather than only the 12px the
+               grip happens to occupy. */
+            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none lg:flex lg:hover:bg-primary/10 lg:hover:before:bg-primary/40"
           >
             {/* `bg-popover`. The grip was `bg-background/90` behind a blur — the
                 page colour, over the page, i.e. a handle whose only visible part

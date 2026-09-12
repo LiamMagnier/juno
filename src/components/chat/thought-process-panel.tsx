@@ -1,16 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { toast } from "sonner";
+import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
-import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
-import { ThinkingState } from "@/components/aicss/thinking-state";
 import type { WebSearchSite } from "@/components/aicss/web-search";
+import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
+import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   TOOLS_DESCRIPTION,
@@ -18,15 +31,17 @@ import {
   formatSpan,
   splitCost,
   toRunMarkdown,
+  toRunSummary,
   toSourcesMarkdown,
+  toStepMarkdown,
+  toVisibleStepsMarkdown,
   toolArgsLabel,
   toolArgsNoteText,
   toolResultLabel,
   toolResultNoteText,
 } from "@/lib/run-receipt";
-import { toReasoningLines } from "@/lib/reasoning-lines";
 import { toSteps } from "@/lib/reasoning-parts";
-import type { ClientActivityEvent, ClientToolDetail } from "@/types/chat";
+import type { ClientActivityEvent, ClientMemoryReceipt, ClientSource, ClientToolDetail } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE FORM MUST BE INCAPABLE OF LYING.
@@ -38,47 +53,30 @@ import type { ClientActivityEvent, ClientToolDetail } from "@/types/chat";
  * guaranteed by the control flow, not an artifact of a fast run.
  *
  * So a rail of ten timestamped rows renders a two-point dataset as though it
- * were a process. The fix is not to restyle the rail; it is to delete the form
- * that lies and split the data by what was actually measured:
+ * were a process. That is why NOTHING in this panel prints a per-row timestamp,
+ * an offset, a wall clock or a proportional bar. What it prints instead is the
+ * ORDER the producer emitted things in — which is real — and a duration only
+ * where one was genuinely measured.
  *
- *   - things with a real duration  → PHASES, which HAVE a figure column
- *   - things that took no time     → FACTS,  which have NO figure column at all
+ * THE HONESTY RULE NOW LIVES IN ONE PLACE INSTEAD OF THREE. The old panel
+ * carried it as markup: a three-column `<dl>` where a MEASURED row filled all
+ * three columns and a STATED row's `<dd>` spanned into the figure column so it
+ * HAD no figure cell. That worked, and it cost six different row vocabularies
+ * in one column — a warning bullet, three ledgers, a link list, a disclosure
+ * list and a prose column, all rendered at once under the model's name.
  *
- * That absence is the design. It becomes structurally impossible to imply that
- * "Selected model" took time, because there is nowhere for that implication to
- * live. It is also forward-compatible: if the producer ever grows a `duration`
- * field, rows migrate from FACTS to PHASES into a column already built.
- *
- * THAT DAY CAME, for exactly one row type. A connector call now carries
- * `tool.durationMs`, measured in mcp.ts around the await on `client.callTool`,
- * and a call that reached the network renders as a PHASE. A call that never
- * reached it — unknown tool, unavailable connector, refused action — has no
- * duration at all and stays a FACT. Both shapes sit in the same list, and the
- * difference between them is a difference in what was measured, not in styling.
- *
- * THE SPLIT IS NOW CARRIED BY THE MARKUP ITSELF. Every list in this panel is one
- * `<dl>` on the same three-column `LEDGER` grid: label · detail · FIGURE. A
- * MEASURED row fills all three columns. A STATED row's `<dd>` spans `2/-1`, so
- * it does not leave an empty figure cell — it HAS no figure cell, in the DOM and
+ * There is one row recipe now, and the rule survives intact inside it: a step's
+ * figure cell is rendered only when `step.ms !== null`, and `ms` is never
+ * zero-as-unknown. A step that never had a clock has no figure, in the DOM and
  * in the accessibility tree alike. Putting a duration beside "Selected model"
- * now requires changing that row's grammar, which is exactly the amount of
- * friction the claim deserves. Assistive tech hears what the eye sees: no time
- * for facts.
+ * still requires inventing a measurement that does not exist.
  *
- * Wall-clock is gone outright, and stays gone for a second reason discovered
- * since. `t0` is `at(events[0]) ?? anchorT0`, and `anchorT0` is the moment
- * ActivityTimeline MOUNTED. For a reasoning-only message, or any persisted
- * message re-rendered on page load, a "Started 14:32:07" footer would print the
- * time the reader opened the page dressed as the time the run began — a flat
- * falsehood with a timestamp on it. `t0` is an internal origin. It is never
- * rendered.
- *
- * AND THERE IS NO BAR. Not a progress bar, not a segmented proportion bar, not a
- * hairline rule under a figure, with or without a track. A proportional graphic
- * whose only content is `ms / max(ms)` says nothing the two adjacent numbers do
- * not already say legibly, in a column built for numbers; its only real function
- * is to make the block LOOK measured, which is the placebic-explanation failure
- * mode this panel exists to avoid.
+ * Wall-clock is gone outright, and stays gone for a second reason. `t0` is
+ * `at(events[0]) ?? anchorT0`, and `anchorT0` is the moment ActivityTimeline
+ * MOUNTED. For a reasoning-only message, or any persisted message re-rendered
+ * on page load, a "Started 14:32:07" line would print the time the reader
+ * opened the page dressed as the time the run began. `t0` is an internal
+ * origin. It is never rendered.
  * ───────────────────────────────────────────────────────────────────────────── */
 
 export function domainOf(url: string) {
@@ -102,23 +100,18 @@ function searchLabelOf(url: string) {
 /**
  * A run's sources as AIcss search rows — for the LIVE STRIP only.
  *
- * The resting panel renders its own source rows (see SOURCES below) because
- * `WebSearchBlock` re-derives host+path from the URL when `sources[].domain` is
- * already on the model, and because its row lets a long title push the row wider
- * than the dock. Mid-stream, in the transcript, it remains the right renderer
- * and is untouched.
+ * The panel renders its own source rows (they are steps, on the one row
+ * recipe) because `WebSearchBlock` re-derives host+path from the URL when
+ * `sources[].domain` is already on the model, and because its row lets a long
+ * title push the row wider than the dock. Mid-stream, in the transcript, it
+ * remains the right renderer and is untouched.
  *
  * EVERY ROW IS `done`, and that is a statement about the data rather than a
  * shortcut. A `visit` event is emitted at the moment a source has been collected
  * or read (see the sends in route.ts and deep-research.ts) — there is no event
  * for "about to fetch this URL", because until the search returns the URL is not
  * yet known. A pending or fetching row here would therefore be a state this app
- * cannot observe, drawn in the shape that says it did. The in-flight state lives
- * where the run genuinely has one: on the label, which shimmers until the search
- * phase it names is over.
- *
- * `pending` and `loading` stay in the component for the callers that can honestly
- * use them — the Code transcript's own search tool reports per-source progress.
+ * cannot observe, drawn in the shape that says it did.
  */
 export function toSearchSites(sources: RunModel["sources"]): WebSearchSite[] {
   return sources.map((source) => ({
@@ -174,6 +167,27 @@ const T_SEARCHING = "Searching the web";
 const T_CONNECTORS = "Connected tools ready";
 const T_EFFORT = "Reasoning mode enabled";
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * ROW COPY THE EXTRACTOR CAN SEE.
+ *
+ * `scripts/generate-i18n-catalog.mjs` reads a `label:` property only when its
+ * value is a literal, so `label: running ? "Thinking" : "Wrote the answer"`
+ * silently leaves the translation catalog — the exact trap documented at
+ * run-receipt.ts:124-135, in its other form. A `…_LABEL` constant is one of the
+ * names the extractor walks in full, so the words live here and the ternaries
+ * below only choose between them.
+ * ───────────────────────────────────────────────────────────────────────────── */
+const STEP_LABEL = {
+  waiting: "Waiting for the model",
+  researching: "Researching",
+  thinking: "Thinking",
+  writing: "Writing the answer",
+  wrote: "Wrote the answer",
+  searched: "Searched the web",
+  reasoning: "Reasoning",
+  fullTrace: "Full reasoning trace",
+} as const;
+
 type PhaseKey = "research" | "think" | "write";
 
 interface Phase {
@@ -199,7 +213,7 @@ interface Call {
    * It is real for a mid-stream `Using X` (route.ts:598) and structurally `0`
    * for every preflight one (route.ts:519) — honest for some rows in a column
    * and degenerate for others, which reads worse than either alone. Superseded,
-   * not joined, by `tool.durationMs`: see the TOOLS section below.
+   * not joined, by `tool.durationMs`.
    */
   offsetMs: number | null;
   warn: boolean;
@@ -211,8 +225,7 @@ interface Call {
    * on every message persisted before this shipped and on every run made with
    * tool detail turned off, which is exactly what makes replay degrade to the
    * old name-only row with no version check anywhere: the row still renders,
-   * it just does not open. See TOOLS_NO_DETAIL_NOTE, which says so on screen
-   * rather than leaving a non-opening row to read as a broken control.
+   * it just does not open. See TOOLS_NO_DETAIL_NOTE.
    */
   tool?: ClientToolDetail;
 }
@@ -226,15 +239,8 @@ interface Call {
  * those rows this app genuinely does not know, and a panel that printed
  * "listed" over them would be inventing the distinction it is trying to report.
  * Only `"listed"` is ever marked on screen; `read` and `unknown` both render
- * bare, which is the same "mark the exception, not the rule" the NOTICE section
+ * bare, which is the same "mark the exception, not the rule" the NOTICE band
  * uses.
- *
- * `Reading source` is deep-research's title TODAY (deep-research.ts:345) and
- * `Read source` / `Listed source` are the pair design §3.1 asks that file to
- * emit once it stops skipping the pages it collected but did not read. Both
- * spellings are accepted so the panel is already correct on the day it changes;
- * until then no row is ever marked, which is the truthful rendering of a
- * producer that cannot yet tell the two apart.
  */
 export type SourceAccess = "read" | "listed" | "unknown";
 
@@ -242,6 +248,43 @@ function sourceAccessOf(title: string): SourceAccess {
   if (title === "Listed source") return "listed";
   if (title === "Read source" || title === "Reading source") return "read";
   return "unknown";
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * A STEP — the panel's only noun.
+ *
+ * Six row vocabularies became one. A warning, a phase, a memory receipt, a
+ * source, a tool call and a reasoning part are all THIS, and the kind changes
+ * the marker glyph and nothing else. That is not a styling decision: the reader
+ * of a run has exactly one question — what is it doing now, and what did it
+ * just do — and six shapes in one column is six answers to a question nobody
+ * asked.
+ * ───────────────────────────────────────────────────────────────────────────── */
+export type StepKind = "think" | "search" | "source" | "tool" | "memory" | "notice" | "write";
+
+export interface Step {
+  /** Event id, or `reason-${i}` for a provider reasoning part. Stable across
+   *  ticks, because it keys both the React list and the expanded-body set. */
+  id: string;
+  kind: StepKind;
+  /** Which sticky section it files under. */
+  phase: PhaseKey;
+  /** Line 1. Never invented — see the table in each branch of `buildSteps`. */
+  label: string;
+  /** Line 2, or null. Never an empty line: absence is a rendering decision made
+   *  here, once, rather than by each row guessing. */
+  detail: string | null;
+  /** MEASURED only. Never zero-as-unknown — a step with no clock has no
+   *  figure cell at all. */
+  ms: number | null;
+  /** At most one `true` across the whole array. */
+  running: boolean;
+  failed: boolean;
+  body?:
+    | { type: "tool"; tool: ClientToolDetail }
+    | { type: "prose"; text: string }
+    | { type: "memory"; memory: ClientMemoryReceipt };
+  source?: { url: string; domain: string; access: SourceAccess; citeIndex: number | null };
 }
 
 export interface RunModel {
@@ -265,6 +308,20 @@ export interface RunModel {
   /** Last warning title, surfaced verbatim. We never editorialise it into a
    *  claim like "Stopped early" — several warnings are non-fatal. */
   note: string | null;
+  /* ── Added for the transcript rewrite. Everything above is untouched, because
+   *    activity-timeline reads `calls`/`searches`/`sourceCount`/`query`/`note`/
+   *    `elapsedMs` to build the resting strip's nouns and run-receipt reads
+   *    `phases`/`facts`/`calls`/`sources`. Deriving those from `steps` instead
+   *    would be a second opinion on the same run. ── */
+  /** The spine, in emission order, grouped by phase at render time. */
+  steps: Step[];
+  /** The run reported no `usage` event. Gated on there being events at all: a
+   *  reasoning-only message has no event stream to be missing a usage row from,
+   *  and calling that "Stopped" would be an accusation with nothing behind it. */
+  stopped: boolean;
+  /** Output tokens, lifted from the usage string's `N output`, or null. Never
+   *  reconstructed from anything else. */
+  outputTokens: string | null;
 }
 
 /** What the live strip is currently saying. Computed ONCE, by the caller that
@@ -272,6 +329,17 @@ export interface RunModel {
 export interface LiveCopy {
   message: string;
   warning: boolean;
+}
+
+/** Everything `buildRun` needs that is not an activity event. Optional in full:
+ *  the receipt tests call `buildRun(events, null)` and must keep doing so. */
+export interface RunContext {
+  /** The message's own source list, for `citeIndex`. See `Step.source`. */
+  sources?: ClientSource[] | null;
+  /** The flat reasoning trace, for the `full` view's single step. */
+  reasoning?: string | null;
+  /** The provider's own discrete parts, for the `summary` view's steps. */
+  reasoningParts?: string[] | null;
 }
 
 /**
@@ -290,7 +358,12 @@ export interface LiveCopy {
  * corrected into the server's frame (see useRunClock). Passing it in is what
  * lets the running phase be open-ended instead of missing.
  */
-export function buildRun(events: ClientActivityEvent[], nowServer: number | null, anchorT0?: number | null): RunModel {
+export function buildRun(
+  events: ClientActivityEvent[],
+  nowServer: number | null,
+  anchorT0?: number | null,
+  context?: RunContext,
+): RunModel {
   const streaming = nowServer !== null;
   const at = (e?: ClientActivityEvent) => (e ? parseTs(e.createdAt) : null);
 
@@ -322,22 +395,17 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // THE RUN'S TERMINATOR. `usage` is emitted only after the producer's stream
   // loop has exited, so while streaming it has not landed and the run is
   // genuinely open-ended: it ends at NOW, not at whichever event happened to
-  // arrive last. This ordering is load-bearing and was got wrong once. Falling
-  // back to `events[last]` mid-stream reads the `write` event itself — so WRITE
-  // measured write→write = 0.0s for the entire body stream — or, on a run with
-  // native search, the last `visit`, which is "time until the last citation
-  // appeared" wearing a WRITE label. Both are the form lying.
-  //
-  // `nowServer` is non-null exactly when streaming, so this chain says: real end
-  // if we have one, else now if live, else the last thing we saw (an aborted run
-  // that never reported usage).
+  // arrive last. Falling back to `events[last]` mid-stream reads the `write`
+  // event itself — so WRITE measured write→write = 0.0s for the entire body
+  // stream — or, on a run with native search, the last `visit`, which is "time
+  // until the last citation appeared" wearing a WRITE label.
   const tEnd = at(usageEv) ?? nowServer ?? at(events[events.length - 1]);
 
   // EVERY page the run reported, in emission order, with no cap and no sample.
   // The only thing dropped is a repeat of a URL already listed, because the same
-  // page arriving twice is one page. Whether the list is COMPLETE is a property
-  // of the producer, not of this loop: see SourceAccess.
+  // page arriving twice is one page.
   const sources: RunModel["sources"] = [];
+  const sourceEvents: ClientActivityEvent[] = [];
   const seen = new Set<string>();
   for (const e of events) {
     if (!e.url || seen.has(e.url)) continue;
@@ -346,6 +414,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     // The producer already truncated `detail` to 96 and already fell back to the
     // host when the page had no title, so there is nothing left to decide here.
     sources.push({ url: e.url, domain, title: e.detail?.trim() || domain, access: sourceAccessOf(e.title) });
+    sourceEvents.push(e);
   }
 
   const warnings = events.filter((e) => e.kind === "warning");
@@ -398,8 +467,6 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // THINK is time-to-first-token minus the research sub-interval. While
   // streaming with no `write` yet it is open-ended — which is precisely the
   // longest window, and the one a user is most likely to open the panel during.
-  // Hiding the phases until first token would make the running phase invisible
-  // for the whole of it, so it stays and simply has no end yet.
   const thinkEnd = tWrite ?? tEnd;
   const thinkTotal = span(t0, thinkEnd);
   const thinkMs = thinkTotal === null ? null : Math.max(0, thinkTotal - (researchMs ?? 0));
@@ -414,11 +481,12 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   }
 
   const outMatch = usageEv?.detail?.match(/(\d[\d,]*)\s*output/);
+  const outputTokens = outMatch ? outMatch[1] : null;
   if (tWrite !== null) {
     phases.push({
       key: "write",
       label: "Write",
-      object: outMatch ? `${outMatch[1]} tokens` : "",
+      object: outputTokens ? `${outputTokens} tokens` : "",
       ms: span(tWrite, tEnd),
       active: writeRunning,
     });
@@ -435,12 +503,30 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // One end for the header and for the last phase, so "total = sum of parts" is
   // arithmetic rather than aspiration.
   const elapsedMs = span(t0, tEnd);
+  const memoryReceipt = memoryEv?.memoryReceipt ?? [];
+
+  const steps = buildSteps({
+    events,
+    searchEvs,
+    sourceEvents,
+    sources,
+    calls,
+    memoryReceipt,
+    context,
+    tWrite,
+    tEnd,
+    span,
+    outputTokens,
+    streaming,
+    researchRunning,
+    writeRunning,
+  });
 
   return {
     t0,
     phases,
     facts,
-    memoryReceipt: memoryEv?.memoryReceipt ?? [],
+    memoryReceipt,
     calls,
     sources,
     searches: searchEvs.length,
@@ -448,14 +534,240 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     query: searchEvs[searchEvs.length - 1]?.detail?.trim() || null,
     elapsedMs,
     note: warnings.length ? warnings[warnings.length - 1].title : null,
+    steps,
+    stopped: events.length > 0 && !usageEv && !streaming,
+    outputTokens,
   };
 }
 
 /**
+ * THE SPINE, in emission order.
+ *
+ * ORDERING IS THE ONE CLAIM THIS PANEL MAKES ABOUT TIME, and it is a claim the
+ * data supports: the producer's sends are ordered even where their timestamps
+ * collide. Nothing here sorts by `createdAt` — most of a run's events share one
+ * instant, so sorting would shuffle a real order into an arbitrary one.
+ *
+ * REASONING STEPS ARE NOT INTERLEAVED WITH TOOL CALLS, and that absence is
+ * deliberate. A provider's summary parts carry no timestamps at all; placing
+ * them between two tool rows would draw a sequence nobody measured. They open
+ * the THINK section, the calls follow, and the gap between the two is honest
+ * about what is known.
+ */
+function buildSteps(input: {
+  events: ClientActivityEvent[];
+  searchEvs: ClientActivityEvent[];
+  sourceEvents: ClientActivityEvent[];
+  sources: RunModel["sources"];
+  calls: Call[];
+  memoryReceipt: ClientMemoryReceipt[];
+  context?: RunContext;
+  tWrite: number | null;
+  tEnd: number | null;
+  span: (a: number | null, b: number | null) => number | null;
+  outputTokens: string | null;
+  streaming: boolean;
+  researchRunning: boolean;
+  writeRunning: boolean;
+}): Step[] {
+  const {
+    events,
+    searchEvs,
+    sourceEvents,
+    sources,
+    calls,
+    memoryReceipt,
+    context,
+    tWrite,
+    tEnd,
+    span,
+    outputTokens,
+    streaming,
+    researchRunning,
+    writeRunning,
+  } = input;
+
+  const steps: Step[] = [];
+
+  // ── RESEARCH: the searches the run ran, then the pages it came back with ──
+  for (const e of searchEvs) {
+    const query = e.detail?.trim();
+    steps.push({
+      id: e.id,
+      kind: "search",
+      phase: "research",
+      // The producer's own query string, in the producer's own quotes. A search
+      // with no query recorded says only that a search happened.
+      label: query ? `Searched “${query}”` : STEP_LABEL.searched,
+      detail: null,
+      ms: null,
+      running: false,
+      failed: false,
+    });
+  }
+
+  /* `citeIndex` is the 1-based position of this URL in the MESSAGE's `sources`
+   * array, and only when that array is a numbered corpus the model was actually
+   * shown (`ClientSource.cited`). On every native-search path the model never
+   * saw an index, so a bracket in its text means nothing — a chip pointing at
+   * an arbitrary source is worse than no chip. Absent on older persisted rows,
+   * which degrades to the same null. */
+  const cited = context?.sources ?? [];
+  const citeIndexOf = (url: string) => {
+    const i = cited.findIndex((s) => s.url === url);
+    return i >= 0 && cited[i]?.cited === true ? i + 1 : null;
+  };
+
+  sourceEvents.forEach((e, i) => {
+    const s = sources[i];
+    steps.push({
+      id: e.id,
+      kind: "source",
+      phase: "research",
+      label: s.title,
+      // Only the exception is marked. A read page and a page whose producer
+      // never said carry no tag, which is this panel's idiom everywhere.
+      detail: s.access === "listed" ? `${s.domain} · listed` : s.domain,
+      ms: null,
+      running: false,
+      failed: false,
+      source: { url: s.url, domain: s.domain, access: s.access, citeIndex: citeIndexOf(s.url) },
+    });
+  });
+
+  // ── THINK: the model's own account, then the calls it made ────────────────
+  const parts = toSteps(context?.reasoningParts);
+  const trace = context?.reasoning?.trim();
+  if (parts) {
+    parts.forEach((part, i) => {
+      /* A PART WITH NO TITLE GETS NO HEADING. `toStep` returns `title: null`
+       * when the model did not open the part with a `**Bold**` line, and in
+       * that case `body` is the WHOLE part. Promoting its first line to a
+       * heading set 177 characters of the model's prose as a semibold label and
+       * dropped the 202 characters behind it, with no ellipsis and no way to
+       * tell. So: a label only when the model wrote one; otherwise the part's
+       * opening is the DETAIL line and the whole part is the body. */
+      const preview = part.body.replace(/\s+/g, " ").trim();
+      steps.push({
+        id: `reason-${i}`,
+        kind: "think",
+        phase: "think",
+        label: part.title ?? STEP_LABEL.reasoning,
+        detail: preview ? preview.slice(0, 90) : null,
+        ms: null,
+        running: false,
+        failed: false,
+        ...(part.body ? { body: { type: "prose" as const, text: part.body } } : {}),
+      });
+    });
+  } else if (trace) {
+    steps.push({
+      id: "reason-full",
+      kind: "think",
+      phase: "think",
+      label: STEP_LABEL.fullTrace,
+      detail: "This model streams one unbroken trace.",
+      ms: null,
+      running: false,
+      failed: false,
+      body: { type: "prose", text: trace },
+    });
+  }
+
+  for (const call of calls) {
+    if (call.warn) {
+      steps.push({
+        id: call.id,
+        kind: "notice",
+        phase: "think",
+        // The producer's own `[title, detail].join(" · ")`, verbatim. Never
+        // re-phrased into blame ("The Linear connector did not respond"): the
+        // only exact signal on the wire is `kind === "warning"`, and naming a
+        // failing component from a warning title is inference dressed as fact.
+        label: call.object,
+        detail: null,
+        ms: null,
+        running: false,
+        failed: true,
+      });
+      continue;
+    }
+    const tool = call.tool;
+    steps.push({
+      id: call.id,
+      kind: "tool",
+      phase: "think",
+      label: call.object,
+      detail: null,
+      // ABSENT, never zero, for the calls that never reached the network — an
+      // unknown tool name, an unavailable connector, a refused action. A zero
+      // would read as "the connector answered instantly".
+      ms: tool && typeof tool.durationMs === "number" ? tool.durationMs : null,
+      running: false,
+      failed: tool?.status === "failed",
+      ...(tool ? { body: { type: "tool" as const, tool } } : {}),
+    });
+  }
+
+  // ── MEMORY: an INPUT, not an event. Filed in Details, never in the spine ──
+  for (const memory of memoryReceipt) {
+    steps.push({
+      id: `memory-${memory.id}`,
+      kind: "memory",
+      phase: "think",
+      label: memory.content,
+      detail: memory.category ?? null,
+      ms: null,
+      running: false,
+      failed: false,
+      body: { type: "memory", memory },
+    });
+  }
+
+  // ── WRITE ─────────────────────────────────────────────────────────────────
+  if (tWrite !== null) {
+    steps.push({
+      id: "write",
+      kind: "write",
+      phase: "write",
+      label: writeRunning ? STEP_LABEL.writing : STEP_LABEL.wrote,
+      detail: outputTokens ? `${outputTokens} tokens` : null,
+      // A running step shows no figure at all: absence is this panel's idiom
+      // for "not yet measured", and the header clock is the only clock.
+      ms: writeRunning ? null : span(tWrite, tEnd),
+      running: writeRunning,
+      failed: false,
+    });
+  } else if (streaming) {
+    /* THE RUNNING ROW, when the run has not started writing yet.
+     *
+     * Its label is the PHASE, not an invented action — "Researching", not
+     * "Reading nature.com". The specific action is the recap sentence's job and
+     * it already has one value to say it with; a second, differently-worded
+     * copy of it down here is how a strip and a panel start disagreeing. */
+    steps.push({
+      id: "running",
+      kind: "think",
+      phase: researchRunning ? "research" : "think",
+      label:
+        events.length === 0
+          ? STEP_LABEL.waiting
+          : researchRunning
+            ? STEP_LABEL.researching
+            : STEP_LABEL.thinking,
+      detail: null,
+      ms: null,
+      running: true,
+      failed: false,
+    });
+  }
+
+  return steps;
+}
+
+/**
  * THE TICK — the one live signal, and the number the whole design stakes its
- * credibility on. It replaces the ring, the breathe and the shimmer combined,
- * and unlike all three it is different at every instant because it is measuring
- * something.
+ * credibility on.
  *
  * CLOCK FRAME (load-bearing): `createdAt` is minted on the SERVER; Date.now()
  * is the browser's. Subtracting one from the other measures skew as much as
@@ -508,36 +820,6 @@ export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) 
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * ONE GRID GRAMMAR FOR THE WHOLE PANEL.
- *
- * col 1 = label · col 2 = detail · col 3 = FIGURE.
- *
- * A MEASURED row fills all three. A STATED row's <dd> spans 2/-1, so it does not
- * leave an empty figure cell — it HAS no figure cell. That absence is the
- * PHASES/FACTS split expressed as markup: it is structurally impossible to put a
- * duration next to "Selected model" without changing the row's grammar.
- * ───────────────────────────────────────────────────────────────────────────── */
-const LEDGER = "grid grid-cols-[5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-2";
-const FIG_TOTAL = "font-mono text-[1.375rem] leading-none tracking-[-0.01em] tabular-nums text-foreground";
-const FIG = "font-mono text-[0.8125rem] leading-5 tabular-nums text-foreground/70";
-
-/* Sections are separated by a rule and vertical space — no cards, no shadows, no
- * nested backgrounds. The rule is a SEPARATOR, so it is drawn BETWEEN sections
- * and never above the first one: the header already ends in a border, and two
- * hairlines 16px apart at the top of a column read as a mistake rather than as
- * structure. `SECTION_FIRST` is that first-section case. */
-const SECTION = "mt-5 border-t border-border/60 pt-5";
-const SECTION_FIRST = "";
-
-function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
-  return (
-    <h3 id={id} className="font-mono text-label text-muted-foreground">
-      {children}
-    </h3>
-  );
-}
-
-/**
  * THE READING COLUMN — the one renderer for model-generated prose.
  *
  * Splits on the MODEL'S OWN blank lines and nothing else. `toReasoningLines` is
@@ -545,16 +827,13 @@ function SectionHeading({ id, children }: { id: string; children: React.ReactNod
  * AIcss 40px slots, and at rest it would insert paragraph breaks the model never
  * wrote — structure invented by a layout constant.
  *
- * No clamp, no ellipsis, no max-height, no inner scroller. The old panel routed
- * this text through `.aicss-tr-sentence` (height 40px, -webkit-line-clamp 2),
- * which truncated every paragraph mid-sentence: correct for a live trace that
- * must not reflow the transcript, wrong in a panel opened specifically to READ.
- * The panel's own scroller bounds this; a scrollbar inside a scrollbar is the
- * thing edge fades are usually papering over.
+ * No clamp, no ellipsis, no max-height, no inner scroller. The panel's own
+ * scroller bounds this; a scrollbar inside a scrollbar is the thing edge fades
+ * are usually papering over.
  *
  * `content-visibility` because a deep-research trace can run to thousands of
  * words and the browser should not lay out what is not on screen.
- */
+ * ───────────────────────────────────────────────────────────────────────────── */
 function Prose({ text, className }: { text: string; className?: string }) {
   const paras = React.useMemo(
     () =>
@@ -572,7 +851,10 @@ function Prose({ text, className }: { text: string; className?: string }) {
         <p
           key={i}
           style={{ contentVisibility: "auto", containIntrinsicSize: "0 96px" }}
-          className="whitespace-pre-wrap break-words font-sans text-[0.9375rem] leading-[1.72] text-foreground/80"
+          // `text-body` and its own 1.6 leading. The 0.9375rem/1.72 this used to
+          // hand-write was `text-body` spelled longhand with a made-up leading,
+          // and it was the reason this surface shared a rhythm with nothing.
+          className="whitespace-pre-wrap break-words font-sans text-body text-foreground/80"
         >
           {p}
         </p>
@@ -584,31 +866,16 @@ function Prose({ text, className }: { text: string; className?: string }) {
 /* ─────────────────────────────────────────────────────────────────────────────
  * SUMMARY OR FULL — a choice, and only where there is genuinely one to make.
  *
- * The panel used to answer this for the reader in two places at once: the steps
- * list showed the provider's part TITLES and silently discarded their bodies,
- * while the prose behind "Full thinking" was the flat trace with the structure
- * flattened out of it. So the summary was never readable as a summary — it was
- * a table of contents — and the only way to read what the model actually said
- * at a step was to open the wall of text and find it again by eye.
+ * `toSteps` returns null for every provider that streamed unbroken prose —
+ * Anthropic, Zhipu, Mistral, Google — and for every message persisted before
+ * parts were carried. Those runs render one `Full reasoning trace` step and say
+ * so in its detail line. A two-option switch with one honest option would be an
+ * invitation to a summary this app would then have to invent.
  *
- * Both halves already exist in the data. `reasoning-parts.ts` keeps the
- * provider's own parts verbatim alongside the flat text, and a part carries a
- * title and a body. This turns that into the two views it always was.
- *
- * WHERE THERE IS NO CHOICE, THERE IS NO CONTROL. `toSteps` returns null for
- * every provider that streamed unbroken prose — Anthropic, Zhipu, Mistral,
- * Google — and for every message persisted before parts were carried. Those
- * runs render one flat column of prose and say so, in a caption. A two-option
- * switch with one honest option would be an invitation to a summary this app
- * would then have to invent, which is precisely what reasoning-parts.ts exists
- * to prevent.
- *
- * The switch is also hidden WHILE STREAMING, for the same reason: mid-run the
- * reasoning column is the AIcss live viewport, so neither view is on screen and
- * neither button would do anything. A control that visibly does nothing is the
- * same lie in a smaller box.
+ * The control is no longer a SegmentedControl floating beside a section
+ * heading: it is a radio group inside the filter menu, because it is a view
+ * preference over the spine rather than a control over one block.
  * ───────────────────────────────────────────────────────────────────────────── */
-
 type ReasoningView = "summary" | "full";
 
 const VIEW_KEY = "juno.reasoning-view";
@@ -616,10 +883,9 @@ const VIEW_KEY = "juno.reasoning-view";
 /**
  * The reader's standing preference, not a per-message toggle.
  *
- * Someone who wants the raw trace wants it on the next message too; making them
- * re-choose on every run is the same as not offering the choice. Read lazily on
- * mount rather than during render so the server-rendered markup and the first
- * client paint agree — reading `localStorage` in the initial state is a
+ * Someone who wants the raw trace wants it on the next message too. Read lazily
+ * on mount rather than during render so the server-rendered markup and the
+ * first client paint agree — reading `localStorage` in the initial state is a
  * hydration mismatch waiting to happen.
  */
 function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
@@ -647,67 +913,138 @@ function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
   return [view, choose];
 }
 
-/**
- * Summary ⇄ Full. This used to be a locally-built radiogroup — well track,
- * roving tabindex, arrow-key handler, raised selected segment — i.e. a second
- * copy of <SegmentedControl>, which already ships all of it plus the gliding
- * thumb, the press dip and the travel stretch. The copy also chose `rounded-full`
- * for both track and segments where the primitive is menu 14 / control 10, so
- * the two segmented controls a reader meets in one session (this one and the
- * artifact card's Preview/Code) looked like two different widgets.
- */
-const VIEW_OPTIONS: (SegmentedOption<ReasoningView> & { hint: string })[] = [
-  { value: "summary", label: "Summary", hint: "The model’s own summary steps." },
-  { value: "full", label: "Full", hint: "The complete reasoning trace." },
+const COPY_REVERT_MS = 1400;
+
+/** How long a collapsing body stays mounted after its row closes — the
+ *  grid-rows transition is `--dur-base` (220ms) and the node has to outlive it
+ *  or the panel snaps shut instead of closing. */
+const COLLAPSE_MS = 240;
+
+/** The kinds the filter menu offers, in menu order, with their labels. `write`
+ *  is absent on purpose: a run has exactly one, it is never the thing you are
+ *  looking for, and an option that filters a list to one known row is a control
+ *  that costs a press and returns nothing. */
+const FILTER_KINDS: { kind: StepKind; label: string }[] = [
+  { kind: "think", label: "Reasoning" },
+  { kind: "tool", label: "Tools" },
+  { kind: "source", label: "Sources" },
+  { kind: "search", label: "Searches" },
+  { kind: "notice", label: "Notices" },
 ];
 
-/** A figure that was MEASURED. The sr-only prefix is what tells a screen reader
- *  that the bare number in column three is a duration — the visual column header
- *  it would otherwise be reading from does not exist for it. */
-function Figure({ className, children }: { className: string; children: React.ReactNode }) {
-  return (
-    <dd className={className}>
-      <span className="sr-only">duration </span>
-      {children}
-    </dd>
-  );
+/* Sentence case here, `uppercase` in the class list: the extractor should
+ * carry words a translator can read, not a shout. */
+/** What the row's copy button says it copies. Same extractor rule as
+ *  STEP_LABEL: a ternary of literals never reaches the catalog. */
+const COPY_TIP_LABEL = {
+  tool: "Copy call",
+  notice: "Copy notice",
+  search: "Copy query",
+  step: "Copy step",
+} as const;
+
+/** The header's one word. Same extractor rule as STEP_LABEL. */
+const HEADER_LABEL = {
+  researching: "Researching",
+  thinking: "Thinking",
+  writing: "Writing",
+  done: "Done",
+  stopped: "Stopped",
+} as const;
+
+const PHASE_LABEL: Record<PhaseKey, string> = {
+  research: "Research",
+  think: "Think",
+  write: "Write",
+};
+
+/** The marker glyph for a kind. Monochrome, ALWAYS: the accent is state and
+ *  only state (FLAT_UI §2.4), so a search row and a tool row differ by drawing,
+ *  never by hue. Running and failed are the two states that colour anything. */
+function StepMarker({ step }: { step: Step }) {
+  if (step.kind === "source" && step.source) {
+    return <SourceFavicon url={step.source.url} variant="cluster" />;
+  }
+  if (step.kind === "think") {
+    return <span className="size-[7px] rounded-full bg-current" aria-hidden="true" />;
+  }
+  const Glyph =
+    step.kind === "search"
+      ? ComposerIcons.web
+      : step.kind === "tool"
+        ? AppIcons.connections
+        : step.kind === "memory"
+          ? ComposerIcons.memory
+          : step.kind === "notice"
+            ? CodeIcons.error
+            : AppIcons.artifacts;
+  return <Glyph className="size-3" aria-hidden="true" />;
 }
 
-const COPY_REVERT_MS = 1400;
+/** Case-insensitive plain substring — no regex, no fuzzy. A find in a run of
+ *  connector output has to mean exactly what it says, or the count beside the
+ *  field is a number about something else. */
+function matches(step: Step, query: string) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const body =
+    step.body?.type === "prose"
+      ? step.body.text
+      : step.body?.type === "memory"
+        ? step.body.memory.content
+        : step.body?.type === "tool"
+          ? `${step.body.tool.args ?? ""} ${step.body.tool.result ?? ""}`
+          : "";
+  return `${step.label} ${step.detail ?? ""} ${body}`.toLowerCase().includes(q);
+}
+
+/** The matched run of a label, wrapped. Only the visible label is marked — the
+ *  body is behind a disclosure, and highlighting text nobody can see is a count
+ *  with no referent. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="rounded-xs bg-primary/15 px-0.5 text-foreground">{text.slice(i, i + query.length)}</mark>
+      {text.slice(i + query.length)}
+    </>
+  );
+}
 
 /**
  * DOCKED, NOT OVERLAID. This was a Radix <Sheet> — a modal dialog with a
  * backdrop that dimmed the chat, trapped focus and locked scroll. The chat is
  * the thing the user is reading; the panel is an annotation on it, so the panel
- * now takes a column and the chat narrows beside it, exactly like CanvasPanel.
+ * takes a column and the chat narrows beside it, exactly like CanvasPanel.
  *
- * Everything the Sheet gave us that we still want is re-supplied deliberately
- * and nothing else: an accessible name, focus moved in on open, Esc-to-close
- * (owned by chat-view, which owns the open state), and a visible close control.
- * The behaviours we shed — backdrop, dimming, focus trap, scroll lock,
- * inert-ing the page — are shed on purpose: the chat MUST stay readable,
- * scrollable and typeable while this is open.
+ * THREE BLOCKS, ONE ROW RECIPE, ONE LIVE SIGNAL.
  *
- * The panel mounts only while open, so there is no `open` prop to thread.
+ *   RECAP    what is happening / what happened — fixed height, never reflows
+ *   SPINE    every step, chronological, one recipe — the body
+ *   DETAILS  model, effort, context, cost, memory — one disclosure, closed
  *
- * STREAMING AND COMPLETE ARE THE SAME CHASSIS. Nothing reflows on settle: the
- * eyebrow crossfades to COMPLETE, the live line unmounts, the elapsed figure
- * gains its tenth in place, and COST appends BELOW the elapsed block so nothing
- * above it moves. There is no auto-close — auto-close belongs to an in-transcript
- * disclosure, not to a docked column the reader opened deliberately.
+ * What this replaced was a warning list, three three-column ledgers, a link
+ * list, a disclosure list and a prose column, stacked under hairlines with the
+ * MODEL'S NAME as the heading — a receipt printed as a form. A person watching
+ * an answer being written has one question, and it is answered in time order.
  */
 export function ThoughtProcessPanel({
   id,
+  messageId,
   onClose,
   run,
   reasoning,
-  reasoningParts,
   streaming,
   live,
   finishNote,
 }: {
   /** DOM id, so the trigger's aria-controls points at something real. */
   id: string;
+  /** The message this run belongs to — the scope for a jump to a citation. */
+  messageId: string;
   onClose: () => void;
   /** Built ONCE by the caller, from the caller's clock. The panel deliberately
    *  owns no clock: the collapsed row and the panel opened from it must be
@@ -715,61 +1052,110 @@ export function ThoughtProcessPanel({
    *  to be one number, not two agreeing ones. See useRunClock. */
   run: RunModel;
   reasoning?: string | null;
-  /** The provider's OWN discrete summary parts, or absent when it sent none.
-   *  Absence is a fact carried from the wire, never a gap to fill in. */
-  reasoningParts?: string[] | null;
   streaming?: boolean;
   /** The strip's current sentence, computed by `liveCopy` in ActivityTimeline
    *  and handed down for exactly the reason `run` is: one value, one call site,
-   *  so the strip and the panel CANNOT drift. The panel has no events of its
-   *  own to derive it from and is not given any. */
+   *  so the strip and the panel CANNOT drift. */
   live?: LiveCopy;
   /** The finish-reason sentence, already resolved by message-item. Threaded
    *  down rather than re-derived: `finishReason` lives on the message, not in
    *  the run's event stream, and there must be exactly one wording of it. */
   finishNote?: string | null;
 }) {
-  const hasReasoning = !!reasoning?.trim();
   const rootRef = React.useRef<HTMLElement>(null);
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  const findRef = React.useRef<HTMLInputElement>(null);
+  const panel = useThoughtPanel();
+  const seedDraft = panel?.seedDraft;
+
   const [view, setView] = useReasoningView();
-  const [copied, setCopied] = React.useState<"run" | "sources" | null>(null);
-  const copyTimer = React.useRef<number | null>(null);
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
 
   /**
-   * WHICH TOOL ROWS ARE OPEN — per row, local, and deliberately not persisted.
+   * WHICH ROWS ARE OPEN — per row, local, and deliberately not persisted.
    *
-   * Unlike Summary/Full, which is a standing reading preference and lives in
-   * localStorage, "which call did I want to look inside" is a question about
-   * one run and one moment. Persisting it would reopen a stranger's payload on
-   * the next message that happened to reuse a row id.
+   * Unlike Summary/Full, which is a standing reading preference, "which call
+   * did I want to look inside" is a question about one run and one moment.
+   * Persisting it would reopen a stranger's payload on the next message that
+   * happened to reuse a row id. All closed by default, all of them.
    *
-   * All closed by default, all of them. A run with six calls expanded is six
-   * code blocks and several thousand lines standing between the reader and the
-   * reasoning section, and the panel's default state has to be readable at a
-   * glance or the disclosure is not buying anything.
+   * `mounted` trails `open` by one transition: the grid-rows collapse needs the
+   * node to still exist while it animates to 0fr, and `aria-controls` must
+   * point only at something in the document.
    */
-  const [openTools, setOpenTools] = React.useState<ReadonlySet<string>>(() => new Set<string>());
-  const toggleTool = React.useCallback((rowId: string) => {
-    setOpenTools((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(rowId)) next.add(rowId);
-      return next;
-    });
+  const [open, setOpen] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const [mounted, setMounted] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const collapseTimers = React.useRef(new Map<string, number>());
+
+  /* Deliberately NOT a side effect inside a setState updater: React invokes an
+   * updater twice under StrictMode, which would arm two collapse timers and
+   * leave one of them unclearable in the map. The decision is made here, once,
+   * from the state we can already see. */
+  const toggleStep = React.useCallback(
+    (rowId: string) => {
+      const pending = collapseTimers.current.get(rowId);
+      if (pending) {
+        window.clearTimeout(pending);
+        collapseTimers.current.delete(rowId);
+      }
+      if (open.has(rowId)) {
+        setOpen((prev) => {
+          const next = new Set(prev);
+          next.delete(rowId);
+          return next;
+        });
+        const t = window.setTimeout(() => {
+          setMounted((m) => {
+            const n = new Set(m);
+            n.delete(rowId);
+            return n;
+          });
+          collapseTimers.current.delete(rowId);
+        }, COLLAPSE_MS);
+        collapseTimers.current.set(rowId, t);
+        return;
+      }
+      // Mounted and opened in the SAME commit. The collapse wrapper is always in
+      // the DOM at `grid-rows-[0fr]`, so the class flip transitions; mounting
+      // the wrapper itself here would give it nothing to animate from.
+      setMounted((m) => new Set([...m, rowId]));
+      setOpen((prev) => new Set([...prev, rowId]));
+    },
+    [open],
+  );
+
+  React.useEffect(() => {
+    const timers = collapseTimers.current;
+    return () => {
+      for (const t of timers.values()) window.clearTimeout(t);
+      timers.clear();
+    };
   }, []);
+
+  /* Filter and find are PER-RUN AND TRANSIENT, for the same reason `open` is:
+   * which slice of one run you wanted is not a standing preference. */
+  const [kinds, setKinds] = React.useState<ReadonlySet<StepKind>>(() => new Set<StepKind>());
+  const [findOpen, setFindOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+
+  const [copied, setCopied] = React.useState<string | null>(null);
+  const copyTimer = React.useRef<number | null>(null);
 
   // A receipt is not only an explanation — it is a direct control surface for
   // the exact facts this turn used. Forgetting writes the durable suppression
   // through the same authenticated memory route as the Memory page, then hides
   // only the local receipt row; the persisted chat remains an honest historical
   // record of what the model saw.
-  const [forgottenMemories, setForgottenMemories] = React.useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  const [forgettingMemory, setForgettingMemory] = React.useState<string | null>(null);
-  const [memoryError, setMemoryError] = React.useState<string | null>(null);
+  const [forgotten, setForgotten] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const [forgetting, setForgetting] = React.useState<string | null>(null);
+  const [memoryError, setMemoryError] = React.useState<Record<string, string>>({});
   const forgetMemory = React.useCallback(async (memoryId: string) => {
-    setForgettingMemory(memoryId);
-    setMemoryError(null);
+    setForgetting(memoryId);
+    setMemoryError((prev) => {
+      const next = { ...prev };
+      delete next[memoryId];
+      return next;
+    });
     try {
       const response = await fetch(`/api/memory/${encodeURIComponent(memoryId)}`, {
         method: "PATCH",
@@ -777,40 +1163,14 @@ export function ThoughtProcessPanel({
         body: JSON.stringify({ forget: true }),
       });
       if (!response.ok) throw new Error("Could not forget that memory.");
-      setForgottenMemories((previous) => new Set([...previous, memoryId]));
+      setForgotten((previous) => new Set([...previous, memoryId]));
     } catch (error) {
-      setMemoryError(error instanceof Error ? error.message : "Could not forget that memory.");
+      const message = error instanceof Error ? error.message : "Could not forget that memory.";
+      setMemoryError((prev) => ({ ...prev, [memoryId]: message }));
     } finally {
-      setForgettingMemory(null);
+      setForgetting(null);
     }
   }, []);
-
-  /**
-   * STEPS — the model's own words, or nothing.
-   *
-   * `toSteps` returns null unless the provider actually delivered parts, so
-   * this is null for Anthropic, Zhipu, Mistral, Google and for every message
-   * persisted before parts were carried. Nothing here inspects `reasoning` to
-   * look for structure: the only boundaries that exist are the ones the
-   * provider sent.
-   */
-  const steps = React.useMemo(() => toSteps(reasoningParts), [reasoningParts]);
-
-  /**
-   * The lines the AIcss viewport shows WHILE STREAMING, and only then.
-   *
-   * The old panel refused to render this at all, on the grounds that "the strip
-   * is showing this exact stream a column away". That is false below `lg`, where
-   * chat-view puts the chat column in `hidden lg:flex` — the strip is
-   * `display:none` and the panel was the only surface left, showing nothing. So
-   * the live trace mounts here too, in the container built for it: 40px slots,
-   * a 180px cap, and the newest line translated into view rather than scrolled
-   * to, which is what stops a growing trace reflowing under the reader.
-   */
-  const liveLines = React.useMemo(
-    () => (streaming ? toReasoningLines(reasoning, reasoningParts) : []),
-    [streaming, reasoning, reasoningParts],
-  );
 
   // Focus moves in on open — the user pressed a control to get here, so the
   // caret follows. Nothing holds it: Tab leaves the panel normally, and
@@ -827,21 +1187,29 @@ export function ThoughtProcessPanel({
     [],
   );
 
-  const copy = React.useCallback(async (what: "run" | "sources", text: string) => {
+  /**
+   * ONE GESTURE, ONE BEHAVIOUR, PRODUCT-WIDE.
+   *
+   * This used to catch and `return` — no toast, no receipt, nothing at all —
+   * while `AicssCodeBlock` five hundred lines below it raised a toast for the
+   * identical failure. The panel had decided that saying "Copied" falsely was a
+   * lie, which is right, and then shipped saying nothing, which is worse. The
+   * success receipt is the glyph swap on the button; the failure is the same
+   * toast the code block already uses.
+   */
+  const copy = React.useCallback(async (key: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // No clipboard permission, or an insecure origin. Saying "Copied" when
-      // nothing was copied is the smallest lie in the panel and still a lie.
+      toast.error("Couldn't copy to clipboard");
       return;
     }
-    setCopied(what);
+    setCopied(key);
     if (copyTimer.current) window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopied(null), COPY_REVERT_MS);
   }, []);
 
   const factOf = (label: string) => run.facts.find((f) => f.label === label)?.value ?? null;
-  const modelName = factOf("Model");
   const costValue = factOf("Cost");
 
   /**
@@ -850,98 +1218,240 @@ export function ThoughtProcessPanel({
    * `chat-usage.ts` joins the whole usage breakdown into one prose string and
    * throws the structure away, so the money has to be read back out of it. The
    * rule is: lift the currency token with one anchored match and degrade to a
-   * STATED row — the producer's whole string, verbatim, inside SETUP — never to
-   * a partial or reconstructed number. See `splitCost`.
+   * stated row — the producer's whole string, verbatim, inside Details — never
+   * to a partial or reconstructed number. See `splitCost`.
    */
   const { money, billed } = splitCost(costValue);
 
   const warnings = run.calls.filter((c) => c.warn);
-  const tools = run.calls.filter((c) => !c.warn);
-  const setupFacts = run.facts.filter((f) => f.label !== "Model" && f.label !== "Cost");
-  // When the money could not be lifted, the whole usage string joins SETUP as
-  // one more stated row rather than vanishing.
-  const setupRows = money === null && costValue ? [...setupFacts, { label: "Cost", value: costValue }] : setupFacts;
 
-  const domainCount = new Set(run.sources.map((s) => s.domain)).size;
-  const countLine =
-    [
-      run.sourceCount ? plural(run.sourceCount, "source") : null,
-      domainCount ? plural(domainCount, "domain") : null,
-      run.searches ? plural(run.searches, "search", "searches") : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || null;
+  /* THE SPINE. Memory receipts are steps too — they just live in Details rather
+   * than in the spine, because they are INPUTS to the run, not events in it. */
+  const allSteps = React.useMemo(() => {
+    const steps = run.steps.filter((s) => !(s.kind === "memory"));
+    if (view !== "full") return steps;
+    /* FULL TRACE. The per-part steps collapse into ONE step holding the flat
+     * reasoning string. Not a second list rendered beside the first: the two
+     * views are the same information at two grains, and showing both is the
+     * "rendered twice" failure this rewrite exists to end. */
+    const trace = reasoning?.trim();
+    if (!trace) return steps;
+    const out: Step[] = [];
+    let inserted = false;
+    for (const s of steps) {
+      if (s.kind !== "think" || s.running) {
+        out.push(s);
+        continue;
+      }
+      if (inserted) continue;
+      inserted = true;
+      out.push({
+        id: "reason-full",
+        kind: "think",
+        phase: "think",
+        label: STEP_LABEL.fullTrace,
+        detail: null,
+        ms: null,
+        running: false,
+        failed: false,
+        body: { type: "prose", text: trace },
+      });
+    }
+    return out;
+  }, [run.steps, view, reasoning]);
 
+  const memorySteps = React.useMemo(
+    () => run.steps.filter((s) => s.kind === "memory" && !forgotten.has(s.body?.type === "memory" ? s.body.memory.id : "")),
+    [run.steps, forgotten],
+  );
+
+  const counts = React.useMemo(() => {
+    const map = new Map<StepKind, number>();
+    for (const s of allSteps) map.set(s.kind, (map.get(s.kind) ?? 0) + 1);
+    return map;
+  }, [allSteps]);
+
+  const filtering = kinds.size > 0 || query.length > 0;
+  const visible = React.useMemo(
+    () => allSteps.filter((s) => (kinds.size === 0 || kinds.has(s.kind)) && matches(s, query)),
+    [allSteps, kinds, query],
+  );
+
+  const sections = React.useMemo(() => {
+    const order: PhaseKey[] = ["research", "think", "write"];
+    return order
+      .map((key) => ({ key, steps: visible.filter((s) => s.phase === key) }))
+      .filter((s) => s.steps.length > 0);
+  }, [visible]);
+
+  const toolsMissingDetail = allSteps.some((s) => s.kind === "tool" && !s.body);
+
+  /* ── AUTO-FOLLOW ─────────────────────────────────────────────────────────
+   * While streaming the scroller sticks to the bottom. Scroll up more than
+   * 24px and following stops — the reader is reading something, and yanking
+   * them back to the newest row is the panel arguing with them. The Live pill
+   * is how they get back. */
+  const [following, setFollowing] = React.useState(true);
+  const onScroll = React.useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+    setFollowing(atBottom);
+  }, []);
+
+  const reduced = React.useRef(false);
+  React.useEffect(() => {
+    reduced.current = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  }, []);
+
+  const scrollToBottom = React.useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: reduced.current ? "auto" : "smooth" });
+  }, []);
+
+  const stepCount = visible.length;
+  React.useEffect(() => {
+    if (!streaming || !following) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [streaming, following, stepCount]);
+
+  /* ── THE ROW KEYBOARD ────────────────────────────────────────────────────
+   * Scoped to the scroller, never to the window: at `lg` the chat stays
+   * typeable beside this dock, so a global `j` would eat a letter out of the
+   * composer. Bound here it can only fire when focus is already inside the
+   * spine, and it stands down for any field that takes text. */
+  const onSpineKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("input, textarea, [contenteditable=true]")) return;
+    const keys = ["ArrowDown", "ArrowUp", "j", "k", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    const rows = Array.from(
+      scrollerRef.current?.querySelectorAll<HTMLElement>("[data-step-row]") ?? [],
+    );
+    if (rows.length === 0) return;
+    const current = rows.findIndex((r) => r === target || r.contains(target));
+    let next: number;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = rows.length - 1;
+    else if (e.key === "ArrowDown" || e.key === "j") next = Math.min(rows.length - 1, current + 1);
+    else next = current <= 0 ? 0 : current - 1;
+    e.preventDefault();
+    rows[next]?.focus();
+    rows[next]?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  /* ── JUMP TO SOURCE ──────────────────────────────────────────────────────
+   * The chip only exists once the answer has rendered, and the model routinely
+   * writes fewer brackets than it was handed sources. Both misses land on the
+   * same fallback — open the URL — and neither says anything: a toast reading
+   * "that source is not cited" is a lecture about the model's behaviour
+   * delivered to the person who clicked. */
+  const jumpToCitation = React.useCallback(
+    (citeIndex: number, url: string) => {
+      const onPhone = typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
+      const el = document.querySelector<HTMLElement>(
+        `[data-juno-message="${CSS.escape(messageId)}"] [data-cite="${citeIndex}"]`,
+      );
+      if (!el) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      // Below lg the dock covers the chat, so a jump has to give it back first.
+      if (onPhone) onClose();
+      window.requestAnimationFrame(() => {
+        el.scrollIntoView({ block: "center", behavior: reduced.current ? "auto" : "smooth" });
+        el.classList.add("animate-cite-flash");
+        el.addEventListener("animationend", () => el.classList.remove("animate-cite-flash"), { once: true });
+      });
+    },
+    [messageId, onClose],
+  );
+
+  /* ── ASK TO RUN AGAIN ────────────────────────────────────────────────────
+   * Juno cannot dispatch a connector from the client, so the verb is honest: it
+   * seeds the composer and the person presses send. And it is offered ONLY on a
+   * call that failed or never returned — re-running a successful `create_issue`
+   * files a duplicate ticket, and an action button that does damage on a
+   * misclick is worse than a missing feature. */
+  const rerunnable = (step: Step) =>
+    !!seedDraft &&
+    step.body?.type === "tool" &&
+    !!step.body.tool.args &&
+    (step.body.tool.status === "failed" || step.body.tool.resultNote === "unfinished");
+
+  const askToRunAgain = React.useCallback(
+    (tool: ClientToolDetail) => {
+      if (!seedDraft) return;
+      const fence = "`".repeat(Math.max(3, ...(tool.args?.match(/`+/g) ?? [""]).map((r) => r.length + 1)));
+      seedDraft(
+        `Run \`${tool.name}\` on ${tool.server} again with the same arguments:\n\n${fence}json\n${tool.args}\n${fence}`,
+      );
+    },
+    [seedDraft],
+  );
+
+  /* ── HEADER STATE ────────────────────────────────────────────────────────
+   * One word, and the clock beside it. The panel used to be titled with the
+   * MODEL'S NAME — a fact that belongs in Details — while the actual state was
+   * a 12px mono eyebrow above it. */
   const activeKey = run.phases.find((p) => p.active)?.key;
-  const statusEyebrow = !streaming
-    ? "COMPLETE"
-    : activeKey === "research"
-      ? "RESEARCHING"
+  const statusWord = streaming
+    ? activeKey === "research"
+      ? HEADER_LABEL.researching
       : activeKey === "write"
-        ? "WRITING"
-        : "THINKING";
+        ? HEADER_LABEL.writing
+        : HEADER_LABEL.thinking
+    : run.stopped
+      ? HEADER_LABEL.stopped
+      : HEADER_LABEL.done;
 
-  const showNotice = warnings.length > 0 || !!finishNote;
-  const showElapsed = run.elapsedMs !== null;
-  // COST DOES NOT RENDER UNTIL `usage` LANDS. A dash at 22px for the length of a
-  // 90-second run is a large, prominent nothing; absence is already this panel's
-  // idiom for unknown, so it is used here rather than a placeholder with a
-  // "pending" caption beside it.
-  const showCost = money !== null && !streaming;
-  const visibleMemoryReceipt = run.memoryReceipt.filter((memory) => !forgottenMemories.has(memory.id));
-  const showMemoryReceipt = visibleMemoryReceipt.length > 0;
-  const showSetup = setupRows.length > 0 || showMemoryReceipt;
-  // WIDENED GATE. A search that returned nothing used to show no query, no
-  // search line and no evidence a search had happened at all — the run's most
-  // interesting outcome rendered as a gap.
-  const showSources = !!run.query || run.sources.length > 0;
-  const showTools = tools.length > 0;
-  const showReasoning = hasReasoning || (streaming && liveLines.length > 0);
+  const summary = React.useMemo(() => toRunSummary(run, finishNote), [run, finishNote]);
+  const recapSentence = streaming ? (live?.message ?? "Thinking about your request") : summary;
 
-  // Which ruled section is first, so the rule can be a separator rather than a
-  // second header border. Nothing above the ledger (no notice, not streaming)
-  // means the first ledger section draws no rule of its own.
-  const ruledOrder = [
-    showElapsed && "elapsed",
-    showCost && "cost",
-    showSetup && "setup",
-    showSources && "sources",
-    showTools && "tools",
-    showReasoning && "reasoning",
-    "footer",
-  ].filter(Boolean) as string[];
-  const firstRuled = showNotice || streaming ? null : ruledOrder[0];
-  const rule = (key: string) => (key === firstRuled ? SECTION_FIRST : SECTION);
+  const toolCalls = run.calls.filter((c) => !c.warn).length;
+  const figureThird = run.sourceCount > 0 || toolCalls === 0
+    ? { value: String(run.sourceCount), caption: "Sources" }
+    : { value: String(toolCalls), caption: "Tool calls" };
 
   /**
-   * ONE ANNOUNCER, PHASE-LEVEL ONLY.
+   * ONE ANNOUNCER, RUN-LEVEL ONLY.
    *
    * The scroller is `aria-live="off"` and every mutating row inside it is
    * therefore silent, because this panel is portalled into chat-view's dock —
    * outside message-item's polite region — and its figures rewrite once a
-   * second. What a screen reader actually needs from a run is three or four
-   * events, not three hundred: which phase it is in, and how it ended.
-   *
-   * Debounced, because a fast run can cross two phases inside 500ms and a
-   * queued pair of announcements would be read after the run had already
-   * finished. Spoken duration uses `speakSpan`, not `formatSpan`'s glyph.
+   * second. What a screen reader needs from a run is three or four events, not
+   * three hundred: which phase it is in, and how it ended. Spoken duration uses
+   * `speakSpan`, not `formatSpan`'s glyph.
    */
   const announceTarget = streaming
-    ? statusEyebrow.charAt(0) + statusEyebrow.slice(1).toLowerCase()
-    : [
-        run.elapsedMs === null ? "Complete." : `Complete in ${speakSpan(run.elapsedMs)}.`,
-        money ? `Cost ${money}.` : null,
-      ]
-        .filter(Boolean)
-        .join(" ");
+    ? statusWord
+    : [summary, run.elapsedMs === null ? null : speakSpan(run.elapsedMs)].filter(Boolean).join(" ");
   const [announcement, setAnnouncement] = React.useState("");
   React.useEffect(() => {
     const t = window.setTimeout(() => setAnnouncement(announceTarget), 500);
     return () => window.clearTimeout(t);
   }, [announceTarget]);
 
-  const hintId = `${id}-view-hint`;
-  const showToggle = !streaming && !!steps;
+  const detailRows = React.useMemo(() => {
+    const rows = run.facts.filter((f) => f.label !== "Cost");
+    if (billed) rows.push({ label: "Billed", value: billed });
+    // When the money could not be lifted, the producer's whole usage string
+    // joins Details verbatim rather than vanishing.
+    if (money === null && costValue) rows.push({ label: "Cost", value: costValue });
+    return rows;
+  }, [run.facts, billed, money, costValue]);
+
+  const setKind = (kind: StepKind, on: boolean) =>
+    setKinds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(kind);
+      else next.delete(kind);
+      return next;
+    });
 
   return (
     <aside
@@ -951,541 +1461,896 @@ export function ThoughtProcessPanel({
       aria-labelledby={`${id}-title`}
       className="flex size-full flex-col bg-card focus:outline-none"
     >
-      <header className="flex shrink-0 items-start gap-4 border-b border-border/55 px-5 py-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {streaming && <ThinkingDots className="origin-left scale-75 text-muted-foreground/55" />}
-            <span
-              key={statusEyebrow}
-              className={cn(
-                "font-mono text-label motion-safe:animate-fade-in",
-                streaming ? "text-primary" : "text-muted-foreground",
-              )}
-            >
-              {statusEyebrow}
-            </span>
-          </div>
-          {/* Archivo, not Newsreader: inside this panel serif is reserved for
-              text the MODEL generated. A model NAME is Juno's chrome. This is a
-              deliberate local override of the house "serif carries headings"
-              rule, recorded here so it does not read as an inconsistency and
-              get "fixed" back. */}
-          <h2
-            id={`${id}-title`}
-            className="mt-1 truncate font-sans text-heading text-foreground"
-            title={modelName ?? undefined}
-          >
-            {modelName ?? "Thought process"}
+      {/* ── HEADER — one row, 48px, Claude's footer geometry ──────────────── */}
+      {/* `min-h-12`, not `h-12`: `pt-safe` pads INTO a fixed height, so on a
+          phone where this dock is the topmost surface the notch would have
+          eaten the header's content rather than sitting above it. */}
+      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/60 pl-3 pr-2 pt-safe">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {/* Below lg this dock covers the chat entirely, so the close control
+              has to read as a way BACK rather than as a dismissal. */}
+          <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 lg:hidden">
+            <ChevronLeft className="size-4" aria-hidden="true" />
+            <span className="sr-only">Back to chat</span>
+          </Pressable>
+
+          {/* THE ONE LOOP IN THIS PANEL. Everything else that used to move —
+              a shimmering sentence, a crossfading eyebrow, a second 1Hz clock,
+              a translating trace viewport — is gone. The resting mark occupies
+              the same 16px box so the title never shifts between states. */}
+          <span className="hidden w-4 shrink-0 items-center justify-center lg:flex">
+            {streaming ? (
+              <ThinkingDots className="text-muted-foreground/70" />
+            ) : (
+              <span className="size-1.5 rounded-full bg-muted-foreground/45" aria-hidden="true" />
+            )}
+          </span>
+
+          <h2 id={`${id}-title`} className="min-w-0 truncate text-ui font-medium text-foreground">
+            <span className="sr-only">Thought process — </span>
+            {statusWord}
           </h2>
+          {run.elapsedMs !== null && (
+            <span className="shrink-0 font-mono text-ui tabular-nums text-muted-foreground">
+              · {formatSpan(run.elapsedMs, { live: streaming })}
+            </span>
+          )}
         </div>
 
-        {/* A hand-rolled copy of `kind="icon" size="lg"`, down to the 36/44
-            ladder. Also the largest of the eight controls in this file that each
-            set `outline-none` and drew their own focus ring — all of them now
-            defer to the global `:focus-visible` rule, which is the authority. */}
-        <Pressable kind="icon" size="lg" onClick={onClose} className="shrink-0">
-          <ActionIcons.dismiss className="size-4" aria-hidden="true" />
-          <span className="sr-only">Close thought process</span>
-        </Pressable>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Pressable kind="icon" size="md" selected={filtering} aria-label="Filter steps">
+                    <ActionIcons.filter className="size-4" aria-hidden="true" />
+                  </Pressable>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Filter steps</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" sideOffset={6} className="min-w-[14rem]">
+              <DropdownMenuItem
+                onSelect={() => {
+                  setFindOpen(true);
+                  window.setTimeout(() => findRef.current?.focus(), 0);
+                }}
+              >
+                Find in this run
+                <AppIcons.search className="ml-auto text-muted-foreground" aria-hidden="true" />
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem checked={kinds.size === 0} onCheckedChange={() => setKinds(new Set())}>
+                All steps
+              </DropdownMenuCheckboxItem>
+              {/* A kind with no steps is OMITTED, not disabled: a greyed row
+                  that can never be pressed is a promise the run did not keep. */}
+              {FILTER_KINDS.filter((f) => (counts.get(f.kind) ?? 0) > 0).map((f) => (
+                <DropdownMenuCheckboxItem
+                  key={f.kind}
+                  checked={kinds.has(f.kind)}
+                  onCheckedChange={(on) => setKind(f.kind, on === true)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {f.label}
+                  <span className="ml-auto pl-4 font-mono text-micro tabular-nums text-muted-foreground">
+                    {counts.get(f.kind)}
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+              {!streaming && !!reasoning?.trim() && (counts.get("think") ?? 0) > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup value={view} onValueChange={(v) => setView(v as ReasoningView)}>
+                    <DropdownMenuRadioItem value="summary">Summary</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="full">Full trace</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  const openable = visible.filter((s) => s.body);
+                  setMounted(new Set(openable.map((s) => s.id)));
+                  setOpen(new Set(openable.map((s) => s.id)));
+                }}
+              >
+                Expand all
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setOpen(new Set());
+                  window.setTimeout(() => setMounted(new Set()), COLLAPSE_MS);
+                }}
+              >
+                Collapse all
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Pressable kind="icon" size="md" aria-label="Copy">
+                    <ActionIcons.copy className="size-4" aria-hidden="true" />
+                  </Pressable>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Copy</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" sideOffset={6}>
+              <DropdownMenuItem onSelect={() => void copy("summary", summary)}>Copy summary</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void copy("run", toRunMarkdown(run, reasoning, finishNote))}>
+                Copy run
+              </DropdownMenuItem>
+              {run.sources.length > 0 && (
+                <DropdownMenuItem onSelect={() => void copy("sources", toSourcesMarkdown(run))}>
+                  Copy sources
+                </DropdownMenuItem>
+              )}
+              {filtering && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void copy("visible", toVisibleStepsMarkdown(visible))}>
+                    Copy visible steps
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable kind="icon" size="md" onClick={onClose} className="hidden lg:inline-flex" aria-label="Close">
+                <ActionIcons.dismiss className="size-4" aria-hidden="true" />
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Close</TooltipContent>
+          </Tooltip>
+        </div>
       </header>
+
+      {findOpen && (
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+          <input
+            ref={findRef}
+            type="search"
+            value={query}
+            placeholder="Find in this run"
+            aria-label="Find in this run"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              /* Esc clears the field first. A field with text in it is work the
+                 reader did; destroying the whole panel on the key they reach
+                 for to undo a typo is the panel punishing them for using it.
+                 The second press closes the find bar; a third reaches
+                 chat-view and closes the dock. */
+              e.preventDefault();
+              if (query) setQuery("");
+              else setFindOpen(false);
+            }}
+            /* The native search decoration is suppressed, not styled: Chrome
+               draws its own blue clear cross, which landed two pixels from this
+               bar's own dismiss control — two clear buttons for one field, one
+               of them in a colour that appears nowhere else in the product. */
+            className="w-full min-w-0 bg-transparent text-ui text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">
+            {query ? (visible.length ? `${visible.length} of ${allSteps.length}` : "No matches") : ""}
+          </span>
+          <Pressable
+            kind="icon"
+            size="sm"
+            className="size-6 shrink-0"
+            onClick={() => {
+              setQuery("");
+              setFindOpen(false);
+            }}
+            aria-label="Close find"
+          >
+            <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
+          </Pressable>
+        </div>
+      )}
 
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>
 
-      <div aria-live="off" className="flex-1 overflow-y-auto px-5 pb-6 pt-4">
-        {/* NOTICE — first, conditional, and ABSENT when the run was clean. There
-            is no "no warnings" state: its absence is the signal.
-
-            The text is the producer's own `[title, detail].join(" · ")`,
-            verbatim. It is deliberately NOT re-phrased into blame ("The Linear
-            connector did not respond"): the only exact signal on the wire is
-            `kind === "warning"`, and naming a failing component from a warning
-            title is inference dressed as fact. `RunModel.note` says so in its
-            own contract. Blame-splitting waits for a `source` field. */}
-        {showNotice && (
-          <section
-            aria-labelledby={`${id}-notice`}
-            /* The dark tint is separated out. --warning is a 58%-lightness fill in
-               dark, so 5% of it over the --card panel is a 2.6-point step — the
-               one block in the panel that has to be noticed was the quietest
-               thing in it. 5% is still right over light paper. */
-            className="-mx-5 border-l-2 border-warning/35 bg-warning/5 px-5 py-3 motion-safe:animate-fade-in-up dark:bg-warning/10"
-          >
-            <h3 id={`${id}-notice`} className="font-mono text-label text-warning">
-              Notice
-            </h3>
-            <ul className="mt-1.5 space-y-1">
-              {warnings.map((c) => (
-                <li key={c.id} className="break-words text-body text-warning">
-                  {c.object}
-                </li>
-              ))}
-              {finishNote && <li className="break-words text-body text-warning">{finishNote}</li>}
-            </ul>
-          </section>
-        )}
-
-        {/* THE LIVE LINE — honest about NOW, and destroyed on settle. No log of
-            it survives, because a record of per-step narration would be a
-            fabrication: the events it is derived from nearly all share one
-            timestamp. */}
-        {streaming && live && (
-          <p className="mt-3">
-            {live.warning ? (
-              <span className="text-body-lg leading-6 text-warning">{live.message}</span>
-            ) : (
-              <ThinkingState className="text-body-lg leading-6" tone="strong">
-                {live.message}
-              </ThinkingState>
-            )}
-          </p>
-        )}
-
-        {/* ELAPSED — the first ledger, and the only block with real figures.
-            The <dt> spans columns 1–2 so the total lands in column 3 with its
-            constituents directly beneath it, on one axis: total = sum of parts
-            is arithmetic here (buildRun subtracts the research sub-interval out
-            of THINK precisely so that it is), and now it is visibly so. */}
-        {showElapsed && (
-          <section aria-labelledby={`${id}-elapsed`} className={cn(rule("elapsed"), "motion-safe:animate-fade-in-up")}>
-            <dl className={LEDGER}>
-              <dt id={`${id}-elapsed`} className="col-span-2 font-mono text-label text-muted-foreground">
-                Elapsed
-              </dt>
-              <Figure className={FIG_TOTAL}>{formatSpan(run.elapsedMs as number, { live: streaming })}</Figure>
-
-              {/* Constituents only when there are at least two of them. One
-                  phase whose ms equals the total, printed twice, is noise
-                  wearing the shape of a breakdown. */}
-              {run.phases.length >= 2 &&
-                run.phases.map((p) => (
-                  <React.Fragment key={p.key}>
-                    <dt className={cn("text-body", p.active ? "text-primary" : "text-muted-foreground")}>{p.label}</dt>
-                    <dd className="min-w-0 truncate text-body text-foreground/70">
-                      {/* Effort is an INPUT. It appears exactly once, in SETUP —
-                          not here, where it would read as something Think did. */}
-                      {p.key === "think" ? "" : p.object}
-                    </dd>
-                    {/* The active row goes coral. The figure carries no shine:
-                        shine belongs on prose, not on a number that is already
-                        changing once a second of its own accord. */}
-                    <Figure className={cn(FIG, p.active && "text-primary")}>
-                      {p.ms === null ? "—" : formatSpan(p.ms, { live: streaming && p.active })}
-                    </Figure>
-                  </React.Fragment>
-                ))}
-            </dl>
-          </section>
-        )}
-
-        {/* COST — appended below ELAPSED so its arrival on settle moves nothing
-            above it. `Billed` is a STATED row: the <dd> spans into the figure
-            column's territory rather than leaving a hole, so it HAS no figure
-            cell. There is no expand-on-click breakdown, because the one string
-            the producer sends IS the breakdown. */}
-        {showCost && (
-          <section aria-labelledby={`${id}-cost`} className={cn(rule("cost"), "motion-safe:animate-fade-in-up")}>
-            <dl className={LEDGER}>
-              <dt id={`${id}-cost`} className="col-span-2 font-mono text-label text-muted-foreground">
-                Cost
-              </dt>
-              <dd className={FIG_TOTAL}>{money}</dd>
-              {billed && (
-                <>
-                  <dt className="text-body text-muted-foreground">Billed</dt>
-                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{billed}</dd>
-                </>
-              )}
-            </dl>
-          </section>
-        )}
-
-        {/* SETUP — configuration, and every row STATED. The missing figure
-            column is the whole point. */}
-        {showSetup && (
-          <section aria-labelledby={`${id}-setup`} className={cn(rule("setup"), "motion-safe:animate-fade-in-up")}>
-            <SectionHeading id={`${id}-setup`}>Setup</SectionHeading>
-            <dl className={cn(LEDGER, "mt-3")}>
-              {setupRows.map((f) => (
-                <React.Fragment key={f.label}>
-                  <dt className="text-body text-muted-foreground">{f.label}</dt>
-                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{f.value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-            {showMemoryReceipt && (
-              <div className="mt-5 border-t border-border/45 pt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="font-mono text-label text-muted-foreground">Memory used</h4>
-                  <a
-                    href="/memory"
-                    className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    Manage all
-                  </a>
-                </div>
-                <ul className="mt-2.5 space-y-2">
-                  {visibleMemoryReceipt.map((memory) => {
-                    const sourceHref =
-                      memory.sourceRef && !["manual", "edit", "forget"].includes(memory.sourceRef)
-                        ? `/chat/${memory.sourceRef}`
-                        : null;
-                    return (
-                      <li key={memory.id} className="rounded-control border border-border/45 bg-secondary px-3 py-2">
-                        <p className="break-words text-body text-foreground/85">{memory.content}</p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
-                          {sourceHref && (
-                            <a
-                              href={sourceHref}
-                              className="underline-offset-4 hover:text-foreground hover:underline"
-                            >
-                              Open source chat
-                            </a>
-                          )}
-                          <button
-                            type="button"
-                            disabled={forgettingMemory === memory.id}
-                            onClick={() => void forgetMemory(memory.id)}
-                            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {forgettingMemory === memory.id ? "Forgetting…" : "Forget this"}
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {memoryError && <p className="mt-2 text-caption text-destructive">{memoryError}</p>}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* SOURCES — the durable asset. Survives the stream, addressable,
-            auditable. Rendered here rather than through WebSearchBlock: the
-            model already carries `domain`, so nothing needs re-deriving from the
-            URL, and `overflow-hidden` + `truncate` keeps a long title from
-            pushing the dock into a horizontal scrollbar. */}
-        {showSources && (
-          <section aria-labelledby={`${id}-sources`} className={cn(rule("sources"), "motion-safe:animate-fade-in-up")}>
-            <SectionHeading id={`${id}-sources`}>Sources</SectionHeading>
-
-            {/* Newsreader italic: the query is text the model wrote. */}
-            {run.query && <p className="mt-3 font-sans text-body italic text-muted-foreground">“{run.query}”</p>}
-            {countLine && <p className="mt-1 font-mono text-caption text-muted-foreground">{countLine}</p>}
-
-            {run.sources.length > 0 ? (
-              <ul className="-mx-2 mt-2.5">
-                {run.sources.map((s) => (
-                  <li key={s.url}>
-                    <a
-                      href={s.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-body text-foreground/85">{s.title}</span>
-                      {/* Only the exception is marked. A read page and a page
-                          whose producer never said carry no tag at all, which
-                          is the panel's idiom everywhere else: absence is the
-                          default state, and a badge on every row would say
-                          nothing while looking like it did. */}
-                      {s.access === "listed" && (
-                        <span className="shrink-0 font-mono text-caption text-muted-foreground">listed</span>
-                      )}
-                      <span className="shrink-0 font-mono text-caption text-source">{s.domain}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2.5 text-body text-muted-foreground">The search returned no sources.</p>
-            )}
-          </section>
-        )}
-
-        {/* ── TOOLS ────────────────────────────────────────────────────────
-            Every connector call the run made, in order, each one openable onto
-            what was sent and what came back.
-
-            THE FIGURE COLUMN IS BACK, FOR EXACTLY ONE FIGURE. `tool.durationMs`
-            is measured in mcp.ts around `client.callTool` — a real interval on
-            a real await, on one call, not a block of sends sharing one
-            Date.now(). It is the first per-item number this panel has ever been
-            able to print honestly, and it is the only one printed. It also
-            EXCLUDES the approval wait, which happens before that clock starts:
-            attributing a person's 90-second pause to Linear's API would be a
-            new lie in a panel built to end them.
-
-            And it is ABSENT, never zero, for the four calls that never reached
-            the network — an unknown tool name, an unavailable connector, a
-            refused action, anything that failed before dispatch. Those rows
-            keep the STATED shape: the <dd> spans 2/-1 and there is NO figure
-            cell, in the DOM and in the accessibility tree alike. Both grammars
-            appear in this one list, which is precisely the migration the header
-            comment anticipated.
-
-            NOT A <details>. The disclosure is a button plus aria-expanded
-            because `<details>` is not permitted inside a <dl>, and the <dl> is
-            what carries the PHASES/FACTS split as markup. Given a choice
-            between the element with free behaviour and the grammar the whole
-            panel's honesty claim rests on, the grammar wins and the behaviour
-            is re-supplied in six lines.
-
-            A FAILED CALL STAYS ON ITS ROW. It is not promoted into NOTICE:
-            NOTICE renders `kind: "warning"`, which is run-level, and a
-            connector hiccup reported there would double-report and would make
-            a recoverable failure look like a failed run. */}
-        {showTools && (
-          <section aria-labelledby={`${id}-tools`} className={cn(rule("tools"), "motion-safe:animate-fade-in-up")}>
-            <SectionHeading id={`${id}-tools`}>Tools</SectionHeading>
-
-            {/* PERMANENT, and body-sized, like REASONING's. It states the
-                redaction AND its limit: a result may contain anything the
-                connector returned, and a reader who assumes it was sanitised of
-                their own data would be wrong. */}
-            <p className="mt-2.5 text-body text-muted-foreground">{TOOLS_DESCRIPTION}</p>
-            {tools.some((c) => !c.tool) && (
-              <p className="mt-1 text-caption text-muted-foreground">{TOOLS_NO_DETAIL_NOTE}</p>
-            )}
-
-            <dl className={cn(LEDGER, "mt-3")}>
-              {tools.map((c) => {
-                const t = c.tool;
-                const failed = t?.status === "failed";
-                const durationMs = t && typeof t.durationMs === "number" ? t.durationMs : null;
-                const expanded = openTools.has(c.id);
-                const bodyId = `${id}-tool-${c.id}`;
-                return (
-                  <React.Fragment key={c.id}>
-                    <dt className={cn("text-body", failed ? "text-warning" : "text-muted-foreground")}>
-                      {failed ? "Failed" : "Tool"}
-                    </dt>
-                    {/* Spans into the figure column ONLY when there is no
-                        figure. This is the one place in the panel where a
-                        single list holds both grammars. */}
-                    <dd className={cn("min-w-0", durationMs === null && "col-span-2")}>
-                      {t ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleTool(c.id)}
-                          aria-expanded={expanded}
-                          /* Only while the body is in the document — an
-                             aria-controls pointing at nothing is worse than
-                             none at all. */
-                          aria-controls={expanded ? bodyId : undefined}
-                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
-                        >
-                          <ChevronRight
-                            aria-hidden="true"
-                            className={cn(
-                              "size-3 shrink-0 translate-y-px text-muted-foreground/50 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
-                              expanded && "rotate-90",
-                            )}
-                          />
-                          <span className="min-w-0 break-words">{c.object}</span>
-                        </button>
-                      ) : (
-                        // No payload behind it, so no control over it. A button
-                        // that opens an explanation of its own emptiness is a
-                        // click that costs the reader something and returns
-                        // nothing; the section note above says it once instead.
-                        <span className="block break-words text-body text-foreground/80">{c.object}</span>
-                      )}
-                    </dd>
-                    {durationMs !== null && <Figure className={FIG}>{formatSpan(durationMs)}</Figure>}
-
-                    {t && expanded && (
-                      <dd id={bodyId} className="col-[2/-1] min-w-0 self-start pb-2">
-                        {/* `code` only, never `lines`: `lines` is for callers
-                            that already ran rehype-highlight, and tokenising
-                            untrusted connector output to colour it spends real
-                            client time for a decorative payoff. The numbered
-                            gutter and the monospace column are the whole value.
-
-                            Nothing here parses or re-formats either payload.
-                            Arguments arrive pretty-printed; a result arrives
-                            pretty-printed only if the server found the WHOLE
-                            body to be JSON — which is a judgement only the
-                            server can make, because the client holds a possibly
-                            truncated head and JSON.parse on a head fails on
-                            exactly the large results where formatting matters
-                            most. */}
-                        {t.args ? (
-                          <AicssCodeBlock
-                            label={toolArgsLabel(t)}
-                            code={t.args}
-                            maxBodyHeight={220}
-                            // `bg-secondary`, and it is a DELIBERATE override of
-                            // `.aicss-cb`'s own fill, not an accident of the
-                            // components-vs-utilities order. The class paints
-                            // --card, this panel is --card, so the block was the
-                            // same colour as the sheet it lies on and only its
-                            // 1px ring said otherwise. What was here — `bg-muted/25`
-                            // — also won that fight and resolved to ~7.25%, i.e.
-                            // it overrode the class in order to change nothing.
-                            className="mt-1 bg-secondary"
-                          />
-                        ) : (
-                          // NEVER an empty code block. An empty box implies the
-                          // model sent nothing; the four reasons it might be
-                          // missing are four different facts and each gets its
-                          // own sentence.
-                          <p className="mt-1 text-body text-muted-foreground">{toolArgsNoteText(t)}</p>
-                        )}
-
-                        {t.result ? (
-                          <AicssCodeBlock
-                            label={toolResultLabel(t)}
-                            code={t.result}
-                            maxBodyHeight={320}
-                            // Same override as the args block above, same reason.
-                            className="mt-3 bg-secondary"
-                          />
-                        ) : (
-                          <p className="mt-3 text-body text-muted-foreground">{toolResultNoteText(t)}</p>
-                        )}
-                      </dd>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </dl>
-          </section>
-        )}
-
-        {/* REASONING — the panel's body, and the largest area on screen, because
-            it is the only thing here with genuine content.
-
-            Disclosure depth inside this section is ZERO. The old "Full thinking
-            ›" button was a second tier over text the reader had already opened a
-            panel to read; Summary↔Full is lateral, not nested. */}
-        {showReasoning && (
-          <section
-            aria-labelledby={`${id}-reasoning`}
-            className={cn(rule("reasoning"), "motion-safe:animate-fade-in-up")}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <SectionHeading id={`${id}-reasoning`}>Reasoning</SectionHeading>
-              {showToggle && (
-                <SegmentedControl
-                  value={view}
-                  onChange={setView}
-                  options={VIEW_OPTIONS}
-                  ariaLabel="Reasoning detail"
-                  className="shrink-0"
-                  // The panel's own type scale; everything else is the primitive's.
-                  optionClassName="px-2.5 text-caption"
-                />
-              )}
-            </div>
-
-            {/* PERMANENT, and body-sized rather than fine print. A reasoning
-                trace is the model's account of itself, not an execution log, and
-                a reader who does not know that will read it as one. */}
-            <p className="mt-2.5 text-body text-muted-foreground">
-              The model’s own account of its reasoning. Not a log of what it computed.
-            </p>
-            {/* Still visible text in reading order, but no longer wired to the
-                switch with aria-describedby: <SegmentedControl> exposes no
-                description passthrough. Worth a `describedBy` prop on the
-                primitive; not worth keeping a second segmented control to have. */}
-            {showToggle && (
-              <p id={hintId} className="mt-1 text-caption text-muted-foreground">
-                {VIEW_OPTIONS.find((o) => o.value === view)?.hint}
-              </p>
-            )}
-
-            <div className="mt-4">
-              {streaming ? (
-                <ThinkingReasoning lines={liveLines} streaming showHeader={false} />
-              ) : steps && view === "summary" ? (
-                <div className="space-y-5">
-                  {steps.map((s, i) => (
-                    // Keyed by ARRAY POSITION, never by the provider's index or
-                    // the title: OpenAI repeats summary_index within one
-                    // response (live: [0…14, 13, 14]) and repeats titles too, so
-                    // either would collide two steps into one and drop text.
-                    <div key={i}>
-                      {/* No ordinal, no numbered token, no connector rail, no
-                          ring, no card. The title is a sub-heading and the body
-                          is prose; that is all a step is.
-
-                          A PART WITH NO TITLE GETS NO HEADING. `toStep` returns
-                          `title: null` when the model did not open the part with
-                          a `**Bold**` line, and in that case `body` is the WHOLE
-                          part. Promoting its first line to the <h4> and printing
-                          nothing else — which is what this did — set 177
-                          characters of the model's prose as a semibold Archivo
-                          heading and DROPPED the 202 characters behind it, with
-                          no ellipsis and no way to tell. That is the same
-                          mid-sentence truncation the reading column was rebuilt
-                          to end, and it breaks §3 as well: Archivo carries
-                          Juno's words, not the model's.
-
-                          So: heading only when the model wrote one. Otherwise
-                          the part is prose, entire. Nothing is invented and
-                          nothing is lost — the step boundary is still the
-                          provider's own, and it is still visible as the gap
-                          between blocks. */}
-                      {s.title && (
-                        <h4 className="font-sans text-body font-semibold text-foreground/85">{s.title}</h4>
-                      )}
-                      {s.body && <Prose text={s.body} className={s.title ? "mt-1.5" : undefined} />}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <Prose text={reasoning ?? ""} />
-                  {/* Says why there is no Summary to switch to, rather than
-                      leaving the switch's absence to read as a missing feature. */}
-                  {!steps && (
-                    <p className="mt-4 text-caption text-muted-foreground">
-                      This model streams one unbroken trace.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* FOOTER — two copy buttons and nothing else. No "Started 14:32:07"
-            line: `t0` is not reliably a server instant (see the header comment).
-            No toast either — the label is the receipt.
-
-            Both were hand-rolled <button>s wearing FULL UPPERCASE 11px mono on a
-            hand-set 0.08em track. That is three breaks stacked on one control,
-            and the worst of them is the font: mono is for the figures in the
-            ledger above, not for a control's prose label. They are the plain
-            ghost Button now, sentence case, which also restores the 44px touch
-            target their hand-rolled padding never reached. The behaviour is
-            untouched — same handlers, same `copied` receipt in the label. */}
-        <div className={cn(rule("footer"), "flex items-center gap-2")}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => void copy("run", toRunMarkdown(run, reasoning, finishNote))}
-            className="text-muted-foreground"
-          >
-            {copied === "run" ? "Copied" : "Copy run"}
-          </Button>
-          {run.sources.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => void copy("sources", toSourcesMarkdown(run))}
-              className="text-muted-foreground"
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollerRef}
+          onScroll={onScroll}
+          onKeyDown={onSpineKeyDown}
+          aria-live="off"
+          className="size-full overflow-y-auto overscroll-contain px-3 pb-8 pt-0"
+        >
+          {/* ── RECAP — fixed height, no reflow on settle ─────────────────── */}
+          <div className="border-b border-border/60 px-0 pb-4 pt-3">
+            {/* `min-h` holds two lines at text-body's leading so the box never
+                changes height when the sentence does. Keyed on `streaming` so
+                the swap is a crossfade rather than a rewrite. */}
+            <p
+              key={streaming ? "live" : "done"}
+              className="min-h-[2.6rem] text-body text-foreground/85 motion-safe:animate-fade-in"
             >
-              {copied === "sources" ? "Copied" : "Copy sources"}
-            </Button>
+              {recapSentence}
+            </p>
+
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-body-lg tabular-nums text-foreground">
+                  {run.elapsedMs === null ? "—" : formatSpan(run.elapsedMs, { live: streaming })}
+                </div>
+                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">Elapsed</div>
+              </div>
+              <div className="min-w-0">
+                {/* THE ONE PLACE THIS PANEL PRINTS A PLACEHOLDER, and it is
+                    correct here precisely because the box is reserved: the
+                    alternative is a figure row that grows a third column when
+                    `usage` lands, which is the reflow the old design spent a
+                    comment defending. */}
+                <div
+                  className={cn(
+                    "truncate font-mono text-body-lg tabular-nums",
+                    money ? "text-foreground" : "text-muted-foreground/60",
+                  )}
+                >
+                  {money ?? "—"}
+                </div>
+                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">Cost</div>
+              </div>
+              <div className="min-w-0">
+                <div className="truncate font-mono text-body-lg tabular-nums text-foreground">{figureThird.value}</div>
+                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">
+                  {figureThird.caption}
+                </div>
+              </div>
+            </div>
+
+            {/* NOTICE — absent when the run was clean. There is no "no
+                warnings" state: its absence is the signal.
+
+                The dark tint is separated out. --warning is a 58%-lightness
+                fill in dark, so 5% of it over the --card panel is a 2.6-point
+                step — the one block that has to be noticed was the quietest
+                thing in the panel. 5% is still right over light paper. */}
+            {(warnings.length > 0 || !!finishNote) && (
+              <section
+                aria-labelledby={`${id}-notice`}
+                className="-mx-3 mt-3 border-l-2 border-warning/35 bg-warning/5 px-3 py-2 dark:bg-warning/10"
+              >
+                <h3 id={`${id}-notice`} className="font-mono text-micro uppercase text-warning">
+                  Notice
+                </h3>
+                <ul className="mt-1 space-y-1">
+                  {warnings.map((c) => (
+                    <li key={c.id} className="break-words text-ui text-warning">
+                      {c.object}
+                    </li>
+                  ))}
+                  {finishNote && <li className="break-words text-ui text-warning">{finishNote}</li>}
+                </ul>
+              </section>
+            )}
+          </div>
+
+          {/* ── SPINE ─────────────────────────────────────────────────────── */}
+          {sections.length === 0 ? (
+            <EmptyState
+              tone="empty"
+              size="panel"
+              title="No steps of that kind"
+              description="Nothing in this run matches the current filter."
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setKinds(new Set());
+                    setQuery("");
+                  }}
+                >
+                  Show all steps
+                </Button>
+              }
+              className="mt-6"
+            />
+          ) : (
+            sections.map((section) => (
+              <section key={section.key} aria-labelledby={`${id}-phase-${section.key}`}>
+                {/* `sticky` gives the reader orientation in a sixty-row list
+                    without a second navigation. `text-micro`, not `text-label`:
+                    a separator inside a dense list is a waypoint, not an
+                    eyebrow. */}
+                <h3
+                  id={`${id}-phase-${section.key}`}
+                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-micro uppercase text-muted-foreground"
+                >
+                  <span>{PHASE_LABEL[section.key]}</span>
+                  <span className="tabular-nums text-muted-foreground/70">
+                    {plural(section.steps.length, "step")}
+                  </span>
+                </h3>
+                {section.key === "think" && toolsMissingDetail && (
+                  <p className="mb-1 text-caption text-muted-foreground">{TOOLS_NO_DETAIL_NOTE}</p>
+                )}
+                {/* The hairline spine. 10px is the centre of the 20px marker
+                    column, which sits flush with the scroller's px-3. */}
+                <ol className="relative before:absolute before:inset-y-1 before:left-[0.625rem] before:w-px before:bg-border before:content-['']">
+                  {section.steps.map((step, i) => (
+                    <StepRow
+                      key={step.id}
+                      id={id}
+                      step={step}
+                      index={i}
+                      query={query}
+                      streaming={!!streaming}
+                      expanded={open.has(step.id)}
+                      mounted={mounted.has(step.id)}
+                      copied={copied === step.id}
+                      onToggle={() => toggleStep(step.id)}
+                      onCopy={() => void copy(step.id, toStepMarkdown(step))}
+                      onJump={jumpToCitation}
+                      rerunnable={rerunnable(step)}
+                      onRerun={askToRunAgain}
+                    />
+                  ))}
+                </ol>
+              </section>
+            ))
+          )}
+
+          {/* ── DETAILS — one disclosure, closed ──────────────────────────── */}
+          {(detailRows.length > 0 || memorySteps.length > 0) && (
+            <div className="mt-6 border-t border-border/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setDetailsOpen((v) => !v)}
+                aria-expanded={detailsOpen}
+                aria-controls={detailsOpen ? `${id}-details` : undefined}
+                className="pressable flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
+              >
+                <ChevronRight
+                  aria-hidden="true"
+                  className={cn(
+                    "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                    detailsOpen && "rotate-90",
+                  )}
+                />
+                Details
+              </button>
+              <div
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
+                  detailsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  {detailsOpen && (
+                    <div id={`${id}-details`}>
+                      {detailRows.length > 0 && (
+                        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 pt-2">
+                          {detailRows.map((f) => (
+                            <React.Fragment key={f.label}>
+                              <dt className="text-ui text-muted-foreground">{f.label}</dt>
+                              <dd className="min-w-0 break-words text-ui text-foreground/80">{f.value}</dd>
+                            </React.Fragment>
+                          ))}
+                        </dl>
+                      )}
+                      {memorySteps.length > 0 && (
+                        <>
+                          <h4 className="mt-4 px-2 font-mono text-micro uppercase text-muted-foreground">
+                            Memory used
+                          </h4>
+                          <ol className="relative mt-1">
+                            {memorySteps.map((step, i) => (
+                              <StepRow
+                                key={step.id}
+                                id={id}
+                                step={step}
+                                index={i}
+                                query=""
+                                streaming={!!streaming}
+                                expanded={open.has(step.id)}
+                                mounted={mounted.has(step.id)}
+                                copied={copied === step.id}
+                                onToggle={() => toggleStep(step.id)}
+                                onCopy={() => void copy(step.id, toStepMarkdown(step))}
+                                onJump={jumpToCitation}
+                                rerunnable={false}
+                                onRerun={askToRunAgain}
+                                memory={{
+                                  forgetting: forgetting === (step.body?.type === "memory" ? step.body.memory.id : ""),
+                                  error:
+                                    memoryError[step.body?.type === "memory" ? step.body.memory.id : ""] ?? null,
+                                  onForget: forgetMemory,
+                                }}
+                              />
+                            ))}
+                          </ol>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* The home indicator's ground, as its own box. `pb-safe` SETS
+              padding-bottom rather than adding to it, so putting it on the
+              scroller beside `pb-8` would have silently deleted the 32px tail
+              on every desktop, where the safe area is 0. */}
+          <div className="pb-safe" aria-hidden="true" />
+        </div>
+
+        {/* The panel's ONLY floating element besides its two menus — a layer
+            that leaves the page, which is the one tier the brief grants a
+            throw. It exists because auto-follow has to be escapable AND
+            resumable; a scroller that silently stops following is a feature
+            the reader cannot get back. */}
+        {streaming && !following && (
+          <button
+            type="button"
+            onClick={() => {
+              setFollowing(true);
+              scrollToBottom();
+            }}
+            className="absolute bottom-3 left-1/2 z-popper inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float motion-safe:animate-pop-in"
+          >
+            <ChevronDown className="size-3" aria-hidden="true" />
+            Live
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * THE ROW. One recipe, every kind.
+ *
+ *   col 1  marker   20px, the spine hairline runs through it
+ *   col 2  label    text-ui, and an optional detail line at text-caption
+ *   col 3  figure   mono tabular-nums — ONLY where a duration was measured
+ *   col 4  action   28px, one verb, revealed on hover and on focus-within
+ *
+ * The kind changes the marker glyph and the verb. It changes nothing else, and
+ * that is the whole design: six shapes in one column is why nothing here used
+ * to read as a set.
+ * ───────────────────────────────────────────────────────────────────────────── */
+function StepRow({
+  id,
+  step,
+  index,
+  query,
+  streaming,
+  expanded,
+  mounted,
+  copied,
+  onToggle,
+  onCopy,
+  onJump,
+  rerunnable,
+  onRerun,
+  memory,
+}: {
+  id: string;
+  step: Step;
+  index: number;
+  query: string;
+  streaming: boolean;
+  expanded: boolean;
+  mounted: boolean;
+  copied: boolean;
+  onToggle: () => void;
+  onCopy: () => void;
+  onJump: (citeIndex: number, url: string) => void;
+  rerunnable: boolean;
+  onRerun: (tool: ClientToolDetail) => void;
+  memory?: { forgetting: boolean; error: string | null; onForget: (id: string) => Promise<void> };
+}) {
+  const bodyId = `${id}-body-${step.id}`;
+  const openable = !!step.body;
+  const linkable = step.kind === "source" && !!step.source && isRenderableSourceUrl(step.source.url);
+
+  const row = cn(
+    "relative grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto_1.75rem] items-start gap-x-2.5",
+    "min-h-8 rounded-control px-0 py-1.5 text-left coarse:min-h-11",
+    "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+    (openable || linkable) && "pressable motion-reduce:active:scale-100",
+    expanded && "bg-secondary hover:bg-secondary",
+  );
+
+  const marker = (
+    <span
+      className={cn(
+        "col-start-1 row-start-1 flex size-5 items-center justify-center rounded-full ring-4 ring-card",
+        step.running
+          ? "text-primary ring-2 ring-primary/35"
+          : step.failed
+            ? "text-warning"
+            : "text-muted-foreground/70",
+        expanded && "ring-secondary",
+      )}
+    >
+      <StepMarker step={step} />
+    </span>
+  );
+
+  const label = (
+    <span
+      className={cn(
+        "col-start-2 row-start-1 flex min-w-0 items-baseline gap-1.5 truncate text-ui",
+        step.running ? "font-medium text-foreground" : step.failed ? "text-warning" : "text-foreground/85",
+      )}
+    >
+      {openable && (
+        // `ease-in-out`, not `ease-out-soft`: both endpoints of a rotation are
+        // on screen, so the curve is symmetric (motion.ts — transition.symmetric).
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            "size-3 shrink-0 translate-y-px text-muted-foreground/50 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            expanded && "rotate-90",
+          )}
+        />
+      )}
+      <span className="min-w-0 truncate">
+        <Highlight text={step.label} query={query} />
+      </span>
+    </span>
+  );
+
+  const detail = step.detail ? (
+    <span className="col-start-2 row-start-2 mt-0.5 min-w-0 truncate text-caption text-muted-foreground">
+      <Highlight text={step.detail} query={query} />
+    </span>
+  ) : null;
+
+  /* Column three holds BOTH, in that order, because they answer different
+   * questions: `failed` is how the call ended, the figure is how long it took,
+   * and a call can have measured 30s and still have failed. Wrapped in one flex
+   * cell rather than two grid cells so the pair stays one right-aligned block. */
+  const figure = (
+    <span className="col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px">
+      {step.failed && step.kind === "tool" && (
+        <span className="font-mono text-micro uppercase text-warning/80">failed</span>
+      )}
+      {step.ms !== null && (
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          {/* The bare number in column three is a duration, and the visual
+              column header a sighted reader infers it from does not exist for
+              anyone else. */}
+          <span className="sr-only">took </span>
+          {formatSpan(step.ms)}
+        </span>
+      )}
+    </span>
+  );
+
+  const inner = (
+    <>
+      {marker}
+      {label}
+      {detail}
+      {figure}
+    </>
+  );
+
+  const stop = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  /* ONE VERB PER ROW, chosen by kind. Always in the DOM so nothing reflows when
+   * the pointer arrives, and pinned visible for the length of a copy receipt so
+   * the confirmation survives the pointer leaving. */
+  const action = (() => {
+    if (step.kind === "source" && step.source) {
+      const { citeIndex, url, domain } = step.source;
+      if (citeIndex !== null) {
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable
+                kind="icon"
+                size="sm"
+                className="size-7"
+                onClick={(e) => {
+                  stop(e);
+                  onJump(citeIndex, url);
+                }}
+                aria-label={`Jump to citation ${citeIndex}`}
+              >
+                <span className="flex size-5 items-center justify-center rounded-xs border border-border font-mono text-micro tabular-nums text-muted-foreground">
+                  {citeIndex}
+                </span>
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="left">Jump to citation {citeIndex}</TooltipContent>
+          </Tooltip>
+        );
+      }
+      if (!isRenderableSourceUrl(url)) return null;
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Pressable
+              kind="icon"
+              size="sm"
+              className="size-7"
+              onClick={(e) => {
+                stop(e);
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+              aria-label={`Open ${domain}`}
+            >
+              <ActionIcons.external className="size-3.5" aria-hidden="true" />
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent side="left">Open {domain}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    if (rerunnable && step.body?.type === "tool") {
+      const tool = step.body.tool;
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Pressable
+              kind="icon"
+              size="sm"
+              className="size-7"
+              onClick={(e) => {
+                stop(e);
+                onRerun(tool);
+              }}
+              aria-label="Ask to run again"
+            >
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent side="left">Ask to run again</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    const tip = COPY_TIP_LABEL[step.kind === "tool" || step.kind === "notice" || step.kind === "search" ? step.kind : "step"];
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Pressable
+            kind="icon"
+            size="sm"
+            className="size-7"
+            onClick={(e) => {
+              stop(e);
+              onCopy();
+            }}
+            aria-label={copied ? "Copied" : tip}
+          >
+            {copied ? (
+              <StatusIcons.success className="size-3.5 motion-safe:animate-check-morph" aria-hidden="true" />
+            ) : (
+              <ActionIcons.copy className="size-3.5" aria-hidden="true" />
+            )}
+          </Pressable>
+        </TooltipTrigger>
+        <TooltipContent side="left">{tip}</TooltipContent>
+      </Tooltip>
+    );
+  })();
+
+  return (
+    <li
+      // `group/step` sits HERE and not on the row, because the action is the
+      // row's SIBLING: a group only reaches its descendants, so with the name on
+      // the row the hover reveal never fired and the verb was unreachable by
+      // pointer or by keyboard.
+      //
+      // `relative` is load-bearing, not tidiness: the hover action is an
+      // absolutely-positioned SIBLING of the row (a button cannot be nested
+      // inside a button), so without a containing block here every row's action
+      // resolves against the <ol> and all of them stack in one corner.
+      //
+      // A new step fades up ONCE, on the first paint of its id. A settled panel
+      // staggers its rows in on the tight rung; a live one does not, because a
+      // row arriving mid-stream is one row, not a list.
+      className={cn(
+        "group/step relative",
+        !streaming && "motion-safe:animate-fade-in-up [animation-fill-mode:backwards]",
+      )}
+      style={streaming ? undefined : staggerDelay(index, "tight")}
+    >
+      {openable ? (
+        <button
+          type="button"
+          data-step-row
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={mounted ? bodyId : undefined}
+          className={row}
+        >
+          {inner}
+        </button>
+      ) : linkable && step.source ? (
+        <a
+          data-step-row
+          href={step.source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={row}
+        >
+          {inner}
+        </a>
+      ) : (
+        // No payload behind it, so no control over it — and a URL that fails
+        // the renderable guard never becomes an anchor. A button that opens an
+        // explanation of its own emptiness costs the reader a click and
+        // returns nothing.
+        <div data-step-row tabIndex={-1} className={cn(row, "cursor-default")}>
+          {inner}
+        </div>
+      )}
+
+      {/* The action column is fixed-width and always present, so revealing it
+          moves nothing. `group-focus-within` is not decoration: it is the only
+          way a keyboard reaches it. */}
+      {action && (
+        <div
+          className={cn(
+            "pointer-events-none absolute right-0 top-0.5 flex w-7 justify-center opacity-0 transition-opacity duration-fast ease-out-soft group-hover/step:pointer-events-auto group-hover/step:opacity-100 group-focus-within/step:pointer-events-auto group-focus-within/step:opacity-100 motion-reduce:transition-none coarse:pointer-events-auto coarse:opacity-100",
+            copied && "pointer-events-auto opacity-100",
+          )}
+        >
+          {action}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "col-start-2 grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
+          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {mounted && step.body && (
+            <div id={bodyId} className="pb-2 pl-[1.875rem] pr-1">
+              {step.body.type === "prose" && <Prose text={step.body.text} className="pt-1" />}
+
+              {step.body.type === "tool" && (
+                <ToolBody tool={step.body.tool} rerunnable={rerunnable} onRerun={onRerun} onCopy={onCopy} />
+              )}
+
+              {step.body.type === "memory" && memory && (
+                <MemoryBody memory={step.body.memory} state={memory} />
+              )}
+            </div>
           )}
         </div>
       </div>
-    </aside>
+    </li>
+  );
+}
+
+function ToolBody({
+  tool,
+  rerunnable,
+  onRerun,
+  onCopy,
+}: {
+  tool: ClientToolDetail;
+  rerunnable: boolean;
+  onRerun: (tool: ClientToolDetail) => void;
+  onCopy: () => void;
+}) {
+  return (
+    <>
+      {/* `code` only, never `lines`: `lines` is for callers that already ran
+          rehype-highlight, and tokenising untrusted connector output to colour
+          it spends real client time for a decorative payoff.
+
+          Nothing here parses or re-formats either payload. Arguments arrive
+          pretty-printed; a result arrives pretty-printed only if the server
+          found the WHOLE body to be JSON — a judgement only the server can
+          make, because the client holds a possibly truncated head. */}
+      {tool.args ? (
+        <AicssCodeBlock
+          label={toolArgsLabel(tool)}
+          code={tool.args}
+          maxBodyHeight={220}
+          // A deliberate override of `.aicss-cb`'s own fill: the class paints
+          // --card, this panel is --card, so the block was the same colour as
+          // the sheet it lies on and only its 1px ring said otherwise.
+          className="mt-1.5 bg-secondary"
+        />
+      ) : (
+        // NEVER an empty code block. An empty box implies the model sent
+        // nothing; the four reasons it might be missing are four different
+        // facts and each gets its own sentence.
+        <p className="mt-1.5 text-ui text-muted-foreground">{toolArgsNoteText(tool)}</p>
+      )}
+
+      {tool.result ? (
+        <AicssCodeBlock
+          label={toolResultLabel(tool)}
+          code={tool.result}
+          maxBodyHeight={320}
+          className="mt-2.5 bg-secondary"
+        />
+      ) : (
+        <p className="mt-2.5 text-ui text-muted-foreground">{toolResultNoteText(tool)}</p>
+      )}
+
+      {/* The caveat about what you are looking at, WHERE you are looking. It
+          used to sit above a section of closed rows, which is an explanation
+          for something nobody had opened yet. */}
+      <p className="mt-2 text-caption text-muted-foreground">{TOOLS_DESCRIPTION}</p>
+
+      {/* Quiet, because they annotate the payload above them rather than
+          competing with it — the same `text-muted-foreground` the panel's old
+          footer buttons carried, kept so the two reads as one family. */}
+      <div className="mt-2.5 flex gap-1.5">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onCopy}>
+          Copy step
+        </Button>
+        {rerunnable && (
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onRerun(tool)}>
+            Ask to run again
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function MemoryBody({
+  memory,
+  state,
+}: {
+  memory: ClientMemoryReceipt;
+  state: { forgetting: boolean; error: string | null; onForget: (id: string) => Promise<void> };
+}) {
+  const sourceHref =
+    memory.sourceRef && !["manual", "edit", "forget"].includes(memory.sourceRef) ? `/chat/${memory.sourceRef}` : null;
+  return (
+    <div className="pt-1">
+      <p className="break-words text-ui text-foreground/85">{memory.content}</p>
+      {state.error ? (
+        // The current dead-end error — a bare red caption with no retry — gets
+        // a way out. An error a reader cannot act on is a status light.
+        <div className="mt-1.5">
+          <p className="text-caption text-destructive">{state.error}</p>
+          <Button variant="ghost" size="sm" className="mt-1" onClick={() => void state.onForget(memory.id)}>
+            Try again
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-1.5 flex flex-wrap gap-x-3 text-caption text-muted-foreground">
+          {sourceHref && (
+            <a href={sourceHref} className="underline-offset-4 hover:text-foreground hover:underline">
+              Open source chat
+            </a>
+          )}
+          <button
+            type="button"
+            disabled={state.forgetting}
+            onClick={() => void state.onForget(memory.id)}
+            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
+          >
+            {state.forgetting ? "Forgetting…" : "Forget this"}
+          </button>
+          <a href="/memory" className="underline-offset-4 hover:text-foreground hover:underline">
+            Manage all
+          </a>
+        </div>
+      )}
+    </div>
   );
 }

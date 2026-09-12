@@ -29,6 +29,22 @@ export interface ThoughtPanelContextValue {
   setOpenId: (id: string | null) => void;
   /** The docked column, mounted by chat-view as a sibling of the chat column. */
   container: HTMLElement | null;
+  /**
+   * Put text in the composer and focus it — THE HONEST SUBSTITUTE FOR
+   * CLIENT-SIDE TOOL DISPATCH.
+   *
+   * The panel's "Ask to run again" on a failed connector call cannot re-run
+   * anything: a tool call is dispatched by the server inside a generation, and
+   * nothing in the browser can start one. A button labelled "Re-run" would
+   * therefore be a control the runtime cannot honour — the exact thing the
+   * brief's non-negotiable §5 forbids. So the verb is what actually happens:
+   * the request is written into the composer and the PERSON presses send.
+   *
+   * Optional, because the message list is a general component: a surface with
+   * no composer simply does not offer the action rather than offering a dead
+   * one.
+   */
+  seedDraft?: (text: string) => void;
 }
 
 const ThoughtPanelContext = React.createContext<ThoughtPanelContextValue | null>(null);

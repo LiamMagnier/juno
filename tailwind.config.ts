@@ -634,6 +634,24 @@ const config: Config = {
           from: { opacity: "1" },
           to: { opacity: "0" },
         },
+        /*
+         * A jumped-to citation, marked once and let go — the landing signal for
+         * the thought panel's jump-to-source (thought-process-panel.tsx). The
+         * reader clicks a source row in the dock, the transcript scrolls, and
+         * without this there is nothing to say WHICH bracket it stopped on.
+         *
+         * Colour only: nothing travels and nothing scales, so this is safe under
+         * the reduced tier and is deliberately NOT guarded by `motion-safe` —
+         * removing it would remove the only confirmation that the jump landed.
+         *
+         * Not `title-in`, which is the nearest existing keyframe and would be
+         * exactly wrong: it starts at `opacity: 0`, so it would blink the cited
+         * text out at the moment the reader was sent to look at it.
+         */
+        "cite-flash": {
+          "0%": { backgroundColor: "hsl(var(--primary) / 0.18)" },
+          "100%": { backgroundColor: "transparent" },
+        },
         // Generation placeholder — two long-period gradient orbs drifting out of
         // phase (16s/22s) so the field never reads as a visible loop.
         "gen-drift-a": {
@@ -754,6 +772,7 @@ const config: Config = {
         // the panel it dims). Previously the scrim cleared in 150ms while
         // SheetContent took 220ms to leave, so the drawer finished sliding over an
         // already-undimmed page.
+        "cite-flash": "cite-flash var(--dur-slow) var(--ease-out-soft) both",
         "overlay-in": "fade-in var(--dur-fast) var(--ease-out-soft) both",
         "overlay-out": "fade-out var(--dur-base) var(--ease-in) both",
         // Reasoning slider's top tier (reasoning-slider.tsx).

@@ -1,5 +1,5 @@
 import type { ClientToolDetail } from "@/types/chat";
-import type { RunModel } from "@/components/chat/thought-process-panel";
+import type { RunModel, Step } from "@/components/chat/thought-process-panel";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE RUN, AS TEXT — the panel's two copy buttons and its one span formatter.
@@ -190,6 +190,132 @@ export function toolResultLabel(tool: ClientToolDetail): string {
     : `${base} · truncated`;
 }
 
+function plural(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** `once` · `twice` · `5 times`. English has words for the first two and a
+ *  construction for the rest; "called Linear 1 times" is the reason this
+ *  exists rather than a bare `${n} times`. */
+function times(n: number) {
+  return n === 1 ? "once" : n === 2 ? "twice" : `${n} times`;
+}
+
+/** `a, b and c` — the reading form. `join(", ")` alone produces a list; a
+ *  summary is a SENTENCE, and a sentence has a conjunction before its last
+ *  clause. */
+function sentenceList(clauses: string[]) {
+  if (clauses.length <= 1) return clauses[0] ?? "";
+  return `${clauses.slice(0, -1).join(", ")} and ${clauses[clauses.length - 1]}`;
+}
+
+/**
+ * WHAT HAPPENED, IN ONE SENTENCE — built only from counted facts.
+ *
+ * This is the panel's recap line the moment a run settles, and it is also the
+ * second line of `toRunMarkdown`, so the surface and the pasted receipt open
+ * identically. That is the whole reason it lives here rather than in the
+ * component: two wordings of "what this run did" is exactly the drift
+ * `formatSpan` was extracted to end.
+ *
+ * NEVER A CLAIM THE RUN DID NOT REPORT. A clause with no number behind it is
+ * simply not written — there is no "read some sources", no "called a few
+ * connectors", and no em-dash standing in for a figure. A run that measured
+ * nothing gets the one honest sentence that remains.
+ *
+ * `finishNote` is not appended: the panel prints it verbatim in its Notice
+ * band, and saying it twice on one screen is how a recap becomes a paragraph.
+ * It is consulted only in the one case where nothing else survives — an
+ * aborted run with no clock — where it is the only true thing left to say.
+ */
+export function toRunSummary(run: RunModel, finishNote?: string | null): string {
+  const clauses: string[] = [];
+
+  const thinkMs = run.phases.find((p) => p.key === "think")?.ms ?? null;
+  if (thinkMs !== null) clauses.push(`thought for ${formatSpan(thinkMs)}`);
+  if (run.searches > 0) clauses.push(`ran ${plural(run.searches, "search", "searches")}`);
+
+  if (run.sourceCount > 0) {
+    const domainCount = new Set(run.sources.map((s) => s.domain)).size;
+    // "across N domains" only when it says something the source count does
+    // not. Nine sources across nine domains is nine sources.
+    const across = domainCount < run.sourceCount ? ` across ${plural(domainCount, "domain")}` : "";
+    clauses.push(`read ${plural(run.sourceCount, "source")}${across}`);
+  }
+
+  const servers = run.calls
+    .filter((c) => !c.warn && c.tool?.server)
+    .map((c) => c.tool!.server);
+  const distinct = [...new Set(servers)];
+  if (distinct.length === 1) clauses.push(`called ${distinct[0]} ${times(servers.length)}`);
+  else if (distinct.length > 1) clauses.push(`called ${plural(distinct.length, "connector")}`);
+
+  if (run.outputTokens) clauses.push(`wrote ${run.outputTokens} tokens`);
+
+  // An aborted run says so first, and the clauses that follow describe what it
+  // did get done before it stopped.
+  const prefix = run.stopped && run.elapsedMs !== null ? `Stopped after ${formatSpan(run.elapsedMs)}. ` : "";
+
+  if (clauses.length === 0) {
+    if (prefix) return prefix.trim();
+    if (run.elapsedMs !== null) return `Answered in ${formatSpan(run.elapsedMs)}.`;
+    return finishNote?.trim() || "Nothing was recorded for this run.";
+  }
+
+  const body = sentenceList(clauses);
+  return `${prefix}${body.charAt(0).toUpperCase()}${body.slice(1)}.`;
+}
+
+/**
+ * ONE STEP, AS MARKDOWN — the same wording the row shows.
+ *
+ * A row's copy button pastes this, so the two must not disagree: the heading is
+ * the row's own label, the line under it is the row's own detail, and the
+ * figure is written only where the row HAS a figure. The expanded body goes in
+ * whole, because a step copied without the payload the reader opened it for is
+ * a receipt for something else.
+ */
+export function toStepMarkdown(step: Step): string {
+  const lines: string[] = [`### ${step.label}`];
+  if (step.failed) lines.push("Failed");
+  if (step.detail) lines.push(step.detail);
+  // Absent, never zero — the same rule the row's figure cell follows.
+  if (step.ms !== null) lines.push(`Duration ${formatSpan(step.ms)}`);
+  if (step.source) lines.push(step.source.url);
+
+  const body = step.body;
+  if (body?.type === "prose") {
+    lines.push("", body.text);
+  } else if (body?.type === "memory") {
+    lines.push("", body.memory.content);
+  } else if (body?.type === "tool") {
+    const tool = body.tool;
+    lines.push("");
+    if (tool.args) {
+      lines.push(`${toolArgsLabel(tool)}:`);
+      lines.push(...fenced(tool.args, "json"));
+    } else {
+      lines.push(`Arguments: ${toolArgsNoteText(tool)}`);
+    }
+    lines.push("");
+    if (tool.result) {
+      lines.push(`${toolResultLabel(tool)}:`);
+      lines.push(...fenced(tool.result));
+    } else {
+      lines.push(`Result: ${toolResultNoteText(tool)}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/** Every step currently on screen, in order — the filter and the find have
+ *  already been applied by the caller, because what is on screen is the
+ *  panel's fact to know, not this module's. */
+export function toVisibleStepsMarkdown(steps: Step[]): string {
+  return steps.map(toStepMarkdown).join("\n\n");
+}
+
 /**
  * A fence long enough to survive the payload.
  *
@@ -226,7 +352,10 @@ export function toRunMarkdown(
   const cost = factOf("Cost");
   const { money, billed } = splitCost(cost);
 
-  const lines: string[] = [model ? `# Run — ${model}` : "# Run"];
+  // The summary sentence opens the receipt for the same reason it pins to the
+  // top of the panel: the first thing a reader of either wants is what the run
+  // did, not how it was configured.
+  const lines: string[] = [model ? `# Run — ${model}` : "# Run", toRunSummary(run, finishNote)];
 
   if (run.elapsedMs !== null) {
     // Only the phases that were actually measured, and only when there are at
