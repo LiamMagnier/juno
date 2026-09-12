@@ -2706,6 +2706,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno · Informations légales"
   },
   {
+    "id": "25b5eee3aa3aea24",
+    "source": "Confirm your email address to start sending messages. Check your inbox for the link."
+  },
+  {
     "id": "25b69c2a0e229f90",
     "source": "Files and images you send in conversations collect here for quick reuse."
   },
@@ -5676,10 +5680,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4f9f0dabcd26ae53",
     "source": "Safe"
-  },
-  {
-    "id": "4fa0fb2f3e15216f",
-    "source": "You've reached your monthly message limit. Upgrade your plan to keep editing."
   },
   {
     "id": "4faef3ef0c5b6f6e",
@@ -16892,10 +16892,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e76fd2add01005ae",
     "source": "Keep editing"
-  },
-  {
-    "id": "e77ca76116745f22",
-    "source": "You've reached your monthly message limit. Upgrade your plan to keep chatting."
   },
   {
     "id": "e77fea936d3e0118",
