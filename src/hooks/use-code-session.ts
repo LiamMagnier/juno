@@ -209,7 +209,9 @@ function friendlyTaskError(code: string | undefined, message?: string | undefine
     case "conversationId_required":
       return "This session isn’t saved yet. Reload the page and try again.";
     case "steer_unsupported":
-      return "Cloud runs can’t take a new instruction mid-run yet. Wait for it to finish, then send a follow-up.";
+      return "This run can’t take a new instruction mid-run. Wait for it to finish, then send a follow-up.";
+    case "task_not_started":
+      return "The cloud runner hasn’t started this task yet. Wait for it to start, then send the instruction.";
     case "task_finished":
       return "This run has finished. Send the instruction as a new message instead.";
     default:
@@ -929,9 +931,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
    * to the live one and the host takes the text as its next user message. The
    * USER row the route persists is placed BEFORE the live bubble, so the
    * transcript reads the way a reload will show it — the run's single
-   * ASSISTANT row settles after every instruction it took. Only device runs
-   * can take one today; the route refuses cloud with a sentence, and
-   * `canSteer` keeps the composer from offering it there in the first place.
+   * ASSISTANT row settles after every instruction it took. A cloud run takes
+   * one once it is running; the route refuses a queued one with a sentence,
+   * and `canSteer` keeps the composer from offering it before then.
    */
   const steer = React.useCallback(
     async (text: string): Promise<{ accepted: boolean }> => {
@@ -1161,12 +1163,12 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     responding,
     isBusy: status !== "idle",
     /**
-     * Whether the composer may send an instruction INTO the live run. Device
-     * only: the cloud driver has no point at which to take one, and the route
-     * refuses it, so the composer must not offer the verb there.
+     * Whether the composer may send an instruction INTO the live run: a
+     * device run that is running or waiting on an approval, or a cloud run
+     * that is running (its driver reads controls between agent steps). A
+     * queued cloud task has no runner yet, and the route refuses it.
      */
-    canSteer:
-      (status === "running" || status === "awaiting_approval") && activeTask?.target !== "cloud",
+    canSteer: status === "running" || status === "awaiting_approval",
     send,
     steer,
     resume,

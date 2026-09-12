@@ -33,6 +33,8 @@ const route = read("src/app/api/code/tasks/[id]/steer/route.ts");
 const cancel = read("src/app/api/code/tasks/[id]/cancel/route.ts");
 const hook = read("src/hooks/use-code-session.ts");
 const composer = read("src/components/code/code-session-composer.tsx");
+const driver = read("scripts/cloud-code-runner.mjs");
+const controls = read("src/app/api/code/tasks/[id]/controls/route.ts");
 
 test("steer is both a control kind and an event kind; the ack flows host → web only", () => {
   const controlKinds = arrayLiteral(taskEvents, "CONTROL_KINDS");
@@ -55,12 +57,26 @@ test("the steer route authorises exactly like cancel, and is idempotent by reque
 
 test("the steer route refuses what cannot be steered, with a reason", () => {
   assert.match(route, /isTerminalTaskStatus\(task\.status\)[\s\S]*?status: 409/);
-  // Cloud: the driver calls prompt() once and has no point at which a second
-  // user message could be taken, so an accepted steer would queue forever.
-  assert.match(route, /task\.target === "cloud"[\s\S]*?"steer_unsupported"[\s\S]*?status: 409/);
+  // Cloud: steerable once the runner is running (it reads controls between
+  // steps); before that there is no process to take the instruction.
+  assert.match(route, /task\.target === "cloud" && task\.status !== "running"[\s\S]*?"task_not_started"[\s\S]*?status: 409/);
   // And it answers `queued`, never `delivered`: the host has not read it yet.
   assert.match(route, /status: "queued"/);
   assert.doesNotMatch(route, /status: "delivered"/);
+});
+
+test("the cloud driver takes a steer between steps and acks only when taken", () => {
+  // Controls reach the driver on its events POST or, when it has been quiet,
+  // from the controls route — the same list, readable without a write.
+  assert.match(controls, /readPendingControls\(task\.id, afterSeq\)/);
+  assert.match(controls, /requireTaskAuth\(id, req\)/);
+  assert.match(driver, /\/controls\?afterSeq=\$\{this\.afterControlSeq\}/);
+  // A control is handled once, whichever path returned it.
+  assert.match(driver, /ctl\.seq <= this\.afterControlSeq\) continue;/);
+  // The ack rides on the session having taken the text, never on receipt.
+  assert.match(driver, /session\.queueUserMessage\(steer\.text\)\.then\(\(\) => \{[\s\S]*?"steer_ack"/);
+  // The composer offers the verb to a running cloud task too.
+  assert.doesNotMatch(hook, /activeTask\?\.target !== "cloud"/);
 });
 
 test("the web moves an instruction to delivered only on the host's ack", () => {

@@ -58,6 +58,20 @@ export interface AgentLoopOptions {
   maxSteps: number;
   /** How hard to think, when the provider can be asked. Absent means Instant. */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * Text a person sent while this turn was running, taken at the top of the
+   * next step.
+   *
+   * The loop is the only place that knows where a step boundary is, so it is
+   * the only place a mid-turn instruction can be folded into the transcript
+   * without breaking it: the text is appended to the user message the step is
+   * about to send — the tool results of the previous step, or the prompt
+   * itself on the first — so the user/assistant alternation every provider
+   * requires is kept and the model reads the instruction beside the results
+   * it is reacting to. Called once per step; returns nothing when there is
+   * nothing queued, which is the common case and costs a function call.
+   */
+  takeQueuedUserText?: () => string[];
   /** Longest silence from a stream before it is judged dead, in ms. */
   silenceTimeoutMs?: number;
   onAssistantDelta?: (text: string) => void;
@@ -189,6 +203,16 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
     if (opts.signal.aborted) {
       stopReason = 'aborted';
       break;
+    }
+    // Anything a person said since the last step rides into this one. See
+    // `takeQueuedUserText` for why it is folded into the last user message.
+    const queued = opts.takeQueuedUserText?.() ?? [];
+    if (queued.length > 0) {
+      const last = opts.messages[opts.messages.length - 1];
+      const parts: UserContent[] = queued.map((text) => ({ type: 'text', text }));
+      if (last && last.role === 'user') last.content.push(...parts);
+      else opts.messages.push({ role: 'user', content: parts });
+      opts.onMessagesChanged?.();
     }
     const assistantContent: AssistantContent[] = [];
     let toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];

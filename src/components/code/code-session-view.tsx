@@ -756,7 +756,19 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           title={sessionTitle}
           // The mono slot is a LOCAL PATH on the device side; a cloud session's
           // codeWorkspacePath is "owner/name", so it is never printed there.
-          subtitle={resolving ? null : isCloud ? (meta.baseRef ? `on ${meta.baseRef}` : null) : workspacePath}
+          // The working branch once one exists — that is where the code is —
+          // and the base until then.
+          subtitle={
+            resolving
+              ? null
+              : isCloud
+                ? meta.branch
+                  ? `on ${meta.branch}`
+                  : meta.baseRef
+                    ? `on ${meta.baseRef}`
+                    : null
+                : workspacePath
+          }
           status={session.status}
           presence={presence}
           prUrl={meta.prUrl}

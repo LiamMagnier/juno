@@ -540,7 +540,8 @@ The Zod body accepts (among others): `message`, `conversationId?`, `projectId?`,
 only limit.
 
 The response is an **SSE stream** (`text/event-stream`, `X-Accel-Buffering: no`).
-Each frame is `data: {json}\n\n`. Event `type` values:
+Each frame is `data: {json}\n\n`, preceded by an `id: {seq}` line on a saved turn
+whose frames are being logged (§5.8). Event `type` values:
 
 | type | meaning |
 |---|---|
@@ -550,6 +551,7 @@ Each frame is `data: {json}\n\n`. Event `type` values:
 | `reasoning` | streamed thinking (with a `part` ordinal for discrete summary parts) |
 | `sources` | cumulative web-search citations `[{title,url,snippet}]` |
 | `ping` | 15 s heartbeat (keeps nginx + native clients alive) |
+| `resume` | resume bookkeeping — `available:false` (the log stopped) or `refetch:true` (reload the conversation); never rendered |
 | `done` | terminal success — final `message`, `artifacts`, `memoryUpdated`, `quota`, `finishReason`, `title?` |
 | `error` | terminal failure — `message`, `failureCode`, `receiptState:"failed"`, stable ids, `preservePartial?` |
 
@@ -686,6 +688,69 @@ aborts a live generation by `generationId` (ownership-checked, in-memory registr
 **Origin/spend tagging:** `origin` (`web` / `main_macos` / `main_ios` /
 `main_windows` / `quick_macos` / `quick_windows`) is durable conversation metadata;
 the legacy `client` tag (`web`/`app`) splits website vs native spend in the admin view.
+
+### 5.8 Resumable streams
+
+Generation is detached from the request, so a dropped SSE connection never
+costs the answer — but until this existed the *browser* had nothing to
+reconnect to. It polled the conversation for 12 seconds and then stamped
+"Try again", which regenerates: **a second charge for an answer that was
+already being written.** Killing that is the entire point of this path.
+
+**The log.** Every stateful frame of a saved turn is appended to
+`ChatStreamEvent` under a monotonic `seq`, and goes out carrying that seq as its
+SSE `id:`. The writer (`src/lib/chat/stream-log.ts`) is pure and sits off the
+critical path: `record` only buffers, and rows reach Postgres on a 250 ms timer
+or once 32 are waiting, whichever comes first, with writes serialised.
+
+- **Private chats log nothing.** The private branch builds its sender with no
+  log at all (`shouldLogStream`), so its frames carry no id and a resume of a
+  private generation is a 404 by construction.
+- **Capped at 20 000 frames** per generation, and **a failed write disables the
+  log** for the rest of it — half a log is worse than none, because a client
+  replaying across the hole renders an answer with a piece missing and believes
+  it complete. Either way the sender emits one `resume {available:false}` and
+  every frame after it is id-less.
+- `payload` is encrypted with the message keyring: a logged `delta` is
+  transcript text and a logged `done` carries the whole message, so the log gets
+  exactly the at-rest treatment `Message.content` does. `kind` stays in the
+  clear — the sweep finds terminal frames by it.
+- Rows are swept ~10 minutes after a generation's terminal frame (24 h for one
+  that never wrote a terminal frame): opportunistically from the chat route's
+  `after()` on a 1-in-20 sample (the abandoned half is a grouped scan, too
+  expensive per turn), with `npm run sync:prune` as the backstop.
+
+**Resuming.** `GET /api/chat/stream/{generationId}?after={seq}` replays every
+frame above `after` under its original id, then tails the log to the terminal
+frame with a 15 s heartbeat (`src/lib/chat/stream-replay.ts`). Ownership is the
+receipt's `userId`, or — for every saved turn that has no receipt — the
+conversation named by the logged `meta` frame. Unknown, foreign, private and
+already-swept generations are the same 404. When the generation is over but no
+terminal frame is in the log, the client gets `resume {refetch:true}` and should
+load the conversation instead. `GET /api/chat/stream/active?conversationId=`
+answers "is anything still running here", so a tab that reopens a chat without
+its `sessionStorage` ledger can still find the stream.
+
+**The client half** (`src/hooks/use-chat.ts`) learns the server's
+`generationId` and `resumable` from the meta frame, tracks the last `id:` it
+applied, and on a drop reconnects with 1s → 2s → 4s backoff for up to three
+minutes. Replayed frames go through **the same applier** as the live stream,
+in front of a sequencer that drops anything at or below the last seq applied —
+a reconnect overlaps the drop on purpose, so application has to be idempotent.
+Reopening a conversation resumes through the log for **any** running
+generation, not only one inside the old two-minute recovery window (deep
+research runs for the better part of an hour). A dropped turn is therefore
+offered **Reconnect**, and `regenerate()` intercepts itself into one while a
+reconnectable generation exists: the answer is already paid for.
+
+**Cancelling across processes.** `POST /api/chat/cancel` aborts through the
+in-memory registry first (instant, same process) and also records
+`cancelRequestedAt` on the receipt. A receipt-backed generation polls that flag
+every ~2 s from its stream loop with an id-only select, so a Stop pressed in
+another tab or served by another process still lands. The poll routes the
+result back through `cancelGeneration`, which marks the generation `stopped` —
+that is what makes the terminal state "user stopped" (partial kept, charge
+kept) rather than an error (refunded).
 
 ---
 
@@ -919,13 +984,17 @@ session's ASSISTANT row under a 16 KB/120 KB cap and read back on reload),
 (subagent lifecycle cards), the rollback quartet, and **`steer`**/**`steer_ack`**.
 Statuses: `queued → running ↔ awaiting_approval → done | failed | cancelled`.
 
-**Mid-run steering (device only).** `POST /api/code/tasks/[id]/steer {text, requestId}`
-appends a `steer` control (idempotent on `steer:<requestId>`), persists the text as a
-USER message in the linked conversation, and answers `{status:"queued"}`. The host reads
-it on its next events POST, injects it as the next user message, and posts `steer_ack
-{requestId}` — the web marks the instruction *delivered* only on that ack. Terminal
-tasks are refused (409 `task_finished`); cloud tasks are refused (409 `steer_unsupported`)
-because the cloud driver runs `prompt()` exactly once.
+**Mid-run steering.** `POST /api/code/tasks/[id]/steer {text, requestId}` appends a
+`steer` control (idempotent on `steer:<requestId>`), persists the text as a USER message
+in the linked conversation, and answers `{status:"queued"}`. A host reads it on its next
+events POST — or from `GET /api/code/tasks/[id]/controls?afterSeq=` (same auth, same
+list, no write) when it has nothing to post — injects it as the next user message, and
+posts `steer_ack {requestId}`; the web marks the instruction *delivered* only on that
+ack. The cloud driver polls the controls route every second while it has been quiet
+for two, folds the text into the agent's next step (`AgentSession.queueUserMessage`),
+and starts a new turn for anything still queued when the turn ends. Terminal tasks are
+refused (409 `task_finished`); a cloud task that is not yet `running` is refused (409
+`task_not_started`) because there is no runner to read it.
 
 `GET /api/code/tasks` omits `prompt` (the agent prompt, including extracted attachment
 text) unless `?include=prompt`; single-task reads keep it. Every list row carries
@@ -971,18 +1040,54 @@ the 502 so the client keeps them. The runner (`scripts/cloud-code-runner.mjs`):
    verified by `src/lib/github-oidc.ts` (RS256, issuer, audience, `repository` +
    `job_workflow_ref` allowlist). The route is **single-use** (stamps `runnerClaimedAt`),
    rejects browser sessions with 403 (so the clone token never reaches a browser), and
-   returns the clone token + a fresh **task token** (`cct_…`, HMAC over `{taskId,exp}`
+   returns the git credential + a fresh **task token** (`cct_…`, HMAC over `{taskId,exp}`
    with `CLOUD_CODE_SECRET`, the workflow's 30-minute `timeout-minutes` plus a 5-minute
-   margin so the terminal `done` post never lands on an expired token) and the
-   submitter's `reasoningEffort`, which the driver passes to `AgentSession`;
+   margin so the terminal `done` post never lands on an expired token), the submitter's
+   `reasoningEffort` (the driver passes it to `AgentSession`), the conversation's
+   persisted USER/ASSISTANT turns as `history` (decrypted, oldest first, trimmed by
+   `src/lib/code-runner-history.ts` to ~48 KB / 40 turns, the task's own prompt
+   excluded) and, for a follow-up, `continuation: {branch, prUrl, prNumber, baseRef}`.
+   **The git credential** (`src/lib/github-app.ts`): when `GITHUB_APP_ID` +
+   `GITHUB_APP_PRIVATE_KEY` are set, the server mints an RS256 app JWT, resolves the
+   installation for the repo (`GET /repos/{owner}/{repo}/installation`) and creates an
+   installation token scoped to that one repository with `contents: write` +
+   `pull_requests: write` (~1 h, cached per installation+repo until 5 min before
+   expiry); otherwise the user's `repo`-scoped OAuth token. One log line per run says
+   which (`cloneCredential` tells the runner too, so an app-authored PR names the user
+   with `@login` and requests their review);
 3. claims (task-token), clones via a transient git askpass (token never in argv/config),
    scrubs its environment, runs the vendored agent-core against the prompt with the
    backend proxy pointed at **`/api/agent`** (so all provider calls + billing go through
    Juno — no provider key ever reaches Actions), streams events (the engine's sensitive-
    command gate is auto-allowed inside the container and recorded as one honest
    `tool` row, "Auto-allowed in sandbox: …", never as a request/response pair nobody
-   answered), and on completion commits to a branch and opens a PR. `prUrl` is lifted
-   onto the task only from an `https://github.com/…/pull/N` URL.
+   answered), and on completion commits and pushes. **Continuity:** the runner seeds
+   `AgentSession.messages` from `history` before `prompt()`; a first run branches
+   `juno/cloud-<id>` from the base and opens a PR; the create route dispatches the next
+   task in the same conversation with `baseRef` = that branch and `branch` set, so the
+   runner clones the branch, pushes to it, finds the open PR by head via the API and
+   reuses it (appending the follow-up prompt to its body) — never a second PR. If the
+   branch is gone (merged and deleted) it is recreated from the first run's base and a
+   new PR opened. `branch` and `prNumber` are lifted onto the task from the `done`
+   payload like `prUrl` (first write wins; `prUrl` only from an
+   `https://github.com/…/pull/N` URL).
+
+**Setting up the GitHub App (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`).** Both are
+optional: with neither set, cloud runs clone and open pull requests with the submitter's
+`repo`-scoped OAuth token exactly as before, and the one credential log line per run says
+so. To narrow that, create an app under GitHub → Settings → Developer settings → GitHub
+Apps → New, give it **Contents: read & write**, **Pull requests: read & write** and
+**Metadata: read**, install it on every repository cloud runs may push to, and put the
+App ID in `GITHUB_APP_ID` and a generated private key in `GITHUB_APP_PRIVATE_KEY` (an env
+file cannot hold newlines, so write the PEM with literal `\n` escapes or base64-wrap the
+whole file — `src/lib/github-app.ts` restores both). The app key never leaves the server:
+the runner only ever sees an installation token scoped to its one repository. That token
+is minted **only when the submitter can push to that repository themselves**
+(`userCanPushToRepo`, a `GET /repos/{owner}/{repo}` with their OAuth token) — the create
+route takes `{owner, name}` from the client, so without that check any user could name a
+repository the app happens to be installed on and be handed write access to it. Anything
+else (app unset, not installed there, no push access, GitHub unreachable) falls back to
+the OAuth token, which is never a widening.
 
 `requireTaskAuth` lets the claim/events/respond/cancel routes and the `/api/agent` proxy
 accept either a real session **or** a valid task token for that exact task, and refuse a

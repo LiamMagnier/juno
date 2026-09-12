@@ -6,9 +6,12 @@
  * Dispatched by the workflow in .github/workflows/code-runner.yml. Reads its
  * two inputs (task id, callback origin) from the environment — the repository
  * is deliberately NOT one of them — pulls the task's runner-context from Juno,
- * clones the target repo, drives the vendored agent core (runner/agent-core)
- * with the task prompt, streams progress back as task events, and opens a pull
- * request with whatever the agent changed.
+ * clones the target repo (or the branch a previous run of the same
+ * conversation pushed), seeds the agent with the conversation so far, drives
+ * the vendored agent core (runner/agent-core) with the task prompt — taking
+ * mid-run instructions between steps — streams progress back as task events,
+ * and opens a pull request with whatever the agent changed, or pushes to the
+ * one the conversation already has.
  *
  * SECURITY — this process executes arbitrary agent-authored bash as the SAME OS
  * uid as this driver. It therefore NEVER receives .env, the database URL,
@@ -90,6 +93,18 @@ const OIDC_AUDIENCE = "juno-cloud-code";
 /** The six effort tiers agent-core accepts (providers/types.ts). Anything else
  *  from runner-context is dropped rather than sent to a provider that 400s. */
 const REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * How long the runner may go without hearing about controls before it asks.
+ *
+ * Controls (cancel, steer) ride the response to an events POST, and the
+ * runner posts when it has events — which during a long tool call is never.
+ * When nothing has synced for this long the watcher reads the controls route
+ * instead, so an instruction typed during a two-minute test run reaches the
+ * agent at its next step rather than at the end of the suite.
+ */
+const CONTROL_SYNC_STALE_MS = 2_000;
+const CONTROL_WATCH_MS = 1_000;
 
 const RUNNER_TEMP = process.env.RUNNER_TEMP || os.tmpdir();
 /** Transient git askpass helper — written only around clone/push, deleted before
@@ -212,6 +227,13 @@ class EventSink {
     this.outbox = new DurableOutbox({ runId: `${TASK_ID}:${RUN_NONCE}` });
     this.afterControlSeq = 0;
     this.cancelled = false;
+    /** Called with each `steer` control as it arrives; set once the session exists. */
+    this.onSteer = null;
+    /** Steers that arrived before the session existed (during the clone). */
+    this.steerBacklog = [];
+    /** When controls were last read, by a POST or a poll — see pollControls. */
+    this.lastControlSyncAt = Date.now();
+    this.polling = false;
     this.flushing = Promise.resolve();
     this.timer = null;
     /** Rolling assistant-prose buffer; coalesced into one `text` event so a
@@ -334,16 +356,59 @@ class EventSink {
       };
     }
     const data = /** @type {any} */ (await res.json().catch(() => ({})));
-    for (const ctl of data?.control ?? []) {
-      if (typeof ctl?.seq === "number") this.afterControlSeq = Math.max(this.afterControlSeq, ctl.seq);
-      if (ctl?.kind === "cancel_request") this.cancelled = true;
-      /*
-       * `steer` IS NOT HANDLED HERE EITHER, for the first of the three reasons
-       * below: `session.prompt()` is one turn and this driver calls it once,
-       * so there is no point at which a second user message could be taken.
-       * The steer route refuses cloud tasks outright (409 `steer_unsupported`)
-       * so nothing is ever queued for this loop to ignore.
-       */
+    this.handleControls(data?.control);
+    return { ok: true, status: res.status, retryAfterSeconds: null };
+  }
+
+  /**
+   * Read the controls the backend is holding for this task without posting.
+   * Skipped while a read is in flight, and skipped when a POST synced them
+   * moments ago — see CONTROL_SYNC_STALE_MS.
+   */
+  async pollControls() {
+    if (this.polling || Date.now() - this.lastControlSyncAt < CONTROL_SYNC_STALE_MS) return;
+    this.polling = true;
+    try {
+      const res = await junoFetch(
+        `/api/code/tasks/${TASK_ID}/controls?afterSeq=${this.afterControlSeq}`,
+        this.token,
+        { method: "GET" },
+      );
+      if (!res.ok) return;
+      const data = /** @type {any} */ (await res.json().catch(() => ({})));
+      this.handleControls(data?.control);
+    } catch {
+      // Transient. The next tick, or the next events POST, reads them again.
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  /**
+   * Act on controls, once each.
+   *
+   * A POST and a poll can return the same row — the cursor sent with one is
+   * stale by the time the other answers — so a control is handled only when
+   * its sequence number advances the cursor. Both paths land here, and the
+   * function is synchronous, so the check cannot interleave with itself.
+   */
+  handleControls(list) {
+    this.lastControlSyncAt = Date.now();
+    for (const ctl of list ?? []) {
+      if (typeof ctl?.seq !== "number" || ctl.seq <= this.afterControlSeq) continue;
+      this.afterControlSeq = ctl.seq;
+      if (ctl.kind === "cancel_request") this.cancelled = true;
+      if (ctl.kind === "steer") {
+        // A person's instruction for the running agent. Queued into the
+        // session between steps (see the agent phase in main); the ack is
+        // posted the moment the session takes it, never before.
+        const requestId = typeof ctl.payload?.requestId === "string" ? ctl.payload.requestId : null;
+        const text = typeof ctl.payload?.text === "string" ? ctl.payload.text.trim() : "";
+        if (!requestId || !text) continue;
+        const steer = { requestId, text };
+        if (this.onSteer) this.onSteer(steer);
+        else this.steerBacklog.push(steer);
+      }
       /*
        * THE ROLLBACK VERBS (accept_change / reject_change / undo_change) ARE
        * DELIBERATELY NOT HANDLED HERE, AND THIS RUNNER MUST NOT ANNOUNCE
@@ -379,7 +444,6 @@ class EventSink {
        * rollback controls at all, which is the designed behaviour and not a gap.
        */
     }
-    return { ok: true, status: res.status, retryAfterSeconds: null };
   }
 
   /** Final flush + terminal status in one drain. */
@@ -529,12 +593,25 @@ async function main() {
   // it since the column existed; nothing here ever looked at it.
   const reasoningEffort = REASONING_EFFORTS.has(ctx.reasoningEffort) ? ctx.reasoningEffort : undefined;
   if (!repoOwner || !repoName) throw new Error("runner-context is missing repoOwner/repoName");
+  // The conversation so far, and the branch this run continues (see main's
+  // step 3/7). Both absent on a first run, which behaves as it always has.
+  const history = readHistory(ctx.history);
+  const continuation = readContinuation(ctx.continuation);
+  // Which credential runner-context handed over, for the PR's authorship: an
+  // app-authored pull request still has to name the person it is for.
+  const credentialSource = ctx.cloneCredential === "github_app" ? "github_app" : "oauth";
+  const githubLogin =
+    typeof ctx.githubLogin === "string" && /^[A-Za-z0-9-]{1,39}$/.test(ctx.githubLogin) ? ctx.githubLogin : null;
 
   const chosen = models.find((m) => m && m.available) ?? models[0];
   if (!chosen) throw new Error("runner-context returned no models to run");
   // The model only. The repository name stays out of this public log for the
-  // same reason it stays out of the workflow inputs.
-  log(`model ${chosen.provider}/${chosen.model}, effort ${reasoningEffort ?? "(default)"}`);
+  // same reason it stays out of the workflow inputs — and so does the branch.
+  log(
+    `model ${chosen.provider}/${chosen.model}, effort ${reasoningEffort ?? "(default)"}, ` +
+      `credential ${credentialSource}, ${history.length} earlier turn(s)` +
+      (continuation ? ", continuing an existing branch" : ""),
+  );
 
   const sink = new EventSink(freshToken);
 
@@ -555,18 +632,45 @@ async function main() {
   const workdir = path.join(RUNNER_TEMP, "workdir"); // outside the runner checkout
   fs.rmSync(workdir, { recursive: true, force: true });
   const cloneUrl = `https://x-access-token@github.com/${repoOwner}/${repoName}.git`;
-  const cloneArgs = ["clone", "--depth", "50"];
-  if (baseRef) cloneArgs.push("--branch", baseRef);
-  cloneArgs.push(cloneUrl, workdir);
-  const cloned = await git(cloneArgs, { env: cloneGitEnv });
+  const cloneAt = (ref) => {
+    const args = ["clone", "--depth", "50"];
+    if (ref) args.push("--branch", ref);
+    args.push(cloneUrl, workdir);
+    return git(args, { env: cloneGitEnv });
+  };
+  // A continuation clones the branch it continues (runner-context sets
+  // baseRef to it); a first run clones the base.
+  let cloned = await cloneAt(baseRef);
+  /*
+   * THE BRANCH IS GONE. The commonest way: the pull request was merged with
+   * "delete branch". The record says to continue it, so it is recreated
+   * under the same name from the base the first run targeted — the task's
+   * `branch` stays true, and the pull request search below finds no open
+   * one and opens a new PR for the new commits, which is the right outcome
+   * for work that resumes after a merge.
+   */
+  let branchMissing = false;
+  if (!cloned.ok && continuation) {
+    log("the branch this run continues is not on origin; starting from the base instead");
+    branchMissing = true;
+    fs.rmSync(workdir, { recursive: true, force: true });
+    cloned = await cloneAt(continuation.baseRef);
+  }
   if (!cloned.ok) throw new Error(`git clone failed: ${redact(cloned.stderr || cloned.message)}`);
 
   await git(["config", "user.name", "Juno Code"], { cwd: workdir, env: cloneGitEnv });
   await git(["config", "user.email", "noreply@chat.liams.dev"], { cwd: workdir, env: cloneGitEnv });
 
-  // Resolve the branch we based off (for the PR base when baseRef was empty).
+  // Resolve the branch a NEW pull request would target. First run: what was
+  // cloned (the base, or the default branch when none was named). A
+  // continuation: the base the first run targeted, else origin's default —
+  // never the branch itself, which is what was cloned.
   const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workdir, env: cloneGitEnv });
-  const baseBranch = baseRef || (head.ok ? head.stdout.trim() : "main");
+  const originHead = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { cwd: workdir, env: cloneGitEnv });
+  const originDefault = originHead.ok ? originHead.stdout.trim().replace(/^origin\//, "") : "";
+  const baseBranch = continuation
+    ? continuation.baseRef || originDefault || "main"
+    : baseRef || (head.ok ? head.stdout.trim() : originDefault || "main");
 
   // TEAR DOWN git credential material before running any agent bash: delete the
   // askpass helper and drop our reference to the clone-bearing env. From here
@@ -660,16 +764,45 @@ async function main() {
     },
   });
 
-  // 5. Drive the agent, watching for a cancel control event.
+  // The conversation so far, so this turn is read as the next one of it
+  // rather than the first of a new one. runner-context already trimmed it.
+  if (history.length > 0) {
+    session.seedHistory(history);
+    log(`seeded ${history.length} earlier turn(s) from the conversation`);
+  }
+
+  // 5. Drive the agent, watching for cancel and steer controls.
+  //
+  // A steer is queued into the session and folded into its NEXT step (see
+  // AgentSession.queueUserMessage); the `user` row and the `steer_ack` are
+  // posted only when the session has actually taken it, which is the one
+  // moment "the run has your instruction" is true.
+  const takeSteer = (steer) => {
+    void session.queueUserMessage(steer.text).then(() => {
+      sink.push("user", { text: steer.text, requestId: steer.requestId, steer: true });
+      sink.push("steer_ack", { requestId: steer.requestId });
+    });
+  };
+  sink.onSteer = takeSteer;
+  for (const steer of sink.steerBacklog.splice(0)) takeSteer(steer);
+
   let finalStopReason = "end_turn";
-  const cancelWatch = setInterval(() => {
+  const controlWatch = setInterval(() => {
     if (sink.cancelled) session.abort();
-  }, 1000);
-  if (typeof cancelWatch.unref === "function") cancelWatch.unref();
+    else void sink.pollControls();
+  }, CONTROL_WATCH_MS);
+  if (typeof controlWatch.unref === "function") controlWatch.unref();
   try {
     await session.prompt(prompt);
+    // An instruction that arrived after the turn's last step starts a turn of
+    // its own, rather than being left queued for a session that has ended.
+    while (!sink.cancelled && session.hasQueuedUserMessages) {
+      const next = session.takeQueuedUserMessages();
+      await session.prompt(next.join("\n\n"));
+    }
   } finally {
-    clearInterval(cancelWatch);
+    clearInterval(controlWatch);
+    sink.onSteer = null;
   }
   finalStopReason = sink.cancelled ? "cancelled" : finalStopReason;
   sink.flushText();
@@ -689,8 +822,23 @@ async function main() {
   await git(["add", "-A"], { cwd: workdir, env: gitEnv });
   const status = await git(["status", "--porcelain"], { cwd: workdir, env: gitEnv });
   if (status.ok && status.stdout.trim() === "") {
-    sink.push("text", { text: "The agent made no file changes, so there is nothing to open a PR for." });
-    sink.push("done", { finishReason: "no_changes" });
+    sink.push("text", {
+      text: continuation
+        ? "The agent made no further file changes; the pull request is as it was."
+        : "The agent made no file changes, so there is nothing to open a PR for.",
+    });
+    // A continuation that changed nothing still points at the branch and pull
+    // request it continued, so the task links to them like its predecessor.
+    sink.push("done", {
+      finishReason: "no_changes",
+      ...(continuation
+        ? {
+            branch: continuation.branch,
+            ...(continuation.prUrl ? { prUrl: continuation.prUrl } : {}),
+            ...(continuation.prNumber ? { prNumber: continuation.prNumber } : {}),
+          }
+        : {}),
+    });
     await sink.finalize("done");
     log("no changes; done");
     return;
@@ -699,33 +847,159 @@ async function main() {
   // Emit per-file change events (accurate counts + capped unified diff).
   await emitFileChanges(sink, workdir, gitEnv);
 
-  // 7. Branch, commit, push, open PR.
+  // 7. Branch, commit, push, then the pull request — reused when this run
+  //    continues one, opened otherwise.
   const shortId = TASK_ID.replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || "task";
-  const branch = `juno/cloud-${shortId}`;
+  const branch = continuation ? continuation.branch : `juno/cloud-${shortId}`;
   const title = firstLine(prompt) || `Juno Cloud Code task ${shortId}`;
 
-  const checkout = await git(["checkout", "-b", branch], { cwd: workdir, env: gitEnv });
-  if (!checkout.ok) throw new Error(`could not create branch: ${redact(checkout.stderr || checkout.message)}`);
+  // Already on the branch when it was cloned; created here when it is new, or
+  // when it had to be recreated from the base.
+  const onBranch = !!continuation && !branchMissing;
+  if (!onBranch) {
+    const checkout = await git(["checkout", "-b", branch], { cwd: workdir, env: gitEnv });
+    if (!checkout.ok) throw new Error(`could not create branch: ${redact(checkout.stderr || checkout.message)}`);
+  }
 
   const commitMsg = `${title}\n\nGenerated by Juno Cloud Code (task ${TASK_ID}).`;
   const committed = await git(["commit", "-m", commitMsg], { cwd: workdir, env: gitEnv });
   if (!committed.ok) throw new Error(`git commit failed: ${redact(committed.stderr || committed.message)}`);
 
-  const pushed = await git(["push", "-u", "origin", branch], { cwd: workdir, env: gitEnv });
+  const pushed = await git(onBranch ? ["push", "origin", branch] : ["push", "-u", "origin", branch], {
+    cwd: workdir,
+    env: gitEnv,
+  });
   if (!pushed.ok) {
     throw new Error(`git push rejected: ${redact(pushed.stderr || pushed.message)}`);
   }
 
-  const prUrl = await openPullRequest({ repoOwner, repoName, cloneToken, branch, baseBranch, title, prompt });
+  /*
+   * ONE PULL REQUEST PER BRANCH. A continuation looks for the open pull
+   * request whose head is this branch and reuses it — the push above already
+   * put the commits on it — rather than opening a second. Found by head via
+   * the API, not by the recorded number: the record is a hint, GitHub is the
+   * truth, and a PR closed since the last run is not one to push a note into.
+   */
+  const github = { repoOwner, repoName, cloneToken };
+  let pr = continuation ? await findOpenPullRequest({ ...github, branch }) : null;
+  let reused = !!pr;
+  if (!pr) {
+    pr = await openPullRequest({
+      ...github,
+      branch,
+      baseBranch,
+      title,
+      prompt,
+      // An app-authored pull request names the person it is for, so it
+      // still turns up under `involves:@me` on their pull request list.
+      mention: credentialSource === "github_app" ? githubLogin : null,
+    });
+    // `reused` when GitHub answered 422 "a pull request already exists" and
+    // openPullRequest handed back the one it collided with — the lookup above
+    // having been skipped (a first run whose branch survived a re-dispatch) or
+    // having failed transiently.
+    reused = !!pr?.reused;
+  }
+  if (pr && reused) {
+    await notePullRequestFollowUp({ ...github, number: pr.number, prompt });
+  }
 
   sink.push("text", {
-    text: prUrl
-      ? `Opened pull request: ${prUrl}`
+    text: pr
+      ? reused
+        ? `Pushed to the open pull request: ${pr.url}`
+        : `Opened pull request: ${pr.url}`
       : `Pushed branch ${branch}, but the pull request could not be created automatically.`,
   });
-  sink.push("done", { finishReason: finalStopReason, ...(prUrl ? { prUrl } : {}) });
+  sink.push("done", {
+    finishReason: finalStopReason,
+    branch,
+    ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
+  });
   await sink.finalize("done");
-  log(prUrl ? `done, PR ${prUrl}` : `done, pushed ${branch} (no PR)`);
+  log(pr ? `done, PR #${pr.number}` : `done, pushed the branch (no PR)`);
+}
+
+/** The conversation turns runner-context handed over, validated to the shape agent-core seeds. */
+function readHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  /** @type {{ role: "user" | "assistant"; text: string }[]} */
+  const turns = [];
+  for (const entry of raw.slice(0, 200)) {
+    if (!entry || typeof entry !== "object") continue;
+    const role = entry.role === "user" || entry.role === "assistant" ? entry.role : null;
+    const text = typeof entry.text === "string" ? entry.text : "";
+    if (role && text.trim()) turns.push({ role, text });
+  }
+  return turns;
+}
+
+/** The branch this run continues, or null for a first run. Same name rules as the server's validator. */
+function readContinuation(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const branch = typeof raw.branch === "string" ? raw.branch : "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/.test(branch) || branch.includes("..")) return null;
+  return {
+    branch,
+    prUrl: typeof raw.prUrl === "string" ? raw.prUrl : null,
+    prNumber: typeof raw.prNumber === "number" && Number.isInteger(raw.prNumber) ? raw.prNumber : null,
+    baseRef: typeof raw.baseRef === "string" && raw.baseRef ? raw.baseRef : null,
+  };
+}
+
+function githubHeaders(cloneToken) {
+  return {
+    Authorization: `Bearer ${cloneToken}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+    "User-Agent": "Juno-Cloud-Code",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+/** The open pull request whose head is `branch`, or null.
+ *  @returns {Promise<{ url: string; number: number } | null>} */
+async function findOpenPullRequest({ repoOwner, repoName, cloneToken, branch }) {
+  const head = encodeURIComponent(`${repoOwner}:${branch}`);
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls?head=${head}&state=open&per_page=1`, {
+      headers: githubHeaders(cloneToken),
+    });
+  } catch (err) {
+    log("PR lookup network error:", err);
+    return null;
+  }
+  if (!res.ok) {
+    log(`PR lookup HTTP ${res.status}`);
+    return null;
+  }
+  const list = /** @type {any} */ (await res.json().catch(() => []));
+  const found = Array.isArray(list) ? list[0] : null;
+  return found && typeof found.html_url === "string" && typeof found.number === "number"
+    ? { url: found.html_url, number: found.number }
+    : null;
+}
+
+/** Append the follow-up's instruction to the pull request body. Best effort. */
+async function notePullRequestFollowUp({ repoOwner, repoName, cloneToken, number, prompt }) {
+  try {
+    const current = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${number}`, {
+      headers: githubHeaders(cloneToken),
+    });
+    if (!current.ok) return;
+    const data = /** @type {any} */ (await current.json().catch(() => ({})));
+    const body = typeof data.body === "string" ? data.body : "";
+    const note = `\n\n**Follow-up** (task ${TASK_ID})\n\n> ${firstLine(prompt).slice(0, 500)}`;
+    if (body.length + note.length > 60_000) return;
+    await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${number}`, {
+      method: "PATCH",
+      headers: githubHeaders(cloneToken),
+      body: JSON.stringify({ body: body + note }),
+    });
+  } catch (err) {
+    log("PR note error:", err);
+  }
 }
 
 /** Translate one AgentEvent into task events. */
@@ -805,34 +1079,52 @@ async function emitFileChanges(sink, workdir, gitEnv) {
   }
 }
 
-async function openPullRequest({ repoOwner, repoName, cloneToken, branch, baseBranch, title, prompt }) {
+/** @returns {Promise<{ url: string; number: number; reused?: boolean } | null>} */
+async function openPullRequest({ repoOwner, repoName, cloneToken, branch, baseBranch, title, prompt, mention }) {
   const body =
-    `This pull request was generated by **Juno Cloud Code**.\n\n` +
+    `This pull request was generated by **Juno Cloud Code**${mention ? ` for @${mention}` : ""}.\n\n` +
     `**Task prompt**\n\n> ${firstLine(prompt).slice(0, 500)}\n\n` +
     `Branch \`${branch}\` targets \`${baseBranch}\`. Review before merging.`;
   let res;
   try {
     res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${cloneToken}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-        "User-Agent": "Juno-Cloud-Code",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers: githubHeaders(cloneToken),
       body: JSON.stringify({ title: title.slice(0, 200), head: branch, base: baseBranch, body }),
     });
   } catch (err) {
     log("PR creation network error:", err);
     return null;
   }
-  if (res.ok) {
-    const data = /** @type {any} */ (await res.json().catch(() => ({})));
-    return typeof data.html_url === "string" ? data.html_url : null;
+  if (!res.ok) {
+    log(`PR creation HTTP ${res.status}`, await res.text().catch(() => ""));
+    /*
+     * 422 is what GitHub answers when an open pull request already has this
+     * head — the one case where "could not create" actually means "there is
+     * already one". It happens when the lookup above could not run or failed
+     * transiently (a rate limit, a blip), and reporting "no pull request" for
+     * a branch that plainly has one loses the link for the rest of the
+     * conversation. GitHub itself is what makes a second PR impossible here;
+     * this is how the runner finds out which one it collided with.
+     */
+    if (res.status === 422) {
+      const collided = await findOpenPullRequest({ repoOwner, repoName, cloneToken, branch });
+      return collided ? { ...collided, reused: true } : null;
+    }
+    return null;
   }
-  log(`PR creation HTTP ${res.status}`, await res.text().catch(() => ""));
-  return null;
+  const data = /** @type {any} */ (await res.json().catch(() => ({})));
+  if (typeof data.html_url !== "string" || typeof data.number !== "number") return null;
+  // Best effort: a review request puts the app's pull request on the person's
+  // own queue. 422 when they cannot review it (not a collaborator) is fine.
+  if (mention) {
+    await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${data.number}/requested_reviewers`, {
+      method: "POST",
+      headers: githubHeaders(cloneToken),
+      body: JSON.stringify({ reviewers: [mention] }),
+    }).catch(() => {});
+  }
+  return { url: data.html_url, number: data.number };
 }
 
 /** Env var names safe to expose to agent-spawned shells: enough for build/test

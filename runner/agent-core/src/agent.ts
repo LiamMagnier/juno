@@ -121,6 +121,15 @@ export class AgentSession {
    *  impossible by construction. */
   readonly subagents?: SubagentManager;
   private currentTurnIndex = 0;
+  /**
+   * Instructions sent while a turn is running, waiting for the next step.
+   *
+   * Each entry resolves its promise the moment the text leaves the queue —
+   * either taken by the loop at a step boundary or drained by the host
+   * between turns — which is what lets a host acknowledge "the run has your
+   * instruction" only once that is true.
+   */
+  private queuedUserMessages: { text: string; resolve: () => void }[] = [];
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -220,6 +229,67 @@ export class AgentSession {
     this.callbacks.onEvent(event);
   }
 
+  /**
+   * Seed the transcript with earlier turns of the same conversation.
+   *
+   * A cloud run is a fresh process on a fresh machine: without this, a
+   * follow-up in a conversation reached a model that had never seen the
+   * previous instruction or what it answered, and worked on a tree without
+   * knowing what it had already changed. The host hands over the persisted
+   * user/assistant text (already trimmed to a budget on its side); this
+   * writes it into the session store so the first `prompt()` is read as the
+   * next turn of that conversation rather than the first turn of a new one.
+   * Only meaningful before the first turn — a session that already holds
+   * messages refuses, because splicing history into the middle of a
+   * transcript would reorder what the model believes happened.
+   */
+  seedHistory(turns: readonly { role: 'user' | 'assistant'; text: string }[]): void {
+    if (this.messages.length > 0) {
+      throw new Error('seedHistory: the session already has messages');
+    }
+    for (const turn of turns) {
+      const text = turn.text.trim();
+      if (!text) continue;
+      if (turn.role === 'user') {
+        this.messages.push({ role: 'user', content: [{ type: 'text', text }] });
+      } else {
+        this.messages.push({ role: 'assistant', content: [{ type: 'text', text }] });
+      }
+    }
+    this.store.saveMessages(this.messages);
+  }
+
+  /**
+   * Queue text to become part of the next user message.
+   *
+   * Resolves when the text has left the queue: taken by the running turn at
+   * its next step (see `AgentLoopOptions.takeQueuedUserText`), or drained by
+   * the host through `takeQueuedUserMessages` once the turn has ended. It is
+   * the cloud runner's steering channel — a person's mid-run instruction
+   * cannot wait for the turn to finish, because the turn is the thing they
+   * are trying to redirect.
+   */
+  queueUserMessage(text: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.queuedUserMessages.push({ text, resolve });
+    });
+  }
+
+  get hasQueuedUserMessages(): boolean {
+    return this.queuedUserMessages.length > 0;
+  }
+
+  /**
+   * Drain the queue outside a turn — for a host whose turn ended with
+   * instructions still waiting, which then starts a new turn with them.
+   * Resolves each entry's promise: leaving the queue IS the acknowledgement.
+   */
+  takeQueuedUserMessages(): string[] {
+    const taken = this.queuedUserMessages.splice(0);
+    for (const entry of taken) entry.resolve();
+    return taken.map((entry) => entry.text);
+  }
+
   /** Run one full user turn: stream, execute tools with gating, until end_turn. */
   async prompt(text: string): Promise<void> {
     const turnIndex = this.store.meta.turnCount;
@@ -278,6 +348,7 @@ export class AgentSession {
         signal: this.aborter.signal,
         maxSteps: MAX_STEPS_PER_TURN,
         ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
+        takeQueuedUserText: () => this.takeQueuedUserMessages(),
         onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
         onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
         executeToolCall: (call) => this.executeToolCall(turnIndex, call),

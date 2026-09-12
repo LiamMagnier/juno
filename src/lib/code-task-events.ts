@@ -72,6 +72,42 @@ export function isGithubPullUrl(candidate: string): boolean {
 }
 
 /**
+ * A branch name a runner may record, and nothing else.
+ *
+ * The runner names its own branches (`juno/cloud-<id>`) and a follow-up is
+ * dispatched onto whatever this column holds, so a value that could carry a
+ * git option (`-`-prefixed), a traversal (`..`) or shell metacharacters must
+ * not be stored. The character set is the conservative core of what git
+ * allows; a legitimate branch a runner would ever create fits inside it.
+ */
+export function isGitBranchName(candidate: string): boolean {
+  return (
+    candidate.length <= 200 &&
+    /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(candidate) &&
+    !candidate.includes("..") &&
+    !candidate.endsWith("/") &&
+    !candidate.endsWith(".lock")
+  );
+}
+
+/**
+ * The controls a host has not consumed yet, in order. What the events POST
+ * returns, for the host that has nothing to post — see the controls route.
+ * Callers MUST have ownership-checked `taskId`.
+ */
+export async function readPendingControls(
+  taskId: string,
+  afterSeq: number,
+): Promise<{ seq: number; kind: string; payload: Prisma.JsonValue }[]> {
+  const rows = await prismaUnguarded.codeTaskEvent.findMany({
+    where: { taskId, kind: { in: CONTROL_KINDS }, seq: { gt: afterSeq } },
+    orderBy: { seq: "asc" },
+    take: 100,
+  });
+  return rows.map((event) => ({ seq: event.seq, kind: event.kind, payload: event.payload }));
+}
+
+/**
  * How many `file_change` events each task has reported.
  *
  * `CodeTask` has no `changedFileCount` column, and adding one is a migration
@@ -172,6 +208,38 @@ export async function appendTaskEvents(
     // overwrite the link the user may already have opened.
     if (prUrl) {
       await tx.codeTask.updateMany({ where: { id: taskId, prUrl: null }, data: { prUrl } });
+    }
+    /*
+     * The branch the run pushed to and the pull request's number, lifted the
+     * same way and with the same first-write rule. These are what let the
+     * NEXT task in the conversation continue this one: the create route
+     * dispatches a follow-up onto `branch`, and the runner finds the pull
+     * request to reuse. Only a branch that exists on origin is ever reported
+     * (the runner sends it after a successful push), and only a name the
+     * validator accepts is stored.
+     */
+    let branch: string | undefined;
+    let prNumber: number | undefined;
+    for (const event of events) {
+      const payload = event.payload as { branch?: unknown; prNumber?: unknown } | null;
+      if (!payload || typeof payload !== "object") continue;
+      if (branch === undefined && typeof payload.branch === "string" && isGitBranchName(payload.branch)) {
+        branch = payload.branch;
+      }
+      if (
+        prNumber === undefined &&
+        typeof payload.prNumber === "number" &&
+        Number.isInteger(payload.prNumber) &&
+        payload.prNumber > 0
+      ) {
+        prNumber = payload.prNumber;
+      }
+    }
+    if (branch) {
+      await tx.codeTask.updateMany({ where: { id: taskId, branch: null }, data: { branch } });
+    }
+    if (prNumber !== undefined) {
+      await tx.codeTask.updateMany({ where: { id: taskId, prNumber: null }, data: { prNumber } });
     }
 
     const task = await tx.codeTask.update({

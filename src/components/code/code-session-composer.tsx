@@ -57,8 +57,9 @@ export interface CodeSessionComposerProps {
   onCancel: () => void;
 
   /**
-   * Mid-run steering. `canSteer` is the session's own answer (a device run
-   * that is running or waiting on an approval); `steerReady` narrows it to
+   * Mid-run steering. `canSteer` is the session's own answer (a run that is
+   * running, or a device run waiting on an approval — a cloud run reads its
+   * controls between agent steps, so it takes one too); `steerReady` narrows it to
    * "there is text to send and nothing staged that a steer cannot carry".
    * While `canSteer` the field stays live and the primary action's send face
    * reads "Send to running task"; Stop is what the circle shows when the
@@ -151,9 +152,9 @@ export function CodeSessionComposer({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  // Locked means "nothing can be typed": submitting, stopping, queued, or a
-  // running cloud task (which cannot be steered). A steerable device run
-  // leaves the field open.
+  // Locked means "nothing can be typed": submitting, stopping, or queued —
+  // including a cloud task whose runner has not claimed it yet, which has no
+  // process to read an instruction. A steerable run leaves the field open.
   const locked = isBusy && !canSteer;
   const settling = status === "stopping" || status === "submitting";
   const dropEnabled = attachments.enabled && !isBusy && !dictation.active;

@@ -62,20 +62,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   /*
-   * CLOUD RUNS CANNOT BE STEERED YET, AND THIS SAYS SO.
+   * A CLOUD RUN TAKES AN INSTRUCTION ONLY ONCE IT IS RUNNING.
    *
-   * The cloud driver calls `AgentSession.prompt()` exactly once and reads its
-   * control events only between event flushes; there is no point inside that
-   * one turn at which a second user message could be injected. Accepting the
-   * instruction would queue it forever behind a run that will never read it.
-   * The refusal is the honest answer until the driver grows a between-step
-   * message queue — scoped separately.
+   * The cloud driver reads its controls between agent steps (an events POST,
+   * or the controls poll when it has been quiet) and folds a steer into the
+   * next user message — so a running cloud task can be steered exactly like
+   * a device one. Before the runner has claimed the task there is no process
+   * to read the instruction, and a queued cloud task cannot be told to wait
+   * for one the way a device task waits for its Mac: the runner starts with
+   * the prompt it was dispatched with. So `queued` is refused with a sentence
+   * rather than accepted into a queue nothing is watching yet.
    */
-  if (task.target === "cloud") {
+  if (task.target === "cloud" && task.status !== "running") {
     return NextResponse.json(
       {
-        error: "steer_unsupported",
-        message: "Cloud runs can’t take a new instruction mid-run yet. Wait for it to finish, then send a follow-up.",
+        error: "task_not_started",
+        message: "The cloud runner hasn’t started this task yet. Wait for it to start, then send the instruction.",
       },
       { status: 409 },
     );

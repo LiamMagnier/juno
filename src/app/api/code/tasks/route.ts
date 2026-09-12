@@ -319,6 +319,32 @@ export async function POST(req: Request) {
         if (active >= CLOUD_TASK_CONCURRENCY_CAP) {
           throw Object.assign(new Error("cloud_cap_exceeded"), { activeCount: active });
         }
+        /*
+         * CONTINUITY. A follow-up in a conversation whose latest cloud run
+         * pushed a branch runs ON that branch: it is dispatched with
+         * `baseRef` = the branch, so the runner checks it out rather than the
+         * base, pushes to it, and reuses the open pull request. Without this
+         * every second message cloned the base afresh, worked on a tree
+         * without the first run's changes, and opened a second PR. The repo
+         * must match — a conversation is bound to one, but the columns are
+         * the proof.
+         */
+        let continueOn: string | null = null;
+        if (conversationId) {
+          const previous = await tx.codeTask.findFirst({
+            where: {
+              userId: user.id,
+              conversationId,
+              target: "cloud",
+              repoOwner: repo.owner,
+              repoName: repo.name,
+              branch: { not: null },
+            },
+            orderBy: { createdAt: "desc" },
+            select: { branch: true },
+          });
+          continueOn = previous?.branch ?? null;
+        }
         return tx.codeTask.create({
           data: {
             userId: user.id,
@@ -326,7 +352,8 @@ export async function POST(req: Request) {
             target: "cloud",
             repoOwner: repo.owner,
             repoName: repo.name,
-            baseRef: baseRef ?? null,
+            baseRef: continueOn ?? baseRef ?? null,
+            branch: continueOn,
             // The repo IS the cloud workspace; keep these columns meaningful for
             // the session view without inventing a device path.
             workspacePath: `${repo.owner}/${repo.name}`,

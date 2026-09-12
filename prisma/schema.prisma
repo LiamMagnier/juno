@@ -704,12 +704,36 @@ model ChatFirstSubmissionReceipt {
   updatedAt          DateTime  @updatedAt
   completedAt        DateTime?
   leaseExpiresAt     DateTime?
+  // Set by POST /api/chat/cancel. The in-memory registry is the fast path; this
+  // is what lets a cancel from another process or tab reach the stream loop,
+  // which polls it every ~2s (src/app/api/chat/route.ts).
+  cancelRequestedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, clientRequestId])
   @@unique([userId, clientMessageId])
   @@index([conversationId])
+}
+
+// Append-only log of one generation's SSE frames, so a web client whose
+// stream dropped can reconnect and replay from the last `seq` it saw instead
+// of polling the conversation and, on giving up, regenerating (a second
+// charge). `payload` is the frame's JSON encrypted with the message keyring:
+// it carries transcript text and gets the same at-rest treatment as Message.
+// Rows live ~10 minutes past the generation's terminal frame (route after()
+// sweep + scripts/prune-sync.ts). No userId by design — ownership is proven
+// through the receipt or the logged meta frame's conversation.
+model ChatStreamEvent {
+  id           String   @id @default(cuid())
+  generationId String
+  seq          Int
+  kind         String
+  payload      String
+  createdAt    DateTime @default(now())
+
+  @@unique([generationId, seq])
+  @@index([generationId, createdAt])
 }
 
 // Idempotency ledger for saving a realtime voice session. A browser may retry
@@ -1464,6 +1488,16 @@ model CodeTask {
   repoName          String?
   baseRef           String?
   prUrl             String?
+  // The branch a cloud run pushed to, and the number of the pull request it
+  // opened or reused. `branch` is set at creation for a follow-up in the same
+  // conversation (dispatched with baseRef = that branch, so the runner checks
+  // it out and pushes to it) and lifted from the runner's `done` event for a
+  // first run — so it only ever names a branch that exists on origin. Without
+  // it every follow-up cloned the base, branched afresh and opened a second
+  // pull request with no memory of the first. `prNumber` pairs with `prUrl`
+  // for the API calls that take a number.
+  branch            String?
+  prNumber          Int?
   // What the submitter chose to run this task with. Both were offered by the
   // composer — a model picker and a thinking slider, on /code/new AND inside a
   // live session — and neither was accepted by the create route or read by any

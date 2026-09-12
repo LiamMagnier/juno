@@ -8,7 +8,12 @@ import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
 
-export { appendTaskEvents, countChangedFiles, type TaskEventInput } from "@/lib/code-task-events";
+export {
+  appendTaskEvents,
+  countChangedFiles,
+  readPendingControls,
+  type TaskEventInput,
+} from "@/lib/code-task-events";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
@@ -298,7 +303,11 @@ export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
     repoOwner: task.repoOwner,
     repoName: task.repoName,
     baseRef: task.baseRef,
+    // The branch a cloud run pushed to and the pull request it opened or
+    // reused — what a follow-up in the same conversation continues on.
+    branch: task.branch,
     prUrl: task.prUrl,
+    prNumber: task.prNumber,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };

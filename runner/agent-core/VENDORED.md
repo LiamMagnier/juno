@@ -74,6 +74,18 @@ copy of `juno-app/core/src`, including the subagent orchestration layer
 - `src/agent.ts` (`AgentOptions.reasoningEffort`, threaded to `runAgentLoop`
   and to subagents through `SubagentHost`): the effort the composer chose used
   to reach runner-context and stop there. Re-apply when re-syncing.
+- `src/agent.ts` (`AgentSession.seedHistory`): writes earlier user/assistant
+  turns into a fresh session before its first `prompt()`, so a cloud follow-up
+  is read as the next turn of its conversation rather than the first turn of a
+  new one. Refuses on a session that already holds messages.
+- `src/agent.ts` (`AgentSession.queueUserMessage` / `hasQueuedUserMessages` /
+  `takeQueuedUserMessages`) and `src/loop.ts`
+  (`AgentLoopOptions.takeQueuedUserText`): mid-run steering. Text queued while
+  a turn runs is folded into the user message the next step sends (the tool
+  results of the previous step, or the prompt on the first), keeping the
+  user/assistant alternation every provider requires; the promise resolves
+  when the text leaves the queue, which is what the cloud runner's `steer_ack`
+  is timed on. `src/test/queue.test.ts` covers both. Re-apply when re-syncing.
 
 ## Build
 

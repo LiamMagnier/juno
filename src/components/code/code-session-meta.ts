@@ -90,7 +90,10 @@ export type CodeTaskMeta = {
   isCloud: boolean;
   repoOwner: string | null;
   repoName: string | null;
+  /** The base the FIRST cloud run targeted; follow-ups are dispatched onto `branch`. */
   baseRef: string | null;
+  /** The branch this conversation's cloud runs push to, once one has pushed. */
+  branch: string | null;
   prUrl: string | null;
   /**
    * The newest task that has not finished, for the session view to re-attach
@@ -108,6 +111,7 @@ type TaskMetaRow = {
   repoOwner?: string | null;
   repoName?: string | null;
   baseRef?: string | null;
+  branch?: string | null;
   prUrl?: string | null;
 };
 
@@ -124,6 +128,7 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
     repoOwner: null,
     repoName: null,
     baseRef: null,
+    branch: null,
     prUrl: null,
     activeTask: null,
   });
@@ -137,6 +142,10 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
       const latest = tasks[0];
       const withRepo = tasks.find((t) => t.repoOwner && t.repoName);
+      // The oldest cloud run's base is the conversation's base; every later
+      // run's `baseRef` is the branch it continued on.
+      const first = [...tasks].reverse().find((t) => t.target === "cloud");
+      const branch = tasks.find((t) => typeof t.branch === "string" && t.branch)?.branch ?? null;
       const prUrl = tasks.find((t) => typeof t.prUrl === "string" && t.prUrl)?.prUrl ?? null;
       const live = tasks.find((t) => typeof t.id === "string" && typeof t.status === "string" && !TERMINAL.has(t.status));
       setMeta({
@@ -144,7 +153,8 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
         isCloud: latest?.target === "cloud",
         repoOwner: latest?.repoOwner ?? withRepo?.repoOwner ?? null,
         repoName: latest?.repoName ?? withRepo?.repoName ?? null,
-        baseRef: latest?.baseRef ?? withRepo?.baseRef ?? null,
+        baseRef: first?.baseRef ?? withRepo?.baseRef ?? null,
+        branch,
         prUrl,
         activeTask: live ? { id: live.id!, status: live.status!, target: live.target ?? null } : null,
       });
