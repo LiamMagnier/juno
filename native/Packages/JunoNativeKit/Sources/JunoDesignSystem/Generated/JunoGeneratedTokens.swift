@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: d6d0cd5a249f3d5d
+// tokens-digest: 909bf6651a4db7de
 //
 
 import CoreGraphics
@@ -154,18 +154,6 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.6)
     )
 
-    /// `--neu-dark-lg`
-    public static let neuDarkLg = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.236, 0.2192, 0.164, 0.2),
-        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.72)
-    )
-
-    /// `--neu-light`
-    public static let neuLight = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.9),
-        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.07)
-    )
-
     /// `--popover`
     public static let popover = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9959, 0.995, 0.9921),
@@ -230,12 +218,6 @@ public enum JunoGeneratedColors {
     public static let sheen = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.55),
         dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.07)
-    )
-
-    /// `--sheen-strong`
-    public static let sheenStrong = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.7),
-        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.11)
     )
 
     /// `--sidebar`
