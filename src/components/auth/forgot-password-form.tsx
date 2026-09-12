@@ -52,7 +52,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
     // (which asserts the email field and the submit exist) green only where
     // email happens to be configured, i.e. untestable everywhere else.
     return (
-      <form onSubmit={onSubmit} className="space-y-5" aria-describedby="forgot-password-unavailable">
+      <form method="post" onSubmit={onSubmit} className="space-y-5" aria-describedby="forgot-password-unavailable">
         <p
           id="forgot-password-unavailable"
           role="note"
@@ -107,7 +107,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form method="post" onSubmit={onSubmit} className="space-y-5">
       <Field
         id="forgot-email"
         type="email"

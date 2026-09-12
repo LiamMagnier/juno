@@ -381,7 +381,15 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
         </>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      {/* method="post" matters even though onSubmit handles every real
+          submission: a form with no method defaults to GET, so a press that
+          lands before React has hydrated navigates to
+          /sign-in?email=…&password=… — putting the password in the address
+          bar, the browser history, the referrer and any access log in front
+          of it. POST is not a working fallback (there is no route to receive
+          it) but it fails without leaking the credential, which is the only
+          property that matters here. */}
+      <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
         {/* The credentials stay mounted but hidden during the code step: the
             password is still in state and still submitted, and unmounting the
             inputs would hand the browser's password manager a form that looks
