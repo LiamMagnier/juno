@@ -166,7 +166,11 @@ export function ReportReader({
                 href={source.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-2 rounded-field px-2 py-2 transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                // `md` (8): the sources rail is `rounded-card` (16) and these
+                // rows are inset from it by the scroll wrapper's `p-2` (8), so
+                // 16 − 8 = 8. The row paints its own corners on hover, so the
+                // difference showed against the rail's edge.
+                className="flex items-start gap-2 rounded-md px-2 py-2 transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               >
                 {body}
               </a>
