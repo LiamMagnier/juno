@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { readChatStream } from "@/lib/chat-stream";
+import { readChatStream, type StreamFrameInfo } from "@/lib/chat-stream";
+import { createFrameSequencer } from "@/lib/chat/stream-replay";
 import { serverTranscriptRevision, settleClientMessage } from "@/lib/chat-client-state";
 import {
   clearPendingGeneration,
@@ -22,6 +23,7 @@ import {
   type PreflightClarificationContext,
 } from "@/lib/preflight-clarification";
 import type {
+  StreamChunk,
   ClientActivityEvent,
   ClientArtifact,
   ClientAttachment,
@@ -117,6 +119,51 @@ const RECOVERY_WINDOW_MS = 12_000;
 const RESUME_MAX_AGE_MS = 2 * 60_000;
 const RESUME_POLL_WINDOW_MS = 6_000;
 
+/*
+ * Reconnecting to a generation whose frames the server is logging.
+ *
+ * The backoff is 1s → 2s → 4s and then every 4s, for three minutes. The window
+ * is generous on purpose: the thing on the other end is an answer the user has
+ * already paid for, and the alternative to waiting for it is a regenerate that
+ * charges them a second time for the same reply. Three minutes covers a train
+ * tunnel, a laptop lid, and a server restart; past it the conversation is the
+ * source of truth and the answer is either in it or was never written.
+ */
+const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000] as const;
+const RECONNECT_WINDOW_MS = 3 * 60_000;
+
+function reconnectDelayMs(attempt: number): number {
+  return RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
+}
+
+/**
+ * How a reconnect ended.
+ *  - `terminal`  the turn's `done`/`error` frame arrived; the transcript is settled.
+ *  - `refetch`   the server says the log cannot finish this turn — load the conversation.
+ *  - `gone`      404: no log (private, swept, or never written).
+ *  - `exhausted` the window ran out with the generation still apparently alive.
+ *  - `stale`     the user moved on; this attempt no longer owns the view.
+ */
+type ReconnectOutcome = "terminal" | "refetch" | "gone" | "exhausted" | "stale";
+
+/** One turn's frame handler, plus what a reconnect needs to know about it. */
+interface StreamApplier {
+  apply(chunk: StreamChunk, frame: StreamFrameInfo): void;
+  /** Log position of the last frame applied — the `after` cursor for a resume. */
+  readonly lastSeq: number;
+  /** A `done` or `error` frame has been applied; the turn is over. */
+  readonly sawTerminal: boolean;
+  /** The meta frame arrived, so the server owns this turn. */
+  readonly metaArrived: boolean;
+  readonly userMessageId: string | null;
+  /** The id the server generated under, learned from the meta frame. */
+  readonly generationId: string | null;
+  /** The server is logging these frames, so a drop can be reconnected to. */
+  readonly resumable: boolean;
+  /** The server has told us the log cannot serve this turn. */
+  readonly refetch: boolean;
+}
+
 /** Backoff between recovery polls — first hit is immediate-ish. */
 function recoveryDelayMs(attempt: number): number {
   if (attempt <= 0) return 400;
@@ -174,6 +221,21 @@ export function useChat(opts: UseChatOptions) {
   /** View detached (new chat / unmount) — abort browser stream without user-stop or error toast. */
   const detachedRef = React.useRef(false);
   const stopFallbackRef = React.useRef<number | null>(null);
+  /*
+   * A turn whose stream dropped while the server was still writing it.
+   *
+   * The affordance a dropped turn gets is RECONNECT, never regenerate. A
+   * regenerate asks for a second answer to a question that is already being
+   * answered and bills for it — one reply, two charges — which is the bug this
+   * whole path exists to kill. While this is set, every retry entry point
+   * reattaches to the log instead.
+   */
+  const reconnectRef = React.useRef<{ generationId: string; assistantTempId: string; lastSeq: number } | null>(null);
+  const [canReconnect, setCanReconnect] = React.useState(false);
+  const clearReconnect = React.useCallback(() => {
+    reconnectRef.current = null;
+    setCanReconnect(false);
+  }, []);
   // Increments on every generation; an in-flight background recovery from a
   // dropped stream aborts itself when the user has already moved on.
   const generationSeqRef = React.useRef(0);
@@ -216,6 +278,10 @@ export function useChat(opts: UseChatOptions) {
     generationSeqRef.current++; // cancel any in-flight drop recovery for this instance
     generationIdRef.current = null;
     assistantIdRef.current = null;
+    // The offer belonged to the conversation being left; its ledger entry is
+    // what lets the reopened chat find the generation again.
+    reconnectRef.current = null;
+    setCanReconnect(false);
     locallyRemovedRef.current = new Map();
     appliedInitialRevisionRef.current = serverTranscriptRevision(opts.initialMessages);
     setMessages(opts.initialMessages);
@@ -382,113 +448,30 @@ export function useChat(opts: UseChatOptions) {
     [mergeArtifacts, opts]
   );
 
-  // Resume when reopening a chat that left mid-generation (tab close, sidebar
-  // navigation, refresh).
-  React.useEffect(() => {
-    if (opts.privateMode || !opts.conversationId) return;
-    const convoId = opts.conversationId;
-    const msgs = opts.initialMessages;
-    const last = msgs[msgs.length - 1];
-    const pending = getPendingGeneration(convoId);
-
-    // Already have a finished assistant as the tail — nothing to recover.
-    if (
-      last?.role === "ASSISTANT" &&
-      (last.content || last.reasoning || (last.attachments?.length ?? 0) > 0)
-    ) {
-      clearPendingGeneration(convoId);
-      return;
-    }
-
-    // Sources of truth for "still waiting on an answer":
-    //  1. Trailing USER message (generation never streamed a done frame)
-    //  2. sessionStorage ledger from a prior tab/route that dropped the SSE
-    const trailingUser = last?.role === "USER" ? last : null;
-    const userMessageId = trailingUser?.id ?? pending?.userMessageId ?? null;
-    if (!trailingUser && !pending) return;
-
-    const ageSource = trailingUser?.createdAt ?? (pending ? new Date(pending.startedAt).toISOString() : null);
-    if (ageSource) {
-      const age = Date.now() - new Date(ageSource).getTime();
-      if (!(age >= 0 && age < RESUME_MAX_AGE_MS)) {
-        if (pending) clearPendingGeneration(convoId);
-        if (trailingUser) {
-          const stalePlaceholderId = tempId();
-          const staleError: ChatMessage = {
-            id: stalePlaceholderId,
-            role: "ASSISTANT",
-            content: "Something didn't go well with the previous generation. Click Try again to retry.",
-            createdAt: new Date().toISOString(),
-            attachments: [],
-            activity: [],
-            streaming: false,
-            error: true,
-            finishReason: "error",
-            errorMessage: "Something didn't go well with the previous generation. Click Try again to retry.",
-          };
-          setMessages((prev) => {
-            const tail = prev[prev.length - 1];
-            if (tail?.id === trailingUser.id) return [...prev, staleError];
-            return prev;
-          });
-        }
-        return;
-      }
-    }
-
-    const seq = generationSeqRef.current;
-    const placeholderId = tempId();
-    const placeholder: ChatMessage = {
-      id: placeholderId,
-      role: "ASSISTANT",
-      content: "",
-      createdAt: new Date().toISOString(),
-      attachments: [],
-      activity: [],
-      streaming: true,
-      errorMessage: "Checking for response...",
-    };
-
-    setMessages((prev) => {
-      const tail = prev[prev.length - 1];
-      // Already showing a recovering/streaming bubble for this turn.
-      if (tail?.role === "ASSISTANT" && (tail.streaming || tail.errorMessage?.includes("Checking"))) {
-        return prev;
-      }
-      if (trailingUser && tail?.id === trailingUser.id) return [...prev, placeholder];
-      if (!trailingUser && pending && tail?.role === "USER") return [...prev, placeholder];
-      if (!trailingUser && pending && tail?.role === "ASSISTANT" && !tail.content && !tail.reasoning) {
-        return prev.map((m, i) => (i === prev.length - 1 ? { ...placeholder, id: m.id } : m));
-      }
-      return prev;
-    });
-
-    // Ensure the ledger exists so further navigations still reattach.
-    markPendingGeneration({
-      conversationId: convoId,
-      userMessageId,
-      generationId: pending?.generationId ?? null,
-      startedAt: pending?.startedAt ?? Date.now(),
-    });
-
-    void recoverDroppedStream(placeholderId, userMessageId, seq, Date.now() + RESUME_POLL_WINDOW_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.conversationId]);
-
-  const runGeneration = React.useCallback(
-    async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
-      const controller = new AbortController();
-      const generationId = crypto.randomUUID();
-      abortRef.current = controller;
-      generationIdRef.current = generationId;
-      assistantIdRef.current = assistantTempId;
-      stopRequestedRef.current = false;
-      detachedRef.current = false;
-      setStatus("submitting");
-      const seq = ++generationSeqRef.current;
+  /**
+   * The one place a stream frame becomes UI.
+   *
+   * Lifted out of `runGeneration` because a RESUMED stream has to be applied by
+   * exactly the same code as the original one. A reconnect deliberately
+   * overlaps the drop — the client asks for everything after the last seq it
+   * rendered, and asks again on every retry — so frames arrive twice by design;
+   * "one applier, plus a sequencer that drops anything at or below the last seq
+   * applied" is what makes that idempotent. A second applier written for
+   * replays would be a second chance for the two to disagree.
+   *
+   * `initialSeq` seeds that mark for a reconnect that continues a bubble which
+   * already has text in it; a reopened tab starts from 0 with an empty bubble
+   * and replays the whole turn.
+   */
+  const createStreamApplier = React.useCallback(
+    (assistantTempId: string, fallbackGenerationId: string | null, initialSeq = 0): StreamApplier => {
+      const sequencer = createFrameSequencer(initialSeq);
       let sawTerminal = false;
-      let metaUserMessageId: string | null = null;
       let metaArrived = false;
+      let userMessageId: string | null = null;
+      let generationId: string | null = null;
+      let resumable = false;
+      let refetch = false;
       // The reasoning fold for this generation, accumulated HERE rather than
       // inside the setMessages updater. React defers an updater to the render
       // phase whenever the fiber already has queued work — which is routine,
@@ -500,39 +483,27 @@ export function useChat(opts: UseChatOptions) {
       // does, which is what makes server and client byte-identical.
       let reasoningState = emptyReasoning();
 
-
-
-      try {
-        // Let React paint "submitting" / the pending bubbles before a multi-MB
-        // JSON.stringify blocks the main thread on long pastes / private history.
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => resolve());
-        });
-
-        const res = await fetch(path, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, generationId }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok || !res.body) {
-          const data = (await res.json().catch(() => ({}))) as {
-            error?: string | { message?: string };
-            message?: string;
-          };
-          // Machine-readable errors (e.g. 402 budget_exceeded) carry the
-          // human sentence in `message`; plain errors keep it in `error`.
-          const nestedMessage = typeof data.error === "object" && data.error ? data.error.message : undefined;
-          const errorText = typeof data.error === "string" ? data.error : undefined;
-          throw new Error(data.message ?? nestedMessage ?? errorText ?? "Something went wrong.");
-        }
-
-        await readChatStream(res.body, (chunk) => {
+      return {
+        apply: (chunk, frame) => {
+          // Every logged frame carries its position in the generation's log as
+          // the SSE `id:`. At or below what has already been applied means a
+          // replay of something the transcript already shows: applying it would
+          // append a delta twice. Frames with no id — heartbeats, the `resume`
+          // notices, anything from an unlogged turn — always apply.
+          if (!sequencer.accept(frame.id)) return;
           switch (chunk.type) {
             case "meta": {
               metaArrived = true;
-              metaUserMessageId = chunk.userMessageId ?? null;
+              // The id the SERVER used, which is not always the one this client
+              // proposed: a durable first submission generates under the id its
+              // receipt already holds. The resume URL is built from this, so
+              // taking the client's guess would 404 on exactly the turns that
+              // most need to be resumable.
+              if (chunk.generationId) generationId = chunk.generationId;
+              // Only the saved path logs frames. Without this the client would
+              // reconnect to an empty log on every private turn.
+              resumable = chunk.resumable === true;
+              userMessageId = chunk.userMessageId ?? null;
               const isNew = convoIdRef.current === null;
               if (!opts.privateMode) {
                 convoIdRef.current = chunk.conversationId;
@@ -540,7 +511,7 @@ export function useChat(opts: UseChatOptions) {
                 markPendingGeneration({
                   conversationId: chunk.conversationId,
                   userMessageId: chunk.userMessageId ?? null,
-                  generationId,
+                  generationId: generationId ?? fallbackGenerationId,
                   startedAt: Date.now(),
                 });
               }
@@ -717,13 +688,422 @@ export function useChat(opts: UseChatOptions) {
               // arrives here as an error frame with finishReason "user_stopped".
               break;
             }
+            case "resume": {
+              // Resume bookkeeping, never rendered. `available: false` means the
+              // server stopped logging this generation mid-stream (a failed
+              // write, or the per-generation cap), so a reconnect would find a
+              // hole; `refetch: true` comes back from the resume route when the
+              // generation is over but its terminal frame never reached the
+              // log. Both end with the conversation as the source of truth.
+              if ("available" in chunk) resumable = false;
+              else refetch = true;
+              break;
+            }
           }
+        },
+        get lastSeq() {
+          return sequencer.lastSeq;
+        },
+        get sawTerminal() {
+          return sawTerminal;
+        },
+        get metaArrived() {
+          return metaArrived;
+        },
+        get userMessageId() {
+          return userMessageId;
+        },
+        get generationId() {
+          return generationId;
+        },
+        get resumable() {
+          return resumable;
+        },
+        get refetch() {
+          return refetch;
+        },
+      };
+    },
+    [mergeArtifacts, opts]
+  );
+
+  /** Ask the server whether a generation is still running for this conversation. */
+  const findActiveGeneration = React.useCallback(async (conversationId: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/chat/stream/active?conversationId=${encodeURIComponent(conversationId)}`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as { generationId?: unknown };
+      return typeof data.generationId === "string" ? data.generationId : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * Reattach to a generation's frame log and keep trying until it ends.
+   *
+   * Each attempt asks for everything after the last seq this client actually
+   * applied, so a reconnect that itself drops mid-answer simply resumes from
+   * wherever it got to. Frames are fed through the applier that rendered the
+   * original stream, which is what makes the overlap harmless.
+   */
+  const reconnectFromLog = React.useCallback(
+    async (args: {
+      applier: StreamApplier;
+      generationId: string;
+      seq: number;
+      signal?: AbortSignal;
+      immediate?: boolean;
+    }): Promise<ReconnectOutcome> => {
+      const deadline = Date.now() + RECONNECT_WINDOW_MS;
+      let attempt = 0;
+      let first = args.immediate === true;
+      while (Date.now() < deadline) {
+        if (!first) await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs(attempt++)));
+        first = false;
+        // The user started another turn, switched chat, or pressed Stop: this
+        // attempt no longer owns the bubble it would write into.
+        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
+        if (stopRequestedRef.current || args.signal?.aborted) return "stale";
+        try {
+          const res = await fetch(
+            `/api/chat/stream/${encodeURIComponent(args.generationId)}?after=${args.applier.lastSeq}`,
+            { signal: args.signal }
+          );
+          // 404 is deliberately every "there is nothing here" at once: an
+          // unknown id, another account's, a private turn (never logged), a
+          // log already swept. None of them are worth retrying.
+          if (res.status === 404) return "gone";
+          if (res.ok && res.body) await readChatStream(res.body, args.applier.apply);
+        } catch {
+          // A reconnect that drops is the ordinary case, not an exception —
+          // it is the reason this is a loop. Try again after the backoff.
+        }
+        if (generationSeqRef.current !== args.seq || detachedRef.current) return "stale";
+        if (args.applier.sawTerminal) return "terminal";
+        if (args.applier.refetch) return "refetch";
+      }
+      return "exhausted";
+    },
+    []
+  );
+
+  /** Reconnect, then settle the transcript on whichever way it ended. */
+  const driveReconnect = React.useCallback(
+    async (args: {
+      applier: StreamApplier;
+      generationId: string;
+      assistantTempId: string;
+      seq: number;
+      signal?: AbortSignal;
+      immediate?: boolean;
+    }): Promise<ReconnectOutcome> => {
+      const outcome = await reconnectFromLog(args);
+      if (outcome === "stale") return outcome;
+      if (outcome === "terminal") {
+        clearReconnect();
+        setStatus((cur) => (cur === "error" ? "error" : "idle"));
+        return outcome;
+      }
+      if (outcome === "exhausted") {
+        // Still apparently alive, just not within the window we are willing to
+        // hold the UI for. Offer the reconnect again rather than a retry: the
+        // answer is (or was) being written, and asking for a new one would
+        // charge for a second copy of it.
+        reconnectRef.current = {
+          generationId: args.generationId,
+          assistantTempId: args.assistantTempId,
+          lastSeq: args.applier.lastSeq,
+        };
+        setCanReconnect(true);
+        setStatus("error");
+        const message =
+          "The connection to this answer dropped. Reconnect to pick it up where it left off — it is still being written, and reconnecting does not use another message.";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === args.assistantTempId
+              ? {
+                  ...m,
+                  streaming: false,
+                  error: true,
+                  progress: null,
+                  finishReason: "error" as const,
+                  errorMessage: message,
+                  content: m.content || message,
+                }
+              : m
+          )
+        );
+        return outcome;
+      }
+      // `refetch` / `gone`: the log cannot finish this turn. The conversation
+      // is the source of truth — the answer is either saved in it or was never
+      // written — so fall back to the poll that reads it.
+      clearReconnect();
+      void recoverDroppedStream(
+        args.assistantTempId,
+        args.applier.userMessageId,
+        args.seq,
+        Date.now() + RESUME_POLL_WINDOW_MS
+      );
+      return outcome;
+    },
+    [clearReconnect, reconnectFromLog, recoverDroppedStream]
+  );
+
+  /**
+   * Take over the view with a reconnect: used both by the explicit Reconnect
+   * affordance and by a reopened conversation that found a running generation.
+   */
+  const attachAndReconnect = React.useCallback(
+    async (target: { generationId: string; assistantTempId: string; lastSeq: number }) => {
+      // Supersede whatever this view was already reading. Two readers applying
+      // frames to one bubble would double every delta between them, and a
+      // StrictMode double-mount produces exactly that pair.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      generationIdRef.current = target.generationId;
+      assistantIdRef.current = target.assistantTempId;
+      stopRequestedRef.current = false;
+      detachedRef.current = false;
+      clearReconnect();
+      setStatus("thinking");
+      const seq = ++generationSeqRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === target.assistantTempId
+            ? { ...m, streaming: true, error: false, errorMessage: undefined, finishReason: null }
+            : m
+        )
+      );
+      const applier = createStreamApplier(target.assistantTempId, target.generationId, target.lastSeq);
+      try {
+        await driveReconnect({
+          applier,
+          generationId: target.generationId,
+          assistantTempId: target.assistantTempId,
+          seq,
+          signal: controller.signal,
+          // A person pressed something, or a chat was just opened: do not make
+          // them watch a backoff before the first attempt.
+          immediate: true,
+        });
+      } finally {
+        if (generationSeqRef.current === seq) {
+          abortRef.current = null;
+          generationIdRef.current = null;
+          assistantIdRef.current = null;
+        }
+      }
+    },
+    [clearReconnect, createStreamApplier, driveReconnect]
+  );
+
+  /** Pick up a dropped answer. Never charges: it reads the log, it does not generate. */
+  const reconnect = React.useCallback(async () => {
+    const target = reconnectRef.current;
+    if (!target || !convoIdRef.current) return;
+    await attachAndReconnect(target);
+  }, [attachAndReconnect]);
+
+  // Resume when reopening a chat that left mid-generation (tab close, sidebar
+  // navigation, refresh).
+  React.useEffect(() => {
+    if (opts.privateMode || !opts.conversationId) return;
+    const convoId = opts.conversationId;
+    const msgs = opts.initialMessages;
+    const last = msgs[msgs.length - 1];
+    const pending = getPendingGeneration(convoId);
+
+    // Already have a finished assistant as the tail — nothing to recover.
+    if (
+      last?.role === "ASSISTANT" &&
+      (last.content || last.reasoning || (last.attachments?.length ?? 0) > 0)
+    ) {
+      clearPendingGeneration(convoId);
+      return;
+    }
+
+    // Sources of truth for "still waiting on an answer":
+    //  1. Trailing USER message (generation never streamed a done frame)
+    //  2. sessionStorage ledger from a prior tab/route that dropped the SSE
+    const trailingUser = last?.role === "USER" ? last : null;
+    const userMessageId = trailingUser?.id ?? pending?.userMessageId ?? null;
+    if (!trailingUser && !pending) return;
+
+    /*
+     * How long ago this turn was sent. It governs the FALLBACK only.
+     *
+     * A generation that is still running is resumed through its log however
+     * old it is. This window used to gate everything, which meant a deep
+     * research run — they go on for the better part of an hour — was declared
+     * dead two minutes in and offered a "Try again" that would have paid for
+     * the entire thing a second time while the first one was still running.
+     */
+    const ageSource = trailingUser?.createdAt ?? (pending ? new Date(pending.startedAt).toISOString() : null);
+    const age = ageSource ? Date.now() - new Date(ageSource).getTime() : null;
+    const withinPollWindow = age === null || (age >= 0 && age < RESUME_MAX_AGE_MS);
+
+    const seq = generationSeqRef.current;
+    const placeholderId = tempId();
+    const placeholder: ChatMessage = {
+      id: placeholderId,
+      role: "ASSISTANT",
+      content: "",
+      createdAt: new Date().toISOString(),
+      attachments: [],
+      activity: [],
+      streaming: true,
+      errorMessage: "Checking for response...",
+    };
+
+    setMessages((prev) => {
+      const tail = prev[prev.length - 1];
+      // Already showing a recovering/streaming bubble for this turn.
+      if (tail?.role === "ASSISTANT" && (tail.streaming || tail.errorMessage?.includes("Checking"))) {
+        return prev;
+      }
+      if (trailingUser && tail?.id === trailingUser.id) return [...prev, placeholder];
+      if (!trailingUser && pending && tail?.role === "USER") return [...prev, placeholder];
+      if (!trailingUser && pending && tail?.role === "ASSISTANT" && !tail.content && !tail.reasoning) {
+        return prev.map((m, i) => (i === prev.length - 1 ? { ...placeholder, id: m.id } : m));
+      }
+      return prev;
+    });
+
+    // Ensure the ledger exists so further navigations still reattach.
+    markPendingGeneration({
+      conversationId: convoId,
+      userMessageId,
+      generationId: pending?.generationId ?? null,
+      startedAt: pending?.startedAt ?? Date.now(),
+    });
+
+    void (async () => {
+      // The ledger remembers the generation this tab dropped; a tab that never
+      // had one (a fresh window, a restored session) asks the server which
+      // generation this conversation is still running.
+      const logGenerationId = pending?.generationId ?? (await findActiveGeneration(convoId));
+      if (generationSeqRef.current !== seq || convoIdRef.current !== convoId) return;
+      if (logGenerationId) {
+        // Write the id we just learned into the ledger, so a further navigation
+        // reattaches without asking the server again.
+        markPendingGeneration({
+          conversationId: convoId,
+          userMessageId,
+          generationId: logGenerationId,
+          startedAt: pending?.startedAt ?? Date.now(),
+        });
+        // From seq 0: this tab has rendered none of the answer, so the whole
+        // log replays into the empty placeholder.
+        await attachAndReconnect({ generationId: logGenerationId, assistantTempId: placeholderId, lastSeq: 0 });
+        return;
+      }
+      if (withinPollWindow) {
+        // Nothing resumable, but recent enough that the answer may be landing
+        // in the conversation right now.
+        void recoverDroppedStream(placeholderId, userMessageId, seq, Date.now() + RESUME_POLL_WINDOW_MS);
+        return;
+      }
+      // No generation is running and the turn is far too old to be about to
+      // finish: this one was lost with the process that was writing it.
+      clearPendingGeneration(convoId);
+      const message = "Something didn't go well with the previous generation. Click Try again to retry.";
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === placeholderId
+            ? {
+                ...m,
+                streaming: false,
+                error: true,
+                finishReason: "error" as const,
+                errorMessage: message,
+                content: message,
+              }
+            : m
+        )
+      );
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts.conversationId]);
+
+  const runGeneration = React.useCallback(
+    async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
+      const controller = new AbortController();
+      const generationId = crypto.randomUUID();
+      abortRef.current = controller;
+      generationIdRef.current = generationId;
+      assistantIdRef.current = assistantTempId;
+      stopRequestedRef.current = false;
+      detachedRef.current = false;
+      setStatus("submitting");
+      const seq = ++generationSeqRef.current;
+      // A new generation supersedes any dropped one waiting to be reconnected.
+      clearReconnect();
+      // Built before the request so the `finally` can ask it whether the turn
+      // ever reached the server.
+      const applier = createStreamApplier(assistantTempId, generationId);
+
+      /*
+       * A dropped transport is not the end of the turn.
+       *
+       * The server is still generating and still logging every frame, so the
+       * answer is reachable — reattach to the log and keep rendering the same
+       * bubble. Both ways a stream can die come through here: an end-of-body
+       * with no terminal frame, and a mid-answer read error (a reset socket, a
+       * sleeping laptop), which is the common one and used to surface as
+       * "Click Try again" — a regenerate, and a second charge for the answer
+       * that was still being written. Returns false when there is nothing to
+       * reattach to (private turns, a server that was not logging, a log the
+       * server has already told us it cannot serve).
+       */
+      const reconnectAfterDrop = async (): Promise<boolean> => {
+        if (!applier.resumable || applier.refetch || opts.privateMode || !convoIdRef.current) return false;
+        setStatus((cur) => (cur === "writing" ? cur : "thinking"));
+        await driveReconnect({
+          applier,
+          generationId: applier.generationId ?? generationId,
+          assistantTempId,
+          seq,
+          signal: controller.signal,
+        });
+        return true;
+      };
+
+      try {
+        // Let React paint "submitting" / the pending bubbles before a multi-MB
+        // JSON.stringify blocks the main thread on long pastes / private history.
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
         });
 
-        // Stream ended without a done/error frame — recover if feasible or show clean error with retry.
-        if (!sawTerminal && !detachedRef.current && !stopRequestedRef.current) {
-          if (metaArrived && !opts.privateMode && convoIdRef.current) {
-            void recoverDroppedStream(assistantTempId, metaUserMessageId, seq, Date.now() + 6_000);
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, generationId }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok || !res.body) {
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string | { message?: string };
+            message?: string;
+          };
+          // Machine-readable errors (e.g. 402 budget_exceeded) carry the
+          // human sentence in `message`; plain errors keep it in `error`.
+          const nestedMessage = typeof data.error === "object" && data.error ? data.error.message : undefined;
+          const errorText = typeof data.error === "string" ? data.error : undefined;
+          throw new Error(data.message ?? nestedMessage ?? errorText ?? "Something went wrong.");
+        }
+
+        await readChatStream(res.body, applier.apply);
+
+        // Stream ended without a done/error frame — reconnect, recover, or
+        // show a clean error with a retry, in that order of preference.
+        if (!applier.sawTerminal && !detachedRef.current && !stopRequestedRef.current && !(await reconnectAfterDrop())) {
+          if (applier.metaArrived && !opts.privateMode && convoIdRef.current) {
+            void recoverDroppedStream(assistantTempId, applier.userMessageId, seq, Date.now() + 6_000);
           } else {
             setStatus("error");
             const dropMessage = "Something didn't go well while receiving the response. Click Try again to retry.";
@@ -758,6 +1138,10 @@ export function useChat(opts: UseChatOptions) {
             )
           );
           if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
+        } else if (await reconnectAfterDrop()) {
+          // The socket died mid-answer; the answer did not. Settled by the
+          // reconnect above — never by surfacing a network error whose only
+          // affordance would be paying for the reply a second time.
         } else {
           const message = err instanceof Error ? err.message : "Something didn't go well while generating the response.";
           setStatus("error");
@@ -788,7 +1172,7 @@ export function useChat(opts: UseChatOptions) {
         // the turn — and there the flag is left off so a retry regenerates
         // rather than risking a duplicate.)
         if (!detachedRef.current) {
-          const orphaned = !metaArrived && !stopRequestedRef.current;
+          const orphaned = !applier.metaArrived && !stopRequestedRef.current;
           setMessages((prev) =>
             prev.some((m) => m.pending && m.role === "USER")
               ? prev.map((m) =>
@@ -804,7 +1188,7 @@ export function useChat(opts: UseChatOptions) {
         stopRequestedRef.current = false;
       }
     },
-    [mergeArtifacts, opts, recoverDroppedStream]
+    [clearReconnect, createStreamApplier, driveReconnect, opts, recoverDroppedStream]
   );
 
   const startGeneration = React.useCallback(
@@ -1189,6 +1573,20 @@ export function useChat(opts: UseChatOptions) {
 
   const regenerate = React.useCallback(async (options?: RegenerateOptions) => {
     if (status !== "idle" && status !== "error") return;
+    /*
+     * A dropped turn is reconnected to, never regenerated.
+     *
+     * The answer is already written (or still being written) on the server and
+     * the user has already been charged for it; regenerating would buy a second
+     * copy of the same reply. Every retry affordance in the UI comes through
+     * here, so this is the one place that has to know the difference — and the
+     * card the user is looking at says "Reconnect", because that is what this
+     * does.
+     */
+    if (reconnectRef.current) {
+      await reconnect();
+      return;
+    }
     // A one-shot model override rides the request only: the composer's pick is
     // untouched, so "try this once with Claude" does not silently become the
     // model for every turn after.
@@ -1247,7 +1645,7 @@ export function useChat(opts: UseChatOptions) {
       },
       assistantTempId
     );
-  }, [status, runGeneration, startGeneration, resendUnsent, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
+  }, [status, runGeneration, startGeneration, resendUnsent, reconnect, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
 
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
@@ -1346,6 +1744,8 @@ export function useChat(opts: UseChatOptions) {
     stopRequestedRef.current = false;
     abortRef.current?.abort();
     generationSeqRef.current++; // cancel local drop recovery for THIS instance
+    reconnectRef.current = null;
+    setCanReconnect(false);
     locallyRemovedRef.current = new Map();
     if (stopFallbackRef.current != null) {
       window.clearTimeout(stopFallbackRef.current);
@@ -1441,6 +1841,11 @@ export function useChat(opts: UseChatOptions) {
     cancelPendingClarification,
     continueResponse,
     regenerate,
+    /** True while the last turn dropped but can still be picked up from its
+     *  frame log. The retry affordance should read "Reconnect": it costs
+     *  nothing and continues the same answer. */
+    canReconnect,
+    reconnect,
     editAndResend,
     stop,
     reset,

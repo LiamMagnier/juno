@@ -18,6 +18,7 @@
  * are current-state and are never pruned.
  */
 import { prismaUnguarded } from "@/lib/db";
+import { sweepChatStreamEvents } from "@/lib/chat-stream-log-store";
 
 const DEFAULT_RETENTION_DAYS = 30;
 const MIN_RETENTION_DAYS = 7;
@@ -94,6 +95,18 @@ async function main() {
     const stale = await prismaUnguarded.rateLimit.deleteMany({ where: { expiresAt: { lt: rateLimitCutoff } } });
     console.log(`[prune-sync] deleted ${stale.count} expired RateLimit rows.`);
   }
+
+  // Resumable-stream frame logs. The chat route sweeps opportunistically after
+  // each turn; this is the backstop for a quiet server, where nothing else
+  // would run it. Finished generations go 10 minutes after their terminal
+  // frame, abandoned ones (no terminal frame ever) after a day — see
+  // src/lib/chat-stream-log-store.ts.
+  const streams = await sweepChatStreamEvents({ dryRun: DRY, limit: 1_000 });
+  console.log(
+    DRY
+      ? `[prune-sync] would delete ${streams.events} ChatStreamEvent rows across ${streams.generations} generations.`
+      : `[prune-sync] deleted ${streams.events} ChatStreamEvent rows across ${streams.generations} generations.`
+  );
 }
 
 main()

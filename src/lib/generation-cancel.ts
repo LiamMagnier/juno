@@ -88,3 +88,28 @@ export function cancelGeneration(generationId: string, userId: string): boolean 
 export function wasGenerationStopped(generationId: string): boolean {
   return activeGenerations.get(generationId)?.stopped ?? false;
 }
+
+/**
+ * Still registered in THIS process — the resume route's liveness signal for a
+ * generation with no receipt (every web turn). Aborted-but-tearing-down still
+ * counts: the terminal frame is on its way to the log. Per-process, like the
+ * registry itself; see the note at the top of this file.
+ */
+export function isGenerationActive(generationId: string): boolean {
+  return activeGenerations.has(generationId);
+}
+
+/**
+ * The generation currently running for a conversation, if this process has
+ * one — what lets a reopened tab find the stream to resume when its
+ * sessionStorage ledger is gone. Ownership-checked: a caller can only see its
+ * own generations.
+ */
+export function activeGenerationForConversation(conversationId: string, userId: string): string | null {
+  let newest: { id: string; startedAt: number } | null = null;
+  for (const [id, generation] of activeGenerations) {
+    if (generation.userId !== userId || generation.conversationId !== conversationId) continue;
+    if (!newest || generation.startedAt > newest.startedAt) newest = { id, startedAt: generation.startedAt };
+  }
+  return newest?.id ?? null;
+}

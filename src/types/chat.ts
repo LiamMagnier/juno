@@ -327,7 +327,23 @@ export type StreamChunk =
       titleSource?: TitleSource;
       generationId?: string;
       receiptState?: "running";
+      /**
+       * This generation's frames are being logged, so a dropped stream can be
+       * picked up at `GET /api/chat/stream/{generationId}?after={seq}` with the
+       * last SSE `id:` the client saw. Absent (private chats, legacy servers)
+       * means fall back to polling the conversation.
+       */
+      resumable?: boolean;
     }
+  /**
+   * Resume bookkeeping. `available: false` mid-stream means the frame log was
+   * disabled for this generation (a failed write, or the per-generation cap)
+   * and a reconnect will not find it. `refetch: true` comes from the resume
+   * route when the generation is over but its end is not in the log: the
+   * client should reload the conversation instead of waiting for frames.
+   */
+  | { type: "resume"; available: false }
+  | { type: "resume"; refetch: true }
   | { type: "title"; conversationId: string; title: string; titleSource?: TitleSource }
   | { type: "activity"; event: ClientActivityEvent }
   /**

@@ -105,3 +105,45 @@ export async function sweepAbandonedFirstSubmissionReceipts(
     },
   });
 }
+
+/**
+ * Record a cancel on the receipt. The in-memory registry is the fast path
+ * (same process, sub-millisecond); this is what lets a cancel from another
+ * process or tab reach a stream loop that polls it (~2s). Only while the
+ * generation can still be running — a terminal receipt has nothing to cancel.
+ */
+export async function requestChatCancel(userId: string, generationId: string): Promise<boolean> {
+  const updated = await prisma.chatFirstSubmissionReceipt.updateMany({
+    where: { userId, generationId, state: { in: ["accepted", "running"] }, cancelRequestedAt: null },
+    data: { cancelRequestedAt: new Date() },
+  });
+  return updated.count === 1;
+}
+
+/** The minimal read the stream loop makes on its cancel poll. */
+export async function isChatCancelRequested(userId: string, generationId: string): Promise<boolean> {
+  const row = await prisma.chatFirstSubmissionReceipt.findFirst({
+    where: { userId, generationId, cancelRequestedAt: { not: null } },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * What the resume route needs of a receipt on each liveness poll: is the
+ * generation still allowed to append to its log? Terminal states are final;
+ * a running receipt whose lease has lapsed belongs to a process that is gone.
+ */
+export async function chatReceiptLiveness(
+  userId: string,
+  generationId: string,
+  now = new Date()
+): Promise<"running" | "terminal" | "none"> {
+  const row = await prisma.chatFirstSubmissionReceipt.findFirst({
+    where: { userId, generationId },
+    select: { state: true, leaseExpiresAt: true },
+  });
+  if (!row) return "none";
+  if (row.state !== "accepted" && row.state !== "running") return "terminal";
+  return row.leaseExpiresAt && row.leaseExpiresAt > now ? "running" : "terminal";
+}

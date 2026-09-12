@@ -16,7 +16,12 @@ import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
-import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
+import {
+  cancelGeneration,
+  registerGeneration,
+  wasGenerationAbortedForShutdown,
+  wasGenerationStopped,
+} from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import {
   getMemoryProfile,
@@ -65,6 +70,8 @@ import { recordCitationAudit } from "@/lib/research/claims";
 import { finalizeChatResearchRun } from "@/lib/research/run";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { createSseSender, encodeChunk, SSE_HEADERS, type SseSender } from "@/lib/chat-stream";
+import { createStreamLog, shouldLogStream, type StreamLog } from "@/lib/chat/stream-log";
+import { appendChatStreamEvents, sweepChatStreamEvents } from "@/lib/chat-stream-log-store";
 import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
 import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
@@ -101,7 +108,7 @@ import {
   firstSubmissionLeaseExpiresAt,
   hashFirstSubmission,
 } from "@/lib/chat-first-submission";
-import { findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
+import { findFirstSubmissionReceipt, isChatCancelRequested } from "@/lib/chat-first-submission-receipt";
 import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import {
   assistantTurnFields,
@@ -152,7 +159,7 @@ import {
 import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
-import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail } from "@/types/chat";
+import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail, StreamChunk } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -203,6 +210,9 @@ Then output the complete, publication-grade report inside ONE artifact block:
 The report is the long-form document described above: every section, every table, every citation. Do not abbreviate it because the chat answer already exists, and do not repeat the chat answer's wording as the report's opening — the report begins with its own title and executive summary.
 Give the artifact a title naming the actual subject, not the words "Research Report".
 Write nothing after the closing tag.`;
+
+/** How often a receipt-backed generation reads its durable cancel flag. */
+const CHAT_CANCEL_POLL_MS = 2_000;
 
 /** Application-authored status, persisted through the normal chat protocol. */
 async function* streamResearchNotice(text: string): AsyncGenerator<LlmEvent> {
@@ -1891,6 +1901,39 @@ async function handleChat(req: Request) {
     model: modelId,
     conversationId,
   });
+  /*
+   * This generation's resumable frame log (docs/JUNO.md §5.8).
+   *
+   * Every stateful frame the sender emits is appended under a monotonic `seq`
+   * and goes out carrying that seq as its SSE `id:`, so a browser whose stream
+   * drops reconnects to GET /api/chat/stream/{generationId}?after={seq} and
+   * keeps rendering THIS turn. What it replaces: 12 seconds of polling the
+   * conversation and then a "Try again" that regenerates — a second charge for
+   * an answer that was already being written.
+   *
+   * Guarded by source, not by position in this function: the private path
+   * builds its sender with no log at all, and `shouldLogStream` is the second
+   * lock, so a private turn that ever reached this branch would still write
+   * nothing. Writes are batched off the critical path and a failed one
+   * disables the log for the rest of the generation — see chat/stream-log.ts
+   * for why half a log is worse than none.
+   */
+  const streamLog: StreamLog | undefined = shouldLogStream(input)
+    ? createStreamLog({
+        generationId,
+        write: appendChatStreamEvents,
+        onDisabled: (reason, error) => {
+          // Once per generation: the log disables itself on the first failure,
+          // so this cannot become a per-frame error loop. No payload is
+          // logged — the rows carry transcript text.
+          console.error("[chat] stream log disabled", {
+            generationId,
+            reason,
+            message: error instanceof Error ? error.message : error ? String(error) : null,
+          });
+        },
+      })
+    : undefined;
   let durableReceiptLeaseLost = false;
   const renewDurableReceiptLease = async (): Promise<boolean> => {
     if (!durableGenerationId) return true;
@@ -2001,10 +2044,36 @@ async function handleChat(req: Request) {
   // without losing the saved answer. The explicit cancel endpoint aborts it.
   let generationHeartbeat: ReturnType<typeof setInterval> | null = null;
   let lastReceiptLeaseHeartbeat = Date.now();
+  /*
+   * A cancel raised somewhere this process cannot hear.
+   *
+   * POST /api/chat/cancel aborts through the in-memory registry first, which
+   * is instant and covers the common case (same tab, same process). The
+   * registry is per-process though, so a Stop pressed in another tab served by
+   * another process — or after this tab's registry entry was recycled — used
+   * to land nowhere and the user watched an answer they had stopped keep
+   * writing itself. The durable half of that cancel is `cancelRequestedAt` on
+   * the receipt, and this is the loop that reads it: one indexed id-only
+   * lookup every ~2s, and only for turns that HAVE a receipt (the first
+   * submission of a saved conversation) — there is no row for the rest, so
+   * polling for them would be a query that can never return anything.
+   *
+   * It routes the result back through `cancelGeneration` rather than aborting
+   * the controller directly: that marks the generation `stopped` in the
+   * registry, which is what makes the terminal state "user stopped" (partial
+   * kept, charge kept) instead of an error (refunded).
+   */
+  let cancelPoll: ReturnType<typeof setInterval> | null = null;
+  const stopGenerationTimers = () => {
+    if (generationHeartbeat) clearInterval(generationHeartbeat);
+    generationHeartbeat = null;
+    if (cancelPoll) clearInterval(cancelPoll);
+    cancelPoll = null;
+  };
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
-      const { send, sendActivity, activityLog } = createSseSender(controller);
+      const { send, sendActivity, activityLog } = createSseSender(controller, { log: streamLog });
       const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
       // One accumulator for text, reasoning, sources, usage and served speed —
       // the same one the private branch folds its stream into.
@@ -2118,6 +2187,10 @@ async function handleChat(req: Request) {
         title: convoTitle,
         titleSource: convoTitleSource,
         generationId,
+        // The client only attempts a resume when this says the frames are
+        // being kept. Absent — private chats, an older server — means a
+        // dropped stream falls back to polling the conversation.
+        ...(streamLog ? { resumable: true as const } : {}),
         ...(durableGenerationId ? { receiptState: "running" as const } : {}),
       });
       // Heartbeat: models with hidden reasoning can stream nothing for minutes;
@@ -2152,6 +2225,28 @@ async function handleChat(req: Request) {
             });
           });
       }, 15_000);
+      if (durableGenerationId) {
+        const receiptGenerationId = durableGenerationId;
+        cancelPoll = setInterval(() => {
+          void isChatCancelRequested(user.id, receiptGenerationId)
+            .then((requested) => {
+              if (!requested) return;
+              if (cancelPoll) clearInterval(cancelPoll);
+              cancelPoll = null;
+              // Registered in this process by definition — we are inside its
+              // generate(). Ownership is re-checked there anyway.
+              cancelGeneration(receiptGenerationId, user.id);
+            })
+            .catch((error) => {
+              // A failed poll is not a cancel. Log once per failure and keep
+              // the interval: the registry fast path is unaffected.
+              console.error("[chat] cancel poll failed", {
+                generationId,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
+        }, CHAT_CANCEL_POLL_MS);
+      }
 
       sendActivity({
         kind: "context",
@@ -2829,8 +2924,11 @@ async function handleChat(req: Request) {
         }
       } finally {
         stallWatchdog.stop();
-        if (generationHeartbeat) clearInterval(generationHeartbeat);
-        generationHeartbeat = null;
+        stopGenerationTimers();
+        // After the terminal frame, before the registry entry goes: a client
+        // that reconnects between the two must find the `done`/`error` in the
+        // log rather than tail a generation this process no longer has.
+        await streamLog?.close();
         unregisterGeneration();
         try {
           controller.close();
@@ -2846,34 +2944,37 @@ async function handleChat(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       genPromise = generate(controller).catch(async (error) => {
-        if (generationHeartbeat) clearInterval(generationHeartbeat);
-        generationHeartbeat = null;
+        stopGenerationTimers();
         const finishReason = classifyErrorFinishReason(error);
         const failureCode = terminalFailureCode(durableReceiptLeaseLost, INTERNAL_ERROR_FAILURE_CODE);
         await markDurableReceiptFailed(finishReason, failureCode);
         const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
         const message = providerErrorMessage(error, PROVIDERS[modelInfo.provider].label);
+        // This path bypasses the sender, so the frame is logged by hand. A
+        // reconnecting client would otherwise tail a log whose last frame is
+        // mid-answer and wait out the terminal grace before giving up.
+        const terminal: StreamChunk = {
+          type: "error",
+          message,
+          quota,
+          finishReason,
+          ...(durableGenerationId
+            ? {
+                conversationId,
+                userMessageId: userMessageId!,
+                generationId,
+                receiptState: "failed" as const,
+                failureCode,
+              }
+            : {}),
+        };
+        const terminalSeq = streamLog?.record(terminal) ?? undefined;
         try {
-          controller.enqueue(
-            encodeChunk({
-              type: "error",
-              message,
-              quota,
-              finishReason,
-              ...(durableGenerationId
-                ? {
-                    conversationId,
-                    userMessageId: userMessageId!,
-                    generationId,
-                    receiptState: "failed" as const,
-                    failureCode,
-                  }
-                : {}),
-            })
-          );
+          controller.enqueue(encodeChunk(terminal, terminalSeq));
         } catch {
           /* client disconnected */
         }
+        await streamLog?.close();
         unregisterGeneration();
         try {
           controller.close();
@@ -2991,6 +3092,21 @@ async function handleChat(req: Request) {
       // `cheapModel` — the background worker itself — which under that policy
       // amounted to asking the worker whether it was allowed to do the work.
       await maybeConsolidate(user.id, modelInfo.provider).catch(() => {});
+    }
+
+    /*
+     * Retire frame logs that have served their purpose (finished ~10 minutes
+     * ago, or abandoned for a day). Sampled rather than run on every turn: the
+     * abandoned half is a grouped scan, and paying for it on every message to
+     * collect a few rows is the wrong trade. `npm run sync:prune` is the
+     * backstop that makes it happen on a server nobody is chatting with.
+     */
+    if (Math.random() < 0.05) {
+      await sweepChatStreamEvents({ limit: 200 }).catch((error) => {
+        console.error("[chat] stream log sweep failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
   });
 
