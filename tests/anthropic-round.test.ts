@@ -117,10 +117,14 @@ test("interleaved block indices do not bleed into each other", async () => {
 
   const byId = Object.fromEntries(round.toolUses.map((t) => [t.id, t.json]));
   assert.deepEqual(byId, { a: '{"x":1}', b: '{"y":2}' });
-  // Wire order is close order, which is what the API replays.
+  // Replay order is INDEX order, not close order. `index` is the block's
+  // position in the message's own `content` array, so a block that finishes
+  // first does not thereby move ahead of one that started before it — and
+  // getting that backwards would reorder a thinking block relative to the
+  // tool_use it signed for.
   assert.deepEqual(
     round.blocks.map((b) => (b as { id?: string }).id),
-    ["b", "a"]
+    ["a", "b"]
   );
 });
 
@@ -257,4 +261,65 @@ test("the running usage total is monotonic, so preferHigher merging cannot lose 
   // The point of the fix: the guard's final figure is 14x the first round, and
   // it now learns that across the turn instead of after it.
   assert.equal(total.input, 14000);
+});
+
+test("server tool blocks stay in the assistant turn that gets replayed", async () => {
+  // These were read for their URLs and then DROPPED from `blocks` — the array
+  // replayed as the assistant message on the next round. Claude therefore lost
+  // its own search results between rounds and searched again, billed again at
+  // webSearchRequests each time. A `pause_turn` turn can also end on a
+  // server_tool_use block that has not run, and continuing it means sending
+  // the content back unchanged.
+  const { round } = await readAll([
+    start(0, { type: "text" }),
+    delta(0, { type: "text_delta", text: "Looking that up." }),
+    stop(0),
+    start(1, { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: {} }),
+    stop(1),
+    start(2, {
+      type: "web_search_tool_result",
+      tool_use_id: "srvtoolu_1",
+      content: [{ type: "web_search_result", url: "https://example.com/a", title: "A" }],
+    }),
+    stop(2),
+    messageDelta("end_turn"),
+  ]);
+
+  // Wire order, by index — not arrival order, which differs because the server
+  // blocks are complete at content_block_start and the text block is not.
+  assert.deepEqual(
+    round.blocks.map((b) => (b as { type: string }).type),
+    ["text", "server_tool_use", "web_search_tool_result"],
+  );
+});
+
+test("an opened-but-empty text block is never replayed", async () => {
+  // The Messages API rejects an assistant turn carrying an empty or
+  // whitespace-only text block: `400 messages: text content blocks must be
+  // non-empty`. Claude routinely opens one before deciding to call a tool.
+  const { round } = await readAll([
+    start(0, { type: "text" }),
+    stop(0),
+    start(1, { type: "text" }),
+    delta(1, { type: "text_delta", text: "   " }),
+    stop(1),
+    start(2, { type: "tool_use", id: "a", name: "t" }),
+    delta(2, { type: "input_json_delta", partial_json: "{}" }),
+    stop(2),
+    messageDelta("tool_use"),
+  ]);
+  assert.deepEqual(round.blocks.map((b) => (b as { type: string }).type), ["tool_use"]);
+  assert.equal(round.toolUses.length, 1);
+});
+
+test("pause_turn is reported so the adapter can continue the turn", async () => {
+  const { round } = await readAll([
+    start(0, { type: "server_tool_use", id: "srvtoolu_2", name: "web_search", input: {} }),
+    stop(0),
+    messageDelta("pause_turn"),
+  ]);
+  assert.equal(round.stopReason, "pause_turn");
+  // Everything needed to resend the turn unchanged is present.
+  assert.equal(round.blocks.length, 1);
+  assert.equal(round.toolUses.length, 0);
 });

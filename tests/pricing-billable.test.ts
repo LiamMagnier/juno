@@ -316,3 +316,45 @@ test("an explicit cache_write_tokens is still a write, and an absent read is und
   assert.equal(compatPromptCacheTokens({ cached_tokens: 7 }).cacheRead, 7);
   assert.equal(compatPromptCacheTokens({}).cacheRead, undefined);
 });
+
+/*
+ * GEMINI'S USAGE SHAPE, billed.
+ *
+ * The native adapter yields `output` = candidatesTokenCount (the visible
+ * answer), `reasoning` = thoughtsTokenCount and `total` = totalTokenCount.
+ * Thinking is by far the larger half on a Gemini 3 turn, so which field is read
+ * under which name is the difference between billing 5,200 output tokens and
+ * billing 200.
+ */
+test("Gemini thinking tokens are billed as output, using total as the cross-check", () => {
+  const gemini = resolveBillableTokens({
+    promptTokens: 1_000,
+    completionTokens: 200, // candidatesTokenCount — the visible answer only
+    reasoningTokens: 5_000, // thoughtsTokenCount
+    totalTokens: 6_200, // totalTokenCount
+  });
+  assert.equal(gemini.promptTokens, 1_000);
+  assert.equal(gemini.completionTokens, 5_200);
+});
+
+test("without total_tokens Gemini bills the largest half it can prove, never zero", () => {
+  // Google's own surfaces disagree about whether candidatesTokenCount already
+  // includes thoughts, so with `total` absent the honest floor is the larger of
+  // the two counters — adding them could double-bill the same thinking tokens.
+  const noTotal = resolveBillableTokens({
+    promptTokens: 1_000,
+    completionTokens: 200,
+    reasoningTokens: 5_000,
+  });
+  assert.equal(noTotal.completionTokens, 5_000);
+});
+
+test("an OpenAI-shaped report, where reasoning is already inside output, is not inflated", () => {
+  const openai = resolveBillableTokens({
+    promptTokens: 1_000,
+    completionTokens: 5_200, // completion_tokens INCLUDES reasoning
+    reasoningTokens: 5_000,
+    totalTokens: 6_200,
+  });
+  assert.equal(openai.completionTokens, 5_200);
+});
