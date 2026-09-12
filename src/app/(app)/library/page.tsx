@@ -690,7 +690,7 @@ export default function LibraryPage() {
         body: JSON.stringify({ fileName: name }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "Could not rename.");
+      if (!response.ok) throw new Error(data.error ?? "Couldn’t rename.");
       setItems(
         (previous) =>
           previous?.map((item) =>
@@ -700,7 +700,7 @@ export default function LibraryPage() {
       toast.success("Renamed.");
       setRenameTarget(null);
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not rename.");
+      toast.error(caught instanceof Error ? caught.message : "Couldn’t rename.");
     } finally {
       setBusy(false);
     }

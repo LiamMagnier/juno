@@ -5,4 +5,4 @@
  * Pages import both from here.
  */
 export { AppPage, type AppPageMeasure, type AppPageProps } from "@/components/ui/app-page";
-export { AppPageHeader } from "@/components/app/app-page-header";
+export { AppPageHeader, AppPageHeaderSkeleton } from "@/components/app/app-page-header";

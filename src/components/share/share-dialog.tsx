@@ -102,7 +102,7 @@ export function ShareDialog({
       setStatus("revoked");
       toast.success("Link revoked — it no longer works.");
     } catch {
-      toast.error("Could not revoke the link.");
+      toast.error("Couldn’t revoke the link.");
     } finally {
       setRevoking(false);
     }

@@ -312,7 +312,7 @@ export function DesignEditor({
           if (parsed.length) toast.info(`Exported. ${parsed[0]}`);
         }
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Could not export this design.");
+        toast.error(error instanceof Error ? error.message : "Couldn’t export this design.");
       }
     },
     [artifactId, doc?.name, pageId, selection]
@@ -1042,7 +1042,7 @@ async function downloadRasterized(request: {
     const image = new Image();
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Could not draw the design for export."));
+      image.onerror = () => reject(new Error("Couldn’t draw the design for export."));
       image.src = source;
     });
 
@@ -1054,7 +1054,7 @@ async function downloadRasterized(request: {
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("Could not encode the PNG.");
+    if (!blob) throw new Error("Couldn’t encode the PNG.");
     saveBlob(blob, request.fileName);
   } finally {
     URL.revokeObjectURL(source);

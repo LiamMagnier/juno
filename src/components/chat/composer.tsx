@@ -648,7 +648,7 @@ export function Composer({
     } catch (error) {
       // Cancelling the OS picker is a decision, not a failure.
       if ((error as DOMException)?.name !== "NotAllowedError")
-        toast.error("Could not capture the screen.");
+        toast.error("Couldn’t capture the screen.");
     } finally {
       // A leaked capture track leaves a permanent "sharing your screen"
       // indicator on the tab — the worst failure this row could have.
@@ -1027,7 +1027,7 @@ export function Composer({
       toast.error(
         err instanceof Error
           ? err.message
-          : "Could not send that message. Try again.",
+          : "Couldn’t send that message. Try again.",
       );
     }
   };
@@ -1675,7 +1675,7 @@ export function Composer({
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d?.id)
-        throw new Error(d?.error ?? "Could not create project.");
+        throw new Error(d?.error ?? "Couldn’t create project.");
       // Optimistically seed the list so the composer chip has a name to show
       // before the sidebar's reload lands.
       setProjects((prev) => [
@@ -1686,7 +1686,7 @@ export function Composer({
       onPickProject?.(d.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Could not create project.",
+        err instanceof Error ? err.message : "Couldn’t create project.",
       );
     } finally {
       setCreatingProject(false);
@@ -1924,7 +1924,7 @@ export function Composer({
           </div>
         ) : connectorsFailed && connectors.length === 0 ? (
           <div className="px-2.5 py-3 text-center">
-            <p className="text-caption text-muted-foreground">Could not load your apps.</p>
+            <p className="text-caption text-muted-foreground">Couldn’t load your apps.</p>
             <button
               type="button"
               onClick={() => void refreshConnectors()}

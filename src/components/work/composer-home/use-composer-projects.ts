@@ -71,13 +71,13 @@ export function useComposerProjects(): ComposerProjectsState {
         body: JSON.stringify({}),
       });
       const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!response.ok || !data.id) throw new Error(data.error ?? "Could not create the project.");
+      if (!response.ok || !data.id) throw new Error(data.error ?? "Couldn’t create the project.");
       const made = { id: data.id, name: "New project", conversationCount: 0 };
       setProjects((prev) => [made, ...(prev ?? [])]);
       window.dispatchEvent(new CustomEvent("projects:sync"));
       return { id: made.id, name: made.name };
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create the project.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t create the project.");
       return null;
     } finally {
       setCreating(false);

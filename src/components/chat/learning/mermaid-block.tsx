@@ -61,7 +61,7 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Couldn’t copy to clipboard");
+      toast.error("Couldn’t copy to the clipboard.");
     }
   };
 

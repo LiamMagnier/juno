@@ -74,7 +74,7 @@ export function SubmitDialog({
         body: JSON.stringify({ title: title.trim(), description: description.trim(), category }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Could not submit.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t submit.");
       toast.success("Request submitted — thanks!");
       onOpenChange(false);
       onCreated(data.id);

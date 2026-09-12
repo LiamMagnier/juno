@@ -1239,7 +1239,7 @@ function ImageSection({
       }
       onApply(operations, asset ? "Replace image" : "Set image");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not read that image.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t read that image.");
     }
   };
 

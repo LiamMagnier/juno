@@ -138,7 +138,7 @@ export function ImportHistoryCard() {
           tone="error"
           size="panel"
           icon={StatusIcons.error}
-          title="Couldn't import that file"
+          title="Couldn’t import that file"
           description={phase.message}
           action={
             <Button variant="outline" size="sm" onClick={pick}>

@@ -411,10 +411,10 @@ export function AnnouncementsAdmin() {
     try {
       const res = await fetch("/api/admin/announcements");
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Could not load announcements.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t load announcements.");
       setItems(data.announcements ?? []);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not load announcements.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t load announcements.");
       setFailed(true);
     } finally {
       setLoading(false);
@@ -443,12 +443,12 @@ export function AnnouncementsAdmin() {
         body: JSON.stringify(payloadFromDraft(draft)),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Could not save announcement.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t save announcement.");
       toast.success(editingId ? "Announcement updated." : "Announcement created.");
       reset();
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save announcement.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t save announcement.");
     } finally {
       setSaving(false);
     }
@@ -459,13 +459,13 @@ export function AnnouncementsAdmin() {
     try {
       const res = await fetch(`/api/admin/announcements/${deleteTarget.id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Could not delete announcement.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t delete announcement.");
       toast.success("Announcement deleted.");
       setDeleteTarget(null);
       if (editingId === deleteTarget.id) reset();
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not delete announcement.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t delete announcement.");
     }
   };
 
@@ -722,7 +722,7 @@ export function AnnouncementsAdmin() {
                   tone="error"
                   size="panel"
                   icon={Megaphone}
-                  title="Couldn't load announcements"
+                  title="Couldn’t load announcements"
                   description="The list didn't come back. Publishing still works — this is only the read."
                   action={
                     <Button variant="outline" size="sm" onClick={load}>

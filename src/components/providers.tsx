@@ -42,14 +42,11 @@ export function Providers({
           {children}
           <AutoTranslate locale={locale} autoDetect={autoDetect} />
           {/*
-            Bottom, not top: the transcript's newest content sits at the top of
-            the scroll area, so a top-center toast landed directly on the
-            message that caused it — and on mobile it covered the entire top bar
-            (menu, title, search, new chat).
-
-            The offsets clear the composer. Sonner ignores the x-position below
-            600px and goes full-bleed, so the mobile offset has to be set
-            explicitly or the toast sits on the input.
+            Position, offsets and the close button now live in sonner.tsx, with
+            the reasoning that used to sit here: the bottom offset depends on
+            whether the route has a composer to clear, and that is a
+            `usePathname()` read, which belongs beside the component it styles
+            rather than in the provider tree.
 
             No `richColors`: it emits sonner's own success/error/warning background
             and border custom properties at equal specificity to ours, so any of the
@@ -57,12 +54,7 @@ export function Providers({
             glass — the toast surface was effectively indeterminate. The semantics
             now come from Juno's own ink ramps (sonner.tsx).
           */}
-          <Toaster
-            position="bottom-center"
-            offset={{ bottom: "8rem" }}
-            mobileOffset={{ bottom: "7rem", left: "0.75rem", right: "0.75rem" }}
-            closeButton
-          />
+          <Toaster />
         </TooltipProvider>
       </ThemeProvider>
     </SessionProvider>

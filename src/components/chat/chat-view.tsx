@@ -16,6 +16,7 @@ import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
+import { StarterChips } from "@/components/chat/starter-chips";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
@@ -731,11 +732,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ projectId: pid }),
           });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not update project.");
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Couldn’t update project.");
           toast.success(pid ? "Added to project." : "Removed from project.");
         } catch (err) {
           setActiveProjectId(prev);
-          toast.error(err instanceof Error ? err.message : "Could not update project.");
+          toast.error(err instanceof Error ? err.message : "Couldn’t update project.");
         }
       } else {
         setActiveProjectId(pid);
@@ -801,7 +802,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         try {
           sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify(payload));
         } catch {
-          toast.error("Couldn't fork — the transcript is too large to carry over.");
+          toast.error("Couldn’t fork — the transcript is too large to carry over.");
           return;
         }
         router.push("/chat");
@@ -1328,7 +1329,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       navigator.clipboard
         .writeText(last.content)
         .then(() => toast.success("Copied the last response."))
-        .catch(() => toast.error("Could not copy."));
+        .catch(() => toast.error("Couldn’t copy."));
     };
     const share = () => {
       if (!privateMode && currentConversationId) setShareOpen(true);
@@ -1503,7 +1504,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           keepalive,
         });
         const data = (await response.json().catch(() => ({}))) as { conversationId?: string; messages?: ClientMessage[]; error?: string };
-        if (!response.ok || !data.conversationId || !data.messages) throw new Error(data.error ?? "Could not save the voice transcript.");
+        if (!response.ok || !data.conversationId || !data.messages) throw new Error(data.error ?? "Couldn’t save the voice transcript.");
 
         const detached = voiceSaveDetachedRef.current;
         if (!detached) {
@@ -1756,6 +1757,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // What the header band calls this conversation. Read from the app context
   // rather than a local copy so the AI rename lands here the moment the
   // sidebar gets it, on the same cross-fade.
+  // The starter row is for the ordinary empty chat only: incognito already
+  // carries its own two-line header, the clarify gate owns the column while it
+  // is waiting for an answer, and the handoff needs the row to leave with the
+  // greeting rather than blink out when the branch unmounts.
+  const showStarterChips = !privateMode && !chat.pendingClarification && handoff !== "leaving";
+
   const headerConversation = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : undefined;
   const headerTitle = headerConversation?.title ?? "";
   const headerTitleSource = headerConversation?.titleSource;
@@ -1789,7 +1796,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             ("Private chat") beside an invisible cluster, above the incognito
             header that already names the mode. Drop it entirely. */}
         {topActionsSlotOwner && !privateMode && (
-          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-between gap-4 px-4 md:flex md:px-6">
+          <div
+            className={cn(
+              "relative z-20 hidden shrink-0 items-center justify-between gap-4 px-4 md:flex md:px-6",
+              // A new chat has no title, so this band held 56px of nothing and
+              // pushed the centred greeting 28px above true centre with the
+              // incognito toggle floating alone at the right. The toggle still
+              // needs a home, so the row collapses to the control's own height
+              // rather than disappearing — h-14 the moment there is a title to
+              // carry.
+              headerTitle ? "h-14" : "h-11"
+            )}
+          >
             {/* The page's visible <h1> from md up; the transcript's own
                 heading (message-list.tsx) leaves the tree at this width so
                 there is exactly one. Empty until a conversation exists — a
@@ -2084,6 +2102,28 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}
+                    {/* Inside THIS wrapper, below the composer, on purpose. The
+                        handoff measures the wrapper's TOP to plan the
+                        composer's travel, so a row added underneath changes
+                        nothing about that; put anywhere outside it and the
+                        chips would hang in place while the greeting and the
+                        composer moved away from them.
+
+                        Same `duration-slow ease-out-soft` cross-fade the
+                        greeting pair above uses, so incognito and the clarify
+                        gate take the row out on the same beat that swaps the
+                        heading — and `handoff === "leaving"` fades it with
+                        them rather than letting it blink out at unmount. */}
+                    <div
+                      aria-hidden={!showStarterChips}
+                      inert={!showStarterChips}
+                      className={cn(
+                        "transition-opacity duration-slow ease-out-soft",
+                        showStarterChips ? "opacity-100" : "pointer-events-none opacity-0"
+                      )}
+                    >
+                      <StarterChips />
+                    </div>
                   </div>
                 </div>
               </div>

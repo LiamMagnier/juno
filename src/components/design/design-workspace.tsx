@@ -136,7 +136,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
       if (!res?.ok) {
         setName(name);
         editorRef.current?.apply([{ op: "renameDocument", name }], "Rename design");
-        toast.error("Could not rename this design.");
+        toast.error("Couldn’t rename this design.");
       }
     },
     [artifactId, name]
@@ -148,12 +148,12 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
     try {
       const res = await fetch(`/api/artifacts/${artifactId}`, { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Could not delete this design.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t delete this design.");
       toast.success("Design deleted.");
       router.replace("/design");
     } catch (error) {
       setDeleting(false);
-      toast.error(error instanceof Error ? error.message : "Could not delete this design.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t delete this design.");
     }
   }, [artifactId, deleting, router]);
 

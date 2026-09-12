@@ -59,7 +59,7 @@ export function SharedLinksCard() {
       setShares((prev) => (prev ? prev.filter((s) => s.id !== share.id) : prev));
       toast.success("Link revoked — it no longer works.");
     } catch {
-      toast.error("Could not revoke the link.");
+      toast.error("Couldn’t revoke the link.");
     } finally {
       setRevokingId(null);
     }

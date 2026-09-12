@@ -28,7 +28,7 @@ export function DataPrivacySection() {
       window.location.href = "/chat";
     } else {
       setDeletingChats(false);
-      toast.error("Could not delete conversations.");
+      toast.error("Couldn’t delete conversations.");
     }
   };
 

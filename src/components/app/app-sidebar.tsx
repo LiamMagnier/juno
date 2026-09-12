@@ -290,7 +290,7 @@ export function AppSidebar({
     }).catch(() => null);
     if (!r || !r.ok) {
       setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)));
-      toast.error("Could not update the project.");
+      toast.error("Couldn’t update the project.");
       return;
     }
     toast.success(next ? "Project pinned." : "Project unpinned.");
@@ -313,7 +313,7 @@ export function AppSidebar({
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setRenameTarget(null);
     } catch {
-      toast.error("Could not rename project.");
+      toast.error("Couldn’t rename project.");
     } finally {
       setRenamingProject(false);
     }
@@ -328,7 +328,7 @@ export function AppSidebar({
       onConfirm: async () => {
         const r = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
         if (!r.ok) {
-          toast.error("Could not delete project.");
+          toast.error("Couldn’t delete project.");
           return;
         }
         toast.success("Project deleted.");
@@ -348,7 +348,7 @@ export function AppSidebar({
       }).catch(() => null);
       if (!res?.ok) {
         upsertConversation(c);
-        toast.error("Could not archive the chat.");
+        toast.error("Couldn’t archive the chat.");
         return;
       }
       toast.success("Chat archived.", {
@@ -1699,7 +1699,7 @@ function ArchivedChatsDialog({
     }).catch(() => null);
     if (!r?.ok) {
       setItems((prev) => (prev ? [c, ...prev] : prev));
-      toast.error("Could not restore the chat.");
+      toast.error("Couldn’t restore the chat.");
       return;
     }
     onRestored(c);
@@ -1728,7 +1728,7 @@ function ArchivedChatsDialog({
         </DialogHeader>
         <div className="-mx-1 max-h-[50vh] overflow-y-auto">
           {failed ? (
-            <p className="px-2 py-6 text-center text-body text-muted-foreground">Could not load archived chats.</p>
+            <p className="px-2 py-6 text-center text-body text-muted-foreground">Couldn’t load archived chats.</p>
           ) : items == null ? (
             <div className="space-y-1 px-1">
               {[...Array(4)].map((_, i) => (

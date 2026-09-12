@@ -656,7 +656,7 @@ export function MessageItem({
         details = ((await res.json()) as { versions?: ClientMessageVersionDetail[] }).versions ?? [];
         setVersionDetails(details);
       } catch {
-        toast.error("Couldn't load that version.");
+        toast.error("Couldn’t load that version.");
         return;
       } finally {
         setVersionsLoading(false);
@@ -705,11 +705,11 @@ export function MessageItem({
         body: JSON.stringify({ atMessageId: message.id }),
       });
       const data = (await res.json().catch(() => ({}))) as { conversation?: { id: string }; error?: string };
-      if (!res.ok || !data.conversation) throw new Error(data.error ?? "Couldn't branch the conversation.");
+      if (!res.ok || !data.conversation) throw new Error(data.error ?? "Couldn’t branch the conversation.");
       toast.success("Branched into a new chat.");
       router.push(`/chat/${data.conversation.id}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't branch the conversation.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t branch the conversation.");
       setBranching(false);
     }
   };
@@ -1128,7 +1128,22 @@ export function MessageItem({
             {totalVersions > 1 && (
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
-            <div className="flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+            <div
+              className={cn(
+                "flex items-center transition-opacity duration-base ease-out-soft",
+                // The newest answer keeps its toolbar. Everything a reader does
+                // with a reply — copy it, rate it, regenerate it — they do to
+                // the one that just arrived, and a control that is invisible
+                // until the pointer finds it is not discoverable on a first
+                // visit, and is simply absent on a trackpad-less session.
+                // Older turns stay quiet so the transcript reads as prose;
+                // hover, focus and coarse pointers still reveal them.
+                isLast
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100",
+                "motion-reduce:transition-none"
+              )}
+            >
               {hasTextContent && (
                 // The check MORPHS in (`.check-morph`: springs from small and
                 // tilted) rather than swapping silently — the confirmation is
@@ -1236,7 +1251,7 @@ export function MessageItem({
                           navigator.clipboard
                             .writeText(url)
                             .then(() => toast.success("Link copied."))
-                            .catch(() => toast.error("Could not copy the link."));
+                            .catch(() => toast.error("Couldn’t copy the link."));
                         }}
                       >
                         <Link2 className="size-4" /> Copy link

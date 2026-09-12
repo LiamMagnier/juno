@@ -102,13 +102,13 @@ export function ModerationAdmin() {
       fetch(`/api/admin/moderation?${params}`, { signal })
         .then(async (res) => {
           const body = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(body.error ?? "Could not load flags.");
+          if (!res.ok) throw new Error(body.error ?? "Couldn’t load flags.");
           setData(body as ModerationResponse);
           setLoading(false);
         })
         .catch((err) => {
           if (signal?.aborted) return;
-          toast.error(err instanceof Error ? err.message : "Could not load flags.");
+          toast.error(err instanceof Error ? err.message : "Couldn’t load flags.");
           setFailed(true);
           setLoading(false);
         });
@@ -145,13 +145,13 @@ export function ModerationAdmin() {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not update flag.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t update flag.");
         if (modReqSeq.current.get(flag.id) !== token) return;
         patchFlag(flag.id, { reviewedAt: body.reviewedAt, reviewedBy: body.reviewedBy });
       })
       .catch((err) => {
         if (modReqSeq.current.get(flag.id) === token) patchFlag(flag.id, prev);
-        toast.error(err instanceof Error ? err.message : "Could not update flag.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t update flag.");
       });
   };
 
@@ -171,14 +171,14 @@ export function ModerationAdmin() {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not ban user.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t ban user.");
         patchUserBan(target.userId, new Date().toISOString());
         toast.success(`${target.user.email} has been banned.`);
         setBanTarget(null);
         setBanReason("");
       })
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Could not ban user.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t ban user.");
       })
       .finally(() => setBanning(false));
   };
@@ -189,12 +189,12 @@ export function ModerationAdmin() {
     fetch(`/api/admin/users/${flag.userId}/unban`, { method: "POST" })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not unban user.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t unban user.");
         toast.success(`${flag.user.email} has been unbanned.`);
       })
       .catch((err) => {
         if (reqSeq.current === token) patchUserBan(flag.userId, flag.user.bannedAt);
-        toast.error(err instanceof Error ? err.message : "Could not unban user.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t unban user.");
       });
   };
 
@@ -248,7 +248,7 @@ export function ModerationAdmin() {
               size="panel"
               icon={StatusIcons.security}
               className="m-4"
-              title="Couldn't load the flag log"
+              title="Couldn’t load the flag log"
               description="The request didn't come back, so nothing is shown — an empty table here would read as an all-clear."
               action={
                 <Button variant="outline" size="sm" onClick={() => load()}>

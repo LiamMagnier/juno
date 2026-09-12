@@ -109,7 +109,7 @@ export default function UpgradePage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) window.location.href = data.url;
-      else throw new Error(data.error ?? "Could not start checkout.");
+      else throw new Error(data.error ?? "Couldn’t start checkout.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Checkout failed.");
       setLoading(null);
@@ -120,7 +120,7 @@ export default function UpgradePage() {
     const res = await fetch("/api/stripe/portal", { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.url) window.location.href = data.url;
-    else toast.error(data.error ?? "Could not open billing portal.");
+    else toast.error(data.error ?? "Couldn’t open billing portal.");
   };
 
   const cta = (plan: Plan, variant: "default" | "secondary") => {

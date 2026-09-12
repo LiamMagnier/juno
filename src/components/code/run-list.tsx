@@ -270,7 +270,7 @@ export function RunList() {
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="Couldn't load your runs"
+        title="Couldn’t load your runs"
         description="The list is served by your Juno account, not by GitHub — so this is usually a connection problem rather than a permissions one."
         action={
           <Button variant="outline" onClick={refresh} className="gap-1.5">
@@ -844,7 +844,7 @@ function RunPeek({
       // acknowledgement for the second between the click and that frame.
       setAnswered({ requestId: pending.requestId, approve });
     } catch {
-      toast.error("Couldn't send your answer. Check your connection and try again.");
+      toast.error("Couldn’t send your answer. Check your connection and try again.");
     } finally {
       setResponding(false);
     }
@@ -858,7 +858,7 @@ function RunPeek({
       if (!res.ok) throw new Error();
       toast.success("Asked the run to stop.");
     } catch {
-      toast.error("Couldn't stop the run. Check your connection and try again.");
+      toast.error("Couldn’t stop the run. Check your connection and try again.");
       setCancelRequested(false);
     }
   };

@@ -351,7 +351,7 @@ export default function NewCodeSessionPage() {
         const sentence =
           payload.message?.trim() ||
           (err && /\s/.test(err) ? err : "") ||
-          "Could not start the cloud run. Check your connection and try again.";
+          "Couldn’t start the cloud run. Check your connection and try again.";
         toast.error(sentence);
         discardOrphanCloudSession();
       }
@@ -378,7 +378,7 @@ export default function NewCodeSessionPage() {
         }
         return false;
       } catch {
-        toast.error("Could not start the session. Check your connection and try again.");
+        toast.error("Couldn’t start the session. Check your connection and try again.");
         return false;
       } finally {
         setSubmitting(false);

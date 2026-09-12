@@ -65,7 +65,7 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
         await load();
         if (!opts?.silent) toast.success("Memory consolidated.");
       } catch {
-        if (!opts?.silent) toast.error("Couldn't update memory. Try again in a moment.");
+        if (!opts?.silent) toast.error("Couldn’t update memory. Try again in a moment.");
       } finally {
         setConsolidating(false);
       }
@@ -92,7 +92,7 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
       toast.success("Memory updated.");
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't update memory.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t update memory.");
       return false;
     } finally {
       setConsolidating(false);

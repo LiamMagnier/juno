@@ -72,7 +72,7 @@ export function PersonalizationSection() {
       body: JSON.stringify({ name: value }),
     });
     if (!res.ok) {
-      toast.error("Could not save your name.");
+      toast.error("Couldn’t save your name.");
       return false;
     }
     // The name is server-rendered into the bootstrap (sidebar, greeting), so
@@ -115,7 +115,7 @@ export function PersonalizationSection() {
         <SettingBlock
           label="Custom instructions"
           description="Juno keeps these in mind in every conversation. No character cap — the model's context window is the only limit."
-          aside={<TileSaveStatus state={instructionsSave.state} failedMessage="Couldn't save. Your draft is still here." />}
+          aside={<TileSaveStatus state={instructionsSave.state} failedMessage="Couldn’t save. Your draft is still here." />}
         >
           <div className="relative">
             <Textarea
@@ -159,7 +159,7 @@ export function PersonalizationSection() {
           description="Your first name opens every new conversation."
           control={
             <div className="flex items-center gap-2">
-              <TileSaveStatus state={nameSave.state} failedMessage="Couldn't save." />
+              <TileSaveStatus state={nameSave.state} failedMessage="Couldn’t save." />
               <Input
                 id="greeting-name"
                 value={name}

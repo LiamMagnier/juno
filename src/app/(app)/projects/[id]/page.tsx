@@ -1,6 +1,6 @@
 "use client";
 
-import { AppPage } from "@/components/app/app-page";
+import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -236,7 +236,7 @@ export default function ProjectDetailPage() {
     }).catch(() => null);
     if (!r || !r.ok) {
       setIsStarred(!next);
-      toast.error("Could not update the project.");
+      toast.error("Couldn’t update the project.");
       return;
     }
     setData((cur) => (cur ? { ...cur, project: { ...cur.project, starred: next } } : cur));
@@ -254,7 +254,7 @@ export default function ProjectDetailPage() {
     }).catch(() => null);
     setSavingWorkspace(false);
     if (!response?.ok) {
-      toast.error("Could not save the assistant settings.");
+      toast.error("Couldn’t save the assistant settings.");
       return;
     }
     toast.success("Assistant settings synced.");
@@ -382,7 +382,7 @@ export default function ProjectDetailPage() {
       refreshKnowledgeAfterUpload();
       toast.success("File added to project.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not upload.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t upload.");
     } finally {
       setUploading(false);
     }
@@ -409,7 +409,7 @@ export default function ProjectDetailPage() {
       });
       toast.success("Project cover image updated.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not upload cover image.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t upload cover image.");
     } finally {
       setUploading(false);
     }
@@ -424,7 +424,7 @@ export default function ProjectDetailPage() {
       setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.id !== existingCover.id) } : cur));
       toast.success("Cover image removed.");
     } catch {
-      toast.error("Could not remove cover image.");
+      toast.error("Couldn’t remove cover image.");
     } finally {
       setUploading(false);
     }
@@ -438,7 +438,7 @@ export default function ProjectDetailPage() {
       setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.id !== fileId) } : cur));
       toast.success("File removed from project.");
     } else {
-      toast.error("Could not remove file.");
+      toast.error("Couldn’t remove file.");
     }
   };
 
@@ -448,7 +448,7 @@ export default function ProjectDetailPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       router.push("/projects");
     }
-    else toast.error("Could not delete project.");
+    else toast.error("Couldn’t delete project.");
   };
 
   // Quick Action: Star chat
@@ -470,7 +470,7 @@ export default function ProjectDetailPage() {
       });
       toast.success(currentPinned ? "Chat unstarred." : "Chat starred!");
     } else {
-      toast.error("Could not update chat.");
+      toast.error("Couldn’t update chat.");
     }
   };
 
@@ -488,7 +488,7 @@ export default function ProjectDetailPage() {
       });
       toast.success("Chat deleted.");
     } else {
-      toast.error("Could not delete chat.");
+      toast.error("Couldn’t delete chat.");
     }
   };
 
@@ -512,7 +512,7 @@ export default function ProjectDetailPage() {
         : "no project";
       toast.success(`Chat moved to ${targetProjectName}.`);
     } else {
-      toast.error("Could not move chat.");
+      toast.error("Couldn’t move chat.");
     }
   };
 
@@ -559,14 +559,13 @@ export default function ProjectDetailPage() {
     );
   }
   if (!data) {
-    // Mirrors the real header rhythm (eyebrow · title · meta) so the page doesn't
-    // reflow when data lands.
+    // The same placeholder the route's own loading.tsx draws, from the header's
+    // own metrics — this used to be a third hand-drawn header (an h-10 heading
+    // over an h-3 lede at mb-8) so the client fetch landed on a different jump
+    // from the one the route transition had already made.
     return (
-      <AppPage measure="wide">
-        <div className="skeleton mb-8 h-8 w-28 rounded-field" />
-        <div className="skeleton mb-3 h-3 w-20 rounded-sm" />
-        <div className="skeleton mb-3 h-10 w-72 rounded-md" />
-        <div className="skeleton mb-8 h-3 w-56 rounded-sm" />
+      <AppPage measure="wide" role="status" aria-label="Loading project">
+        <AppPageHeaderSkeleton headingWidth="w-72" actions />
         <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
           <div className="skeleton h-40 w-full rounded-card" />
           <div className="skeleton h-64 w-full rounded-card" />

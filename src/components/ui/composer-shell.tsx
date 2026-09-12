@@ -148,7 +148,13 @@ export const composerChevronClass =
  * the accent fill arrives.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-control focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
+  // `focus-visible:outline-none` beside the inset ring, not as well as it. An
+  // INSET ring exists for controls flush inside a clipping parent, where the
+  // global outline's 2px offset would be clipped away — it REPLACES the global
+  // outline (globals.css `:focus-visible`), it never joins it. Without this the
+  // focused `+` drew a 2px ring inside a 2px outline: two indicators, one
+  // control.
+  "size-8 shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row

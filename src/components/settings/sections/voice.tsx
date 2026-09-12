@@ -79,7 +79,7 @@ export function VoiceSection() {
     } catch {
       if (previewSeqRef.current !== seq) return;
       stopPreview();
-      toast.error("Could not play that preview.");
+      toast.error("Couldn’t play that preview.");
     }
   };
 

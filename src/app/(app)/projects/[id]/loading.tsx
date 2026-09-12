@@ -1,4 +1,4 @@
-import { AppPage } from "@/components/app/app-page";
+import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { staggerDelay } from "@/lib/motion";
 
@@ -17,20 +17,13 @@ export default function ProjectLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <AppPage measure="full" role="status" aria-label="Loading project">
-      <div className="mb-6 border-b border-border pb-5">
-        <div className="mb-3 flex items-center gap-2">
-          <Skeleton className="size-8 shrink-0" />
-          <Skeleton className="h-3 w-14 rounded-xs" />
-        </div>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-          <div className="min-w-0 flex-1">
-            <Skeleton className="h-8 w-72 max-w-full" />
-            <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-xs" />
-          </div>
-          <Skeleton className="h-8 w-40 shrink-0" />
-        </div>
-      </div>
+    // The skeleton's measure is the page's measure (page.tsx renders
+    // `measure="wide"` in both of its branches). It was "full", so the column
+    // was full-bleed during the load and snapped inward to 64rem the moment the
+    // project arrived: a placeholder that reserves the wrong column reserves
+    // nothing, and it reads as a layout bug rather than as a load.
+    <AppPage measure="wide" role="status" aria-label="Loading project">
+      <AppPageHeaderSkeleton headingWidth="w-72" actions />
 
       {/* Tab row */}
       <Skeleton className="mb-6 h-9 w-96 max-w-full rounded-menu" />

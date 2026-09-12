@@ -111,13 +111,13 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
     fetch(`/api/admin/users?${params}`, { signal: controller.signal })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not load users.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t load users.");
         setData(body as UsersResponse);
         setLoading(false);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        toast.error(err instanceof Error ? err.message : "Could not load users.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t load users.");
         setFailed(true);
         setLoading(false);
       });
@@ -143,7 +143,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not update plan.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t update plan.");
         if (planReqSeq.current.get(target.id) !== token) return;
         patchUser(target.id, { plan: body.user.plan, subscriptionStatus: body.user.subscriptionStatus });
         toast.success(`${target.email} is now on ${PLANS[body.user.plan as Plan].name}.`);
@@ -151,7 +151,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
       .catch((err) => {
         if (planReqSeq.current.get(target.id) !== token) return;
         patchUser(target.id, { plan: prev });
-        toast.error(err instanceof Error ? err.message : "Could not update plan.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t update plan.");
       });
   };
 
@@ -177,7 +177,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
     })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not ban user.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t ban user.");
         toast.success(`${target.email} has been banned.`);
         setBanTarget(null);
         setBanReason("");
@@ -186,7 +186,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
         if (modReqSeq.current.get(target.id) === token) {
           patchUser(target.id, { bannedAt: null, banReason: null });
         }
-        toast.error(err instanceof Error ? err.message : "Could not ban user.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t ban user.");
       })
       .finally(() => setBanning(false));
   };
@@ -199,12 +199,12 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
     fetch(`/api/admin/users/${target.id}/unban`, { method: "POST" })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not unban user.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t unban user.");
         toast.success(`${target.email} has been unbanned.`);
       })
       .catch((err) => {
         if (modReqSeq.current.get(target.id) === token) patchUser(target.id, prev);
-        toast.error(err instanceof Error ? err.message : "Could not unban user.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t unban user.");
       });
   };
 
@@ -219,7 +219,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
     fetch(`/api/admin/users/${target.id}`, { method: "DELETE" })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? "Could not delete user.");
+        if (!res.ok) throw new Error(body.error ?? "Couldn’t delete user.");
         setData((d) =>
           d && { ...d, users: d.users.filter((u) => u.id !== target.id), total: Math.max(0, d.total - 1) }
         );
@@ -228,7 +228,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
         setDeleteConfirm("");
       })
       .catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Could not delete user.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t delete user.");
       })
       .finally(() => setDeleting(false));
   };
@@ -288,7 +288,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               size="panel"
               icon={UsersIcon}
               className="m-4"
-              title="Couldn't load users"
+              title="Couldn’t load users"
               description="The request didn't come back. Nothing is shown rather than a guess at what's there."
               action={
                 <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>

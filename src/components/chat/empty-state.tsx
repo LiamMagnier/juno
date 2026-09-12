@@ -21,7 +21,10 @@ export function PrivateGreeting() {
       <h1 className="font-sans text-title font-semibold leading-tight tracking-[-0.025em] sm:text-page-title">
         You&apos;re incognito
       </h1>
-      <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
+      {/* On the scale, not Tailwind's stock rungs: `text-body` is the same 24px
+          line box `text-sm leading-6` was building by hand, and `body-lg` is the
+          rung `text-base` was standing next to. */}
+      <p className="max-w-md text-body text-muted-foreground sm:text-body-lg">
         Chats aren&apos;t saved, added to memory, or used to train models.
       </p>
     </div>

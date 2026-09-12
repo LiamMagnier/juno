@@ -6,37 +6,66 @@
  * bootstrap read — so the sidebar and chrome stay up and only the pane is
  * replaced. (Errors thrown by `(app)/layout.tsx` itself bubble past this to
  * `app/global-error.tsx`, which is why that fallback exists too.)
+ *
+ * This is the boundary an *unguarded* page falls into, so it is the one a user
+ * is most likely to meet — and it was the only one of the thirty-four that did
+ * not use `EmptyState`. It hand-rolled a `bg-foreground` button, a bordered
+ * `<Link>` and a `text-sm` paragraph, which meant the catch-all failure looked
+ * like a different product from the thirty-three route boundaries beside it.
+ * It now draws the same shape as `library/error.tsx`, the model for all of them.
+ *
+ * `error.message` is deliberately NOT rendered: it can carry a query, a file
+ * path, a provider's raw response or an internal identifier, and none of that
+ * is something the reader can act on. It goes to the console — and, for a
+ * server error, it is already in the server log under `digest`, which is the
+ * one identifier worth showing.
  */
 
+import * as React from "react";
 import Link from "next/link";
 
-import { JunoMark } from "@/components/brand/logo";
+import { AppPage } from "@/components/app/app-page";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 
-export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function AppError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  React.useEffect(() => {
+    console.error("[route] app segment failed to render", error);
+  }, [error]);
+
   return (
-    <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 py-16 text-center">
-      <JunoMark className="size-9 opacity-70" />
-      <p className="mt-6 font-mono text-label text-muted-foreground">Something broke</p>
-      <h1 className="mt-2 font-sans text-heading font-medium">This view couldn&rsquo;t load</h1>
-      <p className="mt-3 max-w-sm text-sm text-muted-foreground">
-        Nothing was lost. Retry the view, or head back to your chats if it keeps failing.
-      </p>
-      <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-        <button
-          type="button"
-          onClick={reset}
-          className="rounded-control bg-foreground px-4 py-2 text-sm text-background transition-colors hover:bg-foreground/85"
-        >
-          Try again
-        </button>
-        <Link
-          href="/chat"
-          className="rounded-control border border-border/60 bg-card px-4 py-2 text-sm transition-colors hover:border-border"
-        >
-          Back to chats
-        </Link>
-      </div>
-      {error.digest && <p className="mt-6 font-mono text-caption text-muted-foreground/70">Reference: {error.digest}</p>}
-    </div>
+    <AppPage measure="wide">
+      <EmptyState
+        tone="error"
+        icon={StatusIcons.error}
+        title="This view couldn’t load"
+        description="Nothing was lost. Retry the view, or head back to your chats if it keeps failing."
+        action={
+          <>
+            <Button size="sm" onClick={reset} className="gap-1.5">
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              Try again
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/chat">Back to chat</Link>
+            </Button>
+          </>
+        }
+      />
+      {error.digest && (
+        // The digest is the only thing tying this screen to a line in the server
+        // log, so it is the one part of the failure worth putting on the page.
+        <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
+          Reference {error.digest}
+        </p>
+      )}
+    </AppPage>
   );
 }

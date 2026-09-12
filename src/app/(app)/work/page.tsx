@@ -517,7 +517,7 @@ function WorkInbox() {
                     empty list that reads as "you have archived nothing". */}
                 {state === "archived" && archivedFailed && (
                   <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground" role="status">
-                    Could not load the archive. What you can see may be incomplete.
+                    Couldn’t load the archive. What you can see may be incomplete.
                   </p>
                 )}
 

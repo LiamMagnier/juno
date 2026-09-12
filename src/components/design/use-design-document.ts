@@ -100,7 +100,7 @@ export function httpTransport(artifactId: string): DesignTransport {
         artifact?: { currentVersion: number };
         error?: string;
       };
-      if (!res.ok) return { ok: false, message: data.error ?? "Could not save that change.", document: data.document };
+      if (!res.ok) return { ok: false, message: data.error ?? "Couldn’t save that change.", document: data.document };
       return { ok: true, document: data.document, version: data.artifact?.currentVersion };
     },
   };
@@ -249,7 +249,7 @@ export function useDesignDocument(opts: Options) {
         try {
           applied = applyTransaction(base, transaction).document;
         } catch (error) {
-          rollback(base, error instanceof Error ? error.message : "Could not save that change.");
+          rollback(base, error instanceof Error ? error.message : "Couldn’t save that change.");
           break;
         }
 
@@ -257,7 +257,7 @@ export function useDesignDocument(opts: Options) {
         try {
           outcome = await transport.commit(transaction, batch.origin, applied);
         } catch {
-          rollback(ackedRef.current, "Could not save that change.");
+          rollback(ackedRef.current, "Couldn’t save that change.");
           break;
         }
         if (generationRef.current !== generation) break;
@@ -411,7 +411,7 @@ export function useDesignDocument(opts: Options) {
       ]);
       persist(transaction.operations, `Undo ${entry.summary}`, entry.author, transaction.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not undo.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t undo.");
     }
   }, [undoStack, opts.readOnly, persist]);
 
@@ -431,7 +431,7 @@ export function useDesignDocument(opts: Options) {
       ]);
       persist(transaction.operations, `Redo ${entry.summary}`, entry.author, transaction.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not redo.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t redo.");
     }
   }, [redoStack, opts.readOnly, persist]);
 
@@ -464,7 +464,7 @@ export function useDesignDocument(opts: Options) {
       setPending(null);
       persist(transaction.operations, pending.transaction.summary, "juno", transaction.id);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not apply Juno's change.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t apply Juno's change.");
     }
   }, [pending, persist]);
 
@@ -590,10 +590,10 @@ export async function readImageAsset(file: File): Promise<AssetRef> {
   const url = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`Could not read “${file.name}”.`));
+    reader.onerror = () => reject(new Error(`Couldn’t read “${file.name}”.`));
     reader.readAsDataURL(file);
   });
-  if (!url.startsWith("data:image/")) throw new Error(`Could not read “${file.name}” as an image.`);
+  if (!url.startsWith("data:image/")) throw new Error(`Couldn’t read “${file.name}” as an image.`);
 
   // Intrinsic size, so the layer the caller creates has the picture's own
   // proportions instead of a square guess.

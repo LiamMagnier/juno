@@ -64,7 +64,7 @@ export function ConnectorsSection() {
             <EmptyState
               tone="error"
               size="panel"
-              title="Couldn't load your connections"
+              title="Couldn’t load your connections"
               description="The list didn't come back. Nothing has been disconnected."
               action={
                 <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">

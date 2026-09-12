@@ -204,7 +204,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       i={index}
       // One status line for the whole card, present in every state — see
       // TileSaveStatus for why it never unmounts.
-      aside={<TileSaveStatus state={save} failedMessage="Couldn't save. Your permissions are unchanged." />}
+      aside={<TileSaveStatus state={save} failedMessage="Couldn’t save. Your permissions are unchanged." />}
     >
       <p className="mb-4 text-body text-muted-foreground">
         What Juno may do with your connected apps on its own, and what it has to stop and ask you
@@ -220,7 +220,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
           tone="error"
           size="panel"
           icon={StatusIcons.error}
-          title="Couldn't load your permissions"
+          title="Couldn’t load your permissions"
           description="Nothing is shown rather than a guess."
           action={
             <Button variant="outline" size="sm" onClick={() => void load()}>

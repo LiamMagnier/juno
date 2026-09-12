@@ -43,7 +43,7 @@ export default function LibraryError({
               <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
               Try again
             </Button>
-            <Button asChild size="sm" variant="secondary">
+            <Button asChild size="sm" variant="outline">
               <Link href="/chat">Back to chat</Link>
             </Button>
           </>

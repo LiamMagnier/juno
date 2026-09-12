@@ -172,7 +172,7 @@ export function BillingSection() {
     if (res.ok && data.url) window.location.href = data.url;
     else {
       setPortalLoading(false);
-      toast.error(data.error ?? "Could not open billing portal.");
+      toast.error(data.error ?? "Couldn’t open billing portal.");
     }
   };
 
@@ -205,7 +205,7 @@ export function BillingSection() {
         body: JSON.stringify({ monthlySpendCapEur }),
       });
       if (!res.ok) {
-        toast.error("Could not save the spend ceiling.");
+        toast.error("Couldn’t save the spend ceiling.");
         return false;
       }
       router.refresh();

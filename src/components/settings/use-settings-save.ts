@@ -26,7 +26,7 @@ export function useSettingsSave() {
       });
       if (!res.ok) {
         setSettings(previous);
-        toast.error("Could not save settings.");
+        toast.error("Couldn’t save settings.");
       }
       return res.ok;
     },

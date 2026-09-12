@@ -249,7 +249,7 @@ export function CompareView() {
     try {
       sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify({ title: truncate(lastPrompt, 48), messages }));
     } catch {
-      toast.error("Couldn't carry this answer into chat — it's too large.");
+      toast.error("Couldn’t carry this answer into chat — it's too large.");
       return;
     }
     router.push("/chat");

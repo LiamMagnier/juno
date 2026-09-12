@@ -561,7 +561,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         tool: null,
         batch: null,
         step: closing,
-        title: `${status === "skipped" ? "Skipped" : "Could not finish"}: ${described.title}`,
+        title: `${status === "skipped" ? "Skipped" : "Couldn’t finish"}: ${described.title}`,
         detail: described.detail,
         tone: status === "failed" ? "bad" : "warning",
         icon: status === "failed" ? X : Minus,

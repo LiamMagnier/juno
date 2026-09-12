@@ -9,11 +9,13 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
+import { DocumentTitle } from "@/components/app/document-title";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
+import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
@@ -70,6 +72,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const widthRef = React.useRef(SIDEBAR_DEFAULT);
   const activeConversation = activeConversationId ? conversations.find((c) => c.id === activeConversationId) : null;
   const activeTitle = activeConversation?.title ?? null;
+  // The mobile bar is captioned by the ROUTE, and only borrows the conversation
+  // title while you are inside a conversation. `activeConversationId` is set on
+  // chat mount and never cleared, so the bar used to keep naming the last chat
+  // you read while you stood on /library or /settings — a header that names a
+  // page you are not on. Everywhere else it said "Juno", which named nothing.
+  const inConversation = pathname.startsWith("/chat/");
+  const mobileTitle = (inConversation ? activeTitle : null) ?? titleForPath(pathname);
 
   const applyWidth = React.useCallback((w: number) => {
     widthRef.current = w;
@@ -357,8 +366,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="size-5" />
           </Button>
           <AnimatedTitle
-            title={activeTitle || "Juno"}
-            animate={activeConversation?.titleSource === "ai"}
+            title={mobileTitle}
+            animate={inConversation && activeConversation?.titleSource === "ai"}
             className="min-w-0 flex-1 px-1"
             textClassName="text-body-lg font-semibold tracking-tight text-foreground"
           />
@@ -393,6 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Onboarding />
       <AnnouncementPopup />
       <CommandPalette />
+      <DocumentTitle />
     </div>
   );
 }

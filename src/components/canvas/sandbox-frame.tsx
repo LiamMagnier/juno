@@ -372,8 +372,8 @@ ${BASE_STYLE}</head>
   function fail(msg){ root.innerHTML = '<pre data-juno-error style="margin:0;padding:16px;color:#b91c1c;white-space:pre-wrap;font:13px/1.6 ui-monospace,SFMono-Regular,monospace">'+String(msg).replace(/[&<]/g,function(c){return c==='&'?'&amp;':'&lt;';})+'</pre>'; }
   function failError(e){var msg=text(e); console.error(msg); fail(msg); status('error','Error');}
   status('loading','Loading');
-  if (!window.React || !window.ReactDOM) { fail('Could not load React (offline?).'); status('error','Error'); return; }
-  if (!window.Babel) { fail('Could not load the Babel compiler (offline?).'); status('error','Error'); return; }
+  if (!window.React || !window.ReactDOM) { fail('Couldn’t load React (offline?).'); status('error','Error'); return; }
+  if (!window.Babel) { fail('Couldn’t load the Babel compiler (offline?).'); status('error','Error'); return; }
   var raw = document.getElementById('__src').textContent;
   var before = {};
   Object.keys(window).forEach(function(k){ before[k] = true; });
@@ -489,7 +489,7 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
       return py.runPythonAsync(raw);
     }).then(function(){status('done','Done');}).catch(function(e){printErr(e);status('error','Error');});
   };
-  s.onerror=function(){printErr('Could not load the Python runtime (offline?).');status('error','Error');};
+  s.onerror=function(){printErr('Couldn’t load the Python runtime (offline?).');status('error','Error');};
   document.head.appendChild(s);`
       : `
   function run(js){
@@ -503,7 +503,7 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
   var body=raw;
   ${
     lang === "typescript"
-      ? `if(!window.Babel){printErr('Could not load the TypeScript compiler (offline?).');status('error','Error');}
+      ? `if(!window.Babel){printErr('Couldn’t load the TypeScript compiler (offline?).');status('error','Error');}
      else{try{body=Babel.transform(body,{filename:'a.ts',presets:[[Babel.availablePresets['typescript'],{onlyRemoveTypeImports:true}]]}).code;}catch(e){printErr(e);status('error','Error');body=null;}}
      if(body!==null) run(body);`
       : `run(body);`

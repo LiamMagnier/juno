@@ -117,7 +117,7 @@ export default function ProjectsPage() {
       setItems((cur) =>
         cur ? cur.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)) : null
       );
-      toast.error("Could not update project pin.");
+      toast.error("Couldn’t update project pin.");
     }
   };
 
@@ -131,7 +131,7 @@ export default function ProjectsPage() {
         body: JSON.stringify({ name: name.trim() || undefined }),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error ?? "Could not create project.");
+      if (!r.ok) throw new Error(d.error ?? "Couldn’t create project.");
       router.push(`/projects/${d.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
@@ -156,7 +156,7 @@ export default function ProjectsPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setEditingProject(null);
     } catch {
-      toast.error("Could not rename project.");
+      toast.error("Couldn’t rename project.");
     } finally {
       setRenaming(false);
     }
@@ -175,7 +175,7 @@ export default function ProjectsPage() {
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setDeletingProject(null);
     } catch {
-      toast.error("Could not delete project.");
+      toast.error("Couldn’t delete project.");
     } finally {
       setDeleting(false);
     }

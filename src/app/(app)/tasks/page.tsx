@@ -82,12 +82,12 @@ export default function TasksPage() {
         body: JSON.stringify({ enabled }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message ?? data.error ?? "Could not update the task.");
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Couldn’t update the task.");
       // Server response carries the recomputed nextRunAt.
       setTasks((cur) => cur?.map((t) => (t.id === task.id ? data.task : t)) ?? cur);
     } catch (err) {
       setTasks((cur) => cur?.map((t) => (t.id === task.id ? { ...t, enabled: !enabled } : t)) ?? cur);
-      toast.error(err instanceof Error ? err.message : "Could not update the task.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t update the task.");
     }
   };
 
@@ -101,7 +101,7 @@ export default function TasksPage() {
       toast.success("Task deleted.");
       setDeleting(null);
     } catch {
-      toast.error("Could not delete the task.");
+      toast.error("Couldn’t delete the task.");
     } finally {
       setDeleteBusy(false);
     }

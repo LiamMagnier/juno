@@ -126,11 +126,11 @@ export function TaskDialog({
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message ?? data.error ?? "Could not save the task.");
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Couldn’t save the task.");
       onSaved(data.task, !task);
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save the task.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t save the task.");
     } finally {
       setSaving(false);
     }

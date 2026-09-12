@@ -194,7 +194,7 @@ export function ReportReader({
       toast.success("Report copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Failed to copy report");
+      toast.error("Couldn’t copy the report.");
     }
   };
 
@@ -211,7 +211,7 @@ export function ReportReader({
       URL.revokeObjectURL(url);
       toast.success("Downloaded report as Markdown");
     } catch {
-      toast.error("Failed to download report");
+      toast.error("Couldn’t download the report.");
     }
   };
 
@@ -225,7 +225,7 @@ export function ReportReader({
         await navigator.clipboard.writeText(window.location.href);
         toast.success("Research URL copied to clipboard");
       } catch {
-        toast.error("Failed to copy link");
+        toast.error("Couldn’t copy the link.");
       }
     }
   };
@@ -288,7 +288,7 @@ export function ReportReader({
         </div>
       </div>
 
-      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
+      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
       <div className="flex items-start gap-8">
         {toc.length >= 2 && (
           <nav

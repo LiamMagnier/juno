@@ -106,7 +106,7 @@ export default function RoadmapDetailPage() {
         body: JSON.stringify({ body, official: official || undefined }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error ?? "Could not comment.");
+      if (!res.ok) throw new Error(d.error ?? "Couldn’t comment.");
       setData((cur) => (cur ? { ...cur, comments: [...cur.comments, d.comment] } : cur));
       setComment("");
       setOfficial(false);

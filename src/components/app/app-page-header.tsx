@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -103,12 +104,69 @@ export function AppPageHeader({
             )}
             {heading}
           </h1>
+          {/* `text-body` (15px × 1.6) is the same 24px line box the
+              `text-sm leading-6` here used to build by hand, so nothing
+              reflows — it is now the rung the scale names rather than
+              Tailwind's stock size sitting one pixel under it on every page. */}
           {lede && (
-            <p className="mt-1.5 max-w-prose text-pretty text-sm leading-6 text-muted-foreground">{lede}</p>
+            <p className="mt-1.5 max-w-prose text-pretty text-body text-muted-foreground">{lede}</p>
           )}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2.5">{actions}</div>}
       </div>
     </header>
+  );
+}
+
+/**
+ * The header's placeholder, drawn from the header's own metrics.
+ *
+ * Twenty-two loading.tsx files hand-copied this block, each with a comment
+ * claiming it matched "AppPageHeader, at its own metrics". None did: the lede
+ * bar sat at `mt-2.5 h-4` against the header's `mt-1.5` and its 24px line box,
+ * and the heading bar was a fixed `h-8`/`h-9` against a `text-page-title` line
+ * box that is 30.4px at 360px and 38.6px at 1280px. Every page therefore
+ * stepped up by as much as 11px at the moment its data landed — a jump at
+ * exactly the moment the reader's eye arrives. The same copying had produced
+ * eight spellings of the eyebrow bar and two radii for the lede.
+ *
+ * Metrics copied by hand drift; metrics shared by import cannot.
+ *
+ * `h-[1.15em]` on an element that carries `text-page-title` is that heading's
+ * line box expressed in the token itself, so the placeholder tracks the clamp
+ * at every viewport with no second number to keep in step.
+ */
+export function AppPageHeaderSkeleton({
+  headingWidth = "w-56",
+  lede = true,
+  actions = false,
+  className,
+}: {
+  /** Roughly as wide as the real heading, so the shimmer isn't a full-bleed slab. */
+  headingWidth?: string;
+  lede?: boolean;
+  actions?: boolean;
+  /** Pass `mb-0` where the page frame supplies its own gap between blocks. */
+  className?: string;
+}) {
+  return (
+    // aria-hidden, because the AppPage around it already carries
+    // role="status" with a label: the region speaks once, not twice.
+    <div className={cn("mb-6 border-b border-border pb-5", className)} aria-hidden="true">
+      <div className="mb-3 flex items-center gap-2">
+        {/* The back control is a `size="icon-sm"` Button: 32px, 40 on coarse.
+            The placeholder carries the coarse step too, or the nav row is 8px
+            short on every touch device. */}
+        <Skeleton className="size-8 shrink-0 coarse:size-10" />
+        <Skeleton className="h-3 w-16 rounded-xs" />
+      </div>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0 flex-1">
+          <Skeleton className={cn("h-[1.15em] max-w-full text-page-title", headingWidth)} />
+          {lede && <Skeleton className="mt-1.5 h-6 w-full max-w-prose rounded-xs" />}
+        </div>
+        {actions && <Skeleton className="h-9 w-32 shrink-0" />}
+      </div>
+    </div>
   );
 }

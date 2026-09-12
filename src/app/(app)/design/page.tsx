@@ -71,13 +71,13 @@ export default function DesignPage() {
     (async () => {
       try {
         const res = await fetch("/api/artifacts");
-        if (!res.ok) throw new Error("Could not load your designs.");
+        if (!res.ok) throw new Error("Couldn’t load your designs.");
         const data = (await res.json()) as { items: (DesignItem & { type: string })[] };
         if (cancelled) return;
         setItems(data.items.filter((item) => item.type === "DESIGN"));
         setError(null);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load your designs.");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Couldn’t load your designs.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -97,10 +97,10 @@ export default function DesignPage() {
           body: JSON.stringify({ title: "Untitled design", preset }),
         });
         const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-        if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start a design.");
+        if (!res.ok || !data.url) throw new Error(data.error ?? "Couldn’t start a design.");
         router.push(data.url);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not start a design.");
+        toast.error(err instanceof Error ? err.message : "Couldn’t start a design.");
         setCreating(null);
       }
     },
@@ -113,12 +113,12 @@ export default function DesignPage() {
     try {
       const res = await fetch(`/api/artifacts/${deleteTarget.id}`, { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Could not delete this design.");
+      if (!res.ok) throw new Error(data.error ?? "Couldn’t delete this design.");
       setItems((current) => current.filter((item) => item.id !== deleteTarget.id));
       toast.success(`${deleteTarget.title} deleted.`);
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not delete this design.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t delete this design.");
     } finally {
       setDeleting(false);
     }

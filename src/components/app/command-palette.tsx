@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Pressable } from "@/components/ui/pressable";
 import { Kbd } from "@/components/ui/kbd";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { staggerDelay } from "@/lib/motion";
 
@@ -314,11 +315,13 @@ function PaletteShell({
             // both themes, which is the same reasoning the row's icon tile below
             // already runs on.
             //
-            // rounded-menu, not rounded-field: the shell is rounded-panel (18px)
-            // and the list insets it by p-1.5 (6px), so 12px is the concentric
-            // radius. The comment on the tile below assumed rounded-field WAS
-            // 12px; it is 10 (tailwind.config.ts), so the bar and every row under
-            // it were drawn 2px too tight for the panel they sit in.
+            // rounded-menu, not rounded-field: the shell is rounded-panel (20px)
+            // and the list insets it by p-1.5 (6px), so 14px — `rounded-menu` —
+            // is the concentric radius. (The arithmetic in this comment used to
+            // read 18 − 6 = 12 and call that `rounded-menu`; the ladder in
+            // tailwind.config.ts says panel is 20 and menu is 14. The class was
+            // always right, the sum behind it was not — which is exactly how a
+            // later reader "corrects" a correct class.)
             className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-menu bg-foreground/10 opacity-0 transition-[transform,height,opacity] duration-base ease-out-strong motion-reduce:transition-none"
           />
           {items.length === 0
@@ -358,7 +361,7 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2 text-left text-ui transition-colors duration-fast ease-out-soft coarse:py-2.5",
                         // A two-line result row hangs its icon and trailing meta
                         // off the title, not off the centre of the pair.
                         c.snippet ? "items-start" : "items-center",
@@ -367,11 +370,11 @@ function PaletteShell({
                     >
                       {/* Icon tile — gives every row a consistent optical anchor
                           and lets the active state read without moving anything.
-                          rounded-xs (6px): the row is rounded-menu (12px) and the
-                          tile sits 8px/10px inside it, so the concentric answer is
-                          12 MINUS the inset, not 12 minus 4 — the old sum ran the
-                          subtraction the wrong way and landed on an 8px value that
-                          is not on the ladder either. 6px is the nearest rung. */}
+                          rounded-xs (6px): the row is rounded-menu (14px) and the
+                          tile sits 8px inside it, so the concentric answer is 14
+                          MINUS the inset — 6px, which is the `xs` rung exactly.
+                          (This sum previously ran off a 12px reading of
+                          `rounded-menu`; the ladder says 14.) */}
                       <span
                         className={cn(
                           "flex size-7 shrink-0 items-center justify-center rounded-xs border transition-colors duration-fast ease-out-soft",
@@ -394,7 +397,7 @@ function PaletteShell({
                             : "border-transparent bg-secondary text-muted-foreground"
                         )}
                       >
-                        <Icon className="h-[15px] w-[15px]" />
+                        <Icon className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">
@@ -811,21 +814,21 @@ function SearchPalette() {
     <div className="px-3 py-10 text-center">
       {failed ? (
         <>
-          <p className="text-sm text-muted-foreground">Search is unavailable right now.</p>
+          <p className="text-body text-muted-foreground">Search is unavailable right now.</p>
           <p className="mt-1 text-caption text-muted-foreground">
             Check your connection and try the search again.
           </p>
         </>
       ) : trimmed ? (
         <>
-          <p className="text-sm text-muted-foreground">Nothing matches “{query}”.</p>
+          <p className="text-body text-muted-foreground">Nothing matches “{query}”.</p>
           <p className="mt-1 text-caption text-muted-foreground">
             Try fewer words, or widen the filters above.
           </p>
         </>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">Search everything in Juno</p>
+          <p className="text-body text-muted-foreground">Search everything in Juno</p>
           <p className="mt-1 text-caption text-muted-foreground">
             Chats and their messages, projects, files, artifacts, memories and Work.
           </p>
@@ -871,6 +874,9 @@ function SearchPalette() {
  */
 function CommandMenu() {
   const router = useRouter();
+  // The rows' key hints print the platform's own modifier: a Windows or Linux
+  // reader was shown "⌘" for four shortcuts their keyboard cannot make.
+  const mod = useModifierKeyLabel();
   const { setTheme, resolvedTheme } = useTheme();
   const { conversations, setSettings } = useApp();
   const [open, setOpen] = React.useState(false);
@@ -971,7 +977,7 @@ function CommandMenu() {
         id: "new-chat",
         group: "Actions",
         label: "New chat",
-        hint: "⌘⇧O",
+        hint: `${mod}⇧O`,
         icon: AppIcons.new,
         keywords: "start compose message",
         run: () => {
@@ -994,7 +1000,7 @@ function CommandMenu() {
           window.dispatchEvent(new CustomEvent("juno:search"));
         },
       },
-      { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: "⌘⇧S", icon: Columns2, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
+      { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: Columns2, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
       { id: "work", group: "Actions", label: "Open Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
       { id: "code-runs", group: "Actions", label: "Open Code runs", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
@@ -1048,7 +1054,7 @@ function CommandMenu() {
         id: "theme",
         group: "Settings",
         label: `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`,
-        hint: "⌘⇧L",
+        hint: `${mod}⇧L`,
         icon: resolvedTheme === "dark" ? Sun : Moon,
         keywords: "theme dark light appearance",
         run: () => {
@@ -1060,7 +1066,7 @@ function CommandMenu() {
         id: "shortcuts",
         group: "Settings",
         label: "Keyboard shortcuts",
-        hint: "⌘/",
+        hint: `${mod}/`,
         icon: Keyboard,
         keywords: "keys help",
         run: () => {
@@ -1071,7 +1077,7 @@ function CommandMenu() {
     ].filter((c) => matches(c.label, c.keywords));
 
     return [...actions, ...chats, ...projectRows, ...settings];
-  }, [conversations, projects, q, go, resolvedTheme, toggleTheme]);
+  }, [conversations, projects, q, go, resolvedTheme, toggleTheme, mod]);
 
   const footer = (
     <>
@@ -1092,7 +1098,7 @@ function CommandMenu() {
 
   const emptyState = (
     <div className="px-3 py-10 text-center">
-      <p className="text-sm text-muted-foreground">No matches for “{query}”.</p>
+      <p className="text-body text-muted-foreground">No matches for “{query}”.</p>
       <p className="mt-1 text-caption text-muted-foreground">Try a chat title, or a command like “settings”.</p>
     </div>
   );
@@ -1126,16 +1132,35 @@ export function CommandPalette() {
 }
 
 /** Every shortcut the product answers to, grouped the way the hand finds
- *  them. Kept in step with use-global-shortcuts.ts and composer.tsx. */
-const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = [
+ *  them. Kept in step with use-global-shortcuts.ts, settings-modal.tsx and
+ *  composer.tsx.
+ *
+ *  A function of the modifier label rather than a constant: every row used to
+ *  print a hardcoded "⌘", so a Windows or Linux reader was shown sixteen
+ *  shortcuts in a key their keyboard does not have — on the one page in the
+ *  product whose whole job is to document the keyboard. `splitKeys` only
+ *  breaks on the glyph set, so "Ctrl" stays one cap. */
+const shortcutGroups = (mod: string): { title: string; items: { keys: string[]; label: string }[] }[] => [
   {
     title: "Everywhere",
     items: [
-      { keys: ["⌘", "K"], label: "Command menu" },
-      { keys: ["⌘", "⇧", "O"], label: "New chat" },
-      { keys: ["⌘", "⇧", "S"], label: "Toggle sidebar" },
-      { keys: ["⌘", "⇧", "L"], label: "Toggle theme" },
-      { keys: ["⌘", "/"], label: "Keyboard shortcuts" },
+      { keys: [mod, "K"], label: "Command menu" },
+      { keys: [mod, "⇧", "O"], label: "New chat" },
+      { keys: [mod, "⇧", "S"], label: "Toggle sidebar" },
+      { keys: [mod, "⇧", "L"], label: "Toggle theme" },
+      // Bound in settings-modal.tsx and missing from this sheet entirely.
+      { keys: [mod, ","], label: "Settings" },
+      { keys: [mod, "/"], label: "Keyboard shortcuts" },
+    ],
+  },
+  {
+    // The product switch landed these (use-global-shortcuts.ts) and the sheet
+    // never learned them.
+    title: "Products",
+    items: [
+      { keys: [mod, "⇧", "1"], label: "Chat" },
+      { keys: [mod, "⇧", "2"], label: "Work" },
+      { keys: [mod, "⇧", "3"], label: "Code" },
     ],
   },
   {
@@ -1143,7 +1168,7 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
     items: [
       { keys: ["↵"], label: "Send message" },
       { keys: ["⇧", "↵"], label: "New line" },
-      { keys: ["⌘", "U"], label: "Attach files" },
+      { keys: [mod, "U"], label: "Attach files" },
       { keys: ["↑"], label: "Edit your last message (empty field)" },
       { keys: ["⇧", "Esc"], label: "Focus the composer" },
       { keys: ["Esc"], label: "Stop generating · close a menu" },
@@ -1154,27 +1179,33 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
   {
     title: "Responses",
     items: [
-      { keys: ["⌘", "⇧", "C"], label: "Copy the last response" },
-      { keys: ["⌘", "⇧", ";"], label: "Copy the last code block" },
+      { keys: [mod, "⇧", "C"], label: "Copy the last response" },
+      { keys: [mod, "⇧", ";"], label: "Copy the last code block" },
       // Under Responses, not Everywhere: it only binds once a transcript
       // exists (chat-view.tsx), and it searches the responses.
-      { keys: ["⌘", "F"], label: "Find in conversation" },
+      { keys: [mod, "F"], label: "Find in conversation" },
     ],
   },
 ];
 
 function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const mod = useModifierKeyLabel();
+  const groups = React.useMemo(() => shortcutGroups(mod), [mod]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      {/* max-w-lg and two columns from sm up: twenty rows in four groups do not
+          fit one screen in a single 28rem column, and a shortcuts sheet you
+          have to scroll is a sheet you close and guess instead. The group heads
+          span both columns so a group never splits across them. */}
+      <DialogContent className="max-w-lg">
         <DialogTitle>Keyboard shortcuts</DialogTitle>
-        <div className="mt-1 space-y-4">
-          {SHORTCUT_GROUPS.map((group) => (
-            <section key={group.title}>
+        <div className="mt-1 space-y-4 sm:columns-2 sm:gap-x-8 sm:space-y-0">
+          {groups.map((group) => (
+            <section key={group.title} className="break-inside-avoid sm:mb-4">
               <p className="pb-1 font-mono text-label text-muted-foreground">{group.title}</p>
               <ul className="divide-y divide-border/60">
                 {group.items.map((s) => (
-                  <li key={s.label} className="flex items-center justify-between gap-4 py-2 text-sm">
+                  <li key={s.label} className="flex items-center justify-between gap-4 py-2 text-ui">
                     <span className="text-foreground/90">{s.label}</span>
                     <span className="flex shrink-0 items-center gap-1">
                       {s.keys.map((k, i) => (

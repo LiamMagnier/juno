@@ -254,10 +254,10 @@ export default function ArtifactsPage() {
         body: JSON.stringify({ title: "Untitled design", preset: "phone" }),
       });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start a design.");
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Couldn’t start a design.");
       router.push(data.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not start a design.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t start a design.");
       setStartingDesign(false);
     }
   }, [router]);
@@ -288,7 +288,7 @@ export default function ArtifactsPage() {
       setItems((prev) => prev?.map((i) => (i.id === renameTarget.id ? { ...i, title } : i)) ?? prev);
       setRenameTarget(null);
     } catch {
-      toast.error("Could not rename the artifact.");
+      toast.error("Couldn’t rename the artifact.");
     } finally {
       setRenaming(false);
     }
@@ -304,7 +304,7 @@ export default function ArtifactsPage() {
       setDeleteTarget(null);
       toast.success("Artifact deleted");
     } catch {
-      toast.error("Could not delete the artifact.");
+      toast.error("Couldn’t delete the artifact.");
     } finally {
       setDeleting(false);
     }
@@ -326,14 +326,20 @@ export default function ArtifactsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error("Could not download the source.");
+      toast.error("Couldn’t download the source.");
     } finally {
       setDownloadingId(null);
     }
   };
 
   return (
-    <AppPage measure="reading">
+    // `wide`, like Library, Projects, Work, Code and Connections. A list of
+    // rows with a search field and a sort control has the same anatomy as those
+    // and so has the same measure; `reading` (48rem) is for prose — Memory, a
+    // roadmap detail, a knowledge document — not for a table. Artifacts was the
+    // only list route at `reading`, so hopping Library → Artifacts in the
+    // sidebar moved the column 16rem for no reason the user could see.
+    <AppPage measure="wide">
       <AppPageHeader
         eyebrow="Canvas"
         heading="Artifacts"

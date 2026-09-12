@@ -23,18 +23,19 @@ export default function CompareLoading() {
       role="status"
       aria-label="Loading Compare"
     >
-      {/* AppPageHeader, at its own metrics. */}
-      <div className="mb-6 shrink-0 border-b border-border pb-5">
-        <div className="mb-3 flex items-center gap-2">
-          <Skeleton className="size-8 shrink-0" />
-          <Skeleton className="h-3 w-16 rounded-sm" />
+      {/* Compare does NOT use AppPageHeader — its view owns a fixed-height
+          shell with an eyebrow over a page-title and a quiet note on the right,
+          no back arrow and no rule. So this is drawn to THAT header rather than
+          borrowing AppPageHeaderSkeleton: a skeleton that does not match its
+          page is worse than no skeleton. `h-[1.15em]` on a `text-page-title`
+          element is the heading's line box expressed in the token, so it tracks
+          the clamp at every viewport. */}
+      <div className="mb-4 flex shrink-0 items-end justify-between gap-3">
+        <div className="min-w-0">
+          <Skeleton className="h-3 w-36 rounded-xs" />
+          <Skeleton className="mt-1 h-[1.15em] w-40 max-w-full text-page-title" />
         </div>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-          <div className="min-w-0 flex-1">
-            <Skeleton className="h-8 w-40 max-w-full" />
-            <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-sm" />
-          </div>
-        </div>
+        <Skeleton className="mb-0.5 h-3 w-40 shrink-0 rounded-xs" />
       </div>
       <Skeleton className="h-28 w-full shrink-0 rounded-panel" />
       <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-2">

@@ -138,7 +138,7 @@ function ConsoleView({ entries, onClear }: { entries: ConsoleEntry[]; onClear: (
           <Eraser className="size-3 shrink-0" aria-hidden /> Clear
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
+      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-caption leading-relaxed">
         {entries.length === 0 ? (
           <p className="text-muted-foreground">No console output yet.</p>
         ) : (
@@ -389,7 +389,7 @@ export function CanvasPanel({
       setHistoryOpen(false);
       toast.success(`Restored v${targetVersion} as v${result.artifact.currentVersion}`);
     } catch {
-      toast.error("Could not restore this version.");
+      toast.error("Couldn’t restore this version.");
     } finally {
       setRestoring(false);
     }
@@ -434,7 +434,7 @@ export function CanvasPanel({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not build that file.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t build that file.");
     } finally {
       setExportingFormat(null);
     }
@@ -469,7 +469,7 @@ export function CanvasPanel({
       const result = await appendVersion(draft, "edit", force ? null : editBaseVersion);
       if (result.stale) {
         if (result.latest) setStaleConflict(result.latest);
-        else toast.error("Could not save — the artifact may have been deleted.");
+        else toast.error("Couldn’t save — the artifact may have been deleted.");
         return;
       }
       onArtifactUpdated(result.artifact);
@@ -477,7 +477,7 @@ export function CanvasPanel({
       setStaleConflict(null);
       toast.success(`Saved as v${result.artifact.currentVersion}`);
     } catch {
-      toast.error("Could not save the artifact.");
+      toast.error("Couldn’t save the artifact.");
     } finally {
       setSaving(false);
     }
@@ -709,7 +709,7 @@ export function CanvasPanel({
   const canOfferLastGood = previewFailed && lastGood != null && lastGood !== selectedVersion;
 
   const contextButton =
-    "h-7 gap-1.5 rounded-control px-2 text-xs font-medium text-muted-foreground hover:text-foreground coarse:h-9 coarse:px-2.5";
+    "h-7 gap-1.5 rounded-control px-2 text-caption font-medium text-muted-foreground hover:text-foreground coarse:h-9 coarse:px-2.5";
 
   return (
     <div
@@ -727,7 +727,7 @@ export function CanvasPanel({
           is not a rung. Full --card is the step the ladder actually names. */}
       <header className="flex items-center gap-2 border-b border-border/60 bg-card py-2 pl-4 pr-2">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold leading-tight">{artifact.title}</h2>
+          <h2 className="truncate text-ui font-semibold leading-tight">{artifact.title}</h2>
           <div className="flex items-center gap-1.5 font-mono text-caption text-muted-foreground">
             <span className="truncate">{rt.label}</span>
             {hasHistory && (
@@ -859,7 +859,7 @@ export function CanvasPanel({
                         traced a shape one pixel tighter than the hover fill. */}
                     <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 rounded-control px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <span className="flex items-baseline gap-1.5">
-                        <span className={cn("font-mono text-xs font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
+                        <span className={cn("font-mono text-caption font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
                         {isCurrent && <span className="font-mono text-caption text-muted-foreground">current</span>}
                       </span>
                       <span className="block pt-px text-caption text-muted-foreground">
@@ -917,7 +917,7 @@ export function CanvasPanel({
               className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-safe:animate-fade-in"
             >
               {hasChanges ? (
-                <div className="min-w-max py-2 font-mono text-xs leading-relaxed">
+                <div className="min-w-max py-2 font-mono text-caption leading-relaxed">
                   {diff.map((line, idx) => (
                     <div
                       key={idx}
@@ -940,7 +940,7 @@ export function CanvasPanel({
                 <div className="flex h-full items-center justify-center p-6 text-center">
                   <div>
                     <p className="font-sans text-heading">No changes</p>
-                    <p className="pt-1 text-sm text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
+                    <p className="pt-1 text-body text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
                   </div>
                 </div>
               )}
@@ -1043,14 +1043,14 @@ export function CanvasPanel({
           <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden">
             {/* A failed newer version never takes the last working preview with it. */}
             {canOfferLastGood && (
-              <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive motion-safe:animate-fade-in">
+              <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-caption text-destructive motion-safe:animate-fade-in">
                 <span className="min-w-0 flex-1 truncate">This version failed to render.</span>
                 {rt.mode === "web" && (
-                  <Button variant="ghost" size="sm" onClick={() => setTab("console")} className="h-6 px-2 text-xs text-destructive hover:text-destructive">
+                  <Button variant="ghost" size="sm" onClick={() => setTab("console")} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
                     Console
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" onClick={() => setSelectedVersion(lastGood!)} className="h-6 px-2 text-xs text-destructive hover:text-destructive">
+                <Button variant="ghost" size="sm" onClick={() => setSelectedVersion(lastGood!)} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
                   View v{lastGood}
                 </Button>
               </div>
@@ -1114,7 +1114,7 @@ export function CanvasPanel({
           <TabsContent value="code" className="min-h-0 flex-1 overflow-hidden">
             <div className="flex h-full flex-col">
               {staleConflict && (
-                <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning-foreground motion-safe:animate-fade-in">
+                <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-2 text-caption text-warning-foreground motion-safe:animate-fade-in">
                   <span className="min-w-0 flex-1">
                     Saved elsewhere as v{staleConflict.currentVersion} while you were editing.
                   </span>
@@ -1125,11 +1125,11 @@ export function CanvasPanel({
                       onArtifactUpdated(staleConflict);
                       discardDraft();
                     }}
-                    className="h-6 px-2 text-xs"
+                    className="h-6 px-2 text-caption"
                   >
                     Discard my draft
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => saveEdit(true)} disabled={saving} className="h-6 px-2 text-xs">
+                  <Button variant="outline" size="sm" onClick={() => saveEdit(true)} disabled={saving} className="h-6 px-2 text-caption">
                     Save anyway
                   </Button>
                 </div>

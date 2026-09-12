@@ -143,7 +143,7 @@ export function AicssCodeBlock({
       if (timer.current) window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Couldn’t copy to clipboard");
+      toast.error("Couldn’t copy to the clipboard.");
     }
   };
 

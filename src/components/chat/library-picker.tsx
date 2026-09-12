@@ -108,11 +108,11 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
         body: JSON.stringify({ attachmentIds: [...selected] }),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error ?? "Couldn't attach those files.");
+      if (!r.ok) throw new Error(d.error ?? "Couldn’t attach those files.");
       onAttach((d.attachments ?? []) as ClientAttachment[]);
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't attach those files.");
+      toast.error(e instanceof Error ? e.message : "Couldn’t attach those files.");
     } finally {
       setAttaching(false);
     }

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "lucide-react";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
@@ -80,6 +81,12 @@ export default function AssistantsPage() {
       if (!response.ok) throw new Error("delete_failed");
       setAssistants((current) => current.filter((assistant) => assistant.id !== deleteTarget.id));
       setDeleteTarget(null);
+    } catch {
+      // The throw used to land in a `finally` with no `catch`, and the call site
+      // is `void deleteAssistant()`: a failed delete was an unhandled rejection,
+      // so the dialog stayed open, the row stayed put and nothing was said. The
+      // user pressed Delete again.
+      toast.error("Couldn’t delete the assistant. Nothing was removed.");
     } finally {
       setDeleting(false);
     }
@@ -91,7 +98,11 @@ export default function AssistantsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isPinned: !assistant.isPinned }),
     }).catch(() => null);
-    if (!response?.ok) return;
+    if (!response?.ok) {
+      // Same silence as the delete above: the pin simply did not move.
+      toast.error("Couldn’t update the pin.");
+      return;
+    }
     const data = await response.json();
     setAssistants((current) =>
       current.map((item) => (item.id === assistant.id ? data.assistant : item))
@@ -115,7 +126,7 @@ export default function AssistantsPage() {
     <button
       type="button"
       onClick={() => openStudio(null)}
-      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-sm text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
     >
       <Plus className="size-4" aria-hidden="true" />
       New assistant
@@ -224,13 +235,13 @@ export default function AssistantsPage() {
                       <AssistantIcon className="size-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 pt-0.5">
-                      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <span className="flex items-center gap-1.5 text-ui font-medium text-foreground">
                         <span className="truncate">{assistant.name}</span>
                         {assistant.isPinned && (
                           <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="Pinned" />
                         )}
                       </span>
-                      <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      <span className="mt-0.5 block line-clamp-2 text-caption leading-5 text-muted-foreground">
                         {assistant.description || "Custom Juno assistant"}
                       </span>
                     </span>

@@ -1162,10 +1162,10 @@ export function ThoughtProcessPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ forget: true }),
       });
-      if (!response.ok) throw new Error("Could not forget that memory.");
+      if (!response.ok) throw new Error("Couldn’t forget that memory.");
       setForgotten((previous) => new Set([...previous, memoryId]));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not forget that memory.";
+      const message = error instanceof Error ? error.message : "Couldn’t forget that memory.";
       setMemoryError((prev) => ({ ...prev, [memoryId]: message }));
     } finally {
       setForgetting(null);
@@ -1201,7 +1201,7 @@ export function ThoughtProcessPanel({
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      toast.error("Couldn't copy to clipboard");
+      toast.error("Couldn’t copy to the clipboard.");
       return;
     }
     setCopied(key);

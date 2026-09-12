@@ -141,8 +141,11 @@ const DESTRUCTIVE_TOKENS = new Set([
  * the approval card's `detail`; since tool detail shipped it also redacts the
  * arguments of EVERY connector call into the thought-process panel, including
  * the read-only calls that never raise a card — and that projection is
- * persisted, unencrypted, on `Message.activity`. A name this misses is a name
- * that is written down.
+ * persisted on `Message.activity`. That column is now encrypted at rest
+ * (src/lib/field-crypto.ts), which protects a database dump and nothing else:
+ * this list is still what stands between a credential and every reader who
+ * legitimately holds the key — the panel itself, the account export, the
+ * native sync payload. A name this misses is a name that is written down.
  *
  * The additions are the credential spellings the original list did not reach:
  * `apiKey` / `api_key` / `x-api-key`, `accessKey`, a bare `auth` field, `bearer`

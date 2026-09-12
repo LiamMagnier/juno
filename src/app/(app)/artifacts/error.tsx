@@ -31,7 +31,7 @@ export default function ArtifactsError({
   }, [error]);
 
   return (
-    <AppPage measure="reading">
+    <AppPage measure="wide">
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
@@ -43,7 +43,7 @@ export default function ArtifactsError({
               <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
               Try again
             </Button>
-            <Button asChild size="sm" variant="secondary">
+            <Button asChild size="sm" variant="outline">
               <Link href="/chat">Back to chat</Link>
             </Button>
           </>
