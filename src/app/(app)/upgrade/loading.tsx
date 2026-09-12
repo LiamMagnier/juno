@@ -14,7 +14,7 @@ export default function UpgradeLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading plans">
-      <AppPageHeaderSkeleton headingWidth="w-40" />
+      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-40" />
 
       <Skeleton className="mb-6 h-9 w-44 rounded-menu" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

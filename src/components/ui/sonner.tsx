@@ -12,10 +12,11 @@ import { Toaster as Sonner, type ToasterProps } from "sonner";
  */
 const COMPOSER_ROUTES = ["/chat", "/code", "/work", "/compare", "/design"];
 
+// "/" is deliberately NOT in the list: it is the marketing front door for a
+// signed-out visitor (app/page.tsx redirects everyone else straight to /chat),
+// and it has no composer to clear.
 function hasComposer(pathname: string) {
-  return (
-    pathname === "/" || COMPOSER_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
-  );
+  return COMPOSER_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 /**

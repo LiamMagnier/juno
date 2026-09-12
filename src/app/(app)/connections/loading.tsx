@@ -16,7 +16,7 @@ export default function ConnectionsLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading connections">
-      <AppPageHeaderSkeleton headingWidth="w-72" />
+      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-72" actions />
 
       <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-9 w-56 rounded-menu" />

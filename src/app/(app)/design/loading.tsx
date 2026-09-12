@@ -16,7 +16,7 @@ export default function DesignLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading designs">
-        <AppPageHeaderSkeleton headingWidth="w-40" actions />
+        <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-40" actions />
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[...Array(4)].map((_, i) => (

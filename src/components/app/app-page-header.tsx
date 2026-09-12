@@ -139,12 +139,24 @@ export function AppPageHeader({
 export function AppPageHeaderSkeleton({
   headingWidth = "w-56",
   lede = true,
+  ledeLines = 1,
   actions = false,
   className,
 }: {
   /** Roughly as wide as the real heading, so the shimmer isn't a full-bleed slab. */
   headingWidth?: string;
   lede?: boolean;
+  /**
+   * How many lines the page's real lede takes.
+   *
+   * Not a guess that goes stale with the viewport: the lede is `max-w-prose`
+   * (65ch), so above ~570px its wrap is set by the copy and nothing else, and
+   * measured, seven pages wrap to two — /connections, /memory, /upgrade,
+   * /design, /code/new and both `new` forms under /work. Leaving those at one
+   * line put a 24px step back into exactly the routes this component exists to
+   * take it out of.
+   */
+  ledeLines?: 1 | 2;
   actions?: boolean;
   /** Pass `mb-0` where the page frame supplies its own gap between blocks. */
   className?: string;
@@ -163,7 +175,20 @@ export function AppPageHeaderSkeleton({
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
           <Skeleton className={cn("h-[1.15em] max-w-full text-page-title", headingWidth)} />
-          {lede && <Skeleton className="mt-1.5 h-6 w-full max-w-prose rounded-xs" />}
+          {lede &&
+            // One line is one `text-body` line box: 15px × 1.6 = 24px = h-6.
+            // Two lines have to total the same 48px the real paragraph does, so
+            // they are 21 + 6 (space-y-1.5) + 21 — a visible gap between the
+            // bars, and the arithmetic still lands on the paragraph's height.
+            // The second bar is short, the way a last line of prose is.
+            (ledeLines > 1 ? (
+              <div className="mt-1.5 max-w-prose space-y-1.5">
+                <Skeleton className="h-[21px] w-full rounded-xs" />
+                <Skeleton className="h-[21px] w-2/3 rounded-xs" />
+              </div>
+            ) : (
+              <Skeleton className="mt-1.5 h-6 w-full max-w-prose rounded-xs" />
+            ))}
         </div>
         {actions && <Skeleton className="h-9 w-32 shrink-0" />}
       </div>

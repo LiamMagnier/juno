@@ -16,7 +16,7 @@ export default function MemoryLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading memory">
-        <AppPageHeaderSkeleton headingWidth="w-72" />
+        <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-72" />
 
         <div className="space-y-3">
           <Skeleton

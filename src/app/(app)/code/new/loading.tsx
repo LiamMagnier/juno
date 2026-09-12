@@ -17,7 +17,7 @@ export default function NewCodeSessionLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading Juno Code">
-      <AppPageHeaderSkeleton headingWidth="w-36" />
+      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-36" />
       <div className="mx-auto w-full max-w-[44rem] pt-6">
         {/* One tier: the field and the controls row. */}
         <Skeleton className="h-[7.25rem] w-full rounded-composer" />
