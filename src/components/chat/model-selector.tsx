@@ -47,9 +47,12 @@ type Filter = "all" | "favorites" | Provider;
 /**
  * The model picker: lab rail · list · spec sheet.
  *
- * Three panes, 880×560, clamped to the viewport. The RAIL on the left names
- * every configured lab (plus All models and Favorites) and counts what each
- * one holds; pick one and the LIST shows that lab's models arranged by what
+ * Three panes, 700×440, clamped to the viewport. The RAIL on the left is one
+ * 32px mark per configured lab (plus All models and Favorites), 48px wide with
+ * the name in a tooltip — it was briefly a 180px column of named rows, and the
+ * answer from the owner was that the popover had become too large, so the
+ * names went back into the tooltip and the whole surface came down from
+ * 880×560. Pick a lab and the LIST shows its models arranged by what
  * they make — Text, then Image, then Video — newest and strongest first, with
  * superseded generations folded behind "Past models". Point or arrow at a row
  * and the SPEC SHEET on the right fills in: intelligence, speed, context and
@@ -62,14 +65,14 @@ type Filter = "all" | "favorites" | Provider;
  *  1. ONE ACCENT, FOUR USES, ALL OF THEM STATE — the selected-model check, a
  *     filled favourite star, the Use button, and the focus edge. Nothing else
  *     in this file may be coral (FLAT_UI.md §2.4: "It is never furniture").
- *     The rail's active row is the tonal `bg-secondary`, the metric fills are
+ *     The rail's active tile is the tonal `bg-secondary`, the metric fills are
  *     `bg-foreground/55`, and the badges are mono words with no capsule.
  *  2. NUMBERS FIRST, METERS SECOND — the grade is a 17px tabular numeral and
  *     the meter under it is a 4px rule. It replaced forty 20×10px coral pills
  *     that shouted the comparison while the real value sat beside them at the
  *     smallest size in the product.
- *  3. ONE LEFT EDGE AND ONE RIGHT EDGE — the rail's p-2 + row px-2, the list
- *     viewport's px-2 + row px-2, and the sheet's px-4 all land on 16px; every
+ *  3. ONE LEFT EDGE AND ONE RIGHT EDGE — the list viewport's px-2 + row px-2
+ *     and the sheet's px-4 both land on 16px; every
  *     trailing object in the list (price, state glyph, section count) ends on
  *     the same x, so a column of prices can be read down.
  *
@@ -294,12 +297,14 @@ function DetailPanel({
   onUse: () => void;
   onToggleStar: () => void;
 }) {
-  // `lg`, not `md`. The popover's width is `min(880, 100vw - 2rem)`, so at a
-  // 768px viewport it is 736px wide — and 180 (rail) + 300 (sheet) leaves the
-  // list 254px, which truncates "Claude Sonnet 5" to "Cla…". The sheet is the
-  // pane that folds first, so it folds one breakpoint higher than the spec's
-  // table assumed; the row's second line follows it (see `renderRow`).
-  const shell = "hidden w-[300px] shrink-0 flex-col border-l border-border/70 bg-background/60 lg:flex";
+  // The fold is `md` (768), recomputed for the 700px popover rather than
+  // inherited: the box is `min(700, 100vw - 2rem)`, so it reaches its full
+  // 700 at any viewport ≥ 732 and the three panes measure 48 · 390 · 260 from
+  // 768 up — 170px of name column, which is the width "Claude Sonnet 5" needs.
+  // One step down (640–767) the sheet would eat the list back to ~78px of
+  // name, so the sheet is the pane that goes and the row grows its second line
+  // to carry the description instead (see `renderRow`).
+  const shell = "hidden w-[260px] shrink-0 flex-col border-l border-border/70 bg-background/60 md:flex";
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const modelId = model?.id;
 
@@ -418,13 +423,16 @@ function DetailPanel({
           </div>
         )}
 
-        {/* `line-clamp-3` is load-bearing: it fixes the y of the stat grid, the
+        {/* The clamp is load-bearing: it fixes the y of the stat grid, the
             chips and the price block, so those land in the same place for every
             model in the list. That stillness is what lets the four meters read
-            as the only thing moving. The full text is on `title`. */}
+            as the only thing moving. TWO lines, not three — the pane lost 120px
+            of height when the popover came down to 440, and the third line is
+            what the grid would have had to give up. The full text is on
+            `title`. */}
         <p
           title={model.description ?? undefined}
-          className="line-clamp-3 text-ui leading-relaxed text-muted-foreground"
+          className="line-clamp-2 text-ui leading-relaxed text-muted-foreground"
         >
           {model.description ?? "Capable foundation model."}
         </p>
@@ -456,23 +464,6 @@ function DetailPanel({
           </p>
         )}
 
-        {hasChips && (
-          <div className="flex flex-wrap gap-1.5">
-            {model.modality === "image" && <CapabilityChip icon={ImageIcon} label="Image" />}
-            {model.modality === "video" && <CapabilityChip icon={Video} label="Video" />}
-            {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
-            {/* Waypoints, not a BRAIN. Extended thinking is the model working
-                through intermediate steps before answering — a route with stops
-                on it. A brain says "this one is intelligent", which is either
-                true of every row here or of none of them, and is the single
-                most worn-out mark in AI product design. */}
-            {model.reasoning && <CapabilityChip icon={Waypoints} label="Thinking" />}
-            {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
-            {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
-            {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
-          </div>
-        )}
-
         <div className="border-t border-border pt-3">
           <div className="font-mono text-micro uppercase text-muted-foreground/70">Price per million tokens</div>
           {free ? (
@@ -498,13 +489,40 @@ function DetailPanel({
             </p>
           )}
         </div>
+
+        {/* The chips sit AFTER the price, which they did not at 300px wide.
+            At 260 they wrap to two rows, and the measured column is 390px of
+            content in a 324px viewport — something has to fall below the fold.
+            These are the only thing here that is a restatement: the same three
+            capabilities are already a glyph column on every row in the list.
+            The price is not restated anywhere and is the fact this pane was
+            rebuilt around, so the tags scroll and the money does not. */}
+        {hasChips && (
+          <div className="flex flex-wrap gap-1.5">
+            {model.modality === "image" && <CapabilityChip icon={ImageIcon} label="Image" />}
+            {model.modality === "video" && <CapabilityChip icon={Video} label="Video" />}
+            {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
+            {/* Waypoints, not a BRAIN. Extended thinking is the model working
+                through intermediate steps before answering — a route with stops
+                on it. A brain says "this one is intelligent", which is either
+                true of every row here or of none of them, and is the single
+                most worn-out mark in AI product design. */}
+            {model.reasoning && <CapabilityChip icon={Waypoints} label="Thinking" />}
+            {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
+            {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
+            {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
+          </div>
+        )}
       </>
     );
   }
 
   return (
     <div className={shell}>
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain px-4 pb-3 pt-4">
+      {/* space-y-3, down from 3.5: the column lost 120px when the popover came
+          down to 440, and a 14px rhythm in a 324px pane spends four of those
+          gaps on air. */}
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 pb-3 pt-4">
         {body}
       </div>
       <div className="flex shrink-0 items-center gap-2 border-t border-border p-3">
@@ -553,49 +571,49 @@ function DetailPanel({
 }
 
 /**
- * A named row on the lab rail — 32px tall, 2px apart.
+ * A 32px tile on the lab rail.
  *
- * It was a 32px icon-only tile with a tooltip, 16 of them in a 48px strip that
- * silently overflowed its own height: telling "Meituan" from "MiniMax" from
- * "MiMo" meant hovering each one. The reference product labels every row, so
- * this one does too, and the tooltip goes away with the guessing.
+ * Icon only, in a 48px strip: the name is the tooltip. It was briefly a 180px
+ * column of named, counted rows, which is most of what made the popover read
+ * as too large — 132px of chrome spent on labels a person reads once.
  *
- * Active is `bg-secondary` — the tonal "selected" fill. The old accent ring
- * spent the brand colour on a filter state, which FLAT_UI.md §2.4 forbids.
+ * Three things from that pass stay. Active is `bg-secondary`, the tonal
+ * "selected" fill — the accent ring it used to wear spent the brand colour on
+ * a filter state, which FLAT_UI.md §2.4 forbids. It carries a real
+ * `focus-visible` ring. And a lab with nothing in it is never rendered at all,
+ * so no tile here can lead to an empty list.
  */
-function RailRow({
+function RailTile({
   active,
-  label,
-  count,
+  title,
   onClick,
   children,
 }: {
   active: boolean;
-  label: string;
-  count?: number;
+  title: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex h-8 w-full items-center gap-2 rounded-control px-2 text-left outline-none",
-        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        active ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      {/* A fixed 18px box, so the glyph column is a column whether the mark is a
-          20px provider tile scaled down or a 16px lucide stroke. */}
-      <span className="flex size-4.5 shrink-0 items-center justify-center">{children}</span>
-      <span className="min-w-0 flex-1 truncate text-ui">{label}</span>
-      {!!count && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">{count}</span>
-      )}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={title}
+          onClick={onClick}
+          aria-pressed={active}
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
+            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -679,11 +697,11 @@ export function ModelSelector({
   /**
    * Everything this surface may offer, before the rail's own filter.
    *
-   * The rail's counts read from HERE — through `modelFilter` (the caller's
-   * capability predicate) and the query, never through `filter`. Reading them
-   * through `filter` would print 0 beside every lab the moment one lab is
-   * picked; ignoring `modelFilter` is the bug that let the Work composer offer
-   * labs whose every model it then refused to show.
+   * Which labs the rail draws is decided from HERE — through `modelFilter`
+   * (the caller's capability predicate) and the query, never through `filter`.
+   * Reading it through `filter` would empty every lab but the picked one;
+   * ignoring `modelFilter` is the bug that let the Work composer offer labs
+   * whose every model it then refused to show.
    */
   const searchable = React.useMemo(
     () => models.filter((m) => (modelFilter ? modelFilter(m) : true)).filter((m) => matchesQuery(m, q)),
@@ -695,11 +713,6 @@ export function ModelSelector({
     for (const m of searchable) out.set(m.provider, (out.get(m.provider) ?? 0) + 1);
     return out;
   }, [searchable]);
-
-  const favoritesCount = React.useMemo(
-    () => searchable.filter((m) => favorites.has(m.id)).length,
-    [searchable, favorites],
-  );
 
   // A lab with no key is not on the rail at all, and neither is one whose
   // models this surface cannot use.
@@ -861,7 +874,7 @@ export function ModelSelector({
           // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
           // it, so a stationary pointer and the arrow keys painted two rows
           // with the identical fill at once.
-          "flex min-h-11 w-full items-center gap-2 rounded-control px-2 py-1.5 text-left outline-none lg:h-11 lg:py-0",
+          "flex min-h-10 w-full items-center gap-2 rounded-control px-2 py-1.5 text-left outline-none md:h-10 md:py-0",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           cursor && "bg-accent",
@@ -895,9 +908,9 @@ export function ModelSelector({
               </span>
             )}
           </span>
-          {/* Below `lg` the sheet is gone, so the description has to survive on
+          {/* Below `md` the sheet is gone, so the description has to survive on
               the row. Above it, the sheet is 8px away with the full text. */}
-          {caption && <span className="block truncate text-caption text-muted-foreground lg:hidden">{caption}</span>}
+          {caption && <span className="block truncate text-caption text-muted-foreground md:hidden">{caption}</span>}
         </span>
         {/* Three fixed slots so this is a column, not a ragged run of glyphs.
             An absent capability holds its space. */}
@@ -971,72 +984,65 @@ export function ModelSelector({
         collisionPadding={16}
         avoidCollisions
         onKeyDown={onNavKeyDown}
-        // Fixed 880×560, clamped to the viewport by Radix's available-height
+        // Fixed 700×440, clamped to the viewport by Radix's available-height
         // var and a 16px margin on every side (collisionPadding does the
-        // horizontal clamp by shifting the box, never by clipping it). The
-        // extra width over the old 760 buys the rail its labels; the extra
-        // height buys one more row.
+        // horizontal clamp by shifting the box, never by clipping it). It was
+        // briefly 880×560 to give the rail room for lab names; the names went
+        // back into tooltips and the box came back down, because a picker that
+        // fills a third of a laptop screen reads as a settings panel.
         style={{
-          width: "min(880px, calc(100vw - 2rem))",
-          height: "min(560px, var(--radix-popover-content-available-height))",
+          width: "min(700px, calc(100vw - 2rem))",
+          height: "min(440px, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
       >
         <div className="flex min-h-0 flex-1">
-          {/* Lab rail — 180px, folds under `sm`. Only labs with something in them. */}
-          <div className="hidden w-[180px] shrink-0 flex-col border-r border-border/70 sm:flex">
-            <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
-              <div className="flex flex-col gap-0.5">
-                {/* While a query is running the list shows every lab, so the
-                    rail has to say "All models" — it used to claim a lab that
-                    was not the one on screen. `filter` itself is untouched, so
-                    clearing the query restores it. */}
-                <RailRow
-                  active={q ? true : filter === "all"}
-                  label="All models"
-                  count={searchable.length}
+          {/* Lab rail — 48px, folds under `sm`. Only labs with something in them. */}
+          <div className="hidden w-12 shrink-0 flex-col border-r border-border/70 sm:flex">
+            {/* ScrollFade, not a bare `overflow-y-auto`: 16 marks need ~601px
+                inside a column this tall, and the strip used to scroll with no
+                affordance saying so. */}
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col items-center gap-1 p-2">
+              {/* While a query is running the list shows every lab, so the rail
+                  has to read as "All models" — it used to claim a lab that was
+                  not the one on screen. `filter` itself is untouched, so
+                  clearing the query restores it. */}
+              <RailTile
+                active={q ? true : filter === "all"}
+                title="All models"
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                <LayoutGrid className="size-4" />
+              </RailTile>
+              <RailTile
+                active={q ? false : filter === "favorites"}
+                title="Favorites"
+                onClick={() => {
+                  setFilter("favorites");
+                  setQuery("");
+                }}
+              >
+                <Star className={cn("size-4", !q && filter === "favorites" && "fill-current")} />
+              </RailTile>
+              <div aria-hidden className="my-1 h-px w-5 shrink-0 bg-border" />
+              {railProviders.map((p) => (
+                <RailTile
+                  key={p}
+                  active={q ? false : filter === p}
+                  title={providerName(p)}
                   onClick={() => {
-                    setFilter("all");
+                    // A lab click means "show me this lab", so it clears the
+                    // query that would otherwise keep showing all of them.
+                    setFilter(p);
                     setQuery("");
                   }}
                 >
-                  <LayoutGrid className="size-4" />
-                </RailRow>
-                <RailRow
-                  active={q ? false : filter === "favorites"}
-                  label="Favorites"
-                  count={favoritesCount}
-                  onClick={() => {
-                    setFilter("favorites");
-                    setQuery("");
-                  }}
-                >
-                  <Star className={cn("size-4", !q && filter === "favorites" && "fill-current")} />
-                </RailRow>
-                {/* The eyebrow only exists to name the labs under it, so a
-                    query that matches nothing takes it with them. */}
-                {railProviders.length > 0 && (
-                  <div aria-hidden className="px-2 pb-1 pt-2.5 font-mono text-micro uppercase text-muted-foreground/70">
-                    Labs
-                  </div>
-                )}
-                {railProviders.map((p) => (
-                  <RailRow
-                    key={p}
-                    active={q ? false : filter === p}
-                    label={providerName(p)}
-                    count={countsByProvider.get(p)}
-                    onClick={() => {
-                      // A lab click means "show me this lab", so it clears the
-                      // query that would otherwise keep showing all of them.
-                      setFilter(p);
-                      setQuery("");
-                    }}
-                  >
-                    <ProviderLogo provider={p} className="size-4.5" />
-                  </RailRow>
-                ))}
-              </div>
+                  <ProviderLogo provider={p} className="size-4" />
+                </RailTile>
+              ))}
             </ScrollFade>
           </div>
 
