@@ -14,6 +14,7 @@ import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
@@ -351,6 +352,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ "--juno-sidebar-width": collapsed || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
       >
         <StreamProgress active={streaming} />
+
+        {/* An account that has never confirmed its address can read everything
+            it owns and export it, but cannot spend — so the refusal has to be
+            explained before it is hit, not after. The banner renders null until
+            it has confirmed the address is unverified, so a verified account
+            pays nothing for it. */}
+        <VerifyEmailBanner />
 
         {/* Mobile navigation stays out of a full-width toolbar: each action is
             a self-contained circular surface, so the page background continues
