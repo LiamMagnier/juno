@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import type { Plan } from "@prisma/client";
 import { PLANS, canUseModel } from "@/lib/plans";
-import { consumeMessage, getUserPlan, refundMessage } from "@/lib/usage";
+import { consumeMessage, consumeRefusalBody, getUserPlan, refundMessage } from "@/lib/usage";
 import { budgetExceededMessage, checkBudget, recordSpend } from "@/lib/spend";
 import { buildUsage } from "@/lib/chat-usage";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
@@ -180,14 +180,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
 
   const consumed = await consumeMessage(user.id, plan);
   if (!consumed.allowed) {
-    return NextResponse.json(
-      {
-        error: "You've reached your monthly message limit. Upgrade your plan to keep editing.",
-        code: "QUOTA_EXCEEDED",
-        quota: consumed.quota,
-      },
-      { status: 402 }
-    );
+    return NextResponse.json(consumeRefusalBody(consumed, "editing"), { status: 402 });
   }
 
   let raw = "";

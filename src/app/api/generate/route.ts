@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveModel, imageEditSupport } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
-import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
+import { getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
 import { checkBudget, recordSpend, budgetExceededMessage } from "@/lib/spend";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
 
   const quotaRes = await consumeMessage(user.id, plan);
   if (!quotaRes.allowed) {
-    return NextResponse.json({ error: "You've reached your monthly limit.", quota: quotaRes.quota }, { status: 402 });
+    return NextResponse.json(consumeRefusalBody(quotaRes, "generating"), { status: 402 });
   }
 
   const stream = new ReadableStream<Uint8Array>({

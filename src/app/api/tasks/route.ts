@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
 import { canUseModel } from "@/lib/plans";
 import { resolveModel } from "@/lib/models";
+import { encryptField } from "@/lib/field-crypto";
 import {
   computeNextRunAt,
   isValidTimezone,
@@ -115,7 +116,9 @@ export async function POST(req: Request) {
     data: {
       userId: user.id,
       name: input.name,
-      prompt: input.prompt,
+      // Encrypted at rest — see src/lib/field-crypto.ts. serializeTask below
+      // decrypts on the way back out, so the response is unchanged.
+      prompt: encryptField(input.prompt),
       model: model.id,
       webSearch: input.webSearch,
       ...schedule,

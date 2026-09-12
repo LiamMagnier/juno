@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
 import { canUseModel } from "@/lib/plans";
 import { resolveModel } from "@/lib/models";
+import { encryptField } from "@/lib/field-crypto";
 import {
   computeNextRunAt,
   isValidTimezone,
@@ -100,7 +101,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const task = await prisma.scheduledTask.update({
     where: { id, userId: user.id },
-    data: { ...input, ...schedule, nextRunAt },
+    // `input` is spread wholesale, so the one field that must not reach the
+    // column in cleartext is re-stated after it. Encrypted at rest — see
+    // src/lib/field-crypto.ts.
+    data: {
+      ...input,
+      ...(input.prompt !== undefined ? { prompt: encryptField(input.prompt) } : {}),
+      ...schedule,
+      nextRunAt,
+    },
     include: LATEST_RUN_INCLUDE,
   });
 

@@ -3,6 +3,7 @@ import type { CodeDevice, CodeTask, CodeTaskEvent, Prisma } from "@prisma/client
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
+import { encryptJsonField } from "@/lib/field-crypto";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
@@ -539,7 +540,7 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
     model: null,
     promptTokens,
     completionTokens,
-    activity: activity as unknown as Prisma.InputJsonValue,
+    activity: encryptJsonField(activity) as unknown as Prisma.InputJsonValue,
   };
   await prisma.message.upsert({
     where: { id: codeTaskMessageId(task.id) },

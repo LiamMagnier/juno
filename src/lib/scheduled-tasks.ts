@@ -7,6 +7,7 @@ import { getModel, isModelId, resolveModel, MODEL_LIST, type ModelInfo } from "@
 import { isProviderConfigured, PROVIDERS } from "@/lib/providers";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { encryptMessageText } from "@/lib/message-crypto";
+import { decryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import {
   checkBudget,
   recordSpend,
@@ -71,7 +72,9 @@ export function serializeTask(task: TaskWithLatestRun) {
   return {
     id: task.id,
     name: task.name,
-    prompt: task.prompt,
+    // Encrypted at rest (field-crypto.ts) — a task prompt is a standing
+    // instruction the user wrote, often naming people, accounts or projects.
+    prompt: decryptField(task.prompt),
     model: task.model,
     modelName: resolveModel(task.model)?.name ?? task.model,
     cadence: task.cadence,
@@ -175,6 +178,19 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     }
   };
 
+  // The stored prompt is ciphertext (field-crypto.ts). Decrypt once, here, and
+  // use `prompt` everywhere below — `task.prompt` is the sealed column.
+  const prompt = decryptField(task.prompt);
+  if (prompt === FIELD_DECRYPT_PLACEHOLDER) {
+    // Refuse rather than degrade. decryptField never throws, so without this a
+    // task whose key left the ring would run the placeholder as its prompt:
+    // a real provider call, really billed, producing an answer to nothing.
+    const error = "The stored prompt for this task could not be decrypted — check the data encryption keyring.";
+    await failRun(null, error);
+    await advance();
+    return { status: "error", error };
+  }
+
   const plan = await getUserPlan(task.userId);
 
   // Tasks live under the same money meter as chat: over budget → skip the run
@@ -215,7 +231,7 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
 
   const today = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const system = `You are running the scheduled task "${task.name}". Today is ${today}. Produce the result directly.`;
-  const history: MessageForModel[] = [{ role: "USER", content: task.prompt, attachments: [] }];
+  const history: MessageForModel[] = [{ role: "USER", content: prompt, attachments: [] }];
   // Web search rides the same native-provider path as chat; models/plans
   // without it silently run without (no error, no warning — it's a schedule).
   const useWebSearch = task.webSearch && PLANS[plan].webSearch && model.webSearch;
@@ -245,7 +261,7 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
   let budgetHalted = false;
   const enforceStreamBudget = () => {
     if (ceilingMicro == null || budgetHalted) return;
-    const inTok = promptTokens ?? Math.ceil((system.length + task.prompt.length) / 4);
+    const inTok = promptTokens ?? Math.ceil((system.length + prompt.length) / 4);
     const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
     if (inTok * rates.input + outTok * rates.output >= ceilingMicro) {
       budgetHalted = true;
@@ -326,7 +342,7 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     cacheWrite1h: cacheWrite1hTokens,
     webSearchRequests,
     xSearchRequests,
-    promptChars: system.length + task.prompt.length,
+    promptChars: system.length + prompt.length,
     completionChars: full.length,
     reasoningChars: reasoning.length,
   });
@@ -336,14 +352,14 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
       ? Math.round(costUsd * 1_000_000)
       : modelRequestCost({
           modelId: model.id,
-          promptTokens: billed.promptTokens || Math.ceil((system.length + task.prompt.length) / 4),
+          promptTokens: billed.promptTokens || Math.ceil((system.length + prompt.length) / 4),
           completionTokens: billed.completionTokens || Math.ceil((full.length + reasoning.length) / 4),
         });
 
   // One exchange per run — prompt then result — encrypted like every chat write.
   const conversationId = await ensureConversation();
   await prisma.message.create({
-    data: { conversationId, role: "USER", content: encryptMessageText(task.prompt) },
+    data: { conversationId, role: "USER", content: encryptMessageText(prompt) },
   });
   const assistant = await prisma.message.create({
     data: {
@@ -377,7 +393,7 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     webSearchRequests,
     xSearchRequests,
     costUsd: costUsd || undefined,
-    promptChars: system.length + task.prompt.length,
+    promptChars: system.length + prompt.length,
     completionChars: full.length,
     reasoningChars: reasoning.length,
   });

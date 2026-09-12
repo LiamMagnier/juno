@@ -18,6 +18,7 @@ import type {
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
+import { decryptJsonField } from "@/lib/field-crypto";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
@@ -59,8 +60,17 @@ function serializeReasoningParts(raw: unknown): string[] | undefined {
  * from named fields, so anything added to `ClientActivityEvent` without being
  * added here streams live and then vanishes the moment the page reloads. The
  * failure is silent and looks exactly like the feature working.
+ *
+ * The column is encrypted at rest (src/lib/field-crypto.ts), so the JSON is
+ * unsealed FIRST and everything below runs on the recovered structure. Rows
+ * written before the backfill have no envelope and come back from
+ * `decryptJsonField` unchanged, which is why this needed no version check; a
+ * row that cannot be decrypted comes back as null and lands on the
+ * `!Array.isArray` branch — the same "no activity" rendering a message written
+ * before the column existed already gets.
  */
-function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
+function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
+  const raw = decryptJsonField(stored);
   if (!Array.isArray(raw)) return undefined;
 
   const events = raw.flatMap((item) => {

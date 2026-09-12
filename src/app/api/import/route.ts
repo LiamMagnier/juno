@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { encryptMessageText } from "@/lib/message-crypto";
+import { encryptJsonField, encryptField } from "@/lib/field-crypto";
 import { getSuppressions } from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
 import { getUserPlan } from "@/lib/usage";
@@ -674,7 +675,7 @@ export async function POST(req: Request) {
             ...(message.completionTokens != null ? { completionTokens: message.completionTokens } : {}),
             ...(message.costMicroUsd != null ? { costMicroUsd: message.costMicroUsd } : {}),
             ...(message.sources !== null && message.sources !== undefined ? { sources: jsonInput(message.sources) } : {}),
-            ...(message.activity !== null && message.activity !== undefined ? { activity: jsonInput(message.activity) } : {}),
+            ...(message.activity !== null && message.activity !== undefined ? { activity: jsonInput(encryptJsonField(message.activity)) } : {}),
             createdAt: message.createdAt,
           })),
         },
@@ -788,13 +789,13 @@ export async function POST(req: Request) {
         where: { userId: user.id },
         create: {
           userId: user.id,
-          content: summaryContent,
+          content: encryptField(summaryContent),
           entryCount: nullableInt(rawSummary.entryCount) ?? memoriesImported,
           ...(dateValue(rawSummary.createdAt) ? { createdAt: dateValue(rawSummary.createdAt)! } : {}),
           ...(dateValue(rawSummary.updatedAt) ? { updatedAt: dateValue(rawSummary.updatedAt)! } : {}),
         },
         update: {
-          content: summaryContent,
+          content: encryptField(summaryContent),
           entryCount: nullableInt(rawSummary.entryCount) ?? memoriesImported,
         },
       });

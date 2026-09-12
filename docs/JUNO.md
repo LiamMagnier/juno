@@ -1636,10 +1636,18 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 Prisma schema: `prisma/schema.prisma` (92 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
-That is the whole list — `Message.activity`, memory entries and summaries, attachment
-`extractedText`, artifact bodies and scheduled-task prompts are plaintext; `SECURITY.md`
-keeps the exact table. Every relation cascades from `User` (account deletion is a single
-cascading delete).
+So are `Message.activity`, `MemorySummary.content` and `ScheduledTask.prompt`, through
+`src/lib/field-crypto.ts` — the same keyring and wire format, so one rotation covers
+everything. `Message.activity` stays a `Json` column: the ciphertext is wrapped as
+`{"enc":"enc:v2:…"}` rather than migrated to text.
+
+Still plaintext, and deliberately: `Attachment.extractedText`, `ArtifactVersion.content`
+and `MemoryEntry.content`, because unified search tokenises them **inside Postgres**
+(`src/lib/search/sql.ts` builds `to_tsvector` and snippets from those columns), so
+encrypting them would make every query silently return nothing. Also plaintext:
+`Message.sources`, titles, project instructions, uploaded bytes. `SECURITY.md` keeps the
+exact table and names searchable encryption as the open design question. Every relation
+cascades from `User` (account deletion is a single cascading delete).
 
 **Users / auth / connectors.** `User` (email, `hashedPassword?`, `sessionVersion`,
 moderation fields `bannedAt`/`banReason`/`bannedBy`/`strikes`, image). `Account`,
@@ -1658,13 +1666,14 @@ responseLanguage/uiLocale/personality/memoryEnabled/voiceId/favoriteModels/email
 `clientRequestId`, pin/`archivedAt`, `folderId`/`projectId`/`forkedFromId`,
 `activeConnectors`, code-workspace attribution). `Project` (name + `nameSource`,
 instructions, starred). `Message` (`role`, encrypted `content`/`reasoning`/
-`reasoningParts`, `model`, `feedback`, token counts, `costMicroUsd`, `sources`, `activity`;
-`clientId` for idempotent native pushes). `MessageVersion` (append-only edit/regenerate
+`reasoningParts`, `model`, `feedback`, token counts, `costMicroUsd`, `sources`, encrypted
+`activity`; `clientId` for idempotent native pushes). `MessageVersion` (append-only edit/regenerate
 history). `ChatFirstSubmissionReceipt` (durable first-submission idempotency + lease).
 `VoiceTranscriptSession`.
 
-**Memory.** `MemoryEntry` (FACT/SUPPRESSION), `ConversationMemory` (per-chat high-water),
-`MemorySummary`.
+**Memory.** `MemoryEntry` (FACT/SUPPRESSION — `content` plaintext, because
+`memorySearchSql` tokenises it in Postgres), `ConversationMemory` (per-chat high-water),
+`MemorySummary` (encrypted `content`).
 
 **Artifacts.** `Artifact` (+ `currentVersion`), `ArtifactVersion` (append-only,
 `@@unique([artifactId, version])`).
@@ -1700,9 +1709,20 @@ fields `parentSessionId`/`createsNewSession`/`origin`/`idempotencyKey`), `CodeTa
   bills the plan.
 - **Every mutating route** authorizes the session/bearer user and scopes queries to their
   data; admin/owner surfaces return 404 (not 403) to hide their existence.
-- **At-rest encryption** (AES-256-GCM) for message content/reasoning and all connector /
-  OAuth tokens, keyed by `AUTH_SECRET`-derived keys (rotatable via
-  `TOKEN_ENCRYPTION_KEYS`/`TOKEN_ENCRYPTION_PRIMARY` + `npm run crypto:rotate`).
+- **At-rest encryption** (AES-256-GCM) for message content/reasoning, the tool-activity
+  log, the memory summary, scheduled-task prompts, and all connector / OAuth tokens.
+  Connector tokens are keyed by `AUTH_SECRET`-derived keys (rotatable via
+  `TOKEN_ENCRYPTION_KEYS`/`TOKEN_ENCRYPTION_PRIMARY` + `npm run crypto:rotate`); message
+  and field columns share the `DATA_ENCRYPTION_KEYRING` keyring
+  (`src/lib/message-crypto.ts`, `src/lib/field-crypto.ts`), rotated together by
+  `npm run crypto:rotate:messages` and backfilled by `npm run crypto:encrypt-columns`.
+  Reads are read-both (unsealed rows pass through) and never throw, so the backfill can
+  run at its own pace against a live database.
+- **Attachment text, artifact bodies and individual memory entries stay plaintext** — not
+  an oversight: `src/lib/search/sql.ts` runs `to_tsvector` over those columns inside
+  Postgres, so encrypting them would make search return nothing with no error. Searchable
+  encryption (an application-side index, or a scheme the database can match over, each
+  leaking equality/frequency/order) is the open design question; see `SECURITY.md`.
 - **Session invalidation** via `User.sessionVersion` covers both web JWTs and native
   access tokens; native refresh tokens rotate with family-wide reuse revocation.
 - **CSRF** origin check on all cookie-bearing API writes (`src/middleware.ts`).

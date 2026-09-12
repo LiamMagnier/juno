@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
+import { decryptField } from "@/lib/field-crypto";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { getViewUrl } from "@/lib/storage";
@@ -406,7 +407,10 @@ const loaders: Record<string, EntityLoader> = {
         {
           id: row.id,
           name: row.name,
-          prompt: row.prompt,
+          // Decrypted for the wire: the native client holds no key, and this
+          // payload is what its task editor renders. Encrypted at rest —
+          // src/lib/field-crypto.ts.
+          prompt: decryptField(row.prompt),
           model: row.model,
           cadence: row.cadence,
           hour: row.hour,

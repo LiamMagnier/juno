@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
-import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
+import { getQuota, getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
@@ -57,6 +57,7 @@ import {
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
+import { encryptJsonField } from "@/lib/field-crypto";
 import {
   checkBudget,
   recordSpend,
@@ -801,10 +802,7 @@ async function handleChat(req: Request) {
 
     const consumed = await consumeMessage(user.id, plan);
     if (!consumed.allowed) {
-      return NextResponse.json(
-        { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
-        { status: 402 }
-      );
+      return NextResponse.json(consumeRefusalBody(consumed), { status: 402 });
     }
 
     const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
@@ -1297,6 +1295,27 @@ async function handleChat(req: Request) {
   let consumed: Awaited<ReturnType<typeof consumeMessage>> | null = null;
 
   if (durableFirstSubmission) {
+    // The durable path consumes quota inside its own acceptance transaction
+    // rather than through consumeMessage(), so it never ran the
+    // email-verification check that lives there — which made the first
+    // message of a brand-new conversation, the exact turn a fresh disposable
+    // account sends, the one turn the gate did not cover. Checked here,
+    // before the transaction, because it must consume nothing.
+    const account = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { emailVerified: true },
+    });
+    if (!account?.emailVerified) {
+      return NextResponse.json(
+        consumeRefusalBody({
+          allowed: false,
+          reason: "email_unverified",
+          quota: await getQuota(user.id, plan),
+        }),
+        { status: 402 },
+      );
+    }
+
     const clientRequestId = input.clientRequestId!;
     const clientMessageId = input.clientMessageId!;
     const requestHash = firstSubmissionHash!;
@@ -1432,7 +1451,7 @@ async function handleChat(req: Request) {
 
       if (acceptance.kind === "quota") {
         return NextResponse.json(
-          { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
+          consumeRefusalBody({ allowed: false, reason: "quota_exceeded", quota: acceptance.quota }),
           { status: 402 }
         );
       }
@@ -1629,10 +1648,7 @@ async function handleChat(req: Request) {
           })
           .catch(() => {});
       }
-      return NextResponse.json(
-        { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
-        { status: 402 }
-      );
+      return NextResponse.json(consumeRefusalBody(consumed), { status: 402 });
     }
   }
 
@@ -2129,7 +2145,7 @@ async function handleChat(req: Request) {
         const parts = reasoningPartsColumn(data.reasoningParts, encryptMessageText, mode);
         const base = {
           ...assistantTurnFields({ ...data, model: modelId }, encryptMessageText),
-          activity: activityLog as unknown as Prisma.InputJsonValue,
+          activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue,
         };
         const sources = acc.sources;
         // Metadata for the pager rides along on the done chunk.
@@ -2673,7 +2689,7 @@ async function handleChat(req: Request) {
         });
         const assistantWithActivity = await prisma.message.update({
           where: { id: assistant.id },
-          data: { activity: activityLog as unknown as Prisma.InputJsonValue },
+          data: { activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue },
           include: {
             attachments: { where: { deletedAt: null } },
             versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
@@ -2798,7 +2814,7 @@ async function handleChat(req: Request) {
             });
             const assistantWithActivity = await prisma.message.update({
               where: { id: assistant.id },
-              data: { activity: activityLog as unknown as Prisma.InputJsonValue },
+              data: { activity: encryptJsonField(activityLog) as unknown as Prisma.InputJsonValue },
               include: {
                 attachments: { where: { deletedAt: null } },
                 versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },

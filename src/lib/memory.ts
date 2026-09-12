@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
+import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, getModel, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
@@ -928,10 +929,14 @@ export interface MemorySummary {
 }
 
 export async function getMemorySummary(userId: string): Promise<MemorySummary | null> {
-  return prisma.memorySummary.findUnique({
+  const row = await prisma.memorySummary.findUnique({
     where: { userId },
     select: { content: true, updatedAt: true, entryCount: true },
   });
+  // Encrypted at rest since field-crypto.ts — the distilled profile is a
+  // denser statement of who the user is than any single message. Rows written
+  // before the backfill carry no prefix and pass straight through.
+  return row ? { ...row, content: decryptField(row.content) } : null;
 }
 
 export interface MemoryProfile {
@@ -1339,11 +1344,14 @@ Rules:
 
   const content = result;
   const factCount = await prisma.memoryEntry.count({ where: { userId: opts.userId, kind: "FACT" } });
+  const sealed = encryptField(content);
   await prisma.memorySummary.upsert({
     where: { userId: opts.userId },
-    create: { userId: opts.userId, content, entryCount: factCount },
-    update: { content, entryCount: factCount },
+    create: { userId: opts.userId, content: sealed, entryCount: factCount },
+    update: { content: sealed, entryCount: factCount },
   });
+  // The outcome reports the CLEARTEXT: callers render it or feed it to a
+  // prompt, and none of them hold a key.
   return { status: "updated", content };
 }
 
