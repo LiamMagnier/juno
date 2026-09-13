@@ -1,0 +1,113 @@
+# Premium audit — September 2026
+
+An audit of what "minimal, clean, premium" means in the products Juno is
+measured against, what Juno actually ships, and the rules that close the gap.
+
+`FLAT_UI.md` is still the material law: one plane, hairlines, tonal state, one
+accent. This document is about **composition** — how much is on screen, how many
+voices speak at once, and where the eye lands first. Juno's tokens were never
+the problem. Every surface audited below is individually on-token and
+collectively reads as a control panel.
+
+## 1. What the reference products actually do
+
+Read from ChatGPT, Claude, Linear, Raycast and Arc — not their marketing, their
+chrome.
+
+**They spend their pixels on one thing per surface.** Claude's model menu is a
+list of model names with a one-line descriptor. There is no speed meter, no
+price table, no context-window figure. The cost of a model is a business fact,
+not a choosing fact, and it is not on the menu. ChatGPT's is the same list with
+a "Thinking" toggle folded into the entry.
+
+**Chrome is quieter than content, always.** In all five the sidebar is the
+lowest-contrast region on screen: one weight of text, one ink at ~55% against
+the panel, no glyph unless the row is a destination rather than a document.
+Juno's sidebar draws a 16px icon on every row including the chat titles, which
+puts a hundred small marks in the quietest column in the product.
+
+**A list is rows, not cards.** Nothing in the reference set puts a border, a
+fill, or a radius on an unselected list row. The row is text on the panel. Fill
+appears on hover and stays on selection, and that is the entire vocabulary.
+
+**Type has two sizes in chrome, not five.** A row size and a section size.
+Juno's picker uses `ui` (13px), `label` (12px caps), `caption` (11px), `micro`
+(10.5px mono) and `tabular-nums` at 17px — five voices inside 700px.
+
+**Density is honest.** Reference rows sit at 32–36px with 8–12px of side
+padding, and the panel has real breathing room at its edges (16px, not 8px).
+Juno's picker pads its list viewport to 8px and its rows to 8px, so the text
+starts 16px from the popover edge while the spec sheet beside it starts at 16px
+from its own — two different left edges that happen to compute the same number.
+
+**Motion is a consequence, not an event.** Hover fills cross-fade in ~120ms.
+Nothing slides, scales, or springs in chrome.
+
+## 2. Findings
+
+### P0 — the model picker reads as a dashboard
+`src/components/chat/model-selector.tsx`
+
+Three panes in 700×440. A 48px icon-only lab rail (names only in tooltips), a
+squeezed ~350px list, and a 300px spec sheet carrying four numeric grades over
+4px meters, capability chips, a two-column price table and a Use button.
+
+The spec sheet is the whole problem. It is a permanent third region that answers
+a question nobody asked at the moment of choosing, and it is the loudest thing
+in the popover. The icon rail is the second: a logo with no name is a memory
+test, and the tooltip that fixes it is a 600ms delay on the primary navigation
+of the surface.
+
+**Rule:** two panes. A **named** lab rail on the left, the model list on the
+right. Everything the spec sheet said moves onto the row it describes or into
+the row's own expanded state. One trailing signal per row, maximum.
+
+### P0 — the sidebar competes with the transcript
+`src/components/app/app-sidebar.tsx`
+
+Every row carries a `size-4` glyph, including recents. Section eyebrows are mono
+caps; date folds are sans captions one rung below; the product switch, search
+field, New chat button and five nav destinations all sit above the list. That is
+332px of chrome before the first chat title.
+
+**Rule:** glyphs on destinations only, never on documents. One eyebrow voice.
+Chrome above the list gets a hard budget.
+
+### P1 — the aura paints the whole window for every surface
+`src/components/ambient/ambient-aura.tsx`, `src/lib/aura.ts`
+
+The light is claimed by five sources (`voice`, `chat`, `research`, `code`,
+`work`), portals to `<body>`, and paints the bottom and both sides of the
+viewport — across the sidebar. So a background chat stream lights the frame
+around a sidebar the user is reading, and the "wave" is a literal sine ribbon
+with a 1.25px crest that reads as a 2008 audio visualiser.
+
+**Rule:** voice only. Scoped to the chat surface, never the window. A field,
+not a waveform.
+
+### P2 — five type voices in chrome
+
+`ui` / `label` / `caption` / `micro` / `tabular-nums` inside one popover. The
+scale is good; the usage is undisciplined.
+
+**Rule:** chrome gets `ui` for rows and `label` for sections. `micro` is for
+genuine machine metadata (a model id, a token count) and appears at most once
+per surface. No numerals above `ui` size anywhere in chrome.
+
+## 3. The rules
+
+1. **One question per surface.** A picker picks. It does not also compare,
+   benchmark, or price.
+2. **Two panes maximum**, and the left one is named.
+3. **A list row is text on the panel.** No border, no fill, no radius until
+   hover or selection.
+4. **Glyphs mark destinations, not documents.**
+5. **Two type voices in chrome**: row and section.
+6. **One trailing signal per row.** If a row needs two facts on the right, one
+   of them is not needed.
+7. **Meters are banned in chrome.** A number is a number; a bar beside it is the
+   same fact drawn twice.
+8. **16px side gutters** on every panel edge, and the panes agree on their
+   inner left edges by construction, not by arithmetic.
+9. **Ambient light belongs to the surface that earned it**, never to the window.
+10. **Nothing in chrome moves except a fill.**

@@ -4,23 +4,17 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
-  Eye,
-  Image as ImageIcon,
   LayoutGrid,
   Lock,
   Search,
   SearchX,
   Star,
-  Video,
-  Waypoints,
   X,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
-import { ComposerIcons, StatusIcons } from "@/lib/app-icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
@@ -31,12 +25,9 @@ import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import {
-  contextScore,
-  expensivenessScore,
   formatContext,
   formatPrice,
   getModelMetrics,
-  hasLiveBenchmark,
   sortModelsForDisplay,
 } from "@/lib/model-metrics";
 import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
@@ -45,48 +36,37 @@ import { cn } from "@/lib/utils";
 type Filter = "all" | "favorites" | Provider;
 
 /**
- * The model picker: lab rail · list · spec sheet.
+ * The model picker: named lab rail · model list.
  *
- * Three panes, 700×440, clamped to the viewport. The RAIL on the left is one
- * 32px mark per configured lab (plus All models and Favorites), 48px wide with
- * the name in a tooltip — it was briefly a 180px column of named rows, and the
- * answer from the owner was that the popover had become too large, so the
- * names went back into the tooltip and the whole surface came down from
- * 880×560. Pick a lab and the LIST shows its models arranged by what
- * they make — Text, then Image, then Video — newest and strongest first, with
- * superseded generations folded behind "Past models". Point or arrow at a row
- * and the SPEC SHEET on the right fills in: intelligence, speed, context and
- * cost as four numerals over 4px ink rules, the capability chips, the price
- * per million tokens in two aligned columns, and a "Use this model" button.
+ * TWO PANES, and the second one is the point. It used to be three — a 48px
+ * icon-only rail, a squeezed list, and a 260px spec sheet carrying four graded
+ * numerals over 4px meters, capability chips and a two-column price table. The
+ * sheet answered a question nobody asks while choosing, and it was the loudest
+ * object in the popover; the rail asked you to recognise sixteen logos with
+ * their names hidden behind a 600ms tooltip. Both are gone
+ * (docs/design/PREMIUM_AUDIT.md §2).
  *
- * Three rules hold the surface together, and breaking any one of them is what
- * made the previous version read as a dashboard:
+ * The RAIL is now 168px of named rows: All models, Favorites, then one row per
+ * configured lab with its mark, its name and how many models it has. The LIST
+ * is everything else — search at the top, rows grouped by lab (or by what they
+ * make, inside a lab), superseded generations folded behind "Past models".
  *
- *  1. ONE ACCENT, FOUR USES, ALL OF THEM STATE — the selected-model check, a
- *     filled favourite star, the Use button, and the focus edge. Nothing else
- *     in this file may be coral (FLAT_UI.md §2.4: "It is never furniture").
- *     The rail's active tile is the tonal `bg-secondary`, the metric fills are
- *     `bg-foreground/55`, and the badges are mono words with no capsule.
- *  2. NUMBERS FIRST, METERS SECOND — the grade is a 17px tabular numeral and
- *     the meter under it is a 4px rule. It replaced forty 20×10px coral pills
- *     that shouted the comparison while the real value sat beside them at the
- *     smallest size in the product.
- *  3. ONE LEFT EDGE AND ONE RIGHT EDGE — the list viewport's px-2 + row px-2
- *     and the sheet's px-4 both land on 16px; every
- *     trailing object in the list (price, state glyph, section count) ends on
- *     the same x, so a column of prices can be read down.
+ * A ROW IS TEXT ON THE PANEL. No border, no fill, no radius until the cursor
+ * is on it. It carries the lab mark, the name, a one-line description, and
+ * exactly ONE trailing signal: the selected check, or a lock, or the plan it
+ * needs. The capability glyph column and the price column both went into the
+ * description line, where they are words a person can read rather than three
+ * 12px icons in a 44px gutter.
  *
- * Favorites are persisted to the account and lead the All view; the star in
- * the sheet's foot toggles them. Recents stay per browser, like a draft. Auto
- * leads All as Juno's recommendation.
+ * What survives from the old surface, because it was right: one accent used
+ * only for state (the selected check, a filled star, the focus edge), a single
+ * cursor shared by pointer and arrow keys, and favorites persisted to the
+ * account while recents stay per browser.
  *
- * Thinking effort lives HERE, as a footer under the three panes, passed in
- * by the composer as `thinking`. It used to be its own chip beside this one
- * — two words with two chevrons for one decision ("which model, how hard")
- * — and the row read as a toolbar. Claude ships effort under its model
- * list; ChatGPT folded Instant/Thinking into one entry with an effort
- * control. One chip, one popover, the model list on top and the effort
- * underneath, is the shape both converged on.
+ * Thinking effort is a footer under both panes, passed in by the composer as
+ * `thinking` — one chip, one popover, for the one decision "which model, how
+ * hard". Claude ships effort under its model list; ChatGPT folds it into the
+ * entry. This is that shape.
  */
 
 /** Most recently chosen models, newest first. Per browser, like a draft. */
@@ -115,10 +95,6 @@ function pushRecent(id: string) {
   } catch {
     // Storage can be unavailable (private mode, quota); the list is a courtesy.
   }
-}
-
-function isFastModel(m: ModelInfo) {
-  return getModelMetrics(m).speed >= 8;
 }
 
 /** "Anthropic · Claude" → "Anthropic". */
@@ -152,16 +128,22 @@ function priceLabel(m: ModelInfo): string {
  * and the description has nowhere else to live. Above `md` the row is one
  * line and this text is in the sheet, 8px to the right, in full.
  */
+/**
+ * The row's one description line.
+ *
+ * The curated blurb when there is one; otherwise what the catalog knows. This
+ * used to be able to return the empty string for a discovered model with no
+ * description and no context figure, which left a row with a name and nothing
+ * under it beside rows carrying two lines — a ragged list. The context window
+ * is the one fact every chat model has, so it is the floor.
+ */
 function rowCaption(m: ModelInfo): string {
   if (m.description) return m.description;
   const metrics = getModelMetrics(m);
-  return [
-    m.modality === "chat" && metrics.contextTokens ? `${formatContext(metrics.contextTokens)} context` : null,
-    m.reasoning ? "Thinking" : null,
-    m.vision ? "Vision" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  if (m.modality !== "chat") return `${MODALITY_LABEL[m.modality]} generation.`;
+  return metrics.contextTokens
+    ? `${formatContext(metrics.contextTokens)} context window.`
+    : `${providerName(m.provider)} chat model.`;
 }
 
 /** Does this model answer the query? One predicate, so the rail's counts and
@@ -187,70 +169,13 @@ function matchesQuery(m: ModelInfo, q: string): boolean {
  */
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
-    <div aria-hidden className="flex h-7 items-center gap-2 px-2">
-      <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/70">{children}</span>
-      <span className="h-px flex-1 bg-border/70" />
+    <div aria-hidden className="flex h-8 items-center gap-2 px-2 pt-1">
+      <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">{children}</span>
+      <span className="h-px flex-1 bg-border/60" />
       {count != null && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">{count}</span>
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/60">{count}</span>
       )}
     </div>
-  );
-}
-
-/**
- * One graded fact: the value as a numeral, the grade as a 4px ink rule.
- *
- * This replaced ten `bg-primary` pills per metric, four metrics deep — forty
- * coral blocks in a 300px column, which spent the accent on decoration and
- * still printed the number they encoded in muted grey at the smallest size in
- * the product. A 17px tabular numeral over a rule is an instrument; the pills
- * were a character sheet.
- *
- * The fill is `bg-foreground/55` on `bg-secondary` — over 3:1 on both themes
- * — and the width is the ONE thing that animates when the sheet's model
- * changes (see the note on the sheet's missing `key`).
- */
-function StatCell({
-  label,
-  value,
-  unit,
-  score,
-  wide,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  /** 1–10. Drives the rule's length only; `value` is what a person reads. */
-  score: number;
-  wide?: boolean;
-}) {
-  return (
-    <div className={cn(wide && "col-span-2")}>
-      <div className="font-mono text-micro uppercase text-muted-foreground/70">{label}</div>
-      <div className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-body-lg font-medium tabular-nums text-foreground">{value}</span>
-        {unit && <span className="font-mono text-micro text-muted-foreground/60">{unit}</span>}
-      </div>
-      <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
-        {/* An inline width percentage: this is DATA, not a colour — the same
-            precedent as Progress's inline transform and the popover's own
-            inline size below. */}
-        <div
-          aria-hidden
-          className="h-full rounded-full bg-foreground/55 transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
-          style={{ width: `${Math.max(0, Math.min(10, score)) * 10}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function CapabilityChip({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
-  return (
-    <span className="inline-flex h-6 items-center gap-1.5 rounded-control border border-border px-2 font-mono text-micro uppercase leading-none text-muted-foreground">
-      <Icon className="size-3 text-muted-foreground/70" />
-      <span>{label}</span>
-    </span>
   );
 }
 
@@ -278,342 +203,44 @@ function EmptyBlock({
 }
 
 /**
- * The spec sheet. A fixed 300px column with its own scroll; the "Use this
- * model" button is pinned at the foot so it is reachable however long the
- * description runs.
- */
-function DetailPanel({
-  model,
-  selected,
-  locked,
-  starred,
-  onUse,
-  onToggleStar,
-}: {
-  model: ModelInfo | null;
-  selected: boolean;
-  locked: boolean;
-  starred: boolean;
-  onUse: () => void;
-  onToggleStar: () => void;
-}) {
-  // The fold is `md` (768), recomputed for the 700px popover rather than
-  // inherited: the box is `min(700, 100vw - 2rem)`, so it reaches its full
-  // 700 at any viewport ≥ 732 and the three panes measure 48 · 390 · 260 from
-  // 768 up — 170px of name column, which is the width "Claude Sonnet 5" needs.
-  // One step down (640–767) the sheet would eat the list back to ~78px of
-  // name, so the sheet is the pane that goes and the row grows its second line
-  // to carry the description instead (see `renderRow`).
-  const shell = "hidden w-[260px] shrink-0 flex-col border-l border-border/70 bg-background/60 md:flex";
-  const scrollRef = React.useRef<HTMLDivElement>(null);
-  const modelId = model?.id;
-
-  // The pane used to be `key={model.id}` + `animate-fade-in`, which remounted
-  // and re-faded 300px of column on EVERY arrow keypress: holding ↓ flickered,
-  // the meters' own transition could never run, and the scroll position reset
-  // anyway. Keeping the container mounted lets the four meters interpolate
-  // their widths — the single piece of motion on this surface — and the scroll
-  // reset the remount used to give for free is this one effect instead.
-  React.useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [modelId]);
-
-  if (!model) {
-    return (
-      <div className={cn(shell, "items-center justify-center p-5")}>
-        <p className="text-center text-caption text-muted-foreground">Select a model to see its specs.</p>
-      </div>
-    );
-  }
-
-  const auto = isAutoModelId(model.id);
-  const soon = !!model.comingSoon;
-  const useLabel = soon
-    ? "Coming soon"
-    : locked
-      ? `Upgrade to ${PLANS[effectiveMinPlan(model.minPlan)].name}`
-      : selected
-        ? "Current model"
-        : auto
-          ? "Use Auto"
-          : "Use this model";
-
-  const identity = (
-    <div className="flex items-center gap-3">
-      {auto ? (
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-logo bg-secondary">
-          <JunoMark className="size-4.5" />
-        </span>
-      ) : (
-        <ProviderLogo provider={model.provider} className="size-8" />
-      )}
-      <div className="min-w-0">
-        <h3 className="truncate text-heading leading-tight tracking-tight">{model.name}</h3>
-        <p className="truncate font-mono text-micro text-muted-foreground">
-          {auto ? "Juno" : providerName(model.provider)}
-          {model.released ? ` · ${model.released}` : ""}
-        </p>
-      </div>
-    </div>
-  );
-
-  let body: React.ReactNode;
-  if (auto) {
-    body = (
-      <>
-        {identity}
-        <p className="text-ui leading-relaxed text-muted-foreground">
-          Routes each message to the <span className="font-medium text-foreground">best model</span> and{" "}
-          <span className="font-medium text-foreground">thinking depth</span> for speed, intelligence and cost.
-        </p>
-        <ul className="space-y-2 text-ui leading-snug text-muted-foreground">
-          <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">1</span>
-            Everyday prompt → Fast models · Instant
-          </li>
-          <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">2</span>
-            Coding &amp; analysis → Mid tier · Balanced
-          </li>
-          <li className="flex gap-2">
-            <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">3</span>
-            Deep reasoning → Flagship · Deep thinking
-          </li>
-        </ul>
-        <p className="border-t border-border pt-3 text-caption leading-snug text-muted-foreground/80">
-          Respects your plan limits, image needs, and web search settings.
-        </p>
-      </>
-    );
-  } else {
-    const metrics = getModelMetrics(model);
-    const free = metrics.inputUsdPerMTok === 0 && metrics.outputUsdPerMTok === 0;
-    const generative = model.modality === "image" || model.modality === "video";
-    const expensiveness = expensivenessScore(metrics);
-    const cells: { label: string; value: string; unit?: string; score: number }[] = generative
-      ? [
-          { label: "Quality", value: String(metrics.intelligence), unit: "/10", score: metrics.intelligence },
-          { label: "Speed", value: String(metrics.speed), unit: "/10", score: metrics.speed },
-          { label: "Cost", value: String(expensiveness), unit: "/10", score: expensiveness },
-        ]
-      : [
-          { label: "Intelligence", value: String(metrics.intelligence), unit: "/10", score: metrics.intelligence },
-          { label: "Speed", value: String(metrics.speed), unit: "/10", score: metrics.speed },
-          {
-            label: "Context",
-            value: formatContext(metrics.contextTokens),
-            score: contextScore(metrics.contextTokens),
-          },
-          { label: "Cost", value: String(expensiveness), unit: "/10", score: expensiveness },
-        ];
-    const hasChips = model.vision || model.reasoning || model.webSearch || isFastModel(model) || generative;
-    body = (
-      <>
-        {identity}
-
-        {model.status === "deprecated" && (
-          // Tonal fill, warning INK only. A `bg-warning/10` block here was a
-          // second coloured object competing with the accent Use button 300px
-          // below it, in a column that can only afford one.
-          <div className="flex items-start gap-2 rounded-control border border-border bg-secondary px-2.5 py-2 text-caption text-warning">
-            <StatusIcons.warning className="mt-px size-3.5 shrink-0" />
-            <span>
-              {model.retiresOn ? `Available until ${formatRetirementDate(model.retiresOn)}` : "Retiring soon"}
-            </span>
-          </div>
-        )}
-
-        {/* The clamp is load-bearing: it fixes the y of the stat grid, the
-            chips and the price block, so those land in the same place for every
-            model in the list. That stillness is what lets the four meters read
-            as the only thing moving. TWO lines, not three — the pane lost 120px
-            of height when the popover came down to 440, and the third line is
-            what the grid would have had to give up. The full text is on
-            `title`. */}
-        <p
-          title={model.description ?? undefined}
-          className="line-clamp-2 text-ui leading-relaxed text-muted-foreground"
-        >
-          {model.description ?? "Capable foundation model."}
-        </p>
-
-        <div className="grid grid-cols-2 gap-x-3 gap-y-3">
-          {cells.map((c, i) => (
-            <StatCell
-              key={c.label}
-              label={c.label}
-              value={c.value}
-              unit={c.unit}
-              score={c.score}
-              wide={cells.length % 2 === 1 && i === cells.length - 1}
-            />
-          ))}
-        </div>
-
-        {hasLiveBenchmark(model) && (
-          <p className="font-mono text-micro text-muted-foreground/60">
-            Scores by{" "}
-            <a
-              href="https://artificialanalysis.ai"
-              target="_blank"
-              rel="noreferrer"
-              className="underline decoration-dotted underline-offset-2 hover:text-muted-foreground"
-            >
-              Artificial Analysis
-            </a>
-          </p>
-        )}
-
-        <div className="border-t border-border pt-3">
-          <div className="font-mono text-micro uppercase text-muted-foreground/70">Price per million tokens</div>
-          {free ? (
-            <p className="mt-1 text-body-lg font-medium">Free</p>
-          ) : (
-            // Money at 17px in two aligned columns. It was 12px prose under a
-            // 1-to-10 "Cost" grade that carried four times its weight — and the
-            // price is the fact people actually compare.
-            <div className="mt-1 grid grid-cols-2 gap-x-3">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-body-lg font-medium tabular-nums">{formatPrice(metrics.inputUsdPerMTok)}</span>
-                <span className="font-mono text-micro uppercase text-muted-foreground">in</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-body-lg font-medium tabular-nums">{formatPrice(metrics.outputUsdPerMTok)}</span>
-                <span className="font-mono text-micro uppercase text-muted-foreground">out</span>
-              </div>
-            </div>
-          )}
-          {locked && (
-            <p className="mt-2 text-caption text-muted-foreground">
-              Requires the {PLANS[effectiveMinPlan(model.minPlan)].name} plan.
-            </p>
-          )}
-        </div>
-
-        {/* The chips sit AFTER the price, which they did not at 300px wide.
-            At 260 they wrap to two rows, and the measured column is 390px of
-            content in a 324px viewport — something has to fall below the fold.
-            These are the only thing here that is a restatement: the same three
-            capabilities are already a glyph column on every row in the list.
-            The price is not restated anywhere and is the fact this pane was
-            rebuilt around, so the tags scroll and the money does not. */}
-        {hasChips && (
-          <div className="flex flex-wrap gap-1.5">
-            {model.modality === "image" && <CapabilityChip icon={ImageIcon} label="Image" />}
-            {model.modality === "video" && <CapabilityChip icon={Video} label="Video" />}
-            {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
-            {/* Waypoints, not a BRAIN. Extended thinking is the model working
-                through intermediate steps before answering — a route with stops
-                on it. A brain says "this one is intelligent", which is either
-                true of every row here or of none of them, and is the single
-                most worn-out mark in AI product design. */}
-            {model.reasoning && <CapabilityChip icon={Waypoints} label="Thinking" />}
-            {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
-            {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
-            {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
-          </div>
-        )}
-      </>
-    );
-  }
-
-  return (
-    <div className={shell}>
-      {/* space-y-3, down from 3.5: the column lost 120px when the popover came
-          down to 440, and a 14px rhythm in a 324px pane spends four of those
-          gaps on air. */}
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 pb-3 pt-4">
-        {body}
-      </div>
-      <div className="flex shrink-0 items-center gap-2 border-t border-border p-3">
-        {soon || selected ? (
-          /* NOT a disabled accent button.
-             The accent at 40% is the treatment the composer's send circle lost
-             this pass, and for the reason it lost it: a washed-out primary
-             reads as a control that failed, not as a state. A model that is
-             already chosen (or not yet available) therefore gets a quiet tonal
-             strip — `--secondary` fill, muted ink, no accent anywhere — that
-             STATES the fact instead of offering a press. It is not a button
-             and not focusable, so nothing here invites an action that would
-             do nothing. Every other model keeps the full-strength accent. */
-          <div className="flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-control bg-secondary px-3 text-ui font-medium text-muted-foreground coarse:h-10">
-            {selected && <StatusIcons.success aria-hidden className="size-3.5 shrink-0" />}
-            <span className="truncate">{useLabel}</span>
-          </div>
-        ) : (
-          /* The one filled object in the whole popover. A locked model keeps
-             the accent and stays enabled — upgrading IS the action. */
-          <Button type="button" size="sm" className="min-w-0 flex-1" onClick={onUse}>
-            {useLabel}
-          </Button>
-        )}
-        {!auto && !soon && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                className="shrink-0"
-                aria-pressed={starred}
-                aria-label={starred ? "Remove from favorites" : "Add to favorites"}
-                onClick={onToggleStar}
-              >
-                <Star className={cn("size-3.5", starred && "fill-current text-primary")} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{starred ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * A 32px tile on the lab rail.
+ * One row on the lab rail: mark, name, count.
  *
- * Icon only, in a 48px strip: the name is the tooltip. It was briefly a 180px
- * column of named, counted rows, which is most of what made the popover read
- * as too large — 132px of chrome spent on labels a person reads once.
- *
- * Three things from that pass stay. Active is `bg-secondary`, the tonal
- * "selected" fill — the accent ring it used to wear spent the brand colour on
- * a filter state, which FLAT_UI.md §2.4 forbids. It carries a real
- * `focus-visible` ring. And a lab with nothing in it is never rendered at all,
- * so no tile here can lead to an empty list.
+ * Named, because a logo with no name is a memory test and the tooltip that
+ * used to fix it put a 600ms delay on this surface's primary navigation. The
+ * active row is the tonal `bg-secondary` — the accent is reserved for the
+ * selected MODEL, not for which lab you are browsing.
  */
-function RailTile({
+function RailRow({
   active,
-  title,
+  label,
+  count,
   onClick,
   children,
 }: {
   active: boolean;
-  title: string;
+  label: string;
+  count?: number;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={title}
-          onClick={onClick}
-          aria-pressed={active}
-          className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-            "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="right">{title}</TooltipContent>
-    </Tooltip>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex h-8 w-full shrink-0 items-center gap-2 rounded-control px-2 text-left outline-none",
+        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">{children}</span>
+      <span className="min-w-0 flex-1 truncate text-ui">{label}</span>
+      {count != null && (
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/60">{count}</span>
+      )}
+    </button>
   );
 }
 
@@ -832,9 +459,16 @@ export function ModelSelector({
     moveCursorTo(e.key === "ArrowDown" ? order[(at + 1) % order.length] : order[(at - 1 + order.length) % order.length]);
   };
 
-  /** The model the spec sheet shows: the row under the cursor, else the current one. */
-  const sheetModel: ModelInfo | null = (cursorKey && byKey.get(cursorKey)) || current || null;
-
+  /**
+   * One model row: mark · name · description · one trailing signal.
+   *
+   * The trailing gutter holds exactly one thing, and which one is a strict
+   * ladder: the selected check, else the plan a locked model needs, else
+   * nothing. It used to hold four — a three-slot capability column, a 76px
+   * price, a state glyph and a star — which is four right edges in a row that
+   * has one left one. The capabilities and the price are words on the
+   * description line now, where they read.
+   */
   const renderRow = (m: ModelInfo, prefix: string) => {
     const key = rowKeyFor(prefix, m.id);
     const auto = isAutoModelId(m.id);
@@ -842,17 +476,16 @@ export function ModelSelector({
     const soon = !!m.comingSoon;
     const locked = isLocked(m);
     const cursor = cursorKey === key;
-    const deprecated = m.status === "deprecated";
     const starred = !auto && favorites.has(m.id);
     const caption = auto ? "Picks the best model and thinking depth for each message." : rowCaption(m);
-    const price = auto ? "" : soon ? "Soon" : locked ? PLANS[effectiveMinPlan(m.minPlan)].name : priceLabel(m);
     const caps = [m.vision ? "Vision" : null, m.reasoning ? "Thinking" : null, m.webSearch ? "Search" : null].filter(
       (c): c is string => !!c,
     );
+    const price = auto || soon ? "" : priceLabel(m);
 
     return (
+      <div key={key} className="group/row relative">
       <button
-        key={key}
         ref={(el) => {
           if (el) rowRefs.current.set(key, el);
           else rowRefs.current.delete(key);
@@ -861,8 +494,7 @@ export function ModelSelector({
         type="button"
         role="option"
         aria-selected={active}
-        // The glyph column is aria-hidden, so the row's label carries what it says.
-        aria-label={`${m.name}, ${auto ? "Juno" : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price}` : ""}`}
+        aria-label={`${m.name}, ${auto ? "Juno" : providerName(m.provider)}${caps.length ? `, ${caps.join(", ")}` : ""}${price ? `, ${price} per million tokens` : ""}${locked ? `, needs ${PLANS[effectiveMinPlan(m.minPlan)].name}` : ""}`}
         disabled={soon}
         onPointerMove={() => {
           if (pointerActive.current) setCursorKey(key);
@@ -874,7 +506,7 @@ export function ModelSelector({
           // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
           // it, so a stationary pointer and the arrow keys painted two rows
           // with the identical fill at once.
-          "flex min-h-10 w-full items-center gap-2 rounded-control px-2 py-1.5 text-left outline-none md:h-10 md:py-0",
+          "flex w-full items-start gap-2.5 rounded-control px-2 py-2 text-left outline-none",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           cursor && "bg-accent",
@@ -886,50 +518,97 @@ export function ModelSelector({
         {auto ? (
           // Auto gets the same 20px tile every lab mark draws, so the first row
           // sits on the column rather than beside it.
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card shadow-pop">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
             <JunoMark className="size-3" />
           </span>
         ) : (
-          <ProviderLogo provider={m.provider} className="size-5" />
+          <ProviderLogo provider={m.provider} className="mt-px size-5 shrink-0" />
         )}
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-ui font-medium text-foreground">{m.name}</span>
-            {starred && <Star aria-hidden className="size-3 shrink-0 fill-current text-primary" />}
             {auto && (
-              <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/70">Recommended</span>
+              <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">Recommended</span>
             )}
             {!auto && isNew(m) && (
-              <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/70">New</span>
-            )}
-            {deprecated && (
-              <span title={m.deprecationNote ?? "Deprecated by the provider"} className="shrink-0 font-mono text-micro text-warning">
-                {m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
-              </span>
+              <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">New</span>
             )}
           </span>
-          {/* Below `md` the sheet is gone, so the description has to survive on
-              the row. Above it, the sheet is 8px away with the full text. */}
-          {caption && <span className="block truncate text-caption text-muted-foreground md:hidden">{caption}</span>}
+          {/* ONE description line, and everything that used to live in the
+              trailing gutter is on it. Truncated rather than wrapped: a row
+              that grows to two lines when a lab writes a long blurb makes the
+              list jump as the cursor walks it. */}
+          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{caption}</span>
+          {/* The machine line. Mono, one rung quieter, and present only when it
+              has something to say — a model with no capabilities and no price
+              (Auto) does not get an empty row of dots. */}
+          {(caps.length > 0 || price || m.status === "deprecated") && (
+            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-micro text-muted-foreground/60">
+              {caps.map((c) => (
+                <span key={c} className="uppercase">{c}</span>
+              ))}
+              {price && (
+                <>
+                  {caps.length > 0 && <span aria-hidden>·</span>}
+                  <span className="tabular-nums">{price}</span>
+                </>
+              )}
+              {m.status === "deprecated" && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span title={m.deprecationNote ?? "Deprecated by the provider"} className="text-warning">
+                    {m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
+                  </span>
+                </>
+              )}
+            </span>
+          )}
         </span>
-        {/* Three fixed slots so this is a column, not a ragged run of glyphs.
-            An absent capability holds its space. */}
-        <span aria-hidden className="flex w-11 shrink-0 items-center justify-end gap-1">
-          {m.vision ? <Eye className="size-3 text-muted-foreground/70" /> : <span className="size-3" />}
-          {m.reasoning ? <Waypoints className="size-3 text-muted-foreground/70" /> : <span className="size-3" />}
-          {m.webSearch ? <ComposerIcons.web className="size-3 text-muted-foreground/70" /> : <span className="size-3" />}
-        </span>
-        <span className="w-[76px] shrink-0 text-right font-mono text-micro tabular-nums text-muted-foreground">
-          {price}
-        </span>
-        <span aria-hidden className="flex w-4 shrink-0 items-center justify-center">
+        {/* The one trailing slot. Fixed width so the column is a column even
+            when every row in view is empty, and wide enough that the star
+            sitting beside it never overlaps what it says. */}
+        <span className="mt-0.5 flex min-h-5 w-16 shrink-0 items-center justify-end pr-7">
           {active ? (
-            <StatusIcons.success className="size-3.5 text-primary" />
+            <StatusIcons.success aria-hidden className="size-3.5 text-primary" />
           ) : locked ? (
-            <Lock className="size-3 text-muted-foreground/70" />
+            <span className="flex items-center gap-1 font-mono text-micro uppercase text-muted-foreground/70">
+              <Lock aria-hidden className="size-3" />
+              {PLANS[effectiveMinPlan(m.minPlan)].name}
+            </span>
+          ) : soon ? (
+            <span className="font-mono text-micro uppercase text-muted-foreground/70">Soon</span>
           ) : null}
         </span>
       </button>
+      {/* The favourite toggle, on the row it favourites.
+          It used to be a button in the foot of the spec sheet, which meant
+          starring a model required pointing at it, reading a 260px column and
+          then travelling back — three moves for a one-bit preference.
+          Revealed on cursor or focus, and permanently visible once set, so an
+          idle list still shows exactly one trailing signal per row. */}
+      {!auto && !soon && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={starred ? `Remove ${m.name} from favorites` : `Add ${m.name} to favorites`}
+          aria-pressed={starred}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavorite(m.id);
+          }}
+          className={cn(
+            "absolute right-2 top-2 flex size-6 items-center justify-center rounded-xs outline-none",
+            "transition-[opacity,color] duration-fast ease-out-soft motion-reduce:transition-none",
+            "hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+            starred
+              ? "text-primary opacity-100"
+              : "text-muted-foreground/70 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100",
+          )}
+        >
+          <Star aria-hidden className={cn("size-3.5", starred && "fill-current")} />
+        </button>
+      )}
+      </div>
     );
   };
 
@@ -984,55 +663,54 @@ export function ModelSelector({
         collisionPadding={16}
         avoidCollisions
         onKeyDown={onNavKeyDown}
-        // Fixed 700×440, clamped to the viewport by Radix's available-height
-        // var and a 16px margin on every side (collisionPadding does the
-        // horizontal clamp by shifting the box, never by clipping it). It was
-        // briefly 880×560 to give the rail room for lab names; the names went
-        // back into tooltips and the box came back down, because a picker that
-        // fills a third of a laptop screen reads as a settings panel.
+        // 680×460. Two panes rather than three, so the list gets 496px of the
+        // box instead of the ~350px it had between an icon rail and a spec
+        // sheet — enough for a name, a description and a machine line without
+        // any of the three truncating at a normal lab name.
         style={{
-          width: "min(700px, calc(100vw - 2rem))",
-          height: "min(440px, var(--radix-popover-content-available-height))",
+          width: "min(680px, calc(100vw - 2rem))",
+          height: "min(460px, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
       >
         <div className="flex min-h-0 flex-1">
-          {/* Lab rail — 48px, folds under `sm`. Only labs with something in them. */}
-          <div className="hidden w-12 shrink-0 flex-col border-r border-border/70 sm:flex">
-            {/* ScrollFade, not a bare `overflow-y-auto`: 16 marks need ~601px
-                inside a column this tall, and the strip used to scroll with no
-                affordance saying so. */}
-            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col items-center gap-1 p-2">
+          {/* Lab rail — 168px of NAMED rows, folds under `sm`. Only labs with
+              something in them; a rail row can never lead to an empty list. */}
+          <div className="hidden w-[168px] shrink-0 flex-col border-r border-border/70 bg-muted/25 sm:flex">
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col gap-0.5 p-2">
               {/* While a query is running the list shows every lab, so the rail
                   has to read as "All models" — it used to claim a lab that was
                   not the one on screen. `filter` itself is untouched, so
                   clearing the query restores it. */}
-              <RailTile
+              <RailRow
                 active={q ? true : filter === "all"}
-                title="All models"
+                label="All models"
+                count={searchable.length}
                 onClick={() => {
                   setFilter("all");
                   setQuery("");
                 }}
               >
                 <LayoutGrid className="size-4" />
-              </RailTile>
-              <RailTile
+              </RailRow>
+              <RailRow
                 active={q ? false : filter === "favorites"}
-                title="Favorites"
+                label="Favorites"
+                count={favorites.size || undefined}
                 onClick={() => {
                   setFilter("favorites");
                   setQuery("");
                 }}
               >
                 <Star className={cn("size-4", !q && filter === "favorites" && "fill-current")} />
-              </RailTile>
-              <div aria-hidden className="my-1 h-px w-5 shrink-0 bg-border" />
+              </RailRow>
+              <div aria-hidden className="my-1.5 h-px shrink-0 bg-border/70" />
               {railProviders.map((p) => (
-                <RailTile
+                <RailRow
                   key={p}
                   active={q ? false : filter === p}
-                  title={providerName(p)}
+                  label={providerName(p)}
+                  count={countsByProvider.get(p)}
                   onClick={() => {
                     // A lab click means "show me this lab", so it clears the
                     // query that would otherwise keep showing all of them.
@@ -1041,14 +719,14 @@ export function ModelSelector({
                   }}
                 >
                   <ProviderLogo provider={p} className="size-4" />
-                </RailTile>
+                </RailRow>
               ))}
             </ScrollFade>
           </div>
 
           {/* List */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border/70 p-2">
+            <div className="shrink-0 border-b border-border/70 p-3">
               {/* `.surface-inset` is the material FLAT_UI.md §3.3 assigns to a
                   search field, and `focus-within:border-ring` is the accent's
                   one decorative home in this popover. The field had neither:
@@ -1085,7 +763,7 @@ export function ModelSelector({
                 )}
               </div>
             </div>
-            <ScrollFade className="min-h-0 flex-1" viewportClassName="px-2 pb-2 pt-1">
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="px-2 pb-3 pt-1.5">
               <div
                 id="model-picker-list"
                 role="listbox"
@@ -1157,23 +835,12 @@ export function ModelSelector({
             </ScrollFade>
           </div>
 
-          {/* Spec sheet — 300px, folds under `lg` (see the note on its shell). */}
-          <DetailPanel
-            model={sheetModel}
-            selected={!!sheetModel && (isAutoModelId(sheetModel.id) ? autoSelected : value === sheetModel.id)}
-            locked={!!sheetModel && isLocked(sheetModel)}
-            starred={!!sheetModel && favorites.has(sheetModel.id)}
-            onUse={() => sheetModel && select(sheetModel)}
-            onToggleStar={() => sheetModel && toggleFavorite(sheetModel.id)}
-          />
         </div>
         {thinking && (
-          // The label is in the mono metadata voice, like every other label on
-          // this surface — it was the one 13px sentence-weight word here. No
-          // `flex-wrap`: at 880px it never needs to, and wrapping produced a
-          // two-row footer nobody designed.
-          <div className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-2.5">
-            <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/70">Thinking effort</span>
+          // The effort control, docked under both panes. The label is in the
+          // mono metadata voice like every other label on this surface.
+          <div className="flex shrink-0 items-center gap-3 border-t border-border/70 px-4 py-2.5">
+            <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">Thinking</span>
             <div className="min-w-0 flex-1">{thinking}</div>
           </div>
         )}
