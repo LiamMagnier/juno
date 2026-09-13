@@ -146,7 +146,7 @@ export function ReportReader({
             </span>
             <SourceFavicon url={source.url} variant="list" className="mt-px" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-foreground/90">
+              <span className="block truncate text-caption font-medium text-foreground/90">
                 {titleOf({ title: source.title, url: source.url, snippet: "" })}
               </span>
               <span className="mt-0.5 block truncate text-caption text-muted-foreground">
@@ -317,7 +317,7 @@ export function ReportReader({
                         jumpTo(item.id);
                       }}
                       className={cn(
-                        "-ml-px block border-l-2 py-1 pr-2 text-xs leading-snug transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                        "-ml-px block border-l-2 py-1 pr-2 text-caption leading-snug transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
                         depth === 0 && "pl-3",
                         depth === 1 && "pl-6",
                         depth === 2 && "pl-9",

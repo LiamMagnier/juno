@@ -42,7 +42,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
             variant="list"
             className={cn("size-4 shrink-0 rounded-xs", !source.read && "opacity-60")}
           />
-          <span className="truncate font-mono text-xs font-semibold text-foreground/90">{host}</span>
+          <span className="truncate font-mono text-micro font-medium text-muted-foreground">{host}</span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -61,7 +61,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
         </div>
       </div>
 
-      <span className="mt-2 line-clamp-2 text-xs sm:text-sm font-medium leading-snug text-foreground transition-colors group-hover:text-primary/95">
+      <span className="mt-2 line-clamp-2 text-ui font-medium leading-snug text-foreground transition-colors group-hover:text-primary/95">
         {title}
       </span>
 
@@ -116,7 +116,7 @@ function Group({
     <section>
       <div className="flex items-baseline gap-2">
         <h4 className="text-ui font-medium text-foreground">{heading}</h4>
-        <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-mono tabular-nums text-muted-foreground">
+        <span className="font-mono text-micro tabular-nums text-muted-foreground">
           {sources.length}
         </span>
         {note && <span className="min-w-0 truncate text-caption text-muted-foreground">{note}</span>}
@@ -130,7 +130,7 @@ function Group({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="pressable mt-2 rounded-control px-2 py-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="pressable mt-2 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           {expanded ? DECK_COPY.showFewer : `${DECK_COPY.showAll} (${sources.length})`}
         </button>
@@ -152,8 +152,8 @@ export function SourceDeck({
   if (sources.length === 0) {
     return (
       <div className={cn("rounded-card border border-dashed border-border/70 p-6 text-center bg-card/40", className)}>
-        <p className="text-sm font-medium text-foreground">{DECK_COPY.empty}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{DECK_COPY.emptyNote}</p>
+        <p className="text-ui font-medium text-foreground">{DECK_COPY.empty}</p>
+        <p className="mt-1 text-caption text-muted-foreground">{DECK_COPY.emptyNote}</p>
       </div>
     );
   }

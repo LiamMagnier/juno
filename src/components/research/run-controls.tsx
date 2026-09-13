@@ -639,7 +639,7 @@ function FocusList({
           }}
           placeholder={emptyLabel}
           aria-label={emptyLabel}
-          className="min-w-0 flex-1 rounded-control bg-secondary/50 px-2.5 py-1.5 text-base text-foreground outline-none ring-1 ring-transparent placeholder:text-muted-foreground/70 focus-visible:ring-ring"
+          className="min-w-0 flex-1 rounded-control bg-secondary/50 px-2.5 py-1.5 text-ui text-foreground outline-none ring-1 ring-transparent placeholder:text-muted-foreground/70 focus-visible:ring-ring"
         />
         <button
           type="button"

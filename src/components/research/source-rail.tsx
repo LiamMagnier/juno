@@ -55,7 +55,7 @@ export function SourceRail({
 
   if (publishers.length === 0) {
     return (
-      <div className={cn("flex items-center gap-2 text-xs text-muted-foreground/75", className)}>
+      <div className={cn("flex items-center gap-2 text-caption text-muted-foreground", className)}>
         <Globe className="size-3.5 text-primary/70 motion-safe:animate-pulse" />
         <span>{RAIL_COPY.nothingYet}</span>
       </div>
@@ -98,9 +98,11 @@ export function SourceRail({
               rel="noopener noreferrer"
               title={`Open ${host}`}
               className={cn(
-                "group/chip inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/50 px-2.5 py-1 text-xs text-foreground transition-all duration-fast",
-                "hover:border-primary/40 hover:bg-secondary hover:shadow-2xs",
-                !read && "opacity-75"
+                "group/chip inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption text-foreground",
+                "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+                // An unread source is stated, not dimmed: 75% opacity on an
+                // already-muted chip lands under the contrast floor.
+                !read && "text-muted-foreground"
               )}
             >
               {chipContent}
@@ -110,7 +112,7 @@ export function SourceRail({
               key={source.id}
               title={host}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/40 px-2.5 py-1 text-xs text-muted-foreground",
+                "inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption text-muted-foreground",
                 !read && "opacity-75"
               )}
             >
@@ -130,14 +132,14 @@ export function SourceRail({
         <button
           type="button"
           onClick={onOpenSources}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15 active:scale-[0.98]"
+          className="pressable inline-flex items-center gap-1.5 rounded-control bg-secondary px-2.5 py-1 font-mono text-micro tabular-nums text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
         >
           <span>
             {sources.length} {RAIL_COPY.sources} · {readCount} {RAIL_COPY.read}
           </span>
         </button>
       ) : (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/70 px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground tabular-nums">
+        <span className="inline-flex items-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
           <span>
             {sources.length} {RAIL_COPY.sources} · {readCount} {RAIL_COPY.read}
           </span>

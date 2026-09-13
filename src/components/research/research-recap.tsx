@@ -71,25 +71,34 @@ export function ResearchRecap({
         className
       )}
     >
+      {/*
+       * THE VERDICT, AS A WORD. These four were `rounded-full` capsules with
+       * their own border, a 15%-alpha tinted fill and 12px semibold type — the
+       * loudest treatment the design system can produce, spent on a label that
+       * repeats what the surface around it already says. FLAT_UI §2.4: the
+       * accent (and every semantic hue) is state, never furniture. They are
+       * now a glyph and a word in the hue that carries the meaning, which is
+       * the same badge idiom the model picker uses.
+       */}
       {/* Top Header: Status badge & metadata */}
       <header className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {clean ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/15 px-2.5 py-1 text-xs font-semibold  text-success-ink">
+            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-success-ink">
               <CheckCircle2 className="size-3.5 text-success-ink" />
               {RECAP_COPY.complete}
             </span>
           ) : state === "failed" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-1 text-xs font-semibold  text-destructive">
+            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-destructive">
               <AlertCircle className="size-3.5 text-destructive" />
               {RESEARCH_STATE_MESSAGE[state]}
             </span>
           ) : state === "cancelled" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-xs font-semibold  text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-muted-foreground">
               Cancelled
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/15 px-2.5 py-1 text-xs font-semibold  text-warning-foreground">
+            <span className="inline-flex items-center gap-1.5 text-ui font-medium text-warning-foreground">
               {RESEARCH_STATE_MESSAGE[state]}
             </span>
           )}
@@ -97,7 +106,7 @@ export function ResearchRecap({
 
         <div className="flex items-center gap-2">
           {elapsed && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-caption font-medium tabular-nums text-foreground">
+            <span className="inline-flex items-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
               <Clock className="size-3 text-muted-foreground" />
               {elapsed}
             </span>
@@ -146,7 +155,7 @@ export function ResearchRecap({
 
       {/* Citation Audit Verdict Banner */}
       {audit && (
-        <div className="mt-4 flex items-center gap-2.5 rounded-card border border-border/60 bg-secondary/30 p-3 text-xs">
+        <div className="mt-4 flex items-center gap-2.5 rounded-card border border-border/60 bg-secondary/30 p-3 text-caption">
           <ShieldCheck className={cn("size-4 shrink-0", auditClean ? "text-success" : "text-warning-foreground")} />
           <span className="flex-1 font-medium text-foreground/90">{auditHeadline(audit)}</span>
         </div>
@@ -170,7 +179,7 @@ export function ResearchRecap({
           />
         </button>
       ) : (
-        <p className="mt-4 text-xs text-muted-foreground">{RECAP_COPY.noReport}</p>
+        <p className="mt-4 text-caption text-muted-foreground">{RECAP_COPY.noReport}</p>
       )}
 
       {run.error && (
@@ -186,7 +195,7 @@ export function ResearchRecap({
             type="button"
             aria-expanded={workOpen}
             onClick={() => setWorkOpen((value) => !value)}
-            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
           >
             <span>{workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}</span>
             <ChevronDown
