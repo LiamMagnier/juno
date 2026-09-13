@@ -311,7 +311,27 @@ function remarkCitations(sourceCount: number) {
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath] satisfies Options["remarkPlugins"];
 const REHYPE_PLUGINS: Options["rehypePlugins"] = [
-  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+  /*
+   * `detect: false`, and that is the whole point of this note.
+   *
+   * With detection ON, highlight.js runs `highlightAuto` over any fence whose
+   * author wrote no language, picks whichever grammar scored highest, and
+   * rehype-highlight stamps `language-<guess>` onto the element. The block
+   * header then prints that guess as a CONFIDENT LABEL, because nothing
+   * downstream can tell a declared language from an inferred one.
+   *
+   * On real code the guess is usually harmless. On anything else it is a lie
+   * stated in the product's own voice: a two-line Gemini API error —
+   * `400 INVALID_ARGUMENT / Thinking level MEDIUM is not supported` — came out
+   * labelled **kotlin**, which is the kind of detail that costs a reader's
+   * trust in everything around it. Auto-detection over two lines of prose is
+   * a coin flip, and a coin flip does not belong in a label.
+   *
+   * The trade is that an unlabelled fence now renders uncoloured. That is the
+   * right side to err on, it is what ChatGPT and Claude both do, and the fix
+   * is available to the author: write the language.
+   */
+  [rehypeHighlight, { detect: false, ignoreMissing: true }],
   // `throwOnError: false` keeps a malformed/incomplete expression (common mid-stream)
   // as red source text instead of crashing the whole render.
   [rehypeKatex, { throwOnError: false, output: "htmlAndMathml" }],

@@ -2371,7 +2371,25 @@
   .prose-juno table,
   .prose-juno img,
   .prose-juno .aicss-cb { max-inline-size: none; }
-  .prose-juno > * + * { margin-top: 0.85em; }
+  /*
+   * THE RHYTHM RULE, AND WHY THE CLASS IS DOUBLED.
+   *
+   * This lost to `.prose-juno p { margin: 0 }` further down the block, and it
+   * lost silently: `.prose-juno > * + *` is (0,1,0) — universal selectors
+   * count for nothing — while `.prose-juno p` is (0,1,1). So every PARAGRAPH
+   * in every assistant reply rendered with `margin-top: 0`, and a multi-
+   * paragraph answer came out as one undifferentiated block. Code fences,
+   * tables and lists were spaced correctly the whole time, which is exactly
+   * why it survived: the only blocks that looked wrong were the ones made of
+   * the same thing on both sides of the gap.
+   *
+   * Doubling the class makes this (0,2,0), which outranks the element-level
+   * reset it has to coexist with — the same trick `.danger-hover` uses above,
+   * and for the same reason. The reset still does its job (killing the UA's
+   * 1em block margins) and this owns the rhythm, which was always the split
+   * the two rules intended.
+   */
+  .prose-juno.prose-juno > * + * { margin-top: 0.85em; }
   .prose-juno h1, .prose-juno h2, .prose-juno h3, .prose-juno h4 {
     font-weight: 600;
     line-height: 1.3;
@@ -2380,6 +2398,9 @@
   .prose-juno h1 { font-size: 1.5em; }
   .prose-juno h2 { font-size: 1.3em; }
   .prose-juno h3 { font-size: 1.12em; }
+  /* Kills the UA's 1em block margins so the rhythm rule above is the only
+     thing spacing blocks. It must NOT be the thing that spaces them: see the
+     specificity note there. */
   .prose-juno p { margin: 0; }
   /* The ink ramp, not the fill tone: a link here sits inside a continuous run of
      body text, which is the one place the difference actually decides whether it
