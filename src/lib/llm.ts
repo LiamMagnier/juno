@@ -9,6 +9,7 @@ import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
+import { noteModelNotServed } from "@/lib/model-capability";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { clampMaxTokens } from "@/lib/provider-limits";
 import type { ModelInfo } from "@/lib/models";
@@ -110,33 +111,47 @@ export async function* streamChat(opts: {
   }
   try {
     const adapter = providerAdapterFor(model, proMode);
-    switch (adapter) {
-      case "anthropic-native":
-        yield* streamAnthropic(
-          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-          toolset, dynamicContext, fastMode, opts.systemStablePrefix
-        );
-        return;
-      case "gemini-native":
-        yield* streamGemini(
-          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-          toolset, dynamicContext, opts.requestContext
-        );
-        return;
-      case "openai-responses":
-        // Responses-only snapshots and GPT Pro execution cannot use
-        // /chat/completions; this branch preserves their reasoning controls.
-        yield* streamOpenAIResponses(
-          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-          toolset, dynamicContext, cacheKey, fastMode, proMode
-        );
-        return;
-      case "openai-compatible":
-        yield* streamOpenAICompat(
-          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-          toolset, dynamicContext, cacheKey, fastMode
-        );
-        return;
+    // Every provider call in the product funnels through the switch below, so
+    // this is the one place that learns what a live request discovered. The
+    // only verdict taken is `not_found`, and taking it is what stops a retired
+    // or not-yet-shipped model id failing every message forever — see
+    // `noteModelNotServed`. Never awaited and never allowed to throw: the
+    // original provider error is what the caller must see.
+    const bench = (err: unknown) => {
+      void noteModelNotServed(model, err).catch(() => undefined);
+    };
+    try {
+      switch (adapter) {
+        case "anthropic-native":
+          yield* streamAnthropic(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            toolset, dynamicContext, fastMode, opts.systemStablePrefix
+          );
+          return;
+        case "gemini-native":
+          yield* streamGemini(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            toolset, dynamicContext, opts.requestContext
+          );
+          return;
+        case "openai-responses":
+          // Responses-only snapshots and GPT Pro execution cannot use
+          // /chat/completions; this branch preserves their reasoning controls.
+          yield* streamOpenAIResponses(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            toolset, dynamicContext, cacheKey, fastMode, proMode
+          );
+          return;
+        case "openai-compatible":
+          yield* streamOpenAICompat(
+            model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+            toolset, dynamicContext, cacheKey, fastMode
+          );
+          return;
+      }
+    } catch (err) {
+      bench(err);
+      throw err;
     }
   } finally {
     if (toolset) await toolset.close();

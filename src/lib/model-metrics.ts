@@ -662,14 +662,32 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // 3.x uses thinking_level on Juno's native GenerateContent transport;
       // Gemini 2.5 retains the legacy budget transport. Reasoning cannot be
       // disabled for any selectable row below.
-      // 3.8 keeps the same provider-native thinking_level contract as 3.7.
-      // Keep this explicit so a live-discovered 3.8 row does not fall through
-      // to the unknown-model branch and lose its thinking selector.
+      // 3.7 and 3.8 Flash: low | medium | high, default medium. No `minimal`
+      // on this pair — 3.5 and 3.6 have it and the two newer rows do not,
+      // which is why they are matched separately rather than folded together.
+      // Keeping 3.8 explicit also stops a live-discovered 3.8 row falling
+      // through to the unknown-model branch and losing its thinking selector.
       if (/3\.[78]-flash/.test(id)) return caps(LMH, false, false, "medium");
       if (/3\.[56]-flash/.test(id)) {
         return caps(["minimal", ...LMH], false, false, "medium");
       }
-      if (/3\.1-pro/.test(id)) return caps(LMH, false, false, "high");
+      /*
+       * PRO TAKES LOW AND HIGH ONLY. There is no MEDIUM on the Pro line, and
+       * asking for one is a hard failure: `400 INVALID_ARGUMENT Thinking level
+       * MEDIUM is not supported for this model`, reported the same way through
+       * the OpenAI-compat surface as `reasoning_effort: "medium"` rejected
+       * while low and high succeed.
+       *
+       * This entry said `LMH`, so Juno's own picker offered Medium on Gemini
+       * 3.1 Pro and every message sent with it 400ed. `gemini-core.ts` has
+       * carried a comment quoting that exact error since the `thinkingLevel`
+       * work — the adapter knew, the catalog never did, and the catalog is
+       * what the picker reads.
+       *
+       * Default high: Gemini 3 defaults to high when no level is sent, and
+       * unlike the Flash line Pro never moved to medium.
+       */
+      if (/3\.\d+-pro|3-pro/.test(id)) return caps(["low", "high"], false, false, "high");
       if (/3\.1-flash-lite/.test(id)) {
         return caps(["minimal", ...LMH], false, false, "minimal");
       }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { decideModelCapability, MODEL_CAPABILITY_TTL_MS } from "../src/lib/model-capability-policy";
+import { classifyProviderError } from "../src/lib/provider-error";
 import { nativeModelCatalog } from "../src/lib/native-model-manifest";
 import type { ModelInfo } from "../src/lib/models";
 
@@ -67,4 +68,41 @@ test("the chat and cloud-code routes both enforce the same capability gate", () 
   const runner = readFileSync("src/app/api/code/tasks/[id]/runner-context/route.ts", "utf8");
   assert.match(chat, /modelCanRoute\(m, capabilityProbes\)/);
   assert.match(runner, /backendAgentCatalog\(availableModels, capabilityProbes\)/);
+});
+
+/*
+ * A live not-found is the one provider verdict that is about the MODEL.
+ *
+ * `noteModelNotServed` is what closes the loop between "a user's message
+ * failed because this id does not exist" and the capability table, which used
+ * to be written only by an admin route and a manual script. Rather than reach
+ * into Prisma, this pins the classification that gates the write — everything
+ * downstream of it is `persistModelCapabilityProbe`, which the probe runner
+ * already exercises.
+ *
+ * The two halves matter equally. Taking a 404 is what benches a dead id;
+ * REFUSING everything else is what stops a rate limit, a capacity blip or an
+ * expired key from benching a model that is perfectly fine.
+ */
+test("only a not-found verdict may bench a model from a live request", () => {
+  const notFound = [
+    { status: 404, message: "models/gemini-3.8-flash is not found for API version v1beta" },
+    { status: 404, message: "The model `gpt-5.9` does not exist or you do not have access to it." },
+  ];
+  for (const err of notFound) {
+    assert.equal(classifyProviderError(err).class, "not_found", `should bench: ${err.message}`);
+  }
+
+  const keepServing: Array<{ status: number; message: string; expect: string }> = [
+    { status: 429, message: "Rate limit reached for requests", expect: "rate_limit" },
+    { status: 503, message: "Internal server error", expect: "capacity" },
+    { status: 401, message: "Incorrect API key provided", expect: "auth" },
+    { status: 403, message: "Forbidden for this key", expect: "auth" },
+    { status: 400, message: "Thinking level MEDIUM is not supported for this model", expect: "invalid_request" },
+  ];
+  for (const err of keepServing) {
+    const klass = classifyProviderError(err).class;
+    assert.equal(klass, err.expect, `${err.message} → ${klass}`);
+    assert.notEqual(klass, "not_found", `must not bench a model over: ${err.message}`);
+  }
 });

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Attachment } from "@prisma/client";
 import { geminiGenerationConfig, geminiThinkingBudget, geminiThinkingConfig, resolveGroundingUrls, toGeminiContents } from "@/lib/gemini-core";
+import { reasoningCaps, reasoningOptions } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { MessageForModel } from "@/types/llm";
 
@@ -129,4 +130,48 @@ test("resolveGroundingUrls keeps regular urls intact", async () => {
   ];
   const resolved = await resolveGroundingUrls(sources);
   assert.deepEqual(resolved, sources);
+});
+
+/*
+ * Gemini 3 Pro has no MEDIUM, and Juno used to offer one.
+ *
+ * `reasoningCaps` listed `low | medium | high` for the Pro line, so the model
+ * picker drew a Medium option and every message sent with it came back
+ * `400 INVALID_ARGUMENT Thinking level MEDIUM is not supported for this
+ * model`. The adapter had quoted that exact error in a comment since the
+ * `thinkingLevel` work; the catalog — which is what the picker reads — never
+ * knew.
+ *
+ * Pinned at BOTH ends, because fixing only one leaves the bug reachable:
+ * the tier list is what the picker offers, and the clamp is what a stored
+ * `medium` (a preference saved before this fix, or copied from a Flash model)
+ * collapses to on the wire.
+ */
+test("Gemini 3 Pro offers only low and high, and a stored medium never reaches the wire", () => {
+  const pro = {
+    id: "google:gemini-3.1-pro-preview", provider: "google", providerModel: "gemini-3.1-pro-preview",
+    name: "Gemini 3.1 Pro", minPlan: "PRO", vision: true, reasoning: true,
+    agenticTools: true, cost: 3, modality: "chat", webSearch: true,
+  } as ModelInfo;
+
+  const caps = reasoningCaps(pro);
+  assert.deepEqual(caps.tiers, ["low", "high"], "Pro takes low and high only");
+  assert.equal(caps.defaultLevel, "high", "Gemini 3 defaults to high when no level is sent");
+  assert.equal(
+    reasoningOptions(pro).some((option) => option.value === "medium"),
+    false,
+    "the picker must not draw an option the API rejects",
+  );
+
+  // The clamp is the second gate: an unsupported tier collapses to the
+  // model's own default rather than travelling as-is.
+  assert.deepEqual(geminiThinkingConfig(pro, "medium"), { includeThoughts: true, thinkingLevel: "HIGH" });
+  assert.deepEqual(geminiThinkingConfig(pro, "low"), { includeThoughts: true, thinkingLevel: "LOW" });
+  assert.deepEqual(geminiThinkingConfig(pro, null), { includeThoughts: true, thinkingLevel: "HIGH" });
+
+  // And the Flash line is unaffected — it genuinely has a medium, and is the
+  // reason a medium was in the Pro row to begin with.
+  const flash = { ...pro, id: "google:gemini-3.8-flash", providerModel: "gemini-3.8-flash" } as ModelInfo;
+  assert.deepEqual(reasoningCaps(flash).tiers, ["low", "medium", "high"]);
+  assert.deepEqual(geminiThinkingConfig(flash, "medium"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
 });

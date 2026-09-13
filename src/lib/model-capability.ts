@@ -15,6 +15,7 @@ import {
   probeRequestFor,
   probeResponseLooksValid,
 } from "@/lib/model-capability-probe";
+import { classifyProviderError } from "@/lib/provider-error";
 
 /**
  * Bumped to 2 when the probe moved onto each model's OWN transport (native
@@ -215,4 +216,63 @@ export async function probeAndPersistModelCapability(model: ModelInfo): Promise<
   const snapshot = await probeModelCapability(model);
   await persistModelCapabilityProbe(snapshot);
   return snapshot;
+}
+
+/**
+ * A LIVE REQUEST DISCOVERED THAT THIS MODEL ID DOES NOT EXIST.
+ *
+ * The capability table was write-only from two places, both of them manual: an
+ * admin route and `npm run models:probe`. So when a provider retired a model —
+ * or when a hand-curated catalog row named an id the provider had not shipped
+ * yet — the only system that ever found out was the one place nobody was
+ * watching: a user's chat request, which failed, said "pick another model",
+ * and taught the product nothing. The row stayed in every picker, stayed
+ * selectable, stayed the account's default if it happened to be one, and
+ * failed again on the next message, forever, until an operator remembered a
+ * script existed.
+ *
+ * This closes that loop. `not_found` is the one provider verdict that is
+ * unambiguously ABOUT THE MODEL rather than about the wire or the account: the
+ * credential authenticated, the request parsed, and the provider said this id
+ * is not one of its own. That is exactly the evidence
+ * `decideModelCapability` exists to weigh, so it is recorded as a model-class
+ * failure with the full 24-hour TTL.
+ *
+ * Bounded on purpose:
+ *  · Only `not_found`. A 429, a 5xx, a timeout or a rejected key says nothing
+ *    about the id, and `classifyProviderError` already separates them.
+ *  · It EXPIRES, like every other verdict. A model mistakenly benched by a
+ *    misconfigured base URL comes back by itself within a day, and a curated
+ *    row fails open the moment the evidence goes stale.
+ *  · It never throws and never blocks: the caller is mid-failure on a user's
+ *    turn, and a bookkeeping write must not become a second error.
+ */
+export async function noteModelNotServed(model: ModelInfo, err: unknown): Promise<void> {
+  const { class: klass, status, raw } = classifyProviderError(err);
+  if (klass !== "not_found") return;
+  const now = new Date();
+  try {
+    await persistModelCapabilityProbe({
+      modelId: model.id,
+      provider: model.provider,
+      status: "failed",
+      detail: `Live request: the provider does not serve ${model.providerModel}.`,
+      checkedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + MODEL_CAPABILITY_TTL_MS).toISOString(),
+      evidence: {
+        probeVersion: MODEL_CAPABILITY_PROBE_VERSION,
+        providerModel: model.providerModel,
+        // `live` marks the source, so an operator reading the table can tell a
+        // verdict a user paid for from one a probe went looking for.
+        source: "live",
+        failureKind: "model",
+        status,
+        // Truncated hard: a provider body can carry account identifiers.
+        message: String(raw).slice(0, 200),
+      },
+    });
+    console.warn("[models] benched after a live not-found", { model: model.id, providerModel: model.providerModel });
+  } catch (error) {
+    console.error("[models] could not record a live not-found", { model: model.id, error });
+  }
 }
