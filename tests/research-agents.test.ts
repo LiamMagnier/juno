@@ -55,7 +55,19 @@ function baseDeps(store: ReturnType<typeof memoryStore>["store"], over: Partial<
   };
 }
 
-test("a planner that returns nothing is replaced by a decomposition, never by the literal goal alone", async () => {
+/*
+ * This test used to assert the opposite, and the behaviour it pinned is the
+ * one users reported as "deep research just searches my sentence a dozen
+ * ways". A planner that returned nothing fell through to
+ * `fallbackResearchQueries` — the goal with fourteen suffixes bolted on — and
+ * those templates were SAVED AS THE PLAN, shown at the confirmation gate for
+ * a person to approve, and used to build the objectives every worker is
+ * briefed from. Templates cannot decompose a question, so the objectives were
+ * the same sentence again, the workers overlapped completely, and the round
+ * review found no gaps because there were no distinct questions to have gaps
+ * in. See `doPlanning`.
+ */
+test("a planner that returns nothing fails the run — it never searches templated variations of the goal", async () => {
   const { store } = memoryStore();
   const searched: string[] = [];
   const engine = createResearchEngine(
@@ -71,12 +83,18 @@ test("a planner that returns nothing is replaced by a decomposition, never by th
   );
   const run = await engine.start({ userId: "user_1", goal: "impact of the new standard", confirmation: "auto", effort: "deep" });
   await engine.drive({ runId: run.id, userId: run.userId });
-  const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
-  assert.ok(plan.queries.length >= 9, `expected a decomposition, got ${plan.queries.length} queries`);
-  assert.ok(plan.queries.includes("impact of the new standard"), "the user's own words are still one of the queries");
-  assert.ok(searched.length >= 9, `the sweep should issue every fallback query, issued ${searched.length}`);
+  const row = await store.loadRun(run.id, run.userId);
+  assert.equal(row?.state, "failed", "a run with no plan is not a research run");
+  assert.match(String(row?.error), /plan/i, "the failure says what went wrong");
+  assert.equal(searched.length, 0, `nothing should be searched without a plan, issued ${searched.length}`);
+  assert.equal(parsePlan(row?.plan).queries.length, 0, "no templated queries are persisted as the plan");
 });
 
+/*
+ * The templates survive for ONE caller: `doSearching`, seeding the sweep of a
+ * legacy run whose persisted plan predates the query list. They are no longer
+ * reachable from planning — see the test above.
+ */
 test("fallback queries scale with effort and never repeat", () => {
   const quick = fallbackResearchQueries("solar panel efficiency", "quick");
   const deep = fallbackResearchQueries("solar panel efficiency", "deep");
@@ -310,4 +328,54 @@ test("the semaphore caps concurrency and the host limiter caps per host", async 
   assert.equal(hosts.inFlight("https://example.org/b"), 1);
   a();
   assert.equal(hosts.inFlight("https://example.org/b"), 0);
+});
+
+/*
+ * The all-workers-unavailable stop.
+ *
+ * `model_unavailable` is the worker runner reporting that no configured
+ * provider serves a model its loop can drive — a deployment fact, equally true
+ * next round. Without this check the run walked the whole round ladder
+ * spawning workers that returned instantly, reviewed rounds with no findings
+ * in them, and wrote its report from the seed sweep alone: a shallow run that
+ * never once said why it was shallow.
+ */
+test("a round where every worker cannot start stops the ladder and records why", async () => {
+  const { store, events } = memoryStore();
+  let spawned = 0;
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async runWorker(input: RunWorkerInput): Promise<WorkerResult> {
+        void input;
+        spawned += 1;
+        return {
+          summary: "",
+          openQuestions: [],
+          followUps: [],
+          tokens: 0,
+          costMicroUsd: 0,
+          reason: "model_unavailable",
+          toolCalls: 0,
+          elapsedMs: 0,
+        };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "auto", effort: "deep" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const spawns = events.filter((e) => e.kind === "worker_spawned").length;
+  assert.ok(spawns > 0, "the first round still goes out — the failure is only knowable by trying");
+  assert.equal(spawned, spawns, "every spawned worker was actually run");
+
+  const notice = events.find(
+    (e) => e.kind === "error" && String((e.payload as { message?: unknown }).message ?? "").includes("research worker")
+  );
+  assert.ok(notice, "the run says a worker model was unavailable rather than degrading in silence");
+  assert.equal((notice.payload as { recoverable?: unknown }).recoverable, true, "it is a notice, not a run failure");
+
+  // And it stopped: a deep tier affords several rounds, so a second round of
+  // spawns would mean the ladder ran on regardless.
+  const rounds = new Set(events.filter((e) => e.kind === "worker_spawned").map((e) => (e.payload as { round?: number }).round));
+  assert.equal(rounds.size, 1, `the ladder should stop after the first round, saw rounds ${[...rounds].join(", ")}`);
 });

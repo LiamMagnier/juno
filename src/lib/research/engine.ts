@@ -1231,15 +1231,43 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       signal,
     });
     await bill(run, drafted.costMicroUsd, "plan");
-    // A failed planner degrades to the templated decomposition rather than to
-    // the goal alone. `[run.goal]` was the old fallback, and it is how a deep
-    // run came back with one page of results: one query, eighteen hits, done.
+    /*
+     * A RUN WITH NO PLAN IS NOT A RESEARCH RUN, so it stops here.
+     *
+     * What used to happen: a planner that returned nothing — a timeout, a
+     * model that ignored the output shape, a provider briefly down — fell
+     * through to `fallbackResearchQueries`, which is the user's own sentence
+     * with fourteen suffixes bolted on ("… explained", "… pros and cons", "…
+     * latest news 2026"). Those were then SAVED AS THE PLAN, shown at the
+     * confirmation gate for a person to approve, and used to synthesise the
+     * objectives every worker is briefed from.
+     *
+     * Every part of that is wrong, and the visible symptom was exactly what
+     * it sounds like: a deep research run that searches one sentence a dozen
+     * ways. The template cannot decompose a question, so the objectives built
+     * from it are the same sentence again; workers briefed on those overlap
+     * completely; the review round finds no gaps because there were never any
+     * distinct questions to have gaps in. A thin report was the LEAST of it.
+     *
+     * `planResearchQueries` already retries once before giving up (see
+     * tools.ts), so reaching here means two attempts produced nothing. That
+     * is a real outage, and saying so costs the user a retry instead of the
+     * price of a full run they will not trust.
+     *
+     * The templates are still the floor for a run that HAS a plan and is
+     * merely short of searches — see `doSearching`, which is the one caller
+     * left.
+     */
+    if (drafted.queries.length === 0) {
+      const ended = await finish(run, "failed", {
+        reason: "no_plan",
+        error: "The research planner could not draft a plan for this question. Try again, or rephrase the goal.",
+      });
+      return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+    }
     // A planner that wrote SOME queries is trusted as written — a quick tier
     // is told to draft a handful, and topping it up would override that.
-    const queries = (drafted.queries.length
-      ? drafted.queries
-      : fallbackResearchQueries(run.goal, plan.effort)
-    ).slice(0, MAX_PLAN_QUERIES);
+    const queries = drafted.queries.slice(0, MAX_PLAN_QUERIES);
     const objectives = drafted.objectives?.length
       ? drafted.objectives
       : buildResearchObjectives(run.goal, queries);
@@ -2308,6 +2336,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const reports: ReviewRoundInput["workerReports"] = [];
       let roundTokens = 0;
       let roundCalls = 0;
+      /** Why each worker stopped, for the all-failed check after the loop. */
+      const roundResults: WorkerResult["reason"][] = [];
       for (let i = 0; i < delegations.length; i += 1) {
         const delegation = delegations[i]!;
         const outcome = settled[i]!;
@@ -2316,6 +2346,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           : { summary: "", openQuestions: [], followUps: [], tokens: 0, costMicroUsd: 0, reason: "error", toolCalls: 0, elapsedMs: 0 };
         roundTokens += result.tokens;
         roundCalls += result.toolCalls;
+        roundResults.push(result.reason);
         await bill(current, result.costMicroUsd, "worker");
         reports.push({
           workerId: delegation.workerId,
@@ -2342,6 +2373,35 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         ]);
       }
       workerTokens.used += roundTokens;
+
+      /*
+       * EVERY WORKER FAILED TO START — stop, and say so.
+       *
+       * `model_unavailable` is `runResearchWorker` reporting that it could not
+       * build an adapter at all: no configured provider serves a model this
+       * loop can drive. That is a deployment fact, so it will be just as true
+       * for round two and round three; without this the run walked the whole
+       * ladder spawning workers that returned instantly, reviewed rounds with
+       * no findings in them, and ended with a report written from the seed
+       * sweep alone — which is a shallow run that never once said why.
+       *
+       * An `error` reason is NOT this case: that is a worker whose model call
+       * failed mid-loop, which is worth retrying in the next round.
+       */
+      if (roundResults.length > 0 && roundResults.every((reason) => reason === "model_unavailable")) {
+        await append(current.id, current.userId, [
+          {
+            kind: "error",
+            payload: {
+              stage: "investigating",
+              recoverable: true,
+              message:
+                "No configured model can run a research worker, so this run gathered sources without the agent team. Configure a provider with an agentic chat model for a full investigation.",
+            },
+          },
+        ]);
+        break;
+      }
 
       const findings = store.listFindings ? await store.listFindings(current.id, current.userId) : [];
       const roundFindings = findings.filter((finding) => finding.round === round);

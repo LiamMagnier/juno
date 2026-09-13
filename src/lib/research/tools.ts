@@ -23,7 +23,7 @@ import {
   type ResearchPlan,
 } from "@/lib/research/domain";
 import { parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
-import { researchWorkerModel } from "@/lib/research/agents/worker";
+import { researchLeadModel } from "@/lib/research/agents/worker";
 
 /**
  * What the durable research job farms out: planning, searching, fetching and
@@ -108,13 +108,12 @@ function timeboxSignal(
  * later may be running while the user has switched models twice.
  */
 export function researchPlannerModel(): ModelInfo | null {
-  // The plan is the one model call whose quality every later call inherits:
-  // a planner that writes vague sub-questions sends eight workers after vague
-  // things. So it runs on the same capable-but-cheap model the workers do
-  // (Claude Haiku when configured) rather than the fastest free utility model
-  // the titles and summaries use, and falls back to that only when nothing
-  // agentic is configured.
-  return researchWorkerModel() ?? utilityModelCandidates()[0] ?? null;
+  // The plan is the one model call whose quality every later call inherits: a
+  // planner that writes vague sub-questions sends eight workers after vague
+  // things, and no amount of worker budget recovers from it. So it runs on the
+  // LEAD model — the strongest configured — not on the workers' cheap one,
+  // which is what it used to do. See `researchLeadModel`.
+  return researchLeadModel() ?? utilityModelCandidates()[0] ?? null;
 }
 
 /**
@@ -256,11 +255,34 @@ async function utilityCompletion(opts: {
 }
 
 /**
+ * Did a planner reply contain a decomposition at all?
+ *
+ * Asked exactly the way `planResearchQueries` asks it below — through the two
+ * parsers that actually consume the text — so "worth retrying" can never drift
+ * from "the caller got nothing". A length check or a status flag would answer a
+ * different question and start disagreeing the first time a parser changed.
+ */
+function hasUsablePlan(text: string): boolean {
+  if (!text.trim()) return false;
+  if (parseStructuredPlan(text, { maxQueries: PLANNED_QUERIES })) return true;
+  return parsePlanLines(parsePlanSections(text).queries, PLANNED_QUERIES).length > 0;
+}
+
+/**
  * PLAN — expand the goal into a brief, then decompose the brief into queries.
  *
- * Never throws. A planner that fails returns no queries and the engine falls
- * back to searching the goal itself; a durable run that died because its
- * cheapest step timed out would be the worst possible trade.
+ * Never throws. But returning nothing is no longer cheap: the engine STOPS the
+ * run when this comes back empty rather than searching templated variations of
+ * the user's sentence (see `doPlanning`), because a run with no decomposition
+ * is not a research run — its objectives, its worker briefs and its gap review
+ * are all derived from what this function returns.
+ *
+ * That raises the cost of a flaky failure, so the decomposition call is
+ * ATTEMPTED TWICE. The overwhelmingly common failure is a timeout on a busy
+ * provider, and a second attempt costs a few seconds of a run measured in
+ * minutes. The brief is not retried: it is an optional augmentation, the
+ * planner is prompted to work without it, and doubling down on the enrichment
+ * step to save the step that actually matters is the wrong order.
  */
 export const planResearchQueries: ResearchDeps["plan"] = async ({
   userId,
@@ -302,17 +324,29 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
     ? `${request}\n\nResearch brief:\n${brief.text}`
     : request;
 
-  const planned = await utilityCompletion({
-    userId,
-    model: planner,
-    system: plannerSystemPrompt(effort, pinnedSources),
-    prompt: prompt.slice(0, PLANNER_PROMPT_CHARS),
-    maxTokens: PLANNER_OUTPUT_TOKENS,
-    timeoutMs: PLAN_TIMEOUT_MS,
-    signal,
-    label: "plan",
-  });
-  const costMicroUsd = brief.costMicroUsd + planned.costMicroUsd;
+  const draft = async (attempt: 1 | 2) =>
+    utilityCompletion({
+      userId,
+      model: planner,
+      system: plannerSystemPrompt(effort, pinnedSources),
+      prompt: prompt.slice(0, PLANNER_PROMPT_CHARS),
+      maxTokens: PLANNER_OUTPUT_TOKENS,
+      timeoutMs: PLAN_TIMEOUT_MS,
+      signal,
+      label: attempt === 1 ? "plan" : "plan (retry)",
+    });
+
+  let planned = await draft(1);
+  let costMicroUsd = brief.costMicroUsd + planned.costMicroUsd;
+  // Both parsers below key off the text, so "did the first attempt produce
+  // anything usable" is asked exactly the way the callers below ask it —
+  // rather than by re-deriving it from a length or a status the model does
+  // not report. An aborted run does not retry: the caller has gone.
+  if (!hasUsablePlan(planned.text) && !signal?.aborted) {
+    const second = await draft(2);
+    costMicroUsd += second.costMicroUsd;
+    if (hasUsablePlan(second.text)) planned = second;
+  }
 
   // The structured plan: sub-questions with evidence contracts, the approach,
   // the bar for done, and the searches attached to the question they serve.

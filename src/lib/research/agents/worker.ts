@@ -61,6 +61,31 @@ import { timeboxSignal } from "@/lib/research/agents/scheduler";
  * Claude Haiku first because the protocol's tool shapes were written against
  * it; otherwise the cheapest configured chat model that the catalog marks as
  * agentic, fastest first among equals.
+ *
+ * TWO FILTERS USED TO RETURN NULL ON PERFECTLY GOOD DEPLOYMENTS, and a null
+ * here is not a degraded research run — it is no research at all. The engine's
+ * `doWorkerRounds` opens with `if (!deps.runWorker) return { run }` and
+ * `runResearchWorker` returns `model_unavailable` for a null model, so the
+ * entire orchestrator-worker layer silently does nothing and the run falls
+ * back to its seed sweep: issue the planner's query list, read the results,
+ * write a report. That is the shallow, repetitive run this whole module
+ * exists to replace, and nothing anywhere said it had happened.
+ *
+ * The first filter was `providerAdapterFor(model) !== "gemini-native"`. That
+ * function answers "how does Juno's CHAT pipeline route this model", which is
+ * a different question from "can the loop below talk to it". Google's own
+ * OpenAI-compatible shim is what `PROVIDERS.google.defaultBaseUrl` already
+ * points at (`…/v1beta/openai/`, `kind: "openai"`), it is what `compatClient`
+ * below already builds a client against, and it serves function calling. So a
+ * Google-only deployment — a perfectly ordinary one — had a planner (which
+ * falls through to `utilityModelCandidates`, and those are not filtered this
+ * way) but no workers at all.
+ *
+ * The second was `minPlan === "FREE"`, meant as a cost ceiling. It is one on
+ * a deployment that has a cheap model configured and a hard exclusion on one
+ * that does not. A PRO-tier worker costs more than a FREE one; no worker
+ * costs the entire feature. So FREE is a PREFERENCE now, applied in the sort,
+ * and the filter only asks what the loop actually requires.
  */
 export function researchWorkerModel(): ModelInfo | null {
   const usable = MODEL_LIST.filter(
@@ -69,20 +94,62 @@ export function researchWorkerModel(): ModelInfo | null {
       model.agenticTools &&
       !model.comingSoon &&
       model.status !== "deprecated" &&
-      model.minPlan === "FREE" &&
       isProviderConfigured(model.provider) &&
-      // The Gemini adapter speaks its own protocol; the worker loop below
-      // speaks Anthropic and OpenAI-compatible only.
-      providerAdapterFor(model) !== "gemini-native"
+      // The Responses-only snapshots (gpt-*-pro, some Codex) 404 on
+      // /chat/completions, which is the only OpenAI surface the loop below
+      // speaks. This one IS a real capability filter.
+      model.api !== "responses"
   );
   if (usable.length === 0) return null;
+  // Cheapest first, FREE-tier ahead of paid at equal cost, then fastest.
+  const byCost = (a: ModelInfo, b: ModelInfo) =>
+    a.cost - b.cost ||
+    Number(b.minPlan === "FREE") - Number(a.minPlan === "FREE") ||
+    getModelMetrics(b).speed - getModelMetrics(a).speed;
   const preferred = usable.find((model) => model.provider === "anthropic" && model.family === "haiku");
   if (preferred) return preferred;
-  const claude = usable
-    .filter((model) => model.provider === "anthropic")
-    .sort((a, b) => a.cost - b.cost || getModelMetrics(b).speed - getModelMetrics(a).speed)[0];
+  const claude = usable.filter((model) => model.provider === "anthropic").sort(byCost)[0];
   if (claude) return claude;
-  return usable.sort((a, b) => a.cost - b.cost || getModelMetrics(b).speed - getModelMetrics(a).speed)[0] ?? null;
+  return usable.sort(byCost)[0] ?? null;
+}
+
+/**
+ * The LEAD model: the most capable configured model this loop can drive.
+ *
+ * STRONG LEAD, FAST WORKERS is the trade every published multi-agent research
+ * system makes, and the one this module's own comments cite — Anthropic put
+ * the lead on Opus and the subagents on Sonnet and measured the pair ~90%
+ * ahead of a single strong agent. Juno was running BOTH halves on
+ * `researchWorkerModel()`, which selects for cheapness: the planner that
+ * decomposes the question, and the lead that judges coverage and writes every
+ * subsequent worker brief, were the cheapest agentic model configured.
+ *
+ * That is the wrong economy by an order of magnitude. A run makes one plan
+ * call and a handful of review calls against dozens of worker calls, each of
+ * which carries a full page digest — the bill is worker input tokens, and it
+ * barely notices the lead. But the plan is the one call whose quality every
+ * later call INHERITS: vague sub-questions send every worker after vague
+ * things, and no amount of worker budget recovers from it.
+ *
+ * Ranked on `intelligence` and then on cost, so the strongest model wins and
+ * ties go to the cheaper one. Falls back to the worker model when nothing
+ * better is configured, which keeps a single-model deployment working exactly
+ * as it did.
+ */
+export function researchLeadModel(): ModelInfo | null {
+  const usable = MODEL_LIST.filter(
+    (model) =>
+      model.modality === "chat" &&
+      model.agenticTools &&
+      !model.comingSoon &&
+      model.status !== "deprecated" &&
+      isProviderConfigured(model.provider) &&
+      model.api !== "responses"
+  );
+  const best = usable.sort(
+    (a, b) => getModelMetrics(b).intelligence - getModelMetrics(a).intelligence || a.cost - b.cost
+  )[0];
+  return best ?? researchWorkerModel();
 }
 
 // ---------------------------------------------------------------------------
