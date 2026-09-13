@@ -86,7 +86,34 @@ export function emptyGeminiRound(): GeminiRoundState {
  * Returns the unconsumed tail so a frame straddling two network chunks is not
  * parsed in halves.
  */
-export function extractGeminiSseEvents(buffer: string): { payloads: string[]; rest: string } {
+export function extractGeminiSseEvents(
+  buffer: string,
+  /**
+   * THE LAST FRAME HAS NO NEWLINE AFTER IT, and without this flag it was
+   * thrown away — which is the whole of "Gemini is temporarily unavailable".
+   *
+   * Mid-stream the loop below is correct: a `data:` line is only complete once
+   * its terminating newline has arrived, so an unterminated tail must stay in
+   * `rest` until the next read. But at end-of-stream there is no next read. A
+   * server that does not send a trailing newline after its final frame leaves
+   * that frame stranded in `rest` for ever, and Gemini's final frame is the
+   * one carrying `finishReason` and `usageMetadata`.
+   *
+   * The consequence was not a missing token count. `streamGemini` throws
+   * `MISSING_FINISH_REASON` with a synthetic httpStatus 502 when no terminal
+   * reason arrived, `classifyProviderError` maps anything >= 500 to `capacity`,
+   * and `capacity` renders as "temporarily unavailable (a server error on
+   * their end)" — so a request Google answered correctly, whose text had
+   * already streamed into the transcript, was destroyed at the finish line and
+   * blamed on Google. It showed up as "works for short replies, fails for long
+   * ones, fails every time on High thinking" because the more frames a
+   * response has, the likelier its last one is to end on the read boundary
+   * with the terminator unflushed.
+   *
+   * Pass `flush` once, after the reader reports done.
+   */
+  flush = false,
+): { payloads: string[]; rest: string } {
   const payloads: string[] = [];
   let rest = buffer;
   let idx: number;
@@ -96,6 +123,16 @@ export function extractGeminiSseEvents(buffer: string): { payloads: string[]; re
     if (!line.startsWith("data:")) continue;
     const json = line.slice(5).trim();
     if (json) payloads.push(json);
+  }
+  if (flush) {
+    const line = rest.trim();
+    rest = "";
+    if (line.startsWith("data:")) {
+      const json = line.slice(5).trim();
+      // Still only a COMPLETE frame: a genuinely truncated stream leaves
+      // invalid JSON here, and `applyGeminiChunk` drops it as it always has.
+      if (json) payloads.push(json);
+    }
   }
   return { payloads, rest };
 }

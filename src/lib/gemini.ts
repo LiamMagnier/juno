@@ -106,6 +106,8 @@ export async function* streamGemini(
   let cumThoughts = 0;
   let cumTotal = 0;
   let sawUsage = false;
+  /** Did any ANSWER text reach the transcript this turn? (Thoughts don't count.) */
+  let sawAnswer = false;
   let lastFinishReason: string | undefined;
   let groundedWithSearchWidget = false;
 
@@ -141,19 +143,36 @@ export async function* streamGemini(
     let streamBuffer = "";
     const state = emptyGeminiRound();
 
+    const drain = function* (payloads: string[]) {
+      for (const payload of payloads) {
+        applyGeminiChunk(state, payload, sources);
+        while (state.events.length > 0) {
+          const ev = state.events.shift();
+          if (!ev) continue;
+          if (ev.type === "text") sawAnswer = true;
+          yield ev;
+        }
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       streamBuffer += decoder.decode(value, { stream: true });
       const { payloads, rest } = extractGeminiSseEvents(streamBuffer);
       streamBuffer = rest;
-      for (const payload of payloads) {
-        applyGeminiChunk(state, payload, sources);
-        while (state.events.length > 0) {
-          const ev = state.events.shift();
-          if (ev) yield ev;
-        }
-      }
+      yield* drain(payloads);
+    }
+
+    // The reader is done, so whatever is still buffered will never be followed
+    // by the newline the mid-stream parser waits for. Gemini's final frame —
+    // `finishReason` and `usageMetadata` — is routinely that frame. See the
+    // header of `extractGeminiSseEvents`.
+    streamBuffer += decoder.decode();
+    if (streamBuffer) {
+      const { payloads } = extractGeminiSseEvents(streamBuffer, true);
+      streamBuffer = "";
+      yield* drain(payloads);
     }
 
     if (state.finishReason) lastFinishReason = state.finishReason;
@@ -230,16 +249,39 @@ export async function* streamGemini(
     };
   }
 
-  if (!lastFinishReason) {
+  /*
+   * A MISSING TERMINAL MARKER IS NOT A REASON TO DESTROY A DELIVERED ANSWER.
+   *
+   * This used to throw unconditionally, with a synthetic httpStatus 502 —
+   * which `classifyProviderError` maps to `capacity`, which renders as "Gemini
+   * is temporarily unavailable (a server error on their end)". So a turn whose
+   * text had ALREADY streamed into the transcript was replaced, at the finish
+   * line, with an outage notice about a provider that had just answered
+   * correctly. The user saw their thought process, then "Generation failed".
+   *
+   * (The frame it was missing is the one `extractGeminiSseEvents` was dropping
+   * for want of a trailing newline — fixed there, and this is the second half:
+   * even when a terminator genuinely never arrives, an answer the reader can
+   * see is worth more than a marker the reader cannot.)
+   *
+   * So: if answer text arrived, finish on it. `UNSPECIFIED` is what Google's
+   * own enum calls a reason it did not state, and `normalizeFinishReason`
+   * already treats anything it does not recognise as a normal stop.
+   */
+  if (!lastFinishReason && !sawAnswer) {
     throw new GeminiProviderError({
-      httpStatus: 502,
+      // NOT 5xx. Nothing here says Google's servers failed: the stream opened,
+      // carried no answer and ended without a terminator, which is a truncated
+      // connection. Reporting it as a provider outage sent operators looking at
+      // Google's status page for a fault on this side of the socket.
+      httpStatus: 499,
       googleStatus: "MISSING_FINISH_REASON",
-      message: "Google ended the stream without a terminal finish reason",
+      message: "The model stream ended with no answer and no finish reason (network interrupted)",
       context: geminiContext,
     });
   }
 
-  const finalRaw = lastFinishReason;
+  const finalRaw = lastFinishReason ?? "FINISH_REASON_UNSPECIFIED";
   // Operator-visible evidence that grounding actually ran: the UI announces
   // "Google Search grounding" from the request side, and for a long time that
   // announcement was the only trace of a search that never happened.

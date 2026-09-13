@@ -177,3 +177,51 @@ test("SSE frames split across network chunks are parsed once, whole", () => {
   assert.deepEqual(second.payloads, ['{"b":2}']);
   assert.equal(second.rest, "");
 });
+
+/*
+ * THE REGRESSION THAT READ AS "Gemini is temporarily unavailable".
+ *
+ * Gemini's LAST frame carries `finishReason` and `usageMetadata`, and a server
+ * is under no obligation to put a newline after it. Mid-stream that tail must
+ * be held back — it may be half a frame — but at end-of-stream there is no next
+ * read to complete it, so holding it back drops it for ever.
+ *
+ * Dropping it meant `streamGemini` reached its end with no terminal reason and
+ * threw a synthetic 502, which classifies as `capacity`, which renders as "a
+ * server error on their end" — about a request Google had answered correctly
+ * and whose text was already on screen.
+ */
+test("the final frame is not lost when the stream ends without a newline", () => {
+  const last = 'data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":42}}';
+
+  // Mid-stream: still incomplete, still held back. Unchanged behaviour.
+  const held = extractGeminiSseEvents(last);
+  assert.deepEqual(held.payloads, []);
+  assert.equal(held.rest, last);
+
+  // End of stream: the same bytes are a complete frame, because nothing more
+  // is coming.
+  const flushed = extractGeminiSseEvents(last, true);
+  assert.deepEqual(flushed.payloads, [
+    '{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":42}}',
+  ]);
+  assert.equal(flushed.rest, "");
+
+  // And it really does carry the terminal reason the throw was missing.
+  const state = emptyGeminiRound();
+  applyGeminiChunk(state, flushed.payloads[0], new Map());
+  assert.equal(state.finishReason, "STOP");
+  assert.equal(state.sawSignal, true);
+});
+
+test("a flushed tail that is genuinely truncated is still discarded", () => {
+  // A real mid-frame cut: valid prefix, no closing brace. It must not be
+  // handed on as if it were a frame — `applyGeminiChunk` drops it, and the
+  // round stays empty, which is the case the throw exists for.
+  const cut = extractGeminiSseEvents('data: {"candidates":[{"finishRea', true);
+  assert.deepEqual(cut.payloads, ['{"candidates":[{"finishRea']);
+  const state = emptyGeminiRound();
+  applyGeminiChunk(state, cut.payloads[0], new Map());
+  assert.equal(state.sawSignal, false);
+  assert.equal(state.finishReason, null);
+});

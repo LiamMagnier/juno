@@ -50,11 +50,26 @@ import { useWorkNeedsYouCount } from "@/components/work/inbox/use-needs-you-coun
  * The sidebar (docs/design/FLAT_UI.md §3).
  *
  * A flat panel (the frame is painted by `.app-sidebar-frame` in the shell)
- * holding, top to bottom: brand + collapse, the Chat · Work · Code product
- * switch, Search (the eight-source search palette — ⌘K is the command menu,
- * a different thing), New chat, the nav destinations, Projects, Pinned,
- * Recents folded by date, and a footer of exactly two blocks: Design, then
- * one 36px account band.
+ * holding, top to bottom: brand + Search + collapse, the Chat · Work · Code
+ * product switch, New chat, the nav destinations, Pinned, Recents folded by
+ * date, and a footer of exactly two blocks: Design, then one 36px account
+ * band.
+ *
+ * SEARCH IS IN THE HEADER, not in the navigation, and that is the one thing
+ * about this layout worth arguing over. It is the eight-source search palette
+ * — ⌘K is the command menu, a different thing — and it used to be the first
+ * full-width row of the nav list. Measured, this column spent 330px before
+ * the first conversation title, and a nav list is a list of PLACES: Library,
+ * Projects, Artifacts, More. Search is a command that opens a palette over
+ * the window and returns you where you were, which is why Linear, Raycast and
+ * Arc all keep it in the chrome. It kept its tooltip; the mobile magnifier is
+ * unchanged. 330px → 296px.
+ *
+ * The remaining 296px is seven rows that each earn their place, which is how
+ * a sidebar gets heavy with nothing identifiably wrong in it. The next real
+ * cut is folding Library/Projects/Artifacts into More (−102px), and that
+ * trades three primary destinations for space — a product call, not a
+ * styling one.
  *
  * THE DENSITY LADDER, and nothing off it. Rows are `h-8` (32px) carrying
  * `text-ui` (13px) and a `size-4` (16px) glyph at `gap-2`, so every label in
@@ -503,6 +518,22 @@ export function AppSidebar({
             </Link>
           </motion.div>
           <motion.div layout="position" transition={layoutTransition} className="flex items-center gap-0.5">
+            {!collapsed && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="group hidden size-7 md:inline-flex coarse:size-9"
+                    onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+                    aria-label="Search"
+                  >
+                    <SidebarMotionIcon kind="search" className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Search</TooltipContent>
+              </Tooltip>
+            )}
             {onToggleCollapse && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -567,20 +598,21 @@ export function AppSidebar({
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
         <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-2")}>
-          {/* `juno:search` — the eight-source search palette, not the ⌘K command
-              menu. A row labelled Search used to open the command menu, whose
-              "Chats" group is a client-side title filter over whatever the
-              context happened to hold; the real search was reachable only from
-              the mobile magnifier. No key hint: the search palette has none,
-              and ⌘K keeps meaning "commands". */}
-          <NavRow
-            collapsed={collapsed}
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-            icon={<SidebarMotionIcon kind="search" />}
-            label="Search"
-            layoutId="nav-search"
-            transition={layoutTransition}
-          />
+          {/* SEARCH IS NOT HERE ANY MORE — it is in the panel header, beside
+              the collapse control. Measured, this column spent 330px before
+              the first conversation title: a wordmark row, a product switch,
+              six full-width nav rows and a section eyebrow. Every one of those
+              is defensible on its own, which is exactly how a sidebar reaches
+              330px with nothing identifiably wrong in it.
+
+              Search is the row that was least at home. The others are PLACES —
+              Library, Projects, Artifacts, More — and a nav list is a list of
+              places. Search is a command that opens a palette over the whole
+              window and returns you to where you were, which is why Linear,
+              Raycast and Arc all put it in the chrome rather than the
+              navigation. Moving it there costs its visible label and buys back
+              a row at the top of the list of things you actually navigate to.
+              (It keeps a tooltip, and the mobile magnifier is unchanged.) */}
           <NavRow
             collapsed={collapsed}
             onClick={newChat}

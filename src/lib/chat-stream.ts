@@ -148,6 +148,16 @@ export async function readChatStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const emit = (frame: string) => {
+    const parsed = parseSseFrame(frame.trim());
+    if (!parsed || !parsed.data.trim()) return;
+    try {
+      onChunk(JSON.parse(parsed.data) as StreamChunk, parsed.id === undefined ? {} : { id: parsed.id });
+    } catch {
+      // ignore malformed frame
+    }
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -155,15 +165,25 @@ export async function readChatStream(
 
     let idx: number;
     while ((idx = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, idx).trim();
+      emit(buffer.slice(0, idx));
       buffer = buffer.slice(idx + 2);
-      const parsed = parseSseFrame(frame);
-      if (!parsed || !parsed.data.trim()) continue;
-      try {
-        onChunk(JSON.parse(parsed.data) as StreamChunk, parsed.id === undefined ? {} : { id: parsed.id });
-      } catch {
-        // ignore malformed frame
-      }
     }
   }
+
+  /*
+   * Flush the tail. A frame is only complete once its blank line has arrived,
+   * which is right for every read but the last one — after `done` there is no
+   * next read to bring the terminator, so a final frame sent without one is
+   * held back for ever.
+   *
+   * This is the same defect that was live in the Gemini reader, where the
+   * stranded frame was the one carrying `finishReason` and the loss rendered
+   * as "Gemini is temporarily unavailable". Here both ends are Juno's, and the
+   * route does terminate its frames — so this is insurance rather than a fix
+   * for an observed failure. It costs one parse of a buffer that is almost
+   * always empty, and the failure it prevents is a silently dropped final
+   * chunk, which is the hardest kind of bug to see.
+   */
+  buffer += decoder.decode();
+  if (buffer.trim()) emit(buffer);
 }
