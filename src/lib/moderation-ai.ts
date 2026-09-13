@@ -1,5 +1,6 @@
 import { recordFlag, type FlagSeverity } from "@/lib/moderation";
-import { runUtilityPrompt } from "@/lib/memory";
+import { accountBackgroundProvider, loadBackgroundProviderPolicy, runUtilityPrompt } from "@/lib/memory";
+import type { BackgroundProviderPolicy } from "@/lib/background-provider-policy";
 import { moderationMessagePreview } from "@/lib/chat-moderation";
 
 /*
@@ -188,7 +189,24 @@ export async function moderateText(
    * near its monthly ceiling stops being screened. Cost is a reason to see the
    * number, not a reason to stop reading what the model is being sent.
    */
-  userId: string | null
+  userId: string | null,
+  /**
+   * Where the message may be sent to be classified.
+   *
+   * The classifier reads the user's own words, so it is background work on
+   * their content and answers to the background-provider policy like every
+   * other utility walk — and this call passed neither a policy nor a provider.
+   * It therefore inherited `same_provider` matched against null, which matches
+   * nothing by design, so `runUtilityPrompt` refused before a model was
+   * reached. Moderation FAILS OPEN, so the refusal looked exactly like a clean
+   * message: layer 2 of two had silently stopped running, leaving only the
+   * narrow `quickScreen` regexes.
+   *
+   * Omitted, this resolves the account's own provider rather than denying —
+   * the deliberate opposite of the default, because the cost of an unresolved
+   * anchor here is that nothing is screened at all.
+   */
+  where?: { policy?: BackgroundProviderPolicy; conversationProvider?: string | null }
 ): Promise<ModerationHit | null> {
   const trimmed = (text ?? "").trim();
   if (trimmed.length < MIN_INPUT_CHARS) return null;
@@ -197,6 +215,15 @@ export async function moderateText(
   if (quick) return quick;
 
   try {
+    const [policy, conversationProvider] = await Promise.all([
+      where?.policy ?? (userId ? loadBackgroundProviderPolicy(userId) : undefined),
+      where?.conversationProvider !== undefined
+        ? Promise.resolve(where.conversationProvider)
+        : userId
+          ? accountBackgroundProvider(userId)
+          : Promise.resolve(null),
+    ]);
+
     const { result } = await runUtilityPrompt<ModerationHit | null>({
       system: SYSTEM_PROMPT,
       userMsg: `User message to classify:\n"""\n${trimmed.slice(0, MAX_INPUT_CHARS)}\n"""\n\nReturn the JSON verdict.`,
@@ -204,6 +231,8 @@ export async function moderateText(
       label: "moderation/classify",
       parse: parseVerdict,
       userId,
+      policy,
+      conversationProvider,
     });
     return result ?? null;
   } catch (err) {
@@ -221,16 +250,23 @@ export async function moderateUserMessages({
   userId,
   texts,
   redactPreview = false,
+  conversationProvider,
 }: {
   userId: string;
   texts: string[];
   redactPreview?: boolean;
+  /** Provider of the model this turn was held with — see `moderateText`. */
+  conversationProvider?: string | null;
 }): Promise<void> {
   try {
+    // Read once for the batch: the policy cannot change between two messages of
+    // one request, and re-reading it would be a query per text for an answer
+    // that does not move.
+    const policy = await loadBackgroundProviderPolicy(userId);
     // One request produces at most one moderation record/strike even when a
     // private context contains several user turns.
     for (const text of texts) {
-      const hit = await moderateText(text, userId);
+      const hit = await moderateText(text, userId, { policy, conversationProvider });
       if (!hit) continue;
       await recordFlag({
         userId,

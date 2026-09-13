@@ -7,6 +7,8 @@ import { isOwnerEmail } from "@/lib/owner";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { generateChatTitleFromMessages, fallbackChatTitle, generateProjectName, type TitleContextMessage } from "@/lib/titles";
 import { canAutoRenameChatTitle, canAutoRenameProjectName, coerceTitleSource } from "@/lib/title-ownership";
+import { loadBackgroundProviderPolicy } from "@/lib/memory";
+import { getModel } from "@/lib/models";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -46,7 +48,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const existing = await prisma.conversation.findFirst({
     where: { id, userId: user.id },
-    select: { id: true, title: true, titleSource: true, projectId: true },
+    // `model` is here for the naming call, not for the response: naming reads
+    // the conversation, so the background-provider policy decides where it may
+    // be sent, and `same_provider` needs the provider of the model this chat is
+    // actually held with. Without it the policy matched null, denied every
+    // call, and every chat in the product fell back to first-seven-words.
+    select: { id: true, title: true, titleSource: true, projectId: true, model: true },
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -79,7 +86,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // It is not plan-gated, but it IS billed: the naming call is a real model
   // call made on this account's behalf, and it reaches the ledger as
   // `kind: "utility"` rather than silently spending outside the month's budget.
-  const generated = await generateChatTitleFromMessages(contextMessages, { userId: user.id }).catch((err) => {
+  const policy = await loadBackgroundProviderPolicy(user.id);
+  // The provider the user chose for THIS chat — a better anchor than the
+  // account default, which is only the stand-in for work with no conversation
+  // behind it. `?? undefined` so an unrecognised model id falls through to that
+  // stand-in rather than being read as "no anchor" and denied.
+  const conversationProvider = getModel(existing.model)?.provider ?? undefined;
+
+  const generated = await generateChatTitleFromMessages(contextMessages, {
+    userId: user.id,
+    policy,
+    conversationProvider,
+  }).catch((err) => {
     console.error("[title] generation failed", { conversationId: id, err });
     return null;
   });
@@ -121,6 +139,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           userId: user.id,
           firstUser: contextMessages.map((m) => m.content).join("\n\n").slice(0, 2000),
           instructions: project.instructions,
+          // Same content, same chat, same rule — resolving a second policy here
+          // could only disagree with the one the title just ran under.
+          policy,
+          conversationProvider,
         }).catch((err) => {
           console.error("[title] project name generation failed", { projectId, err });
           return null;

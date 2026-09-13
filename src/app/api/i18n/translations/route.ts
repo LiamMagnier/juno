@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { UI_TRANSLATION_CATALOG } from "@/lib/i18n-catalog.generated";
-import { runUtilityPrompt } from "@/lib/memory";
+import { platformUtilityPolicy, runUtilityPrompt } from "@/lib/memory";
 import { languageOf, localeDisplayName, normalizeWebLocale } from "@/lib/i18n";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
@@ -140,6 +140,19 @@ export async function GET(req: Request) {
        * and the translation cache rather than by anyone's monthly budget.
        */
       userId: null,
+      /*
+       * The one call that opts OUT of `same_provider`, and the only one that
+       * may: there is no account here to read a policy from, and there is no
+       * user content to protect — every value is a shipped interface literal
+       * ("New chat", "Settings"), identical for every visitor and cached
+       * process-wide. Omitting the policy did not mean "no rule", it meant the
+       * privacy default, matched against a null provider it could never have;
+       * every request was denied, the walk returned null, this route threw
+       * "Translation model returned invalid JSON" and answered 503 — so the
+       * whole interface silently stayed English in every non-English locale.
+       * `platformUtilityPolicy()` is still bounded by the deployment allowlist.
+       */
+      policy: platformUtilityPolicy(),
       system:
         "You translate software interface copy. Return exactly one valid JSON object with the same keys as the input and translated string values. " +
         "Translate naturally and concisely. Preserve Juno, company/model/provider names, URLs, email examples, keyboard shortcuts, variables, numbers, and punctuation where appropriate. " +

@@ -1200,7 +1200,16 @@ async function handleChat(req: Request) {
       // it a moderation failure here is an unhandled rejection, where the saved
       // path has always swallowed its own.
       after(() =>
-        moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }).catch(() => {})
+        moderateUserMessages({
+          userId: user.id,
+          texts: moderationTexts,
+          redactPreview: true,
+          // The classifier is background work on the user's own words, so the
+          // background-provider policy decides where it may be sent. Without
+          // this anchor `same_provider` matched null, the walk refused, and a
+          // fail-open classifier reported every message as clean.
+          conversationProvider: modelInfo.provider,
+        }).catch(() => {})
       );
     }
 
@@ -3016,7 +3025,11 @@ async function handleChat(req: Request) {
     // memory must not record a turn the user never got. See
     // chat/post-processing, where both rules live with their reasons.
     if (postGenerationPlan({ moderate, memoryEnabled, producedAnswer: false }).moderates) {
-      await moderateUserMessages({ userId: user.id, texts: moderationTexts }).catch(() => {});
+      await moderateUserMessages({
+        userId: user.id,
+        texts: moderationTexts,
+        conversationProvider: modelInfo.provider,
+      }).catch(() => {});
     }
 
     await genPromise?.catch(() => {});

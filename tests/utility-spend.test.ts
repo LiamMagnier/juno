@@ -177,16 +177,30 @@ test("the naming and moderation entry points take the account from their caller"
   // These two had no userId in scope at all: titles.ts and moderation-ai.ts are
   // libraries called from a route that knows the user, so the account had to be
   // threaded in before either could be billed.
+  //
+  // Matched on the FIELD, not on the whole options literal. This used to pin
+  // the one-line shape `opts: { userId: string | null; llm?: UtilityLlm }`,
+  // which broke the day naming also had to carry a background-provider policy —
+  // a change that has nothing to do with billing and left every word of the
+  // billing contract intact. A test that fails on an unrelated correct change
+  // teaches people to edit the test, so it asks only what it means to ask:
+  // that the account is a required union the caller must state.
   const titles = src("src/lib/titles.ts");
-  assert.match(titles, /opts: \{ userId: string \| null; llm\?: UtilityLlm \}/);
+  assert.equal(
+    (titles.match(/userId: string \| null;/g) ?? []).length,
+    3,
+    "titles.ts must take a required, nullable account on complete() and both public entry points",
+  );
   assert.match(titles, /userId: string \| null;\s*firstUser\?: string/);
 
   const titleRoute = src("src/app/api/conversations/[id]/title/route.ts");
-  assert.match(titleRoute, /generateChatTitleFromMessages\(contextMessages, \{ userId: user\.id \}\)/);
+  assert.match(titleRoute, /generateChatTitleFromMessages\(contextMessages, \{\s*userId: user\.id,/);
   assert.match(titleRoute, /generateProjectName\(\{\s*userId: user\.id/);
 
   const moderation = src("src/lib/moderation-ai.ts");
-  assert.match(moderation, /moderateText\(text, userId\)/);
+  // `[,)]` because moderateText also takes where the message may be SENT — a
+  // separate contract, checked in tests/background-provider-callers.test.ts.
+  assert.match(moderation, /moderateText\(text, userId[,)]/);
 });
 
 test("the citation judge bills the account as well as the run", () => {

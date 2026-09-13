@@ -5,7 +5,8 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
-import { runUtilityPrompt } from "@/lib/memory";
+import { accountBackgroundProvider, loadBackgroundProviderPolicy, runUtilityPrompt } from "@/lib/memory";
+import { getModel } from "@/lib/models";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -89,7 +90,9 @@ export async function POST(req: Request) {
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: parsed.data.conversationId, userId: user.id },
-    select: { id: true },
+    // `model` names the provider this chat is held with — see the policy note
+    // on the runUtilityPrompt call below.
+    select: { id: true, model: true },
   });
   if (!conversation) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -115,6 +118,25 @@ export async function POST(req: Request) {
       .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${m.content.slice(0, m.role === "USER" ? 1200 : 2000)}`)
       .join("\n\n");
 
+    /*
+     * Pills read the whole transcript, so where they may be generated is the
+     * background-provider policy's call — and this route passed neither a
+     * policy nor a provider. It therefore inherited `same_provider` and was
+     * matched against a null provider, which matches nothing by design: every
+     * request was denied before a model was reached and the route returned an
+     * empty list — which the client renders as no pills at all, exactly the way
+     * it renders "nothing worth suggesting". A dead feature and a quiet one
+     * look identical from the outside, which is why it went unreported.
+     * The provider of the model this chat is held with is the anchor; the
+     * account default stands in when the stored id is one this build no longer
+     * knows.
+     */
+    const chatProvider = getModel(conversation.model)?.provider;
+    const [policy, conversationProvider] = await Promise.all([
+      loadBackgroundProviderPolicy(user.id),
+      chatProvider ?? accountBackgroundProvider(user.id),
+    ]);
+
     const { result } = await runUtilityPrompt({
       system: SYSTEM,
       userMsg: `Conversation so far:\n${transcript}\n\nThree follow-up questions the user might send next:`,
@@ -125,6 +147,8 @@ export async function POST(req: Request) {
       // billed to the account as `kind: "utility"` so the pills show up in the
       // month's spend instead of being free to the budget and unexplained.
       userId: user.id,
+      policy,
+      conversationProvider,
     });
 
     return NextResponse.json({ suggestions: result ?? [] });

@@ -131,6 +131,32 @@ export async function accountBackgroundProvider(userId: string): Promise<string 
 }
 
 /**
+ * The policy for utility work that has no account behind it AND carries none of
+ * the user's content.
+ *
+ * There is exactly one: translating Juno's own interface catalog. Those strings
+ * are shipped literals — "New chat", "Settings" — identical for every visitor,
+ * cached process-wide, and read by people who may not be signed in at all.
+ *
+ * That caller passed no policy, so it inherited `same_provider` and was matched
+ * against a null provider it could never have: every request was denied, the
+ * route threw "Translation model returned invalid JSON", and the ENTIRE
+ * interface silently fell back to English for every non-English locale. The
+ * same failure the memory editor had, on a surface where it was even quieter.
+ *
+ * `same_provider` protects the user's content, and there is no user and no
+ * content here — so the honest rule is the deployment's own allowlist and
+ * nothing narrower. Stated explicitly at the call site rather than defaulted,
+ * because a caller that has not thought about the policy must still fail closed.
+ */
+export function platformUtilityPolicy(): BackgroundProviderPolicy {
+  return normalizeBackgroundProviderPolicy({
+    mode: "any_allowed_provider",
+    allowedProviders: deploymentProviderAllowlist(),
+  });
+}
+
+/**
  * Deployment-wide allowlist, for enterprise and regional policy. Bounds every
  * account's own mode; absent by default so single-tenant deployments are
  * unaffected.
