@@ -169,6 +169,9 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
       // Promotional standard rates through 2026-12-31; see docs/models-september-2026.md.
       if (/3\.[678]-flash/.test(pm)) return { input: 0.75, output: 3.75 };
+      // Before the 3.5-flash test, which this id also matches — see the same
+      // ordering note in model-metrics.ts.
+      if (pm.includes("3.5-flash-lite")) return { input: 0.3, output: 2.5 };
       if (pm.includes("3.5-flash")) return { input: 1.5, output: 9 };
       if (pm.includes("pro")) return { input: 2, output: 12 };
       return { input: 0.3, output: 2.5 }; // older flash-class
@@ -186,6 +189,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "deepseek":
       // NOTE mid-July 2026: V4 goes official with 2x peak-hour pricing
       // (09:00-12:00 / 14:00-18:00 Beijing) — revisit when announced.
+      // V4.1 Flash, off-peak. DeepSeek doubles these in its peak windows.
+      if (pm === "deepseek-flash") return { input: 0.15, output: 0.6 };
       if (pm.includes("v4-pro")) return { input: 0.435, output: 0.87 };
       return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":

@@ -324,7 +324,8 @@ const CURATED: ModelInfo[] = [
   def({ provider: "google", id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", family: "flash", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier Flash generation." }),
   def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "legacy", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier stable Flash generation." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks." }),
-  def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
+  def({ provider: "google", id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash-Lite", family: "flash-lite", status: "current", released: "2026-07", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_048_576, description: "Fastest of the 3.5 line — high-volume subagents, document parsing, 1M context." }),
+  def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "legacy", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
   def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by Gemini 3.6 Flash." }),
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro", retiresOn: "2026-10-16", replacedBy: "google:gemini-3.1-pro-preview" }),
   // gemini-2.5-flash removed — ListModels still lists it, but EVERY call returns
@@ -389,7 +390,12 @@ const CURATED: ModelInfo[] = [
   def({ provider: "moonshot", id: "moonshot-v1-128k", name: "Moonshot v1 128K", family: "moonshot-v1", status: "legacy", released: "2024-03", minPlan: "FREE", cost: 2, contextWindow: 131_072, description: "Legacy long-context text model." }),
 
   // —— DeepSeek ——
-  def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "current", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),
+  // The API id is the bare `deepseek-flash`, NOT `deepseek-v4.1-flash`:
+  // DeepSeek points the unversioned alias at the current Flash generation the
+  // way `deepseek-chat` used to work, and the version appears only in the
+  // product name. Getting this wrong is a 404 on every message.
+  def({ provider: "deepseek", id: "deepseek-flash", name: "DeepSeek V4.1 Flash", family: "v4-flash", status: "current", released: "2026-09", minPlan: "FREE", cost: 1, contextWindow: 1_048_576, description: "Sparse MoE on a 552B backbone — a 1M window, 384K of output, and the cheapest frontier tier there is." }),
+  def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "legacy", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),
   def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship — hardest reasoning and complex agent tasks." }),
   def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
   def({ provider: "deepseek", id: "deepseek-reasoner", name: "DeepSeek Reasoner", family: "v4-flash", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash (thinking).", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
@@ -416,6 +422,7 @@ const CURATED: ModelInfo[] = [
   // every xAI model equally rather than this one specifically.
   def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
   def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "legacy", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive tier — chat, coding, and agentic tool calling. Superseded by 4.5." }),
+  def({ provider: "xai", id: "grok-4.1-fast", name: "Grok 4.1 Fast", family: "grok-fast", status: "current", released: "2026-05", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 2_000_000, description: "xAI's volume tier — a 2M window, tool calling, and reasoning you can switch off." }),
   def({ provider: "xai", id: "grok-build-0.1", name: "Grok Build 0.1", family: "grok-build", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Fast agentic coding — successor to Grok Code Fast." }),
   def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent deep research (beta)." }),
   def({ provider: "xai", id: "grok-4.20-0309-reasoning", name: "Grok 4.20 (Reasoning)", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous flagship reasoning Grok." }),
@@ -463,10 +470,12 @@ const CURATED: ModelInfo[] = [
  *  through /api/generate (not the chat stream). Hidden unless the lab's key is set. */
 const GENERATIVE: ModelInfo[] = [
   // —— Image ——
-  def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "current", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
+  def({ provider: "openai", id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", family: "gpt-image", status: "current", released: "2026-09", modality: "image", minPlan: "PRO", cost: 3, description: "Precision-first: the highest quality and the most control over an edit." }),
+  def({ provider: "openai", id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", family: "gpt-image-fast", status: "current", released: "2026-09", modality: "image", minPlan: "PRO", cost: 2, description: "The everyday default — GPT Image 2 quality at half the latency." }),
+  def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "legacy", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
   def({ provider: "openai", id: "gpt-image-1-mini", name: "GPT Image 1 Mini", family: "gpt-image-mini", status: "current", modality: "image", minPlan: "PRO", cost: 1, description: "Lower-cost OpenAI image generation and editing." }),
   def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "legacy", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model." }),
-  def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026 — use GPT Image 2", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2" }),
+  def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026 — use GPT Image 2.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2.5-sunburst" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation — complex composition, text rendering, 4K." }),
   def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "current", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation — 4K, references, Search grounding." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite", family: "gemini-image-lite", status: "current", released: "2026-04", modality: "image", minPlan: "FREE", cost: 1, description: "Fastest, cheapest image generation for rapid ideation." }),
@@ -486,7 +495,7 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "google", id: "veo-3.1-generate-preview", name: "Veo 3.1", family: "veo", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 3, description: "Cinematic video with native synchronized audio, up to 4K." }),
   def({ provider: "google", id: "veo-3.1-fast-generate-preview", name: "Veo 3.1 Fast", family: "veo-fast", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Veo tier." }),
   def({ provider: "google", id: "veo-3.1-lite-generate-preview", name: "Veo 3.1 Lite", family: "veo-lite", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 1, description: "Lower-cost Veo 3.1 tier for quick video drafts." }),
-  def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash", family: "gemini-omni", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview)." }),
+  def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash", family: "gemini-omni", status: "deprecated", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview).", deprecationNote: "Retires Sep 30, 2026 — use Veo 3.1 Fast", retiresOn: "2026-09-30", replacedBy: "google:veo-3.1-fast-generate-preview" }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
   def({ provider: "xai", id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", family: "imagine-video-15", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 3, description: "Higher-fidelity 720p video with native audio ($0.08/s), GA June 2026." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-260128", name: "Seedance 2.0", family: "seedance", status: "current", released: "2026-01", modality: "video", minPlan: "MAX", cost: 3, description: "ByteDance flagship — multimodal references, native audio, up to 4K." }),
@@ -589,8 +598,8 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "openai:gpt-5.5-mini": "openai:gpt-5.4-mini", // never existed; current mini is 5.4
   "openai:o1-preview": "openai:gpt-5.6-sol", // shut down 2025-07-28
   "openai:o1-mini": "openai:gpt-5.4-mini", // shut down 2025-10-27
-  "openai:dall-e-3": "openai:gpt-image-2", // shut down 2026-05-12
-  "openai:dall-e-2": "openai:gpt-image-2", // shut down 2026-05-12
+  "openai:dall-e-3": "openai:gpt-image-2.5-sunburst", // shut down 2026-05-12
+  "openai:dall-e-2": "openai:gpt-image-2.5-flare", // shut down 2026-05-12
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
   "google:nano-banana-pro": "google:gemini-3.8-flash", // was mis-listed as a chat model
   "google:nano-banana-2": "google:gemini-3.8-flash", // was mis-listed as a chat model
@@ -618,7 +627,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
   "moonshot:kimi-k2": "moonshot:kimi-k3",
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
-  "deepseek:deepseek-coder": "deepseek:deepseek-v4-flash",
+  "deepseek:deepseek-coder": "deepseek:deepseek-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.
   "xai:grok-4": "xai:grok-4.6",
   "xai:grok-2": "xai:grok-4.6",

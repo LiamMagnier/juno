@@ -99,6 +99,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   google: [
     { hints: ["3.8-flash", "3.7-flash", "3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
     { hints: ["3.6-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) },
+    // BEFORE "3.5-flash", which `gemini-3.5-flash-lite` also contains: the
+    // Lite is a sixth of the price and the fastest model Google ships, and
+    // matching it against the full Flash row would have priced it 5x over.
+    { hints: ["3.5-flash-lite"], metric: official(0.3, 2.5, 1_048_576, 10, 5) }, // 350 tok/s
     { hints: ["3.5-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) }, // II 50.2 · 152 tok/s — 3x the 2.5 Flash price
     { hints: ["3.1-flash-lite"], metric: official(0.25, 1.5, 1_048_576, 10, 4) }, // II 25.0 · 251 tok/s — fastest in the lineup
     { hints: ["3.1-pro"], metric: official(2, 12, 1_048_576, 7, 7) }, // II 46.5 · 117 tok/s
@@ -147,6 +151,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["kimi"], metric: metric(0.95, 4, 262_144, 3, 6) },
   ],
   deepseek: [
+    // Off-peak rates. DeepSeek bills 2x during its peak windows (01:00-04:00
+    // and 06:00-10:00 UTC on weekdays); the catalog quotes the rate a request
+    // outside those hours actually pays, as it does for the rest of the line.
+    { hints: ["deepseek-flash"], metric: official(0.15, 0.6, 1_048_576, 8, 7) },
     { hints: ["v4-pro"], metric: official(0.435, 0.87, 1_000_000, 3, 7) }, // II 44.3 · 51 tok/s
     { hints: ["v4-flash"], metric: official(0.14, 0.28, 1_000_000, 6, 6) }, // II 40.3 · 98 tok/s — cheapest credible model on the board
     { hints: ["v4"], metric: official(0.14, 0.28, 1_000_000, 6, 6) },
@@ -688,6 +696,12 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
        * unlike the Flash line Pro never moved to medium.
        */
       if (/3\.\d+-pro|3-pro/.test(id)) return caps(["low", "high"], false, false, "high");
+      // 3.5 Flash-Lite defaults to MINIMAL for speed, and Google documents
+      // raising it to medium or high for subagents that write code or call
+      // APIs — so the whole ladder is offered, with minimal as the default.
+      if (/3\.5-flash-lite/.test(id)) {
+        return caps(["minimal", ...LMH], false, false, "minimal");
+      }
       if (/3\.1-flash-lite/.test(id)) {
         return caps(["minimal", ...LMH], false, false, "minimal");
       }
@@ -703,6 +717,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("grok-4.6")) return caps(LMHX, false, false, "high");
       if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
       if (id.includes("grok-4.3")) return caps(LMH, true); // none|low|medium|high
+      // 4.1 Fast exposes reasoning as an on/off switch (`reasoning.enabled`)
+      // rather than an effort ladder — one Thinking state and a real Instant.
+      if (id.includes("grok-4.1-fast")) return caps([], true, true);
       return caps([], false); // grok-build: reasons, no documented control
     case "deepseek":
       if (id.includes("v4")) return caps(["high", "max"], true); // thinking on/off + effort
