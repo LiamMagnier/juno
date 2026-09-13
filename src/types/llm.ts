@@ -130,4 +130,20 @@ export type LlmEvent =
        *  route bill the real rate even when a fast request degrades. */
       fast?: boolean;
     }
-  | { type: "finish"; reason: ChatFinishReason; raw?: string };
+  | {
+      type: "finish";
+      reason: ChatFinishReason;
+      raw?: string;
+      /**
+       * One sentence naming what actually ended the turn, when the adapter
+       * knows something the reason alone cannot say.
+       *
+       * `finishReasonDetail` maps a reason to a generic sentence, and generic
+       * was the problem: "Response hit the token limit · Use Continue" over a
+       * Gemini turn that spent 64k of its 65,536-token budget THINKING tells
+       * the reader to press Continue when the lever that fixes it is the
+       * thinking level. Only the adapter has the numbers, so only the adapter
+       * can say it. Absent means the generic sentence is the whole truth.
+       */
+      note?: string;
+    };

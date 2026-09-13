@@ -1040,7 +1040,7 @@ async function handleChat(req: Request) {
           if (usage.totalInput || usage.output) {
             sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
           }
-          appendFinishWarning(finishReason, sendActivity);
+          appendFinishWarning(finishReason, sendActivity, acc.finishNote);
           sendActivity({
             kind: "done",
             title: finishReason === "stop" ? "Finished private response" : finishReasonTitle(finishReason),
@@ -2685,7 +2685,7 @@ async function handleChat(req: Request) {
         if (usage.totalInput || usage.output) {
           sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
         }
-        appendFinishWarning(finishReason, sendActivity);
+        appendFinishWarning(finishReason, sendActivity, acc.finishNote);
         sendActivity({
           kind: "done",
           // Was hardcoded "Finished response" for every finish reason, so a turn

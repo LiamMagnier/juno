@@ -87,6 +87,8 @@ export class GenerationAccumulator {
   reasoningState: ReasoningState = emptyReasoning();
   usage: UsageAccumulator = {};
   finishReason: ChatFinishReason = "stop";
+  /** The adapter's own sentence about why, when it has one. See LlmEvent. */
+  finishNote: string | null = null;
   /**
    * Which speed actually served. Starts at what was requested and is refined
    * from the usage stream, because a fast adapter may fall back to standard.
@@ -212,6 +214,11 @@ export class GenerationAccumulator {
       }
       case "finish": {
         this.finishReason = event.reason;
+        // Kept beside the reason rather than folded into it: the reason is what
+        // the product branches on (Continue is offered for `length`), the note
+        // is what the reader is told. Collapsing them would make one of the two
+        // wrong.
+        this.finishNote = event.note ?? null;
         return { kind: "finish", reason: event.reason };
       }
       default:

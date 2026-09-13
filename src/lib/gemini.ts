@@ -1,6 +1,5 @@
 import "server-only";
-import { looksTruncated } from "@/lib/answer-completeness";
-import { normalizeFinishReason } from "@/lib/finish-reason";
+import { decideGeminiFinish } from "@/lib/gemini-finish";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -322,43 +321,33 @@ export async function* streamGemini(
     });
   }
 
-  let finalRaw = lastFinishReason;
-  if (!finalRaw) {
-    // `cumOutput` is Gemini's own candidatesTokenCount. Within 32 tokens of the
-    // cap is the model being cut off, not the model finishing.
-    const atCap = sawUsage && cumOutput > 0 && cumOutput >= maxTokens - 32;
-    /*
-     * THE CAP IS NOT THE ONLY WAY AN ANSWER GETS CUT OFF, and assuming it was
-     * is what put "Done · 7.6s" under a reply that stopped at "…an interactive
-     * command palette (". That turn billed 1,270 output tokens against a
-     * 65,536 ceiling, so `atCap` was false and this said STOP — the product
-     * calmly reporting success over a half-written sentence, with nothing to
-     * click. That is worse than the red banner it replaced: a banner at least
-     * says something went wrong.
-     *
-     * So when the provider will not say why it stopped, read the text. Prose
-     * that ends mid-bracket, on a conjunction, or inside an unclosed code
-     * fence was cut off whatever the token count says. `length` is the honest
-     * label for it — it does not claim the answer finished, and it is the one
-     * that offers Continue.
-     */
-    const truncated = looksTruncated(answerTail);
-    finalRaw = atCap || truncated ? "MAX_TOKENS" : "STOP";
+  const decision = decideGeminiFinish({
+    lastFinishReason: lastFinishReason ?? null,
+    sawUsage,
+    answerTokens: cumOutput,
+    thoughtTokens: cumThoughts,
+    maxTokens,
+    answerTail,
+  });
+  const finalRaw = decision.raw;
+  if (decision.decidedOnEvidence) {
     console.warn("[llm:gemini] no terminal frame; finishing on evidence", {
       model: model.providerModel,
       reasoningEffort: reasoningEffort ?? null,
       decided: finalRaw,
-      atCap,
-      truncated,
+      atCap: decision.atCap,
+      truncated: decision.truncated,
       sawAnswer,
       sawUsage,
       completionTokens: sawUsage ? cumOutput : null,
+      thoughtTokens: sawUsage ? cumThoughts : null,
       maxOutputTokens: maxTokens,
       frames,
       framesUnparsed,
       lastPayloadKeys,
     });
   }
+
   // Operator-visible evidence that grounding actually ran: the UI announces
   // "Google Search grounding" from the request side, and for a long time that
   // announcement was the only trace of a search that never happened.
@@ -373,5 +362,5 @@ export async function* streamGemini(
     thoughtTokens: sawUsage ? cumThoughts || null : null,
     cachedTokens: sawUsage ? cumCached || null : null,
   });
-  yield { type: "finish", reason: normalizeFinishReason(finalRaw), raw: finalRaw };
+  yield { type: "finish", reason: decision.reason, raw: finalRaw, note: decision.note };
 }

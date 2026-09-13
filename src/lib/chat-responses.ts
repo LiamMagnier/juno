@@ -74,13 +74,25 @@ export function generationFailureCode(reason: ChatFinishReason): string {
 
 export function appendFinishWarning(
   reason: ChatFinishReason,
-  sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent
+  sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent,
+  /**
+   * The adapter's own sentence, when it has one, used INSTEAD of the generic
+   * detail for this reason — never alongside it, because the two answer the
+   * same question and the specific one is strictly better.
+   *
+   * `finishReasonDetail("length")` says "Use Continue to ask the model to pick
+   * up from the partial answer". That is the right advice for an answer that
+   * ran long, and the wrong advice for a Gemini turn whose thinking ate the
+   * budget: Continue resumes into the same budget and gets cut the same way.
+   * Only the adapter knows which of the two happened.
+   */
+  note?: string | null
 ) {
   if (reason === "stop") return;
   sendActivity({
     kind: "warning",
     title: finishReasonTitle(reason),
-    detail: finishReasonDetail(reason),
+    detail: note?.trim() || finishReasonDetail(reason),
   });
 }
 
