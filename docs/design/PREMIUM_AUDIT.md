@@ -54,13 +54,26 @@ squeezed ~350px list, and a 300px spec sheet carrying four numeric grades over
 
 The spec sheet is the whole problem. It is a permanent third region that answers
 a question nobody asked at the moment of choosing, and it is the loudest thing
-in the popover. The icon rail is the second: a logo with no name is a memory
-test, and the tooltip that fixes it is a 600ms delay on the primary navigation
-of the surface.
+in the popover.
 
-**Rule:** two panes. A **named** lab rail on the left, the model list on the
-right. Everything the spec sheet said moves onto the row it describes or into
-the row's own expanded state. One trailing signal per row, maximum.
+**Rule:** two panes. A lab rail on the left, the model list on the right.
+Everything the spec sheet said moves onto the row it describes. One trailing
+signal per row, maximum.
+
+**Named rows on the rail were tried and reverted.** The argument for them —
+that a logo with no name is a memory test and a tooltip delay sits on the
+surface's primary navigation — is real, and it lost to arithmetic: 168px of a
+680px box, a quarter of the surface, spent on sixteen words a person reads
+once. The list is where the choosing happens and it got the width. The
+compromise is that the tooltip now carries *more* than the row did — the lab
+and its model count — so hovering answers both questions the named row
+answered.
+
+**The effort control is part of this surface, not an exception to it.** It was
+a `bg-secondary` track with six `flex-1` segments stretched across the footer
+and a `shadow-raised` on the selected one: the last framed, shadowed object in
+the picker, wrapped around its smallest decision. A row of words sized to
+themselves, with the tonal fill on the chosen one, says the same thing.
 
 ### P0 — the sidebar competes with the transcript
 `src/components/app/app-sidebar.tsx`
@@ -98,7 +111,8 @@ per surface. No numerals above `ui` size anywhere in chrome.
 
 1. **One question per surface.** A picker picks. It does not also compare,
    benchmark, or price.
-2. **Two panes maximum**, and the left one is named.
+2. **Two panes maximum.** The narrow one is a rail of marks; anything it
+   would have said in words belongs in its tooltip.
 3. **A list row is text on the panel.** No border, no fill, no radius until
    hover or selection.
 4. **Glyphs mark destinations, not documents.**

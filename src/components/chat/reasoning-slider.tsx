@@ -10,15 +10,28 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * Thinking effort, as a flat segmented control.
+ * Thinking effort, as a row of words.
  *
- * This was a range slider with a neumorphic track, a gradient fill at the
- * top tier and a shadowed thumb — the one control on the composer that kept
- * the Soft UI recipes after the flat retune (docs/design/FLAT_UI.md §6), and
- * the only one that made you drag to choose between four words. Effort is a
- * discrete choice with at most five values, which is what a radio group is
- * for: every option is visible, one press picks it, arrows move between
- * them, and the selected one is a tonal fill rather than a coloured bar.
+ * IT HAD A TRACK, AND THE TRACK WAS THE PROBLEM. The row sat in a
+ * `bg-secondary` box with six `flex-1` segments stretched across the whole
+ * footer of the model picker — roughly 130px of fill around each four-letter
+ * word — and the selected one carried `shadow-raised`. So the last framed,
+ * shadowed object in the picker was the control for its smallest decision,
+ * and it read as a settings row rather than a choice
+ * (docs/design/PREMIUM_AUDIT.md §3, rules 3 and 7).
+ *
+ * Now: no box, no shadow, no stretch. Each tier is sized to its own word,
+ * the row sits left against its label, and the selected tier is the tonal
+ * `bg-secondary` fill — the same "selected" recipe the sidebar's active row
+ * and the product switch's thumb already use, so the product has one way of
+ * saying which of several things is chosen.
+ *
+ * Before that it was a range slider with a neumorphic track and a shadowed
+ * thumb — the one control that kept the Soft UI recipes after the flat
+ * retune (docs/design/FLAT_UI.md §6), and the only one that made you drag to
+ * choose between four words. Effort is a discrete choice with at most six
+ * values, which is what a radio group is for: every option visible, one
+ * press to pick, arrows to move between them.
  *
  * The export keeps its old name so every composer that mounts it keeps
  * compiling; the props are unchanged.
@@ -84,7 +97,10 @@ export function ReasoningSlider({
         aria-label="Thinking effort"
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-9 items-stretch gap-0.5 rounded-control bg-secondary p-0.5",
+          // `flex-wrap` because the row is now as wide as its words rather
+          // than as wide as its container: six tiers in a narrow composer
+          // wrap onto a second line instead of truncating to initials.
+          "flex flex-wrap items-center gap-0.5",
           disabled && "opacity-55",
         )}
       >
@@ -103,14 +119,15 @@ export function ReasoningSlider({
               disabled={disabled}
               onClick={() => onChange(option.value)}
               className={cn(
-                // `md` (8), concentric with the track: `rounded-control` (10)
-                // minus its `p-0.5` (2). `items-stretch` means a segment is
-                // inset by that 2px on all four sides, so its corners and the
-                // track's are struck from one centre.
-                "flex min-w-0 flex-1 items-center justify-center rounded-md px-2 text-ui font-medium transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
+                // Sized to the word, not to a share of the container. `h-7`
+                // and `text-ui` put it on the same rung as every other dense
+                // row in the product; `coarse:h-9` keeps the touch target.
+                "flex h-7 shrink-0 items-center justify-center rounded-control px-2.5 text-ui transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none",
                 selected
-                  ? "bg-card text-foreground shadow-raised"
-                  : "text-muted-foreground hover:text-foreground",
+                  // Tonal, no fill-behind-a-fill and no shadow: the same
+                  // "selected" recipe as the sidebar's active row.
+                  ? "bg-secondary font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
               <span className="truncate">{label}</span>

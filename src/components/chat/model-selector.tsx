@@ -15,6 +15,7 @@ import {
 import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
@@ -198,14 +199,20 @@ function EmptyBlock({
 }
 
 /**
- * One row on the lab rail: mark, name, count.
+ * One tile on the lab rail: the mark, and the name on hover.
  *
- * Named, because a logo with no name is a memory test and the tooltip that
- * used to fix it put a 600ms delay on this surface's primary navigation. The
- * active row is the tonal `bg-secondary` — the accent is reserved for the
- * selected MODEL, not for which lab you are browsing.
+ * Named rows were tried and taken back out. They cost 168px of a 680px box —
+ * a quarter of the surface spent on sixteen words a person reads once — and
+ * the list is where the choosing happens. The objection to an icon rail is
+ * real (a logo with no name is a memory test, and a tooltip delay on the
+ * primary navigation of a surface is a bad trade), so the tooltip carries
+ * MORE than the name did: the lab and how many models it has, which is the
+ * count the named row printed at its right edge.
+ *
+ * Active is the tonal `bg-secondary` — the accent is reserved for the
+ * selected MODEL, never for which lab you are browsing.
  */
-function RailRow({
+function RailTile({
   active,
   label,
   count,
@@ -219,23 +226,30 @@ function RailRow({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex h-8 w-full shrink-0 items-center gap-2 rounded-control px-2 text-left outline-none",
-        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">{children}</span>
-      <span className="min-w-0 flex-1 truncate text-ui">{label}</span>
-      {count != null && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/60">{count}</span>
-      )}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={count == null ? label : `${label}, ${count} models`}
+          onClick={onClick}
+          aria-pressed={active}
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
+            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        {label}
+        {count != null && (
+          <span className="ml-1.5 font-mono text-micro tabular-nums text-muted-foreground">{count}</span>
+        )}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -655,13 +669,22 @@ export function ModelSelector({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
+        // `end`, not `start`. The model chip sits at the right of the
+        // composer, so aligning the box's LEFT edge to it threw 680px
+        // rightward into a viewport edge that was only ~18px away — the
+        // collision clamp then did the positioning, which is why the panel
+        // always sat hard against the right of the window whatever the width.
+        // Anchoring its right edge to the chip's puts the box back over the
+        // conversation, where there is room for it, and keeps it tied to the
+        // control that opened it rather than to a screen edge.
+        align="end"
         side="top"
         sideOffset={8}
         collisionPadding={16}
         avoidCollisions
         onKeyDown={onNavKeyDown}
-        // 680 wide, and between 420 and 540 tall.
+        // 680 wide, and between 420 and 540 tall. The rail gave back 120px
+        // when its names went into tooltips, and all of it went to the list.
         //
         // A FIXED height was wrong in both directions. At 460 a lab with
         // eleven models showed four of them. At 540 the same lab left 200px
@@ -683,15 +706,18 @@ export function ModelSelector({
         className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
       >
         <div className="flex min-h-0 flex-1">
-          {/* Lab rail — 168px of NAMED rows, folds under `sm`. Only labs with
-              something in them; a rail row can never lead to an empty list. */}
-          <div className="hidden w-[168px] shrink-0 flex-col border-r border-border/70 bg-muted/25 sm:flex">
-            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col gap-0.5 p-2">
+          {/* Lab rail — 48px of marks, folds under `sm`. Only labs with
+              something in them; a tile can never lead to an empty list. */}
+          <div className="hidden w-12 shrink-0 flex-col border-r border-border/70 bg-muted/25 sm:flex">
+            {/* ScrollFade, not a bare `overflow-y-auto`: sixteen marks need
+                more than a short column has, and the strip used to scroll
+                with no affordance saying so. */}
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="flex flex-col items-center gap-1 p-2">
               {/* While a query is running the list shows every lab, so the rail
                   has to read as "All models" — it used to claim a lab that was
                   not the one on screen. `filter` itself is untouched, so
                   clearing the query restores it. */}
-              <RailRow
+              <RailTile
                 active={q ? true : filter === "all"}
                 label="All models"
                 count={searchable.length}
@@ -701,8 +727,8 @@ export function ModelSelector({
                 }}
               >
                 <LayoutGrid className="size-4" />
-              </RailRow>
-              <RailRow
+              </RailTile>
+              <RailTile
                 active={q ? false : filter === "favorites"}
                 label="Favorites"
                 count={favorites.size || undefined}
@@ -712,10 +738,10 @@ export function ModelSelector({
                 }}
               >
                 <Star className={cn("size-4", !q && filter === "favorites" && "fill-current")} />
-              </RailRow>
-              <div aria-hidden className="my-1.5 h-px shrink-0 bg-border/70" />
+              </RailTile>
+              <div aria-hidden className="my-1 h-px w-5 shrink-0 bg-border" />
               {railProviders.map((p) => (
-                <RailRow
+                <RailTile
                   key={p}
                   active={q ? false : filter === p}
                   label={providerName(p)}
@@ -728,7 +754,7 @@ export function ModelSelector({
                   }}
                 >
                   <ProviderLogo provider={p} className="size-4" />
-                </RailRow>
+                </RailTile>
               ))}
             </ScrollFade>
           </div>
