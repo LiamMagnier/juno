@@ -1,4 +1,5 @@
 import "server-only";
+import { looksTruncated } from "@/lib/answer-completeness";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
@@ -108,6 +109,13 @@ export async function* streamGemini(
   let sawUsage = false;
   /** Did any ANSWER text reach the transcript this turn? (Thoughts don't count.) */
   let sawAnswer = false;
+  /**
+   * The answer's tail, for `looksTruncated`. Capped rather than accumulated in
+   * full: the question is only ever about how the text ENDS, and holding a
+   * whole reply here to inspect its last character would double this turn's
+   * memory for nothing.
+   */
+  let answerTail = "";
   /** Wire-shape evidence, for the log line when a turn ends with no terminator. */
   let frames = 0;
   let framesUnparsed = 0;
@@ -161,7 +169,10 @@ export async function* streamGemini(
         while (state.events.length > 0) {
           const ev = state.events.shift();
           if (!ev) continue;
-          if (ev.type === "text") sawAnswer = true;
+          if (ev.type === "text") {
+            sawAnswer = true;
+            answerTail = (answerTail + ev.text).slice(-4096);
+          }
           yield ev;
         }
       }
@@ -316,11 +327,29 @@ export async function* streamGemini(
     // `cumOutput` is Gemini's own candidatesTokenCount. Within 32 tokens of the
     // cap is the model being cut off, not the model finishing.
     const atCap = sawUsage && cumOutput > 0 && cumOutput >= maxTokens - 32;
-    finalRaw = atCap ? "MAX_TOKENS" : "STOP";
+    /*
+     * THE CAP IS NOT THE ONLY WAY AN ANSWER GETS CUT OFF, and assuming it was
+     * is what put "Done · 7.6s" under a reply that stopped at "…an interactive
+     * command palette (". That turn billed 1,270 output tokens against a
+     * 65,536 ceiling, so `atCap` was false and this said STOP — the product
+     * calmly reporting success over a half-written sentence, with nothing to
+     * click. That is worse than the red banner it replaced: a banner at least
+     * says something went wrong.
+     *
+     * So when the provider will not say why it stopped, read the text. Prose
+     * that ends mid-bracket, on a conjunction, or inside an unclosed code
+     * fence was cut off whatever the token count says. `length` is the honest
+     * label for it — it does not claim the answer finished, and it is the one
+     * that offers Continue.
+     */
+    const truncated = looksTruncated(answerTail);
+    finalRaw = atCap || truncated ? "MAX_TOKENS" : "STOP";
     console.warn("[llm:gemini] no terminal frame; finishing on evidence", {
       model: model.providerModel,
       reasoningEffort: reasoningEffort ?? null,
       decided: finalRaw,
+      atCap,
+      truncated,
       sawAnswer,
       sawUsage,
       completionTokens: sawUsage ? cumOutput : null,
