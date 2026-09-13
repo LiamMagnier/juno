@@ -79,14 +79,33 @@ what a radio group is for. That is right about semantics and wrong about the
 thing being chosen: **effort is ordered**. Instant is less than Max and every
 rung between them is on the way, so a row of equal words — which says "here
 are six options" — states something false about the choice. It is a slider
-again: a 3px rail, a fill to where you are, a tick per stop so the
-discreteness stays visible, and the rung named in words beside it. A native
-`input[type=range]` underneath supplies drag, click-to-jump, arrows and every
-touch gesture, so none of that lives in the component.
+again — and then it was a slider TWICE, because the first attempt was a 3px
+rail with a 14px dot: correct, and invisible. A control can be the right kind
+of thing and still not read as one. The shipped version is an object: a 28px
+pill, the accent filled to where you are, a knob at the track's full height,
+the rungs marked inside the track, and the rung you are on named above it in
+the accent. A native `input[type=range]` underneath supplies drag,
+click-to-jump, arrows and every touch gesture, so none of that lives in the
+component.
+
+**The knob needed its own token** (`--knob`), which is worth recording because
+the instinct is always to reuse one. It rides the accent fill on one side and
+the tonal track on the other, so it can take its colour from neither:
+`--background` is right on paper and disappears on the dark track, and
+`--primary-foreground` inverts on the accents that go light in dark mode
+(juniper, teal), which puts a near-black knob on a near-black track. A
+grabbable object has to look grabbable under every accent in both themes.
+
+**And Max moves** — the one animation in this product's chrome, and the case
+rule 10 exists to allow. Max is not one more notch: it is the end of the
+scale, where a reply can take minutes and cost several times the rung below.
+A slow sheen travelling the fill says so with no badge, no second colour and
+no warning copy, and stops dead under `prefers-reduced-motion`.
 
 The lesson generalises past this control: **match the control to the shape of
-the quantity, not to the number of values it has.** Two things with an order
-between them are a slider even when there are only four.
+the quantity, not to the number of values it has** — and then make it look
+like the thing it is. Two values with an order between them are a slider even
+when there are only four, and a slider nobody can see is not one.
 
 ### P0 — the sidebar competes with the transcript
 `src/components/app/app-sidebar.tsx`

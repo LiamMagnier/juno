@@ -836,10 +836,11 @@ export function ModelSelector({
           {thinking && (
             <>
               <div aria-hidden className="mx-2 my-1.5 h-px bg-border/70" />
-              <div className="px-2 pb-1">
-                <p className="mb-1.5 font-mono text-micro uppercase text-muted-foreground/60">Thinking</p>
-                {thinking}
-              </div>
+              {/* No eyebrow here any more: the slider draws its own, on the
+                  same line as the rung it names. Two surfaces cannot both own
+                  one label without one of them eventually saying something
+                  the other does not. */}
+              <div className="px-2 pb-1">{thinking}</div>
             </>
           )}
         </PopoverContent>

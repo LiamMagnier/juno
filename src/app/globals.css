@@ -82,6 +82,15 @@
     --primary-ink: 15 54% 44%;
 
     --secondary: 46 20% 93.5%;
+    /* The slider knob — a light disc in BOTH themes, which no existing token
+       is. It rides the accent fill on one side and the tonal track on the
+       other, so it cannot take its colour from either: `--background` is
+       right on paper and vanishes on the dark track, and
+       `--primary-foreground` inverts on the accents that go light in dark
+       mode (juniper, teal), which would put a near-black knob on a near-black
+       track. A grabbable object needs to look like one under every accent, so
+       it gets its own value. */
+    --knob: 0 0% 100%;
     --secondary-foreground: 48 4% 16%;
 
     --muted: 46 20% 93.5%;
@@ -441,6 +450,8 @@
     --primary-ink: 15 62% 66%;
 
     --secondary: 30 5% 18%;
+    /* See --knob above: light in this theme too, deliberately. */
+    --knob: 45 10% 94%;
     --secondary-foreground: 45 10% 92%;
 
     --muted: 30 5% 18%;
@@ -1214,24 +1225,26 @@
    * THE ONE THING THIS BLOCK HAS TO GET RIGHT is the thumb's WIDTH. A browser
    * insets a range thumb by half its width at each end so it never hangs off
    * the track, which means the mapping from pointer-x to value depends on
-   * that width — and the painted thumb has to use the same inset or the two
+   * that width — and the painted knob has to use the same inset or the two
    * drift apart, worst at the ends, where the value you see and the value you
-   * set stop agreeing. 14px here, `THUMB = 14` there. They are one number.
+   * set stop agreeing. 28px here, `THUMB = 28` there. They are one number,
+   * and it is the track's full height rather than the painted knob's 24,
+   * because the knob sits inside 2px of track padding.
    *
-   * Height is the full control so the whole 28px row is draggable rather than
-   * just the 3px rail; `appearance: none` on the thumb is required or WebKit
-   * ignores the width entirely.
+   * Height is the full control so the whole row is draggable rather than just
+   * the pill; `appearance: none` on the thumb is required or WebKit ignores
+   * the width entirely.
    */
   .effort-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
+    width: 28px;
     height: 100%;
     background: transparent;
     border: 0;
   }
   .effort-range::-moz-range-thumb {
-    width: 14px;
+    width: 28px;
     height: 100%;
     background: transparent;
     border: 0;
@@ -1246,6 +1259,48 @@
     height: 100%;
     background: transparent;
     border: 0;
+  }
+
+  /*
+   * The top rung, moving.
+   *
+   * Max is the end of the scale, not one more notch on it: a reply there can
+   * take minutes and cost several times the rung below. This is how the
+   * control says so — a band of the accent's own foreground travelling the
+   * length of the fill, slowly, on a loop. No badge, no second colour, no
+   * warning copy.
+   *
+   * It is a BACKGROUND position that animates, not a transform on a child, so
+   * there is no extra element and nothing to mis-clip at the fill's rounded
+   * cap. `linear`, because a travelling highlight that eases is a highlight
+   * that visibly restarts.
+   */
+  @keyframes effort-sheen {
+    /* 160% → -60%, which sweeps LEFT TO RIGHT and looks backwards written
+       down. Percentage background-position aligns the same fraction of the
+       IMAGE with that fraction of the BOX, so the offset is
+       (box - image) x P — and the image here is 220% of the box, making that
+       first term negative. Larger P moves the image left. Written the
+       intuitive way round, the highlight ran against the reading direction. */
+    from { background-position: 160% 0; }
+    to   { background-position: -60% 0; }
+  }
+  .effort-sheen {
+    background-image: linear-gradient(
+      100deg,
+      transparent 34%,
+      hsl(var(--primary-foreground) / .34) 50%,
+      transparent 66%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    animation: effort-sheen 2.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .effort-sheen {
+      background-image: none;
+      animation: none;
+    }
   }
 
   .composer-surface {

@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 003ab19188d45ceb
+// tokens-digest: 990034de703382a1
 //
 
 import CoreGraphics
@@ -134,6 +134,12 @@ public enum JunoGeneratedColors {
     public static let input = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.8064, 0.7923, 0.7536),
         dark: JunoColorToken(unchecked: 0.2835, 0.27, 0.2565)
+    )
+
+    /// `--knob`
+    public static let knob = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
+        dark: JunoColorToken(unchecked: 0.946, 0.943, 0.934)
     )
 
     /// `--muted`
