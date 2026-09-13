@@ -1798,7 +1798,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         {topActionsSlotOwner && !privateMode && (
           <div
             className={cn(
-              "relative z-20 hidden shrink-0 items-center justify-between gap-4 px-4 md:flex md:px-6",
+              "page-gutter relative z-20 hidden shrink-0 items-center justify-between gap-4 md:flex",
               // A new chat has no title, so this band held 56px of nothing and
               // pushed the centred greeting 28px above true centre with the
               // incognito toggle floating alone at the right. The toggle still
@@ -2012,11 +2012,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 titleShownInHeader={topActionsSlotOwner && !privateMode}
               />
               {currentConversationId && !privateMode && (
-                // Same width cap, centring and horizontal padding as the
-                // composer's root (`max-w-3xl px-3 sm:px-6`, composer.tsx) —
-                // otherwise these sit 8px inside the composer's edge while it
-                // is centred under them, and the two never line up.
-                <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] shrink-0 px-0 pb-2 sm:max-w-3xl sm:px-6">
+                // Same width cap, centring and gutter as the composer's root
+                // (composer.tsx) — otherwise these sit inside the composer's
+                // edge while it is centred under them, and the two never line
+                // up. Both now take `.page-gutter`, so "the same" is a shared
+                // declaration rather than two copies of one number.
+                <div className="page-gutter mx-auto w-full max-w-3xl shrink-0 pb-2">
                   <FollowUpSuggestions
                     conversationId={currentConversationId}
                     onPick={(t) => void sendFromComposer(t, [])}
@@ -2048,7 +2049,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // is wider than the column it sits in, can never put a horizontal
             // scrollbar over dead space (it still scrolls vertically).
             <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
-              <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-8">
+              <div className="page-gutter mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center py-6 md:py-8">
                 {/*
                   `isolate` bounds where the aura is allowed to fall. It paints
                   on z-index -1, and the column below deliberately does NOT

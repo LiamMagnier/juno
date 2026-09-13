@@ -16,7 +16,27 @@ export const UI_STATE_FIXTURES = [
       /motion-safe:/,
 
     ],
-    responsive: [/sm:/],
+    /*
+     * The contract is "this surface adapts to the space it has". It used to be
+     * spelled `/sm:/` — a grep for a VIEWPORT breakpoint prefix — and the
+     * greeting genuinely carried two of them, stepping `page-title` → `display`
+     * and `title` → `page-title` at 640px of window.
+     *
+     * That mechanism is gone on purpose. The window is not the space this
+     * surface has: the sidebar takes 256px of it until the width where the
+     * panel starts floating and then stops taking it, so a `sm:` step fires for
+     * a change the column never saw, and fires the wrong way whenever the
+     * sidebar's state disagrees with the window's size class. The rungs
+     * themselves are fluid against the column now (`cqi`, tailwind.config.ts),
+     * so the greeting adapts continuously and correctly with no breakpoint at
+     * all.
+     *
+     * So the marker asserts what actually holds: the surface caps its measure,
+     * and its heading is set in one of the two column-keyed rungs rather than a
+     * fixed size. Grepping for `sm:` would now pass only if someone put the bug
+     * back.
+     */
+    responsive: [/max-w-/, /text-(?:display|page-title)\b/],
   },
   {
     id: "loading",

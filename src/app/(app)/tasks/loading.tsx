@@ -16,7 +16,7 @@ export default function TasksLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <AppPage measure="reading" role="status" aria-label="Loading scheduled tasks">
+    <AppPage measure="wide" role="status" aria-label="Loading scheduled tasks">
       <AppPageHeaderSkeleton headingWidth="w-64" actions />
 
       <Skeleton className="h-9 w-64 max-w-full rounded-menu" />

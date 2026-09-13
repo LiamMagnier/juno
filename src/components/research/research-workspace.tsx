@@ -90,7 +90,7 @@ export function ResearchBrief({ onStarted }: { onStarted: (id: string) => void }
     finally { setBusy(false); submitting.current = false; }
   };
   return <form onSubmit={submit} className="research-enter mx-auto max-w-2xl">
-    <h2 className="text-balance font-serif text-page-title font-normal leading-tight sm:text-display">Go deeper into a question.</h2>
+    <h2 className="text-balance font-serif text-display font-normal leading-tight">Go deeper into a question.</h2>
     <p className="mt-4 max-w-lg text-body leading-relaxed text-muted-foreground">Build a plan, explore the evidence, and come back to a report with sources you can check.</p>
     <label htmlFor="research-question" className="mt-9 block text-ui font-medium">What would you like to understand?</label>
     <textarea id="research-question" required minLength={8} maxLength={4000} rows={4} value={goal} disabled={busy} onChange={event => setGoal(event.target.value)} placeholder="Describe your question and what a useful answer would cover…" className="research-field mt-3 resize-y" />

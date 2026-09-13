@@ -129,7 +129,7 @@ export function ResearchRecap({
 
       {/* Report Document Title */}
       <div className="mt-3.5 ">
-        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground sm:text-title">
+        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground">
           {title ?? run.goal}
         </h3>
       </div>

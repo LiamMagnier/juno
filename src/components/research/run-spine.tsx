@@ -24,7 +24,7 @@ export function RunSpine({ state, live, detail, yields, className }: {
         <span aria-hidden className={cn("relative flex size-4 items-center justify-center rounded-full border bg-background", index < at && !stopped ? "border-primary bg-primary text-primary-foreground" : index === at ? "border-primary bg-primary" : "border-border")}>
           {index < at && !stopped && <Check className="size-3" />}
         </span>
-        <span className={cn("mt-3 block text-caption sm:text-ui", index === at ? "font-medium text-primary" : "text-muted-foreground")}>{item.label}</span>
+        <span className={cn("mt-3 block text-ui", index === at ? "font-medium text-primary" : "text-muted-foreground")}>{item.label}</span>
         {yields?.[item.id] && <span className="mt-1 hidden text-caption text-muted-foreground sm:block">{yields[item.id]}</span>}
       </li>)}
     </ol>

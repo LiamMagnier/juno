@@ -279,9 +279,10 @@ export function MessageList(props: MessageListProps) {
         role="log"
         aria-label="Conversation transcript"
         aria-live="off"
-        // The same column as the composer (`max-w-3xl px-3 sm:px-6`): the
+        // The same column as the composer, and now literally the same gutter
+        // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
-        className="mx-auto w-full max-w-3xl space-y-6 px-3 py-6 sm:px-6"
+        className="page-gutter mx-auto w-full max-w-3xl space-y-6 py-6"
       >
           {messages.map((m, i) => (
             // Scroll anchor for find-in-conversation. A wrapper rather than a

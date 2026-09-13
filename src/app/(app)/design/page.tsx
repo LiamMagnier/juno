@@ -127,7 +127,7 @@ export default function DesignPage() {
   const empty = !loading && !error && items.length === 0;
 
   return (
-    <AppPage measure="reading">
+    <AppPage measure="wide">
         <AppPageHeader
           eyebrow="Design"
           heading="Design"

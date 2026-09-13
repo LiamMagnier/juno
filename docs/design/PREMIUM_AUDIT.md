@@ -174,6 +174,92 @@ scale is good; the usage is undisciplined.
 genuine machine metadata (a model id, a token count) and appears at most once
 per surface. No numerals above `ui` size anywhere in chrome.
 
+## 2b. The measured audit — September 2026
+
+The first pass of this document was read off the source. This one was read off
+the rendered DOM: every app page, at three window widths, measuring the content
+column, its gutter, its title and every radius painted inside it. Source review
+finds what a file says; only measurement finds what two files say *together*.
+
+Apple's HIG contributed one rule that turned out to be the whole diagnosis:
+*"Determine layout based on size classes, not device type or orientation. Size
+classes describe the actual space available."* On the web, `vw` is the device.
+
+### P0 — the layout was keyed to the window, and the window is not the page
+
+| viewport | content column | gutter | page title |
+|---|---|---|---|
+| 1440 | 1184 | 32px | 33.6px |
+| 1120 | **864** | 28px | 31.4px |
+| 900 | **900** | **22.5px** | 29.6px |
+
+At a 1120px window the column is 864px and got a 28px gutter; at a 900px window
+the column is 900px — **wider** — and got 22.5px. The roomier page had the
+tighter margins and the smaller title. The sidebar takes 256px of the window
+until the width where the panel starts floating and then stops taking it, so
+column and window move independently and, across that range, in opposite
+directions. Everything keyed to `vw` inverts there: the gutter, `page-title`,
+`display`, and every `sm:` rung step in the product.
+
+**Rule:** the content column is the size class. `<main>` is a
+`container-type: inline-size` container named `page`; gutters step on
+`@container`, and the two fluid type rungs are measured in `cqi`. Two columns
+of the same width now look the same however the window arrived at them.
+
+`hero` is the one rung still in `vw`, and that is correct rather than
+overlooked: it appears only on the landing page, which has no sidebar and no
+column, so there the window *is* the container.
+
+### P0 — four gutters on surfaces that sit next to each other
+
+    app pages        clamp(1rem, 2.5vw, 2rem)    16 → 22.5 → 32, fluid
+    chat transcript  px-3 sm:px-6                12 → 24
+    chat header      px-4 md:px-6                16 → 24
+    compare          px-4 sm:px-6                16 → 24
+
+Each keyed to the window, each stepping somewhere different, so the
+transcript's left edge and the page frame's left edge agreed at some widths and
+not at others — scrolling from a list into a chat moved the text sideways. No
+amount of tuning any one of them could fix it, because the problem was that
+there were four.
+
+**Rule:** one `--page-gutter`, three steps — 16 · 24 · 32, on the 8px grid,
+keyed to the column. Every surface takes `.page-gutter`. A fluid gutter was
+also wrong on its own terms: a margin is a structural edge that rows, headers
+and cards align against, so it has to be a number the rest of the system can
+name, and nothing can align to 22.5px.
+
+### P1 — a page that reimplemented the header it already had
+
+`/compare` opened a bare `<div>` and hand-rolled the frame: its own gutter, its
+own top padding, and a `<header>` with an eyebrow over a `page-title` — which
+was `AppPageHeader`, rewritten. The comment on that heading said the view
+"owns its own fixed-height shell so it cannot use the component". True of the
+frame, never of the header, and the cost was measurable: the heading sat 41px
+from the top of the page where every other page put it at 72px, and the page's
+own loading skeleton — which *did* use `<AppPage>` — matched neither.
+
+**Rule:** a page that needs a different *frame* still uses the same *header*.
+Where a skeleton and a page must agree, they agree by sharing a component, not
+by two files holding the same numbers.
+
+### P2 — measures assigned by habit
+
+`/tasks` (a card list) and `/design` (a four-column gallery) were on the
+`reading` measure while every other list and grid — `/work`, `/library`,
+`/artifacts`, `/code` — was on `wide`.
+
+**Rule:** the measure follows the content kind, not the page's history.
+
+### What the radius census actually found
+
+Painted radii across the app: 2, 4, 6, 10, 12, 14, 16, 20, full. That is the
+declared ladder (`micro`, `sm`, `xs`, `control`, `field`, `menu`, `card`,
+`panel`) and it is being used — the ladder was not the problem. Six raw values
+in `globals.css` bypassed it: `9px`, `0.35rem` (5.6px, one tenth of a pixel
+from `xs`), and `999px` three times for what the rest of the file spells
+`9999px`. All now on rungs.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,
@@ -193,7 +279,14 @@ per surface. No numerals above `ui` size anywhere in chrome.
 9. **Ambient light belongs to the surface that earned it**, never to the
    window — and it sits *behind* that surface's content, never over it.
 10. **Nothing in chrome moves except a fill.**
-11. **Never clip a gradient that still carries alpha.** Fill every radial
+11. **Size by the container, never the viewport.** `vw`, `sm:`, `md:` and
+    friends measure the window; a page inside a shell does not have the
+    window. The only correct use of `vw` in this product is a full-bleed
+    surface with no chrome beside it.
+12. **One gutter for the whole product.** Every surface that sits inside the
+    content column takes the same margin at the same column width, declared
+    once.
+13. **Never clip a gradient that still carries alpha.** Fill every radial
     gradient over its own bounding box and let it reach zero on its own. Every
     hard seam this layer has ever shown — the faceted bands, the sheared arm
     tips — was a gradient cut short, and each one cost a redesign that was

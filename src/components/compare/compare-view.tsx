@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ComparePane } from "@/components/compare/compare-pane";
 import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
@@ -258,32 +259,43 @@ export function CompareView() {
   const hasRun = lastPrompt !== null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Page header — compact product heading with quiet metadata. */}
-      <header className="flex shrink-0 items-end justify-between gap-3 px-4 pb-3 pt-5 sm:px-6">
-        <div>
-          {/* text-label already carries 0.10em — the arbitrary tracking-[0.08em]
-              was fighting the scale it sat on. */}
-          <p className="font-mono text-label text-muted-foreground">
-            One prompt · {panes.length} models
-          </p>
-          {/* The same heading metrics AppPageHeader gives every other app page.
-              This view owns its own fixed-height shell so it cannot use the
-              component, but it must not disagree with it about type — which it
-              quietly did, at -0.025em against the header's -0.02em. Naming the
-              `page-title` rung is what makes "the same metrics" true rather than
-              merely intended: two copies of a clamp can drift, one token cannot. */}
-          <h1 className="mt-1 text-balance text-page-title">
-            Compare
-          </h1>
-        </div>
-        <span className="pb-0.5 text-right text-caption text-muted-foreground">
-          Comparisons aren&rsquo;t saved
-        </span>
-      </header>
+    /*
+     * THE SHARED FRAME, not a copy of it.
+     *
+     * This view used to open a bare `<div>` and hand-roll the page frame
+     * inside it: its own gutter (`px-4 sm:px-6`), its own top padding
+     * (`pt-5`), and its own `<header>` with an eyebrow over a `page-title`.
+     * The eyebrow/heading pair was ALREADY a reimplementation of
+     * `AppPageHeader` — the comment that used to sit on that `<h1>` said so,
+     * claiming the view "owns its own fixed-height shell so it cannot use the
+     * component". That was true of the FRAME and never of the HEADER, and the
+     * cost of the confusion was measurable: the heading sat 41px from the top
+     * of the page where every other page put it at 72px, and this view's own
+     * loading skeleton — which does use `<AppPage>` — lined up with neither.
+     *
+     * `<AppPage scroll={false}>` gives the fixed-height shell AND the shared
+     * gutter and block padding, which is what makes the skeleton match the
+     * page by construction rather than by two files agreeing to.
+     */
+    <AppPage
+      measure="full"
+      scroll={false}
+      className="flex h-full min-h-0 flex-col"
+      contentClassName="flex min-h-0 flex-1 flex-col"
+    >
+      <AppPageHeader
+        className="shrink-0"
+        eyebrow={`One prompt · ${panes.length} models`}
+        heading="Compare"
+        actions={
+          <span className="text-right text-caption text-muted-foreground">
+            Comparisons aren&rsquo;t saved
+          </span>
+        }
+      />
 
       {/* Prompt composer — the shared single surface: one textarea, one coral action. */}
-      <div className="shrink-0 px-4 pb-4 sm:px-6">
+      <div className="shrink-0 pb-4">
         <ComposerShell
           dimmed={anyStreaming}
           field={
@@ -346,7 +358,7 @@ export function CompareView() {
           fixed-height with per-pane scroll; mobile stacks and scrolls whole. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
         {!hasRun && (
-          <div className="flex shrink-0 flex-col items-center gap-4 px-6 pb-8 pt-6 text-center motion-safe:animate-rise-in">
+          <div className="flex shrink-0 flex-col items-center gap-4 pb-8 pt-6 text-center motion-safe:animate-rise-in">
             {/* The serif display rung, the product's voice for a human moment —
                 this was a hand-set text-xl/2xl with its own tracking, which is the
                 one heading in the app that never landed on the scale. */}
@@ -399,6 +411,6 @@ export function CompareView() {
           ))}
         </div>
       </div>
-    </div>
+    </AppPage>
   );
 }

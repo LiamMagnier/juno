@@ -293,22 +293,44 @@ const config: Config = {
         ],
       },
       fontSize: {
-        // Legacy hero (empty-state) — kept.
+        // The rem intercept in every clamp below is NOT stylistic. A pure
+        // relative-unit preferred value ignores the user's base font size, so
+        // browser text zoom has no effect at all on the largest type in the
+        // product (WCAG 1.4.4). Keep the intercept in rem whenever you retune
+        // one of these.
         //
-        // The rem intercept in these two clamps is NOT stylistic. A pure-vw
-        // preferred value ignores the user's base font size, so browser text zoom
-        // has no effect at all on the largest type in the product (WCAG 1.4.4).
-        // Anchored 360px → 1280px; min and max are unchanged, so rendered sizes
-        // match the old values to within a rounding error at every viewport.
-        //   hero    38.4px → 64px : m = 2.7826vw, b = 28.38px = 1.7739rem
-        //   display 32px   → 48px : m = 1.7391vw, b = 25.74px = 1.6087rem
+        // `hero` is the ONE rung still measured in `vw`, and that is correct
+        // rather than an oversight: it appears only on the landing page, which
+        // is a full-bleed marketing surface with no sidebar and no column, so
+        // the window IS its container. Anchored 360px → 1280px.
+        //   hero  38.4px → 64px : m = 2.7826vw, b = 28.38px = 1.7739rem
         hero: [
           "clamp(2.4rem, 1.7739rem + 2.7826vw, 4rem)",
           { lineHeight: "1.1", letterSpacing: "-0.02em" },
         ],
-        // Type scale. Contrast comes from family (serif/sans/mono) + 3x size jumps, not timid weights.
+        /*
+         * Type scale. Contrast comes from family (serif/sans/mono) + 3x size
+         * jumps, not timid weights.
+         *
+         * THE TWO FLUID APP RUNGS ARE MEASURED IN `cqi`, NOT `vw` — 1% of the
+         * content column's inline size, against the `page` container declared
+         * on `.app-main-canvas`. They were `vw`, and `vw` is the window, which
+         * is not what a page has: the sidebar takes 256px of the window until
+         * the breakpoint where it starts floating and then stops taking it, so
+         * window and column move independently and for one stretch in opposite
+         * directions. Measured before this change, a 900px window gave a
+         * WIDER column than a 1120px window and a SMALLER title — the same
+         * page, larger, in less type.
+         *
+         * Anchored to the two measures rather than to device widths: the
+         * minimum is the size at a 640px column, the maximum at 1024px, which
+         * are exactly where the gutter steps in globals.css. One set of
+         * thresholds for the whole page frame.
+         *   display     32px → 48px : m = 4.1667cqi, b = 5.33px = 0.3333rem
+         *   page-title  26px → 32px : m = 1.5625cqi, b = 16px   = 1rem
+         */
         display: [
-          "clamp(2rem, 1.6087rem + 1.7391vw, 3rem)",
+          "clamp(2rem, 0.3333rem + 4.1667cqi, 3rem)",
           { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" },
         ],
         /*
@@ -328,7 +350,7 @@ const config: Config = {
          * so text zoom cannot move it (WCAG 1.4.4).
          */
         "page-title": [
-          "clamp(1.65rem, 1.4rem + 0.8vw, 2.1rem)",
+          "clamp(1.625rem, 1rem + 1.5625cqi, 2rem)",
           { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" },
         ],
         title: [

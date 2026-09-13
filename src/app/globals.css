@@ -1470,7 +1470,7 @@
   .composer-voice-wave > span {
     display: block;
     width: 1.5px;
-    border-radius: 999px;
+    border-radius: 9999px;
     background: currentColor;
     transform-origin: center;
   }
@@ -1589,7 +1589,7 @@
        right value for each theme. */
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
-    border-radius: 999px;
+    border-radius: 9999px;
     backdrop-filter: blur(14px);
     /* On the ladder, at the `float` rung, rather than the hand-rolled
        `0 10px 28px -12px / .4` this carried — which was heavier than
@@ -1847,7 +1847,7 @@
     top: 8px;
     right: 8px;
     padding: 2px 7px;
-    border-radius: 999px;
+    border-radius: 9999px;
     /* --popover, not --card. The canvas underneath this badge IS --card on dark
        now, so a translucent card fill resolved to the same value as its own
        ground and the plate vanished. A badge floating over media belongs on the
@@ -2074,7 +2074,9 @@
     padding: 3px 3px 3px 7px;
     border: 0;
     /* `control` — the rung for a small button. 7px was off the ladder entirely. */
-    border-radius: 9px;
+    /* `control` (10px), the rung for small buttons — it was 9px, which is on
+       no rung at all and one pixel from the one it wanted. */
+    border-radius: 10px;
     background: none;
     color: hsl(var(--muted-foreground));
     font-size: 12px;
@@ -2552,7 +2554,10 @@
   .prose-juno code:not(pre code):not(.aicss-cb code) {
     background: hsl(var(--muted));
     padding: 0.15em 0.4em;
-    border-radius: 0.35rem;
+    /* `xs` (6px), the rung for chips and tiny badges, which is what an inline
+       code span is. It was 0.35rem — 5.6px, on no rung, and visually
+       indistinguishable from the rung it was missing. */
+    border-radius: 6px;
     font-size: 0.875em;
     font-family: var(--font-mono);
   }
@@ -2954,8 +2959,34 @@
 
 @layer components {
   /* Shared page chrome and content rhythm. */
+  /*
+   * THE CONTENT COLUMN IS THE SIZE CLASS.
+   *
+   * Everything about a page's proportions — its gutter, its title — used to be
+   * measured in `vw`, which is the WINDOW. The window is not what a page has.
+   * The sidebar takes 256px of it and then stops taking it at the breakpoint
+   * where the panel starts floating, so the column's width and the window's
+   * width move independently, and for one stretch they move in OPPOSITE
+   * directions. Measured: at a 1120px window the column is 864px and got a
+   * 28px gutter; at a 900px window the column is 900px — WIDER — and got
+   * 22.5px. The roomier page had the tighter margins and the smaller title,
+   * which is exactly the incoherence you notice without being able to name.
+   *
+   * `container-type: inline-size` here makes `<main>` the thing pages measure
+   * themselves against, so two columns of the same width look the same however
+   * the window arrived at them. It is the HIG's own rule — "determine layout
+   * based on size classes, not device type or orientation. Size classes
+   * describe the actual space available" — and `vw` is the web's version of
+   * asking the device.
+   *
+   * On `<main>` rather than on the scroll region so that `@container page`
+   * still resolves for a page mounted with `scroll={false}` inside a tab panel
+   * or a modal body, where there is no scroll region to hang it on.
+   */
   .app-main-canvas {
     background-color: hsl(var(--background));
+    container-type: inline-size;
+    container-name: page;
   }
   /* The sidebar is a flat panel (FLAT_UI.md §2.1): its fill sits a step below
      the page and its inner edge is the seam hairline in --sidebar-border, and
@@ -3004,14 +3035,75 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
   }
+
+  /*
+   * ——— THE PAGE GUTTER: ONE NUMBER, FOR EVERY SURFACE ———
+   *
+   * `--page-gutter` is the distance from the edge of the content column to the
+   * content, and it is the same distance on every surface at a given column
+   * width. Three steps — 16 · 24 · 32 — on the 8px grid, keyed to the COLUMN
+   * (see .app-main-canvas), switching at the same widths as the measures.
+   *
+   * IT REPLACED FOUR SYSTEMS. Measured across the product before this change:
+   *
+   *   app pages       clamp(1rem, 2.5vw, 2rem)   16 → 22.5 → 32, fluid
+   *   chat transcript px-3 sm:px-6               12 → 24
+   *   chat header     px-4 md:px-6               16 → 24
+   *   compare         px-4 sm:px-6               16 → 24
+   *
+   * Four, on surfaces that sit next to each other, each keyed to the window
+   * and each stepping at a different place — so the transcript's left edge and
+   * the page frame's left edge agreed at some widths and not at others, and
+   * scrolling from a list into a chat moved the text sideways. That is the
+   * whole of "it looks different depending on the page and the window", and no
+   * amount of tuning any one of the four could fix it, because the problem was
+   * that there were four.
+   *
+   * A fluid gutter was also wrong on its own terms: `clamp` lands on whatever
+   * the arithmetic produces — 22.5px at a 900px window — and a margin is a
+   * structural edge that rows, headers and cards all align against, so it has
+   * to be a number the rest of the system can name.
+   *
+   * A container query cannot set a property on its own container, so the steps
+   * are declared on `.page-gutter` (a descendant) rather than on the canvas.
+   * Anything that wants the product's gutter uses that class; anything that
+   * needs the value for arithmetic reads `var(--page-gutter)`.
+   */
+  .page-gutter,
+  .app-page-content {
+    --page-gutter: 1rem;
+    padding-inline: var(--page-gutter);
+  }
+  @container page (min-width: 40rem) {
+    .page-gutter,
+    .app-page-content {
+      --page-gutter: 1.5rem;
+    }
+  }
+  @container page (min-width: 64rem) {
+    .page-gutter,
+    .app-page-content {
+      --page-gutter: 2rem;
+    }
+  }
+  /* No container to query — a page rendered outside the app shell (dev
+     galleries, print views, the share page). Those are full-width surfaces, so
+     they take the widest step rather than the narrowest. */
+  @supports not (container-type: inline-size) {
+    .page-gutter,
+    .app-page-content {
+      --page-gutter: 2rem;
+    }
+  }
+
   .app-page-content {
     margin-inline: auto;
     width: 100%;
-    padding: 1.75rem clamp(1rem, 2.5vw, 2rem) 3rem;
+    padding-block: 1.25rem 2.5rem;
   }
-  @media (max-width: 639px) {
+  @container page (min-width: 40rem) {
     .app-page-content {
-      padding-block: 1.25rem 2.5rem;
+      padding-block: 1.75rem 3rem;
     }
   }
 

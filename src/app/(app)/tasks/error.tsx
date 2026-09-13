@@ -31,7 +31,7 @@ export default function TasksError({
   }, [error]);
 
   return (
-    <AppPage measure="reading">
+    <AppPage measure="wide">
       <EmptyState
         tone="error"
         icon={StatusIcons.error}

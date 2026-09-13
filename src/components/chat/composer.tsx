@@ -2103,7 +2103,7 @@ export function Composer({
   return (
     <div
       ref={rootRef}
-      className="mx-auto w-full max-w-3xl px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      className="page-gutter mx-auto w-full max-w-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
     >
       {quotaReached && (
         <div

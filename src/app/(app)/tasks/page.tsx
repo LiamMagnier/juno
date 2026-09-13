@@ -119,7 +119,7 @@ export default function TasksPage() {
   const visible = all.filter((task) => (filter === "all" ? true : filter === "active" ? isActive(task) : !isActive(task)));
 
   return (
-    <AppPage measure="reading">
+    <AppPage measure="wide">
       <AppPageHeader
         eyebrow="Tasks"
         heading="Scheduled tasks"
