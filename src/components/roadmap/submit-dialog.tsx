@@ -124,9 +124,9 @@ export function SubmitDialog({
                     <Link
                       href={`/roadmap/${s.id}`}
                       onClick={() => onOpenChange(false)}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-fast ease-out-soft hover:bg-accent"
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent"
                     >
-                      <span className="inline-flex items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 font-mono text-micro tabular-nums text-muted-foreground">
                         <ChevronUp className="size-3 shrink-0" />
                         {s.voteCount}
                       </span>

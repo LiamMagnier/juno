@@ -89,7 +89,7 @@ function Boot() {
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">{error}</div>
+      <div className="flex h-full items-center justify-center p-6 text-center text-ui text-muted-foreground">{error}</div>
     );
   }
   if (!session) {

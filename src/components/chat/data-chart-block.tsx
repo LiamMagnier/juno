@@ -35,7 +35,7 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
   return (
     <figure className="my-3 overflow-hidden rounded-card border border-border/60 bg-card shadow-soft">
       <figcaption className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/35 px-4 py-2.5">
-        <span className="min-w-0 truncate text-xs font-medium text-foreground">
+        <span className="min-w-0 truncate text-caption font-medium text-foreground">
           {chart.title || "Generated chart"}
         </span>
         <div className="flex shrink-0 items-center gap-1">

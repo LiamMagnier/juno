@@ -49,7 +49,7 @@ function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
             stop grouping into a word. */}
         <span className="font-mono text-micro text-muted-foreground">Console</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
+      <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-micro leading-relaxed">
         {entries.length === 0 ? (
           <p role="status" className="text-muted-foreground">
             No console output yet.
@@ -237,7 +237,7 @@ export function ArtifactInlineCard({
         <Icon className={cn("size-4", streaming && "motion-safe:animate-icon-breathe")} aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium leading-5">{title || "Untitled artifact"}</span>
+        <span className="block truncate text-ui font-medium leading-5">{title || "Untitled artifact"}</span>
         <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-micro text-muted-foreground">
           <span className="truncate">{rt.label}</span>
           {!streaming && version != null && version > 1 && (
@@ -309,7 +309,7 @@ export function ArtifactInlineCard({
               className="shrink-0"
               // Keeps the card header's 32px control height; everything else —
               // material, radii, the gliding thumb — is the primitive's.
-              optionClassName="h-6 gap-1 px-2.5 text-xs"
+              optionClassName="h-6 gap-1 px-2.5 text-caption"
             />
           )}
           {onOpen && (
@@ -321,7 +321,7 @@ export function ArtifactInlineCard({
                 aria-label="Open in canvas"
                 className={cn(
                   "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-control text-muted-foreground",
-                  "h-8 gap-1.5 px-2.5 text-xs font-medium coarse:h-10 coarse:px-3",
+                  "h-8 gap-1.5 px-2.5 text-caption font-medium coarse:h-10 coarse:px-3",
                   "hover:bg-accent hover:text-primary"
                 )}
               >
@@ -400,7 +400,7 @@ export function ArtifactInlineCard({
             <ThinkingDots className="text-primary" />
             <div>
               <p className="font-sans text-heading">Writing artifact</p>
-              <p className="pt-0.5 text-sm text-muted-foreground">The source will stream in here.</p>
+              <p className="pt-0.5 text-ui text-muted-foreground">The source will stream in here.</p>
             </div>
           </div>
         </div>

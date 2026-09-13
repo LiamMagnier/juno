@@ -82,7 +82,7 @@ export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineDa
                     {step.label}
                   </span>
                   {step.description && (
-                    <span className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{step.description}</span>
+                    <span className="whitespace-pre-line text-body leading-6 text-muted-foreground">{step.description}</span>
                   )}
                 </span>
               </button>

@@ -127,10 +127,10 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               <FolderOpen className="size-4.5" />
             </div>
             <div>
-              <DialogTitle className="font-sans text-xl font-normal tracking-tight text-foreground">
+              <DialogTitle className="font-sans text-title font-normal tracking-tight text-foreground">
                 Add from your library
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
+              <DialogDescription className="text-caption text-muted-foreground">
                 Attach files and images you’ve previously shared with Juno.
               </DialogDescription>
             </div>
@@ -148,7 +148,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                 onClick={() => setTab(t.key)}
                 aria-pressed={isActive}
                 className={cn(
-                  "pressable rounded-full border border-transparent px-3.5 py-1 text-xs",
+                  "pressable rounded-full border border-transparent px-3.5 py-1 text-caption",
                   isActive
                     ? "surface-raised border-border/60 font-medium text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -185,8 +185,8 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               <div className="surface-raised flex size-11 items-center justify-center rounded-full text-muted-foreground">
                 <FolderOpen className="size-5" />
               </div>
-              <h3 className="mt-3 font-sans text-base font-normal text-foreground">Nothing here yet</h3>
-              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+              <h3 className="mt-3 font-sans text-body-lg font-normal text-foreground">Nothing here yet</h3>
+              <p className="mt-1 max-w-xs text-caption text-muted-foreground">
                 Files and images you send in conversations collect here for quick reuse.
               </p>
             </div>

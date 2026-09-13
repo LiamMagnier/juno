@@ -108,7 +108,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
       {(error || note) && (
         <div
           className={cn(
-            "mb-2 rounded-menu border px-3 py-2 text-xs leading-5",
+            "mb-2 rounded-menu border px-3 py-2 text-caption leading-5",
             // The neutral strip is a floating layer like any other, so it takes the
             // shared material rather than a fourth hand-mixed one (/95 fill, /70
             // hairline, blur-xl, no shadow). The error strip keeps its own tint.
@@ -171,7 +171,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
                 : "Ask Juno to change this design…"
           }
           aria-label="Ask Juno to change this design"
-          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+          className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-ui outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
 
         <Button

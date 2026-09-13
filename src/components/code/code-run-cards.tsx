@@ -417,7 +417,7 @@ function BlockedNote({
       )}
     >
       <StatusIcons.info className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted-foreground">{reason}</p>
+      <p className="min-w-0 flex-1 text-caption leading-relaxed text-muted-foreground">{reason}</p>
       {onRecheck && (
         <Button
           type="button"
@@ -1120,7 +1120,7 @@ function ApprovalCard({
       // chip. At /5 the highest-stakes surface in Juno Code was a ~1%-lightness
       // tint on the black ground, leaving `border-warning/40` to carry the whole
       // alarm on its own. Inset matches the sibling cards above the composer.
-      className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm shadow-raised"
+      className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5 text-ui shadow-raised"
     >
       <div className="flex items-start gap-2.5">
         <CodeIcons.permission className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />

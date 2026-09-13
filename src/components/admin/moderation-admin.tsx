@@ -285,7 +285,7 @@ export function ModerationAdmin() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[56rem] text-sm">
+              <table className="w-full min-w-[56rem] text-ui">
                 <thead>
                   <tr className="border-b border-border/70 text-left">
                     <th className={TH_CLASS}>User</th>
@@ -317,16 +317,16 @@ export function ModerationAdmin() {
                               <span className={cn(CHIP, "shrink-0 bg-destructive/10 text-destructive")}>Banned</span>
                             )}
                           </div>
-                          <p className="truncate text-xs text-muted-foreground">{f.user.email}</p>
+                          <p className="truncate text-caption text-muted-foreground">{f.user.email}</p>
                         </td>
                         <td className="px-4 py-3">
                           <span className={cn(CHIP, severityClass(f.severity))}>{f.severity}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-mono text-xs">{f.category}</p>
+                          <p className="font-mono text-micro">{f.category}</p>
                           <span className={cn(CHIP, "mt-1 inline-block bg-muted text-muted-foreground")}>{f.source}</span>
                         </td>
-                        <td className="max-w-[22rem] px-4 py-3 text-xs text-muted-foreground">
+                        <td className="max-w-[22rem] px-4 py-3 text-caption text-muted-foreground">
                           <p className={cn(!isExpanded && long && "line-clamp-2")}>{f.detail}</p>
                           {f.messagePreview && isExpanded && (
                             // rounded-control + the opaque secondary rung: a
@@ -354,7 +354,7 @@ export function ModerationAdmin() {
                             </button>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-micro text-muted-foreground">
                           {relativeTime(f.createdAt)}
                         </td>
                         <td className="px-4 py-3">

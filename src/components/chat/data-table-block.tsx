@@ -65,7 +65,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
     <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card shadow-soft">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/35 px-4 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h4 className="truncate text-xs font-medium text-foreground">{title || "Data table"}</h4>
+          <h4 className="truncate text-caption font-medium text-foreground">{title || "Data table"}</h4>
           <span className="shrink-0 font-mono text-micro text-muted-foreground">
             {table.rowCount.toLocaleString()} × {table.columnCount}
           </span>
@@ -85,7 +85,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
                 setSearchQuery(event.target.value);
                 setCurrentPage(1);
               }}
-              className="h-8 w-32 pl-8 text-xs sm:w-40"
+              className="h-8 w-32 pl-8 text-caption sm:w-40"
               aria-label="Filter data table rows"
             />
           </div>
@@ -104,7 +104,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
       </header>
 
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-xs">
+        <table className="w-full border-collapse text-left text-caption">
           <thead className="border-b border-border/60 bg-muted/45 text-muted-foreground">
             <tr>
               {table.columns.map((column) => (
@@ -136,7 +136,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
               <tr>
                 <td
                   colSpan={Math.max(1, table.columns.length)}
-                  className="px-3 py-8 text-center font-sans text-xs text-muted-foreground"
+                  className="px-3 py-8 text-center font-sans text-caption text-muted-foreground"
                 >
                   No matching rows
                 </td>
@@ -147,7 +147,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
       </div>
 
       {totalPages > 1 && (
-        <footer className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/25 px-4 py-2 text-xs text-muted-foreground">
+        <footer className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/25 px-4 py-2 text-caption text-muted-foreground">
           <span className="min-w-0 truncate">
             Page {currentPage} of {totalPages} · {filteredData.length.toLocaleString()} rows
           </span>

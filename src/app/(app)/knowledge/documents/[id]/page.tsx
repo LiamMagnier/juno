@@ -107,7 +107,7 @@ export default function KnowledgeDocumentPage() {
   if (failed) {
     return (
       <AppPage measure="reading">
-          <Link href="/library" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground">
+          <Link href="/library" className="inline-flex items-center gap-2 text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground">
             <ArrowLeft className="size-4" /> Library
           </Link>
           <EmptyState
@@ -170,7 +170,7 @@ export default function KnowledgeDocumentPage() {
 
         <Card variant="flat" className="p-5">
           {document.error ? (
-            <div className="mb-4 flex items-start gap-2 rounded-field border border-warning/30 bg-warning/10 px-3.5 py-3 text-sm text-muted-foreground">
+            <div className="mb-4 flex items-start gap-2 rounded-field border border-warning/30 bg-warning/10 px-3.5 py-3 text-ui text-muted-foreground">
               <StatusIcons.error className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
               <span>{document.error}</span>
             </div>
@@ -230,7 +230,7 @@ export default function KnowledgeDocumentPage() {
                     </span>
                   </div>
                   {block.heading.length > 0 ? <p className="mb-1 font-mono text-caption text-muted-foreground">{block.heading.join(" / ")}</p> : null}
-                  <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{block.text}</p>
+                  <p className="whitespace-pre-wrap text-body leading-7 text-foreground">{block.text}</p>
                 </Card>
               </li>
             ))}

@@ -198,7 +198,7 @@ export default function RoadmapPage() {
                 <Link
                   key={r.id}
                   href={`/roadmap/${r.id}`}
-                  className="text-sm text-foreground/90 underline-offset-2 hover:text-foreground hover:underline"
+                  className="text-ui text-foreground/90 underline-offset-2 hover:text-foreground hover:underline"
                 >
                   {r.title} <span className="text-caption text-muted-foreground">· {timeAgo(r.createdAt)}</span>
                 </Link>
@@ -411,7 +411,7 @@ function StatusTab({
       aria-selected={active}
       tabIndex={active ? 0 : -1}
       className={cn(
-        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition-colors duration-fast",
+        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-ui transition-colors duration-fast",
         active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
       )}
     >

@@ -482,7 +482,7 @@ export function WorkScheduleEditor({
               value={draft.hostId ?? ""}
               disabled={saving || hosts === null}
               onChange={(event) => set("hostId", event.target.value === "" ? null : event.target.value)}
-              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">
                 {draft.target === "local" ? "Choose a Mac…" : "Any of my Macs"}

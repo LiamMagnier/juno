@@ -264,7 +264,7 @@ export function QuizInteraction({
       <Reveal open={answered} className="duration-slow" aria-live="polite">
         {answered && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-t border-border/50 pt-3">
-            <p className="min-w-0 flex-1 basis-64 text-sm leading-6 text-muted-foreground">
+            <p className="min-w-0 flex-1 basis-64 text-body leading-6 text-muted-foreground">
               <span className={cn("font-sans text-body font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
                 {isCorrect ? "Correct —" : "Not quite —"}
               </span>{" "}

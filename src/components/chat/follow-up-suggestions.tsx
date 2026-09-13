@@ -130,7 +130,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
             // `.control-neu` (SOFT_UI.md): a raised chip, lifting a rung on
             // hover, dealt out on the tight stagger under the reply.
             className={cn(
-              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:z-10 hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
+              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-ui font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:z-10 hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius

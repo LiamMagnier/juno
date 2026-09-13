@@ -303,7 +303,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
             not a one-time notice: it has to be readable at the moment somebody
             decides whether to believe what they just heard, and at the moment
             they decide whether it is safe to hang up. */}
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="text-caption leading-relaxed text-muted-foreground">
           Juno was told where this runs
           {briefing.turns.length > 0 ? " and how the session has gone so far" : ""} when you started
           talking. This is a separate conversation about the work: it can&rsquo;t see your code, it

@@ -113,7 +113,7 @@ export function CompareModelPicker({
                   className="coarse:py-2.5"
                 >
                   <ProviderLogo provider={m.provider} className="size-5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-ui font-medium">{m.name}</span>
                   <span className="shrink-0 font-mono text-caption text-muted-foreground">
                     {PROVIDERS[m.provider].label.split(" · ")[0]}
                   </span>

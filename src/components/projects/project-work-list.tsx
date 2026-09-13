@@ -104,10 +104,10 @@ export function ProjectWorkList({
                     <Zap className="size-4" aria-hidden="true" />
                   </span>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <span className="block truncate text-sm font-medium text-foreground">
+                    <span className="block truncate text-ui font-medium text-foreground">
                       {work.title || "Delegated task"}
                     </span>
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
                       {work.goal || "No goal description provided."}
                     </p>
                   </div>

@@ -95,7 +95,7 @@ export function TaskCard({
       </span>
 
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-sm font-medium">{task.name}</h3>
+        <h3 className="truncate text-ui font-medium">{task.name}</h3>
         <p className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
           <span className="truncate">{describeSchedule(task)}</span>
           <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />

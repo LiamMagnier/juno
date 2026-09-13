@@ -28,7 +28,7 @@ export function AdminNav({ current, reviewCount = 0 }: { current: AdminSection; 
           className={cn(
             // Scoped transition, and a border on both states so the active pill
             // gains an edge rather than 1px of width when it becomes active.
-            "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-xs font-medium",
+            "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-micro font-medium",
             "transition-[background-color,border-color,color] duration-fast ease-out-soft",
             tab.id === current
               ? "border-border/60 bg-accent text-foreground"

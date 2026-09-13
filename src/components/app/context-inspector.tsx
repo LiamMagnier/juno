@@ -130,7 +130,7 @@ export function ContextInspector({
 
       {isOpen && (
         <aside
-          className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border/60 bg-background/80 text-xs backdrop-blur-md"
+          className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border/60 bg-background/80 text-caption backdrop-blur-md"
           aria-label={`${mode} context inspector`}
         >
           <header className="border-b border-border/60 bg-muted/30 px-3 py-2.5">

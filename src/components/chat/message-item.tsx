@@ -362,7 +362,7 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
             // rounded-md, matching the composer's upload chip (composer.tsx). The
             // same ~34px chip was rounded-lg (24) here and rounded-md (8) there,
             // so a file visibly turned into a stadium the instant it was sent.
-            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs transition-colors duration-fast hover:bg-accent"
+            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-caption transition-colors duration-fast hover:bg-accent"
           >
             <CodeIcons.file className="size-4 text-muted-foreground" />
             <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>

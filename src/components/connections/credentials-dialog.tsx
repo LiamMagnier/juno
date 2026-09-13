@@ -175,7 +175,7 @@ export function CredentialsDialog({
               // pure black has no ground left to speak of.
               <p
                 role="alert"
-                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
+                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive motion-safe:animate-fade-in"
               >
                 <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
                 {error}
@@ -231,7 +231,7 @@ export function CredentialsDialog({
               // pure black has no ground left to speak of.
               <p
                 role="alert"
-                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
+                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-ui text-destructive motion-safe:animate-fade-in"
               >
                 <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
                 {error}

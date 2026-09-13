@@ -105,7 +105,7 @@ export function ProjectCodeList({
                     <Code2 className="size-4" aria-hidden="true" />
                   </span>
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <span className="block truncate text-sm font-medium text-foreground">
+                    <span className="block truncate text-ui font-medium text-foreground">
                       {session.title || "Code session"}
                     </span>
                     {session.workspaceName ? (
@@ -114,7 +114,7 @@ export function ProjectCodeList({
                         <span className="truncate">{session.workspaceName}</span>
                       </p>
                     ) : (
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
                         Local or remote repository session.
                       </p>
                     )}

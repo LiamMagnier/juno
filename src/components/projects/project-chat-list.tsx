@@ -171,7 +171,7 @@ function ChatRow({
         href={`/chat/${chat.id}`}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
-        <span className="truncate text-sm font-medium text-foreground">{chat.title}</span>
+        <span className="truncate text-ui font-medium text-foreground">{chat.title}</span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
           Updated {timeAgo(chat.lastMessageAt)}
         </span>

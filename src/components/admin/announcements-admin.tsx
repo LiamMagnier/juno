@@ -371,7 +371,7 @@ function MediaDropzone({
             ) : (
               <UploadCloud className="size-5 text-muted-foreground" />
             )}
-            <p className="text-xs">
+            <p className="text-caption">
               <span className="font-medium text-foreground">Drag &amp; drop</span> {kind === "image" ? "an image" : "a video"}, or{" "}
               <span className="text-primary">browse</span>
             </p>
@@ -497,11 +497,11 @@ export function AnnouncementsAdmin() {
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold">{editingId ? "Edit popup" : "Create popup"}</h2>
-                  <p className="text-xs text-muted-foreground">Users will see the newest active popup until they dismiss it.</p>
+                  <h2 className="text-ui font-semibold">{editingId ? "Edit popup" : "Create popup"}</h2>
+                  <p className="text-caption text-muted-foreground">Users will see the newest active popup until they dismiss it.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="announcement-published" className="text-xs text-muted-foreground">
+                  <Label htmlFor="announcement-published" className="text-caption text-muted-foreground">
                     Published
                   </Label>
                   <Switch
@@ -648,7 +648,7 @@ export function AnnouncementsAdmin() {
           <div className="flex flex-col gap-4">
             <Card className="overflow-hidden p-0">
               <div className="border-b border-border/70 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm font-semibold">
+                <div className="flex items-center gap-2 text-ui font-semibold">
                   <Eye className="size-4 text-muted-foreground" />
                   Preview
                 </div>
@@ -663,7 +663,7 @@ export function AnnouncementsAdmin() {
                         actually renders, because a preview that is off the
                         scale of the thing it previews is a preview of nothing:
                         the eyebrow was caption/primary against the popup's
-                        label/muted, the title was `text-2xl` — a Tailwind
+                        label/muted, the title was `text-page-title` — a Tailwind
                         default, not a rung — against `text-title`, and the body
                         was text-sm against text-body. An editor was choosing
                         copy length against type that ships two sizes off. */}
@@ -702,7 +702,7 @@ export function AnnouncementsAdmin() {
 
             <Card className="p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold">Current popups</h2>
+                <h2 className="text-ui font-semibold">Current popups</h2>
                 {/* The spinner is the point of a Refresh button: disabled alone
                     gives no sign anything is happening on a fast connection. */}
                 <Button variant="ghost" size="sm" onClick={load} disabled={loading} className="gap-1.5">
@@ -762,7 +762,7 @@ export function AnnouncementsAdmin() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="truncate text-sm font-medium">{item.title}</p>
+                              <p className="truncate text-ui font-medium">{item.title}</p>
                               <span
                                 className={cn(
                                   "shrink-0 rounded-full px-2 py-0.5 font-mono text-caption font-semibold",
@@ -774,7 +774,7 @@ export function AnnouncementsAdmin() {
                                 {status.text}
                               </span>
                             </div>
-                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+                            <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">{item.description}</p>
                             <div className="mt-2 flex items-center gap-1.5 font-mono text-caption text-muted-foreground">
                               <CalendarClock className="size-3.5 shrink-0" />
                               <span>{new Date(item.startsAt).toLocaleString()}</span>

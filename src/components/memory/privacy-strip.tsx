@@ -38,7 +38,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
     // no fill and only its hairline told you where it began.
     <div className="rounded-card border border-border/50 bg-muted/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-        <label htmlFor="pause-memory" className="flex cursor-pointer items-center gap-2.5 text-sm">
+        <label htmlFor="pause-memory" className="flex cursor-pointer items-center gap-2.5 text-ui">
           <Switch
             id="pause-memory"
             checked={paused}

@@ -333,7 +333,7 @@ export function TriggerListEditor({
             )}
             {/* `text-ui`, the dense-UI rung. This card is a control panel row
                 rather than a list item — its own detail lines are `micro` — and
-                `text-sm` put it a pixel off the scale between the two. */}
+                `text-ui` put it a pixel off the scale between the two. */}
             <span className="min-w-0 flex-1 text-ui font-medium text-foreground">
               {triggerLabel(trigger.kind)}
             </span>
@@ -610,7 +610,7 @@ function ChoiceField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="field-well h-9 w-full rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+        className="field-well h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -1156,7 +1156,7 @@ function TriggerConfigFields({
                 value={stringAt(config, "grantId")}
                 disabled={disabled}
                 onChange={(event) => set({ grantId: event.target.value })}
-                className="field-well h-9 w-full rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+                className="field-well h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">Choose a folder…</option>
                 {grants.map((grant) => (

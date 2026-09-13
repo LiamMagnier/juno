@@ -185,7 +185,7 @@ export default function RoadmapDetailPage() {
         <p className="mt-5 whitespace-pre-wrap text-body leading-relaxed text-foreground/90">{r.description}</p>
 
         {r.status === "DECLINED" && r.declineReason && (
-          <div className="mt-4 rounded-field border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <div className="mt-4 rounded-field border border-destructive/30 bg-destructive/10 p-3 text-ui text-destructive">
             <span className="font-medium">Declined:</span> {r.declineReason}
           </div>
         )}
@@ -235,7 +235,7 @@ export default function RoadmapDetailPage() {
                 <li key={e.id} className="flex items-start gap-3">
                   <span aria-hidden className={cn("mt-1 size-2 shrink-0 rounded-full", STATUS_META[e.status].dot)} />
                   <div className="min-w-0">
-                    <p className="text-sm">
+                    <p className="text-ui">
                       <span className="font-medium">{STATUS_META[e.status].label}</span>
                       {e.note ? <span className="text-muted-foreground"> — {e.note}</span> : null}
                     </p>
@@ -273,7 +273,7 @@ export default function RoadmapDetailPage() {
                   )}
                   <span>· {timeAgo(c.createdAt)}</span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-foreground/90">{c.body}</p>
+                <p className="whitespace-pre-wrap text-ui text-foreground/90">{c.body}</p>
               </li>
             ))}
             {comments.length === 0 && (
@@ -295,7 +295,7 @@ export default function RoadmapDetailPage() {
                 // The Switch primitive, not a bare native checkbox: this was the only
                 // `accent-[…]` in the area and the only control on the page rendering
                 // with browser-default sizing, focus ring and hover.
-                <label htmlFor="official-reply" className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
+                <label htmlFor="official-reply" className="flex cursor-pointer items-center gap-2.5 text-ui text-muted-foreground">
                   <Switch id="official-reply" checked={official} onCheckedChange={setOfficial} />
                   Post as official reply
                 </label>

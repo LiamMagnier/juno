@@ -1889,7 +1889,7 @@ function LayerRenameField({
           onCancel();
         }
       }}
-      className="absolute z-10 rounded-md border border-primary/60 bg-popover px-1.5 py-0.5 text-xs shadow-soft outline-none ring-2 ring-primary/20"
+      className="absolute z-10 rounded-md border border-primary/60 bg-popover px-1.5 py-0.5 text-caption shadow-soft outline-none ring-2 ring-primary/20"
       style={{ left, top, width }}
     />
   );

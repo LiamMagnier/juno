@@ -66,7 +66,7 @@ export function WorkSection({
               </span>
             )}
           </h2>
-          {hint && <p className="mt-1 text-sm text-muted-foreground">{hint}</p>}
+          {hint && <p className="mt-1 text-ui text-muted-foreground">{hint}</p>}
         </div>
         {action != null && <div className="shrink-0">{action}</div>}
       </div>

@@ -181,7 +181,7 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
         <div
           role="status"
           aria-live="polite"
-          className="surface-inset flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card px-4 py-3 text-sm text-foreground"
+          className="surface-inset flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card px-4 py-3 text-ui text-foreground"
         >
           <StatusIcons.info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>

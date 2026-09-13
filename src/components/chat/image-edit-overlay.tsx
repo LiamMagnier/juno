@@ -366,7 +366,7 @@ export function ImageEditOverlay({
                     <span className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary">
                       <ImageIcon className="size-4 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
                     </span>
-                    <span className="text-xs">Preparing image…</span>
+                    <span className="text-caption">Preparing image…</span>
                   </div>
                 )}
 
@@ -375,7 +375,7 @@ export function ImageEditOverlay({
                     <span className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary">
                       <ImageOff className="size-4" aria-hidden="true" />
                     </span>
-                    <span className="text-xs">Couldn&apos;t load this image.</span>
+                    <span className="text-caption">Couldn&apos;t load this image.</span>
                   </div>
                 )}
 
@@ -465,7 +465,7 @@ export function ImageEditOverlay({
             <form onSubmit={handleSubmit} className="flex min-h-full flex-col p-5 pt-6 sm:p-6 md:p-7">
               <div className="pr-9">
                 <p className="font-mono text-micro font-semibold text-muted-foreground">Image editor</p>
-                <DialogTitle className="mt-2 text-xl text-foreground">Edit image</DialogTitle>
+                <DialogTitle className="mt-2 text-title text-foreground">Edit image</DialogTitle>
                 <DialogDescription className="mt-2 max-w-sm text-ui leading-relaxed text-muted-foreground">
                   Describe the change and optionally target a precise area.
                 </DialogDescription>

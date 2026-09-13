@@ -19,7 +19,7 @@ function SummarySections({ sections, className }: { sections: SummarySection[]; 
       {sections.map((s) => (
         <section key={s.title}>
           <h3 className="font-sans text-heading">{s.title}</h3>
-          <Markdown content={s.body} className="mt-1.5 text-sm text-foreground/90" />
+          <Markdown content={s.body} className="mt-1.5 text-ui text-foreground/90" />
         </section>
       ))}
     </div>
@@ -129,14 +129,14 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
             <SummarySections sections={sections} className="space-y-5" />
           </div>
         ) : consolidating ? (
-          <div role="status" className="flex items-center gap-3 pb-14 pt-2 text-sm text-muted-foreground">
+          <div role="status" className="flex items-center gap-3 pb-14 pt-2 text-ui text-muted-foreground">
             <ThinkingDots />
             <span>Reading your chats and projects…</span>
           </div>
         ) : (
           <div className="pb-12 pt-1">
             <p className="font-sans text-heading">Nothing here yet</p>
-            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            <p className="mt-1 max-w-md text-ui text-muted-foreground">
               Juno builds this from your chats and projects as you go. You can also just tell it something with the
               pencil below — “remember that I prefer short answers”, for instance.
             </p>
@@ -172,7 +172,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           >
             <div className="flex min-w-0 flex-1 items-center">
               {drafting ? (
-                <span role="status" className="flex h-9 min-w-0 flex-1 items-center gap-2.5 text-sm text-muted-foreground">
+                <span role="status" className="flex h-9 min-w-0 flex-1 items-center gap-2.5 text-ui text-muted-foreground">
                   <ThinkingDots />
                   <span className="truncate">Drafting the change…</span>
                 </span>
@@ -190,7 +190,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   maxLength={600}
                   placeholder="Tell Juno what to remember, update, or forget…"
                   aria-label="Memory instruction"
-                  className="h-9 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="h-9 w-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
                 />
               )}
             </div>

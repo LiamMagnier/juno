@@ -62,14 +62,14 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
             className="grid items-baseline border-b border-border/30 py-3 last:border-b-0"
             style={gridTemplate}
           >
-            <span className="px-2 text-sm font-semibold leading-6">{row.label}</span>
+            <span className="px-2 text-body font-semibold leading-6">{row.label}</span>
             {columns.map((_, colIndex) => {
               const value = row.values[colIndex];
               return (
                 <span
                   key={colIndex}
                   className={cn(
-                    "min-w-0 break-words px-2 text-sm leading-6 transition-opacity duration-base ease-out-soft",
+                    "min-w-0 break-words px-2 text-body leading-6 transition-opacity duration-base ease-out-soft",
                     value ? "text-muted-foreground" : "text-muted-foreground/40",
                     cellTone(colIndex)
                   )}
@@ -86,7 +86,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
       <div className="flex flex-col pt-2 sm:hidden">
         {rows.map((row, rowIndex) => (
           <div key={rowIndex} className="border-t border-border/40 py-3 first:border-t-0">
-            <p className="text-sm font-semibold leading-5">{row.label}</p>
+            <p className="text-ui font-semibold leading-5">{row.label}</p>
             <dl className="grid gap-1.5 pt-2">
               {columns.map((column, colIndex) => {
                 const value = row.values[colIndex];
@@ -95,7 +95,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
                     <dt className="min-w-0 truncate font-mono text-caption text-muted-foreground">
                       {column}
                     </dt>
-                    <dd className={cn("min-w-0 break-words text-sm leading-5", value ? "text-foreground/80" : "text-muted-foreground/40")}>
+                    <dd className={cn("min-w-0 break-words text-ui leading-5", value ? "text-foreground/80" : "text-muted-foreground/40")}>
                       {value ?? "—"}
                     </dd>
                   </div>

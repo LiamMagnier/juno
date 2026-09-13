@@ -314,7 +314,7 @@ function VersionsDialog({
             versions.map((version) => (
               <div key={version.version} className="surface-inset flex items-center gap-3 rounded-field px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
+                  <p className="truncate text-ui font-medium">
                     v{version.version} {version.current ? "· current" : ""}
                   </p>
                   <p className="truncate font-mono text-caption tabular-nums text-muted-foreground">
@@ -484,7 +484,7 @@ function LibraryGridItem({
       <div className="flex min-w-0 items-start gap-2 pt-3">
         <div className="min-w-0 flex-1">
           {item.deletedAt ? (
-            <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+            <p className="block truncate text-ui font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
               {item.fileName}
             </p>
           ) : (
@@ -493,7 +493,7 @@ function LibraryGridItem({
               target="_blank"
               rel="noopener noreferrer"
               title={item.fileName}
-              className="block truncate text-sm font-medium underline-offset-4 hover:underline"
+              className="block truncate text-ui font-medium underline-offset-4 hover:underline"
             >
               {item.fileName}
             </a>
@@ -1005,7 +1005,7 @@ export default function LibraryPage() {
                     <ItemPreview item={item} />
                     <div className="min-w-0">
                       {item.deletedAt ? (
-                        <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+                        <p className="block truncate text-ui font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
                           {item.fileName}
                         </p>
                       ) : (
@@ -1013,7 +1013,7 @@ export default function LibraryPage() {
                           href={item.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                          className="block truncate text-ui font-medium text-foreground underline-offset-4 hover:underline"
                           title={item.fileName}
                         >
                           {item.fileName}

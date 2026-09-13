@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-border py-8">
-      <h2 className="text-sm font-medium">{title}</h2>
-      {note && <p className="mt-1 max-w-prose text-xs text-muted-foreground">{note}</p>}
+      <h2 className="text-ui font-medium">{title}</h2>
+      {note && <p className="mt-1 max-w-prose text-caption text-muted-foreground">{note}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-3">{children}</div>
     </section>
   );
@@ -36,8 +36,8 @@ export function ControlsGallery() {
       <div className="mx-auto max-w-3xl">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Controls</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h1 className="text-page-title font-semibold tracking-tight">Controls</h1>
+            <p className="mt-1 text-ui text-muted-foreground">
               Every control the product uses, rendered together.
             </p>
           </div>

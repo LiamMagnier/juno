@@ -164,7 +164,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
       ) : (
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <p className={cn("text-sm text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
+            <p className={cn("text-ui text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
               {memory.content}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -311,7 +311,7 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
             onClick={() => setShowRetired((open) => !open)}
             aria-expanded={showRetired}
             aria-controls="memory-retired-list"
-            className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
+            className="flex w-full items-center gap-2 px-4 py-3 text-left text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground"
           >
             <ChevronDown
               className={cn(

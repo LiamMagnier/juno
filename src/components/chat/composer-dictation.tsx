@@ -465,7 +465,7 @@ export function ComposerDictation({
       <div
         ref={previewRef}
         aria-live="off"
-        className="max-h-40 min-h-16 overflow-y-auto px-5 pb-3 pt-4 text-base leading-relaxed"
+        className="max-h-40 min-h-16 overflow-y-auto px-5 pb-3 pt-4 text-body-lg leading-relaxed"
       >
         {noTranscription ? (
           <p className="text-muted-foreground">

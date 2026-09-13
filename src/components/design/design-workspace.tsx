@@ -172,7 +172,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
 
         <div className="flex-1" />
 
-        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground">
+        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground">
           <Link href={`/chat/${conversationId}`}>
             <MessagesSquare className="size-3.5" aria-hidden />
             Chat

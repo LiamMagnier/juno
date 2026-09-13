@@ -39,7 +39,7 @@ export function PythonExecutionBlock({
   const isSuccess = result ? result.success : status === "completed";
 
   return (
-    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-xs shadow-soft">
+    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-caption shadow-soft">
       <button
         type="button"
         onClick={() => setIsCodeOpen((open) => !open)}

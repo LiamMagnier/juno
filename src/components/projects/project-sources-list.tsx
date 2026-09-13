@@ -176,7 +176,7 @@ export function ProjectSourcesList({
             <FileUp className="size-4" aria-hidden="true" />
           )}
         </span>
-        <span className="text-sm font-medium text-foreground">
+        <span className="text-ui font-medium text-foreground">
           {uploading ? "Uploading…" : dragging ? "Drop to add to this project" : onDropFiles ? "Drop files here, or click to browse" : "Click to upload files"}
         </span>
         <span className="font-mono text-caption text-muted-foreground">
@@ -273,7 +273,7 @@ export function ProjectSourcesList({
                         rel="noopener noreferrer"
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
                       >
-                        <span className="truncate text-sm font-medium text-foreground">{file.fileName}</span>
+                        <span className="truncate text-ui font-medium text-foreground">{file.fileName}</span>
                         <span className="flex items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground">
                           <span>{formatBytes(file.size)}</span>
                           {status && (
@@ -330,7 +330,7 @@ export function ProjectSourcesList({
                         <Boxes className="size-4" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">{art.title}</span>
+                        <span className="truncate text-ui font-medium text-foreground">{art.title}</span>
                         <span className="font-mono text-caption text-muted-foreground">{art.type}</span>
                       </span>
                       <ExternalLink

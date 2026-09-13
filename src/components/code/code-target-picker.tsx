@@ -850,7 +850,7 @@ function PickerRow({
     >
       <span className={cn("shrink-0", active ? "text-primary" : "text-muted-foreground")}>{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-foreground">{title}</span>
+        <span className="block truncate text-ui font-medium text-foreground">{title}</span>
         {/* `min-w-0` so the second line ellipsizes instead of wrapping. Every
             row in the popover has to stay one height — a wrapping path or hint
             would make the list a ragged column and put the loading skeletons at
@@ -993,7 +993,7 @@ function PickerNote({
       )}
     >
       <span className={isError ? "text-destructive" : "text-muted-foreground"}>{icon}</span>
-      <p className={cn("text-sm font-medium", isError ? "text-destructive" : "text-foreground")}>{title}</p>
+      <p className={cn("text-ui font-medium", isError ? "text-destructive" : "text-foreground")}>{title}</p>
       <p className="max-w-[22rem] text-ui leading-relaxed text-muted-foreground">{body}</p>
       {action && <div className="pt-1">{action}</div>}
     </div>

@@ -67,7 +67,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <JunoMark className="size-6" />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-medium">{title}</h1>
+            <h1 className="truncate text-ui font-medium">{title}</h1>
             <p className="truncate font-mono text-caption text-muted-foreground">Shared {sharedOn}</p>
           </div>
           <Button size="sm" asChild>

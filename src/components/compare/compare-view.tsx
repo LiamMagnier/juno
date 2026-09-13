@@ -353,7 +353,7 @@ export function CompareView() {
             <h2 className="text-balance font-sans text-display">
               Same prompt, different minds
             </h2>
-            <p className="max-w-md text-pretty text-sm leading-6 text-muted-foreground">
+            <p className="max-w-md text-pretty text-body leading-6 text-muted-foreground">
               Watch {panes.length} models answer live, side by side — with the real cost of every reply.
             </p>
             <div className="flex w-full max-w-2xl flex-wrap justify-center gap-2">
@@ -370,7 +370,7 @@ export function CompareView() {
                   // see — and these are the first things anyone clicks on
                   // /compare, which is the case staggerDelay is capped for.
                   style={staggerDelay(i, "tight")}
-                  className="rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 transition-[border-color,background-color,color] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-accent/80 motion-safe:animate-rise-in"
+                  className="rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 transition-[border-color,background-color,color] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-accent/80 motion-safe:animate-rise-in"
                 >
                   {sample}
                 </button>

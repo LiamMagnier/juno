@@ -162,7 +162,7 @@ export default function DesignPage() {
                 creating !== null && "opacity-60"
               )}
             >
-              <span className="flex items-center gap-1.5 text-sm font-medium">
+              <span className="flex items-center gap-1.5 text-ui font-medium">
                 {creating === preset.key ? (
                   <PenTool className="size-3.5 text-primary motion-safe:animate-icon-breathe" aria-hidden />
                 ) : (
@@ -218,7 +218,7 @@ export default function DesignPage() {
                         <AppIcons.design className="size-4" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="block truncate text-ui font-medium">{item.title}</span>
                         <span className="block font-mono text-caption tabular-nums text-muted-foreground">
                           v{item.version} · {timeAgo(item.updatedAt)}
                         </span>

@@ -512,7 +512,7 @@ export default function ArtifactsPage() {
                     href={href}
                     className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                   >
-                    <span className="block truncate text-sm font-medium">{item.title || "Untitled artifact"}</span>
+                    <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
                     <span className="mt-0.5 flex items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
                       <span className="truncate">{rt.label}</span>
                       {item.version > 1 && (
@@ -563,8 +563,8 @@ export default function ArtifactsPage() {
                   href={href}
                   className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                 >
-                  <span className="block truncate text-sm font-medium">{item.title || "Untitled artifact"}</span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">in “{item.conversationTitle}”</span>
+                  <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
+                  <span className="mt-0.5 block truncate text-caption text-muted-foreground">in “{item.conversationTitle}”</span>
                 </Link>
 
                 <span className="hidden shrink-0 items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground sm:flex">

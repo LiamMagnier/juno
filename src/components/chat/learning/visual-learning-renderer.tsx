@@ -33,7 +33,7 @@ function BlockStreamingPlaceholder({ kind }: { kind: ParsedLearningBlock["kind"]
 function BlockFallback({ kind, error }: { kind: ParsedLearningBlock["kind"]; error?: string }) {
   return (
     <div className="my-6 border-y border-border/60 py-4 motion-safe:animate-fade-in">
-      <div className="flex items-center gap-2 text-sm text-foreground/85">
+      <div className="flex items-center gap-2 text-ui text-foreground/85">
         <StatusIcons.warning className="size-4 shrink-0 text-warning" />
         <span>
           This {LEARNING_BLOCK_LABELS[kind].toLowerCase()} couldn&apos;t be rendered

@@ -204,7 +204,7 @@ export function TaskDialog({
               options={CADENCES.map((c) => ({ value: c.id, label: c.label }))}
               ariaLabel="Cadence"
               className="h-9 w-full"
-              optionClassName="text-xs font-medium"
+              optionClassName="text-caption font-medium"
             />
             <div className="flex items-center gap-2">
               {cadence === "ONCE" && (
@@ -264,7 +264,7 @@ export function TaskDialog({
               <button
                 type="button"
                 onClick={() => setTimezoneOpen(true)}
-                className="text-xs text-muted-foreground underline-offset-2 transition-colors duration-fast hover:text-foreground hover:underline"
+                className="text-caption text-muted-foreground underline-offset-2 transition-colors duration-fast hover:text-foreground hover:underline"
               >
                 Timezone: {timezone} — change
               </button>
@@ -274,7 +274,7 @@ export function TaskDialog({
           <div className="flex items-center justify-between gap-3 rounded-field border border-border/60 px-3.5 py-3">
             <div>
               <Label htmlFor="task-web-search">Web search</Label>
-              <p className="text-xs text-muted-foreground">Let the model search the web when it supports it.</p>
+              <p className="text-caption text-muted-foreground">Let the model search the web when it supports it.</p>
             </div>
             <Switch id="task-web-search" checked={webSearch} onCheckedChange={setWebSearch} />
           </div>

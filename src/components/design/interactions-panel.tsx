@@ -405,7 +405,7 @@ function InteractionCard({
               disabled={readOnly}
               onChange={(easing) => setTransition({ easing }, "Set transition easing")}
             />
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 text-caption text-muted-foreground">
               <input
                 type="checkbox"
                 checked={interaction.transition.matchStableIds}
@@ -481,7 +481,7 @@ function ActionFields({
             options={animations}
             onChange={(animationId) => onChange({ ...action, animationId }, "Set animation")}
           />
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2 text-caption text-muted-foreground">
             <input
               type="checkbox"
               checked={action.reverse}
@@ -619,7 +619,7 @@ function VariableValueField({
       return <InlineNumber label="Value" value={value.value} disabled={readOnly} onCommit={(next) => onChange({ kind: "number", value: next })} />;
     case "boolean":
       return (
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <label className="flex items-center gap-2 text-caption text-muted-foreground">
           <input
             type="checkbox"
             checked={value.value}

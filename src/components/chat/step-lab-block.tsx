@@ -566,7 +566,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
                   : "border-border/40 border-l-transparent hover:bg-accent/30"
               )}
             >
-              <span className="font-sans text-sm font-medium text-foreground">{item.name}</span>
+              <span className="font-sans text-ui font-medium text-foreground">{item.name}</span>
               <span className="font-mono text-micro text-muted-foreground">{item.role}</span>
             </button>
           ))}
@@ -579,7 +579,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
       </div>
 
       <p className="font-mono text-micro text-muted-foreground">enriched representations ↓</p>
-      <p key={stage} className="text-sm leading-6 text-muted-foreground motion-safe:animate-fade-in">
+      <p key={stage} className="text-body leading-6 text-muted-foreground motion-safe:animate-fade-in">
         {TRANSFORMER_STAGES[stage].copy}
       </p>
     </div>
@@ -755,7 +755,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
           </defs>
         </svg>
         <Microcap className="text-primary">Autoregression</Microcap>
-        <p className="text-sm leading-6 text-muted-foreground">
+        <p className="text-body leading-6 text-muted-foreground">
           &ldquo;{selectedToken}&rdquo; joins the prompt; the whole forward pass runs again for the next token.
         </p>
       </div>
@@ -963,7 +963,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
         <StepLabVisual step={selected} compact={compact} />
 
         {selected.notice && (
-          <p className="flex gap-2 text-sm leading-6">
+          <p className="flex gap-2 text-body leading-6">
             <Microcap className="shrink-0 pt-0.5 text-primary">Notice</Microcap>
             <span className="min-w-0 font-sans italic text-foreground/75">{selected.notice}</span>
           </p>
@@ -973,7 +973,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
           <div className="flex flex-col">
             <TextToggle open={detailOpen} onToggle={() => setDetailOpen((value) => !value)} label="More detail" controls={detailId} />
             <Reveal open={detailOpen} id={detailId}>
-              <p className="whitespace-pre-line border-l border-border pl-4 pt-1 text-sm leading-7 text-foreground/85">
+              <p className="whitespace-pre-line border-l border-border pl-4 pt-1 text-body leading-7 text-foreground/85">
                 {selected.detail}
               </p>
             </Reveal>

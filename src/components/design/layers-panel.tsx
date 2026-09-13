@@ -428,7 +428,7 @@ export function LayersPanel({
                       (e.target as HTMLInputElement).blur();
                     }
                   }}
-                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
+                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-caption outline-none focus-visible:border-primary/60"
                 />
               ) : (
                 <button
@@ -437,7 +437,7 @@ export function LayersPanel({
                   onDoubleClick={() => !readOnly && setRenamingId(p.id)}
                   aria-current={p.id === page.id}
                   className={cn(
-                    "pressable min-w-0 flex-1 truncate px-2 py-1 text-left text-xs transition-colors coarse:min-h-9",
+                    "pressable min-w-0 flex-1 truncate px-2 py-1 text-left text-caption transition-colors coarse:min-h-9",
                     p.id === page.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -475,7 +475,7 @@ export function LayersPanel({
           }}
           aria-label="Filter layers by name"
           placeholder="Filter"
-          className="ml-auto h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-1.5 text-xs outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 coarse:h-9"
+          className="ml-auto h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-1.5 text-caption outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 coarse:h-9"
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" role="tree" aria-label="Layers" aria-multiselectable>
@@ -550,7 +550,7 @@ export function LayersPanel({
                       (e.target as HTMLInputElement).blur();
                     }
                   }}
-                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
+                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-caption outline-none focus-visible:border-primary/60"
                 />
               ) : (
                 <button
@@ -572,7 +572,7 @@ export function LayersPanel({
                 >
                   <LayerTypeIcon type={node.type} />
 
-                  <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
+                  <span className={cn("truncate text-caption", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
                 </button>
               )}
 
@@ -835,7 +835,7 @@ function ComponentLibrary({
         // uppercase mono at 10.5px, off the type scale — on a control the user
         // presses to open the section. The count keeps the mono, because a
         // figure is what the mono face is for.
-        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground hover:text-foreground"
       >
         <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
         Components
@@ -864,7 +864,7 @@ function ComponentLibrary({
                       <DesignIcons.component className="size-3 text-muted-foreground" aria-hidden />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">{component.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-caption text-foreground">{component.name}</span>
                   <Plus className="size-3 shrink-0 text-muted-foreground" aria-hidden />
                 </button>
               </li>
@@ -1005,7 +1005,7 @@ function VariableLibrary({
           aria-expanded={open}
           // Sentence case in the sans face, matching the Components disclosure
           // above — the two are one idiom and were both set in uppercase mono.
-          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground hover:text-foreground"
         >
           <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
           Variables
@@ -1115,7 +1115,7 @@ function VariableRow({
           ) : (
             <span aria-hidden className="size-3 shrink-0 rounded-micro border border-dashed border-border/60" />
           )}
-          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{variable.name}</span>
+          <span className="min-w-0 flex-1 truncate text-caption text-foreground">{variable.name}</span>
           <span className="max-w-[6rem] shrink-0 truncate font-mono text-micro uppercase text-muted-foreground">{preview}</span>
         </button>
       </PopoverTrigger>
@@ -1168,7 +1168,7 @@ function VariableRow({
           />
         )}
         {variable.type === "boolean" && (
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2 text-caption text-muted-foreground">
             <input
               type="checkbox"
               checked={entry?.kind === "boolean" ? entry.value : false}
@@ -1190,7 +1190,7 @@ function VariableRow({
           // `sm` (4), not `control` (10): this spans the full width of a 16px
           // card padded by `p-3` (12), so its bottom corners sit exactly on the
           // card's inner corners and 16 − 12 = 4 is what they are.
-          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
         >
           <ActionIcons.delete className="size-3" aria-hidden />
           Delete variable

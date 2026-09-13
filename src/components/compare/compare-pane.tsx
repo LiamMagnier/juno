@@ -130,7 +130,7 @@ export function ComparePane({
             {/* rounded-field, not rounded-lg (=16px surface): this is an inline note
                 inside a pane, not a panel. /10 matches every other tinted state chip —
                 /5 all but vanished on the black ground. */}
-            <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
+            <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-ui text-destructive">
               <p>{run.errorMessage}</p>
               {run.errorAction === "upgrade" ? (
                 <Button
@@ -172,7 +172,7 @@ export function ComparePane({
                 // own 6.5% card composites to ~7.9% — a point and a third of lift,
                 // which is not a step anyone sees. The named rung above card is what
                 // makes this read as a note laid ON the answer.
-                className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-secondary px-3 py-2 text-xs text-muted-foreground"
+                className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-secondary px-3 py-2 text-caption text-muted-foreground"
               >
                 <span className="min-w-0 flex-1">{run.errorMessage ?? finishNote}</span>
               </div>

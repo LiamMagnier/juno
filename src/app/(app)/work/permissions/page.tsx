@@ -150,7 +150,7 @@ export default function WorkPermissionsPage() {
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <div className="min-w-0">
               <h2 className="text-heading">Your Macs</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-1 text-ui text-muted-foreground">
                 Anything a task needs a real machine for — a folder on disk, an app, your signed-in
                 browser — happens on one of these. Open one to say what it may do, or to take its
                 access away.
@@ -229,7 +229,7 @@ function AlwaysAsks() {
   return (
     <section>
       <h2 className="text-heading">Juno always asks first</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-ui text-muted-foreground">
         These stop and wait for you every time, under every setting on this page and every setting
         on a task. There is nothing anywhere that turns them off.
       </p>
@@ -240,10 +240,10 @@ function AlwaysAsks() {
             className="surface-raised flex items-center gap-2.5 rounded-card px-3.5 py-2.5"
           >
             <span className="size-2 shrink-0 rounded-full bg-warning" aria-hidden="true" />
-            <span className="min-w-0 text-sm font-medium text-foreground">
+            <span className="min-w-0 text-ui font-medium text-foreground">
               {actionVerb(action).verb}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-ui text-muted-foreground">
               {describeFloorAction(action)}
             </span>
           </li>
@@ -297,7 +297,7 @@ function ApprovalModes() {
   return (
     <section className="mt-8">
       <h2 className="text-heading">How much it asks otherwise</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-ui text-muted-foreground">
         Below that floor, how often Juno stops is set per task — on the composer before you start
         it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a
         task asks for, and the stricter of the two always wins.
@@ -312,20 +312,20 @@ function ApprovalModes() {
             className="flex flex-col p-4"
           >
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-foreground">
+              <span className="text-ui font-medium text-foreground">
                 {WORK_APPROVAL_MODE_LABEL[policy]}
               </span>
               {policy === DEFAULT_WORK_PERMISSION_POLICY && (
                 <Badge variant="secondary">Default</Badge>
               )}
             </div>
-            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
               {WORK_APPROVAL_MODE_SUMMARY[policy]}
             </p>
           </Card>
         ))}
       </div>
-      <p className="mt-4 text-sm text-muted-foreground">
+      <p className="mt-4 text-ui text-muted-foreground">
         When you answer an approval with “and stop asking”, that covers that one action for the rest
         of that task only, and lapses when the task ends. Nothing you allow on one task carries over
         to another. Anything waiting for a decision right now is under{" "}

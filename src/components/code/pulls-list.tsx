@@ -187,7 +187,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
   return (
     <div className="space-y-8">
       <div className="mb-5 flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-sm text-muted-foreground">
+        <p className="min-w-0 truncate text-ui text-muted-foreground">
           {data.account ?? account ? (
             <>
               Open pull requests for <span className="font-medium text-foreground">{data.account ?? account}</span>
@@ -331,7 +331,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">{pr.title}</span>
+                      <span className="block truncate text-ui font-medium text-foreground">{pr.title}</span>
                       <span className="block truncate font-mono text-caption text-muted-foreground">
                         #{pr.number}
                         {pr.headRef ? ` · ${pr.headRef}` : ""}

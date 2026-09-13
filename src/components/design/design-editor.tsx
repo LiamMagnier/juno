@@ -496,7 +496,7 @@ export function DesignEditor({
       <div className="flex h-full items-center justify-center p-6 text-center">
         <div className="max-w-sm">
           <p className="font-sans text-heading">This design can’t be opened</p>
-          <p className="pt-1 text-sm text-muted-foreground">{state.loadError}</p>
+          <p className="pt-1 text-ui text-muted-foreground">{state.loadError}</p>
         </div>
       </div>
     );
@@ -598,7 +598,7 @@ export function DesignEditor({
               aria-pressed={motionOpen}
               onClick={() => setMotionOpen((open) => !open)}
               className={cn(
-                "h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground",
+                "h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground",
                 motionOpen && "bg-primary/10 text-primary hover:text-primary"
               )}
             >
@@ -615,7 +615,7 @@ export function DesignEditor({
               variant="ghost"
               size="sm"
               aria-label="Export"
-              className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground"
             >
               <ActionIcons.share className="size-3.5" aria-hidden />
               Export
@@ -643,7 +643,7 @@ export function DesignEditor({
               if (context) onAskJuno(context);
               else toast.error("Select a layer first.");
             }}
-            className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground"
           >
             Ask Juno
           </Button>
@@ -887,7 +887,7 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
     <div className="pointer-events-auto rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{pending.transaction.summary}</p>
+          <p className="text-ui font-medium">{pending.transaction.summary}</p>
           <ul className="max-h-24 overflow-y-auto pt-1">
             {pending.changes.map((line, index) => (
               <li key={index} className="truncate font-mono text-micro text-muted-foreground">
@@ -941,7 +941,7 @@ function HistoryList({ state, onSelect }: { state: DesignEditorState; onSelect: 
           className="block w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
         >
           <span className="flex items-baseline gap-1.5">
-            <span className={cn("truncate text-xs", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>
+            <span className={cn("truncate text-caption", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>
           </span>
           <span className="block font-mono text-micro text-muted-foreground">
             {entry.author === "juno" ? "Juno" : "You"} · {entry.touched.length} layer{entry.touched.length === 1 ? "" : "s"}

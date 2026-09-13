@@ -80,7 +80,7 @@ function SliderRow({ adjustment, onCommit }: { adjustment: SliderAdjustment; onC
   return (
     <label className="block">
       <span className="flex items-baseline justify-between pb-1">
-        <span className="truncate text-xs">{adjustment.label}</span>
+        <span className="truncate text-caption">{adjustment.label}</span>
         <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">{round(value)}</span>
       </span>
       <input
@@ -136,7 +136,7 @@ function SegmentedRow({ adjustment, onCommit }: { adjustment: SegmentedAdjustmen
   const [value, setValue] = React.useState(adjustment.value);
   return (
     <div>
-      <p className="truncate pb-1 text-xs">{adjustment.label}</p>
+      <p className="truncate pb-1 text-caption">{adjustment.label}</p>
       <div className="flex flex-wrap gap-1" role="group" aria-label={adjustment.label}>
         {adjustment.options.map((option) => (
           <button
@@ -148,7 +148,7 @@ function SegmentedRow({ adjustment, onCommit }: { adjustment: SegmentedAdjustmen
               onCommit(option.value);
             }}
             className={cn(
-              "pressable rounded-control px-2 py-1 text-xs transition-colors duration-fast coarse:min-h-9",
+              "pressable rounded-control px-2 py-1 text-caption transition-colors duration-fast coarse:min-h-9",
               value === option.value ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground hover:text-foreground"
             )}
           >

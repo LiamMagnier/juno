@@ -90,7 +90,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         aria-controls="memory-edits-panel"
         className="group flex w-full items-center justify-between gap-3 rounded-card border border-border/60 bg-card px-4 py-3 text-left surface-raised transition-[border-color,box-shadow] duration-fast ease-out-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <span className="flex items-center gap-2.5 text-sm font-medium">
+        <span className="flex items-center gap-2.5 text-ui font-medium">
           <ActionIcons.edit className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           Manage edits
         </span>
@@ -125,7 +125,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
       >
         <div className="min-h-0 overflow-hidden" inert={!open}>
           {edits.length === 0 ? (
-            <p className="px-4 pb-1 pt-3 text-sm text-muted-foreground">
+            <p className="px-4 pb-1 pt-3 text-ui text-muted-foreground">
               No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget —
               changes apply right away and show up here, with Undo if you change your mind.
             </p>
@@ -139,7 +139,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                     className="rounded-card border border-border/60 bg-card p-4 shadow-soft motion-safe:animate-rise-in"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="font-sans text-sm italic text-foreground/90">“{edit.instruction}”</p>
+                      <p className="font-sans text-ui italic text-foreground/90">“{edit.instruction}”</p>
                       {/* role=status so pending → applied/rejected flips are announced. */}
                       <span role="status" className="shrink-0">
                         <Badge variant="outline" className={STATUS_CHIP[edit.status].className}>

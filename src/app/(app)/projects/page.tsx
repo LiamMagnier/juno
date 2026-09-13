@@ -370,7 +370,7 @@ export default function ProjectsPage() {
               <button
                 type="button"
                 onClick={openCreate}
-                className="surface-inset flex h-full min-h-40 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-sm text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+                className="surface-inset flex h-full min-h-40 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
               >
                 <Plus className="size-4" aria-hidden="true" />
                 New project
@@ -486,11 +486,11 @@ function ProjectTile({
         <div className="min-w-0 flex-1 pt-0.5">
           <Link
             href={`/projects/${p.id}`}
-            className="block truncate text-sm font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+            className="block truncate text-ui font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
           >
             {p.name}
           </Link>
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-1 line-clamp-2 text-caption leading-relaxed text-muted-foreground">
             {promptPreview(p.instructions) || "No instructions yet."}
           </p>
         </div>

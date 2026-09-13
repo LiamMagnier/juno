@@ -393,7 +393,7 @@ export function ApprovalCard({
           className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
-        <p id={labelId} className={cn("text-xs font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
+        <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
           {answerable ? "Juno needs your approval" : "Approval request"}
         </p>
         <span
@@ -427,7 +427,7 @@ export function ApprovalCard({
         )}
       </header>
 
-      <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-sm")}>
+      <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-ui")}>
         {current.preview}
       </p>
       <p className="mt-1 font-mono text-micro text-muted-foreground">

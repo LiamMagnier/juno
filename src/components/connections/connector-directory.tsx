@@ -590,7 +590,7 @@ export function ConnectorDirectory({
         {connectedItems.length > 0 && (
           <div>
             <h2 className="text-heading">Connected</h2>
-            <p className="mb-4 text-sm text-muted-foreground">Linked and available to your chats.</p>
+            <p className="mb-4 text-ui text-muted-foreground">Linked and available to your chats.</p>
             <TileGrid items={connectedItems} {...gridProps} />
           </div>
         )}
@@ -598,7 +598,7 @@ export function ConnectorDirectory({
         {(availableItems.length > 0 || loading) && filter !== "connected" && (
           <div className={cn(connectedItems.length > 0 && "mt-8")}>
             <h2 className="text-heading">Available</h2>
-            <p className="mb-4 text-sm text-muted-foreground">Connect an app to let Juno work inside it.</p>
+            <p className="mb-4 text-ui text-muted-foreground">Connect an app to let Juno work inside it.</p>
             <TileGrid items={availableItems} {...gridProps} trailing={skeletons} />
           </div>
         )}
@@ -667,12 +667,12 @@ function ComposioSetupCallout() {
           <Plug className="size-4" />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-medium">Turn on the full app directory</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          <p className="text-ui font-medium">Turn on the full app directory</p>
+          <p className="mt-1 text-caption leading-5 text-muted-foreground">
             The connectors below are built into Juno and work right now. To add Gmail, Slack, Linear and hundreds more,
             set a Composio API key on the server:
           </p>
-          <ol className="mt-2.5 space-y-1 text-xs leading-5 text-muted-foreground">
+          <ol className="mt-2.5 space-y-1 text-caption leading-5 text-muted-foreground">
             <li>
               1. Create a free project at{" "}
               <a

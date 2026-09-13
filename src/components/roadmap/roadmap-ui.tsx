@@ -76,7 +76,7 @@ export function VoteButton({
       )}
     >
       <ChevronUp className={cn("size-4 transition-transform duration-base ease-out-soft motion-reduce:transition-none", voted && "-translate-y-0.5")} />
-      <span key={count} className="font-mono text-xs font-medium tabular-nums motion-safe:animate-fade-in">
+      <span key={count} className="font-mono text-micro font-medium tabular-nums motion-safe:animate-fade-in">
         {count}
       </span>
     </button>
@@ -106,7 +106,7 @@ export function RequestCard({
           <CategoryChip category={req.category} />
         </div>
         <h3 className="mt-2 truncate font-sans text-heading font-medium">{req.title}</h3>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{req.description}</p>
+        <p className="mt-1 line-clamp-2 text-ui text-muted-foreground">{req.description}</p>
         <div className="mt-3 flex items-center gap-3 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <DotIdenticon seed={req.author.id} className="size-4 shrink-0" />

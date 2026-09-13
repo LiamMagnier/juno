@@ -46,7 +46,7 @@ import { PRESENCE_META, type Presence } from "@/components/code/code-session-met
  * the black ground, which is below the hairline that rings it.
  */
 const BANNER_CHIP =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 text-xs text-muted-foreground sm:px-2.5";
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 text-caption text-muted-foreground sm:px-2.5";
 /** The chip's leading dot, at the one size all four use. */
 const BANNER_DOT = "h-1.5 w-1.5 shrink-0 rounded-full";
 
@@ -148,7 +148,7 @@ export function CodeSessionBanner({
                 of the level-1 it duplicates, in a document where a
                 heading-navigating reader would then hit the same name twice.
                 The <header>'s own label is what names this region. */}
-            <p className="min-w-0 truncate text-sm font-medium text-foreground">{title}</p>
+            <p className="min-w-0 truncate text-ui font-medium text-foreground">{title}</p>
             {/* The mono slot is a LOCAL PATH on the device side. A cloud
                 session's codeWorkspacePath is "owner/name", so printing it
                 before the kind is known dressed a repo up as a folder on your
@@ -219,7 +219,7 @@ export function CodeSessionBanner({
                   href={prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2 py-1 text-xs font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in sm:px-2.5"
+                  className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2 py-1 text-caption font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in sm:px-2.5"
                 >
                   <AppIcons.pulls className="size-3.5" aria-hidden="true" />
                   <ChipLabel>View pull request</ChipLabel>

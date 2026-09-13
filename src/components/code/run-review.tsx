@@ -225,7 +225,7 @@ export function RunReviewPane({
       <header className="flex items-start gap-3 border-b border-border/60 px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="font-mono text-label text-muted-foreground">Review</p>
-          <h2 className="mt-1 truncate text-sm font-semibold">{run.title}</h2>
+          <h2 className="mt-1 truncate text-ui font-semibold">{run.title}</h2>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
             <span className="font-mono tabular-nums">
               <span className="text-success">+{added}</span>{" "}
@@ -271,7 +271,7 @@ export function RunReviewPane({
       ) : files.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
           <CodeIcons.file className="size-5 text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm font-medium">No file changes reported</p>
+          <p className="text-ui font-medium">No file changes reported</p>
           <p className="max-w-xs text-caption text-muted-foreground">
             {canScope && scope === "last-turn"
               ? "Nothing changed after your last instruction. Switch to Everything to see earlier turns."
@@ -490,7 +490,7 @@ function FileDiffBody({
       */}
       {!file.patch ? (
         <div className="surface-inset rounded-field border-dashed border-border/80 px-3 py-4 text-center">
-          <p className="text-sm font-medium">No diff was sent for this file</p>
+          <p className="text-ui font-medium">No diff was sent for this file</p>
           <p className="mt-1 text-caption text-muted-foreground">
             {file.changeKind} · +{file.added} −{file.removed}. Runs on your Mac report which files
             changed without transporting the hunks; open the session to read them.
@@ -709,7 +709,7 @@ function NoteComposer({
         onChange={(e) => setBody(e.target.value)}
         rows={2}
         placeholder="What should change, and why"
-        className="min-h-[56px] text-sm"
+        className="min-h-[56px] text-ui"
       />
       <div className="flex items-center justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -835,7 +835,7 @@ export function RunReceipt({
     <div className={cn("surface-inset space-y-3 rounded-field px-3 py-2.5", className)}>
       <div>
         <p className="font-mono text-label text-muted-foreground">What changed</p>
-        <p className="mt-1 text-sm">
+        <p className="mt-1 text-ui">
           {detail.files.length === 0 ? (
             "No file changes were reported."
           ) : (

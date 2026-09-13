@@ -835,7 +835,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                     <h1 className="font-sans text-display font-normal tracking-tight text-foreground">
                       {sessionTitle}
                     </h1>
-                    <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
+                    <p className="mt-2 max-w-md text-body leading-6 text-muted-foreground sm:text-body-lg">
                       {resolving
                         ? "Describe what to build or fix — Juno Code streams the work here."
                         : isCloud

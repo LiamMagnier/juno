@@ -470,7 +470,7 @@ export function MotionPanel({
             type="button"
             disabled={readOnly}
             onClick={addAnimation}
-            className="pressable rounded-control border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+            className="pressable rounded-control border border-border/60 px-2.5 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
           >
             New animation
           </button>

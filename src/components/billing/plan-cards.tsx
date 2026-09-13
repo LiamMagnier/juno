@@ -109,7 +109,7 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
         </div>
         {header}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">{tagline}</p>
+      <p className="mt-1 text-ui text-muted-foreground">{tagline}</p>
 
       <p className="mt-4 flex items-baseline gap-1.5">
         <span className="text-display tabular-nums">{price}</span>
@@ -118,7 +118,7 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
 
       <ul className="mt-5 space-y-2.5">
         {features.map((feature) => (
-          <li key={feature} className="flex items-start gap-2.5 text-sm">
+          <li key={feature} className="flex items-start gap-2.5 text-ui">
             <StatusIcons.success className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
             <span>{feature}</span>
           </li>

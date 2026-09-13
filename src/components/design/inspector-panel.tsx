@@ -464,7 +464,7 @@ function DocumentSection({
           ].map((row) => (
             <div key={row.term} className="flex items-baseline justify-between gap-2">
               <dt className="truncate font-mono text-micro text-muted-foreground">{row.term}</dt>
-              <dd className="shrink-0 text-xs tabular-nums text-foreground">{row.value}</dd>
+              <dd className="shrink-0 text-caption tabular-nums text-foreground">{row.value}</dd>
             </div>
           ))}
         </dl>
@@ -1091,7 +1091,7 @@ function AutoLayoutSection({
               "Enable auto layout"
             )
           }
-          className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-10"
+          className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-10"
         >
           Add auto layout
         </button>
@@ -1191,7 +1191,7 @@ function AutoLayoutSection({
         />
       )}
       {layout.direction === "horizontal" && (
-        <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+        <label className="flex items-center gap-2 pt-1 text-caption text-muted-foreground">
           <input type="checkbox" checked={layout.wrap} disabled={readOnly} onChange={(e) => patch({ wrap: e.target.checked }, "Set wrapping")} />
           Wrap
         </label>
@@ -1252,7 +1252,7 @@ function ImageSection({
         type="button"
         disabled={readOnly}
         onClick={() => inputRef.current?.click()}
-        className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+        className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
       >
         {asset ? "Replace picture…" : "Choose a picture…"}
       </button>

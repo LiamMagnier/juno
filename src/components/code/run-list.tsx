@@ -408,7 +408,7 @@ export function RunList() {
                             return next;
                           })
                         }
-                        className="h-6 shrink-0 px-2 text-xs"
+                        className="h-6 shrink-0 px-2 text-caption"
                       >
                         {isOpen ? "Hide" : "Show"}
                       </Button>
@@ -553,7 +553,7 @@ function RunRow({
                 // place, because that is a Juno screen and losing the list for it
                 // is the normal cost of opening a thing.
                 {...(!run.conversationId && run.prUrl ? { target: "_blank", rel: "noreferrer" } : {})}
-                className="min-w-0 truncate text-sm font-medium text-foreground hover:underline"
+                className="min-w-0 truncate text-ui font-medium text-foreground hover:underline"
               >
                 {run.title}
               </Link>
@@ -565,7 +565,7 @@ function RunRow({
                 onFocus={onFocus}
                 onClick={onTogglePeek}
                 aria-expanded={peeked}
-                className="min-w-0 truncate text-left text-sm font-medium text-foreground hover:underline"
+                className="min-w-0 truncate text-left text-ui font-medium text-foreground hover:underline"
               >
                 {run.title}
               </button>
@@ -889,7 +889,7 @@ function RunPeek({
           <div className="flex items-start gap-2.5">
             <CodeIcons.permission className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm">
+              <p className="text-ui">
                 <span className="text-muted-foreground">Juno Code wants to: </span>
                 <span className="font-medium">{unanswered.summary}</span>
               </p>
@@ -1015,8 +1015,8 @@ function SeededEmptyState() {
                   href={`/code/new?seed=${encodeURIComponent(seed.prompt)}`}
                   className="surface-raised block h-full rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg motion-reduce:transition-none"
                 >
-                  <span className="block text-sm font-medium">{seed.label}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                  <span className="block text-ui font-medium">{seed.label}</span>
+                  <span className="mt-1 block text-caption leading-relaxed text-muted-foreground line-clamp-3">
                     {seed.prompt}
                   </span>
                 </Link>

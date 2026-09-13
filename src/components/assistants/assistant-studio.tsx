@@ -161,7 +161,7 @@ export function AssistantStudio({
             {error && (
               <div
                 role="alert"
-                className="rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-sm text-destructive-ink"
+                className="rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-ui text-destructive-ink"
               >
                 {error}
               </div>
@@ -206,7 +206,7 @@ export function AssistantStudio({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
               />
-              <p className="text-xs text-muted-foreground">Keep this short enough to scan in the gallery.</p>
+              <p className="text-caption text-muted-foreground">Keep this short enough to scan in the gallery.</p>
             </div>
 
             <div className="space-y-1.5">
@@ -218,7 +218,7 @@ export function AssistantStudio({
                 placeholder="Define the role, how it should reason about the work, output conventions, boundaries, and what it should ask before doing."
                 value={systemPrompt}
                 onChange={(event) => setSystemPrompt(event.target.value)}
-                className="min-h-36 resize-y font-mono text-xs leading-relaxed"
+                className="min-h-36 resize-y font-mono text-micro leading-relaxed"
               />
             </div>
 
@@ -226,7 +226,7 @@ export function AssistantStudio({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <Label>Conversation starters</Label>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-caption text-muted-foreground">
                     Optional prompts that make the assistant useful immediately.
                   </p>
                 </div>
@@ -271,8 +271,8 @@ export function AssistantStudio({
                   <AssistantIcon className="size-4" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{name.trim() || "Untitled assistant"}</p>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                  <p className="truncate text-ui font-medium">{name.trim() || "Untitled assistant"}</p>
+                  <p className="mt-0.5 line-clamp-2 text-caption leading-5 text-muted-foreground">
                     {description.trim() || "A one-line description shows here."}
                   </p>
                 </div>
@@ -286,7 +286,7 @@ export function AssistantStudio({
             <div>
               <CardEyebrow>Starters</CardEyebrow>
               {previewStarters.length === 0 ? (
-                <p className="mt-2 text-xs text-muted-foreground">Add a starter to see it here.</p>
+                <p className="mt-2 text-caption text-muted-foreground">Add a starter to see it here.</p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {previewStarters.map((starter, i) => (

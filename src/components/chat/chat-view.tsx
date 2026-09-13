@@ -1568,7 +1568,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       role={voiceSaveError ? "alert" : "status"}
       aria-live="polite"
       className={cn(
-        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-field border px-3 py-2 text-sm shadow-soft sm:w-full",
+        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-field border px-3 py-2 text-ui shadow-soft sm:w-full",
         // Both states now sit on the floating rung. They were on two different
         // grounds — a 5% destructive tint and `bg-background/85` behind a blur —
         // and on the #000 page those resolve to ~2.5% and ~0% lightness, so a
@@ -1597,14 +1597,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
-        {voiceSaveError && <p className="mt-0.5 truncate text-xs text-muted-foreground">{voiceSaveError}</p>}
+        {voiceSaveError && <p className="mt-0.5 truncate text-caption text-muted-foreground">{voiceSaveError}</p>}
       </div>
       {voiceSaveError && (
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={closeVoice}
-            className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-xs font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
+            className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-caption font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
           >
             <ActionIcons.refresh className="size-3.5" />
             Retry
@@ -1860,7 +1860,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     <button
                       type="button"
                       onClick={() => router.push(`/projects/${activeProjectId}`)}
-                      className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline motion-reduce:transition-none"
+                      className="min-w-0 truncate text-ui font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline motion-reduce:transition-none"
                     >
                       {projectMeta.name}
                     </button>
@@ -1928,7 +1928,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           )}
         >
           <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
-            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-sm text-foreground/80 sm:px-5">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-ui text-foreground/80 sm:px-5">
               {forkedFrom ? (
                 <div className="inline-flex min-w-0 items-center gap-2 font-medium">
                   <GitFork className="size-4 shrink-0 text-primary" />

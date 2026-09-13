@@ -353,7 +353,7 @@ function PaintListSection({
                   onKeyDown={(event) => event.stopPropagation()}
                 />
               ) : (
-                <span className="min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground">{paintKindLabel(paint)}</span>
+                <span className="min-w-0 flex-1 truncate px-2 text-caption text-muted-foreground">{paintKindLabel(paint)}</span>
               )}
               <input
                 type="number"
@@ -969,7 +969,7 @@ function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: 
       >
         {EFFECT_MENU.map((item) => (
           <DropdownMenuItem key={item.type} onSelect={() => onAdd(item.type)} className="flex-col items-start gap-0">
-            <span className="text-xs text-foreground">{item.label}</span>
+            <span className="text-caption text-foreground">{item.label}</span>
             <span className="text-micro leading-snug text-muted-foreground">{item.hint}</span>
           </DropdownMenuItem>
         ))}
@@ -1139,7 +1139,7 @@ function EffectFields({
               onCommit={(v) => onChange({ ...effect, seed: clampSeed(v) }, "Set grain seed")}
             />
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2 text-caption text-muted-foreground">
             <input
               type="checkbox"
               checked={effect.monochrome}
@@ -1363,7 +1363,7 @@ export function Section({ title, action, children }: { title: string; action?: R
  * rather than declaring a second copy of it.
  */
 export const fieldClass =
-  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-caption tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
 
 /**
  * The row every inspector field is built on: the label INSIDE the control's
@@ -1389,7 +1389,7 @@ const FIELD_ROW =
  *  row draws those, and a bordered input inside a bordered row reads as a field
  *  that has been dropped into another field. */
 const FIELD_CONTROL =
-  "min-w-0 flex-1 border-0 bg-transparent p-0 text-xs tabular-nums outline-none placeholder:text-muted-foreground/70";
+  "min-w-0 flex-1 border-0 bg-transparent p-0 text-caption tabular-nums outline-none placeholder:text-muted-foreground/70";
 
 function FieldLabel({ children }: { children: string }) {
   return (
@@ -1411,7 +1411,7 @@ function MiniButton({ children, disabled, onClick }: { children: React.ReactNode
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="pressable flex-1 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-9"
+      className="pressable flex-1 rounded-md border border-border/60 px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-9"
     >
       {children}
     </button>
@@ -1957,7 +1957,7 @@ export function PanelSelect({
           // `justify-start` + `[&>svg]:ml-auto`: the shared trigger spreads its
           // children apart, which would leave a leading label pinned left and
           // its own value stranded in the middle of the row.
-          "h-6 w-full min-w-0 justify-start gap-1 rounded-md border-border/60 px-1.5 py-0 text-xs [&>span]:min-w-0 [&>svg]:ml-auto [&>svg]:size-3",
+          "h-6 w-full min-w-0 justify-start gap-1 rounded-md border-border/60 px-1.5 py-0 text-caption [&>span]:min-w-0 [&>svg]:ml-auto [&>svg]:size-3",
           className
         )}
       >
@@ -1970,7 +1970,7 @@ export function PanelSelect({
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="text-xs">
+          <SelectItem key={option.value} value={option.value} className="text-caption">
             {option.label}
           </SelectItem>
         ))}

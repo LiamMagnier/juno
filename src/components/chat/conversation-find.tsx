@@ -101,7 +101,7 @@ export function ConversationFind({
           }}
           placeholder="Find in this conversation"
           aria-label="Find in this conversation"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
         />
         {query.trim() !== "" && (
           <span

@@ -320,7 +320,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[48rem] text-sm">
+              <table className="w-full min-w-[48rem] text-ui">
                 <thead>
                   <tr className="border-b border-border/70 text-left">
                     <th className={TH_CLASS}>User</th>
@@ -368,7 +368,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                   </span>
                                 )}
                               </div>
-                              <p className="truncate text-xs text-muted-foreground">{u.email}</p>
+                              <p className="truncate text-caption text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
                                 <p className="mt-0.5 font-mono text-caption tabular-nums text-warning">
                                   {u.strikes}/{STRIKE_LIMIT} strikes
@@ -377,7 +377,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-micro text-muted-foreground">
                           {formatDate(u.createdAt)}
                         </td>
                         <td className="px-4 py-2.5">
@@ -386,7 +386,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             onValueChange={(value) => changePlan(u, value as Plan)}
                             disabled={isSelf}
                           >
-                            <SelectTrigger className="h-8 w-32 text-xs" aria-label={`Plan for ${u.email}`}>
+                            <SelectTrigger className="h-8 w-32 text-caption" aria-label={`Plan for ${u.email}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -403,8 +403,8 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{u.messagesThisMonth}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">
+                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">{u.messagesThisMonth}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-micro tabular-nums">
                           {formatSpend(u.monthSpendMicroUsd)}
                           {u.monthSpendAppMicroUsd > 0 && (
                             <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground">

@@ -926,7 +926,7 @@ export default function ProjectDetailPage() {
                   placeholder="How should Juno behave? (role, tone, constraints…)"
                   spellCheck={false}
                   aria-label="Project instructions"
-                  className="min-h-[16rem] font-mono text-sm leading-relaxed"
+                  className="min-h-[16rem] font-mono text-body leading-relaxed"
                 />
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
                   <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
@@ -1101,11 +1101,11 @@ export default function ProjectDetailPage() {
         >
           <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
             <CardEyebrow>Project instructions</CardEyebrow>
-            <DialogTitle className="mt-2 text-xl">
+            <DialogTitle className="mt-2 text-title">
               How Juno behaves in this project
             </DialogTitle>
             {/* `text-body` is the prose rung this description wanted; DialogDescription
-                itself only sets `text-sm`. It could not be passed until utils.ts
+                itself only sets `text-ui`. It could not be passed until utils.ts
                 registered the fontSize keys — twMerge read it as a colour and evicted the
                 component's own text-muted-foreground. Both survive the merge now. */}
             <DialogDescription className="mt-1.5 text-body">
@@ -1134,7 +1134,7 @@ export default function ProjectDetailPage() {
               autoFocus
               aria-label="Project instructions"
               // Monospace: this is a prompt, so alignment and indentation carry meaning.
-              className="min-h-0 flex-1 resize-none px-4 py-3.5 font-mono text-sm leading-relaxed"
+              className="min-h-0 flex-1 resize-none px-4 py-3.5 font-mono text-body leading-relaxed"
             />
           </div>
 

@@ -244,8 +244,8 @@ function Header({ block }: { block: VisualBlock }) {
               </span>
             )}
           </div>
-          {block.title && <h3 className="mt-2 text-lg font-semibold leading-tight tracking-tight">{block.title}</h3>}
-          {block.subtitle && <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">{block.subtitle}</p>}
+          {block.title && <h3 className="mt-2 text-heading font-semibold leading-tight tracking-tight">{block.title}</h3>}
+          {block.subtitle && <p className="mt-1 max-w-2xl text-ui leading-5 text-muted-foreground">{block.subtitle}</p>}
         </div>
       </div>
     </div>
@@ -278,8 +278,8 @@ function CardsBlock({ block }: { block: VisualBlock }) {
                 {item.label ?? index + 1}
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-semibold leading-5">{itemTitle(item, `Card ${index + 1}`)}</span>
-                {primaryText(item) && <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{primaryText(item)}</span>}
+                <span className="block text-ui font-semibold leading-5">{itemTitle(item, `Card ${index + 1}`)}</span>
+                {primaryText(item) && <span className="mt-1 line-clamp-2 block text-caption leading-5 text-muted-foreground">{primaryText(item)}</span>}
               </span>
             </button>
           );
@@ -290,14 +290,14 @@ function CardsBlock({ block }: { block: VisualBlock }) {
         <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
           <Maximize2 className="size-3.5" /> Focus
         </div>
-        <h4 className="mt-3 text-base font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
-        {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{primaryText(selected)}</p>}
+        <h4 className="mt-3 text-body-lg font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
+        {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-body leading-6 text-muted-foreground">{primaryText(selected)}</p>}
         {selected.detail && selected.detail !== primaryText(selected) && (
           // `bg-accent`, not `bg-card`. This note is nested inside the
           // `bg-secondary` focus panel, so card (6.5%) was a step DOWN from its
           // own container — on the black ground you cannot recess, so it read as
           // a hole in the panel. Accent is the rung above secondary.
-          <p className="mt-3 rounded-xs bg-accent px-3 py-2 text-sm leading-6 text-muted-foreground">{selected.detail}</p>
+          <p className="mt-3 rounded-xs bg-accent px-3 py-2 text-body leading-6 text-muted-foreground">{selected.detail}</p>
         )}
       </div>
     </div>
@@ -328,8 +328,8 @@ function FlowBlock({ block }: { block: VisualBlock }) {
             >
               <Circle className={cn("mt-1 size-3.5 shrink-0 fill-muted text-muted-foreground", isActive && "fill-primary/25 text-primary")} />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold leading-5">{itemTitle(node, `Node ${index + 1}`)}</span>
-                {primaryText(node) && <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{primaryText(node)}</span>}
+                <span className="block text-ui font-semibold leading-5">{itemTitle(node, `Node ${index + 1}`)}</span>
+                {primaryText(node) && <span className="mt-1 line-clamp-2 block text-caption leading-5 text-muted-foreground">{primaryText(node)}</span>}
               </span>
             </button>
             {index < nodes.length - 1 && (
@@ -346,8 +346,8 @@ function FlowBlock({ block }: { block: VisualBlock }) {
         <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
           <CornerDownRight className="size-3.5 text-primary" /> Selected node
         </div>
-        <h4 className="mt-3 text-lg font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
-        {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{primaryText(selected)}</p>}
+        <h4 className="mt-3 text-heading font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
+        {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-body leading-6 text-muted-foreground">{primaryText(selected)}</p>}
       </div>
       {block.edges && block.edges.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -389,7 +389,7 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
           Focus
         </div>
         {columns.map((col) => (
-          <div key={col} className="rounded-field border bg-secondary px-3 py-2 text-sm font-semibold">
+          <div key={col} className="rounded-field border bg-secondary px-3 py-2 text-ui font-semibold">
             {col}
           </div>
         ))}
@@ -401,9 +401,9 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
             className="grid min-w-[34rem] gap-2"
             style={{ gridTemplateColumns: `minmax(7rem, 0.8fr) repeat(${columns.length}, minmax(9rem, 1fr))` }}
           >
-            <div className="rounded-field border bg-secondary px-3 py-3 text-sm font-semibold">{itemTitle(row, `Row ${rowIndex + 1}`)}</div>
+            <div className="rounded-field border bg-secondary px-3 py-3 text-ui font-semibold">{itemTitle(row, `Row ${rowIndex + 1}`)}</div>
             {columns.map((col, colIndex) => (
-              <div key={col} className="rounded-field border bg-card px-3 py-3 text-sm leading-6 text-muted-foreground">
+              <div key={col} className="rounded-field border bg-card px-3 py-3 text-body leading-6 text-muted-foreground">
                 {valueFor(row, col, colIndex)}
               </div>
             ))}
@@ -423,7 +423,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
     <div className="space-y-3 p-4">
       <div>
         <p className="font-mono text-micro text-muted-foreground">Quick check</p>
-        <h4 className="mt-1 text-base font-semibold leading-snug">{block.question ?? block.title ?? "Which option fits best?"}</h4>
+        <h4 className="mt-1 text-body-lg font-semibold leading-snug">{block.question ?? block.title ?? "Which option fits best?"}</h4>
       </div>
       <div className="grid gap-2">
         {options.map((option, index) => {
@@ -454,8 +454,8 @@ function QuizBlock({ block }: { block: VisualBlock }) {
                 {active && correct ? <StatusIcons.success className="size-3.5 text-success" /> : active ? <ActionIcons.dismiss className="size-3.5 text-destructive" /> : index + 1}
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-semibold leading-5">{itemTitle(option, `Option ${index + 1}`)}</span>
-                {primaryText(option) && <span className="mt-1 block text-xs leading-5 text-muted-foreground">{primaryText(option)}</span>}
+                <span className="block text-ui font-semibold leading-5">{itemTitle(option, `Option ${index + 1}`)}</span>
+                {primaryText(option) && <span className="mt-1 block text-caption leading-5 text-muted-foreground">{primaryText(option)}</span>}
               </span>
             </button>
           );
@@ -464,7 +464,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
       {selectedOption && (
         <div
           className={cn(
-            "rounded-field border px-3 py-3 text-sm leading-6 motion-safe:animate-rise-in",
+            "rounded-field border px-3 py-3 text-body leading-6 motion-safe:animate-rise-in",
             selectedOption.correct === true ? "border-success/45 bg-success/10" : "border-destructive/40 bg-destructive/10"
           )}
         >
@@ -482,7 +482,7 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
   const items = itemsFor(block);
   return (
     <div className="space-y-3 p-4">
-      {block.body && <p className="text-sm leading-6 text-muted-foreground">{block.body}</p>}
+      {block.body && <p className="text-body leading-6 text-muted-foreground">{block.body}</p>}
       {items.length > 0 && (
         <div className="grid gap-2">
           {items.map((item, index) => (
@@ -491,7 +491,7 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
             // fill of its own and the bulleted list read as loose paragraphs.
             <div key={index} className="flex gap-2 rounded-field bg-secondary px-3 py-2">
               <StatusIcons.info className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-              <p className="text-sm leading-6">
+              <p className="text-body leading-6">
                 <span className="font-semibold">{itemTitle(item, `Point ${index + 1}`)}</span>
                 {primaryText(item) ? <span className="text-muted-foreground"> - {primaryText(item)}</span> : null}
               </p>
@@ -517,8 +517,8 @@ function TimelineBlock({ block }: { block: VisualBlock }) {
             {item.label ?? index + 1}
           </span>
           <div>
-            <h4 className="text-sm font-semibold leading-5">{itemTitle(item, `Moment ${index + 1}`)}</h4>
-            {primaryText(item) && <p className="mt-1 text-sm leading-6 text-muted-foreground">{primaryText(item)}</p>}
+            <h4 className="text-ui font-semibold leading-5">{itemTitle(item, `Moment ${index + 1}`)}</h4>
+            {primaryText(item) && <p className="mt-1 text-body leading-6 text-muted-foreground">{primaryText(item)}</p>}
           </div>
         </div>
       ))}
@@ -543,7 +543,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // Same fix on the parse-failure/streaming notice: `bg-muted/40` over the
       // #000 transcript ground computed to ~3.8% lightness, so the one surface
       // that has to say "this did not render" had nothing behind its text.
-      <div className="my-3 rounded-field border bg-card px-4 py-3 text-sm text-muted-foreground">
+      <div className="my-3 rounded-field border bg-card px-4 py-3 text-ui text-muted-foreground">
         <div className="flex items-center gap-2">
           {streaming ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>

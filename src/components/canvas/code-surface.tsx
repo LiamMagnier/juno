@@ -274,7 +274,7 @@ export function CodeSurface({
 
   const whitespace = wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre";
   // Identical metrics on both layers — one wrong pixel and the caret drifts.
-  const metrics = "font-mono text-xs leading-5 tracking-normal";
+  const metrics = "font-mono text-micro leading-5 tracking-normal";
 
   return (
     <div

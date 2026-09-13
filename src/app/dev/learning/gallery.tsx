@@ -266,7 +266,7 @@ function Section({ label, source }: { label: string; source: string }) {
         {blocks.map((block) => (
           <VisualLearningBlockRenderer key={block.blockId} parsed={block} />
         ))}
-        {blocks.length === 0 && <p className="text-sm text-destructive">Parser returned no blocks — check the sample.</p>}
+        {blocks.length === 0 && <p className="text-ui text-destructive">Parser returned no blocks — check the sample.</p>}
       </div>
     </section>
   );
@@ -277,8 +277,8 @@ export function LearningGallery() {
     <main className="mx-auto flex w-full max-w-[720px] flex-col gap-10 px-4 py-10">
       <header>
         <p className="font-mono text-caption font-semibold text-primary">Dev gallery</p>
-        <h1 className="pt-1 font-sans text-2xl font-semibold tracking-tight">Inline learning blocks</h1>
-        <p className="pt-1 text-sm text-muted-foreground">
+        <h1 className="pt-1 font-sans text-page-title font-semibold tracking-tight">Inline learning blocks</h1>
+        <p className="pt-1 text-ui text-muted-foreground">
           Rendered through the real parser + renderer path at chat width (720px). Resize for mobile; toggle dark mode from the OS.
         </p>
       </header>
