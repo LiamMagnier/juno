@@ -108,6 +108,10 @@ export async function* streamGemini(
   let sawUsage = false;
   /** Did any ANSWER text reach the transcript this turn? (Thoughts don't count.) */
   let sawAnswer = false;
+  /** Wire-shape evidence, for the log line when a turn ends with no terminator. */
+  let frames = 0;
+  let framesUnparsed = 0;
+  let lastPayloadKeys = "";
   let lastFinishReason: string | undefined;
   let groundedWithSearchWidget = false;
 
@@ -145,6 +149,14 @@ export async function* streamGemini(
 
     const drain = function* (payloads: string[]) {
       for (const payload of payloads) {
+        frames += 1;
+        // KEYS ONLY, never values: this line exists to identify a wire shape,
+        // and the values are the user's conversation.
+        try {
+          lastPayloadKeys = Object.keys(JSON.parse(payload) as object).join(",");
+        } catch {
+          framesUnparsed += 1;
+        }
         applyGeminiChunk(state, payload, sources);
         while (state.events.length > 0) {
           const ev = state.events.shift();
@@ -264,9 +276,27 @@ export async function* streamGemini(
    * even when a terminator genuinely never arrives, an answer the reader can
    * see is worth more than a marker the reader cannot.)
    *
-   * So: if answer text arrived, finish on it. `UNSPECIFIED` is what Google's
-   * own enum calls a reason it did not state, and `normalizeFinishReason`
-   * already treats anything it does not recognise as a normal stop.
+   * AND `FINISH_REASON_UNSPECIFIED` WAS THE WRONG SENTINEL. It falls through
+   * `normalizeFinishReason` to `"unknown"`, and `"unknown"` is a deliberate,
+   * LOUD state: the UI titles it "Stream ended unexpectedly" over "The provider
+   * closed the stream without a recognized finish reason" and marks the turn
+   * Failed. That state is reserved for reasons Google DID send and Juno cannot
+   * honestly restate — MALFORMED_FUNCTION_CALL, LANGUAGE, OTHER — which is a
+   * different situation from no reason arriving at all. Routing this case there
+   * turned a hard error into a red banner printed over a complete answer, which
+   * is what the user then reported. Two wrong messages in a row for one cause.
+   *
+   * So the two situations are now separated, and this one is decided on
+   * EVIDENCE rather than on a sentinel:
+   *
+   *   usage arrived and the answer is at the cap  -> "length" (Continue helps)
+   *   usage arrived and it is not                 -> "stop"   (it finished)
+   *   no usage at all                             -> "stop", and logged
+   *
+   * The last case is a judgement, and it is the right one: the alternative is
+   * telling someone their finished answer failed. It is logged at warn with the
+   * wire shape (frame counts, the last payload's KEYS — never its values) so
+   * the cause stays findable instead of being smoothed over.
    */
   if (!lastFinishReason && !sawAnswer) {
     throw new GeminiProviderError({
@@ -281,7 +311,25 @@ export async function* streamGemini(
     });
   }
 
-  const finalRaw = lastFinishReason ?? "FINISH_REASON_UNSPECIFIED";
+  let finalRaw = lastFinishReason;
+  if (!finalRaw) {
+    // `cumOutput` is Gemini's own candidatesTokenCount. Within 32 tokens of the
+    // cap is the model being cut off, not the model finishing.
+    const atCap = sawUsage && cumOutput > 0 && cumOutput >= maxTokens - 32;
+    finalRaw = atCap ? "MAX_TOKENS" : "STOP";
+    console.warn("[llm:gemini] no terminal frame; finishing on evidence", {
+      model: model.providerModel,
+      reasoningEffort: reasoningEffort ?? null,
+      decided: finalRaw,
+      sawAnswer,
+      sawUsage,
+      completionTokens: sawUsage ? cumOutput : null,
+      maxOutputTokens: maxTokens,
+      frames,
+      framesUnparsed,
+      lastPayloadKeys,
+    });
+  }
   // Operator-visible evidence that grounding actually ran: the UI announces
   // "Google Search grounding" from the request side, and for a long time that
   // announcement was the only trace of a search that never happened.

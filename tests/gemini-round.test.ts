@@ -8,6 +8,7 @@ import {
   foldGeminiUsage,
 } from "@/lib/gemini-round";
 import type { GeminiContent } from "@/lib/gemini-core";
+import { normalizeFinishReason, finishReasonTitle } from "@/lib/finish-reason";
 import type { ClientSource } from "@/types/chat";
 
 /*
@@ -212,6 +213,30 @@ test("the final frame is not lost when the stream ends without a newline", () =>
   applyGeminiChunk(state, flushed.payloads[0], new Map());
   assert.equal(state.finishReason, "STOP");
   assert.equal(state.sawSignal, true);
+});
+
+/*
+ * `FINISH_REASON_UNSPECIFIED` must never be used as an internal sentinel for
+ * "no terminal frame arrived".
+ *
+ * It normalises to `"unknown"`, and `"unknown"` is a LOUD state: the UI titles
+ * it "Stream ended unexpectedly" over "The provider closed the stream without a
+ * recognized finish reason" and marks the turn Failed. That is correct for a
+ * reason Google SENT and Juno cannot honestly restate (MALFORMED_FUNCTION_CALL,
+ * LANGUAGE, OTHER), and wrong for a terminator that never arrived — there it
+ * prints a failure banner over a complete answer, which is exactly what was
+ * reported. `streamGemini` now decides that case from usage evidence instead
+ * (STOP, or MAX_TOKENS when the answer sits at the cap). This pins why.
+ */
+test("FINISH_REASON_UNSPECIFIED is a failure state, not a benign default", () => {
+  assert.equal(normalizeFinishReason("FINISH_REASON_UNSPECIFIED"), "unknown");
+  assert.equal(finishReasonTitle("unknown"), "Stream ended unexpectedly");
+
+  // The two reasons streamGemini decides on instead, and what each promises.
+  assert.equal(normalizeFinishReason("STOP"), "stop");
+  assert.equal(normalizeFinishReason("MAX_TOKENS"), "length");
+  assert.notEqual(finishReasonTitle("stop"), finishReasonTitle("unknown"));
+  assert.notEqual(finishReasonTitle("length"), finishReasonTitle("unknown"));
 });
 
 test("a flushed tail that is genuinely truncated is still discarded", () => {
