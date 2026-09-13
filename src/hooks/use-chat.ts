@@ -11,7 +11,6 @@ import {
   markPendingGeneration,
 } from "@/lib/generation-pending";
 import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
-import { pulseAura, setAuraState } from "@/lib/aura";
 import { resolveModel } from "@/lib/models";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
@@ -540,13 +539,6 @@ export function useChat(opts: UseChatOptions) {
               setStatus((cur) => (cur === "submitting" ? "thinking" : cur));
               if (chunk.event.kind === "reasoning") setStatus((cur) => (cur === "writing" ? cur : "thinking"));
               if (chunk.event.kind === "write") setStatus("writing");
-              // A connector call is a different job from the model's own
-              // thinking, and the light says so — slower and cooler. It is not
-              // a GenerationStatus because nothing else needs the distinction;
-              // the next delta or reasoning chunk publishes over it.
-              if (chunk.event.kind === "tool" || chunk.event.kind === "search" || chunk.event.kind === "visit") {
-                setAuraState("chat", "tool");
-              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantTempId
@@ -597,14 +589,6 @@ export function useChat(opts: UseChatOptions) {
             }
             case "reasoning": {
               setStatus((cur) => (cur === "writing" ? cur : "thinking"));
-              // Published here as well as from the status effect, because
-              // `setStatus` with the value it already holds fires no effect —
-              // without this a run that called a connector mid-answer would
-              // leave the light on `tool` for the rest of the stream.
-              setAuraState("chat", "thinking");
-              // Half weight: visible thinking IS output, but it is not the
-              // answer, so it should not drive the light as hard as one.
-              pulseAura(chunk.text.length * 0.5);
               // Fold through the SAME helper the route uses, so the steps the
               // panel shows mid-stream are byte-identical to the ones it shows
               // after a reload. Providers without part boundaries fall through
@@ -628,13 +612,6 @@ export function useChat(opts: UseChatOptions) {
             }
             case "delta": {
               setStatus("writing");
-              setAuraState("chat", "answering");
-              // THE STREAM'S OWN LOUDNESS. There is no audio level while a
-              // reply streams, so the tokens are the level: each chunk is an
-              // impulse into a decaying accumulator the aura reads. A fixed
-              // swell would make a stalled stream and a fast one look
-              // identical, which is the one thing this has to distinguish.
-              pulseAura(chunk.text.length);
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantTempId ? { ...m, content: m.content + chunk.text } : m))
               );
@@ -1844,31 +1821,19 @@ export function useChat(opts: UseChatOptions) {
     return send("Continue from where you left off.");
   }, [send]);
 
-  /**
-   * The chat publishes to the ambient light.
+  /*
+   * THE AMBIENT LIGHT IS NOT THIS HOOK'S ANY MORE.
    *
-   * ONE EFFECT ON `status`, not a call at each site. There are terminal
-   * transitions to idle in three places, `stopping` in a fourth and errors in
-   * three more; seven publishers for one signal would drift the first time
-   * somebody added an eighth. The effect cannot miss a transition, because it
-   * IS the transition.
+   * A chat used to publish to `lib/aura.ts` from seven places — a status
+   * effect, a tool event, a reasoning delta, a text delta and an unmount — so
+   * that the frame around the window lit up while a reply streamed. It lit up
+   * around the SIDEBAR too, for a stream in a surface nobody was looking at,
+   * and it was on for most of the product's waking life. The light belongs to
+   * voice now and to nothing else (see the header of `lib/aura.ts`): a call is
+   * the one thing here with no other way to say it is live, where a stream has
+   * a composer, a thought panel and the shell's own progress line.
    */
-  const previousStatusRef = React.useRef<GenerationStatus>("idle");
-  React.useEffect(() => {
-    const previous = previousStatusRef.current;
-    previousStatusRef.current = status;
-    if (status === "error") setAuraState("chat", "error");
-    else if (status === "writing") setAuraState("chat", "answering");
-    else if (status === "idle") {
-      // One confirming swell at the end of a turn that actually ran — never
-      // after a reset, a cancel that never started, or the first mount.
-      setAuraState("chat", previous === "writing" || previous === "thinking" ? "done" : "idle");
-    } else setAuraState("chat", "thinking");
-  }, [status]);
 
-  // A chat unmounting mid-stream — a route change, a surface closing — has to
-  // put its own light out; nothing else would ever publish `idle` for it again.
-  React.useEffect(() => () => setAuraState("chat", "idle"), []);
 
   return {
     messages,

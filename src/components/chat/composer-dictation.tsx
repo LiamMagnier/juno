@@ -4,7 +4,6 @@ import * as React from "react";
 import { ArrowUp, Check, MicOff } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { attachAuraLevel, setAuraState } from "@/lib/aura";
 import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -317,18 +316,14 @@ export function ComposerDictation({
     };
   }, []);
 
-  // The light is on for exactly as long as this panel is open. `user` is pure
-  // ink at the fastest travel: your voice is never the accent — the accent is
-  // Juno's — and that is the one distinction the light has to make without
-  // being read.
-  React.useEffect(() => {
-    setAuraState("chat", "user");
-    attachAuraLevel(levelRef);
-    return () => {
-      setAuraState("chat", "idle");
-      attachAuraLevel(null);
-    };
-  }, []);
+  /*
+   * NO AMBIENT LIGHT HERE. Dictation used to claim the window frame for as
+   * long as this panel was open, which meant pressing the microphone in the
+   * composer painted a light around the sidebar, the header and every other
+   * surface on screen. The panel has its own meter, in the panel, two inches
+   * from where you are looking — and the frame light is voice mode's alone
+   * (see the header of `lib/aura.ts`).
+   */
 
   // Start recognition once support is known (resolved post-mount by the hook).
   const startedRef = React.useRef(false);

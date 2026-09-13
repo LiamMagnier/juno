@@ -1205,22 +1205,26 @@
   }
 
   /*
-   * ——— Ambient aura ———
+   * ——— Voice aura ———
    *
-   * The light around the bottom of the window that says what the product is
-   * doing: waves along the bottom edge and up both sides for the height of the
-   * band, with an ambient field behind them. It used to mount only inside a
-   * live call, which meant it was invisible for the 99% of the product's life
-   * that is typing, thinking and streaming; it is now the app's one ambient
-   * state light, mounted once and driven by `lib/aura.ts`.
+   * The light around the bottom of the CONVERSATION that says a call is live:
+   * a rim along the bottom edge and up both sides for the height of the band,
+   * with an ambient field behind it. Driven by `lib/aura.ts`, which only voice
+   * may publish to.
+   *
+   * IT IS NOT FIXED TO THE WINDOW. `position: absolute`, so it positions
+   * against `<main>` — the content column, which starts where the sidebar
+   * ends. It used to be `fixed` in a portal to <body>, which meant a call lit
+   * the frame around the sidebar and the navigation too: a mode light claiming
+   * chrome that is not in the mode.
    *
    * THE BAND IS THE LAYER. `--aura-band`, not `inset: 0`. The old version
-   * allocated a full-window canvas to light its bottom 40%, so roughly 60% of
+   * allocated a full-column canvas to light its bottom 40%, so roughly 60% of
    * every frame's fill rate went on pixels that were transparent by
-   * construction. The top of the window is not faded out — it is not drawn.
+   * construction. The top of the column is not faded out — it is not drawn.
    *
-   * The shape is a canvas (ambient-aura.tsx) because it is a sum of travelling
-   * sine waves whose displacement is a live scalar, which no gradient
+   * The shape is a canvas (ambient-aura.tsx) because it is stacked gradient
+   * bands whose reach and hue are live scalars, which no static gradient
    * expresses. Everything CSS owns is placement.
    *
    * IT PAINTS OVER THE PRODUCT, NOT UNDER IT. Every surface in the app has its
@@ -1231,14 +1235,13 @@
    * a click.
    *
    * NOTE THE ABSENT FILTER. An earlier version put `blur(9px)` over this whole
-   * canvas, which destroyed the 1.25px crest stroke that is the only part of
-   * the draw carrying the motion — the expensive work was paid for and then
-   * erased. Softness lives in the paint: the fill runs a gradient that fades to
-   * nothing as it rises, and the field is radial falloff. Do not reintroduce a
-   * filter here; it is also a full-surface pass every frame.
+   * canvas. Softness lives in the paint: every band runs a gradient that fades
+   * to nothing as it rises, and the field is radial falloff. Do not reintroduce
+   * a filter here; it is a full-surface pass every frame and the paint already
+   * does the job.
    */
   .ambient-aura {
-    position: fixed;
+    position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
@@ -1253,10 +1256,9 @@
     width: 100%;
     height: 100%;
     /* Its own compositor layer, so repainting the light sixty times a second is
-       a layer update rather than a repaint of the page under it. Deliberately
-       on the CANVAS and never on the wrapper: on the wrapper it would become
-       the containing block for fixed descendants and defeat the whole point of
-       portalling the layer to <body>. */
+       a layer update rather than a repaint of the page under it. Still on the
+       CANVAS rather than the wrapper — a transform on the wrapper would make
+       it the containing block for anything fixed inside the content column. */
     transform: translateZ(0);
   }
   /* Arriving mid-sentence is worse than arriving late: the field fades up
@@ -1266,9 +1268,9 @@
     to { opacity: 1; }
   }
   /* Reduced motion keeps the envelope and drops only the travel — the canvas
-     freezes its clock and pins the breath (see ambient-aura.tsx), and the waves
-     become a still coloured envelope whose height and hue still change with the
-     state. It must NOT vanish: it is information, not decoration, and a live
+     freezes its clock and pins the breath (see ambient-aura.tsx), and the rim
+     becomes a still coloured envelope whose height and hue still change with
+     the state. It must NOT vanish: it is information, not decoration, and a live
      microphone in particular has to stay visibly live. The arrival keeps its
      fade: opacity is Tier A. */
   @media (prefers-reduced-motion: reduce) {

@@ -12,6 +12,7 @@ import { CommandPalette } from "@/components/app/command-palette";
 import { DocumentTitle } from "@/components/app/document-title";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
+import { AmbientAura } from "@/components/ambient/ambient-aura";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
@@ -352,6 +353,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ "--juno-sidebar-width": collapsed || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
       >
         <StreamProgress active={streaming} />
+
+        {/* THE VOICE LIGHT, and it lives HERE rather than on <body>.
+            `<main>` is `relative` and starts where the sidebar ends, so the
+            layer it positions against is exactly the content column. The old
+            version was `position: fixed` in a body portal, which meant a call
+            lit the frame around the sidebar and the navigation as well as the
+            conversation — a mode light claiming chrome that is not in the
+            mode. Mounted once, here, and absent unless a call is up. */}
+        <AmbientAura />
 
         {/* An account that has never confirmed its address can read everything
             it owns and export it, but cannot spend — so the refusal has to be

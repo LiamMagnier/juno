@@ -4,16 +4,20 @@
  * The aura bench.
  *
  * WHY IT EXISTS. The aura is a motion feature whose whole vocabulary is state:
- * ten of them, six accents, two themes, a reduced-motion variant and two drive
- * sources. Reviewing a change to it by starting a real voice call — which is
- * what the alternative is — exercises four of those and costs a microphone
- * permission each time. This page drives the bus directly, so every state is
- * one press away and none of them need a network.
+ * ten of them, six accents, two themes and a reduced-motion variant. Reviewing
+ * a change to it by starting a real voice call — which is what the alternative
+ * is — exercises four of those and costs a microphone permission each time.
+ * This page drives the bus directly, so every state is one press away and none
+ * of them need a network.
  *
  * The body copy and the mock composer at the bottom are not filler: the one
- * judgement this layer keeps having to make is whether an always-on light
- * stays out of the way of the text it is announcing, and that cannot be judged
- * on an empty screen.
+ * judgement this layer keeps having to make is whether the light stays out of
+ * the way of the text underneath it, and that cannot be judged on an empty
+ * screen.
+ *
+ * The source and stream controls are gone with the sources they drove: the
+ * light is voice's alone now (see the header of `lib/aura.ts`), so there is
+ * one presence and no token cadence to simulate.
  *
  * It also hangs the bus on `window.__aura` so an automated pass can step
  * through the states without clicking; the route 404s outside development
@@ -22,13 +26,7 @@
 
 import * as React from "react";
 import { AmbientAura } from "@/components/ambient/ambient-aura";
-import {
-  attachAuraLevel,
-  pulseAura,
-  setAuraState,
-  type AuraSource,
-  type AuraState,
-} from "@/lib/aura";
+import { attachAuraLevel, setAuraState, type AuraState } from "@/lib/aura";
 import { cn } from "@/lib/utils";
 
 const STATES: readonly AuraState[] = [
@@ -52,11 +50,9 @@ const ON = "border-primary bg-secondary";
 
 export function AuraPreview() {
   const [state, setState] = React.useState<AuraState>("idle");
-  const [source, setSource] = React.useState<AuraSource>("chat");
   const [accent, setAccent] = React.useState<(typeof ACCENTS)[number]>("coral");
   const [dark, setDark] = React.useState(false);
   const [level, setLevel] = React.useState(0);
-  const [streaming, setStreaming] = React.useState(false);
 
   // The stand-in for a microphone. Same shape the call and the dictation panel
   // hand over, so the level states can be driven without one.
@@ -71,31 +67,14 @@ export function AuraPreview() {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
 
-  // Only one source may hold a state at a time here, or the bus's own
-  // resolution would be what is under test rather than the paint.
   React.useEffect(() => {
-    setAuraState(source, state);
-    const other: AuraSource = source === "voice" ? "chat" : "voice";
-    setAuraState(other, "idle");
-  }, [source, state]);
+    setAuraState("voice", state);
+  }, [state]);
 
   React.useEffect(() => {
     attachAuraLevel(levelRef);
     return () => attachAuraLevel(null);
   }, []);
-
-  // A stand-in stream: 20 chunks a second for eight seconds, which is roughly
-  // what a real reply produces, so the cadence envelope can be watched settling
-  // and then falling away when it stops.
-  React.useEffect(() => {
-    if (!streaming) return;
-    const tick = window.setInterval(() => pulseAura(6), 50);
-    const stop = window.setTimeout(() => setStreaming(false), 8000);
-    return () => {
-      window.clearInterval(tick);
-      window.clearTimeout(stop);
-    };
-  }, [streaming]);
 
   // The hook an automated pass drives. Dev-only by construction: this route
   // does not exist in a production build.
@@ -103,13 +82,10 @@ export function AuraPreview() {
     (window as unknown as { __aura?: unknown }).__aura = {
       setAuraState,
       attachAuraLevel,
-      pulseAura,
       setLevel: (v: number) => setLevel(v),
       setState: (s: AuraState) => setState(s),
-      setSource: (s: AuraSource) => setSource(s),
       setAccent: (a: (typeof ACCENTS)[number]) => setAccent(a),
       setDark: (d: boolean) => setDark(d),
-      stream: () => setStreaming(true),
     };
   }, []);
 
@@ -126,18 +102,8 @@ export function AuraPreview() {
 
         <span className="w-full" />
 
-        <button
-          type="button"
-          onClick={() => setSource((c) => (c === "voice" ? "chat" : "voice"))}
-          className={cn(CONTROL, source === "voice" && ON)}
-        >
-          {source === "voice" ? "voice · presence 1.00" : "chat · presence 0.62"}
-        </button>
         <button type="button" onClick={() => setDark((d) => !d)} className={CONTROL}>
           {dark ? "dark" : "light"}
-        </button>
-        <button type="button" onClick={() => setStreaming(true)} className={cn(CONTROL, streaming && ON)}>
-          {streaming ? "streaming…" : "stream"}
         </button>
 
         <span className="w-full" />

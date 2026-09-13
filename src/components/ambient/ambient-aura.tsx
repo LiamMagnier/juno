@@ -1,9 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
 import {
-  decayAuraDrive,
   readAura,
   readAuraLevel,
   subscribeAura,
@@ -86,7 +84,7 @@ const FLOOR: Record<AuraState, number> = {
 };
 
 /** A streaming answer rests higher than a spoken one, which has real peaks. */
-const ANSWERING_FLOOR: Record<AuraDrive, number> = { level: 0.16, cadence: 0.2, floor: 0.2 };
+const ANSWERING_FLOOR: Record<AuraDrive, number> = { level: 0.16, floor: 0.2 };
 
 /**
  * Where the state sits on the one colour ramp the product has: 0 is the
@@ -144,7 +142,7 @@ const TEMPO: Record<AuraState, number> = {
 };
 
 /** A streaming answer travels a hair faster than a spoken one. */
-const ANSWERING_TEMPO: Record<AuraDrive, number> = { level: 1, cadence: 1.05, floor: 1.05 };
+const ANSWERING_TEMPO: Record<AuraDrive, number> = { level: 1, floor: 1.05 };
 
 /**
  * The states with no drive of their own breathe instead of sitting flat. The
@@ -158,12 +156,33 @@ const BREATH: Partial<Record<AuraState, { amp: number; period: number }>> = {
 };
 
 /**
- * One travelling wave. Two, on periods sharing no common factor and running in
- * opposite directions, is enough that the motion never resolves into a loop.
+ * THE RIM, and why it is not a waveform any more.
+ *
+ * What used to be here: two travelling sine ribbons per edge at frequency 2.4
+ * and 3.9, each filled to the edge and finished with a 1.25px crest stroke.
+ * The crest was doing the work — it was the only crisp thing in the layer, and
+ * a crisp sine running along the bottom of a window is a 2008 audio
+ * visualiser. No amount of retuning the alphas fixes that, because the problem
+ * is the SHAPE: a legible travelling waveform reads as a meter, and a meter is
+ * a widget.
+ *
+ * What is here instead: three stacked bands of light per edge, no stroke on
+ * any of them, whose boundary is far too low-frequency to read as a wave at
+ * all. The eye cannot follow a 0.7-cycle undulation across a 1200px edge; what
+ * it sees is the light BREATHING — brighter here, deeper there, the pools
+ * drifting — which is what a room lit from beyond its edges actually does.
+ *
+ * The bands differ in reach and in speed, and their frequencies share no
+ * common factor, so the sum never resolves into a loop and the three never
+ * line up into a single visible front. `alpha` falls as `reach` grows: the
+ * deepest band is the faintest, which is the falloff a real bloom has.
+ *
+ * NO STROKE, EVER. If a crest comes back, so does the visualiser.
  */
-const WAVES = [
-  { frequency: 2.4, speed: 0.55, phase: 0, weight: 1, alpha: 0.42 },
-  { frequency: 3.9, speed: -0.85, phase: 2.1, weight: 0.5, alpha: 0.26 },
+const BANDS = [
+  { frequency: 0.7, speed: 0.16, phase: 0, reach: 1, wobble: 0.3, alpha: 0.2 },
+  { frequency: 1.1, speed: -0.11, phase: 2.1, reach: 0.62, wobble: 0.26, alpha: 0.3 },
+  { frequency: 1.9, speed: 0.07, phase: 4.3, reach: 0.3, wobble: 0.22, alpha: 0.34 },
 ] as const;
 
 /**
@@ -198,11 +217,15 @@ const CORNER_EASE = 0.05;
 
 /**
  * A call is a mode you deliberately entered, and the light is the main thing
- * telling you it is live. A reply streaming is not, and the light must never
- * compete with the text it is announcing — so everything else paints at 62%.
+ * telling you it is live, so it paints at full strength.
+ *
+ * There used to be a second rung at 62% for everything that was not a call —
+ * a streaming reply, a research run — on the argument that the light must
+ * never compete with the text it announces. That argument won completely:
+ * those sources no longer paint at all (see the header of `lib/aura.ts`), so
+ * there is one presence and it is this one.
  */
 const PRESENCE_VOICE = 1;
-const PRESENCE_AMBIENT = 0.62;
 
 /**
  * Share of the band over which the light is erased at its TOP edge.
@@ -258,22 +281,15 @@ export function AmbientAura() {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
 
-  // The layer is fixed to the window, so it is portalled to the body rather
-  // than rendered where it is mounted: any ancestor with a transform, a filter
-  // or a containment would otherwise become its containing block and clip it
-  // back to a column.
-  const [host, setHost] = React.useState<HTMLElement | null>(null);
-  React.useEffect(() => setHost(document.body), []);
-
-  // KEYED ON `host`, and that is load-bearing rather than tidy. The portal does
-  // not exist on the first render — `host` is null until the effect above sets
-  // it — so an effect with an empty dependency list runs once, against a canvas
-  // ref that is still null, and never runs again. The layer then mounts, sizes
-  // itself to nothing, and paints a 300×150 default backing store off-screen.
+  // NO PORTAL. The layer used to be `position: fixed` in a body portal so it
+  // could paint the whole window frame; it is `position: absolute` now and
+  // positions against `<main>`, which is exactly the content column and
+  // exactly what a call is a mode of. An ancestor transform becoming its
+  // containing block is no longer a hazard but the mechanism.
   React.useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
-    if (!host || !canvas || !wrap) return;
+    if (!canvas || !wrap) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -345,7 +361,7 @@ export function AmbientAura() {
     let tone = TONE[previous];
     let alarm = ALARM[previous];
     let tempo = TEMPO[previous];
-    let presence = readAura().source === "voice" ? PRESENCE_VOICE : PRESENCE_AMBIENT;
+    const presence = PRESENCE_VOICE;
 
     /**
      * How strong the ribbon is at position `t` along an edge.
@@ -385,7 +401,6 @@ export function AmbientAura() {
     const paint = (dt: number) => {
       const now = readAura();
       const state = now.state;
-      const cadence = decayAuraDrive(dt);
       wall += dt;
 
       // Exponential in elapsed time, so a 120Hz display feels the same as a
@@ -416,15 +431,6 @@ export function AmbientAura() {
         // Matched rates flicker on every consonant.
         attack = 18;
         release = 3.2;
-      } else if (now.drive === "cadence") {
-        const floor = ANSWERING_FLOOR.cadence;
-        // Under reduced motion the stream holds its floor: a per-token flicker
-        // is exactly the motion the preference is about. The colour and the
-        // height still say "answering".
-        target = reduced ? floor : Math.max(floor, cadence);
-        // Half the level attack, so the light does not chatter once per token.
-        attack = 9;
-        release = 2.4;
       } else {
         const floor = state === "answering" ? ANSWERING_FLOOR.floor : FLOOR[state];
         const breath = BREATH[state];
@@ -451,8 +457,6 @@ export function AmbientAura() {
         alarm += (ALARM[state] - alarm) * ease(ALARM[state] > alarm ? 4 : 1.6);
         const tempoTarget = state === "answering" ? ANSWERING_TEMPO[now.drive] : TEMPO[state];
         tempo += (tempoTarget - tempo) * ease(2.2);
-        const presenceTarget = now.source === "voice" ? PRESENCE_VOICE : PRESENCE_AMBIENT;
-        presence += (presenceTarget - presence) * ease(2);
       }
 
       // Reduced motion freezes the travel and keeps the envelope: the waves
@@ -498,13 +502,27 @@ export function AmbientAura() {
         ctx.fillRect(0, 0, width, height);
       }
 
-      const reach = span * 0.2 * smooth;
-      if (reach >= 1) paintRibbons(reach, paintTone);
+      const reach = span * 0.26 * smooth;
+      if (reach >= 1) paintRim(reach, paintTone);
       fadeTop();
     };
 
-    /** The two travelling waveforms on each of the three edges. */
-    const paintRibbons = (reach: number, paintTone: (a: number) => string) => {
+    /**
+     * The three bands of light on each of the three edges.
+     *
+     * Each band is one filled path — the edge, out to a slowly undulating
+     * boundary — under a linear gradient that is strongest ON the edge and
+     * gone by the top of that band's reach. The gradient is the entire source
+     * of softness: there is no filter (see the note at the top of this file)
+     * and no stroke (see `BANDS`).
+     *
+     * The boundary carries a `wobble` term an octave up from the band's own
+     * frequency, at a fraction of the amplitude. Without it a pure sine at
+     * these frequencies is recognisably a sine even when it is slow; with it
+     * the edge of the light is merely uneven, which is the difference between
+     * a waveform and a bloom.
+     */
+    const paintRim = (reach: number, paintTone: (a: number) => string) => {
       for (const edge of edges()) {
         if (edge.length < 1) continue;
         const [a, b, c, d, e, f] = edge.m;
@@ -512,46 +530,36 @@ export function AmbientAura() {
 
         // Sampled by length rather than by a fixed count: on a phone this is a
         // third of the points, and on a wide window the curve stays smooth.
-        const steps = Math.max(20, Math.min(120, Math.round(edge.length / 10)));
+        // These curves are far smoother than the waves were, so they need
+        // fewer points to stay clean — half the samples for the same result.
+        const steps = Math.max(14, Math.min(72, Math.round(edge.length / 18)));
 
-        for (const wave of WAVES) {
-          const points: [number, number][] = [];
-          for (let i = 0; i <= steps; i += 1) {
-            const t = i / steps;
-            const swell =
-              0.5 + 0.5 * Math.sin(t * wave.frequency * Math.PI * 2 + wave.phase + clock * wave.speed);
-            points.push([t * edge.length, reach * wave.weight * swell * windowAt(t, edge.arm)]);
-          }
-
-          // The body, between the curve and the edge. The gradient is what makes
-          // it soft — full strength on the edge, gone by the top of the wave's
-          // reach. That falloff is what the blur was faking.
-          const top = Math.max(1, reach * wave.weight);
+        for (const band of BANDS) {
+          const top = Math.max(1, reach * band.reach);
           const g = ctx.createLinearGradient(0, 0, 0, top);
-          g.addColorStop(0, paintTone(wave.alpha));
-          // A mid stop, so the strongest light hugs the window edge and the
-          // composer — which sits inside the ribbon's reach — is lit rather than
-          // washed. A straight ramp put a fifth of full strength across the text.
-          g.addColorStop(0.4, paintTone(wave.alpha * 0.3));
+          g.addColorStop(0, paintTone(band.alpha));
+          // A mid stop, so the strongest light hugs the surface edge and the
+          // composer — which sits inside the rim's reach — is lit rather than
+          // washed. A straight ramp put a fifth of full strength across the
+          // text.
+          g.addColorStop(0.42, paintTone(band.alpha * 0.28));
           g.addColorStop(1, paintTone(0));
+
           ctx.beginPath();
           ctx.moveTo(0, 0);
-          for (const [x, y] of points) ctx.lineTo(x, y);
+          for (let i = 0; i <= steps; i += 1) {
+            const t = i / steps;
+            const theta = t * band.frequency * Math.PI * 2 + band.phase + clock * band.speed;
+            const swell =
+              0.62 +
+              0.38 * Math.sin(theta) +
+              band.wobble * Math.sin(theta * 2.37 + band.phase * 1.7);
+            ctx.lineTo(t * edge.length, top * clamp01(swell) * windowAt(t, edge.arm));
+          }
           ctx.lineTo(edge.length, 0);
           ctx.closePath();
           ctx.fillStyle = g;
           ctx.fill();
-
-          // The crest. Without it the moving boundary — the only part of the
-          // draw carrying the motion — sits exactly where the gradient has faded
-          // to nothing, and the whole thing reads as a lamp. Kept low enough
-          // that it never becomes a wire, and the same hue: never a second colour.
-          ctx.beginPath();
-          points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-          ctx.lineWidth = 1.25;
-          ctx.lineJoin = "round";
-          ctx.strokeStyle = paintTone(wave.alpha * 0.32);
-          ctx.stroke();
         }
       }
     };
@@ -646,18 +654,15 @@ export function AmbientAura() {
       reducedQuery?.removeEventListener("change", onReducedChange);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [host]);
-
-  if (!host) return null;
+  }, []);
 
   // No role, no focusable content, `aria-hidden`: every state it shows is
-  // already announced elsewhere — PHASE_ANNOUNCEMENT for a call, the activity
-  // timeline for a chat — so it adds nothing to the accessibility tree by
-  // design. `pointer-events: none` lives in the class; it can never take a click.
-  return createPortal(
+  // already announced elsewhere — PHASE_ANNOUNCEMENT says the call's phase in
+  // words — so it adds nothing to the accessibility tree by design.
+  // `pointer-events: none` lives in the class; it can never take a click.
+  return (
     <div ref={wrapRef} className="ambient-aura" aria-hidden="true">
       <canvas ref={canvasRef} className="ambient-aura__canvas" />
-    </div>,
-    host
+    </div>
   );
 }

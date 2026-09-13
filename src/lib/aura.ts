@@ -1,29 +1,38 @@
 /**
- * The ambient aura's state bus — one source of truth for "what is Juno doing".
+ * The voice aura's state bus — one source of truth for what a CALL is doing.
  *
- * WHY A MODULE SINGLETON AND NOT A CONTEXT. The two numbers this carries that
- * matter most — the microphone envelope and the token cadence — change at frame
- * rate. Pushing them through React would re-render the tree sixty times a
- * second to move a canvas that is not in the tree at all. So the publishers
- * write here, the single rAF in `<AmbientAura />` reads here, and React is only
- * involved when the *state* changes, which is a handful of times per turn.
+ * THE LIGHT BELONGS TO VOICE, AND ONLY TO VOICE. It used to be the app's
+ * ambient state light: five sources could claim it (`voice`, `chat`,
+ * `research`, `code`, `work`), and a reply streaming in a background surface
+ * lit the frame around a sidebar somebody was reading. An ambient light that
+ * is on for most of the product's waking life is wallpaper, and wallpaper that
+ * moves is worse than none — so it is now on for exactly one thing, which is
+ * the one thing in Juno with no other way to say it is live. Typing, thinking
+ * and streaming all have a composer, a thought panel and a stream line saying
+ * so in words.
  *
- * WHY THE PUBLISHERS ARE HOOKS, NOT VIEWS. `use-chat` and `use-realtime-voice`
- * publish; no surface mounts anything. Every screen that runs a chat or a call
- * gets the light by construction, and there is exactly one derivation of "is
- * Juno talking" — the failure mode `voice-phase.ts:129-133` was written to
- * prevent, where two readings disagree and the light says one thing while the
- * label says another.
+ * WHY A MODULE SINGLETON AND NOT A CONTEXT. The number this carries that
+ * matters most — the microphone envelope — changes at frame rate. Pushing it
+ * through React would re-render the tree sixty times a second to move a canvas
+ * that is not in the tree at all. So the publisher writes here, the single rAF
+ * in `<AmbientAura />` reads here, and React is only involved when the *state*
+ * changes, which is a handful of times per call.
+ *
+ * WHY THE PUBLISHER IS A HOOK, NOT A VIEW. `use-realtime-voice` publishes; no
+ * surface mounts anything. Every screen that can run a call gets the light by
+ * construction, and there is exactly one derivation of "is Juno talking" — the
+ * failure mode `voice-phase.ts:129-133` was written to prevent, where two
+ * readings disagree and the light says one thing while the label says another.
  */
 
 import type { VoicePhase } from "@/lib/voice-phase";
 
 export type AuraState =
-  /** Nothing is happening. Absent — no paint, no rAF, no layer. */
+  /** No call. Absent — no paint, no rAF, no layer. */
   | "idle"
   /** A call is up, nobody is talking. */
   | "listening"
-  /** The person is speaking — microphone, call or dictation. */
+  /** The person is speaking. */
   | "user"
   /** A call is up and the microphone is closed. */
   | "muted"
@@ -40,43 +49,34 @@ export type AuraState =
   /** The turn failed. */
   | "error";
 
-/** Which part of the product is claiming the light. */
-export type AuraSource = "voice" | "chat" | "research" | "code" | "work";
+/**
+ * Who may claim the light. One member, deliberately.
+ *
+ * Kept as a union rather than dropped because every call site names it, and a
+ * named source is what makes "the light is voice's" a fact the type system
+ * states rather than a convention four call sites have to remember. Adding a
+ * second member here is the change that has to be argued for, and the argument
+ * has to beat the one in this module's header.
+ */
+export type AuraSource = "voice";
 
 /**
- * Where the amplitude comes from for the winning state. `level` is a live audio
- * envelope, `cadence` is how much text arrived recently, `floor` is the state's
- * own resting swell (possibly breathing).
+ * Where the amplitude comes from for the winning state. `level` is the live
+ * audio envelope; `floor` is the state's own resting swell (possibly
+ * breathing).
+ *
+ * There used to be a third, `cadence` — how much text had arrived recently —
+ * which existed only to give a streaming reply something to modulate. With the
+ * light scoped to voice there is always a microphone or a speaker, so the
+ * substitute for one is gone.
  */
-export type AuraDrive = "level" | "cadence" | "floor";
+export type AuraDrive = "level" | "floor";
 
 export interface AuraResolved {
   state: AuraState;
   source: AuraSource | null;
   drive: AuraDrive;
 }
-
-/**
- * Which state wins when two sources disagree. Higher is louder: a failure
- * outranks a person speaking, which outranks anything the model is doing,
- * because the states nearer the top are the ones a person is waiting on an
- * answer about.
- */
-const RANK: Record<AuraState, number> = {
-  error: 100,
-  user: 90,
-  listening: 80,
-  muted: 75,
-  answering: 70,
-  tool: 60,
-  thinking: 50,
-  connecting: 45,
-  done: 20,
-  idle: 0,
-};
-
-/** Tie-break order, and the order the override below reads. */
-const SOURCES: readonly AuraSource[] = ["voice", "chat", "research", "code", "work"];
 
 const LEVEL_STATES: ReadonlySet<AuraState> = new Set<AuraState>(["listening", "user", "muted"]);
 
@@ -95,48 +95,25 @@ const timers = new Map<AuraSource, ReturnType<typeof setTimeout>>();
 const listeners = new Set<(r: AuraResolved) => void>();
 
 let levelRef: { current: number } | null = null;
-/**
- * The stream's own loudness: how much text arrived recently. A fast stream sits
- * high, a stalled one sinks to the floor within a second — which is the
- * difference between "writing" and "hung", and the one thing a fixed swell
- * cannot say.
- */
-let drive = 0;
 
 let resolved: AuraResolved = { state: "idle", source: null, drive: "floor" };
 
+/**
+ * What the light should show.
+ *
+ * There is no rank table and no tie-break order any more: with one source
+ * there is nothing to arbitrate, and forty lines deciding which of five
+ * claimants wins was forty lines describing a contest that can no longer
+ * happen. A call is a mode the whole surface is in, which is exactly why it is
+ * the only thing allowed to paint one.
+ */
 function resolve(): AuraResolved {
-  // A live call is a mode the WHOLE SCREEN is in, so it wins outright rather
-  // than on rank: a chat streaming in a background surface must never repaint
-  // the caller's turn. Same argument as `voice-phase.ts` giving `muted` an
-  // unconditional win inside a call.
-  const voice = states.get("voice") ?? "idle";
-  let source: AuraSource | null = null;
-  let state: AuraState = "idle";
-
-  if (voice !== "idle") {
-    source = "voice";
-    state = voice;
-  } else {
-    for (const candidate of SOURCES) {
-      const value = states.get(candidate) ?? "idle";
-      if (value === "idle") continue;
-      if (source === null || RANK[value] > RANK[state]) {
-        source = candidate;
-        state = value;
-      }
-    }
-  }
-
-  const nextDrive: AuraDrive = LEVEL_STATES.has(state)
-    ? "level"
-    : state === "answering"
-      ? source === "voice"
-        ? "level"
-        : "cadence"
-      : "floor";
-
-  return { state, source: state === "idle" ? null : source, drive: nextDrive };
+  const state = states.get("voice") ?? "idle";
+  if (state === "idle") return { state, source: null, drive: "floor" };
+  // `answering` is Juno's own voice coming out of the speaker, so it has a
+  // real envelope like the microphone states do.
+  const drive: AuraDrive = LEVEL_STATES.has(state) || state === "answering" ? "level" : "floor";
+  return { state, source: "voice", drive };
 }
 
 function publish() {
@@ -157,8 +134,7 @@ function clearTimer(source: AuraSource) {
 }
 
 /**
- * Declare what one part of the product is doing. Sources are independent; the
- * light shows the winner (see `resolve`).
+ * Declare what the call is doing.
  *
  * `done` and `error` are self-expiring: they are moments, not modes, and a
  * publisher that forgets to clear them would otherwise leave the light on. Any
@@ -204,35 +180,12 @@ export function readAuraLevel(): number {
   return value > 1 ? 1 : value > 0 ? value : 0;
 }
 
-/**
- * A chunk of output arrived. This is the streaming reply's substitute for a
- * microphone: there is no audio level while tokens land, so the tokens ARE the
- * level. Never a random walk — a fake envelope makes a stalled stream and a
- * fast one look identical, which is the one thing this signal exists to
- * distinguish.
- */
-export function pulseAura(chars: number): void {
-  if (!(chars > 0)) return;
-  drive = Math.min(1, drive + Math.min(1, chars / 28) * 0.3);
-}
-
-/**
- * Decay the cadence accumulator by `dt` seconds and return it. Called once per
- * frame from the aura's own rAF, so the decay is tied to real elapsed time and
- * not to how often chunks happen to arrive. τ = 280ms.
- */
-export function decayAuraDrive(dt: number): number {
-  if (dt > 0) drive *= Math.exp(-dt / 0.28);
-  if (drive < 0.0005) drive = 0;
-  return drive;
-}
-
 /** What the light should be showing right now. Read once per frame. */
 export function readAura(): AuraResolved {
   return resolved;
 }
 
-/** Called when the resolved state changes — never for level or cadence. */
+/** Called when the resolved state changes — never for the level. */
 export function subscribeAura(fn: (r: AuraResolved) => void): () => void {
   listeners.add(fn);
   return () => {
