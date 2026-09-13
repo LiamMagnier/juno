@@ -343,7 +343,6 @@ export default function ArtifactsPage() {
       <AppPageHeader
         eyebrow="Canvas"
         heading="Artifacts"
-        icon={AppIcons.artifacts}
         lede="Everything Juno built with you, newest first."
         actions={
           <>

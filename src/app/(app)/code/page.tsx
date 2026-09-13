@@ -44,7 +44,6 @@ export default async function CodePage() {
       <AppPageHeader
         eyebrow="Code"
         heading="Runs"
-        icon={AppIcons.code}
         lede="Every Juno Code run, wherever you started it — this Mac, the cloud, or the app on your phone."
         actions={
           <Button asChild className="gap-1.5">

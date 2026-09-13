@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Loader2 } from "lucide-react";
-import { AppIcons, StatusIcons } from "@/lib/app-icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -177,7 +177,6 @@ export default function ConnectionsPage() {
       <AppPageHeader
         eyebrow="Connections"
         heading="Connect your tools"
-        icon={AppIcons.connections}
         lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
         actions={
           !loading && !error && connectedCount > 0 ? (

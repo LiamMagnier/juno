@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, Cloud, GripVertical, Hand, Pause, Play, Square } from "lucide-react";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { ActionIcons} from "@/lib/app-icons";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import {
@@ -989,7 +989,6 @@ export default function WorkThreadPage() {
         <AppPageHeader
           eyebrow="Work"
           heading={session.title || "Untitled task"}
-          icon={AppIcons.work}
           backHref="/work"
           backLabel="Back to Work"
           className="mb-4"
@@ -1467,7 +1466,6 @@ function ThreadFrame({ heading, children }: { heading: React.ReactNode; children
         <AppPageHeader
           eyebrow="Work"
           heading={heading}
-          icon={AppIcons.work}
           backHref="/work"
           backLabel="Back to Work"
         />

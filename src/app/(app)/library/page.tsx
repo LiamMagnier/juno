@@ -769,7 +769,6 @@ export default function LibraryPage() {
       <AppPageHeader
         eyebrow="Library"
         heading={showDeleted ? "Recently deleted" : "Your files"}
-        icon={AppIcons.library}
         lede={
           showDeleted
             ? "Files you delete land here and stay recoverable."

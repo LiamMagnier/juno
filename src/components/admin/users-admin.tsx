@@ -246,7 +246,6 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           className="mb-0"
           eyebrow="Owner"
           heading="Users"
-          icon={UsersIcon}
           lede={
             data
               ? `${data.totals.users} ${data.totals.users === 1 ? "account" : "accounts"} · ${data.totals.activeThisMonth} active this month`

@@ -36,7 +36,6 @@ export default async function CodePullsPage() {
       <AppPageHeader
         eyebrow="Code"
         heading="Pull requests"
-        icon={AppIcons.code}
         lede="What your runs opened on GitHub, plus anything else waiting on your review."
         // The way back to the thing that produces this list. It matters most
         // when the list is empty, which is exactly when it is least obvious

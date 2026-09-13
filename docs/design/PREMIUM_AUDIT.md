@@ -260,6 +260,41 @@ in `globals.css` bypassed it: `9px`, `0.35rem` (5.6px, one tenth of a pixel
 from `xs`), and `999px` three times for what the rest of the file spells
 `9999px`. All now on rungs.
 
+### P0 — the header every page opens with was three redundancies deep
+
+Measured across the 32 places `AppPageHeader` renders:
+
+| | count |
+|---|---|
+| carried a glyph on the page title | 21 / 32 |
+| drew a back arrow pointing at `/chat` | 22 / 32 |
+| set an eyebrow that repeated the heading | 6 / 32 |
+
+`Settings` under `⚙ Settings` under `← Settings`. `Projects` under
+`▣ Projects` under `← Projects`. Three lines of chrome to say one word, on the
+most-repeated surface in the product.
+
+Standardising the header — which an earlier pass did, and which the component's
+own doc is proud of — made all 32 agree. It never asked whether the shape earns
+its space. Each piece separately:
+
+**The glyph.** Rule 4 already said glyphs mark destinations, not documents, and
+a page title is a document. At `0.78em` of a 32px heading it is a ~25px mark
+competing with the one thing on the page meant to be read first — and the
+sidebar row that got you here already carries it, so the product was saying
+where you are twice, the second time three times larger.
+
+**The arrow.** `backHref` defaulted to `/chat`. An affordance that always does
+one thing, positioned beside a permanent sidebar whose first row does that same
+thing, is chrome answering a question nobody asked. It is opt-in now and means
+what it looks like — up ONE level — on the ten pages that have a parent.
+
+**The eyebrow.** A kicker says which section a page belongs to: `Work` over
+`Skills` earns its line. `Settings` over `Settings` does not.
+
+**Rule:** a page opens with its name. Anything above the name has to say
+something the name does not.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,
@@ -303,7 +338,14 @@ from `xs`), and `999px` three times for what the rest of the file spells
     crossing anything — and make the amplitude a proportion (`brightness`)
     rather than a second hand-picked colour, so it holds across every accent
     and both themes.
-15. **Never clip a gradient that still carries alpha.** Fill every radial
+15. **A page opens with its name.** Anything above the title — a kicker, a
+    back arrow, a glyph — has to say something the title does not, or it is
+    three lines of chrome spelling one word.
+16. **Standardising a shape is not designing it.** Making 32 surfaces agree on
+    a header is worth doing and answers a different question from whether the
+    header should have those parts at all. Do the second one too, or the
+    product ends up consistently over-dressed.
+17. **Never clip a gradient that still carries alpha.** Fill every radial
     gradient over its own bounding box and let it reach zero on its own. Every
     hard seam this layer has ever shown — the faceted bands, the sheared arm
     tips — was a gradient cut short, and each one cost a redesign that was

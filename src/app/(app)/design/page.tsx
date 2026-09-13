@@ -129,9 +129,7 @@ export default function DesignPage() {
   return (
     <AppPage measure="wide">
         <AppPageHeader
-          eyebrow="Design"
           heading="Design"
-          icon={AppIcons.design}
           lede="Draw it yourself, or ask Juno. Every design opens as an editable document you can restyle and hand to Juno Code."
           actions={!loading && !empty && !error ? (
           <span className="shrink-0 font-mono text-caption text-muted-foreground tabular-nums">

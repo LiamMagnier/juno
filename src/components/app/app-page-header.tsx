@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,26 +42,60 @@ import { cn } from "@/lib/utils";
  *  3. The actions cluster wraps. `items-end` with `flex-wrap` drops a count or
  *     a button under the heading at narrow widths instead of squeezing the
  *     display-size h1 into a forced two-line wrap next to it.
+ *
+ * WHAT THIS HEADER STOPPED DOING, and why, because the three deletions are the
+ * whole difference between a standardised header and a good one. Standardising
+ * a shape makes every page agree; it does not ask whether the shape earns its
+ * space. Measured across the 32 places this renders:
+ *
+ *  - NO GLYPH ON THE TITLE. 21 of 32 carried one, at 0.78em of a 32px heading
+ *    — a ~25px mark competing with the only thing on the page that is supposed
+ *    to be read first. Rule 4 of docs/design/PREMIUM_AUDIT.md already said
+ *    glyphs mark destinations, not documents, and a page title is a document.
+ *    The sidebar row that got you here has the mark; repeating it at 3x the
+ *    size is the product telling you where you are twice.
+ *
+ *  - NO BACK ARROW BY DEFAULT. `backHref` defaulted to `/chat`, so 22 of the
+ *    32 drew an arrow pointing at the same place from every page in the
+ *    product, next to a permanent sidebar whose first row is Chat. An
+ *    affordance that always does one thing, beside a control that already does
+ *    it, is chrome answering a question nobody asked. It is now opt-in and
+ *    means what it looks like: up ONE level, on the ten pages that have a
+ *    parent to go up to.
+ *
+ *  - THE EYEBROW IS OPTIONAL. Six pages set one that repeated the heading —
+ *    Settings/Settings, Projects/Projects, Design/Design, Work/Juno Work,
+ *    Tasks/Scheduled tasks. A kicker exists to say which section a page
+ *    belongs to (`Work` over `Skills`); when it can only say the page's own
+ *    name it is a line of type spent on nothing.
+ *
+ * What is left is a page that opens with its name. That is the whole of it.
  */
 export function AppPageHeader({
   eyebrow,
   heading,
   lede,
-  icon: Icon,
   actions,
-  backHref = "/chat",
-  backLabel = "Back to chat",
+  backHref,
+  backLabel,
   className,
 }: {
-  /** The mono kicker beside the back arrow — where you are, in one word. */
-  eyebrow: React.ReactNode;
+  /**
+   * The mono kicker: which SECTION this page belongs to, in one word — `Work`
+   * over `Skills`. Omit it when the only thing it could say is the page's own
+   * name; a kicker that repeats the heading is a line of type spent on nothing.
+   */
+  eyebrow?: React.ReactNode;
   heading: React.ReactNode;
   /** One line at most. Longer than that and it belongs in the page body. */
   lede?: React.ReactNode;
-  /** Optional mark, set in the heading's own em so it scales with it. */
-  icon?: LucideIcon;
   /** Counts, filters, a primary action. Wraps under the heading when tight. */
   actions?: React.ReactNode;
+  /**
+   * The page's PARENT, when it has one. No default: an arrow that points at
+   * the same destination from every page in the product is not a back arrow,
+   * it is a second, worse copy of the sidebar's first row.
+   */
   backHref?: string;
   backLabel?: string;
   className?: string;
@@ -72,17 +105,23 @@ export function AppPageHeader({
     // carries layout. The alpha came from a light-theme habit and now compounds
     // with a token that already dropped five points for the black ground.
     <header className={cn("mb-6 border-b border-border pb-5", className)}>
-      <div className="mb-3 flex items-center gap-2">
-        <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel}>
-          <Link href={backHref}>
-            <ArrowLeft className="size-4" aria-hidden="true" />
-          </Link>
-        </Button>
-        {/* The mono kicker this component's own prop doc promises. It was set in
-            the UI face at `text-xs`, which is neither the eyebrow treatment the
-            rest of the shell uses nor a rung on the type scale. */}
-        <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
-      </div>
+      {/* The whole row is conditional now, and so is each half of it. A page
+          with neither a parent nor a section opens on its name — no leading
+          row, and no 28px of empty chrome where one used to be. */}
+      {(backHref || eyebrow) && (
+        <div className="mb-3 flex items-center gap-2">
+          {backHref && (
+            <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel ?? "Back"}>
+              <Link href={backHref}>
+                <ArrowLeft className="size-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          )}
+          {eyebrow && (
+            <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
@@ -93,17 +132,7 @@ export function AppPageHeader({
               `leading-tight`/`tracking-*`/`font-semibold` beside it would be worse
               than redundant, since Tailwind emits those groups AFTER font-size and
               they would silently keep overriding the rung this is adopting. */}
-          <h1 className="flex items-center gap-2.5 text-balance text-page-title">
-            {Icon && (
-              // `0.78em`, not a px size: the mark is part of the heading and has
-              // to track it through the display scale's responsive steps.
-              <Icon
-                className="size-[0.78em] shrink-0 text-muted-foreground/75"
-                aria-hidden="true"
-              />
-            )}
-            {heading}
-          </h1>
+          <h1 className="text-balance text-page-title">{heading}</h1>
           {/* `text-body` (15px × 1.6) is the same 24px line box the
               `text-sm leading-6` here used to build by hand, so nothing
               reflows — it is now the rung the scale names rather than

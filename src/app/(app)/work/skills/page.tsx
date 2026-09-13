@@ -49,7 +49,6 @@ export default function WorkSkillsPage() {
         eyebrow="Work"
         heading="Skills"
         lede="Reusable instructions with a name. Type a slash and the name in a task, or let Juno reach for one itself — only ever for a skill you have said you trust."
-        icon={AppIcons.work}
         actions={
           <Button asChild size="sm" className="gap-1.5">
             <Link href="/work/skills/new">

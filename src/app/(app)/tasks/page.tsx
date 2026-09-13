@@ -121,9 +121,7 @@ export default function TasksPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Tasks"
         heading="Scheduled tasks"
-        icon={AppIcons.tasks}
         lede="Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread."
         actions={
           !loading && !locked && !empty ? (

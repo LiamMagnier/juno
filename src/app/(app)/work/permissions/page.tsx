@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ActionIcons, AppIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -115,7 +115,6 @@ export default function WorkPermissionsPage() {
         eyebrow="Work"
         heading="Permissions"
         lede="What Juno may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
-        icon={AppIcons.work}
         // The tab row under this header carries the page's single rule.
         className="mb-4 border-b-0 pb-0"
       />

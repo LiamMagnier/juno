@@ -36,7 +36,7 @@ import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefi
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { AppIcons, CodeIcons } from "@/lib/app-icons";
+import { CodeIcons } from "@/lib/app-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
@@ -500,7 +500,6 @@ export default function NewCodeSessionPage() {
         // "New task" is the name the header button on /code and /code/pulls
         // already uses for this destination. It had three names for one thing.
         heading="New task"
-        icon={AppIcons.code}
         lede="Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
         // Back to the surface this belongs to. It silently inherited
         // AppPageHeader's "/chat" default, which walked out of Code entirely.

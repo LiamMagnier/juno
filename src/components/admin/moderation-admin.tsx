@@ -208,7 +208,6 @@ export function ModerationAdmin() {
           className="mb-0"
           eyebrow="Owner"
           heading="Moderation"
-          icon={StatusIcons.security}
           lede="Content flags, strikes, and bans across the platform."
           actions={<AdminNav current="moderation" />}
         />

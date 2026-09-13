@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppIcons } from "@/lib/app-icons";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useApp } from "@/components/app/app-provider";
 import { SettingsRail } from "@/components/settings/settings-rail";
@@ -32,7 +31,7 @@ function SettingsPageContent() {
 
   return (
     <AppPage measure="wide">
-      <AppPageHeader eyebrow="Settings" heading="Settings" icon={AppIcons.settings} lede={user.email} />
+      <AppPageHeader heading="Settings" lede={user.email} />
       <div className="md:grid md:grid-cols-[13.5rem_minmax(0,1fr)] md:gap-10">
         <aside className="mb-6 md:mb-0">
           <div className="md:sticky md:top-2">

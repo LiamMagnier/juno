@@ -479,7 +479,6 @@ export function AnnouncementsAdmin() {
           className="mb-0"
           eyebrow="Owner"
           heading="Announcements"
-          icon={Megaphone}
           lede="Publish model-release popups and product messages."
           actions={
             <>

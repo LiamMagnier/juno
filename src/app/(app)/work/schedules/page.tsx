@@ -73,7 +73,6 @@ export default function WorkSchedulesPage() {
         eyebrow="Work"
         heading="Automations"
         lede="Let Work start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
-        icon={AppIcons.work}
         actions={action}
         // The tab row under this header carries the page's single rule.
         className="mb-4 border-b-0 pb-0"

@@ -239,9 +239,7 @@ export default function ProjectsPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Projects"
         heading="Projects"
-        icon={AppIcons.projects}
         lede="A topic’s chats, instructions, and files, kept together."
         actions={
           <Button onClick={openCreate} size="sm" className="gap-1.5">

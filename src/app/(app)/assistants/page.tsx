@@ -138,7 +138,6 @@ export default function AssistantsPage() {
       <AppPageHeader
         eyebrow="Assistants"
         heading="Specialists you can reuse"
-        icon={AssistantIcon}
         lede="Focused Juno personalities with their own instructions, starter prompts and model preference."
         actions={
           <Button onClick={() => openStudio(null)} className="gap-1.5">
