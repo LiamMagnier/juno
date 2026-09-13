@@ -120,10 +120,19 @@
     /* The sidebar is an inset well cut into the page (two points below it), so
        its frame carries `.surface-inset`'s recess and the active row is the one
        raised object inside it. */
-    --sidebar: 46 22% 95.5%;
+    --sidebar: 46 22% 94.6%;
     --sidebar-foreground: 48 4% 30%;
-    --sidebar-border: 44 14% 88%;
-    --sidebar-accent: 46 20% 91%;
+    /* THE SEAM HAS TO BE THE STRONGEST HAIRLINE IN THE PRODUCT, not the
+       weakest. It was 88% against a page `--border` of 86.5% — a LIGHTER
+       edge — separating two planes 1.7 points apart. Two near-identical
+       grounds divided by the faintest line in the product is what made the
+       panel read as a smudge on the page rather than as a second surface
+       (docs/design/PREMIUM_AUDIT.md §2). The panel drops to 2.6 points below
+       the page and the seam goes one step darker than `--border`, so the
+       edge is now the most definite hairline on screen — which is correct,
+       because it divides the two largest planes in the app. */
+    --sidebar-border: 44 14% 84.5%;
+    --sidebar-accent: 46 20% 90.5%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
@@ -451,9 +460,12 @@
 
     /* One point below the page: the sidebar is a well cut into the ground,
        which on dark reads as the deepest thing on screen. */
-    --sidebar: 30 5% 9.5%;
+    --sidebar: 30 5% 8.8%;
     --sidebar-foreground: 40 6% 70%;
-    --sidebar-border: 30 5% 18%;
+    /* Same argument as light, measured the other way up: 18% on a 9.5% panel
+       was 8.5 points of separation where the page's own `--border` gets 11,
+       so the seam was again the weakest line in the product. */
+    --sidebar-border: 30 5% 21%;
     --sidebar-accent: 30 5% 17%;
 
     /*

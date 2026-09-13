@@ -560,6 +560,12 @@ export function AppSidebar({
         {/* ── Search + New chat ────────────────────────────────────────── */}
         {/* No `pt-*` when expanded: ProductSwitch already closes with `pb-2`,
             which IS the 8px this column puts between sibling groups. */}
+        {/* These two and the three destinations below are ONE navigation
+            block, not two. They used to be separated by 16px (this block's
+            own bottom plus the nav's `pt-2`), which is the same gap the panel
+            spends between the product switch and the whole navigation — so
+            the column read as four stacked groups rather than a header and a
+            list, and the first chat title started ~300px down. */}
         <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-2")}>
           {/* `juno:search` — the eight-source search palette, not the ⌘K command
               menu. A row labelled Search used to open the command menu, whose
@@ -599,8 +605,10 @@ export function AppSidebar({
             with no way to reach it. */}
         <nav
           className={cn(
-            "space-y-0.5 pt-2",
-            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5" : "px-2"
+            // `pt-0.5`, matching the row gap above it: see the note on the
+            // Search block — this is the same navigation block continuing.
+            "space-y-0.5 pt-0.5",
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-2"
           )}
           aria-label="Primary"
         >
@@ -635,7 +643,7 @@ export function AppSidebar({
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-2",
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3",
             // The rail has no lists to scroll; its own scroll region is the
             // <nav> above, so this must not also claim the slack.
             collapsed && "hidden"
@@ -721,7 +729,10 @@ export function AppSidebar({
                       <div className="mt-4 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
                           <div key={group} className="space-y-0.5 pt-2 first:pt-0">
-                            <p className="flex h-6 items-center px-2 text-caption text-muted-foreground/80">{group}</p>
+                            {/* Same heading as Projects and Pinned above — see the note in `Section`. */}
+                            <p className="flex h-6 items-center px-2 font-mono text-micro uppercase text-muted-foreground/70">
+                              {group}
+                            </p>
                             {rows.map((c) => (
                               <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
                             ))}
@@ -1017,7 +1028,12 @@ function NavRow({
  */
 function navRowClass(collapsed: boolean, active: boolean) {
   return cn(
-    "group relative flex h-8 w-full items-center rounded-control text-ui font-medium transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    // `font-normal`, not `font-medium`. Chrome is quieter than content, and
+    // this column had it backwards: the six navigation rows above the list
+    // were set one weight HEAVIER than the chat titles they sit above, so the
+    // furniture out-shouted the documents (docs/design/PREMIUM_AUDIT.md §2).
+    // Selection is the tonal fill and the ink, as it already was.
+    "group relative flex h-8 w-full items-center rounded-control text-ui font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
     // The rail: a 44px target around the same 16px glyph, so every icon is
     // one tap and the row's tooltip names it.
     collapsed ? "size-11 justify-center px-0" : "gap-2 px-2 coarse:h-11",
@@ -1210,13 +1226,18 @@ function Section({
           kind="row"
           onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
-          // 12px mono caps at 0.10em is the declared eyebrow rung — the one
-          // voice in this panel that is not a row, which is exactly why the
-          // date folds below can be plain sans captions and still read as a
-          // level down.
           className="h-6 min-w-0 flex-1 select-none gap-1.5 px-2 py-0 hover:bg-sidebar-accent/60"
         >
-          <span className="min-w-0 truncate font-mono text-label uppercase text-muted-foreground">{label}</span>
+          {/*
+           * ONE SECTION VOICE, and this is it: mono caps at the `micro` rung.
+           * The panel used to speak two — 12px mono caps at 0.10em for
+           * Projects and Pinned, 11px sans for the Today / Yesterday folds —
+           * which is two headings of different sizes and different FAMILIES
+           * marking the same level of the same list. Both are this now, and
+           * it is the same heading the model picker draws, so the product has
+           * one way of naming a group of rows rather than three.
+           */}
+          <span className="min-w-0 truncate font-mono text-micro uppercase text-muted-foreground/70">{label}</span>
           {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
               turn are on screen, so this is an A-to-B move. */}
           <ChevronDown

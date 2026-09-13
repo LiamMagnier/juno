@@ -172,20 +172,18 @@ export function ProductSwitch({
     // `px-2`); the brand row keeps `px-3` because it is type, not a box.
     <nav aria-label="Juno products" className="px-2 pb-2 pt-2">
       {/*
-       * A hairline and a transparent fill, NOT `.surface-inset`. Two reasons,
-       * both load-bearing:
-       *  · `.surface-inset` paints `--background`, which is LIGHTER than
-       *    `--sidebar` in both themes (97.2 vs 95.5 light, 11.5 vs 9.5 dark),
-       *    so the "recessed well" sat up off the panel as a pale plate — a
-       *    control drawn as the opposite of what it meant.
-       *  · a surface class must never be paired with `bg-*`/`border-*`
-       *    utilities (globals.css: components-layer classes silently lose), so
-       *    a track that needs its own border carries no surface class at all.
-       * `gap-0`: the segments abut, ChatGPT-style, so the thumb travels edge to
-       * edge with no dead 4px between cells. Concentric: outer `rounded-field`
-       * 12 = inner `rounded-control` 10 + `p-0.5` 2.
+       * NO TRACK. It used to be a hairline-bordered `rounded-field` box, and
+       * that box was the only framed object in the sidebar — which made the
+       * loudest thing in the quietest column a control you press perhaps twice
+       * a session (docs/design/PREMIUM_AUDIT.md §2). The thumb already says
+       * which product you are in; a frame around three segments says only that
+       * they are three segments, which their own spacing says for free.
+       *
+       * `gap-0`: the segments still abut, so the thumb travels edge to edge
+       * with no dead 4px between cells. Without the border there is no
+       * concentric radius to honour and no `p-0.5` to hold it off one.
        */}
-      <div className="relative grid grid-cols-3 gap-0 rounded-field border border-sidebar-border bg-transparent p-0.5">
+      <div className="relative grid grid-cols-3 gap-0">
         {PRODUCTS.map((product) => (
           <Segment
             key={product.id}
@@ -232,7 +230,7 @@ function Segment({
         // globals.css) — a `transition-colors` utility after it would override
         // the shorthand and un-animate the press.
         "pressable group relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-control px-1.5",
-        "text-ui font-medium focus-visible:outline-offset-0 motion-reduce:active:scale-100",
+        "text-ui font-normal focus-visible:outline-offset-0 motion-reduce:active:scale-100",
         // 44px targets in the drawer, which is the only place this is touched.
         "coarse:h-11",
         locked

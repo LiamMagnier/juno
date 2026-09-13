@@ -124,11 +124,6 @@ function priceLabel(m: ModelInfo): string {
 }
 
 /**
- * The row's second line — and only below `md`, where the spec sheet is gone
- * and the description has nowhere else to live. Above `md` the row is one
- * line and this text is in the sheet, 8px to the right, in full.
- */
-/**
  * The row's one description line.
  *
  * The curated blurb when there is one; otherwise what the catalog knows. This
