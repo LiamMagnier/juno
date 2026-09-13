@@ -761,8 +761,13 @@ export function AppSidebar({
                       <div className="mt-4 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
                           <div key={group} className="space-y-0.5 pt-2 first:pt-0">
-                            {/* Same heading as Projects and Pinned above — see the note in `Section`. */}
-                            <p className="flex h-6 items-center px-2 font-mono text-micro text-muted-foreground/70">
+                            {/* Same heading as Projects and Pinned above — see the note in
+                                `Section` — and now the same INSET too. This is a second
+                                implementation of that eyebrow, so it kept `px-2` when the
+                                other moved to the column's text edge, and "Today" sat 24px
+                                left of every title under it. One voice needs one inset as
+                                much as it needs one rung. */}
+                            <p className="flex h-6 items-center pl-8 pr-2 font-mono text-micro text-muted-foreground/70">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -846,7 +851,12 @@ export function AppSidebar({
                     type="button"
                     aria-haspopup="menu"
                     aria-label={accountLabel}
-                    className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control px-1.5 text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
+                    /* No horizontal padding, so the 24px avatar starts where a
+                       nav row's fill starts and the name lands on the panel's
+                       one text edge at 40px. It was `px-1.5`, which put the
+                       name at 46 — the last row your eye rests on, six pixels
+                       off every label above it. */
+                    className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
                   >
                     {/* The SAME avatar helper the menu this opens draws with.
                         The footer used to render mono initials in a bordered
@@ -988,10 +998,23 @@ function NavRow({
   const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
-      {/* A `size-4` box, not a 22px well: the glyph IS the box, so at `gap-2`
-          every label in the panel starts exactly 32px from its edge — the
-          project tree's guide line and the chat bullets land there too. */}
-      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
+      {/* A `size-4` BOX holding a `size-3.5` GLYPH, and the two numbers are
+          doing different jobs.
+
+          The box is layout: 16px at `gap-2` is what puts every label in this
+          panel on one text edge, 32px from its row's edge, which the chat
+          bullets and the project tree's guide line also land on. Change it and
+          the column loses its alignment.
+
+          The glyph is weight. It used to fill the box, which made it 16px
+          against a 13px label — a mark 23% larger than the word it labels, on
+          every row, so the column read as icon-led and the rows read as
+          chunky. That is what "the size looks bad" was pointing at. 14px sits
+          right against 13px type and is the size the product switch above
+          already uses, so the panel now has ONE glyph size instead of a switch
+          at 14 and a nav at 16. `size-3.5` has its own rung on the optical
+          stroke ladder in globals.css, so the stroke thins with it. */}
+      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-3.5">
         {icon}
       </span>
       {!collapsed && (
@@ -1258,7 +1281,12 @@ function Section({
           kind="row"
           onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
-          className="h-6 min-w-0 flex-1 select-none gap-1.5 px-2 py-0 hover:bg-sidebar-accent/60"
+          /* `pl-8`, not `px-2`: this heads a list, so its word belongs on the
+             same text edge as the rows under it. It sat at 16px while every
+             label in the panel sat at 40 — two section headings hanging out
+             into the gutter, which is the kind of misalignment you see
+             immediately and cannot name. 8px panel padding + 32px = 40. */
+          className="h-6 min-w-0 flex-1 select-none gap-1.5 border-0 pl-8 pr-2 py-0 hover:bg-sidebar-accent/60"
         >
           {/*
            * ONE SECTION VOICE, and this is it: mono caps at the `micro` rung.

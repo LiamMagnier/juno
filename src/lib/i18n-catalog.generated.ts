@@ -14358,6 +14358,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "React component"
   },
   {
+    "id": "c70064df86c1917e",
+    "source": "The model stream ended with no answer and no finish reason (network interrupted)"
+  },
+  {
     "id": "c70eae1dfee0bc0b",
     "source": "juno:console"
   },
@@ -16154,10 +16158,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "7-day window"
   },
   {
-    "id": "dd15511640000eb1",
-    "source": "Google ended the stream without a terminal finish reason"
-  },
-  {
     "id": "dd167905de0defca",
     "source": "Version"
   },
@@ -16992,10 +16992,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e888155d8c7d2e3c",
     "source": "Compare"
-  },
-  {
-    "id": "e8892378638c8f90",
-    "source": "Juno Work"
   },
   {
     "id": "e893cc63a7ee8fe9",

@@ -677,12 +677,10 @@
       --ease-drawer: var(--ease-out-soft);
       --dur-slow: var(--dur-base);
     }
-    .skeleton::after,
-    .shimmer-text,
-    .aicss-shine,
-    [class*="animate-icon-breathe"],
-    [class*="animate-gen-"],
-    [class*="animate-ultra-"] { animation: none; }
+    /* The Tier C kill list MOVED OUT OF THIS LAYER — see the unlayered block
+       at the end of this file. It cannot live in `@layer base`, because every
+       loop it names is declared in `components` or `utilities`, and a later
+       layer beats an earlier one no matter what the selectors are. */
     /*
      * Tailwind's stock infinite loops, which were in no tier at all.
      *
@@ -2623,8 +2621,42 @@
 }
 
 @layer utilities {
-  /* Loading skeleton shimmer — a warm base with a faint primary-tinted sweep, so
-     loading states feel branded rather than like empty grey boxes. */
+  /*
+   * Loading skeleton — a warm well that BREATHES. It does not shimmer.
+   *
+   * It used to: a translucent band with a `--primary`-tinted peak, travelling
+   * left to right on a 1.6s linear loop. Measured on a cold sidebar load, that
+   * was six of them running at once, in phase, in a 256px column — the first
+   * motion anyone sees in this product.
+   *
+   * Four things wrong with it, and the first is the one the rest follow from.
+   *
+   * IT TELEPORTS. The band exits the right edge and reappears at the left,
+   * which is a discontinuity, and the old comment here knew: it chose `linear`
+   * so the jump would not also decelerate into the seam. `linear` does not
+   * remove a seam, it just stops adding a second artefact to it — and six rows
+   * seaming together once every 1.6 seconds reads as a collective stutter.
+   *
+   * IT IS THE STOCK GESTURE. A pale band sweeping a grey bar is the most
+   * copied effect on the web. Two commits ago the effort slider lost the same
+   * band for the same reason; it was wrong there because nothing was loading,
+   * and it is merely cheap here, where something is.
+   *
+   * IT SPENT THE ACCENT ON NOTHING. `--primary` is the one saturated colour in
+   * this interface and FLAT_UI.md reserves it for STATE. A placeholder is not a
+   * state, it is an absence.
+   *
+   * 1.6s IS ON NO LADDER. (A breath is allowed to be: the aura's periods are
+   * deliberately off the `--dur-*` rungs because that ladder is for transitions,
+   * which have an endpoint, and a breath has none. This is the same case — but
+   * the number should still be chosen, and 1.6s was inherited.)
+   *
+   * So: no band, no travel, no accent, nothing crossing anything. The well
+   * itself rises and settles over 1.8s on a symmetric ease. There is no seam
+   * because there is no edge to cross, which also means rows drifting out of
+   * phase with each other stops mattering — it reads as a surface waiting
+   * rather than six bars scanning.
+   */
   .skeleton {
     position: relative;
     overflow: hidden;
@@ -2637,31 +2669,21 @@
     /* Pressed into its ground: a placeholder is a well the content will fill. */
     box-shadow: var(--shadow-pressed), inset 0 0 0 1px hsl(var(--hairline));
   }
-  .skeleton::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.05) 40%, hsl(var(--primary) / 0.08) 50%, hsl(var(--foreground) / 0.05) 60%, transparent);
-    /* linear, and it is the same argument as --ease-breathe's, one step further.
-       This band travels off one edge and teleports back to the other, so there
-       is no turn to soften — an eased sweep decelerates into the seam and then
-       jumps, which reads as a stutter once a second on every loading screen. */
-    animation: skeleton-sweep 1.6s linear infinite;
-  }
   /*
-   * Declared HERE, not in tailwind.config.ts.
-   *
-   * The rule above named `shimmer`, which the config does declare — but
-   * Tailwind emits a keyframe only when its `animate-*` utility appears in the
-   * content glob, and `animate-shimmer` has no call sites anywhere. The
-   * keyframe was therefore never in the stylesheet and every skeleton in the
-   * product sat perfectly still while claiming to shimmer. A plain CSS rule
-   * needs its keyframe in plain CSS.
+   * Declared HERE, not in tailwind.config.ts — the reason is worth keeping from
+   * the rule this replaced. Tailwind emits a keyframe only when its `animate-*`
+   * utility appears in the content glob, and the old rule named `shimmer`,
+   * whose utility had no call sites anywhere. The keyframe was therefore never
+   * in the stylesheet at all, and every skeleton in the product sat perfectly
+   * still while claiming to shimmer. A plain CSS rule needs its keyframe in
+   * plain CSS.
    */
-  @keyframes skeleton-sweep {
-    from { transform: translateX(-100%); }
-    to { transform: translateX(100%); }
+  .skeleton {
+    animation: skeleton-breathe 1.8s var(--ease-breathe, ease-in-out) infinite;
+  }
+  @keyframes skeleton-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.62; }
   }
   .text-balance { text-wrap: balance; }
   /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content
@@ -3159,5 +3181,40 @@
   }
   .activity-heatmap .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+}
+
+
+/*
+ * ——— TIER C: THE DECORATIVE LOOPS, STOPPED ———
+ *
+ * DELIBERATELY UNLAYERED, and that is the entire point of this block.
+ *
+ * This kill list used to sit inside the `@media (prefers-reduced-motion)` rule
+ * in `@layer base`, where it did nothing at all. Cascade layers are resolved
+ * BEFORE specificity: an unlayered rule beats every layered one, and among
+ * layers the later wins regardless of how the selectors compare. Every loop
+ * named here is declared in `components` or `utilities` — `.skeleton` in
+ * utilities, `.shimmer-text` and `.aicss-shine` in components, the
+ * `animate-*` utilities in utilities — so `base` lost to all of them, every
+ * time. The guard read as careful and was decorative: someone who asked their
+ * operating system to stop non-essential motion got the shimmer, the skeletons
+ * and the icon breathing anyway, while the tiered product animations beside
+ * them correctly stopped. It is the worst shape an accessibility bug takes —
+ * one that looks handled in the source.
+ *
+ * Unlayered, it cannot lose to a layer. Keep it here, at the end, outside
+ * every `@layer`, and add new decorative loops to it rather than to any
+ * in-layer media query.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .shimmer-text,
+  .aicss-shine,
+  .effort-max,
+  [class*="animate-icon-breathe"],
+  [class*="animate-gen-"],
+  [class*="animate-ultra-"] {
+    animation: none !important;
   }
 }
