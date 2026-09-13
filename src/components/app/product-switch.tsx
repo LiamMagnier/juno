@@ -85,11 +85,28 @@ type Product = {
  * see native/macOS/.../DesktopProductMode.swift. That split is recorded in the
  * spec's risks; the web cannot take ⌘1–⌘3, which are browser tab switching.)
  */
+/**
+ * The three surfaces, and the ONE of them that is not in this switcher.
+ *
+ * `SIDEBAR_PRODUCTS` below is Chat and Code. Work is deliberately not there:
+ * it is not a place you go, it is a way of ASKING — you hand Juno an errand
+ * with a finish line instead of opening a conversation — and that choice
+ * belongs where you write the ask, not in the column you navigate with. It
+ * lives in the composer now (`ComposerModeSwitch`), which is also why it is
+ * set in words with no glyph there: it qualifies the sentence you are about
+ * to send, and a mark beside it would make it look like a destination again.
+ *
+ * `PRODUCTS` keeps all three, because the command palette, the keyboard
+ * chords and `productOf` still reason about Work as a surface.
+ */
 export const PRODUCTS = [
   { id: "chat", label: "Chat", href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
   { id: "work", label: "Work", href: "/work", kind: "work", chord: "⌘⇧2", minPlan: "FREE" },
   { id: "code", label: "Code", href: "/code", kind: "code", chord: "⌘⇧3", minPlan: "FREE" },
 ] as const satisfies readonly Product[];
+
+/** What the sidebar switcher shows: the two surfaces you navigate BETWEEN. */
+export const SIDEBAR_PRODUCTS = PRODUCTS.filter((p) => p.id !== "work");
 
 /**
  * Which product the reader is inside.
@@ -122,14 +139,12 @@ function isLocked(product: Product, plan: PlanId | undefined): boolean {
 export function ProductSwitch({
   collapsed = false,
   active,
-  needsYou,
   plan,
   onNavigate,
 }: {
   collapsed?: boolean;
   active: ProductSurface;
   /** Work items blocked on the reader. Drawn as a dot, announced as a number. */
-  needsYou?: number | null;
   /** The signed-in account's plan, from `useApp().quota`. */
   plan?: PlanId;
   onNavigate?: () => void;
@@ -150,13 +165,15 @@ export function ProductSwitch({
       // separator hairline says it for free, and it is what the footer uses.
       <nav aria-label="Juno products" className="pt-2">
         <div className="flex flex-col items-center gap-1 px-2.5 pb-2">
-          {PRODUCTS.map((product) => (
+          {SIDEBAR_PRODUCTS.map((product) => (
             <RailItem
               key={product.id}
               product={product}
               active={product.id === active}
               locked={isLocked(product, plan)}
-              needsYou={product.id === "work" ? needsYou ?? 0 : 0}
+              /* Work left this switcher, and its "needs you" count went with
+                 it — see SIDEBAR_PRODUCTS. Neither surface here has one. */
+              needsYou={0}
               onNavigate={onNavigate}
             />
           ))}
@@ -170,7 +187,7 @@ export function ProductSwitch({
     // 8px is the one vertical edge every interactive box in this column already
     // shares (Search, New chat, the Primary nav, More, the footer are all
     // `px-2`); the brand row keeps `px-3` because it is type, not a box.
-    <nav aria-label="Juno products" className="px-2 pb-2 pt-2">
+    <nav aria-label="Juno products" className="px-2 pb-5 pt-2">
       {/*
        * NO TRACK. It used to be a hairline-bordered `rounded-field` box, and
        * that box was the only framed object in the sidebar — which made the
@@ -183,14 +200,14 @@ export function ProductSwitch({
        * with no dead 4px between cells. Without the border there is no
        * concentric radius to honour and no `p-0.5` to hold it off one.
        */}
-      <div className="relative grid grid-cols-3 gap-0">
-        {PRODUCTS.map((product) => (
+      <div className="relative grid grid-cols-2 gap-0">
+        {SIDEBAR_PRODUCTS.map((product) => (
           <Segment
             key={product.id}
             product={product}
             active={product.id === active}
             locked={isLocked(product, plan)}
-            needsYou={product.id === "work" ? needsYou ?? 0 : 0}
+            needsYou={0}
             thumbId={thumbId}
             thumbTransition={thumbTransition}
             onNavigate={onNavigate}

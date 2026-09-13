@@ -24,7 +24,20 @@ const COLLAPSE_KEY = "juno:sidebar-collapsed";
 const WIDTH_KEY = "juno:sidebar:width";
 const SIDEBAR_MIN = 224;
 const SIDEBAR_MAX = 336;
-const SIDEBAR_DEFAULT = 256;
+/*
+ * 288, not 256.
+ *
+ * 256 is the width a sidebar defaults to because 256 is a round number, and at
+ * that width this column truncates its own content: "Pricing table for the new
+ * Fl…" is a conversation title losing its last four words to make room for
+ * nothing. The rows inside it are 36px now with real gaps, so the horizontal
+ * measure had to come up with the vertical one — air in one axis and a squeeze
+ * in the other reads worse than a squeeze in both.
+ *
+ * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
+ * starts.
+ */
+const SIDEBAR_DEFAULT = 288;
 const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /work is the one navigation the user cannot absorb as

@@ -15,6 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { ComposerModeSwitch } from "@/components/chat/composer-mode-switch";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -1012,6 +1013,11 @@ export function WorkComposer({
              * task, never a placeholder for a question it could be asked.
              */
             leading={
+              <>
+              {/* The way back. The switch is the same control on both sides, so
+                  Chat and Work are one choice made in one place rather than two
+                  destinations you have to know how to get between. */}
+              <ComposerModeSwitch />
               <ComposerAddMenu
                 disabled={submitting}
                 attach={
@@ -1041,6 +1047,7 @@ export function WorkComposer({
                 project={project === null ? { projects, onPick: setProject } : undefined}
                 onTalk={voice.onOpenVoiceMode}
               />
+              </>
             }
             trailing={
               <>

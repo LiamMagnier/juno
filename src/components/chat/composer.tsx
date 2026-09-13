@@ -55,6 +55,7 @@ import { researchEffortFor } from "@/lib/research/auto-effort";
 import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ConnectorMark } from "@/components/connections/connector-logos";
+import { ComposerModeSwitch } from "@/components/chat/composer-mode-switch";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
@@ -2604,6 +2605,9 @@ export function Composer({
           }
           leading={
             <>
+            {/* FIRST on the row, before "+": it qualifies the whole message,
+                and everything after it qualifies a part of one. */}
+            <ComposerModeSwitch />
             <PlusMenu
               open={plusOpen}
               onOpenChange={setPlusOpen}

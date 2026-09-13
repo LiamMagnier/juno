@@ -126,6 +126,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Everything in that export is already here."
   },
   {
+    "id": "00e13ed7af55b276",
+    "source": "work"
+  },
+  {
     "id": "00e3d94ef81c8f9e",
     "source": "Upload failed — check your connection and try again."
   },
@@ -4176,6 +4180,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "39b38f4751ee3ef3",
     "source": "Tools and connectors"
+  },
+  {
+    "id": "39b8521e97bcc930",
+    "source": "Composer mode"
   },
   {
     "id": "39b9ee1f3402329f",

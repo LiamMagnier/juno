@@ -44,7 +44,6 @@ import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
-import { useWorkNeedsYouCount } from "@/components/work/inbox/use-needs-you-count";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -71,9 +70,15 @@ import { useWorkNeedsYouCount } from "@/components/work/inbox/use-needs-you-coun
  * trades three primary destinations for space — a product call, not a
  * styling one.
  *
- * THE DENSITY LADDER, and nothing off it. Rows are `h-8` (32px) carrying
- * `text-ui` (13px) and a `size-4` (16px) glyph at `gap-2`, so every label in
- * the panel starts 32px from its edge. Section eyebrows are `h-6` mono caps;
+ * THE DENSITY LADDER, and nothing off it. Rows are `h-9` (36px) carrying
+ * `text-ui` (13px) and a `size-4` box holding a `size-3.5` glyph at `gap-2`,
+ * so every label in the panel starts 32px from its edge.
+ *
+ * 36, up from 32, and `space-y-1` between them rather than `space-y-0.5`. At
+ * 32/2 the rows were touching: five destinations in a 170px block with two
+ * pixels between them, which is a list you have to parse rather than scan.
+ * The extra four pixels of row and two of gap cost 30px across the whole nav
+ * and buy the thing the column was missing — you can see where one row ends. Section eyebrows are `h-6` mono caps;
  * date folds are `h-6` sans captions one rung below them. Glyphs may only be
  * `size-3`, `size-3.5` or `size-4` — every one of which has a rung on the
  * optical stroke ladder in globals.css. The rows were 36px with 14px labels
@@ -165,7 +170,6 @@ export function AppSidebar({
 } = {}) {
   const router = useRouter();
   const pathname = usePathname();
-  const workNeedsYou = useWorkNeedsYouCount();
   const reduceMotion = useReducedMotion();
   const {
     conversations,
@@ -439,7 +443,21 @@ export function AppSidebar({
   const activeKind = activeConversationId
     ? conversations.find((c) => c.id === activeConversationId)?.kind ?? null
     : null;
-  const activeProduct = productOf(pathname, activeKind);
+  /*
+   * Work reads as Chat IN THIS SWITCHER, and that is the point of moving it.
+   *
+   * `productOf` still answers "work" — the command palette and the keyboard
+   * chords need the real surface. But the sidebar's switcher is Chat / Code
+   * now, and on /work it was drawing both segments unselected with no thumb,
+   * which reads as a broken control rather than as an honest "neither".
+   *
+   * Selecting Chat is not a fudge: Work is a MODE of the chat surface now, not
+   * a third place. The column says which product you are in; the composer's
+   * own switch says which mode you are in within it. Two controls, two
+   * questions, no overlap.
+   */
+  const surface = productOf(pathname, activeKind);
+  const activeProduct = surface === "work" ? "chat" : surface;
   /*
    * Usage in the footer is a WORD, not a meter.
    *
@@ -583,7 +601,6 @@ export function AppSidebar({
         <ProductSwitch
           collapsed={collapsed}
           active={activeProduct}
-          needsYou={workNeedsYou}
           plan={quota.plan}
           onNavigate={() => setSidebarOpen(false)}
         />
@@ -597,7 +614,7 @@ export function AppSidebar({
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-2")}>
+        <div className={cn("space-y-1", collapsed ? "px-2.5 pt-2" : "px-2")}>
           {/* SEARCH IS NOT HERE ANY MORE — it is in the panel header, beside
               the collapse control. Measured, this column spent 330px before
               the first conversation title: a wordmark row, a product switch,
@@ -639,7 +656,7 @@ export function AppSidebar({
           className={cn(
             // `pt-0.5`, matching the row gap above it: see the note on the
             // Search block — this is the same navigation block continuing.
-            "space-y-0.5 pt-0.5",
+            "space-y-1 pt-1",
             collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-2"
           )}
           aria-label="Primary"
@@ -758,9 +775,9 @@ export function AppSidebar({
                         another. Grouping, paging and the sentinel are
                         untouched. */}
                     {recents.length > 0 ? (
-                      <div className="mt-4 first:mt-0">
+                      <div className="mt-6 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
-                          <div key={group} className="space-y-0.5 pt-2 first:pt-0">
+                          <div key={group} className="space-y-1 pt-5 first:pt-0">
                             {/* Same heading as Projects and Pinned above — see the note in
                                 `Section` — and now the same INSET too. This is a second
                                 implementation of that eyebrow, so it kept `px-2` when the
@@ -1088,7 +1105,7 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // were set one weight HEAVIER than the chat titles they sit above, so the
     // furniture out-shouted the documents (docs/design/PREMIUM_AUDIT.md §2).
     // Selection is the tonal fill and the ink, as it already was.
-    "group relative flex h-8 w-full items-center rounded-control text-ui font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    "group relative flex h-9 w-full items-center rounded-control text-ui font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
     // The rail: a 44px target around the same 16px glyph, so every icon is
     // one tap and the row's tooltip names it.
     collapsed ? "size-11 justify-center px-0" : "gap-2 px-2 coarse:h-11",
@@ -1275,7 +1292,7 @@ function Section({
     // `mt-4` rather than `mb-3`: the 16px belongs ABOVE the header that owns
     // it, so the first section sits on the scroller's own 8px and every later
     // one is separated from the list it follows.
-    <div className="group/section mt-4 first:mt-0">
+    <div className="group/section mt-6 first:mt-0">
       <div className="flex items-center">
         <Pressable
           kind="row"
@@ -1311,7 +1328,7 @@ function Section({
         {action != null && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       <Disclosure open={!isCollapsed}>
-        <div className="space-y-0.5 pt-0.5">{children}</div>
+        <div className="space-y-1 pt-1">{children}</div>
       </Disclosure>
     </div>
   );
