@@ -2048,7 +2048,7 @@ export function ColorField({
                 backgroundSize: "auto, 6px 6px",
               }}
             />
-            <span className="min-w-0 flex-1 truncate font-mono text-micro uppercase tabular-nums text-foreground">
+            <span className="min-w-0 flex-1 truncate font-mono text-micro tabular-nums text-foreground">
               {mixed ? "Mixed" : value || "None"}
             </span>
           </button>

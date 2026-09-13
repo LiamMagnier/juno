@@ -142,7 +142,7 @@ function matchesQuery(m: ModelInfo, q: string): boolean {
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
     <div aria-hidden className="flex h-8 items-center gap-2 px-2 pt-1">
-      <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">{children}</span>
+      <span className="shrink-0 font-mono text-micro text-muted-foreground/60">{children}</span>
       {count != null && (
         <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/45">{count}</span>
       )}
@@ -185,7 +185,7 @@ function EmptyBlock({
 function Stat({ label, value, unit, score }: { label: string; value: string; unit?: string; score: number }) {
   return (
     <div>
-      <div className="font-mono text-micro uppercase text-muted-foreground/60">{label}</div>
+      <div className="font-mono text-micro text-muted-foreground/60">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-1">
         <span className="text-ui font-medium tabular-nums text-foreground">{value}</span>
         {unit && <span className="font-mono text-micro text-muted-foreground/60">{unit}</span>}
@@ -299,18 +299,18 @@ function DetailPanel({
             {metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0 && (
               <dl className="mt-4 space-y-1 font-mono text-micro tabular-nums text-muted-foreground">
                 <div className="flex items-baseline justify-between gap-2">
-                  <dt className="uppercase text-muted-foreground/60">In / MTok</dt>
+                  <dt className="text-muted-foreground/60">In / MTok</dt>
                   <dd>{formatPrice(metrics.inputUsdPerMTok)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
-                  <dt className="uppercase text-muted-foreground/60">Out / MTok</dt>
+                  <dt className="text-muted-foreground/60">Out / MTok</dt>
                   <dd>{formatPrice(metrics.outputUsdPerMTok)}</dd>
                 </div>
               </dl>
             )}
 
             {caps.length > 0 && (
-              <p className="mt-4 font-mono text-micro uppercase leading-relaxed text-muted-foreground/70">
+              <p className="mt-4 font-mono text-micro leading-relaxed text-muted-foreground/70">
                 {caps.join(" · ")}
               </p>
             )}
@@ -828,7 +828,7 @@ export function ModelSelector({
               <span className="block truncate text-ui font-medium text-foreground">
                 {current?.name ?? "Select model"}
               </span>
-              <span className="block font-mono text-micro uppercase text-muted-foreground/60">Change model</span>
+              <span className="block font-mono text-micro text-muted-foreground/60">Change model</span>
             </span>
             <ChevronUp aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           </button>
@@ -1027,7 +1027,7 @@ export function ModelSelector({
                           {g.legacy.length > 0 && (
                             <details key={q ? "open" : "closed"} open={!!q} className="group/legacy">
                               <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2 text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
-                                <span className="shrink-0 font-mono text-micro uppercase">Past models</span>
+                                <span className="shrink-0 font-mono text-micro">Past models</span>
                                 <span className="h-px flex-1 bg-border/70" />
                                 <span className="shrink-0 font-mono text-micro tabular-nums">{g.legacy.length}</span>
                                 {/* `ease-in-out` is the curve for an A-to-B move

@@ -286,7 +286,24 @@ from `xs`), and `999px` three times for what the rest of the file spells
 12. **One gutter for the whole product.** Every surface that sits inside the
     content column takes the same margin at the same column width, declared
     once.
-13. **Never clip a gradient that still carries alpha.** Fill every radial
+13. **Sentence case. No caps eyebrows.** Mono, small and muted already says
+    "this is metadata" — caps only adds volume, and a product whose section
+    headers, stat labels, kickers and units are all shouting has no quiet
+    register left to fall back on. Retired from 21 class lists, and `label`'s
+    tracking came down from 0.10em with them: a tenth of an em is a caps
+    tracking (caps are all one height, with no ascenders to separate them) and
+    on sentence-case mono it reads as l e t t e r s p a c i n g, the one
+    typographic effect that looks like a mistake rather than a choice. Initials
+    in an avatar stay capitalised; those are initials, not a label.
+14. **Ambient motion must not borrow a loading gesture.** A translucent band
+    travelling along a coloured bar means "waiting for data" everywhere on the
+    web, so on a control that is not loading anything it reads as decoration
+    applied because decoration was available. If a resting state needs to look
+    alive, change the whole thing slowly — no highlight, no direction, nothing
+    crossing anything — and make the amplitude a proportion (`brightness`)
+    rather than a second hand-picked colour, so it holds across every accent
+    and both themes.
+15. **Never clip a gradient that still carries alpha.** Fill every radial
     gradient over its own bounding box and let it reach zero on its own. Every
     hard seam this layer has ever shown — the faceted bands, the sheared arm
     tips — was a gradient cut short, and each one cost a redesign that was

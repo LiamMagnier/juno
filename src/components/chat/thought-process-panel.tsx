@@ -1684,7 +1684,7 @@ export function ThoughtProcessPanel({
                 <div className="truncate font-mono text-body-lg tabular-nums text-foreground">
                   {run.elapsedMs === null ? "—" : formatSpan(run.elapsedMs, { live: streaming })}
                 </div>
-                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">Elapsed</div>
+                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">Elapsed</div>
               </div>
               <div className="min-w-0">
                 {/* THE ONE PLACE THIS PANEL PRINTS A PLACEHOLDER, and it is
@@ -1700,11 +1700,11 @@ export function ThoughtProcessPanel({
                 >
                   {money ?? "—"}
                 </div>
-                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">Cost</div>
+                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">Cost</div>
               </div>
               <div className="min-w-0">
                 <div className="truncate font-mono text-body-lg tabular-nums text-foreground">{figureThird.value}</div>
-                <div className="mt-0.5 truncate font-mono text-micro uppercase text-muted-foreground">
+                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">
                   {figureThird.caption}
                 </div>
               </div>
@@ -1722,7 +1722,7 @@ export function ThoughtProcessPanel({
                 aria-labelledby={`${id}-notice`}
                 className="-mx-3 mt-3 border-l-2 border-warning/35 bg-warning/5 px-3 py-2 dark:bg-warning/10"
               >
-                <h3 id={`${id}-notice`} className="font-mono text-micro uppercase text-warning">
+                <h3 id={`${id}-notice`} className="font-mono text-micro text-warning">
                   Notice
                 </h3>
                 <ul className="mt-1 space-y-1">
@@ -1767,7 +1767,7 @@ export function ThoughtProcessPanel({
                     eyebrow. */}
                 <h3
                   id={`${id}-phase-${section.key}`}
-                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-micro uppercase text-muted-foreground"
+                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-micro text-muted-foreground"
                 >
                   <span>{PHASE_LABEL[section.key]}</span>
                   <span className="tabular-nums text-muted-foreground/70">
@@ -1843,7 +1843,7 @@ export function ThoughtProcessPanel({
                       )}
                       {memorySteps.length > 0 && (
                         <>
-                          <h4 className="mt-4 px-2 font-mono text-micro uppercase text-muted-foreground">
+                          <h4 className="mt-4 px-2 font-mono text-micro text-muted-foreground">
                             Memory used
                           </h4>
                           <ol className="relative mt-1">
@@ -2019,7 +2019,7 @@ function StepRow({
   const figure = (
     <span className="col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px">
       {step.failed && step.kind === "tool" && (
-        <span className="font-mono text-micro uppercase text-warning/80">failed</span>
+        <span className="font-mono text-micro text-warning/80">Failed</span>
       )}
       {step.ms !== null && (
         <span className="font-mono text-caption tabular-nums text-muted-foreground">

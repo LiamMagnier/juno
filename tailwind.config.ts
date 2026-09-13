@@ -386,9 +386,17 @@ const config: Config = {
         // the most likely SC 1.4.12 failure in the tree, since tracking stacks with
         // a user-forced 0.12em on fixed-height chips. AsciiWordmark keeps its own
         // 0.12em — that is a logotype, not a label.
+        /*
+         * 0.01em, down from 0.10em. A tenth of an em is a CAPS tracking: caps
+         * are all the same height with no ascenders or descenders to separate
+         * them, so they need the air. This rung is set in sentence case now
+         * (see the eyebrow note in docs/design/PREMIUM_AUDIT.md), and at 0.10em
+         * sentence-case mono reads as l e t t e r s p a c e d — the one
+         * typographic effect that looks like a mistake rather than a choice.
+         */
         label: [
           "0.75rem",
-          { lineHeight: "1.4", letterSpacing: "0.10em", fontWeight: "500" },
+          { lineHeight: "1.4", letterSpacing: "0.01em", fontWeight: "500" },
         ],
         caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
         /*

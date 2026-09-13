@@ -1116,7 +1116,7 @@ function VariableRow({
             <span aria-hidden className="size-3 shrink-0 rounded-micro border border-dashed border-border/60" />
           )}
           <span className="min-w-0 flex-1 truncate text-caption text-foreground">{variable.name}</span>
-          <span className="max-w-[6rem] shrink-0 truncate font-mono text-micro uppercase text-muted-foreground">{preview}</span>
+          <span className="max-w-[6rem] shrink-0 truncate font-mono text-micro text-muted-foreground">{preview}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-2 p-3" onKeyDown={(event) => event.stopPropagation()}>

@@ -290,7 +290,7 @@ export function ClarifyGate({
             <label htmlFor={`clarify-${question.id}`} className="flex items-baseline gap-2">
               <span className="min-w-0 flex-1 text-ui font-medium text-foreground">{question.question}</span>
               {question.skippable !== false && (
-                <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">
+                <span className="shrink-0 font-mono text-micro text-muted-foreground/60">
                   {CLARIFY_COPY.optional}
                 </span>
               )}

@@ -42,13 +42,23 @@ import {
  * one and you must change the other, which is why the number lives in one
  * place.
  *
- * THE TOP RUNG ANIMATES, and it is the one thing in this product's chrome
- * that does. Rule 10 of the premium audit says nothing in chrome moves except
- * a fill; this is a fill, and it is the case the exception exists for. Max is
- * not one more notch — it is the end of the scale, where a reply can take
- * minutes and cost several times the rung below it. A slow sheen travelling
- * the fill says "this is running at the top" with no badge, no colour change
- * and no warning copy. It stops dead under `prefers-reduced-motion`.
+ * THE TOP RUNG ANIMATES, and it is the one thing in this product's chrome that
+ * does. Rule 10 of the premium audit says nothing in chrome moves except a
+ * fill; this is a fill, and it is the case the exception exists for. Max is not
+ * one more notch — it is the end of the scale, where a reply can take minutes
+ * and cost several times the rung below it.
+ *
+ * IT IS NOT A SHEEN. The first version swept a translucent white band along the
+ * fill on a loop, and a white band travelling left to right across a coloured
+ * bar is the skeleton-loader gesture — the most copied effect on the web. On a
+ * control that is not loading anything it reads as decoration applied because
+ * decoration was available, which is the opposite of what it is for.
+ *
+ * What replaced it has no highlight and no direction: the fill breathes between
+ * `--primary` and `--primary-ink`, two shades of the accent the palette already
+ * owns, over eight seconds. Nothing crosses the bar, nothing arrives or leaves,
+ * and at any instant it is a flat fill in the accent — it reads as alive only
+ * if you keep looking at it. It stops dead under `prefers-reduced-motion`.
  *
  * The export keeps its old name so every composer that mounts it keeps
  * compiling; the props are unchanged.
@@ -107,7 +117,7 @@ export function ReasoningSlider({
           the word it names, and every surface that mounts the slider gets it
           for free instead of only that one. */}
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-micro uppercase text-muted-foreground/60">Thinking</span>
+        <span className="font-mono text-micro text-muted-foreground/60">Thinking</span>
         <span
           className={cn(
             "text-ui font-medium transition-colors duration-fast motion-reduce:transition-none",
@@ -130,14 +140,14 @@ export function ReasoningSlider({
             className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-primary transition-[width] duration-slow ease-out-soft motion-reduce:transition-none"
             style={{ width: `calc(${head} + 12px)` }}
           >
-            {/* THE SHEEN GETS ITS OWN ELEMENT, and that is not tidiness.
+            {/* THE BREATH GETS ITS OWN ELEMENT, and that is not tidiness.
                 Tailwind's `duration-slow` on the fill sets the duration for
-                everything timed on that element, animation included, and it
-                wins on layer order however the shorthand is written — so the
-                2.8s travel was silently running at --dur-slow, 360ms, which
-                is not a sheen but a strobe. A child with no timing utility on
-                it cannot be overridden by one. */}
-            {atMax && <span aria-hidden className="effort-sheen absolute inset-0" />}
+                everything timed on that element, animation included, and wins
+                on layer order however the shorthand is written — so an 8s
+                cycle would silently run at --dur-slow, 360ms, which is not a
+                breath but a flicker. A child with no timing utility on it
+                cannot be overridden by one. */}
+            {atMax && <span aria-hidden className="effort-max absolute inset-0" />}
           </div>
 
           {/* A mark per rung, inside the track. Behind the knob they sit on

@@ -1227,9 +1227,7 @@
    * the track, which means the mapping from pointer-x to value depends on
    * that width — and the painted knob has to use the same inset or the two
    * drift apart, worst at the ends, where the value you see and the value you
-   * set stop agreeing. 28px here, `THUMB = 28` there. They are one number,
-   * and it is the track's full height rather than the painted knob's 24,
-   * because the knob sits inside 2px of track padding.
+   * set stop agreeing. 20px here, `THUMB = 20` there. They are one number.
    *
    * Height is the full control so the whole row is draggable rather than just
    * the pill; `appearance: none` on the thumb is required or WebKit ignores
@@ -1238,13 +1236,13 @@
   .effort-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 28px;
+    width: 20px;
     height: 100%;
     background: transparent;
     border: 0;
   }
   .effort-range::-moz-range-thumb {
-    width: 28px;
+    width: 20px;
     height: 100%;
     background: transparent;
     border: 0;
@@ -1262,45 +1260,48 @@
   }
 
   /*
-   * The top rung, moving.
+   * The top rung, alive.
    *
    * Max is the end of the scale, not one more notch on it: a reply there can
    * take minutes and cost several times the rung below. This is how the
-   * control says so — a band of the accent's own foreground travelling the
-   * length of the fill, slowly, on a loop. No badge, no second colour, no
-   * warning copy.
+   * control says so, with no badge, no second colour and no warning copy.
    *
-   * It is a BACKGROUND position that animates, not a transform on a child, so
-   * there is no extra element and nothing to mis-clip at the fill's rounded
-   * cap. `linear`, because a travelling highlight that eases is a highlight
-   * that visibly restarts.
+   * IT USED TO BE A SHEEN and the sheen was wrong. A translucent white band
+   * travelling left to right along a coloured bar on a 2.8s loop is the
+   * skeleton-loader gesture — the most copied effect on the web, and one that
+   * means "waiting for data" everywhere it appears. On a control that is not
+   * loading anything it reads as decoration applied because decoration was
+   * available, which is the opposite of what it is for. It also drew the eye
+   * on a timer: something crossed the bar every 2.8 seconds whether or not you
+   * were looking at the bar.
+   *
+   * So: no highlight, no direction, nothing crossing anything. The whole bar
+   * brightens and settles, once every eight seconds — slow enough that
+   * peripheral vision does not catch it, so it reads as alive only if you are
+   * already looking at it. That is the right amount of attention for a control
+   * telling you something about cost rather than asking for input.
+   *
+   * `filter: brightness` on a layer painted in the accent, NOT a swap between
+   * two palette colours. The first attempt breathed `--primary` to
+   * `--primary-ink`, which is the pair the palette already owns and is two
+   * points of lightness apart — measured on the rendered element, the full
+   * swing moved rgb(180,85,54) to rgb(174,82,52). Correct in principle,
+   * invisible in fact. A brightness factor is a proportion, so it holds its
+   * amplitude across all six accents and both themes, where any hand-set
+   * second colour would have to be six pairs.
+   *
+   * `ease-in-out` and a symmetric cycle, because a breath has no beginning.
    */
-  @keyframes effort-sheen {
-    /* 160% → -60%, which sweeps LEFT TO RIGHT and looks backwards written
-       down. Percentage background-position aligns the same fraction of the
-       IMAGE with that fraction of the BOX, so the offset is
-       (box - image) x P — and the image here is 220% of the box, making that
-       first term negative. Larger P moves the image left. Written the
-       intuitive way round, the highlight ran against the reading direction. */
-    from { background-position: 160% 0; }
-    to   { background-position: -60% 0; }
+  @keyframes effort-max {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.1); }
   }
-  .effort-sheen {
-    background-image: linear-gradient(
-      100deg,
-      transparent 34%,
-      hsl(var(--primary-foreground) / .34) 50%,
-      transparent 66%
-    );
-    background-size: 220% 100%;
-    background-repeat: no-repeat;
-    animation: effort-sheen 2.8s linear infinite;
+  .effort-max {
+    background-color: hsl(var(--primary));
+    animation: effort-max 8s ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
-    .effort-sheen {
-      background-image: none;
-      animation: none;
-    }
+    .effort-max { animation: none; }
   }
 
   .composer-surface {

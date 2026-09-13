@@ -730,7 +730,7 @@ export function AppSidebar({
                         {groupedRecents.map(({ group, rows }) => (
                           <div key={group} className="space-y-0.5 pt-2 first:pt-0">
                             {/* Same heading as Projects and Pinned above — see the note in `Section`. */}
-                            <p className="flex h-6 items-center px-2 font-mono text-micro uppercase text-muted-foreground/70">
+                            <p className="flex h-6 items-center px-2 font-mono text-micro text-muted-foreground/70">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -1237,7 +1237,7 @@ function Section({
            * it is the same heading the model picker draws, so the product has
            * one way of naming a group of rows rather than three.
            */}
-          <span className="min-w-0 truncate font-mono text-micro uppercase text-muted-foreground/70">{label}</span>
+          <span className="min-w-0 truncate font-mono text-micro text-muted-foreground/70">{label}</span>
           {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
               turn are on screen, so this is an A-to-B move. */}
           <ChevronDown

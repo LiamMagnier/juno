@@ -49,8 +49,11 @@ const STYLES = `
     margin: 1.75rem 0 0;
     font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
     font-size: 0.6875rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    /* Sentence case, and a sentence-case tracking with it. This file inlines
+       its own CSS because it renders when the app's has failed to load, so it
+       carries a hand-written copy of the eyebrow idiom and has to be retuned
+       by hand alongside it. */
+    letter-spacing: 0.01em;
     color: #8a6d3f;
   }
   .juno-fallback-title {
