@@ -25,7 +25,7 @@ const WIDTH_KEY = "juno:sidebar:width";
 const SIDEBAR_MIN = 224;
 const SIDEBAR_MAX = 336;
 /*
- * 288, not 256.
+ * 304, not 256.
  *
  * 256 is the width a sidebar defaults to because 256 is a round number, and at
  * that width this column truncates its own content: "Pricing table for the new
@@ -34,10 +34,16 @@ const SIDEBAR_MAX = 336;
  * measure had to come up with the vertical one — air in one axis and a squeeze
  * in the other reads worse than a squeeze in both.
  *
+ * It went 256 -> 288 when the rows opened up, and 288 -> 304 when the panel's
+ * own inset went 8px -> 12px: that inset takes 8px off the label on both sides
+ * at once, so titles that had just started fitting began truncating again. The
+ * horizontal budget is `width - 44px of text inset - 12px of right padding`,
+ * and it has to be spent on the words, not on the margins around them.
+ *
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
  */
-const SIDEBAR_DEFAULT = 288;
+const SIDEBAR_DEFAULT = 304;
 const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /work is the one navigation the user cannot absorb as
@@ -121,7 +127,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   React.useLayoutEffect(() => {
     try {
       const stored = Number(localStorage.getItem(WIDTH_KEY));
-      if (Number.isFinite(stored) && stored > 0) applyWidth(clampWidth(stored));
+      /*
+       * A STORED VALUE EQUAL TO A PREVIOUS DEFAULT MEANS "I NEVER CHOSE".
+       *
+       * This width is persisted, so the moment it is written once — and it is
+       * written on first paint — raising SIDEBAR_DEFAULT does nothing for
+       * anybody who has already opened Juno. The column would stay at 256 for
+       * every existing reader while the code, the screenshots and the commit
+       * message all said 304. That is the worst kind of change: one that is
+       * real in the repository and invisible in the product.
+       *
+       * So a stored value that is exactly one of the widths this app used to
+       * DEFAULT to is treated as unset, and the new default wins. A width the
+       * reader actually dragged to is any other number, and it is kept — which
+       * is why this is a list of former defaults rather than a version bump on
+       * the key, which would have thrown away deliberate choices too.
+       */
+      const FORMER_DEFAULTS = [256, 288];
+      const chosen = Number.isFinite(stored) && stored > 0 && !FORMER_DEFAULTS.includes(stored);
+      if (chosen) applyWidth(clampWidth(stored));
     } catch {
       /* ignore */
     }

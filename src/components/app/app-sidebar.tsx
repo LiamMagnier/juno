@@ -506,7 +506,7 @@ export function AppSidebar({
         <motion.div
           layout
           transition={layoutTransition}
-          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 justify-between px-2")}
+          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-10 justify-between px-3")}
         >
           <motion.div layout="position" transition={layoutTransition}>
             <Link
@@ -614,7 +614,7 @@ export function AppSidebar({
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        <div className={cn("space-y-1", collapsed ? "px-2.5 pt-2" : "px-2")}>
+        <div className={cn("space-y-1.5", collapsed ? "px-2.5 pt-2" : "px-3")}>
           {/* SEARCH IS NOT HERE ANY MORE — it is in the panel header, beside
               the collapse control. Measured, this column spent 330px before
               the first conversation title: a wordmark row, a product switch,
@@ -656,8 +656,8 @@ export function AppSidebar({
           className={cn(
             // `pt-0.5`, matching the row gap above it: see the note on the
             // Search block — this is the same navigation block continuing.
-            "space-y-1 pt-1",
-            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-2"
+            "space-y-1.5 pt-1.5",
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-3"
           )}
           aria-label="Primary"
         >
@@ -666,6 +666,15 @@ export function AppSidebar({
               { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
               { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
               { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
+              /* Design is a destination like the four above it and is drawn
+                 like one. It used to be pinned on its own above the footer
+                 hairline, on the reasoning that it must never scroll away —
+                 but this whole block sits ABOVE the scroll region (the only
+                 thing that scrolls is the conversation list), so it never
+                 scrolled away here either. The pin was solving a problem that
+                 did not exist, and it cost a row stranded at the bottom of the
+                 column with a void above it. */
+              { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
             ] as const
           ).map((item) => (
             <NavRow
@@ -692,7 +701,7 @@ export function AppSidebar({
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3",
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2 pt-3",
             // The rail has no lists to scroll; its own scroll region is the
             // <nav> above, so this must not also claim the slack.
             collapsed && "hidden"
@@ -777,7 +786,7 @@ export function AppSidebar({
                     {recents.length > 0 ? (
                       <div className="mt-6 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
-                          <div key={group} className="space-y-1 pt-5 first:pt-0">
+                          <div key={group} className="space-y-1.5 pt-6 first:pt-0">
                             {/* Same heading as Projects and Pinned above — see the note in
                                 `Section` — and now the same INSET too. This is a second
                                 implementation of that eyebrow, so it kept `px-2` when the
@@ -817,33 +826,14 @@ export function AppSidebar({
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
         {/*
-         * TWO BLOCKS, 89px total (it was three objects in ~121px: a three-line
-         * account block, a two-high stack of icon buttons with two different
-         * corner radii, and a Design row above them).
-         *
-         * Block 1 is Design, pinned above the hairline — the last thing before
-         * the footer, never scrolled away, drawn as an ordinary 32px
-         * destination row. Block 2 is ONE 36px band carrying three objects the
-         * way the composer's controls row carries three: the account trigger,
-         * then a two-button cluster.
+         * ONE BLOCK: the account band. It was two, the first being a lone
+         * Design row pinned above the hairline — see the note beside Design in
+         * the destinations list for why that pin bought nothing. Removing it
+         * closes the gap that used to sit between the end of the conversation
+         * list and the bottom of the column, which is the "void" the panel was
+         * repeatedly read as having.
          */}
         <motion.div layout transition={layoutTransition}>
-          <div className={cn(collapsed ? "px-2.5" : "px-2 pb-1.5")}>
-            <NavRow
-              collapsed={collapsed}
-              href="/design"
-              active={pathname === "/design"}
-              onClick={() => setSidebarOpen(false)}
-              /* `SidebarMotionIcon kind="design"` = PenTool, the mark /design,
-                 the command palette and the icon registry all draw. This row
-                 was the one nav row in the file that bypassed the registry and
-                 imported a bare lucide `Pencil`: one destination, two marks. */
-              icon={<SidebarMotionIcon kind="design" />}
-              label="Design"
-              layoutId="nav-design"
-              transition={layoutTransition}
-            />
-          </div>
           {collapsed ? (
             /* The rail loses its dedicated 44px Settings button: Settings is a
                row in the account menu, one click away at BOTH widths, and
@@ -861,7 +851,7 @@ export function AppSidebar({
               </div>
             </>
           ) : (
-            <div className="mt-1.5 flex items-center gap-1 border-t border-sidebar-border px-2 pb-2 pt-1.5">
+            <div className="mt-2 flex items-center gap-1 border-t border-sidebar-border px-3 pb-2.5 pt-2">
               <UserMenu
                 trigger={
                   <button
@@ -1015,6 +1005,34 @@ function NavRow({
   const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
+      {/*
+       * THE SELECTION FILL TRAVELS. It is one element with a shared
+       * `layoutId`, so moving from Library to Projects slides it down the
+       * column instead of switching off in one row and on in another.
+       *
+       * This is the same mechanism — and the same `layoutId` idea — as the
+       * product switch's thumb directly above, which is the point: the panel
+       * had two ways of saying "this one is selected", a travelling thumb in
+       * the switcher and a hard cut everywhere else. Now it has one.
+       *
+       * It is a FILL, which is the only thing rule 10 of
+       * docs/design/PREMIUM_AUDIT.md lets chrome animate, and the row's text
+       * and glyph do not move at all — only the ink behind them.
+       *
+       * `spring.layout` has `bounce: 0`: this is a position correcting itself,
+       * not an object with momentum. Under reduced motion `layoutTransition`
+       * is `{ duration: 0 }`, so it jumps, which is the correct behaviour
+       * rather than a degraded one.
+       */}
+      {active && !collapsed && (
+        <motion.span
+          layoutId="sidebar-nav-active"
+          transition={t}
+          aria-hidden
+          data-nav-fill
+          className="absolute inset-0 -z-10 rounded-control bg-sidebar-accent"
+        />
+      )}
       {/* A `size-4` BOX holding a `size-3.5` GLYPH, and the two numbers are
           doing different jobs.
 
@@ -1109,8 +1127,12 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // The rail: a 44px target around the same 16px glyph, so every icon is
     // one tap and the row's tooltip names it.
     collapsed ? "size-11 justify-center px-0" : "gap-2 px-2 coarse:h-11",
+    // NO `bg-` on the active row: its fill is the travelling `motion.span`
+    // inside it (see NavRow). Painting it here too would leave a hard-edged
+    // copy of the fill sitting under the one that slides, so the old row's ink
+    // would blink off before the new row's arrived.
     active
-      ? "bg-sidebar-accent text-foreground"
+      ? "text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
   );
 }
@@ -1328,7 +1350,7 @@ function Section({
         {action != null && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       <Disclosure open={!isCollapsed}>
-        <div className="space-y-1 pt-1">{children}</div>
+        <div className="space-y-1.5 pt-1.5">{children}</div>
       </Disclosure>
     </div>
   );

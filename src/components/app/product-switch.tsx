@@ -187,7 +187,7 @@ export function ProductSwitch({
     // 8px is the one vertical edge every interactive box in this column already
     // shares (Search, New chat, the Primary nav, More, the footer are all
     // `px-2`); the brand row keeps `px-3` because it is type, not a box.
-    <nav aria-label="Juno products" className="px-2 pb-5 pt-2">
+    <nav aria-label="Juno products" className="px-3 pb-6 pt-3">
       {/*
        * NO TRACK. It used to be a hairline-bordered `rounded-field` box, and
        * that box was the only framed object in the sidebar — which made the

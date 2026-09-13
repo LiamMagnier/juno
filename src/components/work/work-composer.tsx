@@ -1014,10 +1014,6 @@ export function WorkComposer({
              */
             leading={
               <>
-              {/* The way back. The switch is the same control on both sides, so
-                  Chat and Work are one choice made in one place rather than two
-                  destinations you have to know how to get between. */}
-              <ComposerModeSwitch />
               <ComposerAddMenu
                 disabled={submitting}
                 attach={
@@ -1047,6 +1043,10 @@ export function WorkComposer({
                 project={project === null ? { projects, onPick: setProject } : undefined}
                 onTalk={voice.onOpenVoiceMode}
               />
+              {/* The way back, in the same position it holds in the chat
+                  composer: after "+". The switch is the same control on both
+                  sides, so Chat and Work are one choice made in one place. */}
+              <ComposerModeSwitch />
               </>
             }
             trailing={

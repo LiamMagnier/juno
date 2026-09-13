@@ -2605,9 +2605,6 @@ export function Composer({
           }
           leading={
             <>
-            {/* FIRST on the row, before "+": it qualifies the whole message,
-                and everything after it qualifies a part of one. */}
-            <ComposerModeSwitch />
             <PlusMenu
               open={plusOpen}
               onOpenChange={setPlusOpen}
@@ -2616,6 +2613,11 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
+            {/* AFTER "+", not before it. "+" is the composer's own left
+                anchor — it is the control that has always started this row and
+                the one the hand goes to without looking — so the mode switch
+                sits beside it rather than displacing it. */}
+            <ComposerModeSwitch />
             {researchArmed && (
               /* h-8, like every other control on this row: a pill one pixel
                  taller or shorter than its neighbours is the kind of thing you
