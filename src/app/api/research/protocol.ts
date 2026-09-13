@@ -13,6 +13,7 @@
 import { z } from "zod";
 import {
   RESEARCH_EFFORTS,
+  MAX_CLARIFICATION_ANSWER_CHARS,
   MAX_CONSTRAINT_CHARS,
   MAX_PINNED_SOURCES,
   MAX_PLAN_CONSTRAINTS,
@@ -72,6 +73,23 @@ export const decidePlanSchema = z.object({
   pinnedSources: z.array(sourceUrl).max(MAX_PINNED_SOURCES).optional(),
 });
 
+/**
+ * Answers to the clarify gate.
+ *
+ * A record rather than an array so the client cannot reorder its way into
+ * mismatching answers to questions, and so an omitted key is unambiguously a
+ * skip. The engine drops any id the run did not actually ask, which is what
+ * stops a crafted body writing arbitrary constraints into a plan.
+ */
+export const answerClarificationsSchema = z.object({
+  answers: z
+    .record(
+      z.string().trim().min(1).max(64),
+      z.string().trim().max(MAX_CLARIFICATION_ANSWER_CHARS),
+    )
+    .default({}),
+});
+
 export const steerResearchSchema = z
   .object({
     constraint: constraint.optional(),
@@ -92,7 +110,8 @@ export type ResearchControlReason =
   | "not_pausable"
   | "not_paused"
   | "already_finished"
-  | "not_awaiting_plan";
+  | "not_awaiting_plan"
+  | "not_awaiting_clarification";
 
 /**
  * The HTTP status for a control the engine refused.
@@ -112,5 +131,6 @@ export const RESEARCH_CONTROL_MESSAGE: Record<ResearchControlReason, string> = {
   not_pausable: "This run is not running.",
   not_paused: "This run is not paused.",
   already_finished: "This run has already stopped.",
+  not_awaiting_clarification: "This run is not waiting on those answers any more.",
   not_awaiting_plan: "This run is not waiting for a plan decision.",
 };

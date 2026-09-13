@@ -35,6 +35,27 @@ short fades and non-overshooting easing, respecting reduced-motion settings.
 
 ## Backend
 
+**Clarify runs before planning.** A run started from the research surface goes
+`accepted → clarifying → awaiting_clarification → planning`. One small
+completion on the lead model reads the goal back and asks at most three things
+it does not say — which markets, which period, against what — and the run stops
+for the answers. This is the front half of ChatGPT's deep research, which Juno
+did not have: a one-line request under-determines a week of work, and a planner
+handed the ambiguity resolves it by guessing, a guess that then propagates into
+every sub-question and worker brief.
+
+The gate can never stop a run, only improve one. It skips outright on the chat
+path (`confirmation: "auto"`, where the per-send toggle is the interaction), on
+the `quick` tier, when no clarifier is wired, when the budget cannot cover the
+call, and when the clarifier returns nothing or throws. Answering is optional:
+an empty submission to `POST /api/research/[id]/clarify` is valid and means
+"research it as I wrote it". Answers are folded into `plan.constraints` as
+"question — answer", which the brief expansion, the planner and every worker
+brief already read, so an answer shapes the whole run with no new code path
+downstream; `clarifications` and `clarificationAnswers` are kept alongside only
+so the UI can show an exchange and a resumed run knows it has already asked.
+Answers whose id the run did not ask are dropped.
+
 Web chat starts a durable run with confirmation required. Planning stops at
 `awaiting_plan_confirmation`, with no search before approval. The ordinary chat
 stream persists an application-authored plan acknowledgement without invoking or
@@ -79,10 +100,18 @@ coverage matrix, the delegation briefs and the lead's review key on. The brief,
 approach and success criteria are persisted and handed to every worker and to
 the lead (`researchBriefText`), so a worker knows how its evidence will be
 judged. A reply that is not the structured shape falls back to the legacy
-two-heading parser, and from there to `fallbackResearchQueries` — never to the
-literal goal.
+two-heading parser. If that yields nothing either, the decomposition is
+attempted a second time and then the RUN FAILS — it does not fall back to
+`fallbackResearchQueries`, which is the goal with suffixes bolted on and the
+reason a run could come back having searched one sentence a dozen ways. Those
+templates now seed the sweep of a legacy plan only.
 
-The gate (`PlanReview`) renders the plan in that order — approach, questions
+The clarify gate (`ClarifyGate`) renders each question with its rationale, a
+free-text field and example answers that fill the field rather than select an
+option; Skip is a full button beside Start, and the primary action is never
+disabled on an empty form.
+
+The plan gate (`PlanReview`) renders the plan in that order — approach, questions
 with evidence chips, the editable schedule, criteria, risks, then the searches
 one disclosure down — and the console's Plan tab renders the same `PlanOutline`.
 Confirming an **unchanged** plan keeps the structured objectives; only a real

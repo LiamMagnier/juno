@@ -27,6 +27,22 @@
  * because Prisma comments are not values.
  */
 export const RESEARCH_WORKING_STATES = [
+  /**
+   * Reading the goal back and deciding what it does not say.
+   *
+   * BEFORE planning, not after, and that order is the whole point. A one-line
+   * request under-determines a week of work — which market, which years, for
+   * whom, against what — and a planner handed the ambiguity resolves it by
+   * guessing. The guess then propagates into every sub-question, every worker
+   * brief and the report, where it is expensive to notice and impossible to
+   * undo. This is the same clarify/rewrite/research split OpenAI documents for
+   * ChatGPT's deep research, where an intermediate model gathers intent before
+   * the research model ever sees the task.
+   *
+   * Cheap and skippable: one small completion, and a goal specific enough to
+   * need nothing produces no questions and falls straight through to planning.
+   */
+  "clarifying",
   "planning",
   /**
    * Workers are out: a round of parallel sub-agents, each with its own brief
@@ -60,6 +76,8 @@ export const RESEARCH_WORKING_STATES = [
  * which is the single failure this slice exists to prevent.
  */
 export const RESEARCH_BLOCKED_STATES = [
+  /** Asked the user what the goal does not say, and stopped for the answers. */
+  "awaiting_clarification",
   /** Drafted a plan and stopped, because the next step costs real money. */
   "awaiting_plan_confirmation",
   /** Stopped to ask the user something it cannot decide alone. */
@@ -154,7 +172,18 @@ export function nextPipelineState(state: ResearchWorkingState): ResearchWorkingS
  * that did not notice a cancel must not drag a finished run back to life.
  */
 const TRANSITIONS: Record<ResearchState, readonly ResearchState[]> = {
-  accepted: ["planning", "paused", "cancelled", "failed"],
+  accepted: ["clarifying", "planning", "paused", "cancelled", "failed"],
+  clarifying: [
+    "awaiting_clarification",
+    // Straight through when the goal needs nothing, when no clarifier is
+    // wired, or on the chat path where the per-send toggle is the whole
+    // interaction and a question would be an ambush.
+    "planning",
+    "paused",
+    "cancelled",
+    "failed",
+  ],
+  awaiting_clarification: ["planning", "clarifying", "paused", "cancelled", "failed"],
   planning: [
     "awaiting_plan_confirmation",
     // Straight past confirmation when the caller pre-confirmed the plan — a
@@ -299,6 +328,10 @@ export type ResearchStage = (typeof RESEARCH_STAGES)[number];
  */
 const STAGE_OF: Record<ResearchState, ResearchStage> = {
   accepted: "plan",
+  // Clarifying is part of planning to a reader: the run has not gone looking
+  // for anything yet, it is still working out what to look for.
+  clarifying: "plan",
+  awaiting_clarification: "plan",
   planning: "plan",
   awaiting_plan_confirmation: "plan",
   investigating: "investigate",
@@ -329,6 +362,8 @@ export const RESEARCH_STAGE_LABEL: Record<ResearchStage, string> = {
 /** One sentence per state, for the live line above the stage list. */
 export const RESEARCH_STATE_MESSAGE: Record<ResearchState, string> = {
   accepted: "Getting ready",
+  clarifying: "Working out what the question leaves open",
+  awaiting_clarification: "Waiting for you to fill in a few details",
   planning: "Working out what to look up",
   awaiting_plan_confirmation: "Waiting for you to confirm the plan",
   investigating: "Researchers are searching and reading",
@@ -356,6 +391,10 @@ export const RESEARCH_STATE_MESSAGE: Record<ResearchState, string> = {
  */
 export const RESEARCH_EVENT_KINDS = [
   "run_started",
+  /** Questions the run wants answered before it plans. */
+  "clarification_requested",
+  /** The user answered them, or skipped. Payload carries how many of each. */
+  "clarification_answered",
   "plan_drafted",
   "plan_confirmed",
   "plan_revised",
@@ -605,6 +644,61 @@ export function fallbackResearchQueries(goal: string, effort: ResearchEffort = D
   return out;
 }
 
+/** Ceiling on how many questions one run may ask. Four is a form; eight is a survey. */
+export const MAX_CLARIFICATIONS = 4;
+/** Characters of one question, one rationale, one suggestion, one answer. */
+export const MAX_CLARIFICATION_CHARS = 240;
+export const MAX_CLARIFICATION_ANSWER_CHARS = 600;
+
+/**
+ * Questions off a plan blob, defensively.
+ *
+ * Same contract as every other parser here: never throws, drops what it cannot
+ * read. A malformed question is worth losing; a run that will not load because
+ * of one is not.
+ */
+export function parseClarifications(value: unknown): ResearchClarification[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResearchClarification[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const raw = item as Record<string, unknown>;
+    const question = typeof raw.question === "string" ? raw.question.replace(/\s+/g, " ").trim() : "";
+    if (question.length < 4) continue;
+    // An id is what the answer map is keyed by, so one is synthesised rather
+    // than dropping a question that arrived without one.
+    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim().slice(0, 64) : `q${out.length + 1}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const why = typeof raw.why === "string" ? raw.why.replace(/\s+/g, " ").trim() : "";
+    out.push({
+      id,
+      question: question.slice(0, MAX_CLARIFICATION_CHARS),
+      ...(why ? { why: why.slice(0, MAX_CLARIFICATION_CHARS) } : {}),
+      ...(Array.isArray(raw.suggestions)
+        ? { suggestions: cleanList(raw.suggestions, 4, MAX_CLARIFICATION_CHARS) }
+        : {}),
+      ...(raw.skippable === false ? { skippable: false } : { skippable: true }),
+    });
+    if (out.length >= MAX_CLARIFICATIONS) break;
+  }
+  return out;
+}
+
+/** Answers by question id, trimmed and capped. Empty answers are dropped. */
+export function parseClarificationAnswers(value: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw !== "string") continue;
+    const answer = raw.replace(/\s+/g, " ").trim();
+    if (!answer) continue;
+    out[key.slice(0, 64)] = answer.slice(0, MAX_CLARIFICATION_ANSWER_CHARS);
+    if (Object.keys(out).length >= MAX_CLARIFICATIONS) break;
+  }
+  return out;
+}
+
 function parseObjectives(value: unknown): ResearchObjective[] {
   if (!Array.isArray(value)) return [];
   const out: ResearchObjective[] = [];
@@ -720,6 +814,28 @@ function parseConflicts(value: unknown): ResearchConflict[] {
  * one written at minute zero — a run that quietly forgets a mid-run constraint
  * once the searching stage is over is worse than one that refuses it.
  */
+/**
+ * One thing the goal did not say, and what a good answer would look like.
+ *
+ * `suggestions` are not a closed list — the field is free text and the run
+ * takes whatever is typed. They exist because the hardest part of answering
+ * "which markets?" is knowing what granularity is useful, and three examples
+ * settle that faster than a sentence of instructions.
+ *
+ * `skippable` is the honest admission that some of these are worth answering
+ * and some are worth a shrug. Everything is skippable in practice — the gate
+ * never blocks on an empty answer — but marking the ones the run can genuinely
+ * proceed without keeps the form from reading as an interrogation.
+ */
+export interface ResearchClarification {
+  id: string;
+  question: string;
+  /** One line: what changes about the research depending on the answer. */
+  why?: string;
+  suggestions?: string[];
+  skippable?: boolean;
+}
+
 export interface ResearchPlan {
   /**
    * The plan a PERSON reads, as ordered sentences: "Collect official pricing,
@@ -747,6 +863,21 @@ export interface ResearchPlan {
   objectives: ResearchObjective[];
   /** Free-text steering: "only sources after 2023", "ignore press releases". */
   constraints: string[];
+  /**
+   * What the run asked before it planned, and what came back.
+   *
+   * The ANSWERS are folded into `constraints` as well, and that duplication is
+   * deliberate: constraints are what the brief, the planner and every worker
+   * brief already read, so an answer that lands there shapes the research
+   * without a single new code path downstream. These two fields exist so the
+   * UI can show the exchange as questions and answers rather than as a list of
+   * anonymous constraints, and so a resumed run knows it has already asked.
+   */
+  clarifications?: ResearchClarification[];
+  /** Answer text by clarification id. An absent or empty entry was skipped. */
+  clarificationAnswers?: Record<string, string>;
+  /** Set once the run has been through the clarify gate, answered or skipped. */
+  clarifiedAt?: string;
   /** URLs the user insisted on, always read regardless of search ranking. */
   pinnedSources: string[];
   /**
@@ -1102,6 +1233,11 @@ export function parsePlan(value: unknown): ResearchPlan {
     ...(typeof raw.revisionRound === "number"
       ? { revisionRound: Math.max(0, Math.min(MAX_REVISION_ROUNDS, Math.floor(raw.revisionRound))) }
       : {}),
+    ...(Array.isArray(raw.clarifications) ? { clarifications: parseClarifications(raw.clarifications) } : {}),
+    ...(raw.clarificationAnswers && typeof raw.clarificationAnswers === "object" && !Array.isArray(raw.clarificationAnswers)
+      ? { clarificationAnswers: parseClarificationAnswers(raw.clarificationAnswers as Record<string, unknown>) }
+      : {}),
+    ...(typeof raw.clarifiedAt === "string" ? { clarifiedAt: raw.clarifiedAt } : {}),
     ...(Array.isArray(raw.coverage) ? { coverage: parseCoverage(raw.coverage) } : {}),
     ...(Array.isArray(raw.conflicts) ? { conflicts: parseConflicts(raw.conflicts) } : {}),
     ...(typeof raw.brief === "string" && raw.brief.trim() ? { brief: raw.brief.trim().slice(0, MAX_BRIEF_CHARS) } : {}),
@@ -1310,6 +1446,17 @@ export const REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN = 15;
 export const MODEL_ESTIMATE_MARGIN = 1.25;
 /** pricing.ts's own chars-per-token rule; kept in step with it deliberately. */
 const CHARS_PER_TOKEN = 4;
+
+/**
+ * What the clarify call is shown and allowed to write.
+ *
+ * Both small on purpose. It sees the goal and nothing else — the point is to
+ * react to what a person actually typed, not to a brief some other model has
+ * already smoothed the ambiguity out of — and four questions with a rationale
+ * and a few suggestions each fits comfortably in 700 tokens.
+ */
+export const CLARIFY_PROMPT_CHARS = 2_000;
+export const CLARIFY_OUTPUT_TOKENS = 700;
 
 /** Goal characters `planResearchQueries` sends the brief expansion. */
 export const BRIEF_PROMPT_CHARS = 4_000;

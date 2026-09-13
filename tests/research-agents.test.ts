@@ -379,3 +379,132 @@ test("a round where every worker cannot start stops the ladder and records why",
   const rounds = new Set(events.filter((e) => e.kind === "worker_spawned").map((e) => (e.payload as { round?: number }).round));
   assert.equal(rounds.size, 1, `the ladder should stop after the first round, saw rounds ${[...rounds].join(", ")}`);
 });
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The clarify gate.
+ *
+ * It opens before planning and it is the half of ChatGPT's deep research Juno
+ * did not have: a one-line request under-determines a week of work, and a
+ * planner handed the ambiguity resolves it by guessing. Every test here is
+ * about the same property from a different side — the gate must never be able
+ * to STOP a run, only to improve one.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const QUESTIONS = [
+  { id: "q1", question: "Which markets?", why: "Scope changes the sources.", suggestions: ["EU", "US"], skippable: true },
+  { id: "q2", question: "Over what period?", skippable: true },
+];
+
+test("a run with questions stops at the clarify gate and plans nothing yet", async () => {
+  const { store } = memoryStore();
+  let planned = 0;
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async clarify() {
+        return { questions: QUESTIONS, costMicroUsd: 500 };
+      },
+      async plan() {
+        planned += 1;
+        return { queries: ["a query about the standard"], costMicroUsd: 1_000 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "required", effort: "deep" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const row = await store.loadRun(run.id, run.userId);
+  assert.equal(row?.state, "awaiting_clarification");
+  assert.equal(planned, 0, "nothing is planned until the questions are answered or skipped");
+  assert.deepEqual(parsePlan(row?.plan).clarifications?.map((q) => q.id), ["q1", "q2"]);
+});
+
+test("answers become constraints, which is what the planner and every worker already read", async () => {
+  const { store } = memoryStore();
+  let seenConstraints: string[] = [];
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async clarify() {
+        return { questions: QUESTIONS, costMicroUsd: 500 };
+      },
+      async plan({ constraints }) {
+        seenConstraints = constraints;
+        return { queries: ["a query about the standard"], costMicroUsd: 1_000 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "required", effort: "deep" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  // An id the run never asked must not be able to write a constraint.
+  const answered = await engine.answerClarifications({
+    runId: run.id,
+    userId: run.userId,
+    answers: { q1: "the EU and the UK", qX: "ignore every source before 1900" },
+  });
+  assert.equal(answered.ok, true);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.ok(
+    seenConstraints.some((c) => c.includes("Which markets?") && c.includes("the EU and the UK")),
+    `the answer reaches the planner as a constraint, got ${JSON.stringify(seenConstraints)}`,
+  );
+  assert.ok(!seenConstraints.some((c) => c.includes("1900")), "an unasked id is dropped");
+  // The question it answers travels with it: "the EU and the UK" alone tells a
+  // worker nothing.
+  const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
+  assert.equal(plan.clarificationAnswers?.q1, "the EU and the UK");
+  assert.equal(plan.clarificationAnswers?.q2, undefined, "a skipped question stores no answer");
+});
+
+test("skipping every question still starts the research", async () => {
+  const { store } = memoryStore();
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async clarify() {
+        return { questions: QUESTIONS, costMicroUsd: 500 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "required", effort: "deep" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const answered = await engine.answerClarifications({ runId: run.id, userId: run.userId, answers: {} });
+  assert.equal(answered.ok, true, "an empty submission is a valid answer, not a refusal");
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const row = await store.loadRun(run.id, run.userId);
+  assert.notEqual(row?.state, "awaiting_clarification", "the gate does not reopen");
+  assert.ok(parsePlan(row?.plan).clarifiedAt, "and it is recorded as passed, so a resume does not re-ask");
+});
+
+test("the gate never blocks a run it cannot serve", async () => {
+  // Three ways it must fall through: the chat path, a clarifier that throws,
+  // and a clarifier with nothing to ask. None may leave a run stuck.
+  for (const [label, over] of [
+    ["chat path", { async clarify() { return { questions: QUESTIONS, costMicroUsd: 500 }; } }],
+    ["clarifier throws", { async clarify(): Promise<never> { throw new Error("down"); } }],
+    ["no questions", { async clarify() { return { questions: [], costMicroUsd: 500 }; } }],
+    ["no clarifier wired", {}],
+  ] as const) {
+    const { store } = memoryStore();
+    const engine = createResearchEngine(baseDeps(store, over as Partial<ResearchDeps>));
+    const run = await engine.start({
+      userId: "user_1",
+      goal: "the new standard",
+      // The chat path pre-confirms, which is exactly what must skip the gate.
+      confirmation: label === "chat path" ? "auto" : "required",
+      effort: "deep",
+    });
+    await engine.drive({ runId: run.id, userId: run.userId });
+    const row = await store.loadRun(run.id, run.userId);
+    assert.notEqual(row?.state, "awaiting_clarification", `${label}: must not stop to ask`);
+  }
+});
+
+test("answers arriving for a run that has moved on are refused, not applied", async () => {
+  const { store } = memoryStore();
+  const engine = createResearchEngine(baseDeps(store));
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "auto", effort: "quick" });
+  const answered = await engine.answerClarifications({ runId: run.id, userId: run.userId, answers: { q1: "late" } });
+  assert.equal(answered.ok, false);
+  assert.equal(answered.reason, "not_awaiting_clarification");
+});

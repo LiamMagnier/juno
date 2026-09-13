@@ -2,6 +2,7 @@ import {
   EMPTY_PLAN,
   MAX_FOLLOW_UP_ROUNDS,
   MAX_REVISION_ROUNDS,
+  MAX_CONSTRAINT_CHARS,
   MAX_PLAN_CONSTRAINTS,
   MAX_PLAN_QUERIES,
   MAX_PINNED_SOURCES,
@@ -23,6 +24,7 @@ import {
   isResearchState,
   isTerminalResearchState,
   isWorkingResearchState,
+  parseClarificationAnswers,
   parsePlan,
   planIsConfirmed,
   planBudget,
@@ -30,6 +32,10 @@ import {
   transitionAllowed,
   BRIEF_OUTPUT_TOKENS,
   BRIEF_PROMPT_CHARS,
+  CLARIFY_OUTPUT_TOKENS,
+  CLARIFY_PROMPT_CHARS,
+  DEFAULT_RESEARCH_EFFORT,
+  MAX_CLARIFICATIONS,
   CORPUS_PER_SOURCE_CHARS,
   CORPUS_PREAMBLE_CHARS,
   EXPANSION_OUTPUT_TOKENS,
@@ -47,6 +53,7 @@ import {
   SYNTHESIS_OUTPUT_TOKENS,
   SYSTEM_PROMPT_CHARS,
   VENDOR_ESTIMATE_MARGIN,
+  type ResearchClarification,
   type ResearchEventKind,
   type ResearchCoverageEntry,
   type ResearchConflict,
@@ -399,6 +406,17 @@ export function pageSkipMessage(page: ResearchPageSkipped): string {
 
 export interface ResearchDeps {
   store: ResearchStore;
+  /**
+   * Reads the goal back and asks what it does not say. OPTIONAL: a deployment
+   * with no clarifier, or a goal that needs nothing, skips straight to
+   * planning — the run must never be blocked by a step that cannot run.
+   */
+  clarify?(input: {
+    userId: string;
+    goal: string;
+    effort: ResearchEffort;
+    signal?: AbortSignal;
+  }): Promise<{ questions: ResearchClarification[]; costMicroUsd: number }>;
   /** Turns the goal (plus any steering constraints) into sub-questions. */
   plan(input: {
     userId: string;
@@ -579,6 +597,20 @@ export function researchBriefText(plan: ResearchPlan): string {
   ].filter(Boolean);
   return parts.join("\n\n");
 }
+
+/**
+ * The clarify call: the goal in, at most four short questions out.
+ *
+ * Deliberately the cheapest gate in the engine. It reserves against the goal
+ * rather than the planner's prompt because that is all it is shown, and a run
+ * whose ceiling cannot cover this one small completion skips the questions and
+ * plans anyway rather than stopping — the budget stops SPENDING, and refusing
+ * to ask is not the same as refusing to research.
+ */
+export const CLARIFY_ESTIMATE_MICRO_USD = modelCallEstimateMicroUsd(
+  CLARIFY_PROMPT_CHARS + SYSTEM_PROMPT_CHARS,
+  CLARIFY_OUTPUT_TOKENS,
+);
 
 /** Both calls `planResearchQueries` makes: the brief expansion, then the planner. */
 export const PLAN_ESTIMATE_MICRO_USD =
@@ -1001,7 +1033,14 @@ export interface ControlResult {
   /** Present whether or not the control applied, so a caller can report truth. */
   state: string;
   /** Set when `ok` is false: why the control did not apply. */
-  reason?: "not_found" | "not_pausable" | "not_paused" | "already_finished" | "not_awaiting_plan";
+  reason?:
+    | "not_found"
+    | "not_pausable"
+    | "not_paused"
+    | "already_finished"
+    | "not_awaiting_plan"
+    /** Answers arrived for a run that is not at the clarify gate. */
+    | "not_awaiting_clarification";
 }
 
 export interface ResearchEngine {
@@ -1025,6 +1064,20 @@ export interface ResearchEngine {
     queries?: string[];
     constraints?: string[];
     pinnedSources?: string[];
+  }): Promise<ControlResult>;
+  /**
+   * Answers to the clarify gate's questions, or a decision to skip them.
+   *
+   * Answering is never mandatory: an empty map is a valid submission and means
+   * "research it as I wrote it". That is why there is no `decision` argument
+   * the way `decidePlan` has one — there is nothing here to decline, only
+   * detail to add or withhold.
+   */
+  answerClarifications(input: {
+    runId: string;
+    userId: string;
+    /** Answer text by question id. Missing or empty entries were skipped. */
+    answers: Record<string, string>;
   }): Promise<ControlResult>;
   steer(input: {
     runId: string;
@@ -1216,6 +1269,68 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   };
 
   // ── the individual stages ───────────────────────────────────────────────
+
+  /**
+   * CLARIFY — ask what the goal leaves open, before anything is planned.
+   *
+   * Three ways this costs nothing and one way it earns its keep.
+   *
+   * It does not run at all on the chat path (`confirmation: "auto"`): there the
+   * per-send toggle IS the whole interaction, the user is mid-conversation, and
+   * stopping to ask four questions would be an ambush. It does not run when no
+   * clarifier is wired. And it does not block when the clarifier comes back
+   * with nothing — a goal specific enough to need no questions falls through to
+   * planning in the same step, having spent one small completion.
+   *
+   * When it does ask, the answers land in `constraints`, which the brief, the
+   * planner and every worker brief already read. So an answer shapes the whole
+   * run without a single new code path downstream — the questions and answers
+   * are kept alongside only so the UI can show an exchange rather than a list
+   * of anonymous constraints, and so a resumed run knows it has already asked.
+   */
+  const doClarifying = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+    const plan = parsePlan(run.plan);
+    const skip = async (): Promise<StepOutcome> => {
+      const moved = await advance(run, "planning");
+      return moved ? { kind: "advanced", state: "planning" } : { kind: "raced" };
+    };
+    if (!deps.clarify || plan.confirmation === "auto" || plan.clarifiedAt) return skip();
+    if (!(await affordable(run, CLARIFY_ESTIMATE_MICRO_USD))) return skip();
+
+    let drafted: { questions: ResearchClarification[]; costMicroUsd: number };
+    try {
+      drafted = await deps.clarify({
+        userId: run.userId,
+        goal: run.goal,
+        effort: plan.effort ?? DEFAULT_RESEARCH_EFFORT,
+        signal,
+      });
+    } catch (error) {
+      // A clarifier that fails must cost the run nothing but a few seconds.
+      console.error("[research] clarify failed", { runId: run.id, error });
+      return skip();
+    }
+    await bill(run, drafted.costMicroUsd, "clarify");
+    const questions = drafted.questions.slice(0, MAX_CLARIFICATIONS);
+    if (questions.length === 0) {
+      const next: ResearchPlan = { ...plan, clarifiedAt: deps.now().toISOString() };
+      await store.savePlan({ runId: run.id, userId: run.userId, plan: next });
+      const reloaded = (await store.loadRun(run.id, run.userId)) ?? run;
+      const moved = await advance(reloaded, "planning");
+      return moved ? { kind: "advanced", state: "planning" } : { kind: "raced" };
+    }
+
+    const next: ResearchPlan = { ...plan, clarifications: questions };
+    await store.savePlan({ runId: run.id, userId: run.userId, plan: next });
+    const reloaded = (await store.loadRun(run.id, run.userId)) ?? run;
+    const moved = await advance(reloaded, "awaiting_clarification", undefined, [
+      {
+        kind: "clarification_requested",
+        payload: { questions: questions.map((q) => ({ id: q.id, question: q.question, why: q.why ?? null })) },
+      },
+    ]);
+    return moved ? { kind: "blocked", state: "awaiting_clarification" } : { kind: "raced" };
+  };
 
   const doPlanning = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
@@ -2947,11 +3062,16 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return stopForBudget(run, 0);
     }
     if (run.state === "accepted") {
-      const moved = await advance(run, "planning");
-      return moved ? { kind: "advanced", state: "planning" } : { kind: "raced" };
+      // Always through `clarifying`, even when it will skip: one place decides
+      // whether a run asks, and it is the stage itself rather than a condition
+      // duplicated at every caller that starts a run.
+      const moved = await advance(run, "clarifying");
+      return moved ? { kind: "advanced", state: "clarifying" } : { kind: "raced" };
     }
     if (!isWorkingResearchState(run.state)) return { kind: "raced" };
     switch (run.state) {
+      case "clarifying":
+        return doClarifying(run, signal);
       case "planning":
         return doPlanning(run, signal);
       case "investigating":
@@ -3143,6 +3263,52 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
      * constraint but not the round trip — rewriting a finished report on a
      * whim is how a user loses the report they were reading.
      */
+    async answerClarifications({ runId, userId, answers }) {
+      const run = await store.loadRun(runId, userId);
+      if (!run) return { ok: false, state: "", reason: "not_found" };
+      if (run.state !== "awaiting_clarification") {
+        return { ok: false, state: run.state, reason: "not_awaiting_clarification" };
+      }
+      const plan = parsePlan(run.plan);
+      const asked = plan.clarifications ?? [];
+      const clean = parseClarificationAnswers(answers);
+      // Only answers to questions this run actually asked. A client that posts
+      // arbitrary keys must not be able to write arbitrary constraints.
+      const known = new Set(asked.map((q) => q.id));
+      const kept: Record<string, string> = {};
+      for (const [id, answer] of Object.entries(clean)) if (known.has(id)) kept[id] = answer;
+
+      /*
+       * THE ANSWERS BECOME CONSTRAINTS, and that is the whole integration.
+       *
+       * `constraints` is already read by the brief expansion, the planner's
+       * request and every worker brief, so an answer that lands there shapes
+       * the entire run with no new plumbing. Written as "question — answer"
+       * rather than as the bare answer, because a constraint reading "the EU
+       * and the UK" tells a worker nothing on its own; it needs the question
+       * it answers to mean anything.
+       */
+      const added = asked
+        .filter((q) => kept[q.id])
+        .map((q) => `${q.question} ${kept[q.id]}`.slice(0, MAX_CONSTRAINT_CHARS));
+      const next: ResearchPlan = {
+        ...plan,
+        constraints: [...plan.constraints, ...added].slice(0, MAX_PLAN_CONSTRAINTS),
+        ...(Object.keys(kept).length ? { clarificationAnswers: kept } : {}),
+        clarifiedAt: deps.now().toISOString(),
+      };
+      await store.savePlan({ runId, userId, plan: next });
+      const reloaded = (await store.loadRun(runId, userId)) ?? run;
+      const moved = await advance(reloaded, "planning", undefined, [
+        {
+          kind: "clarification_answered",
+          payload: { asked: asked.length, answered: Object.keys(kept).length, skipped: asked.length - Object.keys(kept).length },
+        },
+      ]);
+      return moved
+        ? { ok: true, state: "planning" }
+        : { ok: false, state: reloaded.state, reason: "not_awaiting_clarification" };
+    },
     async steer({ runId, userId, constraint, sourceUrl }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };

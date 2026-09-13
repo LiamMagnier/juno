@@ -4,6 +4,7 @@ import * as React from "react";
 import { Check, ChevronDown, Link2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { staggerDelay } from "@/lib/motion";
+import type { ResearchClarification } from "@/lib/research/domain";
 import { cn } from "@/lib/utils";
 
 /**
@@ -224,6 +225,146 @@ export function PlanOutline({
  * format — falls back to the step list, and with no steps to the query list,
  * which is exactly the screen this replaced. Nothing regresses to blank.
  */
+const CLARIFY_COPY = {
+  lede: "A few details would sharpen this. Answer what you can — anything you skip, Juno decides for itself.",
+  start: "Start researching",
+  skip: "Skip and research as written",
+  optional: "Optional",
+  needed: "Needed",
+};
+
+/**
+ * The clarify gate: what the goal did not say.
+ *
+ * It opens BEFORE the plan gate and answers a different question. The plan gate
+ * asks "is this the right work?" about something Juno has already decided; this
+ * asks "what did I not tell you?" before anything is decided at all. A one-line
+ * request under-determines a week of research, and a planner handed the
+ * ambiguity resolves it by guessing — a guess that then propagates into every
+ * sub-question and every worker brief, where it is expensive to notice.
+ *
+ * NOTHING HERE IS MANDATORY, and the surface has to say so without nagging.
+ * Skip is a real button, not a link hidden in a corner; the primary action
+ * stays enabled with every field empty; and a question the run can genuinely
+ * proceed without is marked Optional rather than starred as required. A
+ * research tool that will not start until you fill in a form is worse than one
+ * that guesses.
+ *
+ * The suggestions are examples, not options: pressing one fills the field so it
+ * can then be edited. A radio group would be a lie about a free-text answer.
+ */
+export function ClarifyGate({
+  goal,
+  questions,
+  busy,
+  onSubmit,
+}: {
+  goal: string;
+  questions: ResearchClarification[];
+  busy: boolean;
+  onSubmit: (answers: Record<string, string>) => void;
+}) {
+  const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  const set = (id: string, value: string) => setAnswers((current) => ({ ...current, [id]: value }));
+  const submit = () => {
+    const trimmed: Record<string, string> = {};
+    for (const [id, value] of Object.entries(answers)) {
+      const clean = value.trim();
+      if (clean) trimmed[id] = clean;
+    }
+    onSubmit(trimmed);
+  };
+
+  return (
+    <div className="motion-safe:animate-research-detail-in">
+      <p className="text-ui leading-relaxed text-muted-foreground">{CLARIFY_COPY.lede}</p>
+      <p className="mt-3 line-clamp-2 text-ui leading-relaxed text-foreground/85">{goal}</p>
+
+      <div className="mt-5 space-y-5">
+        {questions.map((question, index) => (
+          <div
+            key={question.id}
+            className="motion-safe:animate-research-detail-in"
+            style={staggerDelay(index)}
+          >
+            <label htmlFor={`clarify-${question.id}`} className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 text-ui font-medium text-foreground">{question.question}</span>
+              {question.skippable !== false && (
+                <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">
+                  {CLARIFY_COPY.optional}
+                </span>
+              )}
+            </label>
+            {question.why && <p className="mt-1 text-caption text-muted-foreground">{question.why}</p>}
+            <input
+              id={`clarify-${question.id}`}
+              value={answers[question.id] ?? ""}
+              onChange={(event) => set(question.id, event.target.value)}
+              // Enter submits the whole gate rather than the one field: there
+              // is no per-question action, and a form that swallows Enter is
+              // the most common way a keyboard user gets stuck on a text list.
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!busy) submit();
+                }
+              }}
+              disabled={busy}
+              autoComplete="off"
+              placeholder={question.suggestions?.[0] ? `e.g. ${question.suggestions[0]}` : "Your answer"}
+              className="surface-inset mt-2 h-9 w-full rounded-control px-2.5 text-ui outline-none transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground/70 focus-within:border-ring focus:border-ring disabled:opacity-55 motion-reduce:transition-none"
+            />
+            {question.suggestions && question.suggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {question.suggestions.map((suggestion) => {
+                  const chosen = (answers[question.id] ?? "") === suggestion;
+                  return (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      disabled={busy}
+                      // Fills the field rather than selecting an option: the
+                      // answer is free text and these are examples of its
+                      // shape, so the next thing a person does is edit it.
+                      onClick={() => set(question.id, chosen ? "" : suggestion)}
+                      aria-pressed={chosen}
+                      className={cn(
+                        "inline-flex h-7 items-center rounded-control px-2.5 text-caption transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                        chosen
+                          ? "bg-secondary text-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                      )}
+                    >
+                      {suggestion}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Never disabled on emptiness. Skipping everything is a valid answer and
+          the button that does it is the same size as the one that does not. */}
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Button type="button" disabled={busy} onClick={submit}>
+          {CLARIFY_COPY.start}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => onSubmit({})}
+          className="text-muted-foreground"
+        >
+          {CLARIFY_COPY.skip}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function PlanReview({
   steps,
   queries,

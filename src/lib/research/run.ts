@@ -24,6 +24,7 @@ import {
   type ResearchEventKind,
   type ResearchConflict,
   type ResearchCoverageEntry,
+  type ResearchClarification,
   type ResearchObjective,
   type ResearchState,
   type ResearchTerminalState,
@@ -31,6 +32,7 @@ import {
 import {
   expandResearchQueries,
   fetchResearchPage,
+  clarifyResearchGoal,
   planResearchQueries,
   searchTheWeb,
   writeResearchReport,
@@ -528,6 +530,7 @@ export function researchEngine(): ResearchEngine {
   if (engine) return engine;
   const deps: ResearchDeps = {
     store: createPrismaResearchStore(),
+    clarify: clarifyResearchGoal,
     plan: planResearchQueries,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
@@ -618,6 +621,8 @@ export interface ResearchRunView {
     constraints: string[];
     pinnedSources: string[];
     confirmed: boolean;
+    clarifications: ResearchClarification[];
+    clarificationAnswers: Record<string, string>;
     /** The planner's reasoning for the gate — see `ResearchPlan`. Empty when absent. */
     brief: string;
     approach: string;
@@ -774,6 +779,11 @@ export async function readResearchRun(input: {
         constraints: plan.constraints,
         pinnedSources: plan.pinnedSources,
         confirmed: planIsConfirmed(plan),
+        // What the run asked before it planned, and what came back. `?? []`
+        // and `?? {}` for the same reason as steps: a client never has to
+        // distinguish "asked nothing" from "field missing".
+        clarifications: plan.clarifications ?? [],
+        clarificationAnswers: plan.clarificationAnswers ?? {},
         // The planner's reasoning, for the gate and the plan tab. Empty
         // strings and lists rather than absent, for the same reason as steps.
         brief: plan.brief ?? "",

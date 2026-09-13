@@ -158,6 +158,8 @@ test("the remaining seven labs carry their current ids", () => {
   assert.ok(byId.get("seedance:dreamina-seedance-2-5-260628"), "Seedance 2.5 is in the catalog");
   assert.equal(byId.get("seedance:dreamina-seedance-2-0-260128")?.status, "legacy");
 
-  // Every retired id and the app default must still land on something callable.
-  assert.equal(resolveModel(DEFAULT_MODEL).status, "current", "the default model is routable");
+  // The app default must still land on something callable.
+  const fallback = resolveModel(DEFAULT_MODEL);
+  assert.ok(fallback, "DEFAULT_MODEL resolves");
+  assert.equal(fallback.status, "current", "the default model is routable");
 });

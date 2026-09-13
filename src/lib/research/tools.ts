@@ -11,6 +11,9 @@ import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
 import {
   BRIEF_OUTPUT_TOKENS,
   BRIEF_PROMPT_CHARS,
+  CLARIFY_OUTPUT_TOKENS,
+  CLARIFY_PROMPT_CHARS,
+  parseClarifications,
   EXPANSION_OUTPUT_TOKENS,
   EXPANSION_PROMPT_CHARS,
   MAX_PLAN_STEPS,
@@ -22,7 +25,7 @@ import {
   SYNTHESIS_OUTPUT_TOKENS,
   type ResearchPlan,
 } from "@/lib/research/domain";
-import { parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
+import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
 
 /**
@@ -39,6 +42,8 @@ import { researchLeadModel } from "@/lib/research/agents/worker";
  */
 
 const BRIEF_TIMEOUT_MS = 30_000;
+/** Short: a person is waiting on a form, and a slow question is worse than none. */
+const CLARIFY_TIMEOUT_MS = 20_000;
 /**
  * The planner writes six steps and fourteen queries after a brief; 25 seconds
  * was short enough that a busy provider timed it out, and a timed-out planner
@@ -253,6 +258,77 @@ async function utilityCompletion(opts: {
   });
   return { text: out.trim(), costMicroUsd: Math.round(billed.costUsd * 1_000_000) };
 }
+
+/**
+ * CLARIFY — what does the goal not say?
+ *
+ * The prompt is written against the one failure mode that matters here:
+ * asking questions for the sake of a form. A request that is already specific
+ * must come back with an empty list, and the instruction to return nothing is
+ * the first rule rather than a footnote, because a model given a "write
+ * questions" task will always find four.
+ *
+ * It sees the raw goal and nothing else. The brief expansion in
+ * `planResearchQueries` exists to smooth ambiguity out; running clarification
+ * on its output would be asking a model what it does not know about a text
+ * another model already decided for it.
+ */
+const CLARIFY_SYSTEM = `You read a research request and decide whether it is specific enough to research well.
+
+Reply with ONE JSON object and nothing else — no prose, no Markdown fence:
+
+{ "questions": [ { "id": "q1", "question": "...", "why": "...", "suggestions": ["...", "..."], "skippable": true } ] }
+
+Return {"questions": []} when the request is already specific enough. That is the RIGHT answer for most well-written requests, and asking a question with an obvious answer wastes the reader's time and makes the product feel bureaucratic.
+
+Ask a question ONLY when the answer would change what gets searched or what the report concludes. Good reasons to ask:
+- The scope is genuinely ambiguous: which markets, which jurisdictions, which time period, which version of the thing.
+- The audience or purpose decides the depth and the framing (a board memo and a technical evaluation need different research).
+- A key term has more than one common meaning in the field.
+- The request implies a comparison but does not say against what.
+
+Never ask:
+- Anything you could look up. "What is the current price of X" is research, not clarification.
+- For permission, preferences about formatting, or how long the report should be.
+- More than one thing per question.
+
+Rules:
+- At most 3 questions, ordered by how much the answer changes the work.
+- "question" is one sentence a person can answer in a few words.
+- "why" is one short clause saying what changes depending on the answer.
+- "suggestions" are 2 to 4 concrete example answers, not categories. They are examples, not a closed list.
+- "skippable" is false only when the research genuinely cannot start without it.`;
+
+/** The questions a run asks before planning. Never throws; empty means "do not ask". */
+export const clarifyResearchGoal: NonNullable<ResearchDeps["clarify"]> = async ({ userId, goal, effort, signal }) => {
+  const model = researchLeadModel();
+  if (!model) return { questions: [], costMicroUsd: 0 };
+  // The quick tier is for "look this up now": stopping to ask is against the
+  // point of choosing it.
+  if (effort === "quick") return { questions: [], costMicroUsd: 0 };
+
+  const out = await utilityCompletion({
+    userId,
+    model,
+    system: CLARIFY_SYSTEM,
+    prompt: goal.slice(0, CLARIFY_PROMPT_CHARS),
+    maxTokens: CLARIFY_OUTPUT_TOKENS,
+    timeoutMs: CLARIFY_TIMEOUT_MS,
+    signal,
+    label: "clarify",
+  });
+
+  const json = extractJsonObject(out.text);
+  if (!json) return { questions: [], costMicroUsd: out.costMicroUsd };
+  try {
+    const parsed = JSON.parse(json) as { questions?: unknown };
+    return { questions: parseClarifications(parsed.questions), costMicroUsd: out.costMicroUsd };
+  } catch {
+    // A clarifier that returns nothing usable is a clarifier that asked
+    // nothing: the run plans as written rather than stopping on a parse error.
+    return { questions: [], costMicroUsd: out.costMicroUsd };
+  }
+};
 
 /**
  * Did a planner reply contain a decomposition at all?

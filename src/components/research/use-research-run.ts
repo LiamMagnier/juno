@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ResearchEventDTO } from "@/lib/research/domain";
+import type { ResearchClarification, ResearchEventDTO } from "@/lib/research/domain";
 
 /**
  * One research run, kept fresh — the client half of GET /api/research/[id].
@@ -72,6 +72,9 @@ export interface ResearchRunView {
     constraints: string[];
     pinnedSources: string[];
     confirmed: boolean;
+    /** What the run asked before it planned, and what came back. */
+    clarifications?: ResearchClarification[];
+    clarificationAnswers?: Record<string, string>;
     /** The expanded brief the planner wrote from the goal. */
     brief?: string;
     /** The planner's one-paragraph reasoning: how the question will be attacked. */

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ChevronDown, Pause, Play, Square, X } from "lucide-react";
 import { EvidencePanel } from "./evidence-panel";
-import { PlanOutline, PlanReview } from "./run-controls";
+import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
 import { RunSpine, type StageYield } from "./run-spine";
 import { RunTimeline } from "./run-timeline";
 import { SourceDeck } from "./source-deck";
@@ -37,6 +37,10 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
   const [tab, setTab] = React.useState("sources");
   const [expanded, setExpanded] = React.useState(false);
   const awaitingPlan = state === "awaiting_plan_confirmation";
+  // The two gates are mutually exclusive states, but they share the header and
+  // the panel, so "is a person being asked something" is one flag.
+  const awaitingClarify = state === "awaiting_clarification";
+  const atGate = awaitingPlan || awaitingClarify;
   const latest = [...events].reverse().find(event => event.kind === "source_read" || event.kind === "query_issued");
   const detail = typeof latest?.payload.url === "string" ? hostOf(latest.payload.url) : typeof latest?.payload.query === "string" ? latest.payload.query : null;
   const team = React.useMemo(() => {
@@ -54,18 +58,20 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
   return <section aria-label="Deep research" className={cn("research-surface research-enter relative min-w-0", className)}>
     <header className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-ui font-medium">{awaitingPlan ? "Your research plan" : "Researching your question"}</p>
+        <p className="text-ui font-medium">
+          {awaitingClarify ? "Before Juno starts" : awaitingPlan ? "Your research plan" : "Researching your question"}
+        </p>
         <p role="status" className="mt-1 text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {!awaitingPlan && run.live && <>
+        {!atGate && run.live && <>
           <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon disabled:opacity-50">{state === "paused" ? <Play className="size-4" /> : <Pause className="size-4" />}</button>
           <button type="button" disabled={busy} aria-label="Stop research" title="Stop research" onClick={() => void post("/control", { action: "cancel" })} className="research-icon disabled:opacity-50"><Square className="size-3.5" /></button>
         </>}
         {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" onClick={onDismiss} className="research-icon"><X className="size-4" /></button>}
       </div>
     </header>
-    {awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} successCriteria={run.plan.successCriteria} risks={run.plan.risks} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
+    {awaitingClarify ? <div className="mt-5"><ClarifyGate key={`${run.id}-clarify`} goal={run.goal} questions={run.plan.clarifications ?? []} busy={busy} onSubmit={answers => void post("/clarify", { answers })} /></div> : awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} successCriteria={run.plan.successCriteria} risks={run.plan.risks} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
       <p className="mt-4 line-clamp-2 text-ui leading-relaxed text-foreground/85">{run.goal}</p>
       <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span className="tabular-nums">{run.sources.filter(source => source.read).length} sources read</span>
