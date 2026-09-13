@@ -149,10 +149,26 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
       /* The detail below names the status without persisting the provider body. */
     }
     if (!response.ok || !probeResponseLooksValid(request.shape, parsed)) {
-      const providerCode =
+      /*
+       * The provider's own name for the failure, preferred over its number.
+       *
+       * `status` is in this list because Google puts its machine-readable
+       * class there (`NOT_FOUND`, `INVALID_ARGUMENT`, `PERMISSION_DENIED`)
+       * while `code` holds the HTTP status again — so the detail line read
+       * "404 404", spending the one line an operator sees on the number they
+       * already had. The whole point of probing a single model is to learn
+       * WHICH failure it was, and NOT_FOUND ("this id is not one of ours") is
+       * a different action from PERMISSION_DENIED ("your key cannot use it").
+       *
+       * The numeric fallback is still last, and dropped when it merely repeats
+       * the HTTP status.
+       */
+      const errorBody =
         parsed && typeof parsed === "object" && "error" in parsed && parsed.error && typeof parsed.error === "object"
-          ? (parsed.error as Record<string, unknown>).type ?? (parsed.error as Record<string, unknown>).code
+          ? (parsed.error as Record<string, unknown>)
           : null;
+      const rawCode = errorBody?.type ?? errorBody?.status ?? errorBody?.code ?? null;
+      const providerCode = rawCode != null && String(rawCode) !== String(response.status) ? rawCode : null;
       return {
         ...base,
         status: "failed",

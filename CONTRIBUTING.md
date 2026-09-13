@@ -43,6 +43,28 @@ Touching `native/` or `contracts/`? `native.yml` additionally builds both apps
 and checks that the generated Swift contract has not drifted
 (`npm run native:contract:check`).
 
+## Checking one model against its provider
+
+```bash
+# Does this exact id answer, on the transport the chat path uses?
+npm run models:probe -- --model=gemini-3.8-flash --dry
+npm run models:probe -- --provider=google --dry
+npm run models:probe                       # the full sweep, persisted
+```
+
+One bounded one-token call per model, on the model's OWN transport (native
+GenerateContent for Gemini, `/responses` for the Responses line), so a pass
+means the id is callable the way chat will call it. `--dry` skips persistence,
+so it needs a provider key and no database. `--model` also reaches
+`comingSoon` rows, which the sweep skips — naming one is how you find out
+whether a lab has opened its API.
+
+Read the failure name, not the number: `404 NOT_FOUND` means the catalog names
+an id the provider does not serve (fix the registry), `403 PERMISSION_DENIED`
+means the key or tier cannot reach it (fix the account), and `400
+INVALID_ARGUMENT` means the request shape is wrong for that model — most often
+a thinking level it rejects, which is a `reasoningCaps` entry, not an outage.
+
 ## Conventions
 
 - **TypeScript is strict.** There are five `any` sites and zero `@ts-ignore` in
