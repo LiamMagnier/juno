@@ -412,7 +412,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
-        <div className="relative min-h-0 flex-1">
+        {/* `z-[1]`, and it is the other half of the aura's `z-index: 0`.
+            A positioned layer at 0 paints ABOVE in-flow content, so without a
+            stacking order here the voice light would cover the conversation
+            instead of sitting behind it. One class, on the one element that
+            wraps everything a person reads. */}
+        <div className="relative z-[1] min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>
         </div>
       </main>

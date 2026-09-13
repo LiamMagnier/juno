@@ -96,7 +96,27 @@ around a sidebar the user is reading, and the "wave" is a literal sine ribbon
 with a 1.25px crest that reads as a 2008 audio visualiser.
 
 **Rule:** voice only. Scoped to the chat surface, never the window. A field,
-not a waveform.
+not a waveform. **Behind the content, not over it** — `z-index: 0` under a
+`z-[1]` content wrapper, so the transcript reads on top of the light.
+
+**And the light has to be big to be ambient.** The first full-column pass kept
+the arms to 0.52 of the height on the argument that light above the midline
+encloses the reader. That argument was covering for a bug: each pool along an
+arm was filled over the EDGE's box rather than its own, so the gradient was
+sheared flat at the arm's tip — and since both arms shear at the same height,
+what rendered was a seam straight across the window at mid-screen. Every
+centimetre of extra arm moved that seam further up, so of course less of it
+looked better. Filling each pool over its own square removes the cut, and the
+light can then go where a lit room is lit: up the sides, dying out before the
+top.
+
+**Three parties, three inks, three motions.** One 0..1 ramp from neutral to
+accent could only ever say more or less of one thing, so "working" and
+"answering" were the same colour at different strengths. Now: you speak in the
+accent and the light moves with your voice; Juno thinks in `--ultra` and the
+light breathes slowly; Juno answers in `--source` and the light rests high and
+travels. Either channel alone is enough to tell them apart, which is the point
+— the person may not be looking at the screen at all.
 
 ### P2 — five type voices in chrome
 
@@ -123,5 +143,12 @@ per surface. No numerals above `ui` size anywhere in chrome.
    same fact drawn twice.
 8. **16px side gutters** on every panel edge, and the panes agree on their
    inner left edges by construction, not by arithmetic.
-9. **Ambient light belongs to the surface that earned it**, never to the window.
+9. **Ambient light belongs to the surface that earned it**, never to the
+   window — and it sits *behind* that surface's content, never over it.
 10. **Nothing in chrome moves except a fill.**
+11. **Never clip a gradient that still carries alpha.** Fill every radial
+    gradient over its own bounding box and let it reach zero on its own. Every
+    hard seam this layer has ever shown — the faceted bands, the sheared arm
+    tips — was a gradient cut short, and each one cost a redesign that was
+    really a debugging session.
+

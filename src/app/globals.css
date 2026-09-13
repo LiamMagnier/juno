@@ -113,6 +113,29 @@
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
 
+    /* ---- The voice light's three inks -------------------------------------
+       The aura says WHO is doing something by hue, because colour is the only
+       channel that reads from the corner of your eye without being looked at.
+       Three, because there are three parties to a call: you, Juno thinking,
+       and Juno answering.
+
+       Aliases rather than values, so a swapped accent still reaches the light
+       and neither the dark theme nor the accent picker has a second place to
+       be updated. `readHSL` in ambient-aura.tsx resolves them through
+       getComputedStyle, which flattens the var() for free.
+
+         you       — the accent. Your turn is the brand's colour: it is the
+                     one moment the product is listening to you specifically.
+         thinking  — `--ultra`. Cooler and further from the accent than
+                     anything else in the palette, so "working" cannot be
+                     mistaken for "your turn" at a glance.
+         juno      — `--source`. The teal already means "this came from
+                     somewhere" everywhere else in the product, which is the
+                     closest existing meaning to Juno speaking. */
+    --aura-you: var(--primary);
+    --aura-thinking: var(--ultra);
+    --aura-juno: var(--source);
+
     --border: 44 14% 86.5%;
     --input: 44 12% 78%;
     --ring: 15 54% 46%;
@@ -1218,10 +1241,19 @@
    * the frame around the sidebar and the navigation too: a mode light claiming
    * chrome that is not in the mode.
    *
-   * THE BAND IS THE LAYER. `--aura-band`, not `inset: 0`. The old version
-   * allocated a full-column canvas to light its bottom 40%, so roughly 60% of
-   * every frame's fill rate went on pixels that were transparent by
-   * construction. The top of the column is not faded out — it is not drawn.
+   * IT IS BEHIND EVERYTHING. `z-index: 0` under content that stacks at 1, so
+   * the light is a ground the conversation sits ON rather than a film over it.
+   * It used to paint at `--z-aura` (40), above the transcript and the
+   * composer, which is why it had to stay at alphas low enough to read type
+   * through — a constraint that kept it timid. Behind the content it can be
+   * as big and as bright as it likes, because nothing it touches has to
+   * survive being read through it.
+   *
+   * THE LAYER IS THE WHOLE COLUMN. `inset: 0`, not a bottom band. The band
+   * existed to save fill rate while the layer was on top and had to be small;
+   * the cost is now bounded per-pool instead (each pool fills its own square,
+   * and the field's lobes fill their own bounding boxes — see the draw), so
+   * the height is free and the light can reach.
    *
    * The shape is a canvas (ambient-aura.tsx) because it is stacked gradient
    * bands whose reach and hue are live scalars, which no static gradient
@@ -1242,11 +1274,8 @@
    */
   .ambient-aura {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--aura-band);
-    z-index: var(--z-aura);
+    inset: 0;
+    z-index: 0;
     pointer-events: none;
     opacity: 0;
     animation: ambient-aura-in var(--dur-slow) var(--ease-out-soft) forwards;

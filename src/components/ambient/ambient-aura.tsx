@@ -24,10 +24,13 @@ import {
  * frames, nothing. If nothing is happening the light is off, which is the whole
  * answer to whether an always-mounted glow becomes wallpaper.
  *
- * THE SHAPE. The bottom edge, and both sides for the height of the band
- * (`--aura-band`, 38vh clamped). Never the top — and that is a structural fact
- * rather than a fade: there is no canvas up there. Light all the way up
- * encloses you, and the thing being signalled is ambient, not urgent.
+ * THE SHAPE. The bottom edge and both sides, over the whole content column —
+ * which is what `<main>` is, and what a call is a mode of. It is BEHIND the
+ * conversation, not over it: `z-index: 0` under a `z-[1]` content wrapper, so
+ * the transcript, the composer and every popover read on top of the light
+ * rather than through it. Never the top: the arms taper out before they get
+ * there (ARM_FADE), because light all the way round encloses you and the
+ * thing being signalled is ambient, not urgent.
  *
  * WHY THREE EDGES AND NOT ONE PATH. A wave is drawn by pushing points inward
  * from an edge along that edge's normal. An earlier attempt walked a single
@@ -47,19 +50,28 @@ import {
  *   half: it fills the corners, so the junctions between the three ribbons are
  *   lit rather than merely adjacent.
  *
- *   THE RIBBONS. Two travelling waveforms per edge, filled toward the edge and
- *   faded away from it by a gradient. This is the half that reads as a voice
- *   rather than a lamp.
+ *   THE RIM. Pools of light along each edge, drifting and breathing against
+ *   each other at speeds sharing no common factor (POOLS). This is the half
+ *   that reads as a voice rather than a lamp. It was a travelling waveform
+ *   once; see the POOLS header for why it is not one now.
  *
  * Softness is in the paint, never in a filter. An early version put
- * `blur(9px)` over the whole canvas, which erased the 1.25px crest that is the
- * only part of the draw carrying the motion — the expensive work was paid for
- * and then destroyed. Do not reintroduce a filter.
+ * `blur(9px)` over the whole canvas, on top of a draw whose every edge is
+ * already a gradient falloff — paying twice for one effect, and paying the
+ * second time per frame. Do not reintroduce a filter.
  *
  * COLOUR AND MOTION BOTH CARRY THE STATE, because either alone is ambiguous at
- * the edge of vision. Your turn is the neutral ink moving quickly and
- * reactively; thinking is halfway to the accent and moving slowly and
- * deliberately; an answer is the full accent at the fastest sustained travel.
+ * the edge of vision — and because one of the three parties here is the person
+ * in the room, who may not be looking at the screen at all.
+ *
+ *   You speaking      the accent, and the only ink driven by a live signal:
+ *                     it climbs on a syllable (attack 18) and falls away
+ *                     slowly (release 3.2), so the movement is YOURS.
+ *   Juno thinking     `--ultra`, breathing on a 3.4s cycle at 0.4 tempo —
+ *                     slow, regular, going nowhere, which is what waiting is.
+ *   Juno answering    `--source`, resting high and travelling at full tempo.
+ *
+ * Three inks and three motions, and each pair is legible without the other.
  *
  * It takes no props. Everything it shows comes from the bus in `lib/aura.ts`,
  * because the two numbers that matter most — the microphone envelope and the
@@ -87,37 +99,42 @@ const FLOOR: Record<AuraState, number> = {
 const ANSWERING_FLOOR: Record<AuraDrive, number> = { level: 0.16, floor: 0.2 };
 
 /**
- * Where the state sits on the one colour ramp the product has: 0 is the
- * neutral ink, 1 is the accent. Your voice is ink and Juno's is accent, and the
- * gap between them is literally between them — a mix along the existing ramp,
- * not a third hue invented for the occasion. `tool` sits below `thinking`
- * because a connector call is the product waiting on someone else.
+ * WHICH INK EACH STATE SPEAKS IN.
+ *
+ * This replaced a single 0..1 ramp from the neutral ink to the accent, plus a
+ * second ramp toward `--destructive`. One ramp can only ever say "more" or
+ * "less" of one thing, so `thinking` and `answering` were the same colour at
+ * different strengths — and the one state that should unmistakably be the
+ * brand's own, your turn, sat at 0: grey.
+ *
+ * Three parties, three inks (the tokens are defined in globals.css):
+ *
+ *   you       your voice, in the accent. The product is listening to you
+ *             specifically, and that is the one moment it should look it.
+ *   thinking  Juno working, in `--ultra`. Far enough from the accent that
+ *             "working" can never be misread as "your turn" at a glance.
+ *   juno      Juno answering, in `--source` — the ink that already means
+ *             "this came from somewhere" everywhere else in the product.
+ *   alarm     a failure, in `--destructive`. Its own ink, never a mix.
+ *
+ * `quiet` is the neutral ink: a call that is up with nobody speaking is
+ * PRESENT without claiming a party, which is exactly what listening is.
  */
-const TONE: Record<AuraState, number> = {
-  idle: 0,
-  listening: 0.12,
-  user: 0,
-  muted: 0,
-  connecting: 0.35,
-  thinking: 0.62,
-  tool: 0.45,
-  answering: 1,
-  done: 1,
-  error: 0,
-};
+type AuraInk = "you" | "thinking" | "juno" | "alarm" | "quiet";
 
-/** The second ramp, toward `--destructive`. The only other hue this may draw. */
-const ALARM: Record<AuraState, number> = {
-  idle: 0,
-  listening: 0,
-  user: 0,
-  muted: 0,
-  connecting: 0,
-  thinking: 0,
-  tool: 0,
-  answering: 0,
-  done: 0,
-  error: 1,
+const INK: Record<AuraState, AuraInk> = {
+  idle: "quiet",
+  listening: "quiet",
+  user: "you",
+  muted: "quiet",
+  connecting: "thinking",
+  thinking: "thinking",
+  // A connector call is Juno working on your behalf, so it takes the working
+  // ink rather than a fifth one nobody would learn.
+  tool: "thinking",
+  answering: "juno",
+  done: "juno",
+  error: "alarm",
 };
 
 /**
@@ -215,26 +232,53 @@ const POOL_BREATH_SPEED = 0.62;
  * They sit outside the band so only their inner falloff is on screen.
  */
 const LOBES = [
-  { x: 0.5, y: 1.16, radius: 0.95, drift: 0.08, speed: 0.21, alpha: 0.12 },
-  { x: 0.0, y: 0.84, radius: 0.7, drift: 0.04, speed: -0.29, alpha: 0.11 },
-  { x: 1.0, y: 0.84, radius: 0.7, drift: 0.04, speed: 0.34, alpha: 0.11 },
-  { x: -0.04, y: 0.37, radius: 0.42, drift: 0.03, speed: 0.17, alpha: 0.07 },
-  { x: 1.04, y: 0.37, radius: 0.42, drift: 0.03, speed: -0.23, alpha: 0.07 },
+  { x: 0.5, y: 1.18, radius: 1.1, drift: 0.08, speed: 0.21, alpha: 0.13 },
+  { x: -0.02, y: 0.86, radius: 0.82, drift: 0.04, speed: -0.29, alpha: 0.12 },
+  { x: 1.02, y: 0.86, radius: 0.82, drift: 0.04, speed: 0.34, alpha: 0.12 },
+  // The high pair carries the field above the midline. They are the reason
+  // the layer reads as a room rather than as a glow at the bottom of one,
+  // and they are deliberately the faintest things here: everything they
+  // touch is text.
+  { x: -0.06, y: 0.3, radius: 0.56, drift: 0.03, speed: 0.17, alpha: 0.075 },
+  { x: 1.06, y: 0.3, radius: 0.56, drift: 0.03, speed: -0.23, alpha: 0.075 },
 ] as const;
 
 /**
- * How far up each side the light reaches, as a share of the BAND — not of the
- * window. The band is the reach now: it is the only thing the layer owns, so a
- * second share of a second dimension would be two places to change one answer.
+ * How far up each side the light reaches, as a share of the LAYER — which is
+ * now the whole content column rather than a 38vh band at its foot.
+ *
+ * 0.78. In the band era this was 0.88 of a 38vh strip, i.e. about a third of
+ * the window; the first full-column pass cut it to 0.52 on the argument that
+ * light above the midline encloses the reader. That argument was answering a
+ * bug: with the arms clipped at their tips (see `paintRim`), every extra
+ * centimetre of arm moved a SEAM further up the window, so of course less of
+ * it looked better. Unclipped, an arm ends in a taper instead of a line, and
+ * the light can go where the eye expects a lit room to be lit — up the sides,
+ * dying out before the top.
  */
-const ARM_OF_BAND = 0.88;
+const ARM_OF_BAND = 0.78;
 
 /**
  * Share of an edge over which the ribbon fades out at its FREE end — the top of
  * an arm, and nothing on the bottom, which has no free end. Long, because a
- * short taper leaves a visible stub.
+ * short taper leaves a visible stub — and longer now that the arm itself is,
+ * so the fade stays a fade rather than becoming a top half that is simply on.
  */
-const ARM_FADE = 0.62;
+const ARM_FADE = 0.78;
+
+/**
+ * Cap on an arm pool's radius, as a share of the arm's own length.
+ *
+ * The bottom's reach is a share of the WIDTH, which on any landscape window is
+ * the larger dimension — so an arm sized off it carries pools wider than the
+ * ribbon they sit on. That is what made the clip visible in the first place,
+ * and removing the clip without this would simply have turned the seam into a
+ * flood.
+ */
+const ARM_REACH_OF_LENGTH = 0.66;
+
+/** How deep into the column the bottom rim carries, as a share of its width. */
+const RIM_REACH = 0.42;
 
 /** Share of the bottom edge over which the ribbon eases in at each corner. */
 const CORNER_EASE = 0.05;
@@ -361,14 +405,23 @@ export function AmbientAura() {
      * The fallbacks are the light-theme coral values, so a failed read looks
      * like the default rather than like nothing.
      */
-    let accent: [number, number, number] = [15, 54, 46];
-    let neutral: [number, number, number] = [48, 4, 40];
-    let danger: [number, number, number] = [11, 51, 48];
+    type Hsl = [number, number, number];
+    // Seeded with the light theme's values so a failed read looks like the
+    // default rather than like nothing.
+    const palette: Record<AuraInk, Hsl> = {
+      you: [15, 54, 46],
+      thinking: [258, 90, 66],
+      juno: [187, 62, 34],
+      alarm: [11, 51, 48],
+      quiet: [48, 4, 40],
+    };
     const readColours = () => {
       const root = document.documentElement;
-      accent = readHSL(root, "--primary") ?? accent;
-      neutral = readHSL(root, "--muted-foreground") ?? neutral;
-      danger = readHSL(root, "--destructive") ?? danger;
+      palette.you = readHSL(root, "--aura-you") ?? palette.you;
+      palette.thinking = readHSL(root, "--aura-thinking") ?? palette.thinking;
+      palette.juno = readHSL(root, "--aura-juno") ?? palette.juno;
+      palette.alarm = readHSL(root, "--destructive") ?? palette.alarm;
+      palette.quiet = readHSL(root, "--muted-foreground") ?? palette.quiet;
     };
 
     let clock = 0;
@@ -382,8 +435,13 @@ export function AmbientAura() {
     // mounting mid-answer is not a turn boundary, and starting from the
     // caller's ink would wash Juno's voice in the wrong colour and then correct
     // itself in front of you.
-    let tone = TONE[previous];
-    let alarm = ALARM[previous];
+    // The live ink, eased toward the state's own. Seeded from the state at
+    // mount: mounting mid-answer is not a turn boundary, and starting from
+    // somebody else's ink would wash Juno's voice in the wrong colour and then
+    // correct itself in front of you.
+    let hue = palette[INK[previous]][0];
+    let sat = palette[INK[previous]][1];
+    let lum = palette[INK[previous]][2];
     let tempo = TEMPO[previous];
     const presence = PRESENCE_VOICE;
 
@@ -474,11 +532,17 @@ export function AmbientAura() {
       // sweeping its colour back to ink on the way would recolour a state the
       // user is still watching disappear. An expired error fades out red, which
       // is the "one pulse, then gone" the brief asks for.
+      // Held, not eased toward idle's ink: the light is fading out, and
+      // sweeping its colour on the way would recolour a state the user is
+      // still watching disappear.
       if (state !== "idle") {
-        const toneRate = state === "done" ? 4 : 2.6;
-        tone += (TONE[state] - tone) * ease(toneRate);
-        // Rises faster than it falls: a failure should land, then let go.
-        alarm += (ALARM[state] - alarm) * ease(ALARM[state] > alarm ? 4 : 1.6);
+        const [th, ts, tl] = palette[INK[state]];
+        // A failure lands fast; everything else sweeps. Hue on the SHORT arc,
+        // or teal → violet would travel the long way round through red.
+        const rate = ease(state === "error" ? 5 : state === "done" ? 4 : 2.6);
+        hue = mixHue(hue, th, rate);
+        sat = mix(sat, ts, rate);
+        lum = mix(lum, tl, rate);
         const tempoTarget = state === "answering" ? ANSWERING_TEMPO[now.drive] : TEMPO[state];
         tempo += (tempoTarget - tempo) * ease(2.2);
       }
@@ -493,24 +557,20 @@ export function AmbientAura() {
       ctx.clearRect(0, 0, width, height);
       if (width === 0 || height === 0 || smooth <= 0.001) return;
 
-      const [nh, ns, nl] = neutral;
-      const [ah, as, al] = accent;
-      const [dh, ds, dl] = danger;
-      // Ink → accent by tone, then that → destructive by alarm. Hue on the
-      // short arc both times (see `mixHue`); saturation and lightness are
-      // linear, where a straight mix is correct.
-      const bh = mixHue(nh, ah, tone);
-      const h = mixHue(bh, dh, alarm);
-      const s = mix(mix(ns, as, tone), ds, alarm);
-      const l = mix(mix(nl, al, tone), dl, alarm);
-      const paintTone = (a: number) => `hsl(${h} ${s}% ${l}% / ${a * presence})`;
+      const paintTone = (a: number) => `hsl(${hue} ${sat}% ${lum}% / ${a * presence})`;
 
-      // THE FIELD. Lobes sunk outside the band, so only their inner falloff is
-      // on screen and the light appears to come from beyond the window rather
-      // than from a circle sitting on it. `H * 2.4` reconstructs the window
-      // height the old full-viewport canvas was measuring, so the light is the
-      // same size it always was — the canvas shrank, the light did not.
-      const span = Math.min(width, height * 2.4);
+      /*
+       * THE FIELD. Lobes sunk outside the layer, so only their inner falloff
+       * is on screen and the light appears to come from beyond the column
+       * rather than from a circle sitting on it.
+       *
+       * `span` is the width now, not `min(width, height * 2.4)`. That
+       * expression existed to reconstruct the window height a bottom BAND was
+       * no longer measuring; the layer is the whole column again, so the
+       * reconstruction is not only unnecessary but wrong — on a tall window it
+       * made the light smaller than the space it had.
+       */
+      const span = width;
       const strength = 0.45 + 0.55 * smooth;
       for (const lobe of LOBES) {
         // Drift is motion for its own sake; reduced motion drops it and keeps
@@ -523,10 +583,19 @@ export function AmbientAura() {
         g.addColorStop(0.55, paintTone(lobe.alpha * 0.34 * strength));
         g.addColorStop(1, paintTone(0));
         ctx.fillStyle = g;
-        ctx.fillRect(0, 0, width, height);
+        // ITS OWN BOUNDING BOX, not the whole canvas. A radial gradient is
+        // transparent past its last stop, so filling the full layer painted
+        // millions of pixels that could not change — affordable on a 38vh
+        // band, not on a full column. Five lobes over the whole canvas was
+        // the single reason the band existed.
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       }
 
-      const reach = span * 0.26 * smooth;
+      // How deep into the column the rim carries, as a share of its width.
+      // 0.42, up from a third — the light is meant to be the room the
+      // conversation is in, and a third of the width on a laptop is a strip
+      // along the bottom bezel.
+      const reach = span * RIM_REACH * smooth;
       if (reach >= 1) paintRim(reach, paintTone);
       fadeTop();
     };
@@ -538,23 +607,38 @@ export function AmbientAura() {
      * so the maths is written once for one direction and the canvas transform
      * does the rotating — the same reason the edges exist at all.
      *
-     * `fillRect` over the whole local box rather than an arc: a radial
-     * gradient's last stop is transparent, so the rectangle outside the pool
-     * costs nothing visually and the alternative — a path per pool — would add
-     * an arc whose own antialiased edge is exactly the hard line this
-     * construction exists to avoid.
+     * EACH POOL IS FILLED OVER ITS OWN BOUNDING BOX, and the fact that this
+     * had to be said twice is the whole history of this layer. The first
+     * version filled `(0, 0, edge.length, r)` — the EDGE's box, not the
+     * POOL's — which is a clip, and a clip through a gradient carrying alpha
+     * is a hard line. On the arms it was unmistakable: an arm is ~0.5 of the
+     * window's height while a pool's radius is sized off its WIDTH, so the
+     * widest pools were nearly twice the length of the ribbon they sat on and
+     * got sheared off flat at the arm's tip. Both arms shear at the same
+     * height, so what rendered was a seam straight across the window at
+     * mid-screen — the same failure as the stacked-gradient version above,
+     * wearing a different shape.
+     *
+     * Filling the pool's own square instead means the gradient reaches its
+     * transparent last stop on its own in every direction, exactly as the
+     * lobes do. Nothing is clipped, so nothing can show a cut, and the arm's
+     * free end is shaped by `windowAt` fading its pools' ALPHA rather than by
+     * cutting their geometry.
      */
-    const paintRim = (reach: number, paintTone: (a: number) => string) => {
+    const paintRim = (base: number, paintTone: (a: number) => string) => {
       for (const edge of edges()) {
         if (edge.length < 1) continue;
         const [a, b, c, d, e, f] = edge.m;
         ctx.setTransform(a * dpr, b * dpr, c * dpr, d * dpr, e * dpr, f * dpr);
 
+        // An arm is a share of the HEIGHT and the reach is a share of the
+        // WIDTH, so on any landscape window an arm pool sized off the bottom's
+        // reach is larger than the arm itself — it stops reading as a rim and
+        // becomes a wash up the side. Capped against the arm's own length, the
+        // light along a side is proportionate to the side.
+        const reach = edge.arm ? Math.min(base, edge.length * ARM_REACH_OF_LENGTH) : base;
+
         for (const pool of POOLS) {
-          // An arm is a fraction of the bottom's length, so a pool sized off
-          // the reach alone would swallow the whole arm. `windowAt` then fades
-          // the free end, which is what keeps the light framing the surface
-          // rather than enclosing it.
           const r = Math.max(1, reach * pool.spread);
           const drift = reduced ? 0 : Math.sin(clock * pool.speed + pool.phase) * edge.length * pool.swing;
           const cx = edge.length * pool.at + drift;
@@ -576,7 +660,7 @@ export function AmbientAura() {
           g.addColorStop(0.72, paintTone(alpha * 0.12));
           g.addColorStop(1, paintTone(0));
           ctx.fillStyle = g;
-          ctx.fillRect(0, 0, edge.length, r);
+          ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
         }
       }
     };
@@ -587,8 +671,17 @@ export function AmbientAura() {
       if (fade < 1) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const cut = ctx.createLinearGradient(0, 0, 0, fade);
-      cut.addColorStop(0, "rgba(0,0,0,1)");
-      cut.addColorStop(1, "rgba(0,0,0,0)");
+      // Sampled along a smoothstep rather than left as a two-stop ramp. A
+      // linear erase is continuous in VALUE but not in slope, and the eye
+      // reads a slope discontinuity over a near-uniform wash as an edge —
+      // a Mach band exactly where the mask stops, which is the artefact this
+      // whole function exists to remove. Five stops is enough for the kink to
+      // fall below a level step; the curve is flat at both ends by
+      // construction, so there is nothing left to see.
+      for (let i = 0; i <= 4; i += 1) {
+        const t = i / 4;
+        cut.addColorStop(t, `rgba(0,0,0,${(1 - smoothstep(t)).toFixed(4)})`);
+      }
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = cut;
       ctx.fillRect(0, 0, width, fade);
