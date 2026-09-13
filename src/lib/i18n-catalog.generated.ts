@@ -334,10 +334,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Earlier stable Flash generation."
   },
   {
-    "id": "03a0e90ee550c2a7",
-    "source": "Everyday prompt → Fast models · Instant"
-  },
-  {
     "id": "03ac864d2beafabd",
     "source": "Resize the motion timeline"
   },
@@ -722,10 +718,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Legacy long-context text model."
   },
   {
-    "id": "093035b0a4210271",
-    "source": "Coding & analysis → Mid tier · Balanced"
-  },
-  {
     "id": "0937c32da2498f51",
     "source": "xAI's recommended image model — generation and editing."
   },
@@ -840,10 +832,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0a9761441f88f001",
     "source": "Chat archived."
-  },
-  {
-    "id": "0ab83287074adfea",
-    "source": "Requires the"
   },
   {
     "id": "0abba441f16eff90",
@@ -1542,10 +1530,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Other steps"
   },
   {
-    "id": "14c3911afc23f864",
-    "source": "chat · presence 0.62"
-  },
-  {
     "id": "14d8260ff98147cb",
     "source": "Connect one"
   },
@@ -1740,10 +1724,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "186ff8b1b164831c",
     "source": "Run again and stop asking"
-  },
-  {
-    "id": "18720329ca307c79",
-    "source": "Remove from favorites"
   },
   {
     "id": "1875464df64a5917",
@@ -1962,10 +1942,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting for the first step. This fills in the moment Juno starts working."
   },
   {
-    "id": "1b2c08a8733d7ff1",
-    "source": "Quality"
-  },
-  {
     "id": "1b3c7f8e637e1454",
     "source": "GPT-6 Astra"
   },
@@ -2084,6 +2060,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1cb99ce2306617b5",
     "source": "Searches"
+  },
+  {
+    "id": "1cd6353fbda7d618",
+    "source": "Precision-first: the highest quality and the most control over an edit."
   },
   {
     "id": "1cd7fa936258e09c",
@@ -2228,10 +2208,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1f21c198ae4be76a",
     "source": "MiMo Pro"
-  },
-  {
-    "id": "1f2ba25aaafeea20",
-    "source": "Use this model"
   },
   {
     "id": "1f2c17331a7383f3",
@@ -4214,10 +4190,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "budget_exceeded"
   },
   {
-    "id": "3a56171f5d137e39",
-    "source": "Scores by"
-  },
-  {
     "id": "3a5ecca188c0579c",
     "source": "Updated"
   },
@@ -4532,10 +4504,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3f7f42e069fb5035",
     "source": "Streaming Text"
-  },
-  {
-    "id": "3f8271f91a889225",
-    "source": "thinking depth"
   },
   {
     "id": "3f83cf53868f24b7",
@@ -4884,10 +4852,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "44a910b7e6524a93",
     "source": "Two-step verification is already on. Turn it off first to enrol a new device."
-  },
-  {
-    "id": "44c7237fb0da7e0b",
-    "source": "streaming…"
   },
   {
     "id": "44cfb83a3f45845d",
@@ -5318,6 +5282,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Task is no longer active."
   },
   {
+    "id": "4ac2f78a5e9dfb1a",
+    "source": "xAI's volume tier — a 2M window, tool calling, and reasoning you can switch off."
+  },
+  {
     "id": "4acea78d4b3cc400",
     "source": "Name it, or leave it blank and Juno will name it from your first chat."
   },
@@ -5674,10 +5642,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Meta · Muse"
   },
   {
-    "id": "4f7d64017689437e",
-    "source": "Coming soon"
-  },
-  {
     "id": "4f89da076497186b",
     "source": "Le directeur de la publication est"
   },
@@ -5780,10 +5744,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "50cbffee01bcdecc",
     "source": "The language Juno replies in."
-  },
-  {
-    "id": "50e7759fec6cb130",
-    "source": "Respects your plan limits, image needs, and web search settings."
   },
   {
     "id": "51035b5b67dca0d1",
@@ -6050,10 +6010,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno carried this out."
   },
   {
-    "id": "54d8dd6ac7fbab4d",
-    "source": "Select a model to see its specs."
-  },
-  {
     "id": "54e6289e14c7b0e7",
     "source": "transcript"
   },
@@ -6216,10 +6172,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "580f9427c0745711",
     "source": "counter-evidence"
-  },
-  {
-    "id": "582967534d0f909d",
-    "source": "in"
   },
   {
     "id": "58363fd94240d677",
@@ -6516,10 +6468,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5c4c1964340aca5b",
     "source": "provider"
-  },
-  {
-    "id": "5c6170e82f9cd480",
-    "source": "Use Auto"
   },
   {
     "id": "5c6aea379fa2521a",
@@ -6858,10 +6806,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Scroll to latest"
   },
   {
-    "id": "60ff4d68f33effcb",
-    "source": "Current model"
-  },
-  {
     "id": "6105d6cc76af4003",
     "source": "image"
   },
@@ -6936,6 +6880,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6205b4d88e13750e",
     "source": "Project instructions"
+  },
+  {
+    "id": "6212fdc03f8dffde",
+    "source": "Fastest of the 3.5 line — high-volume subagents, document parsing, 1M context."
   },
   {
     "id": "621675ea7b659562",
@@ -7758,16 +7706,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No open pull requests"
   },
   {
-    "id": "6c0522c0e1ba6f85",
-    "source": "Price per million tokens"
-  },
-  {
     "id": "6c45cb72a36e63d5",
     "source": "stop"
-  },
-  {
-    "id": "6c582b62e0e5aa05",
-    "source": "Fast"
   },
   {
     "id": "6c5a15da74caf292",
@@ -8494,6 +8434,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "reset your password"
   },
   {
+    "id": "757de29d3bf1cfa6",
+    "source": "Sparse MoE on a 552B backbone — a 1M window, 384K of output, and the cheapest frontier tier there is."
+  },
+  {
     "id": "7583809507a13391",
     "source": "utils.ts"
   },
@@ -8536,10 +8480,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "761b7ad8ad439b28",
     "source": "summary"
-  },
-  {
-    "id": "762069bc07a6e1b5",
-    "source": "out"
   },
   {
     "id": "762d211dacde0663",
@@ -8716,10 +8656,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "78dfd1d482f7c1b1",
     "source": "Runs in this folder on your Mac — the same working copy your editor has open."
-  },
-  {
-    "id": "78ea5ef30f1e6270",
-    "source": "Intelligence"
   },
   {
     "id": "78fd7f3a2edbdfec",
@@ -8962,10 +8898,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "générer ou diffuser des contenus manifestement illicites (haine, harcèlement, exploitation de mineurs, désinformation malveillante) ;"
   },
   {
-    "id": "7ce399f9cb9b543a",
-    "source": "Routes each message to the"
-  },
-  {
     "id": "7ce78f4f954945d9",
     "source": "End voice mode before opening an artifact on this screen, so the microphone controls stay visible."
   },
@@ -9114,10 +9046,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Style"
   },
   {
-    "id": "7e7e1479e2da05c0",
-    "source": "for speed, intelligence and cost."
-  },
-  {
     "id": "7e8b64d281f4401e",
     "source": "Pre-filter matched explicit child sexual abuse language."
   },
@@ -9168,10 +9096,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7f2c862aad8e62a4",
     "source": "Stopped early"
-  },
-  {
-    "id": "7f3c0782afd7e955",
-    "source": "Add to favorites"
   },
   {
     "id": "7f40071ec4849bea",
@@ -10746,10 +10670,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Starts"
   },
   {
-    "id": "96e8840dc9cdb053",
-    "source": "plan."
-  },
-  {
     "id": "96ebc8544f6e52ec",
     "source": "Juno can&rsquo;t reach its backend"
   },
@@ -11724,10 +11644,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a263c39ce6fd3c9a",
     "source": "The /artifacts toolbar"
-  },
-  {
-    "id": "a265c190e0d9140c",
-    "source": "best model"
   },
   {
     "id": "a292ab76d1442dae",
@@ -14130,10 +14046,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rotate"
   },
   {
-    "id": "c372fee9b4566b85",
-    "source": "Speed"
-  },
-  {
     "id": "c37e50b29e6e2b84",
     "source": "Juno Code approval request"
   },
@@ -14274,20 +14186,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Les conversations sont chiffrées au repos sur nos serveurs. Les modalités de traitement des données personnelles sont détaillées dans la"
   },
   {
-    "id": "c57d7e92019708b6",
-    "source": "voice"
-  },
-  {
     "id": "c582ac7607f2971e",
     "source": "instructions_or_restore_version"
   },
   {
     "id": "c5841061eded8a27",
     "source": "Couldn’t carry this answer into chat — it's too large."
-  },
-  {
-    "id": "c587c2601ccfc456",
-    "source": "Vision"
   },
   {
     "id": "c592b0f25e5d1391",
@@ -14548,6 +14452,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c934cc71493d4673",
     "source": "Attempt"
+  },
+  {
+    "id": "c9427916574de5ea",
+    "source": "The research planner could not draft a plan for this question. Try again, or rephrase the goal."
   },
   {
     "id": "c96bfc47eba70b32",
@@ -14942,10 +14850,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Component"
   },
   {
-    "id": "ce72b294389e67e6",
-    "source": "voice · presence 1.00"
-  },
-  {
     "id": "ce75df631c47e6f1",
     "source": "Show what it did"
   },
@@ -14996,6 +14900,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cf07194ee232eb53",
     "source": "prompt"
+  },
+  {
+    "id": "cf0ee3547a4e51a5",
+    "source": "Soon"
   },
   {
     "id": "cf1368a3d1f60767",
@@ -15590,10 +15498,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The validator could not confirm this file opens. It said:"
   },
   {
-    "id": "d6b7e540a8e13888",
-    "source": "Artificial Analysis"
-  },
-  {
     "id": "d6bd8c0aeee80fed",
     "source": "Document"
   },
@@ -16112,10 +16016,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dca61d32363b091b",
     "source": "Grok"
-  },
-  {
-    "id": "dca83e717b1f64eb",
-    "source": "stream"
   },
   {
     "id": "dca9d1e190bafda3",
@@ -16828,6 +16728,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e596899f114b5162",
     "source": "exit"
+  },
+  {
+    "id": "e59efeba8399b569",
+    "source": "The everyday default — GPT Image 2 quality at half the latency."
   },
   {
     "id": "e5c1b08c3503fb58",
@@ -17546,10 +17450,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Primary"
   },
   {
-    "id": "eff928e1713fbf18",
-    "source": "Capable foundation model."
-  },
-  {
     "id": "f0063b808736318d",
     "source": "Hour"
   },
@@ -17624,6 +17524,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f14d7222497cbf13",
     "source": "I trust this"
+  },
+  {
+    "id": "f14ea3cfd35210c4",
+    "source": "No configured model can run a research worker, so this run gathered sources without the agent team. Configure a provider with an agentic chat model for a full investigation."
   },
   {
     "id": "f15973078814588d",
@@ -18406,10 +18310,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Alloy"
   },
   {
-    "id": "fccdb015a54c6afc",
-    "source": "Deep reasoning → Flagship · Deep thinking"
-  },
-  {
     "id": "fcdeb241b9acbe38",
     "source": "Update popup"
   },
@@ -18420,10 +18320,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fd1355ba188fdbec",
     "source": "Your permissions blocked this, so Juno never sent it."
-  },
-  {
-    "id": "fd1e830ab4ddfc43",
-    "source": "Retiring soon"
   },
   {
     "id": "fd220f56d2d5c14c",

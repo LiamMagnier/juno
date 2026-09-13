@@ -156,34 +156,58 @@ const BREATH: Partial<Record<AuraState, { amp: number; period: number }>> = {
 };
 
 /**
- * THE RIM, and why it is not a waveform any more.
+ * THE RIM: pools of light along an edge, not a wave and not a band.
  *
- * What used to be here: two travelling sine ribbons per edge at frequency 2.4
- * and 3.9, each filled to the edge and finished with a 1.25px crest stroke.
- * The crest was doing the work — it was the only crisp thing in the layer, and
- * a crisp sine running along the bottom of a window is a 2008 audio
- * visualiser. No amount of retuning the alphas fixes that, because the problem
- * is the SHAPE: a legible travelling waveform reads as a meter, and a meter is
- * a widget.
+ * TWO THINGS HAVE BEEN TRIED AND BOTH READ AS A WIDGET.
  *
- * What is here instead: three stacked bands of light per edge, no stroke on
- * any of them, whose boundary is far too low-frequency to read as a wave at
- * all. The eye cannot follow a 0.7-cycle undulation across a 1200px edge; what
- * it sees is the light BREATHING — brighter here, deeper there, the pools
- * drifting — which is what a room lit from beyond its edges actually does.
+ * First, two travelling sines per edge at frequency 2.4 and 3.9, each filled
+ * to the edge and finished with a 1.25px crest stroke. The crest was doing all
+ * the work — the only crisp thing in the layer — and a crisp sine along the
+ * bottom of a window is an audio visualiser.
  *
- * The bands differ in reach and in speed, and their frequencies share no
- * common factor, so the sum never resolves into a loop and the three never
- * line up into a single visible front. `alpha` falls as `reach` grows: the
- * deepest band is the faintest, which is the falloff a real bloom has.
+ * Then, stacked gradient bands whose top boundary undulated slowly, with no
+ * stroke at all. That is worse, and the reason is worth writing down because
+ * it is not obvious from the code: a linear gradient runs from the edge to a
+ * FIXED height, but the polygon is cut at a height that VARIES along the edge.
+ * Wherever the cut falls short of the gradient's zero point, the fill stops at
+ * whatever alpha it had reached — a hard line. Rendered, that is a field of
+ * grey facets with straight diagonal seams, like creased paper.
  *
- * NO STROKE, EVER. If a crest comes back, so does the visualiser.
+ * The fix is not a third boundary shape. It is to stop having a boundary.
+ *
+ * Every pool below is a RADIAL gradient whose centre is sunk just outside the
+ * edge, so only its inner falloff is on screen and its alpha reaches zero on
+ * its own in every direction. Nothing is clipped, so nothing can show a cut.
+ * The light is brighter where pools overlap and dimmer between them, and the
+ * pools drift along the edge at speeds sharing no common factor — so what the
+ * eye sees is a rim breathing unevenly, which is what a room lit from beyond
+ * its edges does. This is the same construction as `LOBES` below, which has
+ * always been the half of this layer that looked right.
+ *
+ * `at` is the position along the edge, 0 at the corner; `sink` is how far the
+ * centre sits outside it, as a share of the radius — deeper means flatter and
+ * wider. `spread` is the radius as a share of the reach. `swing` is how far it
+ * travels, as a share of the edge.
  */
-const BANDS = [
-  { frequency: 0.7, speed: 0.16, phase: 0, reach: 1, wobble: 0.3, alpha: 0.2 },
-  { frequency: 1.1, speed: -0.11, phase: 2.1, reach: 0.62, wobble: 0.26, alpha: 0.3 },
-  { frequency: 1.9, speed: 0.07, phase: 4.3, reach: 0.3, wobble: 0.22, alpha: 0.34 },
+const POOLS = [
+  { at: 0.06, spread: 1.15, sink: 0.4, swing: 0.06, speed: 0.23, phase: 0.0, alpha: 0.34 },
+  { at: 0.26, spread: 1.75, sink: 0.55, swing: 0.09, speed: -0.17, phase: 1.7, alpha: 0.24 },
+  { at: 0.44, spread: 1.05, sink: 0.34, swing: 0.07, speed: 0.29, phase: 3.4, alpha: 0.4 },
+  { at: 0.66, spread: 1.85, sink: 0.58, swing: 0.1, speed: -0.21, phase: 5.0, alpha: 0.22 },
+  { at: 0.82, spread: 1.1, sink: 0.37, swing: 0.06, speed: 0.13, phase: 2.3, alpha: 0.36 },
+  { at: 0.96, spread: 1.4, sink: 0.48, swing: 0.05, speed: -0.31, phase: 4.1, alpha: 0.28 },
 ] as const;
+
+/**
+ * How much a pool's own brightness breathes, and how fast.
+ *
+ * Separate from the drift because they are different senses of motion: drift
+ * moves where the light IS, breath moves how much of it there is. Together
+ * they are why the rim never settles into a pattern you can name, which is the
+ * whole difference between ambient light and an animation.
+ */
+const POOL_BREATH = 0.34;
+const POOL_BREATH_SPEED = 0.62;
 
 /**
  * One lobe of the ambient field, in BAND coordinates: `x`/`y` are shares of the
@@ -508,19 +532,17 @@ export function AmbientAura() {
     };
 
     /**
-     * The three bands of light on each of the three edges.
+     * The pools of light along each of the three edges.
      *
-     * Each band is one filled path — the edge, out to a slowly undulating
-     * boundary — under a linear gradient that is strongest ON the edge and
-     * gone by the top of that band's reach. The gradient is the entire source
-     * of softness: there is no filter (see the note at the top of this file)
-     * and no stroke (see `BANDS`).
+     * Drawn in the edge's own local frame (x along the edge, y away from it),
+     * so the maths is written once for one direction and the canvas transform
+     * does the rotating — the same reason the edges exist at all.
      *
-     * The boundary carries a `wobble` term an octave up from the band's own
-     * frequency, at a fraction of the amplitude. Without it a pure sine at
-     * these frequencies is recognisably a sine even when it is slow; with it
-     * the edge of the light is merely uneven, which is the difference between
-     * a waveform and a bloom.
+     * `fillRect` over the whole local box rather than an arc: a radial
+     * gradient's last stop is transparent, so the rectangle outside the pool
+     * costs nothing visually and the alternative — a path per pool — would add
+     * an arc whose own antialiased edge is exactly the hard line this
+     * construction exists to avoid.
      */
     const paintRim = (reach: number, paintTone: (a: number) => string) => {
       for (const edge of edges()) {
@@ -528,38 +550,33 @@ export function AmbientAura() {
         const [a, b, c, d, e, f] = edge.m;
         ctx.setTransform(a * dpr, b * dpr, c * dpr, d * dpr, e * dpr, f * dpr);
 
-        // Sampled by length rather than by a fixed count: on a phone this is a
-        // third of the points, and on a wide window the curve stays smooth.
-        // These curves are far smoother than the waves were, so they need
-        // fewer points to stay clean — half the samples for the same result.
-        const steps = Math.max(14, Math.min(72, Math.round(edge.length / 18)));
+        for (const pool of POOLS) {
+          // An arm is a fraction of the bottom's length, so a pool sized off
+          // the reach alone would swallow the whole arm. `windowAt` then fades
+          // the free end, which is what keeps the light framing the surface
+          // rather than enclosing it.
+          const r = Math.max(1, reach * pool.spread);
+          const drift = reduced ? 0 : Math.sin(clock * pool.speed + pool.phase) * edge.length * pool.swing;
+          const cx = edge.length * pool.at + drift;
+          const cy = -r * pool.sink;
+          const breath = reduced
+            ? 1
+            : 1 + POOL_BREATH * Math.sin(clock * POOL_BREATH_SPEED + pool.phase * 1.31);
+          const alpha = pool.alpha * breath * windowAt(pool.at, edge.arm);
+          if (alpha <= 0.002) continue;
 
-        for (const band of BANDS) {
-          const top = Math.max(1, reach * band.reach);
-          const g = ctx.createLinearGradient(0, 0, 0, top);
-          g.addColorStop(0, paintTone(band.alpha));
-          // A mid stop, so the strongest light hugs the surface edge and the
-          // composer — which sits inside the rim's reach — is lit rather than
-          // washed. A straight ramp put a fifth of full strength across the
-          // text.
-          g.addColorStop(0.42, paintTone(band.alpha * 0.28));
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+          g.addColorStop(0, paintTone(alpha));
+          // Two mid stops rather than one: a single linear ramp inside a
+          // radial gradient reads as a disc with a soft edge, and three make
+          // it read as a falloff. The strongest light still hugs the surface
+          // edge, so the composer sitting inside the reach is lit rather than
+          // washed.
+          g.addColorStop(0.38, paintTone(alpha * 0.42));
+          g.addColorStop(0.72, paintTone(alpha * 0.12));
           g.addColorStop(1, paintTone(0));
-
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          for (let i = 0; i <= steps; i += 1) {
-            const t = i / steps;
-            const theta = t * band.frequency * Math.PI * 2 + band.phase + clock * band.speed;
-            const swell =
-              0.62 +
-              0.38 * Math.sin(theta) +
-              band.wobble * Math.sin(theta * 2.37 + band.phase * 1.7);
-            ctx.lineTo(t * edge.length, top * clamp01(swell) * windowAt(t, edge.arm));
-          }
-          ctx.lineTo(edge.length, 0);
-          ctx.closePath();
           ctx.fillStyle = g;
-          ctx.fill();
+          ctx.fillRect(0, 0, edge.length, r);
         }
       }
     };
