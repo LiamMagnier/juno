@@ -1203,6 +1203,51 @@
      the edge and lifts the shadow one notch; nothing else moves. This is the
      ONLY place the composer's material is decided: every composer in the
      product (chat, Code, Compare, Work) wears this class through ComposerShell. */
+  /*
+   * ——— Thinking effort slider ———
+   *
+   * The interaction half of `components/chat/reasoning-slider.tsx`: a real
+   * `input[type=range]`, invisible, stretched over the painted rail so drag,
+   * click-to-jump, arrows, Home/End and every touch gesture come from the
+   * platform instead of from a pointer handler.
+   *
+   * THE ONE THING THIS BLOCK HAS TO GET RIGHT is the thumb's WIDTH. A browser
+   * insets a range thumb by half its width at each end so it never hangs off
+   * the track, which means the mapping from pointer-x to value depends on
+   * that width — and the painted thumb has to use the same inset or the two
+   * drift apart, worst at the ends, where the value you see and the value you
+   * set stop agreeing. 14px here, `THUMB = 14` there. They are one number.
+   *
+   * Height is the full control so the whole 28px row is draggable rather than
+   * just the 3px rail; `appearance: none` on the thumb is required or WebKit
+   * ignores the width entirely.
+   */
+  .effort-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 100%;
+    background: transparent;
+    border: 0;
+  }
+  .effort-range::-moz-range-thumb {
+    width: 14px;
+    height: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+  }
+  .effort-range::-webkit-slider-runnable-track {
+    height: 100%;
+    background: transparent;
+    border: 0;
+  }
+  .effort-range::-moz-range-track {
+    height: 100%;
+    background: transparent;
+    border: 0;
+  }
+
   .composer-surface {
     background-color: hsl(var(--card));
     /* `--input`, not `--border`: the field boundary is the one hairline on

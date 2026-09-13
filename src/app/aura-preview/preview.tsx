@@ -130,7 +130,14 @@ export function AuraPreview() {
         </label>
       </div>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-end gap-6 px-4 pb-8 pt-24">
+      {/* `relative z-[1]`, exactly as the app shell wraps its content. Without
+          it this harness LIES: the aura is `position: absolute; z-index: 0`,
+          and a positioned z-index-0 box paints ABOVE unpositioned in-flow
+          content in the same stacking context (CSS 2.1 appendix E, step 8 vs
+          step 4). So a bench built to answer "does the light stay out of the
+          way of the text" was rendering the light over the text, and every
+          reading of it was a reading of the wrong stack. */}
+      <div className="relative z-[1] mx-auto flex w-full max-w-3xl flex-1 flex-col justify-end gap-6 px-4 pb-8 pt-24">
         <div className="space-y-3">
           <h1 className="font-sans text-heading">Reading, with the light on</h1>
           <p className="text-ui leading-relaxed text-foreground">

@@ -10,32 +10,51 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * Thinking effort, as a row of words.
+ * Thinking effort, as a slider.
  *
- * IT HAD A TRACK, AND THE TRACK WAS THE PROBLEM. The row sat in a
- * `bg-secondary` box with six `flex-1` segments stretched across the whole
- * footer of the model picker — roughly 130px of fill around each four-letter
- * word — and the selected one carried `shadow-raised`. So the last framed,
- * shadowed object in the picker was the control for its smallest decision,
- * and it read as a settings row rather than a choice
- * (docs/design/PREMIUM_AUDIT.md §3, rules 3 and 7).
+ * IT HAS BEEN ALL THREE THINGS, so the history is worth keeping.
  *
- * Now: no box, no shadow, no stretch. Each tier is sized to its own word,
- * the row sits left against its label, and the selected tier is the tonal
- * `bg-secondary` fill — the same "selected" recipe the sidebar's active row
- * and the product switch's thumb already use, so the product has one way of
- * saying which of several things is chosen.
+ * It began as a range input with a neumorphic track and a shadowed thumb —
+ * the one control that kept the Soft UI recipes after the flat retune
+ * (docs/design/FLAT_UI.md §6). Then it became a row of words, on the argument
+ * that effort is a discrete choice with at most six values and that is what a
+ * radio group is for. That argument is still correct about SEMANTICS and was
+ * wrong about the thing being chosen: effort is ORDERED. Instant is less than
+ * Max, and every value between them is on the way. A row of equal words says
+ * "these are six options"; a slider says "this is one quantity and you are
+ * here on it", which is the true sentence.
  *
- * Before that it was a range slider with a neumorphic track and a shadowed
- * thumb — the one control that kept the Soft UI recipes after the flat
- * retune (docs/design/FLAT_UI.md §6), and the only one that made you drag to
- * choose between four words. Effort is a discrete choice with at most six
- * values, which is what a radio group is for: every option visible, one
- * press to pick, arrows to move between them.
+ * So: a slider again, but nothing of the first one. No track box, no shadow,
+ * no gradient, no drag-to-discover. A 3px rail, a fill up to where you are, a
+ * tick at every stop so the discreteness is visible, and the value named in
+ * words beside it so nobody has to count notches.
+ *
+ * THE INTERACTION IS A NATIVE `input[type=range]`, invisible, stretched over
+ * the whole control. Drag, click-to-jump, arrows, Home/End, page keys and
+ * every touch gesture come from the platform rather than from this file, and
+ * the painted parts below are decoration that cannot fall out of sync with
+ * them. `aria-valuetext` is what makes it say "High" rather than "3".
+ *
+ * The alignment between the invisible input and the painted rail is not a
+ * coincidence and not a fudge: the browser insets a range thumb by half its
+ * width at each end, so `.effort-range` in globals.css pins that thumb to
+ * exactly THUMB px and the same inset is written into `atStop()` here. Change
+ * one and you must change the other, which is why the number lives in one
+ * place.
  *
  * The export keeps its old name so every composer that mounts it keeps
  * compiling; the props are unchanged.
  */
+
+/** Thumb diameter, px. Must equal the width pinned in `.effort-range`. */
+const THUMB = 14;
+
+/** Where stop `i` of `count` sits along the rail, as a CSS length. */
+const atStop = (i: number, count: number) => {
+  const t = count > 1 ? i / (count - 1) : 0;
+  return `calc(${(t * 100).toFixed(4)}% + ${(THUMB / 2 - t * THUMB).toFixed(3)}px)`;
+};
+
 export function ReasoningSlider({
   options,
   value,
@@ -60,80 +79,90 @@ export function ReasoningSlider({
   const count = options.length;
   const found = options.findIndex((option) => option.value === value);
   const index = found < 0 ? 0 : found;
-  const groupRef = React.useRef<HTMLDivElement>(null);
-
-  // Arrow keys move the selection and the focus together, which is what a
-  // radio group does natively — but these are buttons so the selected one
-  // can carry a tooltip, so the roving is written out.
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (disabled) return;
-    const delta =
-      event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? -1
-          : event.key === "Home"
-            ? -index
-            : event.key === "End"
-              ? count - 1 - index
-              : 0;
-    if (!delta) return;
-    event.preventDefault();
-    const next = options[(index + delta + count) % count];
-    if (!next) return;
-    onChange(next.value);
-    groupRef.current
-      ?.querySelector<HTMLButtonElement>(`[data-effort="${next.value}"]`)
-      ?.focus();
-  };
+  const current = options[index];
 
   if (count < 2) return null;
 
+  // "Extra high" is two words for a rung that has to sit in a 3.5rem gutter
+  // beside every other rung's one word.
+  const label = current?.label === "Extra high" ? "X-high" : (current?.label ?? "");
+  const head = atStop(index, count);
+
   return (
     <div className={cn("select-none", className)}>
-      <div
-        ref={groupRef}
-        role="radiogroup"
-        aria-label="Thinking effort"
-        onKeyDown={onKeyDown}
-        className={cn(
-          // `flex-wrap` because the row is now as wide as its words rather
-          // than as wide as its container: six tiers in a narrow composer
-          // wrap onto a second line instead of truncating to initials.
-          "flex flex-wrap items-center gap-0.5",
-          disabled && "opacity-55",
-        )}
-      >
-        {options.map((option, optionIndex) => {
-          const selected = optionIndex === index;
-          const label =
-            option.label === "Extra high" ? "X-high" : option.label;
-          return (
-            <button
-              key={`${option.value}-${option.label}`}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              data-effort={option.value}
-              tabIndex={selected ? 0 : -1}
-              disabled={disabled}
-              onClick={() => onChange(option.value)}
+      <div className={cn("flex items-center gap-3", disabled && "opacity-55")}>
+        <div className="relative h-7 min-w-0 flex-1 coarse:h-9">
+          {/* The rail. `bg-secondary`, the same tonal fill that means
+              "a thing with state" everywhere else in the product. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-secondary"
+          />
+
+          {/* How far along you are. This is the one moving part, and it is a
+              fill — which is all rule 10 of the premium audit allows chrome
+              to animate. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-foreground transition-[width] duration-fast ease-out-soft motion-reduce:transition-none"
+            style={{ width: head }}
+          />
+
+          {/* A tick per stop, so the control looks like the discrete choice it
+              is rather than a continuous one that happens to snap. Past the
+              thumb they sit on the rail; behind it they sit on the fill and
+              have to invert to stay visible. */}
+          {options.map((option, i) => (
+            <div
+              key={`tick-${option.value}-${option.label}`}
+              aria-hidden
               className={cn(
-                // Sized to the word, not to a share of the container. `h-7`
-                // and `text-ui` put it on the same rung as every other dense
-                // row in the product; `coarse:h-9` keeps the touch target.
-                "flex h-7 shrink-0 items-center justify-center rounded-control px-2 text-ui transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none",
-                selected
-                  // Tonal, no fill-behind-a-fill and no shadow: the same
-                  // "selected" recipe as the sidebar's active row.
-                  ? "bg-secondary font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                "pointer-events-none absolute top-1/2 size-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast motion-reduce:transition-none",
+                i <= index ? "bg-background/70" : "bg-muted-foreground/45",
               )}
-            >
-              <span className="truncate">{label}</span>
-            </button>
-          );
-        })}
+              style={{ left: atStop(i, count) }}
+            />
+          ))}
+
+          {/* The thumb. NO RING AND NO SHADOW. A ring would have to be the
+              colour of the paper behind it to separate the thumb from the
+              rail, and this control mounts on four different surfaces — the
+              model popover, the chat composer, the work composer and the new
+              code page — so any one colour is wrong on three of them. A 14px
+              disc over a 3px rail already separates itself, and where it meets
+              the fill they are the same ink on purpose: the bar simply ends in
+              a round cap. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground transition-[left] duration-fast ease-out-soft motion-reduce:transition-none"
+            style={{ left: head }}
+          />
+
+          <input
+            type="range"
+            min={0}
+            max={count - 1}
+            step={1}
+            value={index}
+            disabled={disabled}
+            aria-label="Thinking effort"
+            aria-valuetext={current?.label ?? String(index)}
+            onChange={(event) => {
+              const next = options[Number(event.target.value)];
+              if (next) onChange(next.value);
+            }}
+            className="effort-range peer absolute inset-0 m-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 focus-visible:outline-none disabled:cursor-not-allowed"
+          />
+
+          {/* Focus is drawn on the rail rather than on the invisible input,
+              which has no box of its own to ring. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-x-1 inset-y-0 rounded-control ring-2 ring-ring ring-offset-0 opacity-0 transition-opacity duration-fast peer-focus-visible:opacity-100 motion-reduce:transition-none"
+          />
+        </div>
+
+        <span className="w-14 shrink-0 text-right text-ui font-medium text-foreground">{label}</span>
       </div>
 
       {(onFastModeChange || onProModeChange) && (

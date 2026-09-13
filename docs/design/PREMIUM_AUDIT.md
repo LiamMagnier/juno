@@ -72,8 +72,21 @@ answered.
 **The effort control is part of this surface, not an exception to it.** It was
 a `bg-secondary` track with six `flex-1` segments stretched across the footer
 and a `shadow-raised` on the selected one: the last framed, shadowed object in
-the picker, wrapped around its smallest decision. A row of words sized to
-themselves, with the tonal fill on the chosen one, says the same thing.
+the picker, wrapped around its smallest decision.
+
+It then became a row of words, on the argument that six discrete values are
+what a radio group is for. That is right about semantics and wrong about the
+thing being chosen: **effort is ordered**. Instant is less than Max and every
+rung between them is on the way, so a row of equal words — which says "here
+are six options" — states something false about the choice. It is a slider
+again: a 3px rail, a fill to where you are, a tick per stop so the
+discreteness stays visible, and the rung named in words beside it. A native
+`input[type=range]` underneath supplies drag, click-to-jump, arrows and every
+touch gesture, so none of that lives in the component.
+
+The lesson generalises past this control: **match the control to the shape of
+the quantity, not to the number of values it has.** Two things with an order
+between them are a slider even when there are only four.
 
 ### P0 — the sidebar competes with the transcript
 `src/components/app/app-sidebar.tsx`
@@ -97,7 +110,22 @@ with a 1.25px crest that reads as a 2008 audio visualiser.
 
 **Rule:** voice only. Scoped to the chat surface, never the window. A field,
 not a waveform. **Behind the content, not over it** — `z-index: 0` under a
-`z-[1]` content wrapper, so the transcript reads on top of the light.
+`z-[1]` content wrapper, so the transcript reads on top of the light. That
+wrapper is not optional bookkeeping: a positioned `z-index: 0` box paints
+ABOVE unpositioned in-flow content in the same stacking context, so a layer
+with no counterpart wrapper is over the text, not under it. The aura bench
+(`app/aura-preview`) was missing exactly that wrapper, which meant the one
+surface built to judge whether the light stays out of the way of type was
+rendering it over the type.
+
+**And behind is not enough on its own.** A field under the whole column still
+sits under the transcript, and coloured ground under body text costs contrast
+however correct the stacking is. Turning the whole layer down to compensate
+makes it too dim at the edges, where it is actually doing its job — one
+problem solved twice, badly, in opposite directions. So the reading column is
+ERASED out of the finished field (`READ_W`, a soft ellipse, `destination-out`).
+The light is a rim, the middle is clean paper, and the edges can then be as
+bright as they need to be without touching a line of type.
 
 **And the light has to be big to be ambient.** The first full-column pass kept
 the arms to 0.52 of the height on the argument that light above the midline

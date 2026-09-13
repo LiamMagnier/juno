@@ -207,12 +207,12 @@ const BREATH: Partial<Record<AuraState, { amp: number; period: number }>> = {
  * travels, as a share of the edge.
  */
 const POOLS = [
-  { at: 0.06, spread: 1.15, sink: 0.4, swing: 0.06, speed: 0.23, phase: 0.0, alpha: 0.34 },
-  { at: 0.26, spread: 1.75, sink: 0.55, swing: 0.09, speed: -0.17, phase: 1.7, alpha: 0.24 },
-  { at: 0.44, spread: 1.05, sink: 0.34, swing: 0.07, speed: 0.29, phase: 3.4, alpha: 0.4 },
-  { at: 0.66, spread: 1.85, sink: 0.58, swing: 0.1, speed: -0.21, phase: 5.0, alpha: 0.22 },
-  { at: 0.82, spread: 1.1, sink: 0.37, swing: 0.06, speed: 0.13, phase: 2.3, alpha: 0.36 },
-  { at: 0.96, spread: 1.4, sink: 0.48, swing: 0.05, speed: -0.31, phase: 4.1, alpha: 0.28 },
+  { at: 0.06, spread: 1.15, sink: 0.4, swing: 0.06, speed: 0.23, phase: 0.0, alpha: 0.2 },
+  { at: 0.26, spread: 1.75, sink: 0.55, swing: 0.09, speed: -0.17, phase: 1.7, alpha: 0.14 },
+  { at: 0.44, spread: 1.05, sink: 0.34, swing: 0.07, speed: 0.29, phase: 3.4, alpha: 0.23 },
+  { at: 0.66, spread: 1.85, sink: 0.58, swing: 0.1, speed: -0.21, phase: 5.0, alpha: 0.13 },
+  { at: 0.82, spread: 1.1, sink: 0.37, swing: 0.06, speed: 0.13, phase: 2.3, alpha: 0.21 },
+  { at: 0.96, spread: 1.4, sink: 0.48, swing: 0.05, speed: -0.31, phase: 4.1, alpha: 0.16 },
 ] as const;
 
 /**
@@ -232,15 +232,15 @@ const POOL_BREATH_SPEED = 0.62;
  * They sit outside the band so only their inner falloff is on screen.
  */
 const LOBES = [
-  { x: 0.5, y: 1.18, radius: 1.1, drift: 0.08, speed: 0.21, alpha: 0.13 },
-  { x: -0.02, y: 0.86, radius: 0.82, drift: 0.04, speed: -0.29, alpha: 0.12 },
-  { x: 1.02, y: 0.86, radius: 0.82, drift: 0.04, speed: 0.34, alpha: 0.12 },
+  { x: 0.5, y: 1.18, radius: 1.1, drift: 0.08, speed: 0.21, alpha: 0.075 },
+  { x: -0.02, y: 0.86, radius: 0.82, drift: 0.04, speed: -0.29, alpha: 0.07 },
+  { x: 1.02, y: 0.86, radius: 0.82, drift: 0.04, speed: 0.34, alpha: 0.07 },
   // The high pair carries the field above the midline. They are the reason
   // the layer reads as a room rather than as a glow at the bottom of one,
   // and they are deliberately the faintest things here: everything they
   // touch is text.
-  { x: -0.06, y: 0.3, radius: 0.56, drift: 0.03, speed: 0.17, alpha: 0.075 },
-  { x: 1.06, y: 0.3, radius: 0.56, drift: 0.03, speed: -0.23, alpha: 0.075 },
+  { x: -0.06, y: 0.3, radius: 0.56, drift: 0.03, speed: 0.17, alpha: 0.042 },
+  { x: 1.06, y: 0.3, radius: 0.56, drift: 0.03, speed: -0.23, alpha: 0.042 },
 ] as const;
 
 /**
@@ -311,6 +311,30 @@ const PRESENCE_VOICE = 1;
  * band — about 2% of what the five lobes already cost.
  */
 const TOP_FADE = 0.2;
+
+/**
+ * THE READING WINDOW: the hole in the middle of the light.
+ *
+ * Making the field fill the whole column and then turning it down until the
+ * text was legible was solving the wrong problem twice. A wash dim enough to
+ * read through is also dim enough to stop being visible at the edges, where
+ * the light is actually doing its job — so the layer got quieter everywhere
+ * to fix a contrast problem in one place.
+ *
+ * Instead the transcript's own area is ERASED out of the finished field, with
+ * a soft ellipse over the reading column. The light is a rim, the middle is
+ * clean paper, and the two are independent: the edges can be as bright as they
+ * need to be to read as a lit room without ever touching a line of type.
+ *
+ * `W`/`H` are the ellipse's radii as shares of the layer, `Y` its centre down
+ * the column, `DEPTH` how much of the light it takes at its middle. Not 1:
+ * a completely erased centre is a hole, and the eye finds the rim of a hole.
+ * Taking three quarters leaves the field continuous and still clears the type.
+ */
+const READ_W = 0.52;
+const READ_H = 0.44;
+const READ_Y = 0.4;
+const READ_DEPTH = 0.76;
 
 /** Below this the light is indistinguishable from off, and the loop parks. */
 const OFF_EPSILON = 0.004;
@@ -597,7 +621,41 @@ export function AmbientAura() {
       // along the bottom bezel.
       const reach = span * RIM_REACH * smooth;
       if (reach >= 1) paintRim(reach, paintTone);
+      // Both carves are `destination-out` over the FINISHED field, so what
+      // they take out is taken out of the field and its rim together. Doing
+      // it per-layer would let one of them put light back into a hole the
+      // other had just made.
+      carveReadingWindow();
       fadeTop();
+    };
+
+    /**
+     * See READ_W: the transcript's own area, erased out of the finished field.
+     *
+     * Canvas radial gradients are circles, so the ellipse is a circle drawn
+     * under a non-uniform scale — cheaper and rounder than approximating one
+     * with stops, and it keeps the falloff identical in both axes.
+     */
+    const carveReadingWindow = () => {
+      const rx = width * READ_W;
+      const ry = height * READ_H;
+      if (rx < 1 || ry < 1) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.translate(width / 2, height * READ_Y);
+      ctx.scale(1, ry / rx);
+      const hole = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+      // Smoothstepped for the same reason the top fade is: a linear erase is
+      // continuous in value but not in slope, and a slope discontinuity over
+      // a near-uniform wash reads as an edge — which is precisely what a
+      // window carved to REMOVE a distraction must not have.
+      for (let i = 0; i <= 5; i += 1) {
+        const t = i / 5;
+        hole.addColorStop(t, `rgba(0,0,0,${(READ_DEPTH * (1 - smoothstep(t))).toFixed(4)})`);
+      }
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = hole;
+      ctx.fillRect(-rx, -rx, rx * 2, rx * 2);
+      ctx.globalCompositeOperation = "source-over";
     };
 
     /**
