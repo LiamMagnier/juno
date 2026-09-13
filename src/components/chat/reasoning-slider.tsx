@@ -122,7 +122,7 @@ export function ReasoningSlider({
                 // Sized to the word, not to a share of the container. `h-7`
                 // and `text-ui` put it on the same rung as every other dense
                 // row in the product; `coarse:h-9` keeps the touch target.
-                "flex h-7 shrink-0 items-center justify-center rounded-control px-2.5 text-ui transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none",
+                "flex h-7 shrink-0 items-center justify-center rounded-control px-2 text-ui transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none",
                 selected
                   // Tonal, no fill-behind-a-fill and no shadow: the same
                   // "selected" recipe as the sidebar's active row.
