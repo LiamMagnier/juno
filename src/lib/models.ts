@@ -345,12 +345,23 @@ const CURATED: ModelInfo[] = [
   // Anthropic/OpenAI/Google entries this one is curated from Meta's own launch
   // material and OpenRouter's listing, not from a 200 on our own key. Confirm
   // the id, base URL and modalities against a real key before relying on it.
-  def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
+  def({ provider: "meta", id: "muse-spark-1.3", name: "Muse Spark 1.3", family: "muse-spark", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic flagship — ~20% fewer tool calls and ~25% fewer tokens than 1.2." }),
+  def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
 
   // —— Zhipu / Z.AI ——
+  // `comingSoon` on purpose. GLM-5.3 shipped 14 Aug 2026 and Z.ai's own
+  // developer docs still say the API is "coming soon" — so the row exists,
+  // shows disabled, and cannot be routed. It reuses the 5.2 base unchanged and
+  // takes its gains from post-training; reasoning is always on with no control.
+  //
+  // `glm-next` rather than `glm`, and that is not a fudge. The pickers show
+  // the newest CURRENT row per family, so putting an uncallable generation in
+  // `glm` would bury GLM-5.2 — the model that actually answers — behind a
+  // disabled row. It rejoins `glm` on the day the API opens.
+  def({ provider: "zhipu", id: "glm-5.3", name: "GLM-5.3", family: "glm-next", status: "current", comingSoon: true, released: "2026-08", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Z.ai's newest flagship — coding and long-horizon agents, always reasoning." }),
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", released: "2026-05", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
-  def({ provider: "zhipu", id: "glm-5-turbo", name: "GLM-5 Turbo", family: "glm-turbo", status: "current", released: "2026-03", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Fast, low-latency tier of the GLM-5 generation." }),
-  def({ provider: "zhipu", id: "glm-5v-turbo", name: "GLM-5V Turbo", family: "glm-v", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, description: "Latest GLM vision-language model — image understanding." }),
+  def({ provider: "zhipu", id: "glm-5-turbo", name: "GLM-5 Turbo", family: "glm-turbo", status: "deprecated", released: "2026-03", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Fast, low-latency tier of the GLM-5 generation.", deprecationNote: "Delisted by Z.ai in the September 2026 price card — use GLM-5.2", retiresOn: "2026-10-31", replacedBy: "zhipu:glm-5.2" }),
+  def({ provider: "zhipu", id: "glm-5v-turbo", name: "GLM-5V Turbo", family: "glm-v", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, description: "Latest GLM vision-language model — image understanding.", deprecationNote: "Delisted by Z.ai in the September 2026 price card — use GLM-5.2", retiresOn: "2026-10-31", replacedBy: "zhipu:glm-5.2" }),
   def({ provider: "zhipu", id: "glm-4.7-flash", name: "GLM-4.7 Flash", family: "glm-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Current free-tier GLM — capable and completely free." }),
   def({ provider: "zhipu", id: "glm-4.7-flashx", name: "GLM-4.7 FlashX", family: "glm-flashx", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Low-latency GLM FlashX variant for high-throughput chat." }),
   def({ provider: "zhipu", id: "glm-5.1", name: "GLM-5.1", family: "glm", status: "legacy", released: "2026-02", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Previous GLM flagship." }),
@@ -435,7 +446,8 @@ const CURATED: ModelInfo[] = [
   def({ provider: "minimax", id: "MiniMax-M2.5", name: "MiniMax M2.5", family: "m", status: "legacy", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 204_800, description: "Older agentic model." }),
 
   // —— MiMo (Xiaomi MiMo AI Labs) ——
-  def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Xiaomi MiMo's reasoning, coding and agentic flagship." }),
+  def({ provider: "mimo", id: "mimo-v2.5", name: "MiMo V2.5", family: "mimo-omni", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Natively omnimodal — text, audio, images and video in — at half the Pro's cost." }),
+  def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Xiaomi MiMo's reasoning, coding and agentic flagship." }),
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
@@ -447,7 +459,10 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen3.8-max", name: "Qwen3.8 Max", family: "qwen-max", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context." }),
   def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "legacy", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Max flagship — strong reasoning served extremely fast (~190 tok/s). Standard Model Studio pay-as-you-go API." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
-  def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
+  // The id is exactly `qwen3.8-flash`: lowercase, with the period. Not
+  // `Qwen3.8-Flash` and not `qwen-3.8-flash`, both of which 404.
+  def({ provider: "qwen", id: "qwen3.8-flash", name: "Qwen3.8 Flash", family: "qwen-flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Qwen's volume tier — text, image and video in, a 1M window, and a 256K thinking budget." }),
+  def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "legacy", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
   def({ provider: "qwen", id: "qwen3.6-plus", name: "Qwen3.6 Plus", family: "qwen-plus", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous Plus generation, superseded by Qwen3.7 Plus." }),
   def({ provider: "qwen", id: "qwen3.5-plus", name: "Qwen3.5 Plus", family: "qwen-plus", status: "legacy", released: "2026-01", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Older Plus generation." }),
   def({ provider: "qwen", id: "qwen3.5-flash", name: "Qwen3.5 Flash", family: "qwen-flash", status: "legacy", released: "2026-01", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Older Flash generation." }),
@@ -498,7 +513,8 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash", family: "gemini-omni", status: "deprecated", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview).", deprecationNote: "Retires Sep 30, 2026 — use Veo 3.1 Fast", retiresOn: "2026-09-30", replacedBy: "google:veo-3.1-fast-generate-preview" }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
   def({ provider: "xai", id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", family: "imagine-video-15", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 3, description: "Higher-fidelity 720p video with native audio ($0.08/s), GA June 2026." }),
-  def({ provider: "seedance", id: "dreamina-seedance-2-0-260128", name: "Seedance 2.0", family: "seedance", status: "current", released: "2026-01", modality: "video", minPlan: "MAX", cost: 3, description: "ByteDance flagship — multimodal references, native audio, up to 4K." }),
+  def({ provider: "seedance", id: "dreamina-seedance-2-5-260628", name: "Seedance 2.5", family: "seedance", status: "current", released: "2026-07", modality: "video", minPlan: "MAX", cost: 3, description: "4 to 30s at 24fps with synchronized audio, from up to 50 reference assets." }),
+  def({ provider: "seedance", id: "dreamina-seedance-2-0-260128", name: "Seedance 2.0", family: "seedance", status: "legacy", released: "2026-01", modality: "video", minPlan: "MAX", cost: 3, description: "ByteDance flagship — multimodal references, native audio, up to 4K." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-fast-260128", name: "Seedance 2.0 Fast", family: "seedance-fast", status: "current", released: "2026-01", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Seedance 2.0 tier." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-mini-260615", name: "Seedance 2.0 Mini", family: "seedance-mini", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 1, description: "Cheapest Seedance tier with draft modes." }),
   def({ provider: "seedance", id: "seedance-1-5-pro-251215", name: "Seedance 1.5 Pro", family: "seedance", status: "legacy", released: "2025-12", modality: "video", minPlan: "MAX", cost: 3, description: "First Seedance with synchronized audio." }),
@@ -613,12 +629,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // them), but they no longer leave the provider. Migrating a Meta selection to
   // Anthropic was a stopgap for the window when Meta had no API at all; now that
   // it does, a stored Meta id stays on Meta. Nothing here crosses vendors.
-  "meta:muse-max": "meta:muse-spark-1.2",
-  "meta:muse-spark": "meta:muse-spark-1.2",
-  "meta:muse-flash": "meta:muse-spark-1.2",
-  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.2",
-  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.2",
-  "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.2",
+  "meta:muse-max": "meta:muse-spark-1.3",
+  "meta:muse-spark": "meta:muse-spark-1.3",
+  "meta:muse-flash": "meta:muse-spark-1.3",
+  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.3",
+  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.3",
+  "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.3",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // 400 code 1211 "模型不存在" on both /images/generations and /chat/completions,
@@ -644,7 +660,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // holding the preview id in a stored conversation lands on the GA one.
   "qwen:qwen3.8-max-preview": "qwen:qwen3.8-max",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
-  "qwen:qwen-flash": "qwen:qwen3.6-flash",
+  "qwen:qwen-flash": "qwen:qwen3.8-flash",
 };
 
 /** Ids whose retirement date has passed, mapped to what replaces them. */
@@ -726,7 +742,7 @@ const LEGACY_ALIAS: Record<string, string> = Object.fromEntries(CURATED.map((m) 
 // Qwen is the production-backed default for this deployment. Other providers
 // remain selectable when credentials are configured, but a fresh account must
 // start on the provider that is actually funded and covered by release smoke.
-export const DEFAULT_MODEL: ModelId = "qwen:qwen3.6-flash";
+export const DEFAULT_MODEL: ModelId = "qwen:qwen3.8-flash";
 
 function isProvider(p: string): p is Provider {
   return (PROVIDER_LIST as string[]).includes(p);

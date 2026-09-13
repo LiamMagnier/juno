@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODEL_LIST, GEN_MODELS, resolveModel, RETIRED_MODELS } from "../src/lib/models";
+import { DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, resolveModel, RETIRED_MODELS } from "../src/lib/models";
 import { providerRequestModel } from "../src/lib/model-request";
 
 const ALL_MODELS = [...MODEL_LIST, ...GEN_MODELS];
@@ -112,4 +112,52 @@ test("the September 2026 models carry the ids their providers actually serve", (
   assert.equal(omni.status, "deprecated");
   assert.equal(omni.retiresOn, "2026-09-30");
   assert.ok(omni.replacedBy, "a retirement without a replacement is how a stored id becomes a 404");
+});
+
+/*
+ * The second audit pass — the seven labs the first one did not reach.
+ *
+ * Same contract as the test above: a wrong id is a 404 on every message and
+ * the picker cannot tell.
+ */
+test("the remaining seven labs carry their current ids", () => {
+  const byId = new Map(ALL_MODELS.map((model) => [model.id, model]));
+
+  // Qwen's volume tier. Lowercase with the period — `Qwen3.8-Flash` and
+  // `qwen-3.8-flash` both 404.
+  const qwenFlash = byId.get("qwen:qwen3.8-flash");
+  assert.ok(qwenFlash, "Qwen3.8 Flash is in the catalog");
+  assert.equal(qwenFlash.providerModel, "qwen3.8-flash");
+  assert.equal(byId.get("qwen:qwen3.6-flash")?.status, "legacy");
+
+  // A generation that is announced but not served must be selectable-looking
+  // and NOT routable, and must not sit in the family whose current row it
+  // would hide.
+  const glm53 = byId.get("zhipu:glm-5.3");
+  assert.ok(glm53, "GLM-5.3 is in the catalog");
+  assert.equal(glm53.comingSoon, true, "Z.ai's API for it is not open yet");
+  assert.notEqual(glm53.family, byId.get("zhipu:glm-5.2")?.family, "it must not bury GLM-5.2");
+  assert.equal(byId.get("zhipu:glm-5.2")?.status, "current", "5.2 is still the routable flagship");
+
+  // Delisted in the September 2026 price card.
+  for (const id of ["zhipu:glm-5-turbo", "zhipu:glm-5v-turbo"]) {
+    const model = byId.get(id);
+    assert.ok(model, `${id} is in the catalog`);
+    assert.equal(model.status, "deprecated", `${id} was delisted`);
+    assert.ok(model.replacedBy, `${id} needs somewhere for stored ids to go`);
+  }
+
+  // Xiaomi's omnimodal pair, and the window the Pro row had four times too small.
+  assert.ok(byId.get("mimo:mimo-v2.5"), "MiMo V2.5 is in the catalog");
+  assert.equal(byId.get("mimo:mimo-v2.5")?.contextWindow, 1_050_000);
+  assert.equal(byId.get("mimo:mimo-v2.5-pro")?.contextWindow, 1_050_000);
+
+  // Meta and ByteDance moved a generation.
+  assert.ok(byId.get("meta:muse-spark-1.3"), "Muse Spark 1.3 is in the catalog");
+  assert.equal(byId.get("meta:muse-spark-1.2")?.status, "legacy");
+  assert.ok(byId.get("seedance:dreamina-seedance-2-5-260628"), "Seedance 2.5 is in the catalog");
+  assert.equal(byId.get("seedance:dreamina-seedance-2-0-260128")?.status, "legacy");
+
+  // Every retired id and the app default must still land on something callable.
+  assert.equal(resolveModel(DEFAULT_MODEL).status, "current", "the default model is routable");
 });

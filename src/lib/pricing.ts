@@ -195,7 +195,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":
       if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
-      if (pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
+      // 5.3 reuses the 5.2 base and has no published rate of its own yet.
+      if (pm.includes("glm-5.3") || pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
       if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
       return { input: 0.6, output: 2.2 };
     case "moonshot":
@@ -221,6 +222,7 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "qwen":
       // 3.8 Max has no published pay-as-you-go rate yet; estimate above 3.7 Max.
       if (pm.includes("qwen3.8-max")) return { input: 3.0, output: 9.0 };
+      if (pm.includes("qwen3.8-flash")) return { input: 0.14, output: 0.42 };
       if (pm.includes("qwen3.7-max")) return { input: 2.5, output: 7.5 };
       if (pm.includes("qwen3.7-plus")) return { input: 0.4, output: 1.6 };
       if (pm.includes("flash")) return { input: 0.19, output: 1.13 };

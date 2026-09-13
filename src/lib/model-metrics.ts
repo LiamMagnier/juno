@@ -127,6 +127,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["llama"], metric: metric(0.35, 0.85, 1_000_000, 7, 2) },
   ],
   zhipu: [
+    // 5.3 reuses the 5.2 base unchanged and Z.ai has published no separate
+    // rate, so it prices with 5.2 until one appears. Grades a notch up on the
+    // post-training gains it reports.
+    { hints: ["glm-5.3"], metric: metric(1.4, 4.4, 1_000_000, 9, 9) },
     { hints: ["glm-5.2"], metric: official(1.4, 4.4, 1_000_000, 9, 8) }, // II 51.1 — AA's #1 open-weights · 181 tok/s
     { hints: ["glm-5v-turbo"], metric: metric(1.2, 4.0, 128_000, 7, 5) }, // kept in sync with pricing.ts turbo rate
     { hints: ["glm-5v"], metric: metric(0.6, 1.8, 128_000, 7, 5) },
@@ -189,12 +193,19 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   ],
   mimo: [
     { hints: ["flash"], metric: metric(0.2, 0.8, 256_000, 8, 5) },
-    { hints: ["pro"], metric: official(0.435, 0.87, 256_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
+    // Both V2.5 rows carry a 1,050,000 window — the Pro's was recorded as
+    // 256,000, which is the V2 line's figure and four times too small.
+    { hints: ["v2.5-pro"], metric: official(0.3045, 0.609, 1_050_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
+    { hints: ["v2.5"], metric: official(0.14, 0.28, 1_050_000, 6, 6) }, // Pro-level agentics at roughly half the cost
+    { hints: ["pro"], metric: official(0.435, 0.87, 256_000, 3, 7) },
   ],
   qwen: [
     // 3.8 Max has no official $/MTok list yet. Estimate a notch above 3.7 Max
     // until Alibaba publishes pay-as-you-go rates for it.
     { hints: ["qwen3.8-max"], metric: metric(3.0, 9.0, 983_616, 8, 8) },
+    // 983,616 not 1,000,000: that is the input ceiling IN THINKING MODE, which
+    // is the mode this row is rated in, and the same figure 3.8 Max carries.
+    { hints: ["qwen3.8-flash"], metric: official(0.14, 0.42, 983_616, 9, 6) },
     { hints: ["qwen3.7-max"], metric: official(2.5, 7.5, 1_000_000, 9, 7) }, // II 46.0 · 192 tok/s · arena #17
     { hints: ["qwen3.7-plus"], metric: official(0.4, 1.6, 1_000_000, 3, 6) }, // II 39.0 · 52 tok/s
     { hints: ["qwen3.6-plus"], metric: metric(0.4, 1.2, 1_000_000, 5, 5) },
@@ -725,6 +736,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("v4")) return caps(["high", "max"], true); // thinking on/off + effort
       return caps([], false); // deepseek-reasoner: always on, no control
     case "zhipu":
+      // GLM-5.3: reasoning is ALWAYS enabled on the General API and Z.ai
+      // documents no control for it — so no ladder and no Instant, rather
+      // than an inherited 5.2 ladder whose values it may reject.
+      if (id.includes("glm-5.3")) return caps([], false);
       // GLM-5.2 is the ONLY GLM exposing reasoning_effort; the rest are on/off.
       if (id.includes("glm-5.2")) return caps(["minimal", ...LMHXM], true);
       return caps([], true, true); // glm-5 / 4.6 / 4.7: thinking on/off toggle
@@ -766,6 +781,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // yet verified, so every completion returns 402 and no live oracle exists.
       // /v1/models confirms the id; the effort enum is documentation-only. Worth
       // re-probing once billing clears.
+      // 1.3 documents two reasoning variants ABOVE the shared ladder — `max`
+      // (top) and `xhigh` (faster) — on the same endpoints, SDKs and pricing
+      // as 1.2, so it is 1.2's ladder plus a max rung.
+      if (id.includes("muse-spark-1.3")) return caps(["minimal", ...LMHXM], false);
       if (id.includes("muse-spark")) return caps(["minimal", ...LMHX], false);
       return caps([], false); // retired Llama ids resolving through migration
     case "minimax":
