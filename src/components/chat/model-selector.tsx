@@ -166,10 +166,10 @@ function SectionLabel({ children, count }: { children: React.ReactNode; count?: 
   return (
     <div aria-hidden className="flex h-8 items-center gap-2 px-2 pt-1">
       <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">{children}</span>
-      <span className="h-px flex-1 bg-border/60" />
       {count != null && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/60">{count}</span>
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/45">{count}</span>
       )}
+      <span className="h-px flex-1 bg-border/60" />
     </div>
   );
 }
@@ -455,14 +455,23 @@ export function ModelSelector({
   };
 
   /**
-   * One model row: mark · name · description · one trailing signal.
+   * One model row: mark · name · price, then the description under it.
    *
-   * The trailing gutter holds exactly one thing, and which one is a strict
-   * ladder: the selected check, else the plan a locked model needs, else
-   * nothing. It used to hold four — a three-slot capability column, a 76px
-   * price, a state glyph and a star — which is four right edges in a row that
-   * has one left one. The capabilities and the price are words on the
-   * description line now, where they read.
+   * TWO LINES, and the third one is gone for a reason worth recording. It
+   * carried the capability words — VISION THINKING SEARCH — and on a screen
+   * of Claude rows, or GPT rows, or Gemini rows, it printed the identical
+   * three words on every visible row. A fact that never varies across the
+   * rows in view carries no information and it was costing a whole line of
+   * every row, which is why only four models fitted in a 460px box holding a
+   * lab with eleven. Capabilities stay searchable ("vision" matches the
+   * predicate in `matchesQuery`) and stay in the row's accessible name, where
+   * they are read one row at a time and the repetition is not a cost.
+   *
+   * What is left on the right is a COLUMN: the price per million tokens, in
+   * tabular mono, so a list of models can be read down it. That was the one
+   * genuinely good idea in the spec sheet this picker replaced. The selected
+   * check and a locked model's plan take the same slot when they apply —
+   * state is rarer than price and outranks it.
    */
   const renderRow = (m: ModelInfo, prefix: string) => {
     const key = rowKeyFor(prefix, m.id);
@@ -501,7 +510,7 @@ export function ModelSelector({
           // ONE cursor, one fill. `hover:bg-accent` used to survive alongside
           // it, so a stationary pointer and the arrow keys painted two rows
           // with the identical fill at once.
-          "flex w-full items-start gap-2.5 rounded-control px-2 py-2 text-left outline-none",
+          "flex w-full items-start gap-2.5 rounded-control px-2 py-1.5 text-left outline-none",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           cursor && "bg-accent",
@@ -513,14 +522,14 @@ export function ModelSelector({
         {auto ? (
           // Auto gets the same 20px tile every lab mark draws, so the first row
           // sits on the column rather than beside it.
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
+          <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
             <JunoMark className="size-3" />
           </span>
         ) : (
-          <ProviderLogo provider={m.provider} className="mt-px size-5 shrink-0" />
+          <ProviderLogo provider={m.provider} className="mt-0.5 size-5 shrink-0" />
         )}
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-baseline gap-1.5">
             <span className="truncate text-ui font-medium text-foreground">{m.name}</span>
             {auto && (
               <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">Recommended</span>
@@ -528,41 +537,24 @@ export function ModelSelector({
             {!auto && isNew(m) && (
               <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground/60">New</span>
             )}
+            {m.status === "deprecated" && (
+              <span
+                title={m.deprecationNote ?? "Deprecated by the provider"}
+                className="shrink-0 font-mono text-micro text-warning"
+              >
+                {m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
+              </span>
+            )}
           </span>
-          {/* ONE description line, and everything that used to live in the
-              trailing gutter is on it. Truncated rather than wrapped: a row
-              that grows to two lines when a lab writes a long blurb makes the
-              list jump as the cursor walks it. */}
+          {/* ONE description line. Truncated rather than wrapped: a row that
+              grows to two lines when a lab writes a long blurb makes the list
+              jump as the cursor walks it. */}
           <span className="mt-0.5 block truncate text-caption text-muted-foreground">{caption}</span>
-          {/* The machine line. Mono, one rung quieter, and present only when it
-              has something to say — a model with no capabilities and no price
-              (Auto) does not get an empty row of dots. */}
-          {(caps.length > 0 || price || m.status === "deprecated") && (
-            <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-micro text-muted-foreground/60">
-              {caps.map((c) => (
-                <span key={c} className="uppercase">{c}</span>
-              ))}
-              {price && (
-                <>
-                  {caps.length > 0 && <span aria-hidden>·</span>}
-                  <span className="tabular-nums">{price}</span>
-                </>
-              )}
-              {m.status === "deprecated" && (
-                <>
-                  <span aria-hidden>·</span>
-                  <span title={m.deprecationNote ?? "Deprecated by the provider"} className="text-warning">
-                    {m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
-                  </span>
-                </>
-              )}
-            </span>
-          )}
         </span>
-        {/* The one trailing slot. Fixed width so the column is a column even
-            when every row in view is empty, and wide enough that the star
-            sitting beside it never overlaps what it says. */}
-        <span className="mt-0.5 flex min-h-5 w-16 shrink-0 items-center justify-end pr-7">
+        {/* The trailing column, and it IS a column: fixed width, right
+            aligned, tabular figures. Reserves the star's 24px so the two can
+            never collide. */}
+        <span className="mt-0.5 flex min-h-5 w-[86px] shrink-0 items-center justify-end pr-6">
           {active ? (
             <StatusIcons.success aria-hidden className="size-3.5 text-primary" />
           ) : locked ? (
@@ -572,6 +564,8 @@ export function ModelSelector({
             </span>
           ) : soon ? (
             <span className="font-mono text-micro uppercase text-muted-foreground/70">Soon</span>
+          ) : price ? (
+            <span className="truncate font-mono text-micro tabular-nums text-muted-foreground/70">{price}</span>
           ) : null}
         </span>
       </button>
@@ -592,7 +586,7 @@ export function ModelSelector({
             toggleFavorite(m.id);
           }}
           className={cn(
-            "absolute right-2 top-2 flex size-6 items-center justify-center rounded-xs outline-none",
+            "absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-xs outline-none",
             "transition-[opacity,color] duration-fast ease-out-soft motion-reduce:transition-none",
             "hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
             starred
@@ -607,9 +601,18 @@ export function ModelSelector({
     );
   };
 
-  /** A group's rows, with a Text / Image / Video heading each time the modality changes. */
+  /**
+   * A group's rows, with a Text / Image / Video heading each time the modality
+   * changes — but only when there is more than one to change BETWEEN.
+   *
+   * A lab showing four chat models used to draw "TEXT" above them, which names
+   * a distinction nothing on screen contrasts with. In the All view it landed
+   * directly under the lab's own heading, so one group of rows carried two
+   * headings stacked.
+   */
   const renderRows = (list: ModelInfo[], prefix: string, byModality: boolean) => {
-    if (!byModality) return list.map((m) => renderRow(m, prefix));
+    const modalities = new Set(list.map((m) => m.modality ?? "chat"));
+    if (!byModality || modalities.size < 2) return list.map((m) => renderRow(m, prefix));
     const out: React.ReactNode[] = [];
     let last: Modality | null = null;
     for (const m of list) {
@@ -658,13 +661,24 @@ export function ModelSelector({
         collisionPadding={16}
         avoidCollisions
         onKeyDown={onNavKeyDown}
-        // 680×460. Two panes rather than three, so the list gets 496px of the
-        // box instead of the ~350px it had between an icon rail and a spec
-        // sheet — enough for a name, a description and a machine line without
-        // any of the three truncating at a normal lab name.
+        // 680 wide, and between 420 and 540 tall.
+        //
+        // A FIXED height was wrong in both directions. At 460 a lab with
+        // eleven models showed four of them. At 540 the same lab left 200px
+        // of empty panel under its last row, which reads as a surface that
+        // failed to load.
+        //
+        // A RANGE rather than pure content-sizing, because the popover is
+        // anchored at its bottom edge: a box that resizes freely re-lays the
+        // whole list upward the moment you pick a lab, under a pointer that
+        // has not moved. Between 420 and 540 that movement is bounded to
+        // ~120px instead of ~250px, a four-model lab still fills its panel,
+        // and both bounds clamp to the viewport so a short window gets a
+        // shorter box rather than a clipped one.
         style={{
           width: "min(680px, calc(100vw - 2rem))",
-          height: "min(460px, var(--radix-popover-content-available-height))",
+          minHeight: "min(420px, var(--radix-popover-content-available-height))",
+          maxHeight: "min(540px, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
       >
