@@ -10,7 +10,7 @@ export interface DiscoveredModel {
 }
 
 /** ISO timestamp of the last sync that changed generated catalog state. */
-export const SYNC_STAMP: string | null = "2026-08-07T05:52:33.750Z";
+export const SYNC_STAMP: string | null = "2026-09-14T09:51:44.176Z";
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
  *  plan/vision/reasoning/agenticTools/cost/webSearch are derived in models.ts via the
@@ -22,4 +22,5 @@ export const DISCOVERED: DiscoveredModel[] = [];
 export const UNAVAILABLE: string[] = [
   "deepseek:deepseek-chat",
   "deepseek:deepseek-reasoner",
+  "deepseek:deepseek-v4-flash",
 ];
