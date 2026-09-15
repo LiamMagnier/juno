@@ -227,12 +227,12 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
 };
 
 const MAX_VOICE_IMAGES = 4;
-/** The composer's three states, on the shared primary action's faces. Voice
- *  is its own button beside the mic — the send slot has one verb. */
+/** The composer's four states, on the shared primary action's faces. */
 const PRIMARY_FACES = {
   checking: "busy",
   stop: "stop",
   send: "send",
+  voice: "voice",
 } as const satisfies Record<string, ComposerPrimaryFace>;
 // Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
 // cannot be imported from a client component.
@@ -867,21 +867,44 @@ export function Composer({
         clarificationAnswers.length > 0) &&
       !sendBlocked;
 
-  // Voice is its own quiet button beside the mic. It used to take over the
-  // send circle whenever the field was empty, so the one accent-coloured
-  // control on the row meant "call" until you typed and "send" after — the
-  // button people pressed by accident most.
-  const showVoiceButton = !isBusy && !!onOpenVoiceMode;
+  /*
+   * VOICE IS BACK IN THE SEND SLOT, under one condition: there is nothing to
+   * send.
+   *
+   * It sat there once and was moved out to a ghost button beside the mic,
+   * because it took over the ACCENT circle on an empty field — so the one
+   * saturated control on the row meant "call" until you typed and "send"
+   * afterwards, and people pressed it by accident. That objection was about the
+   * COLOUR, not the position, and the move answered it by giving up the
+   * position too. What it left behind is a disabled grey disc with an arrow in
+   * it, on the most prominent control on the page, in the state the composer is
+   * in every time it opens: a dead button as the default.
+   *
+   * So the slot is live again and the colour does the work. `voice` draws in
+   * the quiet secondary disc — the fill the dead button already wore — and only
+   * send, stop and busy wear the accent (`ComposerPrimaryAction`). The accent
+   * still means exactly one verb, so the misfire cannot return, and the first
+   * keystroke morphs the quiet disc into the accent one.
+   *
+   * NOT IN STEER MODE. Steering a research run is words handed to something
+   * already reading; a call is not one of the things you can do to it, and
+   * putting one in the slot there would offer an action that has no meaning on
+   * that surface.
+   */
+  const voiceAvailable = !!onOpenVoiceMode && !steerMode && !dictating && !sendLocked;
 
-  // The primary button's faces: checking, stop (when busy), or send.
-  const primaryFace: "checking" | "stop" | "send" =
+  // The primary button's faces: checking, stop (when busy), voice (when there
+  // is nothing to send and a call is available), or send.
+  const primaryFace: "checking" | "stop" | "send" | "voice" =
     status === "checking"
       ? "checking"
       : steerMode && text.trim().length > 0
         ? "send"
         : isBusy
           ? "stop"
-          : "send";
+          : canSend || !voiceAvailable
+            ? "send"
+            : "voice";
   // The effort control the model popover draws under its panes. Absent when
   // Auto picks the depth or the model has a single tier, so the footer only
   // appears when there is a choice to make — which also retires the empty
@@ -2690,24 +2713,11 @@ export function Composer({
                   <TooltipContent>Dictate</TooltipContent>
                 </Tooltip>
               )}
-              {showVoiceButton && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={onOpenVoiceMode}
-                      disabled={dictating || sendLocked}
-                      aria-label="Start voice conversation"
-                      className={composerIconButtonClass}
-                    >
-                      <AudioLines className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Voice conversation</TooltipContent>
-                </Tooltip>
-              )}
+              {/* No voice button here any more: it is the primary slot's face
+                  whenever there is nothing to send. Two ways to start the same
+                  call, eight pixels apart, is one more than the row can spend —
+                  and this one costs nothing, because the slot it moved into was
+                  otherwise disabled. */}
             </>
           }
           action={
@@ -2716,23 +2726,31 @@ export function Composer({
                     <ComposerPrimaryAction
                       face={PRIMARY_FACES[primaryFace]}
                       onClick={
-                        primaryFace === "stop" ? onStop : () => void submit()
+                        primaryFace === "stop"
+                          ? onStop
+                          : primaryFace === "voice"
+                            ? onOpenVoiceMode
+                            : () => void submit()
                       }
                       disabled={
                         primaryFace === "stop"
                           ? status === "stopping" || status === "checking"
-                          : !canSend
+                          : // Voice is never short of something to do; only the
+                            // send face can have an empty draft behind it.
+                            primaryFace !== "voice" && !canSend
                       }
                       aria-label={
                         primaryFace === "stop"
                           ? status === "stopping"
                             ? "Stopping generation"
                             : "Stop generating"
-                          : uploading
-                            ? "Send — waiting for the attachment to finish uploading"
-                            : steerMode
-                              ? "Add this to the research"
-                              : "Send message"
+                          : primaryFace === "voice"
+                            ? "Start voice conversation"
+                            : uploading
+                              ? "Send — waiting for the attachment to finish uploading"
+                              : steerMode
+                                ? "Add this to the research"
+                                : "Send message"
                       }
                     />
                   </TooltipTrigger>
@@ -2745,11 +2763,13 @@ export function Composer({
                       ? steerMode
                         ? "Stop the research"
                         : "Stop"
-                      : uploading
-                        ? "Waiting for the upload to finish"
-                        : steerMode
-                          ? "Add to the research"
-                          : "Send"}
+                      : primaryFace === "voice"
+                        ? "Voice conversation"
+                        : uploading
+                          ? "Waiting for the upload to finish"
+                          : steerMode
+                            ? "Add to the research"
+                            : "Send"}
                   </TooltipContent>
                 </Tooltip>
           }

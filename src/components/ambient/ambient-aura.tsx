@@ -64,9 +64,11 @@ import {
  * the edge of vision — and because one of the three parties here is the person
  * in the room, who may not be looking at the screen at all.
  *
- *   You speaking      the accent, and the only ink driven by a live signal:
- *                     it climbs on a syllable (attack 18) and falls away
- *                     slowly (release 3.2), so the movement is YOURS.
+ *   Your turn         the accent — whichever one the reader picked — and the
+ *                     only ink driven by a live signal: it climbs on a syllable
+ *                     (attack 18) and falls away slowly (release 3.2), so the
+ *                     movement is YOURS. Listening and speaking share it; the
+ *                     envelope is what tells them apart.
  *   Juno thinking     `--ultra`, breathing on a 3.4s cycle at 0.4 tempo —
  *                     slow, regular, going nowhere, which is what waiting is.
  *   Juno answering    `--source`, resting high and travelling at full tempo.
@@ -82,7 +84,17 @@ import {
 /** The quiet swell each state keeps when nothing is driving it. */
 const FLOOR: Record<AuraState, number> = {
   idle: 0,
-  listening: 0.09,
+  /*
+   * Raised from 0.09 with the ink. That number was chosen for a GREY listening
+   * state, where the brief was to be barely there — and a barely-there grey and
+   * a barely-there accent are not the same object: the first is the light
+   * staying out of the way, the second is the accent turning up and then not
+   * being visible, which is worse than either. Still well under `thinking`
+   * (0.34), and still leaving the whole range above it for the envelope to
+   * climb into when somebody speaks, so "waiting for you" and "hearing you"
+   * stay as far apart as they were.
+   */
+  listening: 0.14,
   user: 0.09,
   muted: 0.04,
   connecting: 0.14,
@@ -109,23 +121,43 @@ const ANSWERING_FLOOR: Record<AuraDrive, number> = { level: 0.16, floor: 0.2 };
  *
  * Three parties, three inks (the tokens are defined in globals.css):
  *
- *   you       your voice, in the accent. The product is listening to you
- *             specifically, and that is the one moment it should look it.
+ *   you       your turn, in the accent — `--aura-you`, which is `--primary`,
+ *             so it is whichever accent the reader chose in settings.
  *   thinking  Juno working, in `--ultra`. Far enough from the accent that
  *             "working" can never be misread as "your turn" at a glance.
  *   juno      Juno answering, in `--source` — the ink that already means
  *             "this came from somewhere" everywhere else in the product.
  *   alarm     a failure, in `--destructive`. Its own ink, never a mix.
  *
- * `quiet` is the neutral ink: a call that is up with nobody speaking is
- * PRESENT without claiming a party, which is exactly what listening is.
+ * `quiet` is the neutral ink, and WHAT IT MEANS CHANGED. It used to cover
+ * `listening` as well as `muted`, on the argument that a call with nobody
+ * speaking is "present without claiming a party". In practice listening is
+ * where a call spends most of its life — it is the resting state of voice mode,
+ * the thing you are looking at between turns — so the product's one full-screen
+ * expression of being live was grey almost the whole time it was up. Grey is
+ * how this interface draws things that are OFF, so the light said "nothing is
+ * happening" during the one mode where something plainly is, and the accent
+ * only appeared in the fraction of a second somebody was mid-syllable.
+ *
+ * Listening is the accent now, and it is the same ink as `user` on purpose:
+ * both are your turn, and the difference between waiting for you and hearing
+ * you is carried by MOTION, which is where this file already puts it — both
+ * states are level-driven, so the envelope climbs on a syllable and falls away
+ * when the room goes quiet. Same colour, and you can still tell from across the
+ * room whether it heard you.
+ *
+ * That leaves `quiet` for `muted` alone, which is the one state where grey is
+ * the message rather than a default: the microphone is closed, and the light
+ * going colourless is exactly the right thing to say about it.
  */
 type AuraInk = "you" | "thinking" | "juno" | "alarm" | "quiet";
 
 const INK: Record<AuraState, AuraInk> = {
   idle: "quiet",
-  listening: "quiet",
+  // The accent, not the neutral: see the note above. A live call is never grey.
+  listening: "you",
   user: "you",
+  // The one state grey is FOR — the microphone is closed.
   muted: "quiet",
   connecting: "thinking",
   thinking: "thinking",

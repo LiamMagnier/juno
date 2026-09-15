@@ -10,7 +10,7 @@ import {
   useReducedMotion,
   type AnimationPlaybackControls,
 } from "framer-motion";
-import { ArrowUp, Loader2, Square } from "lucide-react";
+import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
 
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
@@ -245,10 +245,29 @@ export function useComposerAutosize(
  * ———————————————————————————————————————————————————————————————————— */
 
 /**
- * `voice` is kept in the union for the surfaces that have not been retuned
- * yet; it draws the send arrow. The send slot never launches a call any
- * more — a second verb in the one accent-coloured control on the row was
- * the thing people pressed by accident most.
+ * THE SLOT HOLDS THE ONE THING THERE IS TO DO, and on an empty composer that is
+ * not sending.
+ *
+ * `voice` used to live here, was pulled out to a ghost button in the icon row,
+ * and is back — but not the way it was. The objection to the old version was
+ * real and is worth stating, because the fix has to answer it: voice took over
+ * the ACCENT CIRCLE when the field was empty, so the one saturated control on
+ * the row meant "call" until you typed and "send" after, and people pressed it
+ * by accident. Two verbs wearing one colour.
+ *
+ * What was left behind was worse in a quieter way. With voice gone, an empty
+ * composer's primary slot is a DISABLED circle: a grey disc with an arrow in
+ * it, sitting on the most prominent control on the page, saying nothing except
+ * that it does not work yet. That is the state the composer is in every time it
+ * is opened.
+ *
+ * So the slot is live again, and the colour does the disambiguating that
+ * position alone could not. Send is the accent; voice is the quiet secondary
+ * disc — the same fill the dead button already had, now with something behind
+ * it. The accent still means exactly one verb, so the misfire the old layout
+ * caused cannot come back, and the first keystroke morphs the quiet disc into
+ * the accent one, which is the clearest possible statement that the control has
+ * changed hands.
  */
 export type ComposerPrimaryFace = "send" | "stop" | "voice" | "busy";
 
@@ -264,13 +283,20 @@ const FACE_MOTION = {
 };
 
 /**
- * The 32px accent circle. Flat — no raised shadow, no halo — and its face
- * cross-morphs (scale .9→1 + fade over `duration-fast`) between send, stop
- * and a spinner.
+ * The 32px circle. Flat — no raised shadow, no halo — and its face cross-morphs
+ * (scale .9→1 + fade over `duration-fast`) between voice, send, stop and a
+ * spinner.
  *
- * Disabled is a NEUTRAL disc, not the accent at 40%. A washed-out coral
+ * TWO FILLS, ONE SLOT. Accent for the three faces that act on the draft (send,
+ * stop, busy); the quiet secondary disc for `voice`, which acts on nothing you
+ * have typed. The fill is what keeps the accent meaning one verb — see the note
+ * on `ComposerPrimaryFace` for why that matters here specifically.
+ *
+ * Disabled is that same NEUTRAL disc, not the accent at 40%. A washed-out coral
  * circle sat on every empty composer and read as a broken button; a quiet
- * secondary fill reads as "nothing to send yet", which is what it means.
+ * secondary fill reads as "nothing to send yet", which is what it means. It is
+ * also why `voice` needs no separate disabled treatment: it is already wearing
+ * it, and a voice button cannot be short of anything to do.
  * `.composer-primary-action` is kept as a class hook for the e2e suite; it
  * carries no styles.
  */
@@ -287,8 +313,13 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         type={type}
         data-face={face}
         className={cn(
-          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-[background-color,color] duration-fast ease-out-soft",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card hover:bg-primary/90 active:scale-95",
+          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full transition-[background-color,color] duration-fast ease-out-soft",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card active:scale-95",
+          face === "voice"
+            ? // Quiet, and reaching the accent only on hover — enough to say it
+              // is live without competing with the send circle it becomes.
+              "bg-secondary text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+            : "bg-primary text-primary-foreground hover:bg-primary/90",
           "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
           "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10",
           className
@@ -304,6 +335,14 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
             ) : face === "stop" ? (
               <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
                 <Square className="size-3 fill-current" />
+              </motion.span>
+            ) : face === "voice" ? (
+              <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+                {/* The waveform, not a microphone. A mic is the glyph for
+                    dictation — which this composer already has, one button to
+                    the left — and the two doing different things behind the
+                    same picture is the confusion this row can least afford. */}
+                <AudioLines className="size-4" />
               </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">

@@ -11146,10 +11146,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Longer clips can take a couple of minutes."
   },
   {
-    "id": "9b5d3af8049f6e7c",
-    "source": "Start voice conversation"
-  },
-  {
     "id": "9b7fb0c015e1915d",
     "source": "Ran with less than you asked for"
   },
@@ -14260,6 +14256,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c57c8e60f59ca64b",
     "source": "Les conversations sont chiffrées au repos sur nos serveurs. Les modalités de traitement des données personnelles sont détaillées dans la"
+  },
+  {
+    "id": "c57d7e92019708b6",
+    "source": "voice"
   },
   {
     "id": "c582ac7607f2971e",

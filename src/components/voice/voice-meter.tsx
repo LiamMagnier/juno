@@ -24,11 +24,19 @@ import { cn } from "@/lib/utils";
  * style write per frame, no per-bar JavaScript, no compositor promotion, and
  * the value never passes through React.
  *
- * WHOSE VOICE IT IS is shown by fill direction and colour, never by a second
- * hue: bars fill from the centre outward while Juno speaks and left to right
- * while you do. `thinking` detaches from the level entirely — there is no
- * audio to show, and pretending otherwise would be the same lie the hardcoded
- * bars told.
+ * WHOSE VOICE IT IS is shown by fill direction and colour: bars fill from the
+ * centre outward while Juno speaks and left to right while you do. `thinking`
+ * detaches from the level entirely — there is no audio to show, and pretending
+ * otherwise would be the same lie the hardcoded bars told.
+ *
+ * THE TWO INKS ARE THE AURA'S, and they were not. This meter used to paint
+ * JUNO's voice in `--primary` and yours in a neutral `--foreground/70`; the
+ * aura behind it (`components/ambient/ambient-aura.tsx`) paints the opposite —
+ * your turn in the accent, Juno's in `--source`. Two live indicators on one
+ * screen, using the product's one saturated ink for opposite parties: whichever
+ * you had learned, the other one was lying to you. They agree now, and the
+ * assignment is the aura's, because the accent belongs to the person whose turn
+ * it is — that is what an accent is for, and the aura is the larger statement.
  */
 export interface VoiceMeterProps {
   phase: VoicePhase;
@@ -64,12 +72,16 @@ export const VoiceMeter = React.forwardRef<HTMLSpanElement, VoiceMeterProps>(fun
           className={cn(
             "h-full origin-center rounded-full transition-colors duration-fast ease-out-soft",
             size === "stage" ? "w-1.5" : "w-[3px]",
-            phase === "speaking"
-              ? "bg-primary"
-              : muted
-                ? "bg-muted-foreground/40"
-                : live
-                  ? "bg-foreground/70"
+            muted
+              ? "bg-muted-foreground/40"
+              : // Juno's own voice, in the ink the aura gives it.
+                phase === "speaking"
+                ? "bg-source"
+                : // Your turn — listening and speaking alike, exactly as the
+                  // aura treats them. The level and the fill direction are what
+                  // separate "waiting for you" from "hearing you".
+                  live
+                  ? "bg-primary"
                   : "bg-muted-foreground/40"
           )}
         />
