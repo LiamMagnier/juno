@@ -75,7 +75,7 @@ import { createStreamLog, shouldLogStream, type StreamLog } from "@/lib/chat/str
 import { appendChatStreamEvents, sweepChatStreamEvents } from "@/lib/chat-stream-log-store";
 import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
 import { truncate, currentPeriod } from "@/lib/utils";
-import { coerceTitleSource } from "@/lib/title-ownership";
+import { coerceTitleSource, promptPlaceholderTitle } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { supportsFastMode } from "@/lib/pricing";
 import { supportsProMode } from "@/lib/model-metrics";
@@ -1409,7 +1409,7 @@ async function handleChat(req: Request) {
               origin: input.origin ?? null,
               clientRequestId,
               model: conversationModelId,
-              title: truncate(input.message ?? "New chat", 48),
+              title: promptPlaceholderTitle(input.message ?? ""),
               titleSource: "default",
               projectId: newConversationProjectId,
               activeConnectors: connectorSelection ?? [],
@@ -1517,7 +1517,7 @@ async function handleChat(req: Request) {
         origin: input.origin ?? null,
         clientRequestId: null,
         model: conversationModelId,
-        title: truncate(input.message ?? "New chat", 48),
+        title: promptPlaceholderTitle(input.message ?? ""),
         titleSource: "default",
         projectId: newConversationProjectId,
         activeConnectors: connectorSelection ?? [],
