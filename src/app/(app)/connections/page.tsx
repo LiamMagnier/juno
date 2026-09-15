@@ -175,8 +175,10 @@ export default function ConnectionsPage() {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Connections"
-        heading="Connect your tools"
+        /* No eyebrow: it restated the sidebar row that opens this page, above
+           a title that already means the same thing. See the note in
+           app/(app)/library/page.tsx — same fix, same rule. */
+        heading="Connections"
         lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
         actions={
           !loading && !error && connectedCount > 0 ? (

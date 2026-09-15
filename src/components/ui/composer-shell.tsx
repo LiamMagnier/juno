@@ -133,9 +133,23 @@ export const composerFieldClass =
  * pointer or while its popover is open. A chip is a label on a control,
  * not a button; it should read at the weight of the placeholder text beside
  * it, not compete with the send circle.
+ *
+ * IT SHRINKS. It used to carry `shrink-0`, which quietly cancelled the design
+ * the row it sits in describes two hundred lines below ("the row now shrinks
+ * instead: `min-w-0` lets the model chip give up its width first"). A chip that
+ * refuses to shrink cannot give up anything, so the `min-w-0` on the cluster
+ * and the `truncate` on each chip's own label were both dead code, and on a
+ * 390px phone the Work composer — which puts three chips on this row — pushed
+ * its controls straight out through the right edge of the box they are drawn
+ * in, the send button landing on top of a half-written "Ask before risky st".
+ *
+ * Nothing changes at a width where the row fits: flex only shrinks what
+ * overflows, and it takes width from the widest item first, which is the long
+ * truncatable label every time. The glyph and the chevron keep their own
+ * `shrink-0`, so a squeezed chip loses letters, never its marks.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 shrink-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =

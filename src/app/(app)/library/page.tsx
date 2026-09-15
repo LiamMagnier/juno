@@ -767,8 +767,18 @@ export default function LibraryPage() {
       {/* "Recently deleted" is a MODE, not a filter, so it has to be legible in
           the heading. */}
       <AppPageHeader
-        eyebrow="Library"
-        heading={showDeleted ? "Recently deleted" : "Your files"}
+        /*
+         * THE NAV ROW AND THE HEADING SAY THE SAME WORD NOW, and the eyebrow
+         * that was standing between them is gone.
+         *
+         * It read "Library" over "Your files", reached from a sidebar row
+         * marked Library — so the page carried two names for one place and
+         * spent a line of chrome above its own title restating the one you had
+         * just clicked. Every other top-level destination (Work, Projects,
+         * Artifacts, Settings) opens with its own name; this was the exception,
+         * and the eyebrow was how it got away with it.
+         */
+        heading={showDeleted ? "Recently deleted" : "Library"}
         lede={
           showDeleted
             ? "Files you delete land here and stay recoverable."
@@ -776,7 +786,10 @@ export default function LibraryPage() {
         }
         actions={
           <>
-            {!loading && !error && (
+            {/* `!libraryEmpty`: "0 items · 0 B" is the emptiness stated a third
+                time, after the heading and the empty state below, and a storage
+                total for nothing stored is a measurement of nothing. */}
+            {!loading && !error && !libraryEmpty && (
               <p className="hidden items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
                 {/* load() asks for 100 at a time, so until the cursor is spent
                     this is a floor, and the byte total is a partial sum that
@@ -810,7 +823,21 @@ export default function LibraryPage() {
         }
       />
 
-      {!error && (
+      {/*
+        ONLY ONCE THERE IS SOMETHING TO FILTER — the same rule the Projects page
+        already applies to its own toolbar, and for the same reason it gives:
+        rendered unconditionally this put a live "Search files" box, three
+        filter tabs each reading 0, a sort menu and a view toggle — six controls
+        — directly above "Your library is empty". Every one of them acts on a
+        list that does not exist, and the three zeroes state the emptiness a
+        second and third time under a heading that has already said it.
+
+        `libraryEmpty` is the WHOLE library, not the filtered view, so a search
+        that happens to match nothing keeps its toolbar: that reader needs the
+        box they typed into in order to clear it. `noResults` is the state for
+        that, and it is handled below.
+      */}
+      {!error && !libraryEmpty && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
             <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

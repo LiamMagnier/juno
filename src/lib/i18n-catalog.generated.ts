@@ -18062,10 +18062,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Low"
   },
   {
-    "id": "f7970f23e75a0dd2",
-    "source": "Connect your tools"
-  },
-  {
     "id": "f79b4290e331c6c1",
     "source": "Remembered from a chat"
   },
