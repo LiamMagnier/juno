@@ -11790,10 +11790,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You're generating a lot — give it a minute."
   },
   {
-    "id": "a3828850cf99e5d5",
-    "source": "Loading Juno Work"
-  },
-  {
     "id": "a39a7ffad4a3013f",
     "source": "assistant"
   },

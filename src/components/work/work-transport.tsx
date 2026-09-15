@@ -300,7 +300,35 @@ async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailur
   return { kind: "failed", cause: res.status === 400 ? "rejected" : "server", message };
 }
 
-async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): Promise<WorkResult<T>> {
+/**
+ * Reads in flight right now, by URL.
+ *
+ * WORK'S INBOX ASKS THE SAME QUESTION FROM THREE PLACES. Its poll re-arms
+ * whenever a row starts or stops executing (the interval changes speed and the
+ * effect fires an immediate read on the way in), `WORK_SYNC_EVENT` is dispatched
+ * by every mutation anywhere in the surface, and coming back to the tab reads as
+ * well. Those coincide constantly — start a task and all three happen inside a
+ * second — and every coincidence used to be a second identical GET over the same
+ * group-by.
+ *
+ * Worse than the duplicate is the ORDER. Two reads of the same list can land in
+ * either order, and the later-arriving answer wins the `setState` regardless of
+ * which is newer, so a slow poll overtaken by a fast one would put the older list
+ * back on screen: rows reappearing after being archived, a status going
+ * backwards from Finished to Working. Sharing one promise removes the race
+ * rather than papering over it — there is only one answer, so there is nothing to
+ * arrive out of order.
+ *
+ * Keyed on the URL alone, which is exactly right for this surface: these are
+ * plain authenticated GETs where the URL IS the question. Nothing is retained
+ * once it settles, so this is coalescing and not a cache — the next read after
+ * this one resolves still goes to the network, and no caller is ever handed an
+ * answer from before it asked.
+ */
+const readsInFlight = new Map<string, Promise<WorkResult<Record<string, unknown>>>>();
+
+/** One GET, down to the parsed body. Resolves rather than rejecting, always. */
+async function read(url: string): Promise<WorkResult<Record<string, unknown>>> {
   let res: Response;
   try {
     res = await fetch(url);
@@ -310,7 +338,26 @@ async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): 
     return { kind: "failed", cause: "offline", message: null };
   }
   if (!res.ok) return refusal(res);
-  return { kind: "ok", value: pick(await body(res)) };
+  return { kind: "ok", value: await body(res) };
+}
+
+async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): Promise<WorkResult<T>> {
+  let shared = readsInFlight.get(url);
+  if (!shared) {
+    shared = read(url);
+    readsInFlight.set(url, shared);
+    // The identity check matters: without it a slow read settling after a newer
+    // one had already replaced it in the map would evict the newer entry, and
+    // the coalescing would silently stop working for that URL.
+    void shared.finally(() => {
+      if (readsInFlight.get(url) === shared) readsInFlight.delete(url);
+    });
+  }
+  const result = await shared;
+  // `pick` is applied PER CALLER rather than shared, so two call sites that read
+  // the same URL for different fields each get their own projection — and one
+  // caller's projection can never be handed to the other.
+  return result.kind === "ok" ? { kind: "ok", value: pick(result.value) } : result;
 }
 
 /**
