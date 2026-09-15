@@ -236,3 +236,45 @@ export function appendGeminiToolRound(
     parts: responses.map((r) => ({ functionResponse: { name: r.name, response: r.response } })),
   });
 }
+
+/**
+ * How much of the cut-off answer the continuation is shown.
+ *
+ * The transcript already holds the whole reply — the reader can see it — so
+ * this is not about carrying the text, it is about giving the model enough
+ * runway to match its own voice, format and place in the argument. Two thousand
+ * characters is a few paragraphs, or the open code fence and the function it is
+ * halfway through, which is what "resume from exactly here" needs.
+ *
+ * Deliberately NOT the full answer: re-sending 60k tokens of prose the model has
+ * already been billed for, on a request whose entire purpose is to buy room for
+ * more prose, spends the thing it is trying to save.
+ */
+export const GEMINI_CONTINUE_TAIL_CHARS = 2000;
+
+/**
+ * Stage a continuation: the tail of what the model wrote, as the model's own
+ * turn, followed by the instruction to resume.
+ *
+ * The model turn matters more than the instruction. A prompt that merely
+ * DESCRIBES the partial answer ("you were writing about X, carry on") makes the
+ * model re-enter the topic from outside and write an introduction; handing it
+ * back its own last words, in its own role, puts it mid-sentence — which is
+ * where the seam has to be invisible.
+ *
+ * Mutates `contents` in place, like `appendGeminiToolRound` beside it, because
+ * the adapter threads one array through every round of a turn.
+ */
+export function appendGeminiContinuation(
+  contents: GeminiContent[],
+  answerTail: string,
+  instruction: string,
+): void {
+  const tail = answerTail.slice(-GEMINI_CONTINUE_TAIL_CHARS);
+  // An empty tail would stage a model turn with no text, which Gemini rejects as
+  // a malformed request — a 400 in place of the rest of somebody's answer. The
+  // caller already refuses to continue an empty answer; this keeps that a local
+  // fact rather than a call-site obligation.
+  if (tail.length > 0) contents.push({ role: "model", parts: [{ text: tail }] });
+  contents.push({ role: "user", parts: [{ text: instruction }] });
+}

@@ -1,5 +1,5 @@
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
-import { clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
+import { REASONING_TIERS, clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import { googleNativeBaseUrl, normalizeProviderKey, providerApiKey } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -250,6 +250,64 @@ export function geminiGenerationConfig(
   const config: Record<string, unknown> = { maxOutputTokens };
   const thinkingConfig = geminiThinkingConfig(model, effort);
   if (thinkingConfig !== undefined) config.thinkingConfig = thinkingConfig;
+  return config;
+}
+
+/**
+ * The generation config for a CONTINUATION pass — the same reply, resumed.
+ *
+ * ONE THING CHANGES, and it is the whole point: thinking drops to this model's
+ * floor. On Gemini 3 `maxOutputTokens` is a combined budget for thinking and
+ * answer, and the model expands its thinking to fill very nearly all of it, so
+ * a turn at HIGH can spend 59k of 65,536 reasoning and write the answer in what
+ * is left. The reasoning for THIS answer has already been done — its conclusion
+ * is in the partial answer the continuation is handed — so a second pass at the
+ * same level buys nothing and re-loses the same budget, which is precisely why
+ * pressing Continue by hand loops (see `geminiShouldContinue`). At the floor,
+ * almost the entire ceiling goes to prose.
+ *
+ * NOT `clampReasoningEffort(model, "minimal")`, which looks like the same thing
+ * and is not: a model that does not declare `minimal` gets its DEFAULT back
+ * from that function, and for a Gemini 3 id accepting only low|high the default
+ * is `high` — so the continuation would think its way to the ceiling again, and
+ * the fix would quietly do nothing. The floor is read off the model's own
+ * declared ladder instead.
+ */
+export function geminiContinuationConfig(
+  model: ModelInfo,
+  maxOutputTokens: number,
+): Record<string, unknown> {
+  const config: Record<string, unknown> = { maxOutputTokens };
+  if (!model.reasoning) return config;
+
+  const caps = reasoningCaps(model);
+  // An on/off model has no floor to drop to; leaving its thinking as the turn
+  // asked for it is the only honest option.
+  if (caps.onOff) {
+    const thinkingConfig = geminiThinkingConfig(model, null);
+    if (thinkingConfig !== undefined) config.thinkingConfig = thinkingConfig;
+    return config;
+  }
+
+  // REASONING_TIERS is the ladder in order, so the first match is the floor.
+  const floor = REASONING_TIERS.find((tier) => caps.tiers.includes(tier));
+
+  if (isGemini3OrLater(model)) {
+    // No declared ladder means no business naming a level: Google's own
+    // per-model default is the only correct request for "no preference", and an
+    // unsupported level is a 400 that costs the reader the REST of their answer
+    // rather than shortening it.
+    config.thinkingConfig = floor
+      ? { includeThoughts: true, thinkingLevel: geminiLevelFor(floor) }
+      : { includeThoughts: true };
+    return config;
+  }
+
+  // 2.5 and earlier take a numeric budget, so "off" is expressible — and it is
+  // better than a small budget, because nothing is left to re-derive.
+  const budget = caps.canDisable ? 0 : floor ? geminiThinkingBudget(model, floor) : undefined;
+  config.thinkingConfig =
+    budget === undefined ? { includeThoughts: true } : { includeThoughts: true, thinkingBudget: budget };
   return config;
 }
 
