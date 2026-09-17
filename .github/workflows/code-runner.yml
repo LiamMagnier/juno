@@ -58,6 +58,13 @@ jobs:
       # agent-authored commands at all when it is unset — there is no fallback
       # to the runner host. Pin it by digest (`…@sha256:…`), never by tag.
       JUNO_RUNNER_SANDBOX_IMAGE: ${{ vars.JUNO_RUNNER_SANDBOX_IMAGE }}
+      # The DEFAULT egress for the agent's container, not a ceiling over it. A
+      # run dispatched with a CodeEnvironment whose network is `full` overrides
+      # this in the driver (scripts/cloud-code-runner.mjs), because a setting
+      # the composer offers and the workflow silently overrules is a control
+      # that does nothing. A run that named no environment — which is every
+      # native client and everything created before environments existed — gets
+      # exactly what it has always had: no network.
       JUNO_RUNNER_SANDBOX_NETWORK: none
 
     steps:

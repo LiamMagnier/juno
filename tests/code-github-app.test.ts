@@ -185,7 +185,19 @@ test("runner-context gates the app token on that check, and logs one line either
   assert.notEqual(gate, -1, "the route no longer checks the submitter's own access");
   assert.ok(gate < mint, "the push check must run BEFORE an installation token is minted");
   // Exactly one line, naming the source and the reason — never the token.
-  const logs = [...route.matchAll(/console\.(info|log|warn|error)\(/g)].map((m) => m[1]);
+  //
+  // Scanned over the credential block rather than the whole file: the route has
+  // since grown an unrelated failure path (an environment sealed under an
+  // encryption key that was later dropped), and a file-wide count would make
+  // this assertion fail for a reason that has nothing to do with the credential
+  // it is about. The claim is unchanged — one info line for the credential, and
+  // the one warn is the app-outage fallback.
+  const credentialBlock = route.slice(
+    route.indexOf("CREDENTIAL, narrowest first"),
+    route.indexOf("THE CONVERSATION SO FAR"),
+  );
+  assert.ok(credentialBlock.length > 500, "the credential block's landmarks have moved");
+  const logs = [...credentialBlock.matchAll(/console\.(info|log|warn|error)\(/g)].map((m) => m[1]);
   assert.deepEqual(logs, ["warn", "info"], "one info line for the credential; the warn is the app-outage path only");
   assert.match(route, /clone credential = \$\{credential\.source\} \(\$\{credential\.reason\}\)/);
   const line = /console\.info\([\s\S]*?\);/.exec(route)?.[0] ?? "";

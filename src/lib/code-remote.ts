@@ -309,6 +309,14 @@ export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
     branch: task.branch,
     prUrl: task.prUrl,
     prNumber: task.prNumber,
+    // What this cloud run was dispatched with: the environment (egress,
+    // variables, setup script) and how much the agent may do before it would
+    // have to ask. Both null on a device task and on anything created before
+    // the columns existed; a reader treats null as "the built-in shape", which
+    // is what such a run actually got. The variable VALUES are never here —
+    // only runner-context unseals them, and only for the runner.
+    environmentId: task.environmentId,
+    permissionMode: task.permissionMode,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };

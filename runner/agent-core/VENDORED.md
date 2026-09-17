@@ -78,6 +78,19 @@ copy of `juno-app/core/src`, including the subagent orchestration layer
   turns into a fresh session before its first `prompt()`, so a cloud follow-up
   is read as the next turn of its conversation rather than the first turn of a
   new one. Refuses on a session that already holds messages.
+
+- `src/tools/container-sandbox.ts` (`ContainerSandboxConfig.network = "full"`
+  and `ContainerSandboxConfig.forwardEnv`): the two things a **Cloud Code
+  environment** needs the sandbox to be able to express. `full` joins docker's
+  default bridge — the honest answer for a run that has to install a package
+  the model only discovers it needs, which the "fetch it in the setup script"
+  argument cannot cover. `forwardEnv` is a list of NAMES emitted as
+  `--env NAME`, so docker copies each value out of its own (already scrubbed)
+  process environment: the caller has to name a variable twice for it to
+  arrive, and no value ever appears in an argv. Neither widens the boundary the
+  file's header describes — nothing of the host's environment can cross by
+  accident, and the default of both is still "no network, no variables".
+  `src/test/container-sandbox.test.ts` pins both. Re-apply when re-syncing.
 - `src/agent.ts` (`AgentSession.queueUserMessage` / `hasQueuedUserMessages` /
   `takeQueuedUserMessages`) and `src/loop.ts`
   (`AgentLoopOptions.takeQueuedUserText`): mid-run steering. Text queued while

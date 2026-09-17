@@ -34,6 +34,15 @@ test('network is off unless a proxy network is explicitly configured', () => {
   assert.ok(!proxied.includes('--network=none'));
 });
 
+test('full egress is spelled out rather than left to the docker default', () => {
+  // A caller reaches this only when a person chose it for that run. Naming the
+  // bridge explicitly is what lets a reader of the argv tell a deliberate
+  // choice from a forgotten flag.
+  const open = argsFor({ network: 'full' });
+  assert.ok(open.includes('--network=bridge'));
+  assert.ok(!open.includes('--network=none'));
+});
+
 test('asking for a proxy without naming its network falls back to no network', () => {
   // Failing open here would mean a misconfiguration silently grants full
   // egress, which is the opposite of what the setting was reaching for.
@@ -47,11 +56,37 @@ test('only the worktree is mounted', () => {
 });
 
 test('no host environment is forwarded into the container', () => {
-  // The credential boundary. A single `--env` or `--env-file` here would hand
-  // the agent the task token, the clone token and the Actions OIDC variables.
+  // The credential boundary. A bulk forward — `--env-file`, or a loop over the
+  // host's own environment — would hand the agent the task token, the clone
+  // token and the Actions OIDC variables. A config that names nothing produces
+  // no `--env` at all, which is every caller that has not been given a Cloud
+  // Code environment to carry.
   const args = argsFor();
   assert.ok(!args.some((arg) => arg.startsWith('--env')));
   assert.ok(!args.some((arg) => arg === '-e'));
+});
+
+test('forwarded variables cross by name only, never as a value in the argv', () => {
+  // `--env NAME` with no `=` makes docker copy the value from ITS OWN process
+  // environment, which is the scrubbed map the driver builds for agent
+  // children. So the caller has to name a variable twice for it to arrive, and
+  // no secret is ever readable from the host's process list.
+  const args = argsFor({ forwardEnv: ['NPM_TOKEN', 'CI'] });
+  assert.deepEqual(
+    args.filter((arg, i) => args[i - 1] === '--env'),
+    ['NPM_TOKEN', 'CI'],
+  );
+  assert.ok(!args.some((arg) => arg.includes('=') && arg.includes('NPM_TOKEN')));
+});
+
+test('a name that is not a shell variable name is dropped', () => {
+  // `FOO=bar` would turn `--env NAME` into the value-carrying form the comment
+  // above rules out; the rest are simply not names a shell would read.
+  const args = argsFor({ forwardEnv: ['FOO=bar', '1BAD', 'with space', 'GOOD_ONE'] });
+  assert.deepEqual(
+    args.filter((arg, i) => args[i - 1] === '--env'),
+    ['GOOD_ONE'],
+  );
 });
 
 test('the docker socket is never mounted', () => {
@@ -100,8 +135,11 @@ test('the command is a single argv element, never spliced into a shell line', ()
 });
 
 test('the image is the last thing before the shell invocation', () => {
-  const args = argsFor();
-  assert.equal(args[args.length - 4], base.image);
+  assert.equal(argsFor()[argsFor().length - 4], base.image);
+  // Still true once variables are forwarded: they are options, and an option
+  // that landed after the image would be read as an argument to the command.
+  const withEnv = argsFor({ forwardEnv: ['NPM_TOKEN'] });
+  assert.equal(withEnv[withEnv.length - 4], base.image);
 });
 
 test('a digest-pinned image is recognised as immutable, a tag is not', () => {
@@ -131,6 +169,14 @@ test('sandbox configuration is read from the environment', () => {
   assert.equal(config?.network, 'proxied');
   assert.equal(config?.memory, '4g');
   assert.equal(config?.worktreeHostPath, '/home/runner/work/task-9');
+});
+
+test('full egress can be named by the environment too', () => {
+  const config = containerSandboxFromEnv(
+    { JUNO_RUNNER_SANDBOX_IMAGE: base.image, JUNO_RUNNER_SANDBOX_NETWORK: 'full' },
+    '/work',
+  );
+  assert.equal(config?.network, 'full');
 });
 
 test('an unrecognised network value is treated as none, not as permissive', () => {

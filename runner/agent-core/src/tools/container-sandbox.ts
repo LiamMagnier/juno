@@ -31,13 +31,33 @@ export interface ContainerSandboxConfig {
   /** Where it appears inside the container. */
   workdir?: string;
   /**
-   * Egress. `none` is the default and the only safe one: a build that needs
+   * Egress. `none` is the default and the safe one: a build that needs
    * dependencies should have had them fetched by the driver, outside the
-   * sandbox, before the agent ran.
+   * sandbox, before the agent ran — which is what a Cloud Code environment's
+   * setup script is for.
+   *
+   * `full` exists because that argument does not cover everything. A run that
+   * has to install a package the model discovers it needs mid-task cannot have
+   * fetched it beforehand, and the honest options are "let the container out"
+   * or "do not offer the capability". It is never a default: a caller reaches
+   * it only when a person chose it for that run, and at that level an agent
+   * that can run `curl` can post the worktree anywhere.
    */
-  network?: "none" | "proxied";
+  network?: "none" | "proxied" | "full";
   /** Docker network name for the capability-aware egress proxy, when proxied. */
   proxyNetwork?: string;
+  /**
+   * Names — never values — of environment variables to carry into the
+   * container from the environment the caller spawns `docker` with.
+   *
+   * This is how a Cloud Code environment's variables reach a build without
+   * putting a secret in an argv. `docker run --env NAME` with no `=` forwards
+   * the value from the docker CLI's own process environment, and that
+   * environment is the scrubbed map the driver already builds for agent
+   * children (`ToolContext.env`), so the only thing that can cross is
+   * something the caller deliberately put there. See the `--env` note below.
+   */
+  forwardEnv?: string[];
   memory?: string;
   cpus?: string;
   pidsLimit?: number;
@@ -98,6 +118,11 @@ export function buildContainerArgs(
     // "allowed domains" is enforced by something the container cannot
     // reconfigure — rather than by an environment variable it could unset.
     args.push(`--network=${config.proxyNetwork}`);
+  } else if (config.network === "full") {
+    // Docker's default bridge: whatever the host can reach. Named explicitly
+    // rather than by omitting the flag, so a reader of this argv can tell a
+    // deliberate choice from a forgotten one.
+    args.push("--network=bridge");
   } else {
     args.push("--network=none");
   }
@@ -108,8 +133,31 @@ export function buildContainerArgs(
   args.push(`--volume=${config.worktreeHostPath}:${workdir}`);
   args.push(`--workdir=${workdir}`);
 
-  // No `--env` and no `--env-file`: the container starts with the image's
-  // environment and nothing from the host. That is the credential boundary.
+  /*
+   * No `--env-file`, and no `--env NAME=VALUE`.
+   *
+   * The boundary has always been that the container starts with the image's
+   * environment and nothing of the host's — because a bulk forward hands the
+   * agent the task token, the clone token and the Actions OIDC variables. That
+   * is still the boundary. What crosses here is a list of NAMES the caller
+   * asked for, one `--env NAME` each, which makes docker copy the value from
+   * its own process environment: the scrubbed map the driver builds for agent
+   * children, which holds no Juno credential by construction.
+   *
+   * Two consequences worth being explicit about. Nothing derived from the
+   * host's real environment can arrive by accident, because the caller has to
+   * name it twice — once in the env it spawns docker with, once here. And no
+   * value ever appears in an argv, so a secret cannot be read out of the
+   * process list.
+   *
+   * Names are filtered to the POSIX shape. A name is interpolated into an
+   * argument, and one containing `=` would turn `--env NAME` into the
+   * value-carrying form this comment just ruled out.
+   */
+  for (const name of config.forwardEnv ?? []) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) args.push("--env", name);
+  }
+
   args.push(config.image, "/bin/bash", "-c", command);
   return args;
 }
@@ -125,7 +173,9 @@ export function containerSandboxFromEnv(
   return {
     image,
     worktreeHostPath,
-    network: network === "proxied" ? "proxied" : "none",
+    // Anything unrecognised is `none`. A typo in a deployment variable must not
+    // be the thing that opens egress.
+    network: network === "proxied" ? "proxied" : network === "full" ? "full" : "none",
     proxyNetwork: env.JUNO_RUNNER_SANDBOX_PROXY_NETWORK?.trim() || undefined,
     memory: env.JUNO_RUNNER_SANDBOX_MEMORY?.trim() || undefined,
     cpus: env.JUNO_RUNNER_SANDBOX_CPUS?.trim() || undefined,
