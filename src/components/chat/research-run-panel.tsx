@@ -112,6 +112,11 @@ export function ResearchRunPanel({
           open={reportOpen}
           onOpenChange={setReportOpen}
           report={run.report}
+          // The READ corpus, in store order, is the reader's numbering
+          // contract, not a display choice: the writer was numbered against
+          // `listSources().filter(snapshot)` (deep-research.ts), `read` is
+          // `!!snapshot` (run.ts), and the Markdown renderer resolves `[n]`
+          // by position. Passing every source would shift every citation.
           sources={run.sources.filter(source => source.read)}
           goal={run.goal}
         />

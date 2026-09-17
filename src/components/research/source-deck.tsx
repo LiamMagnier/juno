@@ -1,18 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { Check, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
 
 /**
- * The corpus, as cards you can scan — read first, leads after.
+ * The corpus, as rows you can scan — read first, leads after.
  *
- * Designed with modern citation standards (ChatGPT Deep Research & Claude Research):
- * - Clear distinction between sources read in full (cited evidence) and discovered leads
- * - Publisher domain identity and verified badges
- * - Two-line unclamped titles with external source links
+ * Read-versus-lead is said ONCE, by the group heading. Every row used to
+ * restate it in a bordered, tinted capsule ("Read" / "Lead") beside the
+ * external-link glyph — two trailing marks per row, the second repeating the
+ * heading it sat under (PREMIUM_AUDIT rule 6). The glyph is the one trailing
+ * mark; a lead's dimmed favicon is the only other thing that differs.
+ *
+ * Two voices: `ui` for the title, `caption` for everything else. The host,
+ * the count and the footer were `micro` in mono, which is the register for
+ * machine identifiers, and a publisher's name is prose.
  */
 
 const DECK_COPY = {
@@ -42,23 +47,12 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
             variant="list"
             className={cn("size-4 shrink-0 rounded-xs", !source.read && "opacity-60")}
           />
-          <span className="truncate font-mono text-micro font-medium text-muted-foreground">{host}</span>
+          <span className="truncate text-caption text-muted-foreground">{host}</span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {source.read ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/15 px-2 py-0.5 text-micro font-medium text-success-ink">
-              <Check className="size-2.5 stroke-[2.5]" /> Read
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full border border-border/50 bg-secondary/80 px-2 py-0.5 text-micro font-medium text-muted-foreground">
-              Lead
-            </span>
-          )}
-          {linkable && (
-            <ExternalLink className="size-3 text-muted-foreground/50 transition-colors group-hover:text-primary" />
-          )}
-        </div>
+        {linkable && (
+          <ExternalLink className="size-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
+        )}
       </div>
 
       <span className="mt-2 line-clamp-2 text-ui font-medium leading-snug text-foreground transition-colors group-hover:text-primary/95">
@@ -66,7 +60,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
       </span>
 
       {(source.sourceType || source.publishedAt) && (
-        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 text-micro font-mono text-muted-foreground/75">
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/40 pt-1.5 text-caption text-muted-foreground/75">
           {source.sourceType ? (
             <span className="capitalize">{source.sourceType.replace(/_/g, " ")}</span>
           ) : (
@@ -116,7 +110,7 @@ function Group({
     <section>
       <div className="flex items-baseline gap-2">
         <h4 className="text-ui font-medium text-foreground">{heading}</h4>
-        <span className="font-mono text-micro tabular-nums text-muted-foreground">
+        <span className="text-caption tabular-nums text-muted-foreground">
           {sources.length}
         </span>
         {note && <span className="min-w-0 truncate text-caption text-muted-foreground">{note}</span>}
@@ -150,8 +144,12 @@ export function SourceDeck({
   const leads = sources.filter((source) => !source.read);
 
   if (sources.length === 0) {
+    // Two lines on the panel, not a dashed box: this sits inside
+    // `.research-surface` (16px radius, 16px padding), where FLAT_UI §6 gives
+    // a nested box a radius of zero, and a bordered well is the wrong answer
+    // to "nothing here yet" anyway.
     return (
-      <div className={cn("rounded-card border border-dashed border-border/70 p-6 text-center bg-card/40", className)}>
+      <div className={cn("text-center", className)}>
         <p className="text-ui font-medium text-foreground">{DECK_COPY.empty}</p>
         <p className="mt-1 text-caption text-muted-foreground">{DECK_COPY.emptyNote}</p>
       </div>

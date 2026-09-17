@@ -25,6 +25,7 @@ import {
   type ResearchConflict,
   type ResearchCoverageEntry,
   type ResearchClarification,
+  type ResearchEffort,
   type ResearchObjective,
   type ResearchState,
   type ResearchTerminalState,
@@ -632,6 +633,14 @@ export interface ResearchRunView {
     coverage: ResearchCoverageEntry[];
     conflicts: ResearchConflict[];
     followUpRound: number;
+    /**
+     * The tier the run was started at. The plan gate is where a person
+     * authorises the spend, and until this rode the wire the gate could not
+     * say how big a team or how long a run it was asking them to approve —
+     * the tier copy existed but only the composer's tooltip could reach it.
+     * Null on runs older than tiers.
+     */
+    effort: ResearchEffort | null;
   };
   auditSummary: {
     claims: number;
@@ -794,6 +803,7 @@ export async function readResearchRun(input: {
         coverage: plan.coverage ?? [],
         conflicts: plan.conflicts ?? [],
         followUpRound: plan.followUpRound ?? 0,
+        effort: plan.effort ?? null,
       },
       auditSummary,
       reportRevision: run.reportRevision ?? 0,

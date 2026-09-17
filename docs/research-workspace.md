@@ -19,9 +19,14 @@ company’s private implementation. Juno retains its provider-neutral research e
 ## Frontend
 
 The research card lives beside its originating turn in the scrolling transcript,
-not in the fixed composer dock. The editable plan is initially visible. After
-approval, the card becomes a compact factual status with source counts, pause,
-resume, stop and expandable sources/activity/plan/evidence. The composer accepts
+not in the fixed composer dock. The editable plan is initially visible, under the
+question it is a plan for, and its Start row states what is being authorised: the
+tier's team and reading, about how long, and the spend the run stops at. After
+approval, the card opens with the question, one state sentence, the four stages
+with the live one marked, and a line of facts — time spent working (parked time
+at a gate or on pause is not counted), spend against the ceiling, sources read,
+researchers out, what is being read now — with pause, resume, stop and
+expandable activity/sources/plan/evidence one disclosure down. The composer accepts
 additional direction during investigation. Completed reports open from the same
 card in an accessible document dialog with contents, citations and export.
 Earlier runs keep their cards when another run starts (up to the API’s 20-run

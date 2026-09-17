@@ -17,13 +17,17 @@ const DialogClose = DialogPrimitive.Close;
  * can vary (image-edit-overlay's close sits over a dark image at a different
  * inset — a position, not a style). No focus or radius override: the global
  * ring is authoritative and `kind="icon"` is circular by house idiom.
+ *
+ * `print:hidden`, with the scrim below: a dialog that prints its content (the
+ * research report reader) must not print a close glyph in the corner of page
+ * one, and there is nothing to dismiss on paper.
  */
 export const DialogCloseButton = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Close>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Close ref={ref} asChild {...props}>
-    <Pressable kind="icon" size="lg" className={cn("absolute right-4 top-4", className)}>
+    <Pressable kind="icon" size="lg" className={cn("absolute right-4 top-4 print:hidden", className)}>
       <ActionIcons.dismiss className="size-4" />
       <span className="sr-only">Close</span>
     </Pressable>
@@ -46,7 +50,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-modal bg-scrim backdrop-blur-[2px] data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out",
+      "fixed inset-0 z-modal bg-scrim backdrop-blur-[2px] data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out print:hidden",
       className
     )}
     {...props}

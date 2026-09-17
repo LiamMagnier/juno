@@ -3,8 +3,10 @@
 import * as React from "react";
 import { Check, ChevronDown, Link2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RESEARCH_EFFORT_COPY } from "./effort-copy";
+import { formatMicroUsd } from "./run-format";
 import { staggerDelay } from "@/lib/motion";
-import type { ResearchClarification } from "@/lib/research/domain";
+import type { ResearchClarification, ResearchEffort } from "@/lib/research/domain";
 import { cn } from "@/lib/utils";
 
 /**
@@ -41,6 +43,9 @@ const PLAN_COPY = {
   risks: "Where evidence may be thin",
   primary: "primary source",
   fresh: "fresh",
+  /* What Start authorises: the team, the reading, the time, the ceiling. */
+  about: "about",
+  stopsAt: "Stops at",
 } as const;
 
 /** The plan's objectives as the gate and the plan tab receive them. */
@@ -366,6 +371,9 @@ export function ClarifyGate({
 }
 
 export function PlanReview({
+  goal,
+  effort = null,
+  budgetMicroUsd = null,
   steps,
   queries,
   constraints,
@@ -378,6 +386,11 @@ export function PlanReview({
   onConfirm,
   onDiscard,
 }: {
+  goal: string;
+  /** The tier the run was started at; null on runs older than tiers, and then no estimate is stated. */
+  effort?: ResearchEffort | null;
+  /** The run's spend ceiling in micro-USD, or null when it has none. */
+  budgetMicroUsd?: string | null;
   steps: string[];
   queries: string[];
   constraints: string[];
@@ -447,11 +460,25 @@ export function PlanReview({
     </ol>
   );
 
+  // What a person is authorising, in one quiet line under the Start row: the
+  // team and the reading from the tier, the time from the same table the
+  // composer's tooltip reads, and the ceiling the engine will actually stop
+  // at. The ceiling is a limit, not an estimate, and is worded as one.
+  const tier = effort ? RESEARCH_EFFORT_COPY.find((item) => item.value === effort) : undefined;
+  const authorised = [
+    tier ? `${tier.summary} · ${PLAN_COPY.about} ${tier.eta.replace(/^~/, "")}` : null,
+    budgetMicroUsd ? `${PLAN_COPY.stopsAt} ${formatMicroUsd(budgetMicroUsd)}` : null,
+  ].filter((line): line is string => !!line);
+
   return (
     <div>
       <p className="text-ui text-muted-foreground">
         {structured || hasSteps ? PLAN_COPY.lede : PLAN_COPY.ledeFallback}
       </p>
+      {/* The question, exactly as the clarify gate one state earlier shows it.
+          This was the only state of the card where the question vanished —
+          a plan for something the card no longer said. */}
+      <p className="mt-3 line-clamp-2 text-ui leading-relaxed text-foreground/85">{goal}</p>
 
       <div className="mt-5">
         <PlanOutline
@@ -484,6 +511,9 @@ export function PlanReview({
           {PLAN_COPY.discard}
         </Button>
       </div>
+      {authorised.length > 0 && (
+        <p className="mt-3 text-caption tabular-nums text-muted-foreground">{authorised.join(" · ")}</p>
+      )}
 
       {/* The searches, for the reader who wants them. Only when the steps are
           carrying the plan — with no steps the queries ARE the plan above. */}

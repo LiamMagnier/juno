@@ -75,11 +75,15 @@ export function SourceRail({
           const chipContent = (
             <>
               <SourceFavicon url={source.url} variant="cluster" className="size-3.5 shrink-0" />
-              <span className="max-w-[120px] truncate font-mono text-caption font-medium text-foreground/90 sm:max-w-[150px]">
+              {/* `@sm:`, not `sm:`: the chip's room is set by the transcript
+                  column, not the window (PREMIUM_AUDIT rule 11). Sans, not
+                  mono: a publisher's name is prose, and the mono rung is
+                  for machine identifiers. */}
+              <span className="max-w-[120px] truncate text-caption font-medium text-foreground/90 @sm:max-w-[150px]">
                 {host}
               </span>
               {count > 1 && (
-                <span className="text-micro font-mono text-muted-foreground/80">({count})</span>
+                <span className="text-caption text-muted-foreground/80">({count})</span>
               )}
               {read ? (
                 <span className="size-1.5 shrink-0 rounded-full bg-success/80" title="Read in full" />
@@ -122,7 +126,7 @@ export function SourceRail({
         })}
 
         {hidden > 0 && (
-          <span className="text-caption font-mono text-muted-foreground/80">
+          <span className="text-caption text-muted-foreground/80">
             +{hidden} {RAIL_COPY.more}
           </span>
         )}
@@ -132,14 +136,14 @@ export function SourceRail({
         <button
           type="button"
           onClick={onOpenSources}
-          className="pressable inline-flex items-center gap-1.5 rounded-control bg-secondary px-2.5 py-1 font-mono text-micro tabular-nums text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+          className="pressable inline-flex items-center gap-1.5 rounded-control bg-secondary px-2.5 py-1 text-caption tabular-nums text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
         >
           <span>
             {sources.length} {RAIL_COPY.sources} · {readCount} {RAIL_COPY.read}
           </span>
         </button>
       ) : (
-        <span className="inline-flex items-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 text-caption tabular-nums text-muted-foreground">
           <span>
             {sources.length} {RAIL_COPY.sources} · {readCount} {RAIL_COPY.read}
           </span>
