@@ -33,6 +33,35 @@
   --warning: 38 92% 50%;
   --warning-foreground: 38 40% 20%;
   --radius: 0.75rem;
+
+  /* The motion ladder, mirrored from src/app/globals.css — that file is the
+     source of truth; change a value there first and copy it here.
+     tests/design-host-motion-tokens.test.ts fails the moment the two drift.
+
+     The build compiles the website's tailwind.config.ts, so `animate-rise-in`
+     arrives here as `animation: rise-in var(--dur-base) var(--ease-out-soft)`.
+     With no declaration of either custom property in this document the
+     shorthand was invalid at computed-value time, `animation-name` fell back
+     to `none`, and every entrance in the Mac editor — the adjustments panel,
+     the editor frame, the Ask Juno bar — hard-cut while the same components
+     eased in on the website. The colour tokens above kept the two looking
+     identical; the missing motion tokens kept them from MOVING identically,
+     and nothing reported it, because an invalid animation is not an error. */
+  --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-press: 70ms;
+  --dur-fast: 120ms;
+  --dur-exit: 160ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --dur-emphasis: 560ms;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -55,6 +84,24 @@
   }
 }
 
+/* The website's tiered reduced-motion policy (globals.css), which the host
+   did not have at all. Every travelling keyframe reads --motion-shift and
+   --motion-scale-from with its full value as the fallback, so zeroing them
+   removes the travel and keeps the fade; the overshooting and front-loaded
+   curves collapse to the soft ease because with nothing left to travel there
+   is nothing for them to overshoot, and a spring on opacity alone clips. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-shift: 0;
+    --motion-scale-from: 1;
+    --ease-out-strong: var(--ease-out-soft);
+    --ease-out-expo: var(--ease-out-soft);
+    --ease-spring: var(--ease-out-soft);
+    --ease-drawer: var(--ease-out-soft);
+    --dur-slow: var(--dur-base);
+  }
+}
+
 html,
 body,
 #root {
@@ -74,11 +121,34 @@ body,
   line-height: 1.45;
 }
 
+/* `.pressable` as globals.css declares it, not a fork of it. The host's copy
+   ran the press transform at 120ms on a hand-written curve — the exact value
+   the website rewrote away: 120ms is fine for a colour but it is above the
+   direct-manipulation threshold for movement, and a press that takes that
+   long to reach scale(0.97) is felt as lag on the one interaction where
+   latency is most obvious. Same class, same 70ms dip, on both platforms.
+   globals.css defines no reduced-motion reset for this class and leaves that
+   to each call site's `motion-reduce:` utilities; the host's consumers carry
+   none, so the reset lives on the class here. */
 .pressable {
-  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+  transition:
+    transform        var(--dur-press) var(--ease-out-soft),
+    color            var(--dur-fast)  var(--ease-out-soft),
+    background-color var(--dur-fast)  var(--ease-out-soft),
+    border-color     var(--dur-fast)  var(--ease-out-soft),
+    opacity          var(--dur-fast)  var(--ease-out-soft),
+    box-shadow       var(--dur-fast)  var(--ease-out-soft);
 }
 .pressable:active {
   transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pressable {
+    transition: none;
+  }
+  .pressable:active {
+    transform: none;
+  }
 }
 
 /* A design canvas is a pointer surface: a stray text selection while dragging a

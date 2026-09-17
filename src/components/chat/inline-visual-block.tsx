@@ -269,7 +269,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "group flex min-h-20 items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "group flex min-h-20 items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
                 "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
@@ -321,7 +321,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "flex min-w-0 items-start gap-2 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "flex min-w-0 items-start gap-2 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
                 "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
@@ -437,7 +437,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setSelected(index)}
               onClick={() => setSelected(index)}
               className={cn(
-                "group flex items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "group flex items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
                 "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 active && correct && "border-success/60 bg-success/10 shadow-soft",
                 active && answered && !correct && "border-destructive/50 bg-destructive/10 shadow-soft"

@@ -2205,16 +2205,28 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           16px slide + fade, not a full-width sweep, so opening reads as the
           card "handing off" to the workspace rather than a scene change. On
           close it lingers (absolute, so the chat reflows underneath) while the
-          brief fade-out plays, then unmounts. */}
+          brief fade-out plays, then unmounts.
+
+          The class strings are the thought dock's, verbatim, for the reasons
+          written beside it: `slide-in-from-right-4` is a hardcoded translate
+          that --motion-shift cannot reach, so the reduced tier needs its own
+          fade or a reader who asked for no motion gets the full 16px; and an
+          exit accelerates (`ease-in`, --dur-exit) where an entrance
+          decelerates. The canvas had neither — it slid under the preference
+          and left on the entrance curve, 40 lines from a panel on the same
+          edge that did both right — and the two panels are open at once, so
+          the difference was visible side by side. `ease-out-expo` sits in
+          the entrance branch so the exit's curve does not depend on which
+          utility Tailwind emits last. */}
       {(openArtifact ?? closingArtifact) && (
         <div
           style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
           className={cn(
             "relative z-40 size-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
-            canvas.resizing ? "select-none transition-none" : "ease-out-expo",
+            canvas.resizing && "select-none transition-none",
             openArtifact
-              ? !canvas.resizing && "duration-base animate-in fade-in slide-in-from-right-4"
-              : "pointer-events-none absolute inset-y-0 right-0 duration-fast animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+              ? !canvas.resizing && "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "lg:relative"
           )}
         >

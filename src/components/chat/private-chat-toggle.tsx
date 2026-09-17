@@ -52,8 +52,10 @@ export function PrivateChatToggle({
             // both neighbours answer hover with bg-accent — a control that
             // levitated instead read as a different species. The levitation
             // wasn't lost; it belongs to the mascot, and the SVG below already
-            // floats on group-hover. Press dips at .97, same as `.pressable`.
-            "group inline-flex size-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 coarse:size-11",
+            // floats on group-hover. Press dips at .97 and at --dur-press, same
+            // as `.pressable`: transform is in the transition list, so on the
+            // base rung alone the dip took 220ms and was felt as lag.
+            "group inline-flex size-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press disabled:pointer-events-none disabled:opacity-50 coarse:size-11",
             "motion-reduce:transition-none motion-reduce:active:scale-100",
             active && "text-primary"
           )}
