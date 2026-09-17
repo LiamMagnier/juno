@@ -242,7 +242,11 @@ export function AccountSection() {
         )}
       </SettingsGroup>
 
-      <SettingsGroup title="Danger zone" description="Irreversible. There is no undo and no grace period.">
+      {/* "Delete", not "Danger zone": settings-sections.ts rules a danger zone
+          out on the grounds that a heading whose only content is destruction
+          reads as a dare, and Data & privacy already names its destructive
+          group this way with this lede. Two destructive groups, one voice. */}
+      <SettingsGroup title="Delete" description="Irreversible. This removes data permanently.">
         <SettingRow
           label="Delete account"
           tone="destructive"

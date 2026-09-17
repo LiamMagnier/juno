@@ -201,10 +201,25 @@ const PILL_SHAPE =
   "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none";
 
 /** The status as a chip. Mono + colour, never a coloured rectangle alone. */
-export function WorkStatusPill({ status, className }: { status: WorkStatus; className?: string }) {
+export function WorkStatusPill({
+  status,
+  describe = true,
+  className,
+}: {
+  status: WorkStatus;
+  /**
+   * Whether the status sentence rides along as the pill's tooltip. On by
+   * default, because in a list row the pill is the only word about the state
+   * and the sentence is worth a hover. The task header prints that same
+   * sentence immediately after the pill, so there the tooltip was a third
+   * copy that covered the text it repeated — that call site turns it off.
+   */
+  describe?: boolean;
+  className?: string;
+}) {
   const meta = STATUS_META[status];
   return (
-    <span className={cn(PILL_SHAPE, PILL_CLASS[meta.tone], className)} title={meta.sentence}>
+    <span className={cn(PILL_SHAPE, PILL_CLASS[meta.tone], className)} title={describe ? meta.sentence : undefined}>
       <span className={cn("size-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
       {meta.label}
     </span>

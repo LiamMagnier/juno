@@ -16,7 +16,10 @@ export default function ConnectionsLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading connections">
-      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-72" actions />
+      {/* No `actions`: the header has no trailing cluster since its count
+          badge went (the toolbar's "Connected" segment carries the number),
+          so a placeholder for one would reserve room nothing fills. */}
+      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-72" />
 
       <div className="flex flex-wrap items-center gap-2">
         <Skeleton className="h-9 w-56 rounded-menu" />

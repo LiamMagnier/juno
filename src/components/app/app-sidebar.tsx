@@ -78,8 +78,8 @@ import type { ClientConversation } from "@/types/chat";
  * 32/2 the rows were touching: five destinations in a 170px block with two
  * pixels between them, which is a list you have to parse rather than scan.
  * The extra four pixels of row and two of gap cost 30px across the whole nav
- * and buy the thing the column was missing — you can see where one row ends. Section eyebrows are `h-6` mono caps;
- * date folds are `h-6` sans captions one rung below them. Glyphs may only be
+ * and buy the thing the column was missing — you can see where one row ends. Section headings and date folds are
+ * both `h-6` sentence-case mono at the `label` rung — one voice. Glyphs may only be
  * `size-3`, `size-3.5` or `size-4` — every one of which has a rung on the
  * optical stroke ladder in globals.css. The rows were 36px with 14px labels
  * and UNSIZED glyphs that fell back to Lucide's intrinsic 24px; that, plus
@@ -727,19 +727,20 @@ export function AppSidebar({
                     {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
 
                     {sidebarProjects.length > 0 && (
+                      // "Pinned projects", because that is what `sidebarProjects`
+                      // is — the starred subset — and because the nav row ~40px
+                      // above this heading already says "Projects" and already
+                      // goes to /projects. The section used to repeat the word
+                      // AND carry an "All projects" chevron to the same route:
+                      // one destination, two controls, one column.
                       <Section
-                        label="Projects"
+                        label="Pinned projects"
                         isCollapsed={sectionCollapsed.projects}
                         onToggleCollapse={() => toggleSection("projects")}
                         action={
-                          <>
-                            <SectionAction label="New project" onClick={() => router.push("/projects?new=1")} always>
-                              <Plus className="size-3.5" />
-                            </SectionAction>
-                            <SectionAction label="All projects" onClick={() => router.push("/projects")}>
-                              <ChevronRight className="size-3.5" />
-                            </SectionAction>
-                          </>
+                          <SectionAction label="New project" onClick={() => router.push("/projects?new=1")} always>
+                            <Plus className="size-3.5" />
+                          </SectionAction>
                         }
                       >
                         {sidebarProjects.map((p) => (
@@ -767,7 +768,11 @@ export function AppSidebar({
                     )}
 
                     {pinned.length > 0 && (
-                      <Section label="Pinned" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
+                      // "Pinned chats", for the reason the section above is
+                      // "Pinned projects": the same word at the same rung one
+                      // section apart, naming two kinds of thing, reads as one
+                      // list cut in half rather than two lists.
+                      <Section label="Pinned chats" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
                         {pinned.map((c) => (
                           <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
                         ))}
@@ -793,7 +798,7 @@ export function AppSidebar({
                                 other moved to the column's text edge, and "Today" sat 24px
                                 left of every title under it. One voice needs one inset as
                                 much as it needs one rung. */}
-                            <p className="flex h-6 items-center pl-8 pr-2 font-mono text-micro text-muted-foreground/70">
+                            <p className="flex h-6 items-center pl-8 pr-2 font-mono text-label text-muted-foreground/70">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -1328,15 +1333,21 @@ function Section({
           className="h-6 min-w-0 flex-1 select-none gap-1.5 border-0 pl-8 pr-2 py-0 hover:bg-sidebar-accent/60"
         >
           {/*
-           * ONE SECTION VOICE, and this is it: mono caps at the `micro` rung.
-           * The panel used to speak two — 12px mono caps at 0.10em for
-           * Projects and Pinned, 11px sans for the Today / Yesterday folds —
-           * which is two headings of different sizes and different FAMILIES
-           * marking the same level of the same list. Both are this now, and
-           * it is the same heading the model picker draws, so the product has
-           * one way of naming a group of rows rather than three.
+           * ONE SECTION VOICE, and this is it: sentence-case mono at the
+           * `label` rung. The panel used to speak two — 12px mono caps at
+           * 0.10em for Projects and Pinned, 11px sans for the Today /
+           * Yesterday folds — which is two headings of different sizes and
+           * different FAMILIES marking the same level of the same list. Both
+           * are this now, and it is the rung SettingsGroup and CardEyebrow
+           * head their sections with, so the product has one way of naming a
+           * group of rows rather than three.
+           *
+           * `label` and not `micro`: PREMIUM_AUDIT reserves `micro` for
+           * machine metadata, at most once per surface, and this heading is
+           * painted six or more times down one panel. Chrome gets `ui` for
+           * rows and `label` for sections — that is the whole rule.
            */}
-          <span className="min-w-0 truncate font-mono text-micro text-muted-foreground/70">{label}</span>
+          <span className="min-w-0 truncate font-mono text-label text-muted-foreground/70">{label}</span>
           {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
               turn are on screen, so this is an A-to-B move. */}
           <ChevronDown

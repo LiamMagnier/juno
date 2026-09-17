@@ -519,43 +519,54 @@ export default function ProjectDetailPage() {
   // Two terminal states, two tones. A missing project is not a failure the user
   // can retry away — it is an empty destination — while a failed load is, and only
   // the error tone gets the solid destructive fence and role="status".
+  //
+  // Both sit inside the same <AppPage> frame as the loading and loaded branches,
+  // so they take the product's one gutter from `.app-page-content` (16 / 24 / 32,
+  // keyed to the column). They used to return a bare <div> with a hand-rolled
+  // `px-4`, which meant two of this route's three states indented 16px while the
+  // third indented up to 32. The centred, capped treatment is kept through
+  // `contentClassName` and an inner `max-w-xl` column.
   if (error === "notfound") {
     return (
-      <div className="mx-auto flex size-full max-w-xl items-center px-4">
-        <EmptyState
-          className="w-full motion-safe:animate-rise-in"
-          icon={FolderClosed}
-          title="Project not found"
-          description="It may have been deleted."
-          action={
-            <Button size="sm" asChild>
-              <Link href="/projects">Back to projects</Link>
-            </Button>
-          }
-        />
-      </div>
+      <AppPage measure="wide" contentClassName="flex min-h-full items-center">
+        <div className="mx-auto w-full max-w-xl">
+          <EmptyState
+            className="w-full motion-safe:animate-rise-in"
+            icon={FolderClosed}
+            title="Project not found"
+            description="It may have been deleted."
+            action={
+              <Button size="sm" asChild>
+                <Link href="/projects">Back to projects</Link>
+              </Button>
+            }
+          />
+        </div>
+      </AppPage>
     );
   }
   if (error === "error") {
     return (
-      <div className="mx-auto flex size-full max-w-xl items-center px-4">
-        <EmptyState
-          tone="error"
-          className="w-full motion-safe:animate-rise-in"
-          title="Couldn’t load this project"
-          description="Check your connection and try once more."
-          action={
-            <>
-              <Button variant="outline" size="sm" onClick={load}>
-                Try again
-              </Button>
-              <Button size="sm" asChild>
-                <Link href="/projects">Back to projects</Link>
-              </Button>
-            </>
-          }
-        />
-      </div>
+      <AppPage measure="wide" contentClassName="flex min-h-full items-center">
+        <div className="mx-auto w-full max-w-xl">
+          <EmptyState
+            tone="error"
+            className="w-full motion-safe:animate-rise-in"
+            title="Couldn’t load this project"
+            description="Check your connection and try once more."
+            action={
+              <>
+                <Button variant="outline" size="sm" onClick={load}>
+                  Try again
+                </Button>
+                <Button size="sm" asChild>
+                  <Link href="/projects">Back to projects</Link>
+                </Button>
+              </>
+            }
+          />
+        </div>
+      </AppPage>
     );
   }
   if (!data) {
@@ -720,19 +731,36 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
                       {memories.length === 0 ? (
-                        <p className="text-caption leading-relaxed text-muted-foreground">
-                          No memories saved yet. Juno builds memories across conversations.
-                        </p>
+                        // The same shape as the Instructions and Sources
+                        // sections under it in this card; this was a bare
+                        // sentence while its two siblings were EmptyStates.
+                        // No action, because nothing the reader does here
+                        // resolves it — memories arrive from chats — and the
+                        // "Automatically updated" footer stays with the list,
+                        // since this description already says as much. No
+                        // icon either: the section head 20px above already
+                        // paints NotebookPen beside "Memory", and Instructions
+                        // beneath carries none. "Your chats", not "this
+                        // project's": the list is `/api/memory` with no
+                        // project parameter — the user's global memory, which
+                        // is what the "Only you" chip beside it is saying.
+                        <EmptyState
+                          size="panel"
+                          title="No memories yet"
+                          description="Juno saves durable facts from your chats here."
+                        />
                       ) : (
-                        <ul className="max-h-[7.5rem] list-disc space-y-1.5 overflow-y-auto pl-4 pr-1 marker:text-muted-foreground/50">
-                          {memories.slice(0, 3).map((m) => (
-                            <li key={m.id} className="text-caption leading-relaxed text-muted-foreground">
-                              <span className="block truncate">{m.content}</span>
-                            </li>
-                          ))}
-                        </ul>
+                        <>
+                          <ul className="max-h-[7.5rem] list-disc space-y-1.5 overflow-y-auto pl-4 pr-1 marker:text-muted-foreground/50">
+                            {memories.slice(0, 3).map((m) => (
+                              <li key={m.id} className="text-caption leading-relaxed text-muted-foreground">
+                                <span className="block truncate">{m.content}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="mt-2.5 font-mono text-caption text-muted-foreground/70">Automatically updated</p>
+                        </>
                       )}
-                      <p className="mt-2.5 font-mono text-caption text-muted-foreground/70">Automatically updated</p>
                     </section>
 
                     {/* Instructions Preview */}
@@ -892,8 +920,12 @@ export default function ProjectDetailPage() {
               <Card className="p-5">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
+                    {/* Eyebrow and one body line, the shape the Tools card
+                        beside it uses. There was an h2 between them — "How
+                        Juno behaves in this project" — which is the eyebrow's
+                        own gloss; the line that carries new information is
+                        the one saying where the text is injected. */}
                     <CardEyebrow>System instructions</CardEyebrow>
-                    <h2 className="mt-1 font-sans text-heading text-foreground">How Juno behaves in this project</h2>
                     <p className="mt-1 text-body text-muted-foreground">
                       Prepended to every chat, work run, and code session in this project.
                     </p>
@@ -940,7 +972,7 @@ export default function ProjectDetailPage() {
               {/* Assistant Configuration */}
               <div className="grid items-start gap-6 lg:grid-cols-2">
                 <Card className="p-5">
-                  <CardEyebrow>Identity & Model</CardEyebrow>
+                  <CardEyebrow>Identity and model</CardEyebrow>
                   <div className="mt-4 space-y-4">
                     <label className="block space-y-2">
                       <span className="text-body font-medium text-foreground">Persona name</span>

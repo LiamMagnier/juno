@@ -1023,7 +1023,9 @@ export default function WorkThreadPage() {
           className="mb-4"
           lede={
             <>
-              <WorkStatusPill status={session.status} className="mr-2 align-middle" />
+              {/* `describe={false}`: the sentence this pill would put in its
+                  tooltip is printed 8px to its right. */}
+              <WorkStatusPill status={session.status} describe={false} className="mr-2 align-middle" />
               {statusSentence(session.status)}
             </>
           }
@@ -1492,8 +1494,12 @@ function uncapitalize(text: string): string {
 /**
  * The header + column used by the pre-content states.
  *
- * The same `full` measure and the same capped column as the loaded page, so
- * the eyebrow and the title stay put the moment the task resolves.
+ * The same `full` measure, the same capped column AND the same `mb-4` header
+ * override as the loaded page, so the eyebrow, the title and the first content
+ * edge all stay put the moment the task resolves. The override was missing
+ * here, so this header fell back to the component's `mb-6` and everything
+ * under it stepped up 8px when `session` landed — under a comment promising
+ * the frame matched.
  */
 function ThreadFrame({ heading, children }: { heading: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -1504,6 +1510,7 @@ function ThreadFrame({ heading, children }: { heading: React.ReactNode; children
           heading={heading}
           backHref="/work"
           backLabel="Back to Work"
+          className="mb-4"
         />
         {children}
       </div>

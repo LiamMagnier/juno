@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
-import { Tile, TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
+import { SettingsGroup } from "@/components/settings/setting-row";
+import { TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import type { ConnectorStatus } from "@/components/connections/types";
 // Type-only on purpose. `@/lib/action-approval` pulls in node:crypto for the
@@ -70,8 +71,14 @@ const POLICY_ORDER = Object.keys(POLICY_COPY) as ActionPermissionPolicy[];
  * it refuses to render controls until it has read the real values, because
  * drawing schema defaults over a failed fetch would tell the user their account
  * is more locked down than it is.
+ *
+ * It is a SettingsGroup like every other block in settings. It was the last
+ * `Tile` — a second container system with its own eyebrow gap (16px against
+ * the group's 4), its own stagger, and a full-width bottom hairline — so the
+ * Connectors pane switched containers halfway down and ended on a rule drawn
+ * under nothing. The `index` prop existed only to feed that stagger.
  */
-export function PermissionsSection({ index = 0 }: { index?: number }) {
+export function PermissionsSection() {
   const [state, setState] = React.useState<PermissionState | null>(null);
   const [connectors, setConnectors] = React.useState<ConnectorStatus[]>([]);
   const [loadFailed, setLoadFailed] = React.useState(false);
@@ -199,174 +206,172 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
   }, [connectors, state?.blockedConnectors]);
 
   return (
-    <Tile
-      eyebrow="Connector permissions"
-      i={index}
-      // One status line for the whole card, present in every state — see
+    <SettingsGroup
+      title="Connector permissions"
+      description="What Juno may do with your connected apps on its own, and what it has to stop and ask you about first. Juno checks this before every connector call, so a change here applies to chats already open."
+      // One status line for the whole group, present in every state — see
       // TileSaveStatus for why it never unmounts.
       aside={<TileSaveStatus state={save} failedMessage="Couldn’t save. Your permissions are unchanged." />}
     >
-      <p className="mb-4 text-body text-muted-foreground">
-        What Juno may do with your connected apps on its own, and what it has to stop and ask you
-        about first. Juno checks this before every connector call, so a change here applies to chats
-        already open.
-      </p>
-
-      {loadFailed ? (
-        // A failed read of the permission policy is a failure, not a well of
-        // information. It was a neutral border-border/70 box, indistinguishable
-        // from the ordinary field wells around it.
-        <EmptyState
-          tone="error"
-          size="panel"
-          icon={StatusIcons.error}
-          title="Couldn’t load your permissions"
-          description="Nothing is shown rather than a guess."
-          action={
-            <Button variant="outline" size="sm" onClick={() => void load()}>
-              Try again
-            </Button>
-          }
-        />
-      ) : !state ? (
-        // gap-2 and rounded-card, because a skeleton's whole job is to be the
-        // shape that arrives: these stood in for five `Pressable kind="tile"`
-        // cards at rounded-card (14) and were drawn at rounded-field (10), so
-        // the corners visibly stepped out when the real policy list landed.
-        <div className="grid grid-cols-1 gap-2" aria-hidden>
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-16 rounded-card" style={staggerDelay(i, "loose")} />
-          ))}
-        </div>
-      ) : (
-        <>
-          {state.lockdownMode && (
-            // p-4, matching the spend-ceiling warning well on this same page:
-            // the two warning states in settings share one chrome.
-            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body text-foreground">
-              <StatusIcons.security className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-              Lockdown is on, so every connector action is refused right now. The choice below takes
-              effect again when you turn it off.
-            </p>
-          )}
-
-          {/* text-muted-foreground to match every other field label on this
-              surface — this was the third of three label treatments in one grid. */}
-          <Label id="action-policy-label" className="mb-2 block text-muted-foreground">
-            When Juno wants to use a connected app
-          </Label>
-          <div
-            role="radiogroup"
-            aria-labelledby="action-policy-label"
-            className="grid grid-cols-1 gap-2"
-          >
-            {POLICY_ORDER.map((policy, position) => {
-              const option = POLICY_COPY[policy];
-              const selected = state.actionApprovalPolicy === policy;
-              return (
-                <Pressable
-                  key={policy}
-                  kind="tile"
-                  selected={selected}
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => selectPolicy(policy)}
-                  // No shadows. `--shadow-float` is the OUT-OF-FLOW token —
-                  // card.tsx explicitly forbids an in-flow tile reaching for it,
-                  // because a hovered tile then outranks every dropdown in the
-                  // product — and on a black ground both shadows are black ink,
-                  // so the whole hover state degraded to a 2px translate. The
-                  // Pressable `tile` kind already carries border + fill hover.
-                  //
-                  // And no `hover:bg-card` either, which is what the line above
-                  // used to say while doing the opposite: utilities are emitted
-                  // after the components layer, so it beat the kind's
-                  // `hover:bg-accent` and repainted the hover in the tile's OWN
-                  // rest fill. Five policy cards whose only hover was a 2px lift.
-                  className="min-h-11 motion-safe:hover:-translate-y-0.5"
-                  {...policyOption(position)}
-                >
-                  <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
-                    {option.label}
-                    {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden />}
-                  </span>
-                  <span className="text-ui text-muted-foreground">
-                    {option.description}
-                  </span>
-                </Pressable>
-              );
-            })}
+      {/* `py-3`: the same inner wrapper the Connected apps group above uses
+          for a body that is one block rather than rows. */}
+      <div className="py-3">
+        {loadFailed ? (
+          // A failed read of the permission policy is a failure, not a well of
+          // information. It was a neutral border-border/70 box, indistinguishable
+          // from the ordinary field wells around it.
+          <EmptyState
+            tone="error"
+            size="panel"
+            icon={StatusIcons.error}
+            title="Couldn’t load your permissions"
+            description="Nothing is shown rather than a guess."
+            action={
+              <Button variant="outline" size="sm" onClick={() => void load()}>
+                Try again
+              </Button>
+            }
+          />
+        ) : !state ? (
+          // gap-2 and rounded-card, because a skeleton's whole job is to be the
+          // shape that arrives: these stood in for five `Pressable kind="tile"`
+          // cards at rounded-card (14) and were drawn at rounded-field (10), so
+          // the corners visibly stepped out when the real policy list landed.
+          <div className="grid grid-cols-1 gap-2" aria-hidden>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="skeleton h-16 rounded-card" style={staggerDelay(i, "loose")} />
+            ))}
           </div>
-          <p className="mt-2 text-ui text-muted-foreground">
-            Juno only ever offers to remember an approval for reversible actions. Anything
-            destructive or sensitive is asked again every single time.
-          </p>
-
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-body font-medium" id="lockdown-label">
-                Lockdown
+        ) : (
+          <>
+            {state.lockdownMode && (
+              // p-4, matching the spend-ceiling warning well on this same page:
+              // the two warning states in settings share one chrome.
+              <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body text-foreground">
+                <StatusIcons.security className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                Lockdown is on, so every connector action is refused right now. The choice below takes
+                effect again when you turn it off.
               </p>
-              <p className="mt-0.5 text-ui text-muted-foreground" id="lockdown-description">
-                Refuse every connector action, including ones that only read. This overrides the
-                choice above and every approval you have already given, until you turn it off.
-              </p>
-            </div>
-            <Switch
-              checked={state.lockdownMode}
-              onCheckedChange={setLockdown}
-              aria-labelledby="lockdown-label"
-              aria-describedby="lockdown-description"
-            />
-          </div>
-
-          <div className="mt-5 border-t border-border/60 pt-4">
-            <p className="text-body font-medium">Blocked apps</p>
-            <p className="mt-0.5 text-ui text-muted-foreground">
-              A blocked app is refused everything, reads included — lockdown for one app instead of
-              all of them.
-            </p>
-
-            {connectorRows.length === 0 ? (
-              <p className="mt-3 text-ui text-muted-foreground">
-                No apps are connected yet.{" "}
-                <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
-                  Connect one
-                </Link>{" "}
-                and it will appear here.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-1">
-                {connectorRows.map((row) => {
-                  const blocked = state.blockedConnectors.includes(row.id);
-                  return (
-                    <li
-                      key={row.id}
-                      className="flex min-h-11 flex-wrap items-center justify-between gap-3 py-1"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-body">{row.label}</span>
-                        {!row.connected && (
-                          <span className="block text-ui text-muted-foreground">
-                            Not connected right now. The block still applies if you reconnect it.
-                          </span>
-                        )}
-                      </span>
-                      {/* The app name alone would not say what the switch does,
-                          and "Blocked" alone would not say which app. */}
-                      <Switch
-                        checked={blocked}
-                        onCheckedChange={(value) => setConnectorBlocked(row.id, value)}
-                        aria-label={`Block ${row.label}`}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
             )}
-          </div>
-        </>
-      )}
-    </Tile>
+
+            {/* text-muted-foreground to match every other field label on this
+                surface — this was the third of three label treatments in one grid. */}
+            <Label id="action-policy-label" className="mb-2 block text-muted-foreground">
+              When Juno wants to use a connected app
+            </Label>
+            <div
+              role="radiogroup"
+              aria-labelledby="action-policy-label"
+              className="grid grid-cols-1 gap-2"
+            >
+              {POLICY_ORDER.map((policy, position) => {
+                const option = POLICY_COPY[policy];
+                const selected = state.actionApprovalPolicy === policy;
+                return (
+                  <Pressable
+                    key={policy}
+                    kind="tile"
+                    selected={selected}
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => selectPolicy(policy)}
+                    // No shadows. `--shadow-float` is the OUT-OF-FLOW token —
+                    // card.tsx explicitly forbids an in-flow tile reaching for it,
+                    // because a hovered tile then outranks every dropdown in the
+                    // product — and on a black ground both shadows are black ink,
+                    // so the whole hover state degraded to a 2px translate. The
+                    // Pressable `tile` kind already carries border + fill hover.
+                    //
+                    // And no `hover:bg-card` either, which is what the line above
+                    // used to say while doing the opposite: utilities are emitted
+                    // after the components layer, so it beat the kind's
+                    // `hover:bg-accent` and repainted the hover in the tile's OWN
+                    // rest fill. Five policy cards whose only hover was a 2px lift.
+                    className="min-h-11 motion-safe:hover:-translate-y-0.5"
+                    {...policyOption(position)}
+                  >
+                    <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
+                      {option.label}
+                      {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden />}
+                    </span>
+                    <span className="text-ui text-muted-foreground">
+                      {option.description}
+                    </span>
+                  </Pressable>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-ui text-muted-foreground">
+              Juno only ever offers to remember an approval for reversible actions. Anything
+              destructive or sensitive is asked again every single time.
+            </p>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-medium" id="lockdown-label">
+                  Lockdown
+                </p>
+                <p className="mt-0.5 text-ui text-muted-foreground" id="lockdown-description">
+                  Refuse every connector action, including ones that only read. This overrides the
+                  choice above and every approval you have already given, until you turn it off.
+                </p>
+              </div>
+              <Switch
+                checked={state.lockdownMode}
+                onCheckedChange={setLockdown}
+                aria-labelledby="lockdown-label"
+                aria-describedby="lockdown-description"
+              />
+            </div>
+
+            <div className="mt-5 border-t border-border/60 pt-4">
+              <p className="text-body font-medium">Blocked apps</p>
+              <p className="mt-0.5 text-ui text-muted-foreground">
+                A blocked app is refused everything, reads included — lockdown for one app instead of
+                all of them.
+              </p>
+
+              {connectorRows.length === 0 ? (
+                <p className="mt-3 text-ui text-muted-foreground">
+                  No apps are connected yet.{" "}
+                  <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
+                    Connect one
+                  </Link>{" "}
+                  and it will appear here.
+                </p>
+              ) : (
+                <ul className="mt-3 space-y-1">
+                  {connectorRows.map((row) => {
+                    const blocked = state.blockedConnectors.includes(row.id);
+                    return (
+                      <li
+                        key={row.id}
+                        className="flex min-h-11 flex-wrap items-center justify-between gap-3 py-1"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body">{row.label}</span>
+                          {!row.connected && (
+                            <span className="block text-ui text-muted-foreground">
+                              Not connected right now. The block still applies if you reconnect it.
+                            </span>
+                          )}
+                        </span>
+                        {/* The app name alone would not say what the switch does,
+                            and "Blocked" alone would not say which app. */}
+                        <Switch
+                          checked={blocked}
+                          onCheckedChange={(value) => setConnectorBlocked(row.id, value)}
+                          aria-label={`Block ${row.label}`}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </SettingsGroup>
   );
 }

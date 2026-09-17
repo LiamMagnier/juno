@@ -452,7 +452,10 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
 
   return (
     <div>
-      <p className="mb-2 font-mono text-label text-muted-foreground">Budget & Resource Limits</p>
+      {/* Sentence case (PREMIUM_AUDIT rule 13). The pass that retired caps
+          eyebrows removed `uppercase` from class lists; a hand-typed Title
+          Case string is content, not a class, and survived it. */}
+      <p className="mb-2 font-mono text-label text-muted-foreground">Budget and limits</p>
       <div className="space-y-2.5">
         <UsageMeter
           label="Cost"
@@ -471,7 +474,7 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
           warningThreshold={0.8}
         />
         <UsageMeter
-          label="Execution Time"
+          label="Execution time"
           used={elapsedMs}
           total={run.budget.maxRuntimeMs === 0 ? undefined : run.budget.maxRuntimeMs}
           formattedUsed={formatDuration(elapsedMs)}

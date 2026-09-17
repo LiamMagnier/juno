@@ -150,10 +150,11 @@ export function ProjectWorkspaceHeader({
                   <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
                   <span>Rename</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEditInstructions}>
-                  <NotebookPen className="mr-2 size-4" aria-hidden="true" />
-                  <span>Edit instructions</span>
-                </DropdownMenuItem>
+                {/* No "Edit instructions" item. The outline Instructions button
+                    ~50px to the left of this menu is the same handler with the
+                    same glyph and a standing hit target; a menu whose items
+                    duplicate the buttons beside it teaches the reader that the
+                    menu is where the leftovers go. */}
                 {menuExtras && (
                   <>
                     <DropdownMenuSeparator />

@@ -414,10 +414,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pinned chats"
   },
   {
-    "id": "0556f301fd1061a9",
-    "source": "Apps Juno can read from and act on, on your behalf."
-  },
-  {
     "id": "0559aadba9e29b9a",
     "source": "OWNER"
   },
@@ -1188,6 +1184,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "105d5a56019121a7",
     "source": "Writing the answer"
+  },
+  {
+    "id": "1069e2ec6da1823d",
+    "source": "Execution time"
   },
   {
     "id": "1078bd2dc1424fe9",
@@ -2562,10 +2562,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "text-ui font-medium text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
   },
   {
-    "id": "23e275114309dfff",
-    "source": "Edit instructions"
-  },
-  {
     "id": "23e39291d6135814",
     "source": "Saving…"
   },
@@ -2664,10 +2660,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "25a200daeda8bad0",
     "source": "Resend link"
-  },
-  {
-    "id": "25a67bc576c728ec",
-    "source": "Irreversible. There is no undo and no grace period."
   },
   {
     "id": "25b3ce41d80b130c",
@@ -3358,10 +3350,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Tool"
   },
   {
-    "id": "2e62744a5381cb8b",
-    "source": "Identity & Model"
-  },
-  {
     "id": "2e816ddaed2b48f6",
     "source": "Could not cancel the task. Check your connection and try again."
   },
@@ -3400,6 +3388,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2f35055d7f7e67b9",
     "source": "Greeting"
+  },
+  {
+    "id": "2f354646e8c322c4",
+    "source": "generation:"
   },
   {
     "id": "2f39f9ae0cfb23f2",
@@ -4206,10 +4198,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT Terra"
   },
   {
-    "id": "3a93e2a84435b3aa",
-    "source": "Budget & Resource Limits"
-  },
-  {
     "id": "3a95b6a45da2e143",
     "source": "Will run"
   },
@@ -4572,6 +4560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "405ba7d9f632df66",
     "source": "Step Lab has no valid steps."
+  },
+  {
+    "id": "4084515733777d0c",
+    "source": "No memories yet"
   },
   {
     "id": "4087309c8126aad8",
@@ -5742,10 +5734,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Filter by type"
   },
   {
-    "id": "511a7125342dd901",
-    "source": "How Juno writes. Your custom instructions still take priority."
-  },
-  {
     "id": "512b760984717cf8",
     "source": "Mentions légales de Juno (chat.liams.dev) : éditeur, directeur de la publication, hébergeur et propriété intellectuelle, conformément à la loi pour la confiance dans l'économie numérique (LCEN)."
   },
@@ -6302,6 +6290,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open Code runs"
   },
   {
+    "id": "5a3686b7f4ac1c81",
+    "source": "Every research worker in this round answered in prose without searching or opening a page, so the round produced no findings. The report is written from the sources gathered so far."
+  },
+  {
     "id": "5a415ca1d46cddf4",
     "source": "Button · variants"
   },
@@ -6668,6 +6660,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5f22c60b3d40c9b9",
     "source": "Data & privacy"
+  },
+  {
+    "id": "5f25947bd69dcefe",
+    "source": "Budget and limits"
   },
   {
     "id": "5f2c12911f38c3e1",
@@ -11682,6 +11678,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You're generating a lot — give it a minute."
   },
   {
+    "id": "a38776bc6077b18d",
+    "source": "Juno saves durable facts from your chats here."
+  },
+  {
     "id": "a39a7ffad4a3013f",
     "source": "assistant"
   },
@@ -12012,6 +12012,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7b4cf9f7e429771",
     "source": "Hint"
+  },
+  {
+    "id": "a7baf1fef520c39c",
+    "source": "Identity and model"
   },
   {
     "id": "a7e0b520f0b3bf78",
@@ -13878,10 +13882,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "If an account exists for that email, a password-reset link is on its way."
   },
   {
-    "id": "c1ba75e2674d0b92",
-    "source": "Execution Time"
-  },
-  {
     "id": "c1d5c40b2fef2b96",
     "source": "Lighten"
   },
@@ -14732,10 +14732,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cd9836606526ab59",
     "source": "Search an opened page for a word, phrase or regular expression and get the matching chunks in full. Use it to pull the exact figure, date or quote you will cite."
-  },
-  {
-    "id": "cd9eeeb3d37eca4a",
-    "source": "What Juno is allowed to remember about you between conversations."
   },
   {
     "id": "cda28699a510f244",
@@ -16126,10 +16122,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Describe what to build, test, refactor, or fix…"
   },
   {
-    "id": "de355f84fcf99733",
-    "source": "Files you delete land here and stay recoverable."
-  },
-  {
     "id": "de3f769e4f7e5595",
     "source": "Please upload a JPEG, PNG, WebP, or GIF."
   },
@@ -16184,6 +16176,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ded4ea674a939deb",
     "source": "Couldn’t delete the task."
+  },
+  {
+    "id": "dedefd288735d471",
+    "source": "Your custom instructions still take priority."
   },
   {
     "id": "dee6a104e47f7773",
@@ -17710,6 +17706,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t save your name."
   },
   {
+    "id": "f456248363a0e7d5",
+    "source": "Pinned projects"
+  },
+  {
     "id": "f45cb54c74d8f716",
     "source": "Apple Music isn’t set up on this server yet."
   },
@@ -18306,20 +18306,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hide the inspector"
   },
   {
-    "id": "fd77fdf589d91cb5",
-    "source": "No memories saved yet. Juno builds memories across conversations."
-  },
-  {
     "id": "fd787ef3d46c9b82",
     "source": "This month"
   },
   {
     "id": "fd84a648acc1a29a",
     "source": ": vos informations de compte sont consultables et modifiables directement dans les réglages du Service."
-  },
-  {
-    "id": "fd8b8dae44216610",
-    "source": "Danger zone"
   },
   {
     "id": "fd9890d479058681",

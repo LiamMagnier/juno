@@ -17,7 +17,11 @@ export function MemorySection() {
 
   return (
     <>
-      <SettingsGroup title="Memory" description="What Juno is allowed to remember about you between conversations.">
+      {/* No title and no lede: the pane header directly above this is "Memory"
+          with the registry's one-line description, and this group used to
+          repeat both — the same word one rung down and a paraphrase of the
+          same sentence. The pane's lede is this group's lede. */}
+      <SettingsGroup>
         <SettingRow
           label="Reference saved memories"
           htmlFor="memory-enabled"
