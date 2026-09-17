@@ -30,12 +30,18 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-/** Rule-bounded figure frame — the ONLY outer chrome any learning block gets. */
+/** Rule-bounded figure frame — the ONLY outer chrome any learning block gets.
+ *
+ *  Also the block's size class (`@container`): a Step Lab's five-track station
+ *  row or a comparison's ruled table needs a width, and the width it has is
+ *  this frame's, not the window's — the transcript can be 412px wide beside a
+ *  canvas on a 1440px screen. Every `@[…]:` step in the learning blocks reads
+ *  the nearest container, which is this. */
 export function BlockShell({ className, children, ...props }: React.ComponentPropsWithoutRef<"section">) {
   return (
     <section
       className={cn(
-        "relative my-6 border-y border-border/60 py-5 text-foreground",
+        "@container relative my-6 border-y border-border/60 py-5 text-foreground",
         "motion-safe:animate-rise-in",
         className
       )}

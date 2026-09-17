@@ -43,11 +43,12 @@ export type SplitBounds = { minWidth: number; maxWidth: number };
  *    container too narrow to give both columns what they want — a floor that
  *    cannot be reached is a handle that appears stuck.
  *  - `cssWidth` is for a pane whose UNDRAGGED width comes from a CSS class
- *    (the thought dock's `lg:w-[30rem]`, the Work rail's `22rem`/`26rem`
- *    track). That width is rendered by CSS no matter what these bounds say, so
- *    a max below it does not make the pane narrower — it only makes the HANDLE
- *    lie: pointer-down reads the live edge, clamps, and snaps the pane
- *    inwards before the user has moved. Keeping the CSS default reachable is
+ *    (the thought dock's `@[50rem]/split:w-[30rem]`, the Work rail's
+ *    `clamp(22rem, 35%, 26rem)` track). That width is rendered by CSS no
+ *    matter what these bounds say, so a max below it does not make the pane
+ *    narrower — it only makes the HANDLE lie: pointer-down reads the live
+ *    edge, clamps, and snaps the pane inwards before the user has moved.
+ *    Keeping the CSS default reachable is
  *    what stops that.
  */
 export function splitBounds({
@@ -106,8 +107,8 @@ type SplitPaneOptions = {
    */
   ssrWidth?: number;
   /**
-   * Whether the stored width is actually applied at this viewport. Below the
-   * breakpoint where these panes go full-bleed there is no width to constrain,
+   * Whether the stored width is actually applied at this container width.
+   * Below the width where these panes go full-bleed there is no width to constrain,
    * and clamping there destroys a width chosen on a wide monitor to satisfy a
    * constraint that does not exist — `resize` fires continuously on a phone
    * (the URL bar alone), so one scroll was enough to rewrite a 700px
@@ -259,6 +260,22 @@ export function useSplitPane({
       if (appliesNow()) setWidth((current) => (current == null ? current : clamp(current, containerWidth)));
     };
     sync();
+    // A ResizeObserver on the CONTAINER, not a `resize` listener on the window.
+    // The container's width changes without the window's every time the
+    // sidebar expands or collapses — 240px at a stroke — and that is exactly
+    // the move a window listener slept through: a dock clamped at one width
+    // stayed there while the transcript beside it went under the floor these
+    // bounds exist to hold. The observer also reports once on `observe`, which
+    // is the first honest measurement (the initial state had to guess from the
+    // viewport because the ref attaches with the first commit). No container
+    // yet — the Work grid before its task has loaded — falls back to the window
+    // until `active` re-runs this with the grid in place.
+    const container = containerRef.current;
+    if (container && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => sync());
+      observer.observe(container);
+      return () => observer.disconnect();
+    }
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
     // `active` re-runs it on open: a width stored while the sidebar was

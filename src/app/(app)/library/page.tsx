@@ -94,9 +94,19 @@ const SORTS: { key: LibrarySort; label: string }[] = [
 ];
 
 /** Checkbox · name · type · size · added · actions. The row and its header
- *  share one template so the columns line up without a table. */
+ *  share one template so the columns line up without a table.
+ *
+ *  Stepped on the CONTENT COLUMN (`page`), not the window. The six-track
+ *  template reserves 476px of fixed columns, and keyed to `md:` it arrived at
+ *  a 768px WINDOW — where, with the sidebar in flow, the column is 704 and the
+ *  name gets 172px, 116 after its thumbnail. Worse, the name column SHRANK as
+ *  the window grew: 1023 (sidebar floating, column 911) gave it ~411px; 1024
+ *  (sidebar pushing, column 720) gave it 172. The sixth track now waits for a
+ *  64rem column; the five-track step keeps its 640, which inside the shell was
+ *  never a window number to begin with. Every per-cell `hidden`/`block` gate
+ *  below rides the same two queries, or a cell lands in the wrong track. */
 const browserGrid =
-  "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-3 sm:grid-cols-[1.25rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] md:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
+  "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-3 @[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] @5xl/page:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
 
 /** The hover-raised row, the house recipe for a row in a list. */
 const rowClass =
@@ -360,7 +370,7 @@ function MobileItemMenu({
           variant={triggerVariant ?? "ghost"}
           size="icon-sm"
           aria-label={`Actions for ${item.fileName}`}
-          className={cn("text-muted-foreground", triggerClassName ?? "sm:hidden")}
+          className={cn("text-muted-foreground", triggerClassName ?? "@[40rem]/page:hidden")}
         >
           <ActionIcons.more className="size-4" />
         </Button>
@@ -404,7 +414,13 @@ function MobileItemMenu({
 }
 
 function GridItemPreview({ item }: { item: LibItem }) {
-  const preview = <FilePreview item={item} className="size-full" sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw" />;
+  // `sizes` can only speak in window widths, so it says the one true thing it
+  // can: below 640 there is no sidebar and a tile is half the window; above it
+  // the tile grid steps on the content column (3-up from 40rem, 4-up from
+  // 64rem, a `max-w-5xl` page), which caps a tile near 320px however wide the
+  // window is. The old `33vw`/`25vw` rungs were keyed to a 1024 WINDOW and
+  // fetched a 480px image for a 156px tile.
+  const preview = <FilePreview item={item} className="size-full" sizes="(max-width: 639px) 50vw, 20rem" />;
   return item.deletedAt ? (
     <div className="group/preview block size-full" aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
@@ -534,7 +550,7 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
   if (view === "grid") {
     return (
       <div
-        className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4"
+        className="mt-5 grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @5xl/page:grid-cols-4"
         aria-label="Loading files"
       >
         {[...Array(8)].map((_, index) => (
@@ -862,7 +878,7 @@ export default function LibraryPage() {
                 variant="ghost"
                 size="sm"
                 onClick={toggleSelectAll}
-                className={cn("shrink-0 text-muted-foreground", view === "list" && "sm:hidden")}
+                className={cn("shrink-0 text-muted-foreground", view === "list" && "@[40rem]/page:hidden")}
               >
                 {allSelected ? "Clear visible" : "Select"}
               </Button>
@@ -944,7 +960,7 @@ export default function LibraryPage() {
           <div
             role="list"
             aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}
-            className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4"
+            className="grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @5xl/page:grid-cols-4"
           >
             {filtered.map((item, i) => (
               <LibraryGridItem
@@ -972,9 +988,9 @@ export default function LibraryPage() {
               label={allSelected ? "Deselect all visible files" : "Select all visible files"}
             />
             <span>Name</span>
-            <span className="hidden sm:block">Type</span>
-            <span className="hidden md:block">Size</span>
-            <span className="hidden sm:block">Added</span>
+            <span className="hidden @[40rem]/page:block">Type</span>
+            <span className="hidden @5xl/page:block">Size</span>
+            <span className="hidden @[40rem]/page:block">Added</span>
             <span className="sr-only">Actions</span>
           </div>
 
@@ -1018,10 +1034,10 @@ export default function LibraryPage() {
                           {item.fileName}
                         </a>
                       )}
-                      <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground sm:hidden">
+                      <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground @[40rem]/page:hidden">
                         {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
                       </p>
-                      <div className="mt-0.5 hidden min-h-4 items-center font-mono text-caption text-muted-foreground sm:flex">
+                      <div className="mt-0.5 hidden min-h-4 items-center font-mono text-caption text-muted-foreground @[40rem]/page:flex">
                         {item.conversationId ? (
                           <Link
                             href={`/chat/${item.conversationId}`}
@@ -1044,17 +1060,17 @@ export default function LibraryPage() {
                     </div>
                   </div>
 
-                  <span className="hidden font-mono text-caption text-muted-foreground sm:block">{typeLabel(item)}</span>
-                  <span className="hidden font-mono text-caption tabular-nums text-muted-foreground md:block">{formatBytes(item.size)}</span>
+                  <span className="hidden font-mono text-caption text-muted-foreground @[40rem]/page:block">{typeLabel(item)}</span>
+                  <span className="hidden font-mono text-caption tabular-nums text-muted-foreground @5xl/page:block">{formatBytes(item.size)}</span>
                   <time
                     dateTime={item.createdAt}
                     title={new Date(item.createdAt).toLocaleString()}
-                    className="hidden font-mono text-caption tabular-nums text-muted-foreground sm:block"
+                    className="hidden font-mono text-caption tabular-nums text-muted-foreground @[40rem]/page:block"
                   >
                     {timeAgo(item.createdAt)}
                   </time>
 
-                  <div className="hidden items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/row:opacity-100 sm:flex coarse:opacity-100">
+                  <div className="hidden items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/row:opacity-100 @[40rem]/page:flex coarse:opacity-100">
                     <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
                     {item.versionCount > 0 && (
                       <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />

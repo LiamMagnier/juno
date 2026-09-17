@@ -7,7 +7,7 @@ import { GitFork, GripVertical, Loader2 } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
-import { splitBounds, useSplitPane } from "@/hooks/use-split-pane";
+import { useSplitPane } from "@/hooks/use-split-pane";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
@@ -21,6 +21,7 @@ import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -57,8 +58,6 @@ interface ChatViewProps {
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
 const CANVAS_WIDTH_KEY = "juno:canvas-width";
-const CANVAS_MIN_WIDTH = 420;
-const CHAT_MIN_WIDTH = 320;
 
 /**
  * Whether the system keyboard conventions are Apple's. Only used to decide
@@ -76,87 +75,7 @@ function isApplePlatform() {
  * it is a full-bleed one. */
 const CANVAS_SSR_WIDTH = 560;
 
-function canvasWidthBounds(containerWidth: number) {
-  return splitBounds({
-    containerWidth,
-    paneMin: CANVAS_MIN_WIDTH,
-    // 320 in its own right, not CHAT_MIN_WIDTH reused: this is how far the
-    // canvas itself may be squeezed on a container that cannot give both
-    // columns what they want, and the two numbers coinciding is arithmetic
-    // rather than a shared rule.
-    paneFloor: 320,
-    primaryMin: CHAT_MIN_WIDTH,
-    fraction: 0.82,
-  });
-}
-
-/* ─── Thought dock width ──────────────────────────────────────────────────────
- * The dock shipped as a fixed column on the reasoning that it "holds one
- * fixed-measure column of receipts" and so had not earned a handle. Overruled:
- * the user wants the control, in both directions, at any time.
- *
- * Deliberately its own key and its own bounds, but the SAME mechanism as the
- * canvas — pointer capture, cursor/user-select save-restore, clamp-on-restore.
- *
- * THE DEFAULT DOES NOT MOVE. `null` means "never dragged", and null renders the
- * original `lg:w-[30rem]` class untouched. Only a width the user chose and we
- * persisted is ever applied as an inline override — which also keeps 30rem
- * honest if the root font size is not 16px, where a hardcoded 480 would not be.
- */
 const THOUGHT_WIDTH_KEY = "juno:thought-width";
-/* The FLOOR, not a new default. SAME NUMBER, TRUE REASON — this comment used
- * to derive 400 from the 5rem label column of the panel's `LEDGER` grid, and
- * `LEDGER` no longer exists: the panel is one spine of steps on one row recipe.
- *
- * The arithmetic that holds now: the spine's 20px marker column, its 10px
- * gutter and the scroller's 12px inset on both sides leave the label column
- * roughly 350px at the floor. Below that a reasoning paragraph — still the
- * largest surface in the dock, and the reason the number is 400 rather than
- * 320 — drops under ~45 characters, which is the point at which continuous
- * reading costs more in return sweeps than the narrow dock saves in chat
- * width. A ledger was legible at 320; a reading column is not. */
-const THOUGHT_MIN_WIDTH = 400;
-/* 30rem at the default 16px root — the width the dock already has. Used ONLY as
- * the starting point for a keyboard nudge (which needs a number to add to) and
- * for the handle's aria-valuenow. It is never applied as a width: an undragged
- * dock keeps rendering the `lg:w-[30rem]` class itself. */
-const THOUGHT_DEFAULT_WIDTH = 480;
-
-function thoughtWidthBounds(containerWidth: number) {
-  return splitBounds({
-    containerWidth,
-    paneMin: THOUGHT_MIN_WIDTH,
-    paneFloor: 280,
-    // Reserves CHAT_MIN_WIDTH exactly as canvasWidthBounds does, so dragging the
-    // dock can never squeeze the chat below phone width. The 0.6 cap (vs the
-    // canvas's 0.82) is the one honest difference: the canvas holds documents the
-    // user edits, this holds receipts read beside the chat.
-    primaryMin: CHAT_MIN_WIDTH,
-    fraction: 0.6,
-    // THE DEFAULT MUST ALWAYS BE REACHABLE. `lg:w-[30rem]` is rendered by CSS for
-    // an undragged dock no matter what these bounds say, so a max below 480 does
-    // not make the panel narrower — it only makes the HANDLE lie: pointer-down
-    // (which reads the live edge, i.e. 480) would clamp and snap the dock ~56px
-    // narrower before the user moved, and the "grow" arrow would shrink it. That
-    // happens on any lg container under 800px — a 1024 tablet or a half-screen
-    // window with the sidebar out. `splitBounds` caps it by the container so the
-    // dock can still never exceed the layout it lives in.
-    cssWidth: THOUGHT_DEFAULT_WIDTH,
-  });
-}
-
-/* Below lg BOTH docked columns are full-bleed `w-full` — no
- * `lg:w-[var(--juno-thought-width)]`, no `lg:w-[var(--juno-canvas-width)]` — so
- * there is no width to constrain, and clamping there would destroy a width
- * chosen on a wide monitor to satisfy a constraint that does not exist.
- *
- * The dock has always said so; the canvas did not, and clamped at every
- * breakpoint. That was not harmless: `resize` fires continuously on a phone (the
- * URL bar sliding away is enough), so one scroll rewrote a canvas width chosen on
- * a monitor down to the phone bounds and persisted it — for a column that was
- * rendering `w-full` and never read the number. One gate now, used by both. */
-const splitResizeApplies = () =>
-  typeof window !== "undefined" && !window.matchMedia("(max-width: 1023px)").matches;
 
 // A fork carries the transcript up to the fork point into a fresh, unsaved
 // branch. It rides the private-mode transport (full history is sent with each
@@ -952,7 +871,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [openArtifact, closingArtifact]);
 
   const openArtifactByIdentifier = (identifier: string, opts?: { fullscreen?: boolean }) => {
-    if (voiceOpen && typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+    if (voiceOpen && !splitEngaged(layoutRef.current)) {
       toast.error("End voice mode before opening an artifact on this screen, so the microphone controls stay visible.");
       return;
     }
@@ -1005,13 +924,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    * seeding the same failed call twice fires twice, where a prop carrying the
    * same string would have to smuggle a nonce alongside it to be noticed.
    *
-   * Below `lg` the dock covers the chat, so it has to hand the column back
+   * Below the split the dock covers the chat, so it has to hand the column back
    * before the composer it just filled can be seen — the same rule the canvas
    * quote flow follows.
    */
   const seedComposerDraft = React.useCallback((text: string) => {
     if (typeof window === "undefined") return;
-    if (window.matchMedia("(max-width: 1023px)").matches) openThoughtPanel(null);
+    if (!splitEngaged(layoutRef.current)) openThoughtPanel(null);
     window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: text }));
   }, [openThoughtPanel]);
 
@@ -1058,6 +977,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       setOpenId: openThoughtPanel,
       container: thoughtContainer,
       seedDraft: seedComposerDraft,
+      coversChat: () => !splitEngaged(layoutRef.current),
     }),
     [thoughtOpenId, openThoughtPanel, thoughtContainer, seedComposerDraft]
   );
@@ -1081,7 +1001,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // default, so "reset" has to be a measurement.
     resetWidth: (containerWidth) => Math.round(containerWidth * 0.46),
     ssrWidth: CANVAS_SSR_WIDTH,
-    applies: splitResizeApplies,
+    applies: () => splitEngaged(layoutRef.current),
     active: !!openArtifact && !fullscreen,
     // The canvas is the one pane with a legitimate "must be huge" case — it
     // holds documents being edited — so a drag past the max asks the shell for
@@ -1095,11 +1015,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     containerRef: layoutRef,
     bounds: thoughtWidthBounds,
     // THE DEFAULT DOES NOT MOVE: null, not a recomputed number, so an undragged
-    // dock keeps rendering `lg:w-[30rem]` itself and stays honest at a root font
+    // dock keeps rendering `@[50rem]/split:w-[30rem]` itself and stays honest at a root font
     // size that is not 16px.
     resetWidth: () => null,
     cssWidth: THOUGHT_DEFAULT_WIDTH,
-    applies: splitResizeApplies,
+    applies: () => splitEngaged(layoutRef.current),
     active: thoughtOpenId != null,
     // Deliberately no `onRequestRoom`. The canvas escalates because of what it
     // holds; the dock is capped at 60% and reading receipts is never worth
@@ -1114,13 +1034,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   // Opening a canvas into a container too narrow for both columns buys the
   // sidebar's width first and re-measures on the next frame. The threshold is
-  // "neither column can have its minimum plus a gap", which is a different
-  // question from the drag-time one above: this one fires with no pointer
-  // anywhere near the handle.
+  // the split's own switch point: below SPLIT_MIN_WIDTH the CSS puts the canvas
+  // over the chat rather than beside it, and the sidebar's width is usually the
+  // difference. A different question from the drag-time one above: this one
+  // fires with no pointer anywhere near the handle.
   React.useEffect(() => {
     if (!openArtifact || fullscreen) return;
     const availableWidth = layoutRef.current?.getBoundingClientRect().width;
-    if (!availableWidth || availableWidth >= CANVAS_MIN_WIDTH + CHAT_MIN_WIDTH + 32) return;
+    if (!availableWidth || availableWidth >= SPLIT_MIN_WIDTH) return;
     window.dispatchEvent(new CustomEvent("juno:collapse-sidebar"));
     window.requestAnimationFrame(() => reclampCanvas());
     // `reclampCanvas`, not `canvas`: the hook hands back a fresh object every
@@ -1129,14 +1050,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // `juno:collapse-sidebar` on repeat while a narrow layout stayed narrow.
   }, [fullscreen, openArtifact, reclampCanvas]);
 
-  // A canvas selection lands in the composer as a quote chip. Below lg the
-  // canvas covers the chat, so close it to bring the composer back into view.
+  // A canvas selection lands in the composer as a quote chip. Below the split
+  // the canvas covers the chat, so close it to bring the composer back into view.
   const handleQuote = React.useCallback(
     (quote: ComposerQuote) => {
       setComposerQuote(quote);
-      if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
-        closeArtifact();
-      }
+      if (!splitEngaged(layoutRef.current)) closeArtifact();
     },
     [closeArtifact]
   );
@@ -1290,7 +1209,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const planAllowsVoice = PLANS[quota.plan].voice;
 
   // Whether the composer — and so its Stop button — is on screen. The dock is
-  // `hidden lg:flex` behind a canvas or the thought dock below lg, and a
+  // `hidden` behind a canvas or the thought dock below the split, and a
   // display:none box never intersects, which is exactly the case the shell's
   // sweep exists for. Both refs are observed: the composer lives in one or the
   // other depending on whether a transcript exists yet.
@@ -1773,16 +1692,21 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       ref={layoutRef}
       data-juno-chat-root
       data-juno-chat-mount-id={chatMountId}
-      className="relative flex h-full min-h-0 w-full overflow-hidden"
+      // `@container/split`: this box is the size class for everything docked
+      // inside it (split-layout.ts). Every `@[50rem]/split:` step below, and
+      // the ones the thought and canvas panels carry, reads its width — never
+      // the window's, which the sidebar takes 304px of without telling anyone.
+      className="@container/split relative flex h-full min-h-0 w-full overflow-hidden"
     >
       {/* Chat column */}
-      {/* Below lg the canvas replaces the chat entirely — a split there leaves the
-          chat column narrower than a phone. The thought dock follows the same
-          precedent for the same reason, rather than inventing a second story. */}
+      {/* Below the split the canvas replaces the chat entirely — a split there
+          leaves the chat column narrower than a phone. The thought dock follows
+          the same precedent for the same reason, rather than inventing a second
+          story. */}
       <div
         className={cn(
           "relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-          (openArtifact || thoughtOpenId) && "hidden lg:flex"
+          (openArtifact || thoughtOpenId) && "hidden @[50rem]/split:flex"
         )}
       >
         {/* The column's header band: the conversation's title at the left
@@ -2158,9 +2082,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // screen ever said this column was draggable — and this is the one
             // panel in the product whose default width is most often wrong for
             // its content.
-            "lg:min-w-0 lg:border-l lg:border-border/70 lg:hover:border-border",
-            // Undragged: the ORIGINAL default class, byte-for-byte.
-            thought.width == null ? "lg:w-[30rem]" : "lg:w-[var(--juno-thought-width)]",
+            "@[50rem]/split:min-w-0 @[50rem]/split:border-l @[50rem]/split:border-border/70 @[50rem]/split:hover:border-border",
+            // Undragged: the default class, on the split's own step.
+            thought.width == null ? "@[50rem]/split:w-[30rem]" : "@[50rem]/split:w-[var(--juno-thought-width)]",
             thoughtOpenId
               ? // The entrance is a MOUNT effect, so it is dropped for good the
                 // moment the user grabs the handle. Re-adding `animate-in` after
@@ -2178,8 +2102,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             thought.resizing && "select-none"
           )}
         >
-          {/* Below lg the dock is full-bleed `w-full`, so there is nothing to
-              resize and the handle is display:none — matching the canvas. */}
+          {/* Below the split the dock is full-bleed `w-full`, so there is nothing
+              to resize and the handle is display:none — matching the canvas. */}
           <button
             type="button"
             {...thought.separatorProps}
@@ -2188,7 +2112,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             /* The hairline under the pointer tints BEFORE the grip appears, so
                the edge itself reads as draggable rather than only the 12px the
                grip happens to occupy. */
-            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none lg:flex lg:hover:bg-primary/10 lg:hover:before:bg-primary/40"
+            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
           >
             {/* `bg-popover`. The grip was `bg-background/90` behind a blur — the
                 page colour, over the page, i.e. a handle whose only visible part
@@ -2210,12 +2134,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         <div
           style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
           className={cn(
-            "relative z-40 size-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
+            "relative z-40 size-full bg-background @[50rem]/split:w-[var(--juno-canvas-width)] @[50rem]/split:min-w-[420px] @[50rem]/split:shrink-0 @[50rem]/split:border-l",
             canvas.resizing ? "select-none transition-none" : "ease-out-expo",
             openArtifact
               ? !canvas.resizing && "duration-base animate-in fade-in slide-in-from-right-4"
               : "pointer-events-none absolute inset-y-0 right-0 duration-fast animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
-            openArtifact && !fullscreen && "lg:relative"
+            openArtifact && !fullscreen && "@[50rem]/split:relative"
           )}
         >
           {/* The same separator contract the dock has, which this handle
@@ -2230,7 +2154,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {...canvas.separatorProps}
               aria-label="Resize canvas"
               title="Drag to resize canvas. Arrow keys adjust, Home resets."
-              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
+              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center @[50rem]/split:flex"
             >
               <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
                 <GripVertical className="size-3.5" />

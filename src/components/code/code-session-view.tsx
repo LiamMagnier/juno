@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { MessageList } from "@/components/chat/message-list";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { splitEngaged } from "@/components/chat/split-layout";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
@@ -490,6 +491,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    */
   const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
+  const layoutRef = React.useRef<HTMLDivElement>(null);
 
   /*
    * THE CANVAS, WHICH THIS SURFACE HAD STUBBED OUT.
@@ -552,14 +554,19 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     [closeArtifact],
   );
   const thoughtPanel = React.useMemo(
-    () => ({ openId: thoughtOpenId, setOpenId: openThoughtPanel, container: thoughtContainer }),
+    () => ({
+      openId: thoughtOpenId,
+      setOpenId: openThoughtPanel,
+      container: thoughtContainer,
+      coversChat: () => !splitEngaged(layoutRef.current),
+    }),
     [thoughtOpenId, openThoughtPanel, thoughtContainer],
   );
   // Self-heal, for the reason chat-view reconciles too: the dock is raw state
   // naming a message, and this surface swaps ids under it routinely — the live
   // streaming bubble is REPLACED by its persisted row when a run settles, which
   // unmounts the ActivityTimeline holding the panel and its only close button.
-  // What would be left is an empty card column covering the whole screen below lg.
+  // What would be left is an empty card column covering the whole screen below the split.
   React.useEffect(() => {
     if (!thoughtOpenId) return;
     if (!session.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
@@ -749,7 +756,14 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
-      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      {/* `@container/split` on the view's root rather than on the row below:
+          the two have the same inline size, and a `container-type` box is also
+          the containing block for `position: fixed` descendants, so the
+          container has to sit ABOVE the banner or a fullscreened canvas would
+          stop short of it. Same name as chat-view's mount, so the thought and
+          canvas panels — portalled into either surface — carry one set of
+          `@[50rem]/split:` classes. */}
+      <div ref={layoutRef} className="@container/split relative flex h-full min-h-0 w-full flex-col overflow-hidden">
         <CodeSessionBanner
           resolving={resolving}
           isCloud={isCloud}
@@ -775,20 +789,28 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           activity={currentActivity}
         />
 
-        {/* Transcript column ⇄ thought dock ⇄ canvas. Below lg a dock replaces
-            the transcript entirely, the precedent chat-view sets for both of its
-            docked columns: a split there leaves the transcript narrower than a
-            phone. A fullscreened canvas takes the row at every width, which is
-            what "fullscreen" means. One expression rather than stacked
-            conditional classes: `hidden lg:flex` and `lg:hidden` land in the
-            same cascade layer, so which won would depend on stylesheet order. */}
+        {/* Transcript column ⇄ thought dock ⇄ canvas. Below the split a dock
+            replaces the transcript entirely, the precedent chat-view sets for
+            both of its docked columns: a split there leaves the transcript
+            narrower than a phone. Each dock has its own step, derived from its
+            width plus the transcript's 320 floor (split-layout.ts): the 30rem
+            dock from 50rem of mount, the 34rem canvas from 54rem. Derived, so
+            the transcript can never be under 320 while split — which is why
+            the column carries no floor of its own; a `min-w` beside `shrink-0`
+            panes would only overflow the row. A fullscreened canvas takes the
+            row at every width, which is what "fullscreen" means. One
+            expression rather than stacked conditional classes: `hidden
+            @[50rem]/split:flex` and `@[50rem]/split:hidden` land in the same
+            cascade layer, so which won would depend on stylesheet order. */}
         <div className="flex min-h-0 flex-1">
           <div
             className={cn(
               "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
               openArtifact && artifactFullscreen
                 ? "hidden"
-                : (thoughtOpenId || openArtifact) && "hidden lg:flex",
+                : thoughtOpenId
+                  ? "hidden @[50rem]/split:flex"
+                  : openArtifact && "hidden @[54rem]/split:flex",
             )}
           >
             {hasMessages ? (
@@ -864,7 +886,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               // transcript column. Naming a layer here would instead put the
               // dock over the composer's own portalled dropdowns, which sit at
               // z-popper.
-              className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 lg:w-[30rem] lg:min-w-0 lg:border-l"
+              className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l"
             />
           )}
 
@@ -882,7 +904,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
             <div
               className={cn(
                 "relative h-full w-full min-w-0 bg-background duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
-                artifactFullscreen ? "flex-1" : "shrink-0 border-border lg:w-[34rem] lg:border-l",
+                artifactFullscreen ? "flex-1" : "shrink-0 border-border @[54rem]/split:w-[34rem] @[54rem]/split:border-l",
               )}
             >
               <CanvasPanel

@@ -276,12 +276,15 @@ export function ArtifactInlineCard({
         // `bg-card`, not `bg-card/40`. The card sits directly on the transcript
         // ground — true black in dark — so 40% of a 6.5% fill resolved to
         // ~2.6%: an artifact card that was, in dark, a border around the page.
-        "group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card",
+        // `@container`: the header below lays out by the card's own width — it
+        // sits in a transcript that can be 412px wide beside a canvas at any
+        // window width, and `sm:` was asking the window.
+        "@container group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card",
         "transition-colors duration-base ease-out-soft hover:border-border",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
     >
-      <header className="flex flex-col gap-2.5 px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-2.5 px-3.5 py-2.5 @[24rem]:flex-row @[24rem]:items-center @[24rem]:justify-between">
         {onOpen ? (
           <button
             type="button"
@@ -298,7 +301,7 @@ export function ArtifactInlineCard({
           <span className="flex min-w-0 flex-1 items-center gap-2.5">{identity}</span>
         )}
 
-        <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
+        <div className="flex shrink-0 items-center gap-1 self-end @[24rem]:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
           {!streaming && hasContent && viewOptions.length > 1 && (
             <SegmentedControl
@@ -314,7 +317,7 @@ export function ArtifactInlineCard({
           )}
           {onOpen && (
             <>
-              <span aria-hidden className="mx-1 hidden h-4 w-px shrink-0 bg-border/70 sm:block" />
+              <span aria-hidden className="mx-1 hidden h-4 w-px shrink-0 bg-border/70 @[24rem]:block" />
               <button
                 type="button"
                 onClick={onOpen}

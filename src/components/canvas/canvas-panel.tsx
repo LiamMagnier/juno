@@ -813,7 +813,9 @@ export function CanvasPanel({
 
         <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border/60" />
 
-        {/* Fullscreen only matters where the canvas shares the row with chat. */}
+        {/* Fullscreen only matters where the canvas shares the row with chat —
+            i.e. from the split mount's own step (split-layout.ts), not from a
+            window width the sidebar makes meaningless. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -821,7 +823,7 @@ export function CanvasPanel({
               size="icon-sm"
               onClick={onToggleFullscreen}
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-              className="hidden text-muted-foreground hover:text-foreground lg:inline-flex"
+              className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >
               {fullscreen ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
             </Button>

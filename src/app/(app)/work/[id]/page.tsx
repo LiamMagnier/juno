@@ -163,11 +163,23 @@ const WORK_RAIL_MIN_WIDTH = 288;
  * on purpose: this column is prose and tool output, not a phone-width fallback,
  * and squeezing it is how you end up reading a transcript four words wide. */
 const WORK_CONVERSATION_MIN_WIDTH = 480 + 40;
-/* 26rem — the widest track the undragged CSS can hand out (xl). Same rule as the
- * thought dock's 30rem: the class renders regardless of these bounds, so a max
- * below it would only make the handle snap the rail inwards before the user had
- * moved. */
+/* 26rem — the widest track the undragged CSS can hand out (the top of its
+ * clamp). Same rule as the thought dock's 30rem: the class renders regardless
+ * of these bounds, so a max below it would only make the handle snap the rail
+ * inwards before the user had moved. */
 const WORK_RAIL_CSS_WIDTH = 416;
+/* 22rem — the narrowest, and the one the split engages with. */
+const WORK_RAIL_DEFAULT_WIDTH = 352;
+/* Where the grid splits into two columns: the conversation at its floor (gap
+ * included) beside the rail at its narrowest — 872px, and the class strings say
+ * the same thing as `@[54.5rem]/thread:`. The `thread` container is the page's
+ * content box, which is exactly the box this grid fills, so the CSS and this
+ * number measure one thing. It used to be `lg:` in the classes and a
+ * matchMedia on 1024px OF WINDOW in the code, which with the sidebar out is a
+ * 672px grid: a 352 rail, a 40 gap and a 280px conversation, 200 under the
+ * floor declared a few lines up. Below the split the rail is a section stacked
+ * under the transcript and its width is whatever the page is. */
+const WORK_SPLIT_MIN_WIDTH = WORK_CONVERSATION_MIN_WIDTH + WORK_RAIL_DEFAULT_WIDTH;
 
 function workRailBounds(containerWidth: number) {
   return splitBounds({
@@ -182,14 +194,6 @@ function workRailBounds(containerWidth: number) {
     cssWidth: WORK_RAIL_CSS_WIDTH,
   });
 }
-
-/* The grid drops to one column below lg, where the rail is a section stacked
- * under the transcript and its width is whatever the page is. Same gate the
- * chat panes use, and for the same reason: clamping a stored width against a
- * layout that never reads it is how a width chosen on a monitor gets rewritten
- * to phone bounds by a phone's own scroll. */
-const workRailResizeApplies = () =>
-  typeof window !== "undefined" && !window.matchMedia("(max-width: 1023px)").matches;
 
 export default function WorkThreadPage() {
   const { id } = useParams<{ id: string }>();
@@ -682,10 +686,15 @@ export default function WorkThreadPage() {
     storageKey: WORK_RAIL_WIDTH_KEY,
     containerRef: gridRef,
     bounds: workRailBounds,
-    // null = never dragged = the 22rem/26rem track the CSS already gives it.
+    // null = never dragged = the clamp(22rem, 35%, 26rem) track the CSS already gives it.
     resetWidth: () => null,
     cssWidth: WORK_RAIL_CSS_WIDTH,
-    applies: workRailResizeApplies,
+    // Same gate the chat panes use, and for the same reason: clamping a stored
+    // width against a layout that never reads it is how a width chosen on a
+    // monitor gets rewritten to phone bounds by a phone's own scroll. Measured
+    // off the grid, the box the `thread` queries read, so it agrees with the
+    // CSS by construction.
+    applies: () => (gridRef.current?.getBoundingClientRect().width ?? 0) >= WORK_SPLIT_MIN_WIDTH,
     // The grid only exists once the task has loaded — the pre-content states
     // below render a single narrow column instead. Without this the hook would
     // measure its bounds against nothing while the skeleton was up and never
@@ -983,7 +992,10 @@ export default function WorkThreadPage() {
       measure="full"
       scroll={false}
       className="flex h-full min-h-0 flex-col"
-      contentClassName="flex min-h-0 flex-1 flex-col pb-0"
+      // `@container/thread`: the content box — the column less its gutter — is
+      // the box the grid below fills, so the split's `@[54.5rem]/thread:` steps
+      // and WORK_SPLIT_MIN_WIDTH measure the same thing.
+      contentClassName="@container/thread flex min-h-0 flex-1 flex-col pb-0"
     >
       <div className="mx-auto w-full max-w-[80rem] shrink-0">
         <AppPageHeader
@@ -1211,7 +1223,7 @@ export default function WorkThreadPage() {
              * same words they will land on.
              */}
             {(needsYou || railLead !== null) && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 lg:hidden">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 @[54.5rem]/thread:hidden">
                 {needsYou && <JumpLink href="#work-needs-you">Go to what needs you</JumpLink>}
                 {railLead !== null && (
                   <JumpLink href="#work-rail">
@@ -1250,7 +1262,7 @@ export default function WorkThreadPage() {
           measures `grid.right - pointerX`; with `px-4 sm:px-6` still on the grid
           that measurement was over by the padding, and the rail's edge landed a
           padding-width to the left of the pointer for the whole drag. */}
-      <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto @[54.5rem]/thread:overflow-hidden">
         <div
           ref={gridRef}
           style={
@@ -1259,13 +1271,19 @@ export default function WorkThreadPage() {
               : undefined
           }
           className={cn(
-            "mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 pb-8 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:pb-0",
-            // Undragged: the ORIGINAL tracks, byte-for-byte, including the xl
-            // step. A dragged width is one number at every size above lg —
-            // stepping it at xl would move a column the user had just placed.
+            "mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 pb-8 @[54.5rem]/thread:h-full @[54.5rem]/thread:grid-rows-[auto_minmax(0,1fr)] @[54.5rem]/thread:gap-y-0 @[54.5rem]/thread:overflow-hidden @[54.5rem]/thread:pb-0",
+            // Undragged: a rail that grows with the grid — 22rem at the split,
+            // 26rem from ~74rem of it, and no step between. It was `22rem` at
+            // lg and `26rem` at xl, and the step ran backwards for the reader:
+            // at the window where it fired the conversation LOST 64px as the
+            // window grew (at 1280 with the sidebar out it read 456 wide where
+            // 1279 gave 519). A share of the grid can only give the
+            // conversation more as the grid widens. A dragged width is one
+            // number at every size above the split — a rail that kept growing
+            // would move a column the user had just placed.
             rail.width == null
-              ? "lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]"
-              : "lg:grid-cols-[minmax(0,1fr)_var(--juno-work-rail-width)]"
+              ? "@[54.5rem]/thread:grid-cols-[minmax(0,1fr)_clamp(22rem,35%,26rem)]"
+              : "@[54.5rem]/thread:grid-cols-[minmax(0,1fr)_var(--juno-work-rail-width)]"
           )}
         >
           {needsYou && (
@@ -1273,7 +1291,7 @@ export default function WorkThreadPage() {
               id="work-needs-you"
               tabIndex={-1}
               aria-label="Waiting on you"
-              className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8 lg:pt-1"
+              className="min-w-0 space-y-4 @[54.5rem]/thread:col-start-2 @[54.5rem]/thread:row-start-1 @[54.5rem]/thread:border-l @[54.5rem]/thread:border-border/60 @[54.5rem]/thread:pb-6 @[54.5rem]/thread:pl-8 @[54.5rem]/thread:pt-1"
             >
               {questions.length > 0 && (
                 <div>
@@ -1315,7 +1333,7 @@ export default function WorkThreadPage() {
             </section>
           )}
 
-          <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:pb-6 lg:pt-1">
+          <div className="min-w-0 @[54.5rem]/thread:col-start-1 @[54.5rem]/thread:row-start-1 @[54.5rem]/thread:row-span-2 @[54.5rem]/thread:h-full @[54.5rem]/thread:overflow-y-auto @[54.5rem]/thread:pb-6 @[54.5rem]/thread:pt-1">
             {/* What it is doing right now, at the top of the column a reader
                 watching the run is looking at — the ChatGPT-Agent position —
                 rather than inside a rail section. Only while live: a finished
@@ -1355,8 +1373,8 @@ export default function WorkThreadPage() {
             tabIndex={-1}
             aria-label="Run detail"
             className={cn(
-              "min-w-0 space-y-4 focus-visible:outline-none lg:col-start-2 lg:row-start-2 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8",
-              !needsYou && "lg:pt-1"
+              "min-w-0 space-y-4 focus-visible:outline-none @[54.5rem]/thread:col-start-2 @[54.5rem]/thread:row-start-2 @[54.5rem]/thread:h-full @[54.5rem]/thread:min-h-0 @[54.5rem]/thread:overflow-y-auto @[54.5rem]/thread:border-l @[54.5rem]/thread:border-border/60 @[54.5rem]/thread:pb-6 @[54.5rem]/thread:pl-8",
+              !needsYou && "@[54.5rem]/thread:pt-1"
             )}
           >
             {railOrder.map((name) => sections[name])}
@@ -1368,14 +1386,14 @@ export default function WorkThreadPage() {
               would be missing exactly when an approval is open. An overlay grid
               item rather than a child of either — it is `pointer-events-none`
               apart from the 12px grip, so the panels underneath keep every
-              click. Hidden below lg, where there is one column and nothing to
+              click. Hidden below the split, where there is one column and nothing to
               split.
 
               LAST in the DOM although it paints down the middle: grid places it
               explicitly, so source order is free to be tab order, and a splitter
               is the last thing a keyboard user wants between them and the
               conversation. */}
-          <div className="pointer-events-none relative hidden lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:block">
+          <div className="pointer-events-none relative hidden @[54.5rem]/thread:col-start-2 @[54.5rem]/thread:row-start-1 @[54.5rem]/thread:row-span-2 @[54.5rem]/thread:block">
             <button
               type="button"
               {...rail.separatorProps}
@@ -1426,9 +1444,10 @@ function NeedsYouHeading({ count, children }: { count: number; children: React.R
 /**
  * A link down the page, on the layout where down the page is a long way.
  *
- * `lg:hidden` lives here rather than at the call sites because it is the whole
- * reason these exist: on a desktop both targets are already on screen, and a
- * link to something visible is noise a reader has to rule out.
+ * The row of these is hidden from the split (`@[54.5rem]/thread:hidden`) because
+ * that is the whole reason they exist: with two columns both targets are
+ * already on screen, and a link to something visible is noise a reader has to
+ * rule out.
  */
 function JumpLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (

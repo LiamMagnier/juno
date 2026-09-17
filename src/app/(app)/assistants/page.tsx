@@ -183,7 +183,7 @@ export default function AssistantsPage() {
             }
           />
         ) : loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-hidden="true">
             {[0, 1, 2].map((index) => (
               <Skeleton
                 key={index}
@@ -215,7 +215,7 @@ export default function AssistantsPage() {
             }
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
             {filteredAssistants.map((assistant, i) => (
               <Card
                 key={assistant.id}

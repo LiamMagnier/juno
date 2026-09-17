@@ -263,7 +263,7 @@ export function UsageStats({ data, loading, error, reload }: ReturnType<typeof u
 
   if (loading || !data) {
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 @[36rem]/pane:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
           <StatSkeleton key={i} i={i} />
         ))}
@@ -274,7 +274,11 @@ export function UsageStats({ data, loading, error, reload }: ReturnType<typeof u
   const { month } = data;
   const streakHot = month.currentStreakDays >= 3;
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    // Four across from 36rem of PANE (`@container/pane`, declared by both the
+    // settings page and the modal), not from a 1024px window: on the page the
+    // pane is what the rail leaves — 416px at a 1024 window with the sidebar
+    // out — and `lg:` put four 95px cards there with `px-4` each.
+    <div className="grid grid-cols-2 gap-3 @[36rem]/pane:grid-cols-4">
       <Stat
         i={0}
         label="This month"
@@ -360,7 +364,7 @@ export function UsageActivity({ data, loading }: Pick<ReturnType<typeof useProfi
 export function UsageDetail({ data, loading }: Pick<ReturnType<typeof useProfileUsage>, "data" | "loading">) {
   if (loading || !data) return null;
   return (
-    <div className="grid gap-8 py-2 md:grid-cols-2">
+    <div className="grid gap-8 py-2 @[32rem]/pane:grid-cols-2">
       <div>
         <p className="mb-3 text-ui font-medium text-foreground">Weekly rhythm</p>
         <Rhythm daily={data.stats.daily} />

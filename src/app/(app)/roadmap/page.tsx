@@ -291,7 +291,7 @@ export default function RoadmapPage() {
             }
           />
         ) : loading ? (
-          <div className="mt-6 grid gap-4 lg:grid-cols-4">
+          <div className="mt-6 grid gap-4 @[60rem]/page:grid-cols-4">
             {[...Array(4)].map((_, c) => (
               <div key={c} className="space-y-3">
                 {[...Array(3)].map((_, i) => (
@@ -317,8 +317,15 @@ export default function RoadmapPage() {
           />
         ) : (
           <>
-            {/* Desktop: columns */}
-            <div className="mt-6 hidden gap-4 lg:grid lg:grid-cols-4">
+            {/* The board, from 60rem of CONTENT COLUMN — not from a 1024px window.
+                Four RequestCards (`p-4`, a vote button) need ~220px each before
+                a title survives, and the column is what the sidebar leaves, not
+                what the window has: at a 1024 window with the sidebar out the
+                column is 720, and `lg:` drew four 156px columns there where a
+                1023 window drew a full-width list. Skeleton, board and list all
+                switch on the identical query so the two halves never show
+                together. */}
+            <div className="mt-6 hidden gap-4 @[60rem]/page:grid @[60rem]/page:grid-cols-4">
               {BOARD_COLUMNS.map((status) => {
                 const items = filtered.filter((r) => r.status === status).sort((a, b) => b.voteCount - a.voteCount);
                 const meta = STATUS_META[status];
@@ -343,8 +350,8 @@ export default function RoadmapPage() {
               })}
             </div>
 
-            {/* Mobile: status tabs + list */}
-            <div className="mt-5 lg:hidden">
+            {/* Narrow column: status tabs + list */}
+            <div className="mt-5 @[60rem]/page:hidden">
               {/* The same single-select-as-N-switches fault the category row had,
                   so the same fix: a tablist with roving focus. Geometry and type
                   are untouched — these pills are already sans on the ladder. */}

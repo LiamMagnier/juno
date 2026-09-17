@@ -88,7 +88,7 @@ export function PersonalizationSection() {
         description="How Juno writes. Your custom instructions still take priority."
       >
         <SettingBlock label="Personality">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Response style">
+          <div className="grid grid-cols-1 gap-2 @[28rem]/pane:grid-cols-2" role="radiogroup" aria-label="Response style">
             {PERSONALITIES.map((p, i) => {
               const selected = activePersonality === p.id;
               return (
