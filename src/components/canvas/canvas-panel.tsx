@@ -813,7 +813,15 @@ export function CanvasPanel({
 
         <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border/60" />
 
-        {/* Fullscreen only matters where the canvas shares the row with chat. */}
+        {/* Fullscreen only matters where the canvas shares the row with chat —
+            i.e. from the split mount's own step (split-layout.ts), not from a
+            window width the sidebar makes meaningless. Code docks this canvas
+            four rem later (its 34rem pane plus the transcript's floor), so
+            between 50 and 54rem of a Code mount the button offers to cover a
+            transcript the canvas already covers; toggling there only swaps
+            `flex-1` for `shrink-0` on a full-bleed pane, and one shared step
+            is what lets this panel carry one set of classes into both
+            surfaces. */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -821,7 +829,7 @@ export function CanvasPanel({
               size="icon-sm"
               onClick={onToggleFullscreen}
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-              className="hidden text-muted-foreground hover:text-foreground lg:inline-flex"
+              className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >
               {fullscreen ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
             </Button>

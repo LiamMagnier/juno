@@ -371,7 +371,10 @@ export function ApprovalCard({
       aria-labelledby={labelId}
       aria-busy={sending || undefined}
       className={cn(
-        "my-5 w-full rounded-card border px-4 py-4",
+        // `@container`: the argument rows below lay out by the card's own width —
+        // it sits in a transcript that can be 412px wide beside a canvas at any
+        // window width, and `sm:` was asking the window.
+        "@container my-5 w-full rounded-card border px-4 py-4",
         answerable
           ? // This is holding a generation open. It has to out-shout the prose
             // it sits between, or it gets scrolled past and the model just
@@ -487,8 +490,8 @@ export function ApprovalCard({
           ) : (
             <dl className="space-y-1.5">
               {detailRows.map(([key, value]) => (
-                <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-                  <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 sm:w-28">{key}</dt>
+                <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
+                  <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 @[24rem]:w-28">{key}</dt>
                   <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
                     {formatDetailValue(value)}
                   </dd>

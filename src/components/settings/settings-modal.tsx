@@ -68,7 +68,12 @@ export function SettingsModal() {
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogCloseButton className="z-10" />
 
-        <aside className="shrink-0 border-b border-border/60 p-3 md:w-56 md:border-b-0 md:border-r md:p-4">
+        {/* The modal's own layout keys on the window — a dialog is a full-bleed
+            surface whose width is a function of the window, the one case rule 11
+            allows. `@container/rail` and `@container/pane` are for what renders
+            INSIDE it: the rail and the sections read their own boxes, because
+            they also render on /settings under a different parent. */}
+        <aside className="@container/rail shrink-0 border-b border-border/60 p-3 md:w-56 md:border-b-0 md:border-r md:p-4">
           <div className="mb-3 hidden items-center justify-between px-1 md:flex">
             <h2 className="text-heading">Settings</h2>
             <Kbd aria-hidden="true">{modifier === "⌘" ? "⌘," : `${modifier}+,`}</Kbd>
@@ -77,7 +82,7 @@ export function SettingsModal() {
         </aside>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-5 pb-10 pt-12 sm:px-8 md:pt-7">
+          <div className="@container/pane mx-auto w-full max-w-2xl px-5 pb-10 pt-12 sm:px-8 md:pt-7">
             <SettingsPane section={section} tabpanel />
           </div>
         </div>

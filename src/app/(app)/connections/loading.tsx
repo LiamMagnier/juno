@@ -23,7 +23,7 @@ export default function ConnectionsLoading() {
         <Skeleton className="h-9 w-72 max-w-full rounded-field" />
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
         {[...Array(6)].map((_, i) => (
           <Skeleton
             key={i}

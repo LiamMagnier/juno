@@ -1067,6 +1067,7 @@ export function ThoughtProcessPanel({
   const findRef = React.useRef<HTMLInputElement>(null);
   const panel = useThoughtPanel();
   const seedDraft = panel?.seedDraft;
+  const coversChat = panel?.coversChat;
 
   const [view, setView] = useReasoningView();
   const [detailsOpen, setDetailsOpen] = React.useState(false);
@@ -1352,7 +1353,7 @@ export function ThoughtProcessPanel({
    * delivered to the person who clicked. */
   const jumpToCitation = React.useCallback(
     (citeIndex: number, url: string) => {
-      const onPhone = typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches;
+      const covering = coversChat?.() ?? false;
       const el = document.querySelector<HTMLElement>(
         `[data-juno-message="${CSS.escape(messageId)}"] [data-cite="${citeIndex}"]`,
       );
@@ -1360,15 +1361,15 @@ export function ThoughtProcessPanel({
         window.open(url, "_blank", "noopener,noreferrer");
         return;
       }
-      // Below lg the dock covers the chat, so a jump has to give it back first.
-      if (onPhone) onClose();
+      // Below the split the dock covers the chat, so a jump has to give it back first.
+      if (covering) onClose();
       window.requestAnimationFrame(() => {
         el.scrollIntoView({ block: "center", behavior: reduced.current ? "auto" : "smooth" });
         el.classList.add("animate-cite-flash");
         el.addEventListener("animationend", () => el.classList.remove("animate-cite-flash"), { once: true });
       });
     },
-    [messageId, onClose],
+    [coversChat, messageId, onClose],
   );
 
   /* ── ASK TO RUN AGAIN ────────────────────────────────────────────────────
@@ -1467,9 +1468,11 @@ export function ThoughtProcessPanel({
           eaten the header's content rather than sitting above it. */}
       <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/60 pl-3 pr-2 pt-safe">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {/* Below lg this dock covers the chat entirely, so the close control
-              has to read as a way BACK rather than as a dismissal. */}
-          <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 lg:hidden">
+          {/* Below the split this dock covers the chat entirely, so the close
+              control has to read as a way BACK rather than as a dismissal. The
+              step is the split mount's (chat-view, code-session-view), not the
+              window's: this panel is portalled into whichever surface owns it. */}
+          <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 @[50rem]/split:hidden">
             <ChevronLeft className="size-4" aria-hidden="true" />
             <span className="sr-only">Back to chat</span>
           </Pressable>
@@ -1478,7 +1481,7 @@ export function ThoughtProcessPanel({
               a shimmering sentence, a crossfading eyebrow, a second 1Hz clock,
               a translating trace viewport — is gone. The resting mark occupies
               the same 16px box so the title never shifts between states. */}
-          <span className="hidden w-4 shrink-0 items-center justify-center lg:flex">
+          <span className="hidden w-4 shrink-0 items-center justify-center @[50rem]/split:flex">
             {streaming ? (
               <ThinkingDots className="text-muted-foreground/70" />
             ) : (
@@ -1602,7 +1605,7 @@ export function ThoughtProcessPanel({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Pressable kind="icon" size="md" onClick={onClose} className="hidden lg:inline-flex" aria-label="Close">
+              <Pressable kind="icon" size="md" onClick={onClose} className="hidden @[50rem]/split:inline-flex" aria-label="Close">
                 <ActionIcons.dismiss className="size-4" aria-hidden="true" />
               </Pressable>
             </TooltipTrigger>

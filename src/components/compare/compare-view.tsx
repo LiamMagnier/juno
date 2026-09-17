@@ -355,9 +355,21 @@ export function CompareView() {
         />
       </div>
 
-      {/* Body: hero (until the first run) + the panes. Desktop keeps the page
-          fixed-height with per-pane scroll; mobile stacks and scrolls whole. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
+      {/* Body: hero (until the first run) + the panes. Side by side — a
+          fixed-height page with per-pane scroll — from the CONTENT COLUMN width
+          that gives every pane ~270px: 54rem for three panes, 40rem for two.
+          Below that the panes stack and the page scrolls whole. Keyed to the
+          column rather than the window: `md:` put three 218px panes into the
+          656px a 768 window's column has, and never asked how many panes there
+          were. The scroll switch rides the grid's own query, or stacked panes
+          would each get a third of a fixed height. Literal class strings per
+          branch so the JIT sees them. */}
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-y-auto",
+          panes.length === 3 ? "@[54rem]/page:overflow-hidden" : "@[40rem]/page:overflow-hidden"
+        )}
+      >
         {!hasRun && (
           <div className="flex shrink-0 flex-col items-center gap-4 pb-8 pt-6 text-center motion-safe:animate-rise-in">
             {/* The serif display rung, the product's voice for a human moment —
@@ -395,8 +407,9 @@ export function CompareView() {
         <div
           className={cn(
             "grid min-h-0 flex-1 grid-cols-1 divide-y divide-border/60 border-t border-border/60",
-            "md:divide-x md:divide-y-0",
-            panes.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2"
+            panes.length === 3
+              ? "@[54rem]/page:grid-cols-3 @[54rem]/page:divide-x @[54rem]/page:divide-y-0"
+              : "@[40rem]/page:grid-cols-2 @[40rem]/page:divide-x @[40rem]/page:divide-y-0"
           )}
         >
           {panes.map((pane) => (

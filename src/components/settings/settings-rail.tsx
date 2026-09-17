@@ -42,11 +42,20 @@ export function SettingsRail({
   hrefFor?: (id: SettingsSectionId) => string;
   className?: string;
 }) {
+  // A strip or a column, decided by the width the rail is GIVEN — its
+  // `@container/rail` parent (settings/page.tsx, settings-modal.tsx) — not by
+  // the window. It has two parents that go side by side at different widths:
+  // the page at 48rem of content column, the modal at a 768px window. Keyed to
+  // `md:`, the page's stacked layout (a 1024 window with the sidebar out) drew
+  // a vertical column of eight rows above the pane. The one rule that holds in
+  // both parents: a rail with 16rem or more to itself is the stacked layout's
+  // strip; narrower than that it is the side column (13.5rem on the page,
+  // 14rem less padding in the modal).
   const railClass = cn(
-    "surface-inset flex gap-1 overflow-x-auto rounded-card p-1.5 [scrollbar-width:none] md:flex-col md:overflow-visible [&::-webkit-scrollbar]:hidden",
+    "surface-inset flex flex-col gap-1 rounded-card p-1.5 [scrollbar-width:none] @[16rem]/rail:flex-row @[16rem]/rail:overflow-x-auto [&::-webkit-scrollbar]:hidden",
     className
   );
-  const rowClass = "w-auto shrink-0 whitespace-nowrap md:w-full";
+  const rowClass = "w-full shrink-0 whitespace-nowrap @[16rem]/rail:w-auto";
   // Arrow keys move between tabs and select in the same gesture — the ARIA
   // tabs pattern with automatic activation, which is also what the radio
   // hook implements, so it is reused rather than rewritten.

@@ -88,7 +88,7 @@ export function ProjectWorkList({
           }
         />
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Delegated work">
+        <ul className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-label="Delegated work">
           {filtered.map((work, i) => (
             <li
               key={work.id}

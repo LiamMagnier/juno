@@ -571,7 +571,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
             </button>
           ))}
         </div>
-        <div aria-hidden className="hidden shrink-0 flex-col items-center justify-center gap-1 sm:flex">
+        <div aria-hidden className="hidden shrink-0 flex-col items-center justify-center gap-1 @[30rem]:flex">
           <span className="h-6 w-px bg-border/60" />
           <span className="font-mono text-caption text-muted-foreground">×{layers}</span>
           <span className="h-6 w-px bg-border/60" />
@@ -791,11 +791,11 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
   }, []);
 
   return (
-    <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-start">
+    <div className="grid gap-3 @[30rem]:grid-cols-[1fr_auto_1fr_auto_1fr] @[30rem]:items-start">
       {stations.map((station, index) => (
         <React.Fragment key={index}>
           {index > 0 && (
-            <span aria-hidden className="relative hidden self-center px-1 font-mono text-ui text-muted-foreground/50 sm:block">
+            <span aria-hidden className="relative hidden self-center px-1 font-mono text-ui text-muted-foreground/50 @[30rem]:block">
               →
               <span
                 className={cn(
@@ -805,7 +805,7 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
               />
             </span>
           )}
-          <div className={cn("flex flex-col gap-1", "border-l border-border/50 pl-4 sm:border-l-0 sm:pl-0")}>
+          <div className={cn("flex flex-col gap-1", "border-l border-border/50 pl-4 @[30rem]:border-l-0 @[30rem]:pl-0")}>
             <Microcap className={cn("text-micro", station.capTone)}>{station.cap}</Microcap>
             <p className="font-sans text-body leading-6 text-foreground">{station.value}</p>
           </div>

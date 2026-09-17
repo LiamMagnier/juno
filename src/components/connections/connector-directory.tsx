@@ -301,7 +301,7 @@ function TileGrid({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
       {items.map((item, i) => (
         <ConnectorTile
           key={item.key}

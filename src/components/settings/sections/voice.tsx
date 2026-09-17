@@ -99,7 +99,7 @@ export function VoiceSection() {
       <SettingsGroup title="Read aloud" description="The voice Juno reads answers in. Press play to hear one.">
         {pickerAvailable ? (
           <SettingBlock label="Voice">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Read-aloud voice">
+            <div className="grid grid-cols-1 gap-2 @[28rem]/pane:grid-cols-2" role="radiogroup" aria-label="Read-aloud voice">
               {VOICES.map((v, i) => {
                 const selected = activeVoice === v.id;
                 const active = preview?.id === v.id;

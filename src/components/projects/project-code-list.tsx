@@ -89,7 +89,7 @@ export function ProjectCodeList({
           }
         />
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Code sessions">
+        <ul className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-label="Code sessions">
           {filtered.map((session, i) => (
             <li
               key={session.id}

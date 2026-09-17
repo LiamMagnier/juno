@@ -32,13 +32,25 @@ function SettingsPageContent() {
   return (
     <AppPage measure="wide">
       <AppPageHeader heading="Settings" lede={user.email} />
-      <div className="md:grid md:grid-cols-[13.5rem_minmax(0,1fr)] md:gap-10">
-        <aside className="mb-6 md:mb-0">
-          <div className="md:sticky md:top-2">
+      {/* Rail beside pane from 48rem of CONTENT COLUMN, not from a 768px
+          window. At a 1024 window with the sidebar out the column is 720, and
+          `md:` gave the pane 720 − 216 − 40 = 464px — four Stat cards at 95px
+          each. Below 48rem the rail is a strip above the pane, which then has
+          the whole column. */}
+      <div className="@[48rem]/page:grid @[48rem]/page:grid-cols-[13.5rem_minmax(0,1fr)] @[48rem]/page:gap-10">
+        {/* `@container/rail`: the rail reads ITS OWN width to choose between a
+            strip and a column (settings-rail.tsx), because it has two parents —
+            this page and the settings modal — that go side by side at
+            different widths. */}
+        <aside className="@container/rail mb-6 @[48rem]/page:mb-0">
+          <div className="@[48rem]/page:sticky @[48rem]/page:top-2">
             <SettingsRail active={section} hrefFor={hrefFor} onSelect={select} />
           </div>
         </aside>
-        <div className="min-w-0 max-w-3xl">
+        {/* `@container/pane`: the sections' grids read the pane — the width
+            they actually have — because the same sections render in the modal
+            under a different parent. */}
+        <div className="@container/pane min-w-0 max-w-3xl">
           <SettingsPane section={section} />
         </div>
       </div>

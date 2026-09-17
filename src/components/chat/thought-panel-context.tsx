@@ -45,6 +45,17 @@ export interface ThoughtPanelContextValue {
    * one.
    */
   seedDraft?: (text: string) => void;
+  /**
+   * Whether the docked column is currently COVERING the chat — full-bleed,
+   * below the split — rather than sitting beside it. The panel asks before it
+   * scrolls the transcript to a citation, and to decide whether its close
+   * control reads as "back" or as "close". Measured off the split mount by the
+   * surface that owns it (split-layout.ts), the same box the
+   * `@[50rem]/split:` classes read, so the code and the CSS cannot disagree
+   * the way a `matchMedia` on the window did: a 1024px window with the sidebar
+   * out is a 720px mount, which the CSS never split.
+   */
+  coversChat?: () => boolean;
 }
 
 const ThoughtPanelContext = React.createContext<ThoughtPanelContextValue | null>(null);

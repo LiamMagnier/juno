@@ -349,7 +349,13 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Projects">
+        // Three across from a 64rem CONTENT COLUMN, not a 1024px window. The
+        // column loses 240px at exactly the window where `lg:` fired — the
+        // sidebar stops floating and starts pushing — so 1023 drew two 447px
+        // cards and 1024 drew three at 213. The same recipe on every card grid
+        // in the app pages (connections, assistants, a project's work and code
+        // lists, and each one's skeleton).
+        <ul className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-label="Projects">
           {filteredItems.map((p, i) => (
             <li
               key={p.id}
@@ -571,7 +577,7 @@ function ProjectTile({
 /** The grid, in placeholder form — identical to `loading.tsx` so nothing shifts. */
 function ProjectsGridSkeleton() {
   return (
-    <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="status" aria-label="Loading projects">
+    <div className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" role="status" aria-label="Loading projects">
       {[...Array(6)].map((_, i) => (
         <div
           key={i}

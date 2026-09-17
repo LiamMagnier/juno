@@ -26,8 +26,9 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
     <BlockShell aria-label={comparison.title ? `${comparison.title} comparison` : "Comparison"}>
       <BlockHeader kicker="Comparison" kickerClassName="text-primary" title={comparison.title} />
 
-      {/* Desktop: ruled rows with focusable column headers. */}
-      <div className="hidden pt-3 sm:block">
+      {/* Wide (28rem of the block's own frame): ruled rows with focusable
+          column headers. */}
+      <div className="hidden pt-3 @[28rem]:block">
         <div className="grid items-end border-b border-border/60 pb-2" style={gridTemplate} role="row">
           <Microcap className="px-2">Focus</Microcap>
           {columns.map((column, colIndex) => {
@@ -82,8 +83,8 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
         ))}
       </div>
 
-      {/* Mobile: stacked definition lists — the comparison stays side-readable. */}
-      <div className="flex flex-col pt-2 sm:hidden">
+      {/* Narrow: stacked definition lists — the comparison stays side-readable. */}
+      <div className="flex flex-col pt-2 @[28rem]:hidden">
         {rows.map((row, rowIndex) => (
           <div key={rowIndex} className="border-t border-border/40 py-3 first:border-t-0">
             <p className="text-ui font-semibold leading-5">{row.label}</p>

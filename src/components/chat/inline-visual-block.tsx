@@ -258,8 +258,8 @@ function CardsBlock({ block }: { block: VisualBlock }) {
   const selected = items[Math.min(active, Math.max(0, items.length - 1))];
   if (items.length === 0) return null;
   return (
-    <div className="grid gap-3 p-3 md:grid-cols-[0.95fr_1.25fr]">
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-1">
+    <div className="grid gap-3 p-3 @[36rem]:grid-cols-[0.95fr_1.25fr]">
+      <div className="grid gap-2 @[24rem]:grid-cols-2 @[36rem]:grid-cols-1">
         {items.map((item, index) => {
           const isActive = index === active;
           return (
@@ -311,7 +311,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
   if (nodes.length === 0) return null;
   return (
     <div className="space-y-3 p-3">
-      <div className="grid gap-2 sm:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))]">
+      <div className="grid gap-2 @[24rem]:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))]">
         {nodes.map((node, index) => {
           const isActive = index === active;
           return (
@@ -333,7 +333,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
               </span>
             </button>
             {index < nodes.length - 1 && (
-              <div className="hidden items-center justify-center text-muted-foreground sm:flex">
+              <div className="hidden items-center justify-center text-muted-foreground @[24rem]:flex">
                 <ArrowRight className="size-4" />
               </div>
             )}
@@ -566,7 +566,13 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
   }
 
   return (
-    <section className="juno-visual my-4 overflow-hidden rounded-card border bg-card text-foreground shadow-soft motion-safe:animate-rise-in">
+    // `@container`: the block is its own size class. It is drawn by Markdown,
+    // which renders in eleven surfaces — a chat transcript that can be 412px
+    // wide beside a canvas at any window width, the thought dock, the research
+    // reader — and every `@[…]:` step inside keys on THIS box, not on a window
+    // the sidebar and the docks make meaningless. Unnamed on purpose: the
+    // nearest container is the right one wherever the block lands.
+    <section className="@container juno-visual my-4 overflow-hidden rounded-card border bg-card text-foreground shadow-soft motion-safe:animate-rise-in">
       <Header block={block} />
       <VisualBody block={block} />
     </section>

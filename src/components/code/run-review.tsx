@@ -23,9 +23,10 @@ import type { RunDetail, RunFile } from "@/components/code/use-code-runs";
  * A modal review dialog forces the reader to choose between the diff and the
  * list, and the list is where the other eleven runs are. Every product that got
  * this right independently arrived at the same arrangement: files on one side,
- * changes on the other, run list still on screen. Below `lg` there is no room
- * for that, so the pane covers — but it is still not a dialog: it traps no
- * focus and it makes no claim that the page behind it is unusable.
+ * changes on the other, run list still on screen. Below 52rem of content
+ * column there is no room for that, so the pane covers — but it is still not a
+ * dialog: it traps no focus and it makes no claim that the page behind it is
+ * unusable.
  *
  * ── WHAT THIS PANE CAN AND CANNOT DO, STATED ONCE ──────────────────────────
  *
@@ -208,18 +209,22 @@ export function RunReviewPane({
     <aside
       aria-label={`Review changes from ${run.title}`}
       className={cn(
-        // Below lg the pane covers, because two columns do not fit; from lg it
-        // is an ordinary column beside the list, which stays readable. One
-        // element in both cases — a second copy behind a breakpoint is two
-        // panes that drift.
+        // Below 52rem of CONTENT COLUMN the pane covers, because two columns
+        // do not fit; from there it is an ordinary column beside the list,
+        // which stays readable. 52rem is what both halves need — the 27rem
+        // pane, ~22rem of run row and the 1.25rem gap, plus the gutter — and it
+        // is the column's width, not the window's: `lg:` docked the pane at a
+        // 1024 window, where with the sidebar out the column is 720 and the
+        // rows beside a 432px pane were 220px wide. One element in both cases
+        // — a second copy behind a breakpoint is two panes that drift.
         // Full-bleed it is the page's own ground; beside the list it is a
         // raised card, the same material as every other card in the product.
         "surface-raised fixed inset-0 z-modal flex flex-col overflow-hidden",
-        // `sticky` from lg so the pane stays put while the run list scrolls
+        // `sticky` once docked so the pane stays put while the run list scrolls
         // past it — a review pane that scrolls away is a modal with extra
         // steps, and the whole reason it is not a modal is that both halves
         // have to stay on screen together.
-        "lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100dvh-9rem)] lg:w-[27rem] lg:shrink-0 lg:rounded-card",
+        "@[52rem]/page:sticky @[52rem]/page:top-4 @[52rem]/page:z-auto @[52rem]/page:h-[calc(100dvh-9rem)] @[52rem]/page:w-[27rem] @[52rem]/page:shrink-0 @[52rem]/page:rounded-card",
       )}
     >
       <header className="flex items-start gap-3 border-b border-border/60 px-4 py-3">
