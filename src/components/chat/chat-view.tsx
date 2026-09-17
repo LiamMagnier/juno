@@ -27,7 +27,7 @@ import { useConversationResearch } from "@/components/research/use-conversation-
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
-import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
+import { delegatedComposerPlaceholder, delegationAttemptKey } from "@/lib/work/delegation";
 import {
   WORK_SYNC_EVENT,
   createWorkSession,
@@ -1411,17 +1411,51 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    * here the panel IS Juno's side of the exchange, and an application-authored
    * "I'll get on it" directly above a live panel narrating what it is doing
    * would be the product speaking twice about one thing.
+   *
+   * The choreography is `dispatchDelegation`; `delegate` below it is the one
+   * thing that must be true around the WHOLE of it — one dispatch at a time —
+   * and is kept separate so that guard cannot be escaped by an early return
+   * added to the middle of the sequence later.
    */
   const delegateAttemptRef = React.useRef<{
-    goal: string;
+    /** `delegationAttemptKey` over everything the create carries. */
+    inputs: string;
+    /**
+     * The id the USER turn is appended under, minted once per attempt.
+     *
+     * A fresh one on every press is the same as having none: the append route
+     * dedupes on (conversationId, clientId), and a refused dispatch deliberately
+     * keeps the draft in the box, so pressing the button again is the expected
+     * path rather than an exotic one. A random id there writes the reader's
+     * sentence into their own transcript once per press.
+     */
+    clientId: string;
+    /** Set once the turn is persisted, so a retry does not append it twice. */
+    messageId: string | null;
     sessionKey: string;
     runKey: string;
     session: ClientWorkSession | null;
   } | null>(null);
 
-  const delegate = React.useCallback(
+  /*
+   * A dispatch in flight, held twice on purpose.
+   *
+   * The ref is what a press is tested against and the state is what dims the
+   * composer, because the two are true at different moments: React has not
+   * re-rendered with `delegating` set by the time a second Enter arrives, and
+   * this window is up to four sequential round trips long. A second entry inside
+   * it mints its own idempotency keys and creates a SECOND WorkSession with a
+   * SECOND run — two run ceilings spent on one sentence, two USER turns in the
+   * transcript, and two panels competing for one conversation, of which the
+   * discovery poll then follows exactly one. `WorkComposer.submitting` guards
+   * the identical window on the other surface.
+   */
+  const delegatingRef = React.useRef(false);
+  const [delegating, setDelegating] = React.useState(false);
+
+  const dispatchDelegation = React.useCallback(
     async (input: DelegateInput): Promise<boolean> => {
-      if (privateMode) return false;
+      const attachmentIds = input.attachments.map((attachment) => attachment.id);
       // The same first-message handoff a send arms (see the choreography block
       // above): delegating from an empty chat replaces the greeting with a
       // transcript exactly as a first message does, and without this the
@@ -1454,62 +1488,92 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         }
       }
 
-      try {
-        const response = await fetch(`/api/conversations/${id}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            turns: [
-              {
-                // A client id, so a retried append lands on the row the first
-                // attempt created rather than writing the sentence twice.
-                clientId: `task-${crypto.randomUUID()}`,
-                role: "USER",
-                content: input.goal,
-                ...(input.attachmentIds.length > 0
-                  ? { attachmentIds: input.attachmentIds }
-                  : {}),
-              },
-            ],
-          }),
-        });
-        const data = (await response.json().catch(() => ({}))) as {
-          messages?: Array<{ id: string; content: string; createdAt: string }>;
-        };
-        const persisted = data.messages?.[0];
-        if (!response.ok || !persisted) throw new Error("append");
-        chat.setMessages((current) => [
-          ...current,
-          {
-            id: persisted.id,
-            role: "USER",
-            content: persisted.content,
-            createdAt: persisted.createdAt,
-            conversationId: id ?? undefined,
-            attachments: [],
-          },
-        ]);
-      } catch {
-        toast.error("Couldn’t save your message, so nothing was started. Try again.");
-        return false;
-      }
-
       /*
-       * A fresh pair of keys whenever the errand changed, and the SAME pair when
-       * it did not. A press that created the draft and then failed to dispatch
-       * must land on that same draft next time — `POST /sessions` replays an
-       * existing id for a repeated key — or every refused start leaves another
-       * orphan draft in the reader's list.
+       * A fresh attempt whenever anything the dispatch carries changed, and the
+       * SAME one when it did not. A press that created the draft and then failed
+       * to dispatch must land on that same draft next time — `POST /sessions`
+       * replays an existing id for a repeated key — or every refused start
+       * leaves another orphan draft in the reader's list.
+       *
+       * Keyed on `delegationAttemptKey` rather than on the goal, because the
+       * create carries far more than the sentence and every one of those can be
+       * changed from the "+" menu without touching a character of it. The sharp
+       * case is the approval mode: refused, switch "How often it asks", press
+       * again, and a goal-keyed attempt would reuse the draft created under the
+       * old policy while the pill and the disclosure line both state the new one.
+       *
+       * Decided before the append, because the attempt is what owns the turn's
+       * client id as well as the two idempotency keys.
        */
       let attempt = delegateAttemptRef.current;
-      if (attempt === null || attempt.goal !== input.goal) {
+      const inputsKey = delegationAttemptKey({
+        goal: input.goal,
+        permissionPolicy: input.permissionPolicy,
+        connectorIds: input.connectorIds,
+        attachmentIds,
+        projectId: activeProjectId,
+        model,
+        reasoningEffort,
+      });
+      if (attempt === null || attempt.inputs !== inputsKey) {
         attempt = {
-          goal: input.goal,
+          inputs: inputsKey,
+          clientId: `task-${crypto.randomUUID()}`,
+          messageId: null,
           sessionKey: workIdempotencyKey(),
           runKey: workIdempotencyKey(),
           session: null,
         };
         delegateAttemptRef.current = attempt;
+      }
+
+      // Skipped outright once this attempt's turn has landed: the route would
+      // dedupe the re-append on the client id anyway, but the optimistic push
+      // below is local and would draw the sentence a second time regardless.
+      if (attempt.messageId === null) {
+        try {
+          const response = await fetch(`/api/conversations/${id}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              turns: [
+                {
+                  // The attempt's client id, so a retried append lands on the row
+                  // the first press created rather than writing the sentence
+                  // twice. It is stable for exactly as long as the inputs are.
+                  clientId: attempt.clientId,
+                  role: "USER",
+                  content: input.goal,
+                  ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+                },
+              ],
+            }),
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            messages?: Array<{ id: string; content: string; createdAt: string }>;
+          };
+          const persisted = data.messages?.[0];
+          if (!response.ok || !persisted) throw new Error("append");
+          attempt.messageId = persisted.id;
+          chat.setMessages((current) => [
+            ...current,
+            {
+              id: persisted.id,
+              role: "USER",
+              content: persisted.content,
+              createdAt: persisted.createdAt,
+              conversationId: id ?? undefined,
+              // The files the composer just claimed onto this turn. Drawn from
+              // what was sent rather than left empty until the next reload: they
+              // are part of what was asked, and a turn that shows none reads as
+              // a task that was given none.
+              attachments: input.attachments,
+            },
+          ]);
+        } catch {
+          toast.error("Couldn’t save your message, so nothing was started. Try again.");
+          return false;
+        }
       }
 
       let session = attempt.session;
@@ -1523,7 +1587,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           model,
           reasoningEffort,
           permissionPolicy: input.permissionPolicy,
-          attachmentIds: input.attachmentIds,
+          attachmentIds,
           // Sent even when empty, because empty is an answer: this task reaches
           // no connected app. Absent would mean a client with no control for it.
           connectorIds: input.connectorIds,
@@ -1574,12 +1638,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       currentConversationId,
       hasMessages,
       model,
-      privateMode,
       reasoningEffort,
       setActiveConversationId,
       upsertConversation,
       adoptWorkSession,
     ]
+  );
+
+  const delegate = React.useCallback(
+    async (input: DelegateInput): Promise<boolean> => {
+      if (privateMode) return false;
+      if (delegatingRef.current) return false;
+      delegatingRef.current = true;
+      setDelegating(true);
+      try {
+        return await dispatchDelegation(input);
+      } finally {
+        delegatingRef.current = false;
+        setDelegating(false);
+      }
+    },
+    [privateMode, dispatchDelegation]
   );
 
   const openVoice = React.useCallback(() => {
@@ -1798,7 +1877,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               researchSteering.stop();
               chat.stop();
             }
-          : workSteering
+          : // A live task and a streaming reply can both exist at once — the
+            // clarification path suppresses `steerMode` and lets an ordinary
+            // send through, and so does a follow-up chip — and Stop has to end
+            // whichever of the two the reader is watching. The generation wins
+            // while it is streaming: it is the thing moving on screen, and
+            // reading "Stop" over a live stream as an offer to cancel a
+            // twenty-minute task nobody mentioned is the more expensive misread.
+            workSteering && !chat.isBusy
             ? // A delegated run is not this conversation's generation, so there
               // is no stream to tear down beside it — Stop ends the attempt, the
               // way it already ends a research run.
@@ -1830,13 +1916,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   workSteering.mode.kind === "answer"
                     ? "Answer the task’s question"
                     : "Add this to the running task",
-                stopLabel: "Stop the task",
+                // Whatever `onStop` above will actually end. The two can be
+                // live at once, and a button reading "Stop the task" that
+                // cancels a stream — or the reverse — is the one word this
+                // control can afford spent on the wrong thing.
+                stopLabel: chat.isBusy ? "Stop generating" : "Stop the task",
                 above: <PendingSteers steers={work.pendingSteers} />,
                 onSteer: workSteering.send,
               }
             : null
       }
       onDelegate={privateMode ? undefined : delegate}
+      delegating={delegating}
       pendingClarification={chat.pendingClarification}
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}

@@ -3,7 +3,11 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { isTerminalStatus } from "@/lib/work/domain";
-import { delegatedComposerMode, type DelegatedComposerMode } from "@/lib/work/delegation";
+import {
+  adoptDiscoveredSession,
+  delegatedComposerMode,
+  type DelegatedComposerMode,
+} from "@/lib/work/delegation";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
 import {
   WORK_SYNC_EVENT,
@@ -158,10 +162,11 @@ export function useConversationWork(conversationId: string | null): Conversation
       const result = await fetchWorkSessions({ conversationId, limit: 1 });
       if (!cancelled && result.kind === "ok") {
         const newest = result.value[0] ?? null;
-        // Only when it is genuinely a different task. Writing the same row back
-        // every four seconds would re-render the panel — and the composer — on
-        // a timer, for a fact that did not change.
-        setSession((current) => (current?.id === newest?.id ? current : newest));
+        // Only when it is genuinely a different task, and never a draft. Writing
+        // the same row back every four seconds would re-render the panel — and
+        // the composer — on a timer, for a fact that did not change; the draft
+        // rule is argued over `adoptDiscoveredSession`.
+        setSession((current) => adoptDiscoveredSession(current, newest));
       }
       if (!cancelled) timer = setTimeout(discover, DISCOVERY_POLL_MS);
     };
@@ -325,7 +330,14 @@ export function useConversationWork(conversationId: string | null): Conversation
       send: (text: string) =>
         mode.kind === "answer" ? answer(mode.questionId, text) : steer(text),
       stop: () => {
-        if (run === null) return;
+        // There IS a window where the panel is up and this is null: between
+        // `adopt` putting the session on screen and the first SSE frame naming
+        // the run. A press in it used to return silently, which on a control
+        // labelled "Stop the task" reads as a stop that worked.
+        if (run === null) {
+          toast.error("This task hasn’t reported in yet, so there is nothing to stop. Try again in a moment.");
+          return;
+        }
         void controlWorkRun(run.id, "cancel").then((result) => {
           if (result.kind === "ok") {
             setRun(result.value);

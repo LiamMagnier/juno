@@ -12,7 +12,11 @@ import {
 import { isWorkModelAllowed } from "@/lib/work/models";
 import { DEFAULT_WORK_PERMISSION_POLICY } from "@/lib/work/domain";
 import { getUserPlan } from "@/lib/usage";
-import { createSessionSchema, parseSessionListQuery } from "@/app/api/work/protocol";
+import {
+  createSessionSchema,
+  parseSessionListQuery,
+  sessionListOrder,
+} from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
 
@@ -185,10 +189,9 @@ export async function GET(req: Request) {
       // rather than reading that account's task.
       ...(conversationId ? { conversationId } : {}),
     },
-    // Pinned first so a session the user pinned does not fall off the end of a
-    // clamped page, then most recently active — which is the order the indexes
-    // on (userId, lastActivityAt) are built for.
-    orderBy: [{ pinned: "desc" }, { lastActivityAt: "desc" }],
+    // Pinned first, except when one conversation is being asked about its own
+    // task — the argument is written out over `sessionListOrder`.
+    orderBy: sessionListOrder(parsed.query),
     take: limit,
   });
 

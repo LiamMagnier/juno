@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
+import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { isTerminalStatus } from "@/lib/work/domain";
 import type { ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
 import type { ConversationWork } from "@/components/chat/use-conversation-work";
@@ -159,6 +160,11 @@ function LiveRun({
               // this question — one question, one place to type at it.
               onAnswer={(questionId, text) => void work.answer(questionId, text)}
               current={question.id === work.questions[0]?.id}
+              // The chat composer, not the /work thread composer the card
+              // defaults to: that field is not on this page, and a "Reply below"
+              // that focuses nothing is a control offering something the surface
+              // cannot do.
+              fieldId={CHAT_COMPOSER_FIELD_ID}
             />
           ))}
           {work.openApprovals.length > 0 && (

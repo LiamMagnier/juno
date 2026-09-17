@@ -167,3 +167,85 @@ export function delegatedComposerPlaceholder(mode: DelegatedComposerMode): strin
     ? "Answer Juno’s question…"
     : "Add an instruction to the running task…";
 }
+
+// ---------------------------------------------------------------------------
+// Pressing the button twice
+// ---------------------------------------------------------------------------
+
+/** Everything a delegated draft is created with, as the chat composer hands it over. */
+export interface DelegationInputs {
+  goal: string;
+  /** How often the run stops to ask, exactly as the armed pill states it. */
+  permissionPolicy: string;
+  /** The connected apps this task may reach. Empty is an answer: it reaches none. */
+  connectorIds: readonly string[];
+  attachmentIds: readonly string[];
+  projectId: string | null;
+  model: string;
+  reasoningEffort: string | null;
+}
+
+/**
+ * One press's inputs, as a string two presses can be compared on.
+ *
+ * A dispatch is two calls — create the draft, then start a run on it — and the
+ * second press after a failed start deliberately REUSES the draft the first one
+ * created, so a refused start does not leave an orphan in the reader's list.
+ * That reuse is only honest while the inputs have not moved, and the goal alone
+ * does not say whether they have: the "+" menu can change the approval mode, add
+ * or remove a connector, take a file back off, or switch the project, all
+ * without touching a character of the sentence. Keyed on the goal alone, a
+ * reader who is refused, opens the menu, switches "How often it asks" from Ask
+ * to Manual and presses again gets the first press's permission policy under the
+ * second press's button — while the pill beside `+` and the disclosure line under
+ * the field both state the new one. A permission control that reads one way and
+ * acts another is the worst thing on this surface, so everything the create
+ * carries is in the key and a change to any of it mints a fresh pair of
+ * idempotency keys.
+ *
+ * The two id lists are sorted because what the create carries is a SET of
+ * grants: the same three files and the same two apps in a different order are
+ * the same permission surface, and this composer exposes no way to reorder
+ * either deliberately.
+ */
+export function delegationAttemptKey(inputs: DelegationInputs): string {
+  return JSON.stringify([
+    inputs.goal.trim(),
+    inputs.permissionPolicy,
+    [...inputs.connectorIds].sort(),
+    [...inputs.attachmentIds].sort(),
+    inputs.projectId,
+    inputs.model,
+    inputs.reasoningEffort,
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Finding the run again
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a task the discovery poll just found should become the one the
+ * transcript draws.
+ *
+ * A `draft` is refused. That status means the create landed and the dispatch did
+ * not — the second half of a press that was blocked or lost its connection — and
+ * a session that has never had a run has nothing for the panel to draw: no
+ * current action, no plan, no run, no meter, and no composer mode either, since
+ * a draft takes neither an answer nor an instruction. Adopted, it puts an empty
+ * task panel in the reader's transcript with no way to start it and no way to
+ * get rid of it. The session a press has just dispatched does not come through
+ * here — it is adopted directly, keys and all — so this costs that path nothing.
+ *
+ * Everything else, including a task already on screen, is returned unchanged
+ * when it is the same row: re-adopting an identical session would reset the
+ * event cursor and replay the run from zero every four seconds.
+ */
+export function adoptDiscoveredSession<T extends { id: string; status: WorkStatus }>(
+  current: T | null,
+  discovered: T | null
+): T | null {
+  if (current !== null && discovered !== null && current.id === discovered.id) return current;
+  if (discovered !== null && discovered.status === "draft") return current;
+  return discovered;
+}

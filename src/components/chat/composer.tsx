@@ -128,12 +128,31 @@ import type {
   ReasoningEffort,
 } from "@/types/chat";
 
+/**
+ * The chat field's id, so a card in the transcript can put the cursor in it.
+ *
+ * Named rather than written out at the `<textarea>`, because the run components
+ * the Work merge mounts inside this transcript were built against the /work
+ * thread composer and reach for its field by id. A card that says "Reply below"
+ * and focuses nothing is worse than one that says nothing at all, so the id is
+ * an export a caller can hand to them.
+ */
+export const CHAT_COMPOSER_FIELD_ID = "juno-composer-textarea";
+
 /** Everything a delegated run is created with, assembled in the composer. */
 export interface DelegateInput {
   /** The sentence, verbatim. It is what the plan is checked back against. */
   goal: string;
-  /** Files the reader attached, already uploaded, by id. */
-  attachmentIds: string[];
+  /**
+   * Files the reader attached, already uploaded.
+   *
+   * Whole attachments rather than ids, because the caller needs both halves of
+   * them: the ids go to the create route, and the rest is what the USER turn it
+   * writes into the transcript draws its chips from. Handed over as ids alone,
+   * that turn showed no files at all until the conversation was next reloaded,
+   * on a task that had in fact been given every one of them.
+   */
+  attachments: ClientAttachment[];
   /**
    * The connected apps this task may reach — the ones switched on in the "+"
    * menu, and no others. An empty array is a real answer and is sent as one:
@@ -218,6 +237,17 @@ interface ComposerProps {
    * paragraph they would then have to retype from memory.
    */
   onDelegate?: (input: DelegateInput) => Promise<boolean>;
+  /**
+   * True from the first request of a dispatch to the last.
+   *
+   * `onDelegate` is up to four sequential round trips, and the composer is the
+   * only thing that can stop a second Enter arriving inside that window: the
+   * caller's own guard refuses the second press, but a primary action that stays
+   * lit and a field that still takes Enter say nothing happened, so the reader
+   * presses again. It joins `sendBlocked` rather than `sendLocked` because the
+   * field itself stays live — the draft is still theirs to edit while it goes.
+   */
+  delegating?: boolean;
   pendingClarification?: PendingPreflightClarification | null;
   onSubmitClarification?: (
     answers: PreflightClarificationAnswer[],
@@ -450,6 +480,7 @@ export function Composer({
   onStop,
   steering,
   onDelegate,
+  delegating = false,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -624,6 +655,15 @@ export function Composer({
    * most of them never touch. `null` means "not asked yet", which the
    * disclosure renders as "Checking where this will run" rather than as a
    * claim about the cloud it cannot support.
+   *
+   * NEITHER OF THOSE TWO STATES DISABLES SEND, and that is a deliberate
+   * disagreement with `work-composer.tsx`, whose `canStart` refuses both. That
+   * surface is a form whose whole subject is one task, so waiting for the answer
+   * costs a moment; this is a chat box that is also a chat box, and taking the
+   * primary action away from somebody mid-sentence because a list of Macs has
+   * not come back is a worse trade. The dispatch route re-runs the same
+   * selection against real facts and refuses in words if it has to, so nothing
+   * is decided here that the server does not decide again.
    */
   const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
   const [hostsFailed, setHostsFailed] = React.useState(false);
@@ -1053,16 +1093,27 @@ export function Composer({
    * ordinary thing a person does in a chat, and Enter hands the draft to
    * the chat hook, which queues it for the moment the reply ends — or
    * refuses it, in which case the draft simply stays where it was.
+   *
+   * A dispatch in flight IS on this list, and it is the one case where a request
+   * already sent blocks the next send: a delegation is four calls that spend a
+   * run ceiling, not a stream that queues.
    */
-  const sendBlocked = sendLocked || uploading || !!quotaReached;
+  const sendBlocked = sendLocked || uploading || !!quotaReached || delegating;
   const canSend = steerMode
     ? // No attachments and no clarification answers: direction is words, and a
       // file cannot be handed to a run that is already reading.
       text.trim().length > 0 && !sendLocked && !quotaReached
-    : (text.trim().length > 0 ||
-        sendAttachments.length > 0 ||
-        clarificationAnswers.length > 0) &&
-      !sendBlocked;
+    : taskArmed
+      ? // A task needs a sentence. Files alone satisfy an ordinary send — "look
+        // at this" is a complete message — but they are not an errand, and
+        // `submit` refuses a task with an empty draft. Left out of this
+        // condition, attaching a file to an armed pill lit the primary action
+        // for a press that returned silently and said nothing.
+        text.trim().length > 0 && !sendBlocked
+      : (text.trim().length > 0 ||
+          sendAttachments.length > 0 ||
+          clarificationAnswers.length > 0) &&
+        !sendBlocked;
 
   /*
    * VOICE IS BACK IN THE SEND SLOT, under one condition: there is nothing to
@@ -1218,7 +1269,7 @@ export function Composer({
       if (!onDelegate) return false;
       const started = await onDelegate({
         goal,
-        attachmentIds: sendAttachments.map((attachment) => attachment.id),
+        attachments: sendAttachments,
         connectorIds: [...connectorsEnabled],
         permissionPolicy: taskApprovalMode,
       });
@@ -2917,7 +2968,7 @@ export function Composer({
             !showCollapsedDraft && (
               <textarea
                 ref={textareaRef}
-                id="juno-composer-textarea"
+                id={CHAT_COMPOSER_FIELD_ID}
                 aria-label={
                   steerMode && steering
                     ? steering.placeholder

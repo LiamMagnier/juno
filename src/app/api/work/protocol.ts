@@ -832,12 +832,34 @@ export interface SessionListQuery {
    * A conversation draws the run it started, so the transcript has to be able
    * to ask "is there one" from an id it already holds, without scanning a list
    * of the whole account. `?conversationId=` answers that question and nothing
-   * else, which is why it is a filter here rather than a new route: this list
-   * already orders by `lastActivityAt` desc, so the newest task on the chat is
-   * the first row.
+   * else, which is why it is a filter here rather than a new route.
+   *
+   * It also changes the ORDER of the answer — see `sessionListOrder`.
    */
   conversationId?: string;
   limit: number;
+}
+
+/**
+ * What order a listing comes back in, and why it is not always the same one.
+ *
+ * Pinned first everywhere else: a session the user pinned must not fall off the
+ * end of a clamped page, and after that most recently active, which is the order
+ * the account's `lastActivityAt` index is built for.
+ *
+ * Narrowed to ONE CONVERSATION, pinning is dropped. That caller is not paging a
+ * list — the transcript asks for a single row and draws it as "the task on this
+ * chat" — and pinning is a flag about the /work list, not about which run is
+ * current. A chat that delegated twice, where the older of the two happens to be
+ * pinned, would otherwise have its transcript draw the older run, follow its
+ * event stream, and offer the composer as the way to answer its questions.
+ */
+export function sessionListOrder(
+  query: Pick<SessionListQuery, "conversationId">
+): Array<{ pinned: "desc" } | { lastActivityAt: "desc" }> {
+  return query.conversationId
+    ? [{ lastActivityAt: "desc" }]
+    : [{ pinned: "desc" }, { lastActivityAt: "desc" }];
 }
 
 export type SessionListQueryResult =
