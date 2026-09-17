@@ -10,13 +10,19 @@ import type {
   ResearchStore,
 } from "@/lib/research/engine";
 import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
+import { canonicalUrl } from "@/lib/search/url-safety";
 
 /**
  * The in-memory ResearchStore, shared by the research test files.
  *
- * A copy of the fixture tests/research-run.test.ts has always kept privately,
- * plus the findings table the agent round writes. Kept out of that file so a
- * second test file can drive the same engine without re-running the first.
+ * One fixture rather than a private copy per file: tests/research-run.test.ts
+ * kept its own for a long time, and every column the store learned to keep —
+ * the score dimensions, the publication date, the narrow lookups — had to be
+ * taught to both or a test would pass against a store more forgetful than the
+ * real one. It mirrors src/lib/research/run.ts where the behaviour has
+ * judgement in it: rows dedupe on the canonical URL, a snapshot never shrinks,
+ * and the narrow lookups exist so a test can prove a tool call does not load
+ * the corpus.
  */
 
 interface MemoryRow extends ResearchRunRow {
@@ -158,8 +164,23 @@ export function memoryStore() {
       };
     },
 
-    async upsertSource({ runId, userId, url, title, contentHash, snapshot, authority }) {
-      const existing = sources.find((source) => source.runId === runId && source.url === url);
+    async upsertSource({
+      runId,
+      userId,
+      url,
+      title,
+      publishedAt,
+      contentHash,
+      snapshot,
+      authority,
+      freshness,
+      directness,
+      independence,
+      composite,
+      sourceType,
+    }) {
+      const canonical = canonicalUrl(url);
+      const existing = sources.find((source) => source.runId === runId && canonicalUrl(source.url) === canonical);
       if (existing) {
         existing.title = title;
         // Mirrors the Prisma store: a snapshot never shrinks, and the hash moves
@@ -167,7 +188,13 @@ export function memoryStore() {
         const keepsMoreText = snapshot != null && snapshot.length > (existing.snapshot?.length ?? 0);
         if (keepsMoreText && contentHash !== undefined) existing.contentHash = contentHash;
         if (keepsMoreText) existing.snapshot = snapshot;
+        if (publishedAt !== undefined) existing.publishedAt = publishedAt;
         if (authority !== undefined) existing.authority = authority;
+        if (freshness !== undefined) existing.freshness = freshness;
+        if (directness !== undefined) existing.directness = directness;
+        if (independence !== undefined) existing.independence = independence;
+        if (composite !== undefined) existing.composite = composite;
+        if (sourceType !== undefined) existing.sourceType = sourceType;
         return { id: existing.id, created: false };
       }
       const row = {
@@ -178,8 +205,13 @@ export function memoryStore() {
         title,
         contentHash: contentHash ?? null,
         snapshot: snapshot ?? null,
-        publishedAt: null,
+        publishedAt: publishedAt ?? null,
         authority: authority ?? null,
+        freshness: freshness ?? null,
+        directness: directness ?? null,
+        independence: independence ?? null,
+        composite: composite ?? null,
+        sourceType: sourceType ?? null,
         fetchedAt: new Date(),
       };
       sources.push(row);
@@ -197,6 +229,20 @@ export function memoryStore() {
     async listSources(runId, userId) {
       if (!own(runId, userId)) return [];
       return sources.filter((source) => source.runId === runId).map((source) => ({ ...source }));
+    },
+
+    async findSourceByUrl(runId, userId, url) {
+      if (!own(runId, userId)) return null;
+      const canonical = canonicalUrl(url);
+      const row = sources.find((source) => source.runId === runId && canonicalUrl(source.url) === canonical);
+      return row ? { ...row } : null;
+    },
+
+    async listSourceUrls(runId, userId) {
+      if (!own(runId, userId)) return [];
+      return sources
+        .filter((source) => source.runId === runId)
+        .map((source) => ({ url: source.url, snapshotChars: source.snapshot?.length ?? 0 }));
     },
 
     async addFinding(input) {
@@ -235,4 +281,3 @@ export function memoryStore() {
 
   return { store, events, runs, sources, findings };
 }
-

@@ -921,6 +921,34 @@ export interface ResearchPlan {
   budget?: ResearchBudget;
   /** One entry per round of workers, in order. The engine resumes from its length. */
   rounds?: ResearchRound[];
+  /**
+   * Pages the seed sweep fetched — ranked reads and the link hop, summed over
+   * every pass through `investigating`.
+   *
+   * Persisted rather than derived from the source rows, because the rows
+   * cannot say which of them cost a fetch: a search backend that returns page
+   * bodies stores one per hit, and counting those as "pages read" put a
+   * standard run at 380 pages against a ceiling of 80 before a single worker
+   * had been dispatched. The tier's page ceiling bounds fetches, so this is
+   * the number of fetches.
+   */
+  seedPagesRead?: number;
+  /**
+   * Queries the workers issued, newest last, bounded by `MAX_WORKER_QUERIES`.
+   *
+   * Separate from `issuedQueries`, which is the sweep's own ledger and the
+   * list `doSearching` filters its pending queries against: worker volume
+   * would push the seed queries out of a shared list and a follow-up pass
+   * would then re-issue — and re-pay for — the whole sweep.
+   */
+  workerQueries?: string[];
+  /**
+   * URLs whose fetch failed for a reason a retry cannot change — a 404, a
+   * blocked host, an unreadable PDF — so a follow-up pass reads the next
+   * ranked source instead of paying the full fetch timeout for the same dead
+   * link again and re-emitting the same error line.
+   */
+  unreadable?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1105,7 +1133,11 @@ export interface ResearchRound {
   round: number;
   /** The briefs that were dispatched. */
   delegations: ResearchDelegation[];
-  /** Pages read in full by the whole run when the round ended. */
+  /**
+   * Pages this round's workers opened with a fetch. Per round, not a running
+   * total, so the run's page count is `seedPagesRead` plus the sum over rounds
+   * and a resumed run can rebuild it from the ledger alone.
+   */
   pagesRead: number;
   toolCalls: number;
   tokens: number;
@@ -1117,6 +1149,14 @@ export interface ResearchRound {
   finishedAt?: string;
   /** Written by the lead review; absent while the round awaits one. */
   review?: ResearchRoundReview;
+  /**
+   * What the workers said they could not settle, deduplicated across the
+   * round. Kept because the writer is otherwise never told: a worker's `done`
+   * summary went to the lead and the event log and nowhere else, so the
+   * report's limitations section was written blind to what the team itself
+   * had flagged as unanswered.
+   */
+  openQuestions?: string[];
 }
 
 /** What the lead concluded from one round. */
@@ -1144,6 +1184,17 @@ export const MAX_RESEARCH_ROUNDS = 6;
 export const MAX_DELEGATIONS_PER_ROUND = 16;
 export const MAX_BRIEF_CHARS = 2_000;
 export const MAX_DELEGATION_CHARS = 1_200;
+/**
+ * Worker queries the plan keeps, newest last. The gap expander is shown the
+ * most recent forty and a worker brief the most recent couple of dozen, so
+ * the ledger only has to outlast a few rounds of the widest tier, not the
+ * whole run — a max round is at most 12 workers × 80 calls.
+ */
+export const MAX_WORKER_QUERIES = 160;
+/** Dead URLs one plan remembers. Past this the oldest are forgotten, which costs one wasted fetch each. */
+export const MAX_UNREADABLE_SOURCES = 64;
+/** Open questions one round records for the writer. */
+export const MAX_ROUND_OPEN_QUESTIONS = 12;
 
 export const EMPTY_PLAN: ResearchPlan = {
   queries: [],
@@ -1253,6 +1304,15 @@ export function parsePlan(value: unknown): ResearchPlan {
     ...(isResearchEffort(raw.effort) ? { effort: raw.effort } : {}),
     ...(budget ? { budget } : {}),
     ...(Array.isArray(raw.rounds) ? { rounds: parseRounds(raw.rounds) } : {}),
+    ...(typeof raw.seedPagesRead === "number" ? { seedPagesRead: count(raw.seedPagesRead) } : {}),
+    // Newest last, so the bound keeps the most recent queries: the oldest are
+    // the ones the expander and the workers have least use for.
+    ...(Array.isArray(raw.workerQueries)
+      ? { workerQueries: cleanList(raw.workerQueries.slice(-MAX_WORKER_QUERIES), MAX_WORKER_QUERIES, MAX_QUERY_CHARS) }
+      : {}),
+    ...(Array.isArray(raw.unreadable)
+      ? { unreadable: cleanList(raw.unreadable.slice(-MAX_UNREADABLE_SOURCES), MAX_UNREADABLE_SOURCES, MAX_QUERY_CHARS) }
+      : {}),
   };
 }
 
@@ -1342,6 +1402,9 @@ function parseRounds(value: unknown): ResearchRound[] {
       startedAt: typeof item.startedAt === "string" ? item.startedAt : "",
       ...(typeof item.finishedAt === "string" ? { finishedAt: item.finishedAt } : {}),
       ...(review ? { review } : {}),
+      ...(Array.isArray(item.openQuestions)
+        ? { openQuestions: cleanList(item.openQuestions, MAX_ROUND_OPEN_QUESTIONS, MAX_QUERY_CHARS) }
+        : {}),
     });
   }
   return out;
@@ -1578,9 +1641,10 @@ export function modelCallEstimateMicroUsd(
  *
  * Micro-USD per token equals dollars per million tokens, so a model's
  * `inputUsdPerMTok` from `getModelMetrics` IS this figure. The engine never
- * looks a model up itself — `tools.ts` chooses the models and reports their
- * rates through `ResearchDeps.modelRates`, so a cheap worker model is priced
- * as the cheap model it is rather than at the reference ceiling.
+ * looks a model up itself — `run.ts` reads the worker and lead models' rates
+ * into `ResearchDeps.modelRates`, so a cheap worker model is priced as the
+ * cheap model it is rather than at the reference ceiling, which would refuse
+ * whole rounds on an ordinary budget.
  */
 export interface ResearchModelRates {
   inputMicroUsdPerToken: number;

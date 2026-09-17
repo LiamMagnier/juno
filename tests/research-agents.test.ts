@@ -4,8 +4,9 @@ import {
   RESEARCH_TIERS,
   fallbackResearchQueries,
   parsePlan,
+  workerEstimateMicroUsd,
 } from "@/lib/research/domain";
-import { createResearchEngine, type ResearchDeps } from "@/lib/research/engine";
+import { createResearchEngine, SEED_PAGE_SHARE, type ResearchDeps } from "@/lib/research/engine";
 import type { RunWorkerInput, WorkerResult } from "@/lib/research/agents/protocol";
 import { chunkText, compileFindPattern, parseToolArgs } from "@/lib/research/agents/protocol";
 import { HostLimiter, Semaphore, runAll } from "@/lib/research/agents/scheduler";
@@ -507,4 +508,386 @@ test("answers arriving for a run that has moved on are refused, not applied", as
   const answered = await engine.answerClarifications({ runId: run.id, userId: run.userId, answers: { q1: "late" } });
   assert.equal(answered.ok, false);
   assert.equal(answered.reason, "not_awaiting_clarification");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The seed sweep and the team's share of the pages.
+ *
+ * The sweep used to size its reads at the whole page ceiling, and the agent
+ * layer's first gate — "has the run read its pages yet?" — counted every row
+ * with a snapshot. On a plain-HTTP backend the team ran only on the pages
+ * failed fetches left over; on a backend that returns bodies with its results
+ * it never ran on any tier. Both regimes, pinned.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const done = (): WorkerResult => ({
+  summary: "Established the figure.",
+  openQuestions: [],
+  followUps: [],
+  tokens: 10,
+  costMicroUsd: 0,
+  reason: "done",
+  toolCalls: 1,
+  elapsedMs: 1,
+});
+
+test("workers dispatch on the standard tier even when search returns every page's body", async () => {
+  const { store, events } = memoryStore();
+  const pages = RESEARCH_TIERS.standard.pages;
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async plan() {
+        // Four sub-questions, so the first round is the tier's full team.
+        return {
+          queries: [
+            "adoption rate of the standard",
+            "cost of implementing the standard",
+            "criticism of the standard",
+            "history of the standard",
+          ],
+          costMicroUsd: 1_000,
+        };
+      },
+      async search({ query }) {
+        // More hits than the tier has pages, every one of them with its body:
+        // a snapshot count says the run has read them all before a single fetch.
+        return {
+          hits: Array.from({ length: pages + 20 }, (_, i) => ({
+            url: `https://example.org/${encodeURIComponent(query)}/${i}`,
+            title: `${query} ${i}`,
+            snippet: "A page.",
+            rawContent: PAGE,
+          })),
+          costMicroUsd: 2_000,
+        };
+      },
+      async runWorker() {
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "standard" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const firstRound = events.filter(
+    (event) => event.kind === "worker_spawned" && (event.payload as { round?: number }).round === 1
+  );
+  assert.equal(firstRound.length, RESEARCH_TIERS.standard.workers, "the team goes out on the pages it never had to fetch");
+  assert.equal(parsePlan((await store.loadRun(run.id, run.userId))?.plan).seedPagesRead, 0, "bodies that came free with the search are not fetches");
+});
+
+test("the seed sweep reads its share of the tier's pages and leaves the rest to the team", async () => {
+  const { store, events } = memoryStore();
+  const pages = RESEARCH_TIERS.standard.pages;
+  let fetches = 0;
+  let fetchesBeforeWorkers = -1;
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async plan() {
+        return { queries: ["adoption rate of the standard"], costMicroUsd: 1_000 };
+      },
+      async search({ query }) {
+        return {
+          hits: Array.from({ length: pages * 2 }, (_, i) => ({ url: `https://example.org/${i}`, title: `${query} ${i}`, snippet: "A page." })),
+          costMicroUsd: 2_000,
+        };
+      },
+      async fetchPage({ url }) {
+        fetches += 1;
+        return { title: `Page at ${url}`, text: PAGE, costMicroUsd: 500 };
+      },
+      async runWorker() {
+        if (fetchesBeforeWorkers < 0) fetchesBeforeWorkers = fetches;
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "standard" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.ok(events.some((event) => event.kind === "worker_spawned"), "the team is dispatched after a sweep whose every fetch succeeded");
+  assert.equal(fetchesBeforeWorkers, Math.ceil(pages * SEED_PAGE_SHARE), "the sweep stops at its share, not at the ceiling");
+  const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
+  assert.equal(plan.seedPagesRead, fetchesBeforeWorkers, "and records what it fetched for the page ceiling");
+  assert.equal(plan.rounds?.[0]?.pagesRead, 0, "a round's page count is what its workers opened, not a running total");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * What a worker may cite, what it is told, and what its tools load.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("a finding cannot cite a page the run has only seen in a result list", async () => {
+  const { store } = memoryStore();
+  let rejectedReason = "";
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async runWorker(input) {
+        const found = await input.tools.search("registry filings for the standard");
+        // Two hits from a search this worker ran; the second is never opened.
+        const unopened = found.result.hits[1]!.url;
+        const rejected = await input.tools.noteFinding({ claim: "Made up.", quote: "words the worker never read", url: unopened });
+        rejectedReason = rejected.result.reason ?? "";
+        assert.equal(rejected.result.ok, false, "a row with no body is a search hit, not a page");
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "quick" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.match(rejectedReason, /open_page/, "the refusal tells the worker what to do instead");
+});
+
+test("the date a fetched page carries lands on its row", async () => {
+  const { store } = memoryStore();
+  const publishedAt = new Date("2026-03-01T00:00:00.000Z");
+  let opened = "";
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async fetchPage({ url }) {
+        return { title: `Page at ${url}`, text: PAGE, costMicroUsd: 500, publishedAt };
+      },
+      async runWorker(input) {
+        const found = await input.tools.search("registry filings for the standard");
+        opened = found.result.hits[0]!.url;
+        await input.tools.openPage(opened);
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "quick" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const rows = await store.listSources(run.id, run.userId);
+  const workerRow = rows.find((row) => row.url === opened);
+  assert.equal(workerRow?.publishedAt?.toISOString(), publishedAt.toISOString(), "a worker-opened page keeps its date");
+  assert.ok(
+    rows.filter((row) => row.snapshot).every((row) => row.publishedAt?.toISOString() === publishedAt.toISOString()),
+    "and so does every page the sweep fetched — a freshness rule can only be met by a dated page"
+  );
+});
+
+test("a worker's tool calls never load the whole corpus", async () => {
+  const { store } = memoryStore();
+  let corpusLoads = 0;
+  let loadsDuringTools = -1;
+  const counting: typeof store = {
+    ...store,
+    async listSources(runId, userId) {
+      corpusLoads += 1;
+      return store.listSources(runId, userId);
+    },
+  };
+  const engine = createResearchEngine(
+    baseDeps(counting, {
+      async runWorker(input) {
+        const before = corpusLoads;
+        const found = await input.tools.search("registry filings for the standard");
+        const url = found.result.hits[0]!.url;
+        await input.tools.openPage(url);
+        await input.tools.findInPage(url, "42 percent");
+        await input.tools.noteFinding({ claim: "Adoption reached 42 percent.", quote: "reached 42 percent in 2025", url });
+        loadsDuringTools = corpusLoads - before;
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "quick" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.equal(loadsDuringTools, 0, "each tool call used to load every snapshot in the run to find one row by URL");
+});
+
+test("a store without the narrow lookups still serves every tool", async () => {
+  const { store, findings } = memoryStore();
+  const { findSourceByUrl: _find, listSourceUrls: _list, ...scanning } = store;
+  const engine = createResearchEngine(
+    baseDeps(scanning, {
+      async runWorker(input) {
+        const found = await input.tools.search("registry filings for the standard");
+        const url = found.result.hits[0]!.url;
+        const page = await input.tools.openPage(url);
+        assert.ok(page.result.ok);
+        const noted = await input.tools.noteFinding({ claim: "Adoption reached 42 percent.", quote: "reached 42 percent in 2025", url });
+        assert.ok(noted.result.ok, `finding accepted: ${noted.result.reason ?? ""}`);
+        return done();
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "quick" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.ok(findings.length >= 1, "the fallback scan path still finds the row");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * A round that never worked, a host that is hit by every worker at once, and
+ * what the team already searched.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("a round where every worker stayed idle stops the ladder and says so", async () => {
+  const { store, events } = memoryStore();
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async runWorker() {
+        return { ...done(), summary: "Here is how I would approach this.", reason: "idle", toolCalls: 0 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "the new standard", confirmation: "auto", effort: "deep" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const notice = events.find(
+    (event) => event.kind === "error" && String((event.payload as { message?: unknown }).message ?? "").includes("answered in prose")
+  );
+  assert.ok(notice, "an empty round is named, not reviewed as if it had findings");
+  assert.equal((notice.payload as { recoverable?: unknown }).recoverable, true);
+  const rounds = new Set(events.filter((event) => event.kind === "worker_spawned").map((event) => (event.payload as { round?: number }).round));
+  assert.equal(rounds.size, 1, "a model that ignores its tools once will do it again; the deep tier's other rounds are not paid for");
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "completed");
+});
+
+test("no host sees more than two of the run's fetches at once, however many workers are reading it", async () => {
+  const { store } = memoryStore();
+  const inFlight = new Map<string, number>();
+  const peakByHost = new Map<string, number>();
+  let peakOverall = 0;
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async fetchPage({ url }) {
+        const host = new URL(url).hostname;
+        inFlight.set(host, (inFlight.get(host) ?? 0) + 1);
+        peakByHost.set(host, Math.max(peakByHost.get(host) ?? 0, inFlight.get(host)!));
+        peakOverall = Math.max(peakOverall, [...inFlight.values()].reduce((n, v) => n + v, 0));
+        await new Promise((resolve) => setTimeout(resolve, 8));
+        inFlight.set(host, inFlight.get(host)! - 1);
+        return { title: `Page at ${url}`, text: PAGE, costMicroUsd: 500 };
+      },
+      async runWorker(input) {
+        // Two workers per host, so a per-host gate and a global one read differently.
+        const host = input.brief.delegation.workerId.endsWith("1") || input.brief.delegation.workerId.endsWith("3") ? "one.example" : "two.example";
+        for (let i = 0; i < 4; i += 1) await input.tools.openPage(`https://${host}/${input.brief.delegation.workerId}/${i}`);
+        return { ...done(), toolCalls: 4 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "standard" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  for (const [host, peak] of peakByHost) assert.ok(peak <= 2, `${host} saw ${peak} fetches at once`);
+  assert.ok(peakOverall >= 3, `the gate is per host, not per run: ${peakOverall} in flight across hosts at the peak`);
+});
+
+test("a semaphore keeps its slots across a handover", async () => {
+  const gate = new Semaphore(1);
+  const first = await gate.acquire();
+  const second = gate.acquire();
+  first();
+  (await second)();
+  // The handover used to drive the count below zero, and this third acquire
+  // then waited for a release that was never coming.
+  const third = await Promise.race([
+    gate.acquire().then(() => "acquired"),
+    new Promise<string>((resolve) => setTimeout(() => resolve("stuck"), 200)),
+  ]);
+  assert.equal(third, "acquired");
+});
+
+test("what the workers searched reaches the plan and the gap expander", async () => {
+  const { store } = memoryStore();
+  const workerQuery = "registry filings for the standard 2026";
+  let told: string[] = [];
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async runWorker(input) {
+        await input.tools.search(workerQuery);
+        return done();
+      },
+      async reviewRound(input) {
+        return {
+          coverage: Object.fromEntries(input.objectives.map((objective) => [objective.id, 0.3])),
+          gaps: [],
+          contradictions: [],
+          decision: "synthesize",
+          reason: "thin",
+          costMicroUsd: 0,
+        };
+      },
+      async expandQueries({ alreadyIssued }) {
+        told = alreadyIssued;
+        return { queries: ["a genuinely different direction on the standard"], costMicroUsd: 0 };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "standard" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.ok(parsePlan((await store.loadRun(run.id, run.userId))?.plan).workerQueries?.includes(workerQuery), "the plan keeps the team's queries");
+  assert.ok(told.includes(workerQuery), "the expander is told what the team already tried, not only the seed list");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The follow-up gate listens to the lead.
+ *
+ * Token overlap over a whole page says "satisfied" for any page on the topic,
+ * and it used to recompute every objective's status on top of the lead's
+ * scores — so a lead score of 0.2 never scheduled a follow-up.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("a lead score below the target schedules a follow-up whatever the token overlap says", async () => {
+  const { store, events } = memoryStore();
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      async runWorker() {
+        return done();
+      },
+      async reviewRound(input) {
+        return {
+          coverage: Object.fromEntries(input.objectives.map((objective) => [objective.id, 0.2])),
+          gaps: [],
+          contradictions: [],
+          decision: "synthesize",
+          reason: "mentions, not answers",
+          costMicroUsd: 0,
+        };
+      },
+    })
+  );
+  const run = await engine.start({ userId: "user_1", goal: "adoption of the standard", confirmation: "auto", effort: "standard" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  // The pages repeat the objective's every content word, so the heuristic
+  // alone would call each objective covered.
+  assert.ok(events.some((event) => event.kind === "follow_up_scheduled"), "the lead's 0.2 decides, not the overlap");
+  const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
+  assert.ok(plan.objectives.every((objective) => objective.status !== "covered"), "and the panel agrees with the lead");
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The per-round reservation.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("a round is reserved at the worker model's own rates when the engine knows them", async () => {
+  const { store, events } = memoryStore();
+  const rates = { inputMicroUsdPerToken: 1, outputMicroUsdPerToken: 4 };
+  const perWorker = workerEstimateMicroUsd(RESEARCH_TIERS.standard, rates);
+  const engine = createResearchEngine(
+    baseDeps(store, {
+      modelRates: { worker: rates },
+      async plan() {
+        return { queries: ["adoption rate of the standard", "cost of implementing the standard"], costMicroUsd: 0 };
+      },
+      async search({ query }) {
+        return { hits: [{ url: `https://example.org/${encodeURIComponent(query)}`, title: query, snippet: "A page." }], costMicroUsd: 0 };
+      },
+      async fetchPage({ url }) {
+        return { title: `Page at ${url}`, text: PAGE, costMicroUsd: 0 };
+      },
+      async runWorker() {
+        return done();
+      },
+    })
+  );
+  // Room for two and a half workers' worst case: two go out, not four, and
+  // the two that do cannot cross the ceiling however long they run.
+  const run = await engine.start({
+    userId: "user_1",
+    goal: "adoption of the standard",
+    confirmation: "auto",
+    effort: "standard",
+    budgetMicroUsd: BigInt(Math.ceil(perWorker * 2.5)),
+  });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const firstRound = events.filter((event) => event.kind === "worker_spawned" && (event.payload as { round?: number }).round === 1);
+  assert.equal(firstRound.length, 2, `${firstRound.length} workers dispatched against a ceiling that covers two`);
 });

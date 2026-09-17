@@ -63,11 +63,12 @@ test("a structured reply becomes objectives with evidence contracts and per-ques
   // Unknown source types are dropped; the known one is normalised.
   assert.deepEqual(plan.objectives[1].evidenceRequirements[0].preferredSourceTypes, ["reputable_secondary"]);
   assert.equal(plan.objectives[1].evidenceRequirements[0].minimumIndependentSources, 3);
-  // Queries are flattened in objective order and deduplicated.
+  // Queries are taken from the objectives in turn — every objective's first
+  // search before any objective's second — and deduplicated.
   assert.deepEqual(plan.queries, [
     "Anthropic Claude API pricing per million tokens September 2026",
-    "OpenAI GPT API pricing per million tokens 2026",
     "independent LLM reasoning benchmark results 2026 Claude GPT Gemini",
+    "OpenAI GPT API pricing per million tokens 2026",
   ]);
   // Steps keep sentence shape: a fragment is dropped, a missing period is added.
   assert.deepEqual(plan.steps, [
@@ -106,6 +107,33 @@ test("the query cap holds however many searches the planner wrote", () => {
   assert.ok(plan);
   assert.equal(plan.queries.length, 6);
   assert.equal(plan.objectives.length, 8);
+});
+
+/*
+ * The cap used to be applied while walking the objectives in order, so a deep
+ * plan of eight sub-questions with three searches each filled sixteen slots by
+ * the sixth objective and the last two were never searched — and nothing
+ * downstream knew, because the "no search of its own" fallback only caught
+ * objectives whose list was empty.
+ */
+test("under the cap every sub-question keeps at least its first search", () => {
+  const objectives = Array.from({ length: 8 }, (_, i) => ({
+    question: `Sub-question number ${i + 1} about the subject?`,
+    queries: Array.from({ length: 3 }, (_, j) => `search ${i + 1}-${j + 1} about the subject`),
+  }));
+  const plan = parseStructuredPlan(JSON.stringify({ objectives }), { maxQueries: 16 });
+  assert.ok(plan);
+  assert.equal(plan.queries.length, 16);
+  for (let i = 1; i <= 8; i += 1) {
+    assert.ok(
+      plan.queries.some((query) => query.startsWith(`search ${i}-`)),
+      `objective ${i} contributes no search at all: ${plan.queries.join(" | ")}`
+    );
+  }
+  // Every first search comes before any second: the cap costs each
+  // sub-question its least important searches, not the last sub-questions
+  // everything.
+  assert.deepEqual(plan.queries.slice(0, 8).map((query) => query.slice(0, 10)), Array.from({ length: 8 }, (_, i) => `search ${i + 1}-1`));
 });
 
 test("the structured fields survive a round trip through the stored plan", () => {

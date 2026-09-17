@@ -1,7 +1,10 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { recordSpend } from "@/lib/spend";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { getModelMetrics } from "@/lib/model-metrics";
+import type { ModelInfo } from "@/lib/models";
 import {
   createResearchEngine,
   type ResearchDeps,
@@ -25,6 +28,7 @@ import {
   type ResearchConflict,
   type ResearchCoverageEntry,
   type ResearchClarification,
+  type ResearchModelRates,
   type ResearchObjective,
   type ResearchState,
   type ResearchTerminalState,
@@ -38,7 +42,7 @@ import {
   writeResearchReport,
 } from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
-import { runResearchWorker } from "@/lib/research/agents/worker";
+import { researchLeadModel, researchWorkerModel, runResearchWorker } from "@/lib/research/agents/worker";
 import { reviewResearchRound } from "@/lib/research/agents/lead";
 import { canonicalUrl } from "@/lib/search/url-safety";
 
@@ -412,6 +416,39 @@ export function createPrismaResearchStore(): ResearchStore {
       });
     },
 
+    async findSourceByUrl(runId, userId, url) {
+      // One indexed row by the same key `upsertSource` dedupes on, instead of
+      // the whole corpus scanned for it — see `ResearchStore.findSourceByUrl`.
+      return prisma.researchSource.findFirst({
+        where: { runId, userId, canonicalUrl: canonicalUrl(url) },
+        select: {
+          id: true,
+          url: true,
+          title: true,
+          contentHash: true,
+          snapshot: true,
+          publishedAt: true,
+          authority: true,
+          freshness: true,
+          directness: true,
+          independence: true,
+          composite: true,
+          sourceType: true,
+          fetchedAt: true,
+        },
+      });
+    },
+
+    async listSourceUrls(runId, userId) {
+      // `length()` is not something a Prisma select can ask for, and selecting
+      // the snapshot to measure it is the load this method exists to avoid.
+      // Scoped by userId in the WHERE itself: a raw query goes around the
+      // ownership guard the model operations carry.
+      return prisma.$queryRaw<Array<{ url: string; snapshotChars: number }>>(
+        Prisma.sql`SELECT "url", COALESCE(length("snapshot"), 0)::int AS "snapshotChars" FROM "ResearchSource" WHERE "runId" = ${runId} AND "userId" = ${userId}`
+      );
+    },
+
     async addFinding({ runId, userId, workerId, round, objectiveId, sourceId, url, claim, quote, locator, confidence }) {
       const created = await prisma.researchFinding.create({
         data: {
@@ -523,6 +560,28 @@ function hashSnapshot(text: string): string {
 let engine: ResearchEngine | null = null;
 
 /**
+ * A model's price in the unit the engine's estimates are computed in.
+ *
+ * Micro-USD per token equals USD per million tokens, so the catalogue's figure
+ * is the rate as it stands. The engine reserves each round of workers at
+ * these rates rather than at the reference ceiling, which would price a cheap
+ * worker three or four times over and refuse whole rounds on an ordinary
+ * budget. Undefined when no model is configured, in which case the engine
+ * falls back to reserving the vendor fees alone.
+ */
+function ratesOf(model: ModelInfo | null): ResearchModelRates | undefined {
+  if (!model) return undefined;
+  const metrics = getModelMetrics(model);
+  return { inputMicroUsdPerToken: metrics.inputUsdPerMTok, outputMicroUsdPerToken: metrics.outputUsdPerMTok };
+}
+
+function researchModelRates(): ResearchDeps["modelRates"] {
+  const worker = ratesOf(researchWorkerModel());
+  const lead = ratesOf(researchLeadModel());
+  return { ...(worker ? { worker } : {}), ...(lead ? { lead } : {}) };
+}
+
+/**
  * The one engine the app uses. Memoised because the deps are stateless and
  * building a new closure per request would make the module-level store a lie.
  */
@@ -537,6 +596,7 @@ export function researchEngine(): ResearchEngine {
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
+    modelRates: researchModelRates(),
     synthesize: writeResearchReport,
     validateReport: async ({ userId, runId, goal, report, sources }) => {
       const audit = await recordCitationAudit({
@@ -598,6 +658,7 @@ export function gatheringOnlyEngine(): ResearchEngine {
     expandQueries: expandResearchQueries,
     runWorker: runResearchWorker,
     reviewRound: reviewResearchRound,
+    modelRates: researchModelRates(),
     hash: hashSnapshot,
     now: () => new Date(),
   });

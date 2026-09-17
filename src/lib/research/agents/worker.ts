@@ -8,19 +8,13 @@ import { providerAdapterFor } from "@/lib/provider-routing";
 import { isProviderConfigured, providerApiKey, providerBaseUrl } from "@/lib/providers";
 import { recordSpend } from "@/lib/spend";
 import { truncate } from "@/lib/utils";
-import { wrapUntrusted } from "@/lib/untrusted-content";
 import {
   WORKER_TOOLS,
-  parseToolArgs,
-  renderFindMatches,
-  renderPageDigest,
-  renderSearchDigest,
   type RunWorkerInput,
   type WorkerFinishReason,
   type WorkerResult,
-  type WorkerStopReason,
 } from "@/lib/research/agents/protocol";
-import { timeboxSignal } from "@/lib/research/agents/scheduler";
+import { elided, runWorkerLoop, type Adapter, type ToolCall } from "@/lib/research/agents/worker-loop";
 
 /**
  * One research worker: a model driving the five worker tools against the run.
@@ -185,223 +179,36 @@ function workerUserMessage(input: RunWorkerInput): string {
     brief.visited.length
       ? `Pages the run has already read (open only if you need a specific figure):\n${brief.visited.slice(0, 40).map((url) => `- ${url}`).join("\n")}\n`
       : "",
+    // The team's recent searches, so a worker goes somewhere the run has not
+    // already been rather than paying to see the same page of results again.
+    brief.recentQueries?.length
+      ? `Searches the team has already run (do not repeat them; vary the vocabulary or the source):\n${brief.recentQueries.slice(-24).map((query) => `- ${query}`).join("\n")}\n`
+      : "",
     `Round ${brief.round}. You may make up to ${input.limits.maxToolCalls} tool calls in about ${Math.round(input.limits.wallClockMs / 60_000)} minutes.`,
   ];
   return lines.filter((line, i, all) => line !== "" || all[i - 1] !== "").join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// The loop, shared by both providers
+// The loop, priced
 // ---------------------------------------------------------------------------
 
-/** One tool call as the model requested it, provider shape removed. */
-interface ToolCall {
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-}
-
-interface Turn {
-  /** Tool calls the model made this turn. Empty means it answered in prose. */
-  calls: ToolCall[];
-  text: string;
-  inputTokens: number;
-  outputTokens: number;
-}
-
 /**
- * The provider-specific half: given the transcript so far, one model call.
+ * Runs the shared loop and bills what it consumed.
  *
- * `record` is the transcript in the provider's own message shape, owned by the
- * adapter; the loop only ever appends through `pushToolResults`.
+ * The loop itself is in worker-loop.ts, where a test can drive it with a
+ * scripted adapter; this wrapper is the part that has to stay `server-only`,
+ * because pricing a worker means naming its model and writing the ledger.
+ * Billed whether or not the loop ended cleanly — the tokens were spent either
+ * way, and a ledger that omits its failures under-reports what research costs.
  */
-interface Adapter {
-  next(signal: AbortSignal): Promise<Turn>;
-  pushToolResults(results: Array<{ call: ToolCall; text: string }>): void;
-  /** Drops the bodies of tool results older than the newest `keep`. */
-  elideOldResults(keep: number): void;
-}
-
-/** Tool results the model can still see in full. Older ones are elided. */
-const RESULTS_KEPT_IN_FULL = 10;
-/** Characters of tool output one result may carry into the transcript. */
-const MAX_RESULT_CHARS = 14_000;
-/** Turns in a row that produced no tool call before the worker is stopped. */
-const MAX_IDLE_TURNS = 2;
-
-function elided(call: ToolCall): string {
-  const arg = typeof call.args.query === "string" ? call.args.query : typeof call.args.url === "string" ? call.args.url : "";
-  return `[earlier ${call.name} result${arg ? ` for "${truncate(arg, 80)}"` : ""} elided to save context — call the tool again if you need it]`;
-}
-
 async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo): Promise<WorkerResult> {
-  const startedAt = Date.now();
-  const box = timeboxSignal(input.signal, input.limits.wallClockMs);
-  let toolCalls = 0;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let idleTurns = 0;
-  let reason: WorkerFinishReason = "error";
-  let summary = "";
-  let openQuestions: string[] = [];
-  let followUps: string[] = [];
-  let stop: WorkerStopReason | null = null;
-  const resultLog: Array<{ call: ToolCall; text: string }> = [];
-
-  try {
-    for (;;) {
-      if (box.signal.aborted) {
-        reason = box.timedOut() ? "time_limit" : "aborted";
-        break;
-      }
-      let turn: Turn;
-      try {
-        turn = await adapter.next(box.signal);
-      } catch (error) {
-        if (box.signal.aborted) {
-          reason = box.timedOut() ? "time_limit" : "aborted";
-        } else {
-          console.error("[research] worker model call failed", {
-            model: model.id,
-            worker: input.brief.delegation.workerId,
-            message: error instanceof Error ? error.message : String(error),
-          });
-          reason = "error";
-        }
-        break;
-      }
-      inputTokens += turn.inputTokens;
-      outputTokens += turn.outputTokens;
-
-      if (turn.calls.length === 0) {
-        // A worker that writes prose instead of calling a tool is one that has
-        // finished in its own mind. Give it one nudge, then take the prose as
-        // its summary rather than paying for another idle turn.
-        idleTurns += 1;
-        if (idleTurns > MAX_IDLE_TURNS || toolCalls === 0) {
-          summary = summary || turn.text.trim();
-          reason = "done";
-          break;
-        }
-        adapter.pushToolResults([]);
-        continue;
-      }
-      idleTurns = 0;
-
-      const results: Array<{ call: ToolCall; text: string }> = [];
-      let finished = false;
-      for (const call of turn.calls) {
-        if (finished || stop) {
-          results.push({ call, text: "The worker has finished; this call was not run." });
-          continue;
-        }
-        const parsed = parseToolArgs(call.name, call.args);
-        if (!parsed.ok) {
-          results.push({ call, text: `Error: ${parsed.reason}` });
-          continue;
-        }
-        const args = parsed.parsed;
-        if (args.name === "done") {
-          summary = args.summary;
-          openQuestions = args.openQuestions;
-          followUps = args.followUps;
-          reason = "done";
-          finished = true;
-          results.push({ call, text: "Recorded. Thank you." });
-          continue;
-        }
-        toolCalls += 1;
-        const remaining = input.limits.maxToolCalls - toolCalls;
-        let text: string;
-        try {
-          switch (args.name) {
-            case "search": {
-              const out = await input.tools.search(args.query);
-              text = renderSearchDigest(out.result.hits, out.result.note);
-              if (out.stop) stop = out.stop;
-              break;
-            }
-            case "open_page": {
-              const out = await input.tools.openPage(args.url);
-              text = out.result.ok
-                ? wrapUntrusted(out.result.url, renderPageDigest(out.result))
-                : `Could not open ${out.result.url}: ${out.result.reason}`;
-              if (out.stop) stop = out.stop;
-              break;
-            }
-            case "find_in_page": {
-              const out = await input.tools.findInPage(args.url, args.pattern);
-              text = out.result.ok
-                ? wrapUntrusted(args.url, renderFindMatches(out.result.matches))
-                : `Could not search that page: ${out.result.reason ?? "not opened yet"}`;
-              if (out.stop) stop = out.stop;
-              break;
-            }
-            case "note_finding": {
-              const out = await input.tools.noteFinding({
-                claim: args.claim,
-                quote: args.quote,
-                url: args.url,
-                locator: args.locator,
-                confidence: args.confidence,
-              });
-              text = out.result.ok ? "Finding recorded." : `Finding rejected: ${out.result.reason ?? "unknown"}`;
-              if (out.stop) stop = out.stop;
-              break;
-            }
-          }
-        } catch (error) {
-          text = `Tool error: ${error instanceof Error ? error.message : String(error)}`;
-        }
-        if (text.length > MAX_RESULT_CHARS) text = `${text.slice(0, MAX_RESULT_CHARS)}\n[truncated]`;
-        if (stop) {
-          text += `\n\nThis was your last tool call (${describeStop(stop)}). Call done now with your summary.`;
-        } else if (remaining <= 0) {
-          stop = "tool_limit";
-          text += "\n\nYou have used every tool call in your budget. Call done now with your summary.";
-        } else if (remaining <= 3) {
-          text += `\n\n(${remaining} tool call${remaining === 1 ? "" : "s"} left — wrap up and call done.)`;
-        }
-        results.push({ call, text });
-      }
-      resultLog.push(...results);
-      adapter.pushToolResults(results);
-      adapter.elideOldResults(RESULTS_KEPT_IN_FULL);
-      if (finished) break;
-      if (stop) {
-        // One more turn so the model can say what it established, then out.
-        let last: Turn | null = null;
-        try {
-          last = await adapter.next(box.signal);
-        } catch {
-          last = null;
-        }
-        if (last) {
-          inputTokens += last.inputTokens;
-          outputTokens += last.outputTokens;
-          const done = last.calls.find((call) => call.name === "done");
-          const parsed = done ? parseToolArgs("done", done.args) : null;
-          if (parsed?.ok && parsed.parsed.name === "done") {
-            summary = parsed.parsed.summary;
-            openQuestions = parsed.parsed.openQuestions;
-            followUps = parsed.parsed.followUps;
-          } else if (last.text.trim()) {
-            summary = last.text.trim();
-          }
-        }
-        reason = stop;
-        break;
-      }
-    }
-  } finally {
-    box.release();
-  }
-
+  const loop = await runWorkerLoop(input, adapter, { label: model.id });
   const billed = estimateGenerationCostUsd(model, {
-    promptTokens: inputTokens || undefined,
-    completionTokens: outputTokens || undefined,
-    promptChars: inputTokens ? undefined : resultLog.reduce((n, r) => n + r.text.length, WORKER_SYSTEM.length),
-    completionChars: outputTokens ? undefined : summary.length,
+    promptTokens: loop.inputTokens || undefined,
+    completionTokens: loop.outputTokens || undefined,
+    promptChars: loop.inputTokens ? undefined : loop.resultChars + WORKER_SYSTEM.length,
+    completionChars: loop.outputTokens ? undefined : loop.summary.length,
   });
   await recordSpend({
     userId: input.userId,
@@ -414,30 +221,15 @@ async function runLoop(input: RunWorkerInput, adapter: Adapter, model: ModelInfo
   }).catch(() => {});
 
   return {
-    summary: truncate(summary, 3_000),
-    openQuestions,
-    followUps,
+    summary: truncate(loop.summary, 3_000),
+    openQuestions: loop.openQuestions,
+    followUps: loop.followUps,
     tokens: billed.promptTokens + billed.completionTokens,
     costMicroUsd: Math.round(billed.costUsd * 1_000_000),
-    reason,
-    toolCalls,
-    elapsedMs: Date.now() - startedAt,
+    reason: loop.reason,
+    toolCalls: loop.toolCalls,
+    elapsedMs: loop.elapsedMs,
   };
-}
-
-function describeStop(stop: WorkerStopReason): string {
-  switch (stop) {
-    case "tool_limit":
-      return "tool budget spent";
-    case "time_limit":
-      return "out of time";
-    case "budget":
-      return "the run's money is spent";
-    case "page_limit":
-      return "the run has read every page its tier allows";
-    case "aborted":
-      return "the run was stopped";
-  }
 }
 
 // ---------------------------------------------------------------------------
