@@ -12,6 +12,7 @@ import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { WorkProgressChecklist, planTally } from "@/components/work/detail/work-progress";
 import { WorkQuestionCard } from "@/components/work/work-decisions";
 import { WorkLiveMeter } from "@/components/work/work-detail-panels";
+import { CaptureSkillButton, canCaptureSkill } from "@/components/work/skills/capture-skill";
 import {
   WorkCurrentAction,
   derivePerformedActions,
@@ -257,6 +258,27 @@ function TerminalRun({
       <div className="px-2 empty:hidden">
         <WorkDeliverableStage list={work.documents} />
       </div>
+
+      {/*
+       * Turning a run that worked into a skill, offered at the one moment it
+       * makes sense: the deliverable is above it and the reader has just
+       * decided the run was good.
+       *
+       * This offer used to sit under the finished checklist on the task page,
+       * which is the page Work's merge into Chat deleted. Without a new mount it
+       * would have gone with it, and skills would be back to being AUTHORED
+       * only — a blank textarea at /skills/new asking somebody to write, in
+       * advance, instructions for a job they have not done yet, which is the
+       * hardest moment to write them and why skill libraries stay empty.
+       * `canCaptureSkill` keeps it off failed runs and off anything too small to
+       * generalise, so a terminal run that went badly does not offer to teach
+       * Juno how it went badly.
+       */}
+      {canCaptureSkill(session.status, work.plan) && (
+        <div className="px-2">
+          <CaptureSkillButton session={session} plan={work.plan} performed={performed} />
+        </div>
+      )}
 
       {/* The receipt. Last, because it is reference rather than narrative. */}
       {run !== null && (

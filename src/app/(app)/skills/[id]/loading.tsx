@@ -1,0 +1,27 @@
+import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
+import { Skeleton } from "@/components/ui/skeleton";
+
+/**
+ * Name, description, the instructions box, then trust and version history.
+ *
+ * A skeleton rather than a spinner, because the two answer different questions:
+ * a spinner says only that something is happening, while a placeholder in the
+ * page's own shape says what is about to be there and reserves the room for it,
+ * so nothing jumps when the data lands. The rows come up on the shared stagger
+ * (see STAGGER in src/lib/motion.ts) rather than repainting as one flat block.
+ */
+export default function SkillLoading() {
+  return (
+    // role="status" with a label, not aria-hidden: a screen-reader user is owed
+    // the same "this is loading" the sighted reader gets from the shimmer.
+    <AppPage measure="reading" role="status" aria-label="Loading skill">
+      <AppPageHeaderSkeleton headingWidth="w-44" actions />
+      <div className="space-y-5">
+        <Skeleton className="h-10 w-full rounded-field" />
+        <Skeleton className="h-10 w-full rounded-field" />
+        <Skeleton className="h-56 w-full rounded-field" />
+        <Skeleton className="h-24 w-full rounded-card" />
+      </div>
+    </AppPage>
+  );
+}

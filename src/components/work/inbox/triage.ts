@@ -1,4 +1,5 @@
 import { isTerminalStatus, statusNeedsAttention, type WorkStatus } from "@/lib/work/domain";
+import { chatPathForSession } from "@/lib/work-url-migration";
 import { matchesFilter, type RecentItem } from "@/lib/work/recents";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkSession } from "@/lib/work/serializers";
@@ -105,7 +106,10 @@ export const TRIAGE_CAPTION: Record<WorkTriageState, string> = {
  *
  * Lifted verbatim from the grouping module this replaces. `href` and `title`
  * are filled honestly rather than stubbed, because a stub is what somebody
- * later reads as permission to widen this function's use.
+ * later reads as permission to widen this function's use. Honest now means the
+ * CONVERSATION: a task is read in the chat that asked for it, and a session
+ * that never had one — which is every task the retired Work composer created —
+ * resolves to the chat index rather than to a page that no longer exists.
  */
 function asRecentItem(session: ClientWorkSession): RecentItem {
   return {
@@ -116,7 +120,7 @@ function asRecentItem(session: ClientWorkSession): RecentItem {
     pinned: session.pinned,
     status: session.status,
     needsAttention: session.needsAttention,
-    href: `/work/${session.id}`,
+    href: chatPathForSession(session.conversationId),
   };
 }
 

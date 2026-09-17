@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { chatPathForSession, resolveWorkUrl } from "../src/lib/work-url-migration";
+
+/*
+ * EVERY /work URL SHAPE THAT EVER EXISTED, AND WHERE IT LANDS.
+ *
+ * The Work web routes are gone (docs/design/TWO_PRODUCTS.md §2) and the URLs
+ * are not. They are in bookmarks, in notification emails Juno itself sent, in
+ * search results, and — for `/work/skills` — hard-coded in a shipped macOS
+ * build that cannot be corrected retroactively. The one failure this file
+ * exists to catch is a 404 on a path that worked yesterday, which is why the
+ * cases below are written as the SHAPES rather than as the function's branches:
+ * a branch test passes when somebody deletes a case, and a shape test does not.
+ *
+ * The lookup leg — `/work/<sessionId>` → the conversation that session writes
+ * into — is split at the seam: `resolveWorkUrl` says "this is a session id" and
+ * `chatPathForSession` says where a resolved session goes. Only the Prisma call
+ * between them lives in the route, so everything a person can type is covered
+ * here without a database.
+ */
+
+const path = (segments: string[] | undefined, query: Record<string, string> = {}) => {
+  const target = resolveWorkUrl(segments, query);
+  assert.equal(target.kind, "path", `expected /work/${(segments ?? []).join("/")} to be a static redirect`);
+  return target.kind === "path" ? target.path : "";
+};
+
+test("the inbox lands on the chat index", () => {
+  assert.equal(path(undefined), "/chat");
+  assert.equal(path([]), "/chat");
+});
+
+test("a project filter survives the move, because /chat reads the same parameter", () => {
+  assert.equal(path([], { project: "proj-a" }), "/chat?project=proj-a");
+});
+
+test("a project id is encoded rather than pasted into the Location header", () => {
+  assert.equal(path([], { project: "a b&c" }), "/chat?project=a%20b%26c");
+});
+
+test("a repeated parameter takes its first value rather than serialising the array", () => {
+  const target = resolveWorkUrl([], { project: ["proj-a", "proj-b"] });
+  assert.deepEqual(target, { kind: "path", path: "/chat?project=proj-a" });
+});
+
+test("the triage filter is dropped, and dropping it still lands somewhere true", () => {
+  // Six of the seven `?show=` states named a pill on a list that no longer
+  // exists; the seventh, needs_you, is the fold at the top of the sidebar and is
+  // reached by pressing it rather than by a URL. See the module's own note for
+  // why the sidebar does not read this parameter.
+  for (const state of ["needs_you", "in_progress", "scheduled", "unread", "done", "all", "archived"]) {
+    assert.equal(path([], { show: state }), "/chat");
+  }
+});
+
+test("the three destinations that moved keep their whole shape", () => {
+  assert.equal(path(["skills"]), "/skills");
+  assert.equal(path(["skills", "new"]), "/skills/new");
+  assert.equal(path(["skills", "skl_123"]), "/skills/skl_123");
+
+  assert.equal(path(["schedules"]), "/automations");
+  assert.equal(path(["schedules", "new"]), "/automations/new");
+  assert.equal(path(["schedules", "sch_123"]), "/automations/sch_123");
+
+  assert.equal(path(["permissions"]), "/permissions");
+});
+
+test("the Macs list folds into the permissions hub, and one Mac keeps its page", () => {
+  // `/work/hosts` was already a redirect to `/work/permissions`; it is answered
+  // directly rather than chained, so a URL in the composer's refusal notes does
+  // not cost two round trips.
+  assert.equal(path(["hosts"]), "/permissions");
+  assert.equal(path(["hosts", "host_123"]), "/permissions/host_123");
+});
+
+test("a path segment is re-encoded on the way out", () => {
+  // Next hands `params` already percent-decoded, so a segment that arrived
+  // encoded would otherwise be emitted raw into a Location header.
+  assert.equal(path(["skills", "a b/c"]), "/skills/a%20b%2Fc");
+});
+
+test("a single unknown segment is a session id", () => {
+  assert.deepEqual(resolveWorkUrl(["cl_sess_1"]), { kind: "session", sessionId: "cl_sess_1" });
+});
+
+test("a shape this product never served lands on the front door rather than a 404", () => {
+  // Nothing under `/work` was ever three segments deep, so there is no history
+  // to honour and nothing to explain. Forwarding the extra segment verbatim
+  // would convert a URL that never existed into a 404 on the NEW tree, which is
+  // the one outcome this whole module exists to prevent — so each family falls
+  // back to its own index instead.
+  assert.equal(path(["cl_sess_1", "settings"]), "/chat");
+  assert.equal(path(["permissions", "anything"]), "/permissions");
+  assert.equal(path(["skills", "skl_123", "versions"]), "/skills/skl_123");
+  assert.equal(path(["schedules", "sch_123", "runs"]), "/automations/sch_123");
+  assert.equal(path(["hosts", "host_123", "grants"]), "/permissions/host_123");
+});
+
+test("a resolved session goes to its conversation, and one without goes to the index", () => {
+  assert.equal(chatPathForSession("conv-1"), "/chat/conv-1");
+  // Null for every session the retired Work composer created — most of the
+  // history of an older account — so this is the common path, not an edge.
+  assert.equal(chatPathForSession(null), "/chat");
+  assert.equal(chatPathForSession(undefined), "/chat");
+  assert.equal(chatPathForSession("a b"), "/chat/a%20b");
+});

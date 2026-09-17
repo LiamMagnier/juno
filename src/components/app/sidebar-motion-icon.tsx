@@ -11,7 +11,12 @@ import { cn } from "@/lib/utils";
 export type SidebarMotionIconKind =
   | "new"
   | "home"
-  | "work"
+  /* No "work". A glyph in this union marks a DESTINATION — a row in the
+     sidebar or its flyout — and Work stopped being one when it became
+     something a conversation does (docs/design/TWO_PRODUCTS.md §2). The mark
+     itself is not gone: `AppIcons.work` still draws a task in the command
+     palette's results and in the recents list, because a task is still a kind
+     of THING even though it is no longer a kind of PLACE. */
   | "code"
   | "design"
   | "library"
@@ -21,6 +26,11 @@ export type SidebarMotionIconKind =
   | "projects"
   | "assistants"
   | "tasks"
+  /** Skills, Automations and Permissions: the three rooms Work's tab row used
+   *  to hold, now destinations of their own under More. */
+  | "skills"
+  | "automations"
+  | "permissions"
   | "pulls"
   /** Code's Customize row. The same gear the account menu draws Settings with,
    *  because it is the same idea one level down: configuration for a product
@@ -50,7 +60,6 @@ export type SidebarMotionIconKind =
 const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   new: AppIcons.new,
   home: AppIcons.home,
-  work: AppIcons.work,
   code: AppIcons.code,
   design: AppIcons.design,
   library: AppIcons.library,
@@ -60,6 +69,9 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   projects: AppIcons.projects,
   assistants: AppIcons.assistants,
   tasks: AppIcons.tasks,
+  skills: AppIcons.skills,
+  automations: AppIcons.automations,
+  permissions: AppIcons.permissions,
   pulls: AppIcons.pulls,
   settings: AppIcons.settings,
   search: AppIcons.search,

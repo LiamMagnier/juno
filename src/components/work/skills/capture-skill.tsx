@@ -26,7 +26,7 @@ import { WorkStateNote } from "@/components/work/work-vocabulary";
  * Turning a task that worked into a skill you can run again.
  *
  * THE GAP THIS FILLS. Skills existed and could only be AUTHORED — a blank
- * textarea at /work/skills/new asking somebody to write, in advance and in the
+ * textarea at /skills/new asking somebody to write, in advance and in the
  * abstract, instructions for a job they have not done yet. That is the hardest
  * possible moment to write them, and it is why skill libraries in every product
  * that only offers upfront authoring stay empty. The easy moment is straight
@@ -201,7 +201,7 @@ function CaptureSkillDialog({
     if (result.kind === "ok") {
       toast.success(`Saved as /${result.value.slug}.`);
       onOpenChange(false);
-      router.push(`/work/skills/${result.value.id}`);
+      router.push(`/skills/${result.value.id}`);
       return;
     }
     setRefusal(

@@ -139,7 +139,7 @@ async function deliver(
       origin: true,
       inputSensitivity: true,
       outputSensitivity: true,
-      session: { select: { title: true } },
+      session: { select: { title: true, conversationId: true } },
       schedule: { select: { notifyPolicy: true } },
       host: { select: { displayName: true } },
     },
@@ -239,7 +239,7 @@ async function deliver(
         actionData: {
           runId: run.id,
           sessionId: run.sessionId,
-          taskUrl: taskUrl(run.sessionId),
+          taskUrl: taskUrl(run.sessionId, run.session.conversationId),
           question: occasion.question ?? null,
           approvalSummary: occasion.approvalSummary ?? null,
         },
@@ -252,7 +252,7 @@ async function deliver(
   const template = workNotificationEmail({
     message,
     urgency: decision.urgency,
-    taskUrl: taskUrl(run.sessionId),
+    taskUrl: taskUrl(run.sessionId, run.session.conversationId),
   });
   const result = await sendEmail({
     to: user.email,
@@ -501,6 +501,24 @@ function asSensitivity(value: string): WorkSensitivity {
     : "restricted";
 }
 
-function taskUrl(sessionId: string): string {
-  return `${env.appUrl.replace(/\/$/, "")}/work/${sessionId}`;
+/**
+ * Where a notification points — in an email, and in the in-app row's
+ * `actionData.taskUrl`.
+ *
+ * `/work/<sessionId>` used to be a page. It is not one any more: a run is read
+ * in the conversation that asked for it (docs/design/TWO_PRODUCTS.md §2), so
+ * the link is that conversation.
+ *
+ * WHEN THERE IS NO CONVERSATION, this hands out `/work/<sessionId>` rather than
+ * `/chat`, and the difference matters precisely because an email is the
+ * longest-lived link Juno emits. That path is the account-scoped resolver
+ * (src/lib/work-url-migration.ts): it answers "the chat index" today and "the
+ * conversation" the moment one is attached, whereas a `/chat` baked in now
+ * would still say "the chat index" a month later. The direct link is preferred
+ * when it can be built because it costs the reader one fewer round trip, not
+ * because the resolver would be wrong.
+ */
+function taskUrl(sessionId: string, conversationId: string | null): string {
+  const base = env.appUrl.replace(/\/$/, "");
+  return conversationId ? `${base}/chat/${conversationId}` : `${base}/work/${sessionId}`;
 }

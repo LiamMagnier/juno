@@ -52,6 +52,7 @@ import {
   type WorkEventRow,
   type WorkSessionRow,
 } from "@/lib/search/sql";
+import { chatPathForSession } from "@/lib/work-url-migration";
 import {
   SEARCH_TYPES,
   windowSince,
@@ -485,7 +486,7 @@ export async function runUnifiedSearch(
             type: "work" as const,
             title: row.title || "Untitled task",
             snippet: buildSnippet(row.goal ?? "", terms),
-            href: `/work/${row.id}`,
+            href: chatPathForSession(row.conversationId),
             locator: row.status,
             projectId: row.projectId,
             updatedAt: row.updatedAt.toISOString(),
@@ -496,7 +497,16 @@ export async function runUnifiedSearch(
             type: "work" as const,
             title: row.sessionTitle || "Untitled task",
             snippet: buildSnippet(row.snippetSource ?? "", terms),
-            href: href(`/work/${row.sessionId}`, { run: row.runId, event: row.seq }),
+            // The conversation, and only the conversation. This used to
+            // carry `?run=&event=`, naming the exact step — and nothing ever
+            // read those two parameters, on the task page then or in the
+            // transcript now: `useConversationWork` follows a conversation's
+            // NEWEST run and says so in its own docblock, and `WorkRunPanel`
+            // draws the event stream with no per-step anchor. A parameter the
+            // destination cannot honour is worse than none, because it reads as
+            // a promise. The reader is still told which step matched — that is
+            // what `locator` is for, one line below.
+            href: chatPathForSession(row.conversationId),
             locator: `Step ${row.seq}`,
             projectId: row.projectId,
             updatedAt: row.updatedAt.toISOString(),

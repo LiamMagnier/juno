@@ -428,7 +428,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
       )}
       <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
         Start a new task to change it.{" "}
-        <Link href="/work/skills" className="underline underline-offset-2 hover:text-foreground">
+        <Link href="/skills" className="underline underline-offset-2 hover:text-foreground">
           Manage skills
         </Link>
         .

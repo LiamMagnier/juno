@@ -51,10 +51,12 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  ScrollText,
   Search,
   Settings,
   Share2,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Square,
   SquareDashed,
@@ -121,6 +123,33 @@ export const AppIcons = {
    *  nothing to emit — so that row fell back to SF Symbols' `gearshape`, the one
    *  non-Lucide glyph in an otherwise Lucide column. */
   settings: Settings,
+  /** Skills — reusable instructions with a name.
+   *
+   *  A written sheet, not a mortarboard and not a robot: a skill is a document
+   *  the reader wrote (or reviewed) and hands over, and the two obvious
+   *  alternatives both say something false about it. `Bot` is already
+   *  Assistants and sits three rows away in the same menu, and a graduation cap
+   *  would say Juno LEARNED this, which is exactly the thing skills are not —
+   *  they are instructions, reviewed and trusted by a person, not training. */
+  skills: ScrollText,
+  /** Automations — everything that starts without the reader typing.
+   *
+   *  The SAME workflow mark as `work` above and `ComposerIcons.task`, on the
+   *  argument this file has already made twice: one feature, one drawing. An
+   *  automation IS a delegated task, started by a clock or an event instead of
+   *  by a press, and giving it a second glyph would make the thing that starts
+   *  a run and the run it starts look like two different products. `tasks`
+   *  keeps its calendar because legacy scheduled prompts are a different,
+   *  older thing that lives on its own page. */
+  automations: Workflow,
+  /** Permissions — what Juno may do on your behalf, and on which Mac.
+   *
+   *  A shield with a CHECK. `ShieldAlert`, three lines up in `CodeIcons`, is
+   *  the moment Juno stops to ask and is drawn in warning tone; this is the
+   *  standing answer to that question and a destination you visit when nothing
+   *  is wrong. The same mark in two tones would read as "something needs your
+   *  attention" on a row that is simply where the settings live. */
+  permissions: ShieldCheck,
 } as const satisfies Record<string, LucideIcon>;
 
 export type AppIconName = keyof typeof AppIcons;

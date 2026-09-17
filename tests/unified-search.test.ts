@@ -149,6 +149,7 @@ function fixtures(userId: string, tag: string): Record<string, FakeRow[]> {
         goal: `Replace nesting with a guard clause, ${tag}.`,
         status: "completed",
         projectId: null,
+        conversationId: `conv-${tag}`,
         updatedAt: T0,
         rank: 0.55,
       },
@@ -164,6 +165,7 @@ function fixtures(userId: string, tag: string): Record<string, FakeRow[]> {
         sessionId: `work-${tag}`,
         sessionTitle: `Refactor ${tag}`,
         projectId: null,
+        conversationId: `conv-${tag}`,
         snippetSource: `{"note":"added a guard clause ${tag}"}`,
         updatedAt: T0,
         rank: 0.35,
@@ -532,7 +534,11 @@ test("a hit resolves to the exact location, not merely its container", async () 
   assert.equal(byType.artifact[0].locator, "v2");
   assert.equal(byType.knowledge[0].locator, "Page 4", "a citation has to be able to say where");
   assert.equal(byType.knowledge[0].href, "/projects/proj-a?doc=doc-a&block=block-a");
-  assert.equal(byType.work[1].href, "/work/work-a?run=run-a&event=12", "the step inside the run");
+  assert.equal(
+    byType.work[1].href,
+    "/chat/conv-a",
+    "a step inside a run resolves to the conversation the run is drawn in"
+  );
   assert.equal(byType.file[0].href, "/chat/conv-a?m=msg-a", "the message the file was attached to");
 });
 

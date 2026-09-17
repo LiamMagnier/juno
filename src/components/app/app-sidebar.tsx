@@ -806,26 +806,21 @@ export function AppSidebar({
         >
           {(isCode
             ? ([
-                /* Code's destination, and for now there is one.
+                /* Code's two destinations.
+
                    Artifacts is shared with Chat — one library of generated
                    things, not one per product.
 
-                   CUSTOMIZE IS MISSING ON PURPOSE, and belongs here the moment
-                   it can be pressed. Code is the product with page-sized
-                   configuration — repositories, Mac workspaces, the default
-                   permission mode (docs/design/TWO_PRODUCTS.md §2.2) — and
-                   Chat's equivalents are already destinations or settings,
-                   which is why there is no Customize row over there either.
-                   But `/code/customize` is served by no branch yet, and this
-                   package already decided how it treats a route in that state:
-                   the palette's Skills, Automations and Permissions commands
-                   were left out of this same commit because their routes do not
-                   exist. One rule, and the persistent chrome is the surface
-                   that can least afford the other one — a palette result you
-                   never type is invisible, while a row sitting in the column on
-                   every page is an invitation to a 404. The page's own package
-                   adds the row back beside it. */
+                   Customize is Code's and Chat has no equivalent, deliberately:
+                   Code is the product with page-sized configuration —
+                   repositories, Mac workspaces, the default permission mode
+                   (docs/design/TWO_PRODUCTS.md §2.2) — while Chat's are already
+                   destinations (Projects, Connections) or settings. The row was
+                   held back until `/code/customize` was served, on the rule
+                   that persistent chrome must never be an invitation to a 404;
+                   the page exists, so the row is here. */
                 { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
+                { href: "/code/customize", kind: "settings", label: "Customize", active: pathname === "/code/customize" },
               ] as const)
             : ([
                 { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
@@ -1483,6 +1478,16 @@ function MoreFlyout({
    * happens — it used to be a tab on the Code list page, beside a Runs tab that
    * duplicated the panel you are reading. Connections is in both lists: a Code
    * session reaches GitHub through exactly the same connector a chat does.
+   *
+   * SKILLS, AUTOMATIONS AND PERMISSIONS ARRIVE HERE, and this is the whole of
+   * what Work's four-tab row becomes. They were rooms inside a product, which
+   * meant you could only reach them by first going to a place you had no other
+   * reason to be in — and two of the three govern every delegated run in the
+   * account, not a section of it. In More rather than as top-level rows for the
+   * same reason Assistants and Connections are: you configure them occasionally
+   * and read the list under them every day. Tasks stays beside them and is a
+   * different, older thing — scheduled PROMPTS, which predate delegated runs
+   * and still have their own page and their own data.
    */
   const items = isCode
     ? [
@@ -1492,6 +1497,9 @@ function MoreFlyout({
     : [
         { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
         { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
+        { href: "/skills", kind: "skills" as const, label: "Skills", active: !!pathname?.startsWith("/skills") },
+        { href: "/automations", kind: "automations" as const, label: "Automations", active: !!pathname?.startsWith("/automations") },
+        { href: "/permissions", kind: "permissions" as const, label: "Permissions", active: !!pathname?.startsWith("/permissions") },
         { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
       ];
   const anyActive = items.some((item) => item.active);

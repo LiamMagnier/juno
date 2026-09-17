@@ -9,8 +9,13 @@ import { Toaster as Sonner, type ToasterProps } from "sonner";
  * clear the composer on these and only these — everywhere else the 8rem lift
  * parked it a third of the way up an otherwise empty page, which read as a
  * misplaced object rather than as a notification.
+ *
+ * "/work" was here and is not replaced by anything. The three destinations that
+ * came out of it — /skills, /automations, /permissions — are ordinary pages
+ * with no composer along the bottom edge, so a toast on one of them belongs
+ * where every other page's toast sits.
  */
-const COMPOSER_ROUTES = ["/chat", "/code", "/work", "/compare", "/design"];
+const COMPOSER_ROUTES = ["/chat", "/code", "/compare", "/design"];
 
 // "/" is deliberately NOT in the list: it is the marketing front door for a
 // signed-out visitor (app/page.tsx redirects everyone else straight to /chat),

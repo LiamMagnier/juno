@@ -176,22 +176,29 @@ export default function ProjectDetailPage() {
       })
       .catch(() => {});
 
-    // Fetch work runs
-    fetch("/api/work?limit=50")
+    // Fetch this project's delegated tasks.
+    //
+    // `/api/work/sessions?projectId=`, not `/api/work?limit=50`. There is no
+    // route at `/api/work` — `src/app/api/work` holds only subdirectories — so
+    // this tab has been silently empty for as long as it has existed: the fetch
+    // 404d, `res.sessions` was undefined, and the `.catch` swallowed it. The
+    // real route filters by project server-side, which is why the client-side
+    // `.filter` on `projectId` is gone with it rather than kept as a belt.
+    fetch(`/api/work/sessions?projectId=${encodeURIComponent(id)}&limit=50`)
       .then((res) => res.json())
       .then((res) => {
         if (res && Array.isArray(res.sessions)) {
-          const matching = res.sessions
-            .filter((s: Record<string, unknown>) => s.projectId === id)
-            .map((s: Record<string, unknown>) => ({
+          setWorkRuns(
+            res.sessions.map((s: Record<string, unknown>) => ({
               id: String(s.id),
+              conversationId: s.conversationId == null ? null : String(s.conversationId),
               title: String(s.title || ""),
               goal: String(s.goal || ""),
               status: s.status,
               updatedAt: String(s.updatedAt || ""),
               createdAt: String(s.createdAt || ""),
-            }));
-          setWorkRuns(matching);
+            }))
+          );
         }
       })
       .catch(() => {});
@@ -619,8 +626,10 @@ export default function ProjectDetailPage() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
+            {/* "Tasks", not "Work". The value stays `work` because `?tab=work`
+                is a URL somebody can hold; the label says what the tab lists. */}
             <TabsTrigger value="work" className="px-4">
-              Work {workRuns.length > 0 && `(${workRuns.length})`}
+              Tasks {workRuns.length > 0 && `(${workRuns.length})`}
             </TabsTrigger>
             <TabsTrigger value="code" className="px-4">
               Code
@@ -879,7 +888,10 @@ export default function ProjectDetailPage() {
               projectId={data.project.id}
               workRuns={workRuns}
               onNewWork={() => {
-                router.push(`/work?project=${data.project.id}`);
+                // A new task starts where every task starts now: the chat
+                // composer, with this project already selected. There is no
+                // Work composer to send anyone to.
+                router.push(`/chat?project=${data.project.id}`);
               }}
             />
           </TabsContent>

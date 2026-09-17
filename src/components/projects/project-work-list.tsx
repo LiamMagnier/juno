@@ -9,10 +9,21 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
+import { chatPathForSession } from "@/lib/work-url-migration";
 import { cn } from "@/lib/utils";
 
 export interface ProjectWorkItem {
   id: string;
+  /**
+   * The chat this task runs in, when it has one.
+   *
+   * It is on the item rather than resolved at press time because a task is now
+   * READ in its conversation — there is no task page left to open
+   * (docs/design/TWO_PRODUCTS.md §2). Null for every task the retired Work
+   * composer created, and `chatPathForSession` lands those on the chat index
+   * rather than inventing a conversation for them.
+   */
+  conversationId: string | null;
   title: string;
   goal: string;
   status: AgentRunStatus;
@@ -96,7 +107,7 @@ export function ProjectWorkList({
               style={staggerDelay(i)}
             >
               <Link
-                href={`/work/${work.id}`}
+                href={chatPathForSession(work.conversationId)}
                 className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg motion-reduce:transition-none"
               >
                 <div className="flex items-start gap-3">

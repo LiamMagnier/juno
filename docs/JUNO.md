@@ -46,10 +46,16 @@ document the native clients themselves.
 20. [Deployment & operations](#20-deployment--operations)
 21. [Development: scripts & tests](#21-development-scripts--tests)
 
-Plus **[§9b Work: tasks, runs, plans & approvals](#9b-work-tasks-runs-plans--approvals)**,
+Plus **[§9b Work: what a conversation can do](#9b-work-what-a-conversation-can-do)**,
 which sits between 9 and 10. It carries a letter rather than a number for the same reason
 §3.4b and §20.2b do: it was written after the numbering was set, and renumbering twelve
 sections would break every anchor anyone has linked to.
+
+**There are two products, Chat and Code.** Work used to be a third and is now something a
+conversation does — see `docs/design/TWO_PRODUCTS.md` for the decision and §9b for what it
+means in the code. Nothing in `/api/work/**`, `src/lib/work/domain.ts` or
+`contracts/work/juno-work-v1.json` moved: the runtime is untouched and the Mac and the
+iPhone keep the product they have. What changed is where a person reads a run.
 
 ---
 
@@ -996,6 +1002,18 @@ URLs resolve against `NEXT_PUBLIC_APP_URL`):
 Juno "Code" runs agentic coding sessions. Three cooperating surfaces share the
 `/api/code/*` namespace and the `CodeDevice`/`CodeTask`/`CodeTaskEvent` core.
 
+**`/code` is a composer, not a list.** It lands on a greeting and a field pinned to the
+bottom edge — environment and repository chips above it, permission mode, model and effort
+below — which is the same shape `/chat` has and the shape `/code/new` used to have on a
+route of its own. The sessions that were on the list page are in the sidebar, in date
+folds, one status glyph per row, with a **Needs you** fold above them; that is a better
+answer to the objection the list page raised against landing on a composer, because the
+run that stopped to ask you something is now the first row of the column on *every* page
+rather than only on one. `/code/new` is a redirect onto `/code`
+(`src/app/(app)/code/new/page.tsx`), `/code/pulls` stays as a destination under More, and
+`/code/customize` holds the page-sized configuration — environments, repositories, Mac
+workspaces, the default permission mode — that Chat does not have an equivalent of.
+
 ### 9.1 Device task queue
 
 A Mac/Windows host running the agent registers/heartbeats via `POST /api/code/devices`
@@ -1128,15 +1146,60 @@ git worktrees, surfaced to the web UI as `agent` events.
 
 ---
 
-## 9b. Work: tasks, runs, plans & approvals
+## 9b. Work: what a conversation can do
 
-Juno **Work** is the agentic surface for everything that is not code: you write a goal,
-Juno plans it, works it, stops to ask when only you can decide, and hands back a
-deliverable. It shares nothing with Code except the idea of a remote executor — its own
-vocabulary lives in `src/lib/work/domain.ts` (statuses, event kinds, capabilities, risk
-levels, command kinds), is mirrored to the native clients through
+**Work is not a place. It is what a conversation can do when the ask is big.** You write a
+goal in the chat composer and arm it — "Do this as a task", beside Deep research in the
+`+` menu — and Juno plans it, works it, stops to ask when only you can decide, and hands
+back a deliverable, all inside the transcript that asked for it. The decision and the
+argument for it are `docs/design/TWO_PRODUCTS.md`; this section is what it means in the
+code.
+
+**The runtime did not move.** Work shares nothing with Code except the idea of a remote
+executor — its own vocabulary lives in `src/lib/work/domain.ts` (statuses, event kinds,
+capabilities, risk levels, command kinds), is mirrored to the native clients through
 `contracts/work/juno-work-v1.json`, and `src/lib/work/contract.ts` asserts at runtime that
 the two still agree. **A value that is not in `domain.ts` is not a value Work has.**
+`/api/work/**` is byte-identical: the macOS and iOS clients are generated from that
+contract and they still ship the Work product they always had.
+
+**What a person sees.** A `WorkSession` carries a `conversationId` — an indexed column
+that has existed since Work shipped and that only the legacy `ScheduledTask` adopter ever
+wrote — and the chat composer now writes it on every delegation. `useConversationWork`
+(`src/components/chat/use-conversation-work.ts`) discovers the session by
+`GET /api/work/sessions?conversationId=`, then follows its run down the same SSE stream
+the task page used to read, with the same resume cursor. `WorkRunPanel`
+(`src/components/chat/work-run-panel.tsx`) draws it through `MessageList`'s one inline
+slot, routing on liveness exactly as `ResearchRunPanel` does: **live** is what it is doing
+now, the plan with its tally, one line of facts, the run's own words and the block that
+needs a person; **terminal** is the outcome, the deliverables, the offer to save the run
+as a skill, and the receipt. Every block is a component the task page already mounted over
+the same stream — they are pure functions of the event log and were built to be re-mounted
+— so a run cannot disagree with itself about what happened. The composer owns answering,
+steering and stopping, because the composer is where a person types at a conversation.
+It follows a conversation's NEWEST task; a chat that has delegated twice draws the second
+run, and that limitation is stated in the hook rather than discovered.
+
+**The web routes are gone, and none of the URLs are.** `src/app/(app)/work/**` is one
+optional catch-all (`[[...segments]]/page.tsx`) over one pure map
+(`src/lib/work-url-migration.ts`, pinned by `tests/work-url-migration.test.ts`):
+
+| was | is | why it is a redirect and not a 404 |
+| --- | --- | --- |
+| `/work`, `/work?show=…`, `/work?project=` | `/chat` (carrying `project`) | The inbox's triage survives as the sidebar's **Needs you** fold, which is a press rather than a URL |
+| `/work/<sessionId>` | `/chat/<conversationId>`, or `/chat` when there is none | Owner-scoped lookup; 404s a deleted task rather than pretending |
+| `/work/skills[/…]` | `/skills[/…]` | A **shipped** macOS build links here by hand (`DesktopWorkWorkspace.swift`) |
+| `/work/schedules[/…]` | `/automations[/…]` | Every task notification's email footer points here |
+| `/work/permissions`, `/work/hosts` | `/permissions` | Both were linked from the composer's refusal notes |
+| `/work/hosts/<hostId>` | `/permissions/<hostId>` | One Mac keeps its own page |
+
+`/work/<sessionId>` is the one path that is **not** legacy: the automation editor's run
+rows and a schedule row's "Its task" link through it on purpose, because those rows hold a
+session id and turning one into a conversation is an owner-scoped lookup a client cannot
+do. Skills, Automations and Permissions are destinations under **More** in the sidebar
+rather than tabs inside a product — two of the three govern every delegated run in the
+account, and the tab row meant you could only reach them by first going somewhere you had
+no other reason to be.
 
 Sixteen `Work*` Prisma models back it. The ones that carry the flow: `WorkSession` (the
 task: goal, target, model, reasoning effort, permission policy), `WorkRun` (one *attempt*
@@ -1481,12 +1544,25 @@ is 24 random bytes (base64url), the only capability; revocation is a tombstone t
 the page from the next request; creating a share reuses the newest active link for a
 target rather than orphaning snapshots.
 
-**Scheduled tasks.** `/api/tasks` create a `ScheduledTask` (cadence DAILY / WEEKDAYS /
-WEEKLY / MONTHLY, timezone-aware, plan-limited: PRO 3, MAX/OWNER 10, FREE 0). The
-`juno-scheduler` PM2 worker (`scripts/scheduled-task-runner.ts`) claims due tasks every
-60 s with an atomic `updateMany` (double-run-safe), runs them through `streamChat` with a
-10-min ceiling and budget enforcement, and writes an encrypted USER+ASSISTANT pair into a
-lazily-created results conversation.
+**Scheduled tasks — the older of the two schedulers.** `/api/tasks` create a
+`ScheduledTask` (cadence DAILY / WEEKDAYS / WEEKLY / MONTHLY, timezone-aware,
+plan-limited: PRO 3, MAX/OWNER 10, FREE 0). The `juno-scheduler` PM2 worker
+(`scripts/scheduled-task-runner.ts`) claims due tasks every 60 s with an atomic
+`updateMany` (double-run-safe), runs them through `streamChat` with a 10-min ceiling and
+budget enforcement, and writes an encrypted USER+ASSISTANT pair into a lazily-created
+results conversation.
+
+`WorkSchedule` + `WorkTrigger` supersede it and have not replaced it. A `ScheduledTask` is
+a recurring **prompt** answered by `streamChat`; a `WorkSchedule` points at one durable
+`WorkSession`, so every fire adds to one transcript and one deliverable history instead of
+spawning an orphan, and its triggers are not only clocks — email filters, calendar
+windows, topic monitors, connector events, folder changes and one-click manual runs all
+start one. That is why the surface is called **Automations** (`/automations`) rather than
+Schedules. The migration path exists in code (`planTaskMigration` in
+`src/lib/work/schedule.ts`, which carries the results conversation across so a migrated
+schedule's history stays continuous) but has not been run: both live, `/tasks` keeps its
+own page and its own sidebar row under More, and nothing has been taken away from an
+account that already had scheduled prompts.
 
 **Roadmap.** `/api/roadmap` (public feature requests: create, vote-toggle — one per user
 via a DB unique — comment; owner-only status moderation writing an append-only

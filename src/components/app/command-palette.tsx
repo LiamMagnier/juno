@@ -522,7 +522,7 @@ function FilterChip({
  *
  * This used to filter the conversation titles the app context happened to be
  * holding, in the browser. That was never search: it could not see message
- * text, files, knowledge, artifacts, memories or Work, it silently excluded
+ * text, files, knowledge, artifacts, memories or tasks, it silently excluded
  * archived chats, and it stopped at whatever the 200-row context contained.
  * There was a server-side title search behind `GET /api/conversations?q=` and
  * nothing in the repository ever passed the `q`.
@@ -831,7 +831,7 @@ function SearchPalette() {
         <>
           <p className="text-body text-muted-foreground">Search everything in Juno</p>
           <p className="mt-1 text-caption text-muted-foreground">
-            Chats and their messages, projects, files, artifacts, memories and Work.
+            Chats and their messages, projects, files, artifacts, memories and tasks.
           </p>
         </>
       )}
@@ -853,7 +853,7 @@ function SearchPalette() {
       open={open}
       onOpenChange={setOpen}
       ariaLabel="Search everything"
-      placeholder="Search chats, files, artifacts, memory and Work"
+      placeholder="Search chats, files, artifacts, memory and tasks"
       query={query}
       onQueryChange={setQuery}
       items={items}
@@ -991,7 +991,11 @@ function CommandMenu() {
          from the chat composer, in the conversation the run will live in
          (docs/design/TWO_PRODUCTS.md §2.2), so the palette's answer to "I want
          Juno to go and do this" is the same "New chat" row above. */
-      { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac task agent", run: () => go("/code/new") },
+      /* Straight to `/code`, not to `/code/new`. The Code landing IS the
+         composer now (docs/design/TWO_PRODUCTS.md §3) and `/code/new` is a
+         redirect onto it, so routing through it would spend a round trip to
+         arrive at the row's own destination. */
+      { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac task agent", run: () => go("/code") },
       { id: "new-task", group: "Actions", label: "New scheduled task", icon: AppIcons.tasks, keywords: "schedule recurring automation cron reminder", run: () => go("/tasks") },
       { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
       {
@@ -1013,6 +1017,14 @@ function CommandMenu() {
       { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
       { id: "library", group: "Actions", label: "Open Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: "Open Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
+      /* The three rooms Work's tab row used to hold. They are destinations in
+         their own right now, so they are reachable from the keyboard — which
+         the tab row never made them, since you had to be standing inside Work
+         to see it. Left out of the shell's own commit because the routes did
+         not exist yet; they do. */
+      { id: "skills", group: "Actions", label: "Open Skills", icon: AppIcons.skills, keywords: "instructions reusable slash capability library", run: () => go("/skills") },
+      { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule recurring trigger cron email calendar monitor", run: () => go("/automations") },
+      { id: "permissions", group: "Actions", label: "Open Permissions", icon: AppIcons.permissions, keywords: "approvals allow ask macs hosts security", run: () => go("/permissions") },
       { id: "tasks", group: "Actions", label: "Open Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: "Open Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
