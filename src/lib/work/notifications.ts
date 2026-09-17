@@ -145,6 +145,41 @@ function isFinished(status: WorkStatus): boolean {
 }
 
 /**
+ * What to say when the number of tasks waiting on the reader goes UP.
+ *
+ * ── Why a rise, and not a count ─────────────────────────────────────────────
+ *
+ * The web app has always had the number — a dot on the switch, a pill in the
+ * inbox, an unread ledger — and a number that is quietly two instead of one is
+ * a notification nobody receives. It has to be the change that speaks, because
+ * the change is the new information; the count is already on screen.
+ *
+ * Only upwards, and never on the first reading. A count that FALLS is the
+ * reader answering something, which needs no announcement, and the first
+ * reading has no previous value to have risen from — announcing it would
+ * greet every page load with "a task needs you" about tasks that have been
+ * waiting since yesterday.
+ *
+ * ── Why it does not consult the decision table above ────────────────────────
+ *
+ * `decideNotification` answers a different question with different evidence: it
+ * is given one run's transition, that run's policy and whether it has already
+ * been told, and it decides whether to interrupt somebody who is elsewhere.
+ * This is a reader who is demonstrably here, looking at the app, and the
+ * question is only whether to say out loud what the interface has just started
+ * showing. Running a per-run policy over a per-account count would be answering
+ * with evidence it does not have — and `none` means "do not email me", not "do
+ * not update the screen I am looking at".
+ */
+export function describeNeedsYouRise(previous: number | null, next: number | null): string | null {
+  if (previous === null || next === null) return null;
+  if (next <= previous) return null;
+  const added = next - previous;
+  const what = added === 1 ? "A task needs you" : `${added} tasks need you`;
+  return next === added ? what : `${what} — ${next} in total`;
+}
+
+/**
  * The identity of "this exact thing", for deduplication.
  *
  * Keyed on the run and the specific event rather than on the session, because a

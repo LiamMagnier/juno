@@ -19,13 +19,27 @@
  * second failure on the first without un-finishing the run. Errors go to the
  * operator console.
  *
- * **The only channel is email.** That is a statement of fact about the app
- * rather than a design choice made here. Juno has one delivery layer
- * (`sendEmail`, Resend, flag-gated on RESEND_API_KEY) and one wake-up channel
- * for native clients (the AccountChange feed) — but no Work table has a change
- * trigger, so no Work state reaches that feed today and there is nothing to
- * push. Building a second sender to fill the gap would be a fourth mechanism to
- * keep correct; the gap is recorded in the deployment notes instead.
+ * **The only channel this function drives is email.** Juno has one delivery
+ * layer (`sendEmail`, Resend, flag-gated on RESEND_API_KEY) and one wake-up
+ * channel for native clients (the AccountChange feed). Building a second sender
+ * here to reach the second channel would be a fourth mechanism to keep correct,
+ * and it is not needed: the feed is fed by Postgres triggers, not by
+ * application code, so a run that changes status wakes every signed-in device
+ * without this function knowing anything about it.
+ *
+ * Those triggers are written and are deliberately NOT applied yet. They sit in
+ * `prisma/migrations-pending/20260815141000_work_change_capture_triggers`, held
+ * back because `NativeSyncAPIClient.requireEntityType` throws on an entity type
+ * it has not learned and that aborts the whole `/changes` page rather than
+ * skipping one row — so arming them before the build carrying the twelve Work
+ * strings is the OLDEST client in the field would stop those accounts syncing
+ * entirely, for every entity type, until they updated. Both allowlists carry
+ * the strings; what remains is adoption. The precondition, and the instruction
+ * not to move the file merely because the strings are in `main`, are in that
+ * directory's README.
+ *
+ * So the gap here is a release schedule and not a missing mechanism, and the
+ * thing NOT to do is build one.
  */
 
 import "server-only";
