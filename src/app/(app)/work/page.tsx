@@ -25,6 +25,7 @@ import {
   type WorkTriageState,
 } from "@/components/work/inbox/triage";
 import { fetchWorkOutputCounts } from "@/components/work/shell/work-outputs";
+import { readWorkSnapshot, writeWorkSnapshot } from "@/components/work/work-snapshot";
 import {
   WORK_LIVE_POLL_MS,
   WORK_POLL_MS,
@@ -134,16 +135,37 @@ function WorkInbox() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const [sessions, setSessions] = React.useState<WorkInboxSession[] | null>(null);
+  /*
+   * OPENING ON WHAT WE ALREADY HAVE.
+   *
+   * These three used to start empty on every arrival, so Chat -> Work drew
+   * skeleton rows for a list the reader had looked at a minute ago and that had
+   * not changed. The snapshot is the last successful answer (see
+   * `work-snapshot.ts` for why it is in memory and why it expires); the loads
+   * below still run and still overwrite it. What changes is only the FIRST
+   * frame: real rows instead of a placeholder for them.
+   *
+   * Read ONCE, into `restored`, rather than once per piece of state: the read
+   * expires a stale snapshot as a side effect, so three separate calls could
+   * disagree about whether there is one — and `loadedAt` comes from the snapshot
+   * rather than from `now`, so the staleness line under the list keeps telling
+   * the truth about how old these rows are.
+   */
+  const [restored] = React.useState(readWorkSnapshot);
+  const [sessions, setSessions] = React.useState<WorkInboxSession[] | null>(
+    restored?.sessions ?? null
+  );
   const [sessionsFailed, setSessionsFailed] = React.useState(false);
-  const [loadedAt, setLoadedAt] = React.useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = React.useState<string | null>(restored?.loadedAt ?? null);
   /**
    * The four counts the server keeps for the whole account. Null until the
    * first answer; the pills fall back to counting the page they can see, which
    * is what they did before the route existed and is still true of that page.
    */
-  const [serverCounts, setServerCounts] = React.useState<ServerTriageCounts | null>(null);
-  const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
+  const [serverCounts, setServerCounts] = React.useState<ServerTriageCounts | null>(
+    restored?.counts ?? null
+  );
+  const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(restored?.hosts ?? null);
   const [hostsFailed, setHostsFailed] = React.useState(false);
   const [outputs, setOutputs] = React.useState<ReadonlyMap<string, number> | null>(null);
   const [schedules, setSchedules] = React.useState<readonly ClientWorkSchedule[]>([]);
@@ -175,9 +197,13 @@ function WorkInbox() {
   const loadSessions = React.useCallback(async () => {
     const result = await fetchWorkSessions();
     if (result.kind === "ok") {
+      const at = new Date().toISOString();
       setSessions(result.value);
       setSessionsFailed(false);
-      setLoadedAt(new Date().toISOString());
+      setLoadedAt(at);
+      // Written on SUCCESS only. A snapshot taken from a failed load would open
+      // the next visit on an empty list that looks like an empty account.
+      writeWorkSnapshot({ sessions: result.value, loadedAt: at });
       return;
     }
     setSessionsFailed(true);
@@ -193,7 +219,10 @@ function WorkInbox() {
    */
   const loadCounts = React.useCallback(async () => {
     const result = await fetchWorkTriageCounts();
-    if (result.kind === "ok") setServerCounts(result.value);
+    if (result.kind === "ok") {
+      setServerCounts(result.value);
+      writeWorkSnapshot({ counts: result.value });
+    }
   }, []);
 
   /*
@@ -253,6 +282,7 @@ function WorkInbox() {
     if (result.kind === "ok") {
       setHosts(result.value);
       setHostsFailed(false);
+      writeWorkSnapshot({ hosts: result.value });
       return;
     }
     // What we last knew is left standing rather than blanked. A dropped request

@@ -1,5 +1,11 @@
 import "server-only";
-import { decideGeminiFinish } from "@/lib/gemini-finish";
+import {
+  GEMINI_CONTINUE_INSTRUCTION,
+  MAX_GEMINI_CONTINUATIONS,
+  decideGeminiFinish,
+  geminiShouldContinue,
+  type GeminiFinishDecision,
+} from "@/lib/gemini-finish";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -10,6 +16,7 @@ import {
   resolveGroundingUrls,
   geminiThinkingBudget,
   geminiThinkingConfig,
+  geminiContinuationConfig,
   geminiGenerationConfig,
   geminiEndpoint,
   geminiModelPath,
@@ -23,6 +30,7 @@ import {
 } from "@/lib/gemini-core";
 import {
   applyGeminiChunk,
+  appendGeminiContinuation,
   appendGeminiToolRound,
   emptyGeminiRound,
   extractGeminiSseEvents,
@@ -97,7 +105,8 @@ export async function* streamGemini(
 
   const hasTools = !!toolset && toolset.tools.length > 0;
   const functionDeclarations = hasTools ? toGeminiFunctionDeclarations(toolset) : [];
-  const generationConfig = geminiGenerationConfig(model, maxTokens, reasoningEffort);
+  // `let`, because a continuation pass rebuilds it at the thinking floor.
+  let generationConfig = geminiGenerationConfig(model, maxTokens, reasoningEffort);
 
   const sources = new Map<string, ClientSource>();
   let cumInput = 0;
@@ -124,136 +133,260 @@ export async function* streamGemini(
 
   const maxRounds = hasTools ? MAX_GEMINI_TOOL_ROUNDS + 1 : 1;
 
-  for (let round = 0; round < maxRounds; round++) {
-    const isFinalRound = round === maxRounds - 1;
-    const requestBody = geminiRequestBody({
-      contents,
-      generationConfig,
-      system,
-      // `google_search` is a SERVER-side tool that resolves inside one request,
-      // so it rides on every round — including the single round of a turn with
-      // no function tools, which is where it used to be dropped entirely.
-      tools: geminiToolsPayload({ model, functionDeclarations, webSearch, isFinalRound }),
-    });
+  /*
+   * TWO NESTED LOOPS, AND THEY ARE NOT THE SAME LOOP.
+   *
+   * The inner one is the TOOL loop: rounds of one conversation, where the model
+   * asked for something and the answer to it goes back in.
+   *
+   * The outer one is CONTINUATION, and it exists because Gemini 3 charges
+   * thinking and prose to a single `maxOutputTokens` ceiling. A turn at HIGH
+   * expands its reasoning to fill nearly all of it and then writes the answer in
+   * whatever is left, so a request that asked for Google's own published maximum
+   * comes back cut off mid-sentence after a few thousand tokens. The manual
+   * lever loops: Continue re-runs the turn at the same level into the same
+   * budget and gets the same split back. `geminiShouldContinue` argues how
+   * narrow this is kept; `geminiContinuationConfig` is where the second pass
+   * gets its room.
+   *
+   * Nested rather than merged, because a continuation is a fresh tool budget:
+   * the resumed answer may still need to look something up, and it should not be
+   * refused because the first pass spent the rounds.
+   */
+  let continuations = 0;
+  let decision: GeminiFinishDecision;
+  /** The LAST attempt's counts — see where they are taken, below. */
+  let attemptOutput = 0;
+  let attemptThoughts = 0;
 
-    const res = await requestGeminiStream({
-      url,
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(requestBody),
-      },
-      signal,
-      context: geminiContext,
-      apiKeys,
-    });
+  for (;;) {
+    /*
+     * PER ATTEMPT, NOT PER TURN. Left at the previous attempt's value, a
+     * continuation that ends without a terminal frame would be judged on the
+     * earlier pass's MAX_TOKENS — reporting a resumed answer as truncated
+     * however cleanly it finished, which is the false "hit the limit" label
+     * this module exists to stop printing.
+     */
+    lastFinishReason = undefined;
+    const startOutput = cumOutput;
+    const startThoughts = cumThoughts;
 
-    // requestGeminiStream rejects successful responses without a body.
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let streamBuffer = "";
-    const state = emptyGeminiRound();
+    /*
+     * A FAILED CONTINUATION MUST NOT TAKE THE ANSWER WITH IT.
+     *
+     * Everything below can throw — an empty stream, a 500, a dropped socket —
+     * and on the FIRST attempt that is correct: there is nothing to lose and
+     * the reader is owed the real error. On a continuation it is catastrophic.
+     * The turn already has an answer on screen; throwing here would replace it
+     * with a provider-outage notice, which is the exact "Generation failed"
+     * printed over delivered text that the comment at the foot of this file
+     * exists to record. The reader would have lost a good partial reply BECAUSE
+     * Juno tried to make it longer.
+     *
+     * So a continuation that fails simply ends the turn where the previous
+     * attempt left it: `decision` still holds that attempt's verdict, so the
+     * label and the note are the ones the reader would have got had this pass
+     * never been attempted. Logged at warn, because a provider failing every
+     * continuation is worth knowing about and is invisible from the transcript.
+     */
+    try {
+      for (let round = 0; round < maxRounds; round++) {
+        const isFinalRound = round === maxRounds - 1;
+        const requestBody = geminiRequestBody({
+          contents,
+          generationConfig,
+          system,
+          // `google_search` is a SERVER-side tool that resolves inside one request,
+          // so it rides on every round — including the single round of a turn with
+          // no function tools, which is where it used to be dropped entirely.
+          tools: geminiToolsPayload({ model, functionDeclarations, webSearch, isFinalRound }),
+        });
 
-    const drain = function* (payloads: string[]) {
-      for (const payload of payloads) {
-        frames += 1;
-        // KEYS ONLY, never values: this line exists to identify a wire shape,
-        // and the values are the user's conversation.
-        try {
-          lastPayloadKeys = Object.keys(JSON.parse(payload) as object).join(",");
-        } catch {
-          framesUnparsed += 1;
-        }
-        applyGeminiChunk(state, payload, sources);
-        while (state.events.length > 0) {
-          const ev = state.events.shift();
-          if (!ev) continue;
-          if (ev.type === "text") {
-            sawAnswer = true;
-            answerTail = (answerTail + ev.text).slice(-4096);
+        const res = await requestGeminiStream({
+          url,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify(requestBody),
+          },
+          signal,
+          context: geminiContext,
+          apiKeys,
+        });
+
+        // requestGeminiStream rejects successful responses without a body.
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let streamBuffer = "";
+        const state = emptyGeminiRound();
+
+        const drain = function* (payloads: string[]) {
+          for (const payload of payloads) {
+            frames += 1;
+            // KEYS ONLY, never values: this line exists to identify a wire shape,
+            // and the values are the user's conversation.
+            try {
+              lastPayloadKeys = Object.keys(JSON.parse(payload) as object).join(",");
+            } catch {
+              framesUnparsed += 1;
+            }
+            applyGeminiChunk(state, payload, sources);
+            while (state.events.length > 0) {
+              const ev = state.events.shift();
+              if (!ev) continue;
+              if (ev.type === "text") {
+                sawAnswer = true;
+                answerTail = (answerTail + ev.text).slice(-4096);
+              }
+              yield ev;
+            }
           }
-          yield ev;
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          streamBuffer += decoder.decode(value, { stream: true });
+          const { payloads, rest } = extractGeminiSseEvents(streamBuffer);
+          streamBuffer = rest;
+          yield* drain(payloads);
         }
+
+        // The reader is done, so whatever is still buffered will never be followed
+        // by the newline the mid-stream parser waits for. Gemini's final frame —
+        // `finishReason` and `usageMetadata` — is routinely that frame. See the
+        // header of `extractGeminiSseEvents`.
+        streamBuffer += decoder.decode();
+        if (streamBuffer) {
+          const { payloads } = extractGeminiSseEvents(streamBuffer, true);
+          streamBuffer = "";
+          yield* drain(payloads);
+        }
+
+        if (state.finishReason) lastFinishReason = state.finishReason;
+        if (state.searchEntryPoint) groundedWithSearchWidget = true;
+
+        if (!state.sawSignal) {
+          throw new GeminiProviderError({
+            httpStatus: 502,
+            googleStatus: "EMPTY_STREAM",
+            message: "Google ended the stream without a candidate or usage record",
+            context: geminiContext,
+          });
+        }
+
+        if (state.sawUsage) {
+          sawUsage = true;
+          cumInput += state.usage.input;
+          cumOutput += state.usage.output;
+          cumCached += state.usage.cached;
+          cumThoughts += state.usage.thoughts;
+          cumTotal += state.usage.total;
+        }
+
+        if (hasTools && !isFinalRound && state.functionCalls.length > 0) {
+          const responseParts: Array<{ name: string; response: Record<string, unknown> }> = [];
+
+          for (const call of state.functionCalls) {
+            const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const label = toolset.labelFor(call.name);
+            yield {
+              type: "tool",
+              server: label,
+              name: call.name,
+              phase: "call",
+              callId,
+              args: JSON.stringify(call.args),
+            };
+
+            const exec = await toolset.execute(call.name, call.args, signal, callId);
+            responseParts.push({ name: call.name, response: { result: exec.body ?? exec.text } });
+
+            yield {
+              type: "tool",
+              server: label,
+              name: call.name,
+              phase: "result",
+              callId,
+              result: exec.body,
+              ok: exec.ok,
+              durationMs: exec.durationMs,
+            };
+          }
+
+          // Replays the assistant parts UNCHANGED, thought signatures included.
+          appendGeminiToolRound(contents, state.assistantParts, responseParts);
+          continue;
+        }
+
+        break;
       }
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      streamBuffer += decoder.decode(value, { stream: true });
-      const { payloads, rest } = extractGeminiSseEvents(streamBuffer);
-      streamBuffer = rest;
-      yield* drain(payloads);
-    }
-
-    // The reader is done, so whatever is still buffered will never be followed
-    // by the newline the mid-stream parser waits for. Gemini's final frame —
-    // `finishReason` and `usageMetadata` — is routinely that frame. See the
-    // header of `extractGeminiSseEvents`.
-    streamBuffer += decoder.decode();
-    if (streamBuffer) {
-      const { payloads } = extractGeminiSseEvents(streamBuffer, true);
-      streamBuffer = "";
-      yield* drain(payloads);
-    }
-
-    if (state.finishReason) lastFinishReason = state.finishReason;
-    if (state.searchEntryPoint) groundedWithSearchWidget = true;
-
-    if (!state.sawSignal) {
-      throw new GeminiProviderError({
-        httpStatus: 502,
-        googleStatus: "EMPTY_STREAM",
-        message: "Google ended the stream without a candidate or usage record",
-        context: geminiContext,
+    } catch (error) {
+      if (continuations === 0) throw error;
+      console.warn("[llm:gemini] continuation failed; keeping the answer so far", {
+        model: model.providerModel,
+        attempt: continuations,
+        error: error instanceof Error ? error.message : String(error),
       });
+      break;
     }
 
-    if (state.sawUsage) {
-      sawUsage = true;
-      cumInput += state.usage.input;
-      cumOutput += state.usage.output;
-      cumCached += state.usage.cached;
-      cumThoughts += state.usage.thoughts;
-      cumTotal += state.usage.total;
-    }
+    /*
+     * THE COUNTS THIS ATTEMPT PRODUCED, not the turn's running total, and both
+     * readers of them are per-request questions.
+     *
+     * "Did the model run out of room?" is asked of one ceiling and one request.
+     * Carry the first pass's 59k of thinking into the second and every
+     * continuation looks starved — including one that thought for nothing and
+     * wrote 60k of prose — so the adapter would spend its whole allowance every
+     * single time. And the reader's sentence ("thinking used X of the Y this
+     * model can produce in one reply") is a claim about ONE reply.
+     *
+     * On a turn that is never continued — every turn that is not this bug —
+     * these are identical to the cumulative figures, so nothing else moves.
+     */
+    attemptOutput = cumOutput - startOutput;
+    attemptThoughts = cumThoughts - startThoughts;
 
-    if (hasTools && !isFinalRound && state.functionCalls.length > 0) {
-      const responseParts: Array<{ name: string; response: Record<string, unknown> }> = [];
+    decision = decideGeminiFinish({
+      lastFinishReason: lastFinishReason ?? null,
+      sawUsage,
+      answerTokens: attemptOutput,
+      thoughtTokens: attemptThoughts,
+      maxTokens,
+      answerTail,
+      continued: continuations,
+    });
 
-      for (const call of state.functionCalls) {
-        const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const label = toolset.labelFor(call.name);
-        yield {
-          type: "tool",
-          server: label,
-          name: call.name,
-          phase: "call",
-          callId,
-          args: JSON.stringify(call.args),
-        };
+    const canContinue =
+      continuations < MAX_GEMINI_CONTINUATIONS &&
+      // An aborted turn is a reader who has stopped reading. Spending another
+      // request to finish prose for them is the one case where continuing is
+      // strictly worse than the stub.
+      !signal?.aborted &&
+      geminiShouldContinue(decision.reason, {
+        sawUsage,
+        answerTokens: attemptOutput,
+        thoughtTokens: attemptThoughts,
+        maxTokens,
+      });
 
-        const exec = await toolset.execute(call.name, call.args, signal, callId);
-        responseParts.push({ name: call.name, response: { result: exec.body ?? exec.text } });
+    if (!canContinue) break;
 
-        yield {
-          type: "tool",
-          server: label,
-          name: call.name,
-          phase: "result",
-          callId,
-          result: exec.body,
-          ok: exec.ok,
-          durationMs: exec.durationMs,
-        };
-      }
-
-      // Replays the assistant parts UNCHANGED, thought signatures included.
-      appendGeminiToolRound(contents, state.assistantParts, responseParts);
-      continue;
-    }
-
-    break;
+    continuations += 1;
+    console.info("[llm:gemini] resuming a thinking-starved answer", {
+      model: model.providerModel,
+      reasoningEffort: reasoningEffort ?? null,
+      attempt: continuations,
+      thoughtTokens: attemptThoughts,
+      answerTokens: attemptOutput,
+      maxOutputTokens: maxTokens,
+    });
+    appendGeminiContinuation(contents, answerTail, GEMINI_CONTINUE_INSTRUCTION);
+    // Rebuilt rather than mutated: `geminiRequestBody` is handed this object on
+    // every round, and "this pass runs at a different level" should be one
+    // readable assignment rather than a field poked in place.
+    generationConfig = geminiContinuationConfig(model, maxTokens);
   }
 
   if (sources.size > 0) {
@@ -321,26 +454,25 @@ export async function* streamGemini(
     });
   }
 
-  const decision = decideGeminiFinish({
-    lastFinishReason: lastFinishReason ?? null,
-    sawUsage,
-    answerTokens: cumOutput,
-    thoughtTokens: cumThoughts,
-    maxTokens,
-    answerTail,
-  });
-  const finalRaw = decision.raw;
-  if (decision.decidedOnEvidence) {
+  // Decided inside the attempt loop, because the loop has to read it to know
+  // whether to run again. `for (;;)` has no exit that skips the assignment, so
+  // by the time control reaches here it is always the last attempt's verdict.
+  const finalDecision = decision!;
+  const finalRaw = finalDecision.raw;
+  if (finalDecision.decidedOnEvidence) {
     console.warn("[llm:gemini] no terminal frame; finishing on evidence", {
       model: model.providerModel,
       reasoningEffort: reasoningEffort ?? null,
       decided: finalRaw,
-      atCap: decision.atCap,
-      truncated: decision.truncated,
+      atCap: finalDecision.atCap,
+      truncated: finalDecision.truncated,
       sawAnswer,
       sawUsage,
-      completionTokens: sawUsage ? cumOutput : null,
-      thoughtTokens: sawUsage ? cumThoughts : null,
+      // The last attempt's, matching the verdict they produced. The turn's
+      // totals are on the usage event above.
+      completionTokens: sawUsage ? attemptOutput : null,
+      thoughtTokens: sawUsage ? attemptThoughts : null,
+      continuations,
       maxOutputTokens: maxTokens,
       frames,
       framesUnparsed,
@@ -354,6 +486,7 @@ export async function* streamGemini(
   console.info("[llm:gemini] stream finish", {
     model: model.providerModel,
     finishReason: finalRaw,
+    continuations,
     webSearch: !!webSearch,
     grounded: sources.size > 0 || groundedWithSearchWidget,
     sources: sources.size,
@@ -362,5 +495,5 @@ export async function* streamGemini(
     thoughtTokens: sawUsage ? cumThoughts || null : null,
     cachedTokens: sawUsage ? cumCached || null : null,
   });
-  yield { type: "finish", reason: decision.reason, raw: finalRaw, note: decision.note };
+  yield { type: "finish", reason: finalDecision.reason, raw: finalRaw, note: finalDecision.note };
 }

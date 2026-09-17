@@ -242,9 +242,16 @@ export default function ProjectsPage() {
         heading="Projects"
         lede="A topic’s chats, instructions, and files, kept together."
         actions={
-          <Button onClick={openCreate} size="sm" className="gap-1.5">
-            <Plus className="size-4" aria-hidden="true" /> New project
-          </Button>
+          /* Withheld while the page is empty, on the same argument the toolbar
+             below is withheld on: the empty state already draws this button,
+             in the same accent, 260px away, with a sentence explaining what it
+             makes. Two identical primary buttons on one screen is not two
+             chances to find it — it is a reader deciding which one is real. */
+          empty || loading ? undefined : (
+            <Button onClick={openCreate} size="sm" className="gap-1.5">
+              <Plus className="size-4" aria-hidden="true" /> New project
+            </Button>
+          )
         }
       />
 

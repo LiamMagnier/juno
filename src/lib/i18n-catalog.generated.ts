@@ -11146,10 +11146,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Longer clips can take a couple of minutes."
   },
   {
-    "id": "9b5d3af8049f6e7c",
-    "source": "Start voice conversation"
-  },
-  {
     "id": "9b7fb0c015e1915d",
     "source": "Ran with less than you asked for"
   },
@@ -11788,10 +11784,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a36a163114e380d9",
     "source": "You're generating a lot — give it a minute."
-  },
-  {
-    "id": "a3828850cf99e5d5",
-    "source": "Loading Juno Work"
   },
   {
     "id": "a39a7ffad4a3013f",
@@ -14264,6 +14256,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c57c8e60f59ca64b",
     "source": "Les conversations sont chiffrées au repos sur nos serveurs. Les modalités de traitement des données personnelles sont détaillées dans la"
+  },
+  {
+    "id": "c57d7e92019708b6",
+    "source": "voice"
   },
   {
     "id": "c582ac7607f2971e",
@@ -18064,10 +18060,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f793de205ead5ac3",
     "source": "Low"
-  },
-  {
-    "id": "f7970f23e75a0dd2",
-    "source": "Connect your tools"
   },
   {
     "id": "f79b4290e331c6c1",

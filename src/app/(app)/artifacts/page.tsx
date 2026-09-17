@@ -341,7 +341,14 @@ export default function ArtifactsPage() {
     // sidebar moved the column 16rem for no reason the user could see.
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Canvas"
+        /*
+         * NO EYEBROW. It read "Canvas" over a heading that reads "Artifacts",
+         * on a page the sidebar row "Artifacts" takes you to — three words for
+         * two things, and the one word above the title named a DIFFERENT
+         * surface (the Canvas is where an artifact opens, not where the list
+         * lives). docs/design/PREMIUM_AUDIT.md §3 rule 15: anything above the
+         * title has to say something the title does not.
+         */
         heading="Artifacts"
         lede="Everything Juno built with you, newest first."
         actions={
@@ -351,10 +358,17 @@ export default function ArtifactsPage() {
                 {items.length} {items.length === 1 ? "artifact" : "artifacts"}
               </span>
             )}
-            <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-              <PenTool className="size-3.5" aria-hidden />
-              {startingDesign ? "Creating…" : "New design"}
-            </Button>
+            {/* Not while the page is empty: the empty state below already
+                offers this exact button, 250px away, and a reader looking at
+                two identical controls has to work out which one is the real
+                one. The empty state's copy explains what it does; this one
+                cannot. It comes back the moment there is a list to act on. */}
+            {!empty && (
+              <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+                <PenTool className="size-3.5" aria-hidden />
+                {startingDesign ? "Creating…" : "New design"}
+              </Button>
+            )}
           </>
         }
       />

@@ -20,7 +20,8 @@ import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, costScore } from "@/lib/model-metrics";
 import { planRank, effectiveMinPlan } from "@/lib/plans";
-import { cn, truncate } from "@/lib/utils";
+import { promptPlaceholderTitle } from "@/lib/title-ownership";
+import { cn } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
 import type { ClientMessage, ClientQuota } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
@@ -248,7 +249,7 @@ export function CompareView() {
       },
     ];
     try {
-      sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify({ title: truncate(lastPrompt, 48), messages }));
+      sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify({ title: promptPlaceholderTitle(lastPrompt), messages }));
     } catch {
       toast.error("Couldn’t carry this answer into chat — it's too large.");
       return;
