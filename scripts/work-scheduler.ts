@@ -51,6 +51,7 @@ import {
   createWorkSession,
   appendEvents,
   finishRun,
+  recordRunInputsFromGrants,
   sweepExpiredCheckpoints,
 } from "@/lib/work/store";
 import {
@@ -584,7 +585,30 @@ async function dispatchOne(
           ),
           idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
         });
-        if (!created.replay) started += 1;
+        // A replay is a fire this process already made and is seeing again, so
+        // it is neither counted nor re-manifested.
+        //
+        // The task's files are carried onto the attempt here because the runner
+        // reads a run's attachments from its `WorkRunIO` input rows and from
+        // nowhere else, and only the manual dispatch route wrote them — so a
+        // schedule pointed at a session with three documents attached fired
+        // every morning against none of them and said nothing about it. The run
+        // behaved as though the task had no files, which from the reader's side
+        // is a task that quietly stopped working.
+        //
+        // After `createRun` rather than inside it: the call needs the run id,
+        // and `createMany` on a replayed key would double rows that already
+        // exist. The manifest is a snapshot of the grants as they stand at this
+        // fire, which is the point — a file revoked yesterday is not in today's
+        // run.
+        if (!created.replay) {
+          started += 1;
+          await recordRunInputsFromGrants({
+            runId: created.run.id,
+            sessionId: schedule.sessionId,
+            userId: schedule.userId,
+          });
+        }
       }
 
       await prisma.workSchedule.updateMany({

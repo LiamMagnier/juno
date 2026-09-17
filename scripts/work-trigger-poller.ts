@@ -68,7 +68,12 @@ import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { runBudgetForPlan } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
-import { appendEvents, createRun, finishRun } from "@/lib/work/store";
+import {
+  appendEvents,
+  createRun,
+  finishRun,
+  recordRunInputsFromGrants,
+} from "@/lib/work/store";
 import {
   WORK_LIVE_STATUSES,
   defaultVisibilityFor,
@@ -1005,6 +1010,15 @@ async function offer(
   });
 
   if (!created.replay) {
+    // The task's files, carried onto the attempt - see the same call in
+    // work-scheduler.ts. The runner reads attachments from `WorkRunIO` input
+    // rows only, and until this call a trigger-fired run saw none of the files
+    // attached to the task it was firing.
+    await recordRunInputsFromGrants({
+      runId: created.run.id,
+      sessionId: schedule.sessionId,
+      userId: schedule.userId,
+    });
     log("fired", {
       triggerId: trigger.id,
       runId: created.run.id,
