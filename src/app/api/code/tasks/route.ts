@@ -139,17 +139,47 @@ export async function GET(req: Request) {
   // the composer text PLUS extracted attachment text, and the run list polled
   // a hundred of them every six seconds to render titles.
   const includePrompt = searchParams.get("include") === "prompt";
+  /*
+   * ONE ROW PER SESSION, for a caller that draws sessions rather than runs.
+   *
+   * The sidebar lists Code sessions and puts the state of each one's newest
+   * task on its row. Asked the ordinary way — the newest N tasks — that join is
+   * wrong in exactly the case it matters: a person who sent six follow-ups to
+   * one session this morning gets six rows about that session and no row at all
+   * about the one that stopped overnight to ask them a question. The page
+   * boundary has to be drawn across sessions, not across tasks.
+   *
+   * Additive and opt-in: every existing caller (the run list, the native apps,
+   * the device poller) is untouched, and `limit` keeps meaning "at most this
+   * many rows" — it is the UNIT that changes, from tasks to conversations.
+   * Tasks with no conversation are excluded rather than bunched under one null
+   * key, because the caller's unit is the conversation and a run pointing at
+   * nothing has no row to land on.
+   */
+  const latestPerConversation = searchParams.get("latestPerConversation") === "1";
 
-  const tasks = await prisma.codeTask.findMany({
-    where: {
-      userId: user.id,
-      ...(deviceId ? { deviceId } : {}),
-      ...(conversationId ? { conversationId } : {}),
-      ...(status ? { status } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
+  const where: Prisma.CodeTaskWhereInput = {
+    userId: user.id,
+    ...(deviceId ? { deviceId } : {}),
+    ...(status ? { status } : {}),
+    ...(conversationId ? { conversationId } : latestPerConversation ? { conversationId: { not: null } } : {}),
+  };
+  const tasks = latestPerConversation
+    ? await prisma.codeTask.findMany({
+        where,
+        // Postgres DISTINCT ON requires the distinct column to lead the sort, so
+        // this cannot ALSO be ordered by recency. The caller re-sorts, which it
+        // does regardless because its rows are conversations. Descending
+        // conversation id is the best available tiebreak for the clamp: a
+        // session created on the web carries a cuid, whose leading component is
+        // a timestamp, so the page favours the newest; a client that mints its
+        // own ids gets a slice that is arbitrary but at least stable between
+        // polls, which is what stops rows flickering in and out of the panel.
+        orderBy: [{ conversationId: "desc" }, { createdAt: "desc" }],
+        distinct: ["conversationId"],
+        take: limit,
+      })
+    : await prisma.codeTask.findMany({ where, orderBy: { createdAt: "desc" }, take: limit });
   // One grouped query for the page, so a finished device run can be "Ready to
   // review" without the list reading every run's event log.
   const changed = await countChangedFiles(tasks.map((task) => task.id));

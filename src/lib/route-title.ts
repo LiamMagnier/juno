@@ -1,6 +1,6 @@
 /**
- * Pathname prefix → tab title. Longest prefix wins, so "/work/skills" beats
- * "/work". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
+ * Pathname prefix → tab title. Longest prefix wins, so "/code/pulls" beats
+ * "/code". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
  * these are the bare nouns; the suffix is added once, at the call site, because
  * `document.title` is set imperatively and no metadata template applies to it.
  *
@@ -14,12 +14,13 @@
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/chat", "Juno"], // the new-chat screen has no subject yet
-  ["/work/skills", "Skills"],
-  ["/work/schedules", "Schedules"],
-  ["/work/permissions", "Permissions"],
-  ["/work/hosts", "Macs"],
-  ["/work", "Work"],
+  /* No /work entries. There are two products (docs/design/TWO_PRODUCTS.md), so
+     a window switcher must not offer a third — and the routes that used to live
+     under /work are moving out from under it, which means an entry keyed to
+     that prefix would be wrong twice over. The pages that survive the move
+     re-enter this list under their own names when they land. */
   ["/code/pulls", "Pull requests"],
+  ["/code/customize", "Customize"],
   ["/code/new", "New run"],
   ["/code", "Code"],
   ["/design", "Design"],

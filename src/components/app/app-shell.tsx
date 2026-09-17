@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
+import { productOf } from "@/components/app/product-switch";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
@@ -46,9 +47,9 @@ const SIDEBAR_MAX = 336;
 const SIDEBAR_DEFAULT = 304;
 const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
-// immediately, so a cold /work is the one navigation the user cannot absorb as
+// immediately, so a cold /code is the one navigation the user cannot absorb as
 // "the page is loading".
-const PREFETCH_ROUTES = ["/chat", "/work", "/design", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
+const PREFETCH_ROUTES = ["/chat", "/code", "/design", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
 
 function clampWidth(w: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
@@ -100,6 +101,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // page you are not on. Everywhere else it said "Juno", which named nothing.
   const inConversation = pathname.startsWith("/chat/");
   const mobileTitle = (inConversation ? activeTitle : null) ?? titleForPath(pathname);
+  /*
+   * Which product's sidebar this is, decided ONCE.
+   *
+   * A Juno Code session is served at /chat/<id> — `app/(app)/chat/[id]/page.tsx`
+   * renders `<CodeSessionView>` when the conversation's kind is "code" — so the
+   * path alone says "Chat" for the entire time somebody is inside a Code
+   * session, which is precisely when the column must not be Chat's. The open
+   * conversation's own kind is the tiebreak; `productOf` holds that rule.
+   *
+   * It is computed here rather than inside the sidebar because the sidebar
+   * mounts twice (the desktop aside and the phone drawer) and two copies of a
+   * derivation are two things that can disagree.
+   */
+  const product = productOf(pathname, activeConversation?.kind ?? null);
 
   const applyWidth = React.useCallback((w: number) => {
     widthRef.current = w;
@@ -327,7 +342,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           } as React.CSSProperties
         }
       >
-        <AppSidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} />
+        <AppSidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} product={product} />
         {!collapsed && (
           <div
             role="separator"
@@ -379,7 +394,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           and hover at 4.5. */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] md:hidden" title="Conversations">
-          <AppSidebar />
+          <AppSidebar product={product} />
         </SheetContent>
       </Sheet>
 

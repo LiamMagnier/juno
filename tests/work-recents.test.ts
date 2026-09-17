@@ -7,6 +7,7 @@ import {
   matchesFilter,
   mergeRecents,
   perSourceLimit,
+  workRecentHref,
   type RecentItem,
 } from "@/lib/work/recents";
 import { WORK_STATUSES } from "@/lib/work/domain";
@@ -241,4 +242,29 @@ test("every filter name is recognised and nothing else is", () => {
   for (const filter of RECENT_FILTERS) assert.equal(isRecentFilter(filter), true);
   assert.equal(isRecentFilter("everything"), false);
   assert.equal(isRecentFilter(""), false);
+});
+
+// ---------------------------------------------------------------------------
+// Where a Work row points
+// ---------------------------------------------------------------------------
+
+/*
+ * The failure these cover is a dead link in the one list whose whole job is to
+ * be the way back to anything: `/work/<id>` is not a page any more, so a Work
+ * row either opens the conversation its run lives in or it is not a row.
+ */
+
+test("a Work row opens the conversation its run lives in", () => {
+  assert.equal(workRecentHref("conv_1", new Set()), "/chat/conv_1");
+});
+
+test("a session with no conversation is dropped rather than linked to a dead route", () => {
+  assert.equal(workRecentHref(null, new Set()), null);
+  assert.equal(workRecentHref(undefined, new Set()), null);
+  assert.equal(workRecentHref("", new Set()), null);
+});
+
+test("one destination, one row: the conversation's own row wins", () => {
+  assert.equal(workRecentHref("conv_1", new Set(["conv_1"])), null);
+  assert.equal(workRecentHref("conv_2", new Set(["conv_1"])), "/chat/conv_2");
 });
