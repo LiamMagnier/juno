@@ -24,6 +24,19 @@ import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
+import { useConversationWork } from "@/components/chat/use-conversation-work";
+import { WorkRunPanel } from "@/components/chat/work-run-panel";
+import { PendingSteers } from "@/components/work/steering/pending-steers";
+import { delegatedComposerPlaceholder, delegationAttemptKey } from "@/lib/work/delegation";
+import {
+  WORK_SYNC_EVENT,
+  createWorkSession,
+  startWorkRun,
+  workIdempotencyKey,
+} from "@/components/work/work-transport";
+import { describeFailure } from "@/components/work/composer-home/start-attempt";
+import type { DelegateInput } from "@/components/chat/composer";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
@@ -389,6 +402,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    */
   const research = useConversationResearch(privateMode ? null : currentConversationId, privateMode ? undefined : initialResearchRun);
   const researchSteering = research.steering;
+
+  /**
+   * The delegated task attached to this conversation, on exactly the same
+   * terms: one hook, one cursor, two readers — the panel in the transcript and
+   * the composer at the bottom. Never in incognito, which writes no rows for a
+   * `WorkSession.conversationId` to point at.
+   */
+  const work = useConversationWork(privateMode ? null : currentConversationId);
+  const workSteering = work.steering;
+  // Destructured so the dispatch below depends on the one stable callback
+  // rather than on the whole hook result, which is a fresh object every render.
+  const adoptWorkSession = work.adopt;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
   // message is a non-empty assistant reply. Flipping this false while a new send
@@ -1103,7 +1128,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return lines;
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
-  const hasMessages = displayMessages.length > 0 || voiceOpen || !!research.run;
+  // A task counts, the same way a research run does: a conversation whose only
+  // content is a run is not an empty chat, and showing the greeting over a live
+  // run would be the product denying the thing it is in the middle of doing.
+  const hasMessages =
+    displayMessages.length > 0 || voiceOpen || !!research.run || !!work.session;
 
   /* ─── First-message handoff ────────────────────────────────────────────────
    * The centered empty-state composer and the transcript's bottom dock are two
@@ -1356,6 +1385,282 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [chat, hasMessages, realtimeVoice, voiceOpen, voiceSaveError]
   );
 
+  /*
+   * One press of "start this as a task", and what it costs when it half works.
+   *
+   * Four things have to happen, and the ORDER is the whole design:
+   *
+   *   1. A conversation to hang the run on. A task started from a blank chat has
+   *      no row to point `WorkSession.conversationId` at yet.
+   *   2. The reader's sentence, persisted as a USER turn, so the transcript
+   *      shows what was asked. It is the same append the native clients push
+   *      their finished turns through.
+   *   3. `POST /api/work/sessions` — the draft, with the conversation on it.
+   *   4. `POST /sessions/[id]/runs` — the attempt.
+   *
+   * The turn is written BEFORE anything is dispatched because of how the two
+   * failures differ. A create that fails after the turn landed leaves the
+   * reader's words in their own chat with a sentence saying nothing started —
+   * recoverable by pressing the button again, and nothing has been spent. A
+   * dispatch that succeeded while the turn failed would leave a run spending a
+   * budget inside a conversation that shows no sign of having asked for it,
+   * which is the failure nobody can act on.
+   *
+   * NO ACKNOWLEDGEMENT TURN IS WRITTEN. Deep research persists one because its
+   * dispatch happens inside a streaming chat turn that has to say something;
+   * here the panel IS Juno's side of the exchange, and an application-authored
+   * "I'll get on it" directly above a live panel narrating what it is doing
+   * would be the product speaking twice about one thing.
+   *
+   * The choreography is `dispatchDelegation`; `delegate` below it is the one
+   * thing that must be true around the WHOLE of it — one dispatch at a time —
+   * and is kept separate so that guard cannot be escaped by an early return
+   * added to the middle of the sequence later.
+   */
+  const delegateAttemptRef = React.useRef<{
+    /** `delegationAttemptKey` over everything the create carries. */
+    inputs: string;
+    /**
+     * The id the USER turn is appended under, minted once per attempt.
+     *
+     * A fresh one on every press is the same as having none: the append route
+     * dedupes on (conversationId, clientId), and a refused dispatch deliberately
+     * keeps the draft in the box, so pressing the button again is the expected
+     * path rather than an exotic one. A random id there writes the reader's
+     * sentence into their own transcript once per press.
+     */
+    clientId: string;
+    /** Set once the turn is persisted, so a retry does not append it twice. */
+    messageId: string | null;
+    sessionKey: string;
+    runKey: string;
+    session: ClientWorkSession | null;
+  } | null>(null);
+
+  /*
+   * A dispatch in flight, held twice on purpose.
+   *
+   * The ref is what a press is tested against and the state is what dims the
+   * composer, because the two are true at different moments: React has not
+   * re-rendered with `delegating` set by the time a second Enter arrives, and
+   * this window is up to four sequential round trips long. A second entry inside
+   * it mints its own idempotency keys and creates a SECOND WorkSession with a
+   * SECOND run — two run ceilings spent on one sentence, two USER turns in the
+   * transcript, and two panels competing for one conversation, of which the
+   * discovery poll then follows exactly one. `WorkComposer.submitting` guards
+   * the identical window on the other surface.
+   */
+  const delegatingRef = React.useRef(false);
+  const [delegating, setDelegating] = React.useState(false);
+
+  const dispatchDelegation = React.useCallback(
+    async (input: DelegateInput): Promise<boolean> => {
+      const attachmentIds = input.attachments.map((attachment) => attachment.id);
+      // The same first-message handoff a send arms (see the choreography block
+      // above): delegating from an empty chat replaces the greeting with a
+      // transcript exactly as a first message does, and without this the
+      // greeting would vanish in one frame instead of handing over.
+      if (!hasMessages) handoffArmedAtRef.current = Date.now();
+
+      let id = currentConversationId;
+      if (!id) {
+        try {
+          const response = await fetch("/api/conversations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "chat", model }),
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            conversation?: ClientConversation;
+          };
+          if (!response.ok || !data.conversation) throw new Error("conversation");
+          id = data.conversation.id;
+          upsertConversation(data.conversation);
+          createdIdRef.current = id;
+          setActiveConversationId(id);
+          if (typeof window !== "undefined") {
+            window.history.replaceState(null, "", `/chat/${id}`);
+            window.__junoSoftRoutePath = `/chat/${id}`;
+          }
+        } catch {
+          toast.error("Couldn’t start a chat for this task, so nothing was queued.");
+          return false;
+        }
+      }
+
+      /*
+       * A fresh attempt whenever anything the dispatch carries changed, and the
+       * SAME one when it did not. A press that created the draft and then failed
+       * to dispatch must land on that same draft next time — `POST /sessions`
+       * replays an existing id for a repeated key — or every refused start
+       * leaves another orphan draft in the reader's list.
+       *
+       * Keyed on `delegationAttemptKey` rather than on the goal, because the
+       * create carries far more than the sentence and every one of those can be
+       * changed from the "+" menu without touching a character of it. The sharp
+       * case is the approval mode: refused, switch "How often it asks", press
+       * again, and a goal-keyed attempt would reuse the draft created under the
+       * old policy while the pill and the disclosure line both state the new one.
+       *
+       * Decided before the append, because the attempt is what owns the turn's
+       * client id as well as the two idempotency keys.
+       */
+      let attempt = delegateAttemptRef.current;
+      const inputsKey = delegationAttemptKey({
+        goal: input.goal,
+        permissionPolicy: input.permissionPolicy,
+        connectorIds: input.connectorIds,
+        attachmentIds,
+        projectId: activeProjectId,
+        model,
+        reasoningEffort,
+      });
+      if (attempt === null || attempt.inputs !== inputsKey) {
+        attempt = {
+          inputs: inputsKey,
+          clientId: `task-${crypto.randomUUID()}`,
+          messageId: null,
+          sessionKey: workIdempotencyKey(),
+          runKey: workIdempotencyKey(),
+          session: null,
+        };
+        delegateAttemptRef.current = attempt;
+      }
+
+      // Skipped outright once this attempt's turn has landed: the route would
+      // dedupe the re-append on the client id anyway, but the optimistic push
+      // below is local and would draw the sentence a second time regardless.
+      if (attempt.messageId === null) {
+        try {
+          const response = await fetch(`/api/conversations/${id}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              turns: [
+                {
+                  // The attempt's client id, so a retried append lands on the row
+                  // the first press created rather than writing the sentence
+                  // twice. It is stable for exactly as long as the inputs are.
+                  clientId: attempt.clientId,
+                  role: "USER",
+                  content: input.goal,
+                  ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+                },
+              ],
+            }),
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            messages?: Array<{ id: string; content: string; createdAt: string }>;
+          };
+          const persisted = data.messages?.[0];
+          if (!response.ok || !persisted) throw new Error("append");
+          attempt.messageId = persisted.id;
+          chat.setMessages((current) => [
+            ...current,
+            {
+              id: persisted.id,
+              role: "USER",
+              content: persisted.content,
+              createdAt: persisted.createdAt,
+              conversationId: id ?? undefined,
+              // The files the composer just claimed onto this turn. Drawn from
+              // what was sent rather than left empty until the next reload: they
+              // are part of what was asked, and a turn that shows none reads as
+              // a task that was given none.
+              attachments: input.attachments,
+            },
+          ]);
+        } catch {
+          toast.error("Couldn’t save your message, so nothing was started. Try again.");
+          return false;
+        }
+      }
+
+      let session = attempt.session;
+      if (session === null) {
+        const created = await createWorkSession({
+          goal: input.goal,
+          conversationId: id,
+          requestedTarget: "automatic",
+          preferredHostId: null,
+          projectId: activeProjectId,
+          model,
+          reasoningEffort,
+          permissionPolicy: input.permissionPolicy,
+          attachmentIds,
+          // Sent even when empty, because empty is an answer: this task reaches
+          // no connected app. Absent would mean a client with no control for it.
+          connectorIds: input.connectorIds,
+          idempotencyKey: attempt.sessionKey,
+        });
+        if (created.kind !== "ok") {
+          toast.error(
+            created.kind === "blocked"
+              ? created.explanation
+              : describeFailure(created, "save").message
+          );
+          return false;
+        }
+        session = created.value;
+        attempt.session = session;
+      }
+
+      // No `requiredCapabilities`: the server infers them from the goal it was
+      // given. Sending a list derived in this bundle would look like agreement
+      // and act like an override.
+      const started = await startWorkRun(session.id, {
+        origin: "manual",
+        requestedTarget: "automatic",
+        model,
+        reasoningEffort,
+        idempotencyKey: attempt.runKey,
+      });
+      if (started.kind !== "ok") {
+        toast.error(
+          started.kind === "blocked"
+            ? started.explanation
+            : describeFailure(started, "start").message
+        );
+        return false;
+      }
+
+      // Shown immediately rather than four seconds later, when the discovery
+      // poll would have found it: this is the one moment the reader is most
+      // certain something should have happened.
+      adoptWorkSession(session);
+      delegateAttemptRef.current = null;
+      window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+      return true;
+    },
+    [
+      activeProjectId,
+      chat,
+      currentConversationId,
+      hasMessages,
+      model,
+      reasoningEffort,
+      setActiveConversationId,
+      upsertConversation,
+      adoptWorkSession,
+    ]
+  );
+
+  const delegate = React.useCallback(
+    async (input: DelegateInput): Promise<boolean> => {
+      if (privateMode) return false;
+      if (delegatingRef.current) return false;
+      delegatingRef.current = true;
+      setDelegating(true);
+      try {
+        return await dispatchDelegation(input);
+      } finally {
+        delegatingRef.current = false;
+        setDelegating(false);
+      }
+    },
+    [privateMode, dispatchDelegation]
+  );
+
   const openVoice = React.useCallback(() => {
     if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
     closeArtifact();
@@ -1572,13 +1877,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               researchSteering.stop();
               chat.stop();
             }
-          : chat.stop
+          : // A live task and a streaming reply can both exist at once — the
+            // clarification path suppresses `steerMode` and lets an ordinary
+            // send through, and so does a follow-up chip — and Stop has to end
+            // whichever of the two the reader is watching. The generation wins
+            // while it is streaming: it is the thing moving on screen, and
+            // reading "Stop" over a live stream as an offer to cancel a
+            // twenty-minute task nobody mentioned is the more expensive misread.
+            workSteering && !chat.isBusy
+            ? // A delegated run is not this conversation's generation, so there
+              // is no stream to tear down beside it — Stop ends the attempt, the
+              // way it already ends a research run.
+              workSteering.stop
+            : chat.stop
       }
       steering={
         researchSteering?.accepting
           ? {
               active: true,
               placeholder: "Add a constraint, or paste a source to include…",
+              sendLabel: "Add to the research",
+              stopLabel: "Stop the research",
               onSteer: async (value: string) => {
                 const accepted = await researchSteering.steer(value);
                 if (accepted) toast.success("Added to this research run");
@@ -1586,8 +1905,29 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 return accepted;
               },
             }
-          : null
+          : workSteering
+            ? {
+                active: true,
+                // Nothing is streaming: the run was dispatched minutes ago and
+                // `isBusy` is false for its whole life. See the prop's note.
+                standalone: true,
+                placeholder: delegatedComposerPlaceholder(workSteering.mode),
+                sendLabel:
+                  workSteering.mode.kind === "answer"
+                    ? "Answer the task’s question"
+                    : "Add this to the running task",
+                // Whatever `onStop` above will actually end. The two can be
+                // live at once, and a button reading "Stop the task" that
+                // cancels a stream — or the reverse — is the one word this
+                // control can afford spent on the wrong thing.
+                stopLabel: chat.isBusy ? "Stop generating" : "Stop the task",
+                above: <PendingSteers steers={work.pendingSteers} />,
+                onSteer: workSteering.send,
+              }
+            : null
       }
+      onDelegate={privateMode ? undefined : delegate}
+      delegating={delegating}
       pendingClarification={chat.pendingClarification}
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
@@ -1924,9 +2264,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <MessageList
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
-                researchContents={privateMode ? [] : [
+                inlineRuns={privateMode ? [] : [
                   ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} className="mt-5" /> }] : []),
                   ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
+                  // Placed by its own createdAt, so it lands under the turn that
+                  // asked for it rather than at the end of a transcript the
+                  // reader has carried on adding to while it worked.
+                  ...(work.session ? [{ id: work.session.id, createdAt: work.session.createdAt, node: <WorkRunPanel work={work} className="mt-5" /> }] : []),
                 ]}
                 busy={chat.isBusy}
                 status={chat.status}

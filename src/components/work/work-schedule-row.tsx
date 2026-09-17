@@ -166,7 +166,7 @@ export function WorkScheduleRow({
       style={staggerDelay(index, "tight")}
     >
       <Link
-        href={`/work/schedules/${schedule.id}`}
+        href={`/automations/${schedule.id}`}
         className="flex min-w-0 flex-1 items-start gap-3 rounded-field px-3.5 py-3 focus-visible:outline-none"
       >
         <span className="min-w-0 flex-1">
@@ -205,6 +205,20 @@ export function WorkScheduleRow({
           Outside the row's own anchor, like the two controls beside it: an
           anchor nested in an anchor is invalid markup that browsers resolve by
           following the outer one.
+
+          The href goes through `/work/<sessionId>`, deliberately: it is the one
+          URL under `/work` that is still a live resolver rather than a legacy
+          redirect. A schedule carries a session id and no conversation id
+          (`ClientWorkSchedule`), and turning one into the other is an
+          owner-scoped lookup only the server can do — see
+          src/lib/work-url-migration.ts.
+
+          There is a conversation to resolve to because POST /api/work/schedules
+          now creates one with the session it mints, which is what makes the
+          history above a thing you can press rather than a claim. A schedule
+          created before that landed resolves to the chat index instead: the
+          resolver reads the column every time rather than caching an answer, so
+          those rows start working the moment a conversation is attached.
         */}
         <Button
           asChild

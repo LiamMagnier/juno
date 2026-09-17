@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import {
@@ -6,6 +7,7 @@ import {
   isValidTimeZone,
   nextFireForTriggers,
   parseScheduleListQuery,
+  scheduleConversationSeed,
   serializeSchedule,
 } from "@/lib/work/schedule";
 import { normalizeTriggerDrafts } from "@/lib/work/triggers";
@@ -97,21 +99,7 @@ export async function POST(req: Request) {
     if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const sessionId =
-    body.sessionId ??
-    (
-      await createWorkSession({
-        userId: user.id,
-        title: body.name,
-        // "manual" because the user named the schedule themselves; leaving it
-        // "default" would let an auto-titler rewrite a name they chose.
-        titleSource: "manual",
-        goal: body.instructions,
-        requestedTarget: body.target,
-        preferredHostId: body.hostId ?? null,
-        requestedModel: body.model ?? null,
-      })
-    ).id;
+  const sessionId = body.sessionId ?? (await createScheduleSession(user.id, body)).id;
 
   // Computed even when the schedule is created paused. The column is inert
   // while `enabled` is false — the dispatcher's due query filters on it — and
@@ -162,4 +150,49 @@ export async function POST(req: Request) {
     { schedule: serializeSchedule(schedule, schedule.triggers) },
     { status: 201 }
   );
+}
+
+/**
+ * The session a new schedule re-runs, and the conversation it writes into.
+ *
+ * The conversation is the point. A schedule fires into the same session for
+ * ever, and since Work stopped being a place that session is only readable
+ * through the conversation it points at (docs/design/TWO_PRODUCTS.md §2): the
+ * transcript draws the live run, its plan, its questions and its approval
+ * cards. Minting the session without one — which is what this route did — left
+ * every automation with no web surface whatsoever, so a run that stopped to ask
+ * whether it could send the email had nowhere to be answered, and the "Its
+ * task" link on its row resolved to the chat index. The column has existed and
+ * been serialised to every client since Work shipped (§2.1); only the web
+ * create routes never wrote it.
+ *
+ * Created here rather than at the first fire so the row exists before anything
+ * can need it: the schedule row's link, the run rows in the automation editor
+ * and the notification email all carry a session id and expect the resolver to
+ * find a conversation behind it.
+ *
+ * Not a transaction with the schedule below. If the schedule's own write fails,
+ * what is left is an empty chat and a draft session the user can delete —
+ * whereas a transaction spanning both would have to hold one open across the
+ * trigger fan-out, and the failure it would protect against is cosmetic.
+ */
+async function createScheduleSession(
+  userId: string,
+  body: z.infer<typeof createScheduleSchema>
+): Promise<{ id: string }> {
+  const conversation = await prisma.conversation.create({
+    data: { userId, ...scheduleConversationSeed(body.name, body.model) },
+  });
+  return createWorkSession({
+    userId,
+    title: body.name,
+    // "manual" because the user named the schedule themselves; leaving it
+    // "default" would let an auto-titler rewrite a name they chose.
+    titleSource: "manual",
+    goal: body.instructions,
+    conversationId: conversation.id,
+    requestedTarget: body.target,
+    preferredHostId: body.hostId ?? null,
+    requestedModel: body.model ?? null,
+  });
 }

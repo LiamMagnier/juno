@@ -1,5 +1,5 @@
 /**
- * One list of everything the user has been doing, across all three products.
+ * One list of everything the user has been doing, whatever they did it in.
  *
  * Juno has three kinds of thing with a timeline — a chat, a Work session, and a
  * Code session — and until now each had its own list with its own sort, its own
@@ -149,6 +149,33 @@ export function mergeRecents(sources: readonly (readonly RecentItem[])[], limit:
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
   return merged.slice(0, Math.max(0, limit));
+}
+
+/**
+ * Where a Work row points, and whether it is a row at all.
+ *
+ * It used to point at `/work/<sessionId>`, and there is no such place any more:
+ * a run is read in the conversation that asked for it
+ * (docs/design/TWO_PRODUCTS.md §2), so the destination is that conversation.
+ *
+ * Null means "do not list this session", for two different reasons that happen
+ * to have the same answer. A session with no conversation is a pre-merge row
+ * with nowhere to go, and a row that opens a page that no longer exists is
+ * worse than a row that is not there. A session whose conversation is ALREADY
+ * in the merged list would be a second row to the same destination — and the
+ * conversation's own row is the one to keep, because it carries the title the
+ * reader recognises and the words they typed, while the run's state reaches
+ * them inside it.
+ *
+ * Here rather than in the route because it is the rule, not the query: the
+ * route reads four tables, and the one decision in it worth a test is this one.
+ */
+export function workRecentHref(
+  conversationId: string | null | undefined,
+  listedConversations: ReadonlySet<string>,
+): string | null {
+  if (!conversationId || listedConversations.has(conversationId)) return null;
+  return `/chat/${conversationId}`;
 }
 
 /**

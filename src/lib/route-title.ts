@@ -1,6 +1,6 @@
 /**
- * Pathname prefix → tab title. Longest prefix wins, so "/work/skills" beats
- * "/work". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
+ * Pathname prefix → tab title. Longest prefix wins, so "/code/pulls" beats
+ * "/code". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
  * these are the bare nouns; the suffix is added once, at the call site, because
  * `document.title` is set imperatively and no metadata template applies to it.
  *
@@ -14,13 +14,19 @@
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/chat", "Juno"], // the new-chat screen has no subject yet
-  ["/work/skills", "Skills"],
-  ["/work/schedules", "Schedules"],
-  ["/work/permissions", "Permissions"],
-  ["/work/hosts", "Macs"],
-  ["/work", "Work"],
+  /* The three that came out of Work, under their own names now. A title
+     describes what is SERVED, which is why they moved in the same commit as
+     the pages: /work/skills is a redirect and a redirect draws no window to
+     caption. `/work` and `/code/new` are absent for the same reason. */
+  ["/skills", "Skills"],
+  ["/automations", "Automations"],
+  /* "Macs" is gone with /work/hosts. One Mac is now `/permissions/<hostId>`,
+     and the longest-prefix rule gives it "Permissions" — which is right: the
+     page is one machine's permissions, and it is reached from the hub of that
+     name rather than from a list of machines. */
+  ["/permissions", "Permissions"],
   ["/code/pulls", "Pull requests"],
-  ["/code/new", "New run"],
+  ["/code/customize", "Customize"],
   ["/code", "Code"],
   ["/design", "Design"],
   ["/library", "Library"],

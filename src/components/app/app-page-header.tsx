@@ -180,10 +180,12 @@ export function AppPageHeaderSkeleton({
    *
    * Not a guess that goes stale with the viewport: the lede is `max-w-prose`
    * (65ch), so above ~570px its wrap is set by the copy and nothing else, and
-   * measured, seven pages wrap to two — /connections, /memory, /upgrade,
-   * /design, /code/new and both `new` forms under /work. Leaving those at one
-   * line put a 24px step back into exactly the routes this component exists to
-   * take it out of.
+   * measured, six pages wrap to two — /connections, /memory, /upgrade, /design,
+   * /skills/new and /automations/new. (The list used to name /code/new and "both
+   * `new` forms under /work"; the first is a bare redirect now and the second
+   * moved out of /work with the two pages above.) Leaving those at one line put
+   * a 24px step back into exactly the routes this component exists to take it
+   * out of.
    */
   ledeLines?: 1 | 2;
   actions?: boolean;

@@ -70,23 +70,29 @@ That is a positioning decision, not a defect.
 ---
 
 ## 4. Should "Code" be called Code, and should it be a sidebar item?
-(review item 51)
+(review item 51) — **DECIDED, September 2026**
 
-All eight surveyed incumbents have promoted an agent/async surface to top level:
-ChatGPT *Work*, Claude *Cowork*, Copilot *Cowork*, Perplexity *Computer*, Vibe
-*Work*, Gemini *Spark*, Grok *Automations*. Mistral has flagged its *Chat* mode
-for sunset with history migrating into Work.
+**Yes to the sidebar item; Code keeps its name.** The decision and its reasoning
+are `docs/design/TWO_PRODUCTS.md`; this entry records that it is closed and what
+was actually settled, because the question as asked was not quite the question.
 
-Juno has the runtime — device sessions, cloud runs, subagent orchestration,
-phone↔Mac remote control — and files it under a developer-flavoured name inside
-a sidebar segmented control.
+Code is one of the two products in the sidebar's switcher, at ⌘⇧2, with its own
+column — its sessions in date folds, a **Needs you** fold above them, and its own
+Customize page. It kept the name because renaming a surface is cheap to do and
+expensive to undo, it invalidates every screenshot, doc and support answer, and
+the market study this item cited is a snapshot of a convention that is still
+forming. The runtime was always the asset.
 
-**A recommendation, since you asked me to use my judgement elsewhere:** the
-naming is undersold but the *timing* argues for waiting. Renaming a surface is
-cheap to do and expensive to undo, it invalidates every screenshot, doc and
-support answer, and the review's own market study is a snapshot of a convention
-that is still forming. The runtime is the asset; the label can follow once it is
-clear what the category settles on calling it.
+What the item did not ask, and what the answer turned on: the surface those
+eight incumbents promoted is not Code, it is the **async agent** — and Juno
+already had it, as Work, as a third top-level product. The reference the item
+was written against has since gone the other way: Anthropic folded Cowork back
+into Claude on 16 September 2026, on the argument that a person should not have
+to decide, before typing, whether their sentence belongs in a conversation or in
+an agent workspace. Juno did the same. Work is now what a conversation does when
+the ask is big — armed from the composer's `+` menu, drawn in the transcript,
+listed in the sidebar as an ordinary chat with a status — and the `/work` routes
+redirect. Two products, not three, and the runtime under both is unchanged.
 
 ---
 

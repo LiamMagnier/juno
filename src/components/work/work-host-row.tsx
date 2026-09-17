@@ -119,7 +119,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
   const workload = hostWorkloadSentence(host);
   return (
     <Link
-      href={`/work/hosts/${host.id}`}
+      href={`/permissions/${host.id}`}
       className={cn(
         // The same rest/hover/press/focus set WorkSessionRow carries. These
         // three sibling rows are the same object in three lists and had neither a

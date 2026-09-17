@@ -65,6 +65,18 @@ const APPROVAL_PHRASE: Record<WorkPermissionPolicy, string> = {
 };
 
 /**
+ * The same phrase, for the armed pill in the chat composer.
+ *
+ * Exported rather than copied because the pill sits directly above this
+ * disclosure — "Task · asks before risky steps" over "Runs on Juno's cloud ·
+ * asks before risky steps" — and two spellings of one mode, eight pixels apart,
+ * is the kind of drift a reader reads as two different settings.
+ */
+export function runApprovalPhrase(policy: WorkPermissionPolicy): string {
+  return APPROVAL_PHRASE[policy];
+}
+
+/**
  * Where this task will run, in the reader's words.
  *
  * One function, read by the summary line and by the voice briefing, because

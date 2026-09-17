@@ -1,7 +1,8 @@
 import { after, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, type CodeTask } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { latestTaskPerConversationQuery } from "@/lib/code-task-page";
 import { sweepStuckCodeTasksOpportunistically } from "@/lib/sweep-stuck-code-tasks";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
@@ -64,8 +65,9 @@ const postSchema = z.object({
     .optional(),
   baseRef: z.string().trim().min(1).max(200).optional(),
   // What to run the task with. The composer has offered both of these since
-  // Juno Code shipped — a model picker and a thinking slider, on /code/new and
-  // inside a live session — and this schema accepted neither, so the values
+  // Juno Code shipped — a model picker and a thinking slider, on the /code
+  // landing and inside a live session — and this schema accepted neither, so
+  // the values
   // were persisted onto the Conversation (where they LOOKED durable) and never
   // reached a run. Optional: omitted means "no preference", which keeps the
   // runner's first-available fallback for native clients.
@@ -139,17 +141,43 @@ export async function GET(req: Request) {
   // the composer text PLUS extracted attachment text, and the run list polled
   // a hundred of them every six seconds to render titles.
   const includePrompt = searchParams.get("include") === "prompt";
+  /*
+   * ONE ROW PER SESSION, for a caller that draws sessions rather than runs.
+   *
+   * The sidebar lists Code sessions and puts the state of each one's newest
+   * task on its row. Asked the ordinary way — the newest N tasks — that join is
+   * wrong in exactly the case it matters: a person who sent six follow-ups to
+   * one session this morning gets six rows about that session and no row at all
+   * about the one that stopped overnight to ask them a question. The page
+   * boundary has to be drawn across sessions, not across tasks.
+   *
+   * Additive and opt-in: every existing caller (the run list, the native apps,
+   * the device poller) is untouched, and `limit` keeps meaning "at most this
+   * many rows" — it is the UNIT that changes, from tasks to conversations.
+   * Tasks with no conversation are excluded rather than bunched under one null
+   * key, because the caller's unit is the conversation and a run pointing at
+   * nothing has no row to land on.
+   *
+   * WHAT RUNS: a hand-written `SELECT DISTINCT ON ("conversationId")`, built by
+   * `latestTaskPerConversationQuery`. Prisma's `distinct` option would NOT have
+   * produced one here — it compiles to `DISTINCT ON` only under the
+   * `nativeDistinct` preview feature, which this schema does not declare, and
+   * otherwise de-duplicates in memory after the `LIMIT` has already been
+   * applied to tasks. That module's docblock carries the full argument.
+   */
+  const latestPerConversation = searchParams.get("latestPerConversation") === "1";
 
-  const tasks = await prisma.codeTask.findMany({
-    where: {
-      userId: user.id,
-      ...(deviceId ? { deviceId } : {}),
-      ...(conversationId ? { conversationId } : {}),
-      ...(status ? { status } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
+  const where: Prisma.CodeTaskWhereInput = {
+    userId: user.id,
+    ...(deviceId ? { deviceId } : {}),
+    ...(status ? { status } : {}),
+    ...(conversationId ? { conversationId } : {}),
+  };
+  const tasks = latestPerConversation
+    ? await prisma.$queryRaw<CodeTask[]>(
+        latestTaskPerConversationQuery({ userId: user.id, deviceId, status, conversationId, limit }),
+      )
+    : await prisma.codeTask.findMany({ where, orderBy: { createdAt: "desc" }, take: limit });
   // One grouped query for the page, so a finished device run can be "Ready to
   // review" without the list reading every run's event log.
   const changed = await countChangedFiles(tasks.map((task) => task.id));

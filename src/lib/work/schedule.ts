@@ -1976,3 +1976,52 @@ export function parseScheduleRunListQuery(params: URLSearchParams): ScheduleRunL
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// The transcript a schedule writes into
+// ---------------------------------------------------------------------------
+
+/** The `Conversation` columns a schedule's own thread is created with. */
+export interface ScheduleConversationSeed {
+  title: string;
+  titleSource: "manual";
+  /**
+   * `"chat"`, never a new kind. A run is not a different kind of conversation —
+   * it is a conversation with a run in it (docs/design/TWO_PRODUCTS.md §4), and
+   * the phone drops kinds it does not know.
+   */
+  kind: "chat";
+  /** Omitted rather than null when the schedule names no model, so the column's own default stands. */
+  model?: string;
+}
+
+/**
+ * The thread an automation accumulates in.
+ *
+ * A schedule points at ONE `WorkSession` and re-runs it, so every fire writes
+ * into the same transcript — that is the fact about Juno's schedules worth
+ * knowing, and until this existed there was nowhere to read it. The web create
+ * route used to mint that session with no `conversationId`, which was harmless
+ * while `/work/<sessionId>` was a page of its own and became a dead end the
+ * moment a run was read inside its conversation instead: a session with no
+ * conversation has no surface at all, so a run that stopped to ask for an
+ * approval could not be answered from the web.
+ *
+ * Pure, and separate from the route, because the decision worth pinning is
+ * which columns this thread is born with — the title the reader sees in the
+ * sidebar, and the kind — rather than the Prisma call that writes them.
+ */
+export function scheduleConversationSeed(
+  name: string,
+  model: string | null | undefined
+): ScheduleConversationSeed {
+  return {
+    // The schedule's own name, and `manual` with it: the person typed this, and
+    // an auto-titler that rewrote it from the first run's output would rename a
+    // row they named themselves.
+    title: name,
+    titleSource: "manual",
+    kind: "chat",
+    ...(model ? { model } : {}),
+  };
+}

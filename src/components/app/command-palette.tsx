@@ -35,6 +35,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { staggerDelay } from "@/lib/motion";
+import type { ClientConversation } from "@/types/chat";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -521,7 +522,7 @@ function FilterChip({
  *
  * This used to filter the conversation titles the app context happened to be
  * holding, in the browser. That was never search: it could not see message
- * text, files, knowledge, artifacts, memories or Work, it silently excluded
+ * text, files, knowledge, artifacts, memories or tasks, it silently excluded
  * archived chats, and it stopped at whatever the 200-row context contained.
  * There was a server-side title search behind `GET /api/conversations?q=` and
  * nothing in the repository ever passed the `q`.
@@ -830,7 +831,7 @@ function SearchPalette() {
         <>
           <p className="text-body text-muted-foreground">Search everything in Juno</p>
           <p className="mt-1 text-caption text-muted-foreground">
-            Chats and their messages, projects, files, artifacts, memories and Work.
+            Chats and their messages, projects, files, artifacts, memories and tasks.
           </p>
         </>
       )}
@@ -852,7 +853,7 @@ function SearchPalette() {
       open={open}
       onOpenChange={setOpen}
       ariaLabel="Search everything"
-      placeholder="Search chats, files, artifacts, memory and Work"
+      placeholder="Search chats, files, artifacts, memory and tasks"
       query={query}
       onQueryChange={setQuery}
       items={items}
@@ -970,8 +971,8 @@ function CommandMenu() {
     const matches = (label: string, keywords?: string) =>
       !q || label.toLowerCase().includes(q) || (keywords ? keywords.includes(q) : false);
 
-    // Four sections: Actions (things to start and places to go), Chats,
-    // Projects, Settings. A typed query filters across all four.
+    // Five sections: Actions (things to start and places to go), Chats, Code
+    // sessions, Projects, Settings. A typed query filters across all five.
     const actions: PaletteItem[] = [
       {
         id: "new-chat",
@@ -985,8 +986,16 @@ function CommandMenu() {
           window.dispatchEvent(new CustomEvent("juno:new-chat"));
         },
       },
-      { id: "new-work", group: "Actions", label: "New Work task", icon: AppIcons.work, keywords: "work task do errand agent mac cloud automation", run: () => go("/work") },
-      { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac", run: () => go("/code/new") },
+      /* "New Work task" used to sit here and open /work. There is no such
+         destination and no such kind of thing to start any more: you delegate
+         from the chat composer, in the conversation the run will live in
+         (docs/design/TWO_PRODUCTS.md §2.2), so the palette's answer to "I want
+         Juno to go and do this" is the same "New chat" row above. */
+      /* Straight to `/code`, not to `/code/new`. The Code landing IS the
+         composer now (docs/design/TWO_PRODUCTS.md §3) and `/code/new` is a
+         redirect onto it, so routing through it would spend a round trip to
+         arrive at the row's own destination. */
+      { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac task agent", run: () => go("/code") },
       { id: "new-task", group: "Actions", label: "New scheduled task", icon: AppIcons.tasks, keywords: "schedule recurring automation cron reminder", run: () => go("/tasks") },
       { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
       {
@@ -1002,32 +1011,71 @@ function CommandMenu() {
       },
       { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: Columns2, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
-      { id: "work", group: "Actions", label: "Open Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
-      { id: "code-runs", group: "Actions", label: "Open Code runs", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
+      { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
       { id: "design", group: "Actions", label: "Open Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
       { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
       { id: "library", group: "Actions", label: "Open Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: "Open Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
+      /* The three rooms Work's tab row used to hold. They are destinations in
+         their own right now, so they are reachable from the keyboard — which
+         the tab row never made them, since you had to be standing inside Work
+         to see it. Left out of the shell's own commit because the routes did
+         not exist yet; they do. */
+      { id: "skills", group: "Actions", label: "Open Skills", icon: AppIcons.skills, keywords: "instructions reusable slash capability library", run: () => go("/skills") },
+      { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule recurring trigger cron email calendar monitor", run: () => go("/automations") },
+      { id: "permissions", group: "Actions", label: "Open Permissions", icon: AppIcons.permissions, keywords: "approvals allow ask macs hosts security", run: () => go("/permissions") },
       { id: "tasks", group: "Actions", label: "Open Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: "Open Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
     ].filter((c) => matches(c.label, c.keywords));
 
-    const chatRows = conversations.filter((c) => c.kind !== "code" && !c.archivedAt);
+    /*
+     * CODE SESSIONS ARE ROWS HERE NOW.
+     *
+     * They were excluded outright — `kind !== "code"` — on the reasoning that
+     * Code had its own list page with its own search field. That page is being
+     * retired (docs/design/TWO_PRODUCTS.md §3), and even while it stood, this
+     * exclusion plus the sidebar's identical one meant an open Code session
+     * could not be reached from the keyboard from anywhere else in the product.
+     *
+     * The meta line is the repository or workspace rather than a timestamp,
+     * because that is the fact that tells two sessions apart — a person has
+     * three "Fix the flaky test"s and one of them is in the repo they mean. A
+     * status mark is deliberately NOT drawn here: this surface holds no run
+     * data, and a palette that is open for two seconds must not start a poll to
+     * colour a dot. The state is on the row in the sidebar, which is the
+     * surface whose job is triage.
+     */
+    const live = conversations.filter((c) => !c.archivedAt);
+    const byRecency = (a: ClientConversation, b: ClientConversation) =>
+      new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    const chatRows = live.filter((c) => c.kind !== "code");
     const chats: PaletteItem[] = (
       q
         ? chatRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
-        : [...chatRows]
-            .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
-            .slice(0, 5)
+        : [...chatRows].sort(byRecency).slice(0, 5)
     ).map((c) => ({
       id: "recent-" + c.id,
       group: "Chats",
       label: c.title || "New chat",
       meta: relativeTime(c.lastMessageAt),
       icon: MessageSquare,
+      run: () => go("/chat/" + c.id),
+    }));
+
+    const codeRows = live.filter((c) => c.kind === "code");
+    const codeSessions: PaletteItem[] = (
+      q
+        ? codeRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
+        : [...codeRows].sort(byRecency).slice(0, 4)
+    ).map((c) => ({
+      id: "code-session-" + c.id,
+      group: "Code sessions",
+      label: c.title || "Untitled session",
+      meta: c.codeWorkspaceName || relativeTime(c.lastMessageAt),
+      icon: AppIcons.code,
       run: () => go("/chat/" + c.id),
     }));
 
@@ -1076,7 +1124,7 @@ function CommandMenu() {
       },
     ].filter((c) => matches(c.label, c.keywords));
 
-    return [...actions, ...chats, ...projectRows, ...settings];
+    return [...actions, ...chats, ...codeSessions, ...projectRows, ...settings];
   }, [conversations, projects, q, go, resolvedTheme, toggleTheme, mod]);
 
   const footer = (
@@ -1159,8 +1207,7 @@ const shortcutGroups = (mod: string): { title: string; items: { keys: string[]; 
     title: "Products",
     items: [
       { keys: [mod, "⇧", "1"], label: "Chat" },
-      { keys: [mod, "⇧", "2"], label: "Work" },
-      { keys: [mod, "⇧", "3"], label: "Code" },
+      { keys: [mod, "⇧", "2"], label: "Code" },
     ],
   },
   {

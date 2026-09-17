@@ -15,8 +15,7 @@ import { PRODUCTS } from "@/components/app/product-switch";
  *   ⌘⇧;   copy the last code block    (read from the transcript DOM)
  *   ⌘⇧L   toggle the theme            → `juno:toggle-theme` (command palette)
  *   ⌘⇧1   Chat                        → `juno:go-product` (app-shell pushes)
- *   ⌘⇧2   Work                        → `juno:go-product`
- *   ⌘⇧3   Code                        → `juno:go-product`
+ *   ⌘⇧2   Code                        → `juno:go-product`
  *
  * ⌘K / ⌘⇧O / ⌘/ live in the command palette, which has always owned them.
  * Everything here is a modifier chord, so it is safe to fire while typing —
@@ -65,16 +64,20 @@ export function useGlobalShortcuts({ onToggleSidebar }: { onToggleSidebar: () =>
       } else if (key === "l") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("juno:toggle-theme"));
-      } else if (e.code === "Digit1" || e.code === "Digit2" || e.code === "Digit3") {
+      } else if (e.code === "Digit1" || e.code === "Digit2") {
         e.preventDefault();
-        // `e.code`, not `e.key`: with Shift held, `e.key` is "!" / "@" / "#" on
-        // a US layout and something else again on every other one. The chord is
-        // the physical key.
+        // `e.code`, not `e.key`: with Shift held, `e.key` is "!" / "@" on a US
+        // layout and something else again on every other one. The chord is the
+        // physical key.
         //
         // ⌘⇧n rather than the Mac app's ⌘n: ⌘1–⌘8 are browser tab switching on
         // macOS and cannot be reliably preempted, and ⌘⇧ is the chord family
         // this hook already owns. PRODUCTS is the one list the sidebar's switch
-        // reads too, so the order can never drift between key and pill.
+        // reads too, so the order can never drift between key and pill — which
+        // is why losing Work moved Code from ⌘⇧3 to ⌘⇧2 here without a second
+        // edit: the digits index that list. ⌘⇧3 is deliberately NOT caught any
+        // more, so it falls through to the browser rather than being swallowed
+        // by a chord that no longer goes anywhere.
         const product = PRODUCTS[Number(e.code.slice(-1)) - 1];
         if (product) window.dispatchEvent(new CustomEvent("juno:go-product", { detail: product.href }));
       }

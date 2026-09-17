@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 /**
  * Whether a cloud run could start right now.
  *
- * `/code/new` asks this when the Cloud target is chosen, so a server whose
+ * The Code composer asks this when the Cloud target is chosen, so a server whose
  * runner workflow is missing or disabled says so under the composer BEFORE
  * the reader writes a prompt and presses Start — rather than after, as a 503
  * on the submit. Same probe the create route gates on, same cache, so the

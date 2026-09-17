@@ -8,6 +8,7 @@ import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
+import type { ReviewFile } from "@/components/code/run-review";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,17 @@ export interface CodeFileChange {
    * neither expands nor shows a diff pane. See `ChangedFilesCard`.
    */
   patch: string | null;
+  /**
+   * Whether this file was written after the reader's most recent instruction.
+   *
+   * The review pane's "Last turn" scope is the only thing that reads it, and it
+   * is the pane's most useful control: a session three instructions deep has
+   * touched files from all three, and a reader opening the diff after the third
+   * cannot otherwise tell which is which. The boundary is the last USER message
+   * in the transcript, which is the same boundary `useRunDetail` finds in an
+   * event log — one definition of "a turn", two transports.
+   */
+  fromLastTurn: boolean;
 }
 
 /**
@@ -194,15 +206,28 @@ export function useSessionFileChanges(
 ): CodeFileChange[] {
   return React.useMemo(() => {
     const byPath = new Map<string, CodeFileChange>();
-    for (const message of messages) {
+    // Where the latest turn starts. Everything an assistant message wrote after
+    // the reader's last instruction belongs to it; -1 when the transcript holds
+    // no user message at all, which makes every write part of the first turn.
+    let lastUserIndex = -1;
+    messages.forEach((message, index) => {
+      if (message.role === "USER") lastUserIndex = index;
+    });
+    messages.forEach((message, index) => {
       for (const event of message.activity ?? []) {
         if (event.kind !== "write") continue;
         const space = event.title.indexOf(" ");
         const changeKind = space === -1 ? "edit" : event.title.slice(0, space);
         const path = space === -1 ? event.title : event.title.slice(space + 1);
-        byPath.set(path, { path, changeKind, churn: event.detail ?? null, patch: activityPatch(event) });
+        byPath.set(path, {
+          path,
+          changeKind,
+          churn: event.detail ?? null,
+          patch: activityPatch(event),
+          fromLastTurn: index > lastUserIndex,
+        });
       }
-    }
+    });
     for (const change of live) {
       byPath.set(change.path, {
         path: change.path,
@@ -212,10 +237,57 @@ export function useSessionFileChanges(
         // row contribute nothing to the header's totals.
         churn: `+${change.added} −${change.removed}`,
         patch: change.patch,
+        // A live event is by definition this turn's: it arrived on the stream
+        // the reader's last instruction opened.
+        fromLastTurn: true,
       });
     }
     return [...byPath.values()];
   }, [messages, live]);
+}
+
+/**
+ * How many turns this transcript holds, for "was there ever a second one".
+ *
+ * The review pane offers its "Last turn" scope only where a boundary exists,
+ * because on a single-turn session that control is a choice between a thing and
+ * itself. Counting user messages is the cheapest honest answer: one instruction
+ * is one turn.
+ */
+export function hasTurnBoundary(messages: readonly ClientMessage[]): boolean {
+  let seen = 0;
+  for (const message of messages) {
+    if (message.role !== "USER") continue;
+    seen += 1;
+    if (seen > 1) return true;
+  }
+  return false;
+}
+
+/**
+ * A changed file as the review pane reads it: the same facts, with the churn
+ * string split back into numbers.
+ *
+ * The producer folded `+3 −1` into one display string on the way in and the
+ * card header re-parses it (`totalChurn`) rather than recomputing, for the
+ * reason given there. The pane needs the pair per file rather than summed, so
+ * it parses the same string the same way. A row whose churn does not parse
+ * contributes zeroes, which understates quietly — the alternative is dropping
+ * the file from the review, which hides a change.
+ */
+export function reviewFilesOf(files: readonly CodeFileChange[]): ReviewFile[] {
+  return files.map((file) => {
+    // U+2212 MINUS SIGN first, hyphen second: the producer writes the former.
+    const match = file.churn?.match(/\+(\d+)\s+[−-](\d+)/);
+    return {
+      path: file.path,
+      changeKind: file.changeKind,
+      added: match ? Number(match[1]) : 0,
+      removed: match ? Number(match[2]) : 0,
+      patch: file.patch,
+      fromLastTurn: file.fromLastTurn,
+    };
+  });
 }
 
 /** The last thing the runner said it was doing, or null when nothing is live. */
@@ -247,6 +319,17 @@ export interface CodeRunStackProps {
   isCloud: boolean;
   /** The newest mid-run instruction and where it has got to, or null. */
   steering: CodeSteering | null;
+  /**
+   * Open the review pane on these changes, or null where there is nothing to
+   * review yet.
+   *
+   * The changed-files card is the only place in the product that knows a run
+   * has written something, so it is where reading it properly starts. The card
+   * itself stays what it is — a summary above the composer that must not grow —
+   * and the judgement vocabulary (per-file verdicts, per-line notes at three
+   * severities, bundled into the next instruction) lives in the pane it opens.
+   */
+  onReview: (() => void) | null;
 }
 
 /** The lifecycle line under a steer, phase by phase. */
@@ -274,6 +357,7 @@ export function CodeRunStack({
   rollback,
   isCloud,
   steering,
+  onReview,
 }: CodeRunStackProps) {
   return (
     <MotionConfig reducedMotion="user">
@@ -297,7 +381,7 @@ export function CodeRunStack({
             : (queuedNote ?? "")}
       </p>
 
-      {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} />}
+      {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} onReview={onReview} />}
       {agents.length > 0 && <AgentsCard agents={agents} />}
       {blocked && <BlockedNote reason={blocked.reason} onRecheck={blocked.onRecheck} />}
       {queuedNote && (
@@ -644,9 +728,11 @@ function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
 function ChangedFilesCard({
   files,
   rollback,
+  onReview,
 }: {
   files: CodeFileChange[];
   rollback: CodeRollbackControls | null;
+  onReview: (() => void) | null;
 }) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
@@ -737,6 +823,23 @@ function ChangedFilesCard({
             </span>
           )}
         </Pressable>
+        {onReview && (
+          // BEFORE the undo, because reading is what a reader does first and
+          // the destructive control should never be the nearest thing to the
+          // thumb. Ghost against the undo's outline for the same ranking: one
+          // of these two buttons changes the checkout and the other opens a
+          // pane, and they must not look equally consequential.
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onReview}
+            className="shrink-0 gap-1.5 coarse:h-11"
+          >
+            <CodeIcons.file className="size-3.5" aria-hidden="true" />
+            Review
+          </Button>
+        )}
         {rollback && (
           // "Last turn", not "everything": the checkpoint index truncates on
           // rewind, so only the most recent file-changing turn can be popped

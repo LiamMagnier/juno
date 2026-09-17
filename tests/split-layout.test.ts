@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { splitBounds } from "../src/hooks/use-split-pane";
 import {
   CANVAS_MIN_WIDTH,
   CHAT_MIN_WIDTH,
@@ -89,38 +88,16 @@ test("the code session's docks each derive their step from their width plus the 
   assert.ok(!src.includes("(max-width: 1023px)"));
 });
 
-test("the Work thread's split is the file's own floor plus its narrowest rail", () => {
-  const src = read("src/app/(app)/work/[id]/page.tsx");
-  const floor = src.match(/const WORK_CONVERSATION_MIN_WIDTH = (\d+) \+ (\d+);/);
-  const rail = src.match(/const WORK_RAIL_DEFAULT_WIDTH = (\d+);/);
-  const railMax = src.match(/const WORK_RAIL_CSS_WIDTH = (\d+);/);
-  const share = src.match(/const WORK_RAIL_SHARE = 0\.(\d+);/);
-  assert.ok(floor && rail && railMax && share, "the constants the thresholds derive from are still declared");
-  const splitAt = Number(floor[1]) + Number(floor[2]) + Number(rail[1]);
-  assert.deepEqual(containerSteps(src, "thread"), [remOf(splitAt)]);
-  // The undragged rail is a share of the grid between the two rem values the
-  // constants name — no second step, so the conversation never narrows as the
-  // grid widens. The class is matched as `clamp(<min>,<share>%,<max>)` with no
-  // spaces, which is how the page writes it; a rewrite that spells the share
-  // differently (a custom property, a `min()`) has to update this line too.
-  assert.match(src, new RegExp(`clamp\\(${remOf(Number(rail[1]))},${share[1]}%,${remOf(Number(railMax[1]))}\\)`));
-  // At the split the CSS draws the rail at its narrowest, and the bounds must
-  // say so: a `cssWidth` fixed at the top of the clamp kept 416 reachable
-  // there, so a drag left the conversation 456 wide under a 520 floor.
-  const primaryMin = Number(floor[1]) + Number(floor[2]);
-  const cssAt = (w: number) =>
-    Math.min(Number(railMax[1]), Math.max(Number(rail[1]), Math.round(w * Number(`0.${share[1]}`))));
-  const atSplit = splitBounds({
-    containerWidth: splitAt,
-    paneMin: 288,
-    paneFloor: 240,
-    primaryMin,
-    fraction: 0.5,
-    cssWidth: cssAt(splitAt),
-  });
-  assert.equal(atSplit.maxWidth, Number(rail[1]), "the rail's max at the split is its CSS width");
-  assert.equal(splitAt - atSplit.maxWidth, primaryMin, "the conversation keeps its floor at the split");
-  const code = stripComments(src);
-  assert.ok(!/\b(lg|xl):/.test(code), "the grid still keys a class on the window");
-  assert.ok(!src.includes("(max-width: 1023px)"));
-});
+/*
+ * THE WORK THREAD'S SPLIT IS NOT PINNED HERE ANY MORE, because there is no
+ * longer a split to pin. `src/app/(app)/work/[id]/page.tsx` drew a conversation
+ * beside a rail of run detail, and its four constants —
+ * WORK_CONVERSATION_MIN_WIDTH, WORK_RAIL_DEFAULT_WIDTH, WORK_RAIL_CSS_WIDTH,
+ * WORK_RAIL_SHARE — were the numbers this file checked the page's own
+ * `@[...]/thread:` classes against. A delegated run is now drawn INSIDE the
+ * transcript (docs/design/TWO_PRODUCTS.md §3): `WorkRunPanel` is a block in the
+ * reading column, it has no second column and therefore no threshold at which
+ * one appears, and the two splits that remain — the chat's docks and the code
+ * session's — are covered by the tests above. The test was deleted rather than
+ * retargeted because there is nothing left for it to be retargeted AT.
+ */

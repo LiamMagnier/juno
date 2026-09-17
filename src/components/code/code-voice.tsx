@@ -19,10 +19,11 @@ import {
 /*
  * Voice mode for Juno Code — the launcher's gate, and the live call.
  *
- * Both Code surfaces mount this: /code/new, where the call is about deciding
- * what to ask for, and a live session, where it is about what the run did. One
- * file because the two composers have to agree — the alternative was two panels
- * describing the same arrangement in different words on adjacent screens.
+ * Both Code surfaces mount this: the landing composer at /code, where the call
+ * is about deciding what to ask for, and a live session, where it is about what
+ * the run did. One file because the two composers have to agree — the
+ * alternative was two panels describing the same arrangement in different words
+ * on adjacent screens.
  *
  * ── What this is NOT ───────────────────────────────────────────────────────
  *
@@ -102,9 +103,9 @@ export interface CodeVoiceSend {
   /** A send is already in flight elsewhere on the page. Locks the button. */
   sending?: boolean;
   /**
-   * True when a successful send navigates away — /code/new pushes to the new
-   * session. The panel then ends the call itself before handing over, so the
-   * microphone is released deliberately rather than by the unmount that
+   * True when a successful send navigates away — the landing composer pushes to
+   * the new session. The panel then ends the call itself before handing over,
+   * so the microphone is released deliberately rather than by the unmount that
    * `useRealtimeVoice` cleans up after.
    */
   endsCall?: boolean;
@@ -238,7 +239,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
    *
    * The viewport's own `scrollTop` is set directly rather than calling
    * `scrollIntoView` on a sentinel: this panel sits inside a page-level
-   * `overflow-y-auto` on /code/new, and `scrollIntoView` walks EVERY scrollable
+   * `overflow-y-auto` on the landing, and `scrollIntoView` walks EVERY scrollable
    * ancestor — so pinning the transcript would also yank the page under the
    * reader on each spoken word.
    */

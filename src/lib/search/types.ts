@@ -18,7 +18,7 @@
 /**
  * The kinds of thing a person can look for. Order is the order groups are
  * rendered in — conversations and their messages first because that is what
- * most searches are for, memories and Work last because they are the rarest.
+ * most searches are for, memories and tasks last because they are the rarest.
  */
 export const SEARCH_TYPES = [
   "conversation",
@@ -46,7 +46,10 @@ export const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
   knowledge: "Knowledge",
   artifact: "Artifacts",
   memory: "Memory",
-  work: "Work",
+  // "Tasks", not "Work": Work is no longer a place a result can be in
+  // (docs/design/TWO_PRODUCTS.md §2), and what these rows actually are is
+  // delegated tasks and the steps inside them.
+  work: "Tasks",
 };
 
 /**

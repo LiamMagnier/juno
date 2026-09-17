@@ -106,6 +106,7 @@ export function WorkQuestionCard({
   busy,
   onAnswer,
   current = true,
+  fieldId,
 }: {
   question: OpenQuestion;
   busy: boolean;
@@ -113,6 +114,18 @@ export function WorkQuestionCard({
   onAnswer: (questionId: string, text: string) => void;
   /** False for a second open question the composer is not yet answering. */
   current?: boolean;
+  /**
+   * The id of the box "Reply below" should land in.
+   *
+   * This card now has two homes. On the task page the composer below it is the
+   * /work thread composer, which is what the default names; inside a chat
+   * transcript it is the chat composer, whose field carries a different id
+   * entirely. Hard-coded to the first of the two, the button rendered on every
+   * open question in a chat, took focus, announced "Reply in the message box
+   * below" and did nothing at all — a control that implies something the
+   * runtime cannot do, on the exact block the merge exists to serve.
+   */
+  fieldId?: string;
 }) {
   const answer = (text: string) => {
     const trimmed = text.trim();
@@ -121,10 +134,17 @@ export function WorkQuestionCard({
   };
 
   const replyBelow = () => {
-    const field = document.getElementById(WORK_THREAD_COMPOSER_FIELD_ID);
-    if (field instanceof HTMLTextAreaElement) {
-      field.focus();
-      field.scrollIntoView({ block: "nearest" });
+    // The caller's field first, then the thread composer's — the fallback is
+    // what keeps a caller that forgets to say where it lives working on the
+    // surface this card was written for.
+    for (const id of [fieldId, WORK_THREAD_COMPOSER_FIELD_ID]) {
+      if (id === undefined) continue;
+      const field = document.getElementById(id);
+      if (field instanceof HTMLTextAreaElement) {
+        field.focus();
+        field.scrollIntoView({ block: "nearest" });
+        return;
+      }
     }
   };
 

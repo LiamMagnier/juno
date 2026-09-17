@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { WORK_STATUSES, type WorkStatus } from "@/lib/work/domain";
 import { tallyTriageCounts, type SessionStatusTally } from "@/app/api/work/protocol";
-import { matchesTriage } from "@/components/work/inbox/triage";
+import { matchesTriage, type WorkTriageState } from "@/components/work/inbox/triage";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 
 /*
@@ -52,9 +52,8 @@ test("the server tally and the inbox filter agree on every status", () => {
     for (const needsAttention of [true, false]) rows.push({ status, needsAttention, count: 1 });
   }
   const counts = tallyTriageCounts(rows);
-  const ctx = { scheduled: false, unread: false };
-  const expect = (state: "needs_you" | "in_progress" | "done" | "all") =>
-    rows.filter((row) => matchesTriage(session(row.status, row.needsAttention), state, ctx)).length;
+  const expect = (state: WorkTriageState) =>
+    rows.filter((row) => matchesTriage(session(row.status, row.needsAttention), state)).length;
 
   assert.equal(counts.all, expect("all"));
   assert.equal(counts.needs_you, expect("needs_you"));

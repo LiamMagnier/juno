@@ -32,7 +32,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
   const auto = skill.autoSelect && trustPermitsAutoSelection(skill.trust);
   return (
     <Link
-      href={`/work/skills/${skill.id}`}
+      href={`/skills/${skill.id}`}
       className={cn(
         // The same rest/hover/press/focus set WorkSessionRow carries. These
         // three sibling rows are the same object in three lists and had neither a

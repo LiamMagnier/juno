@@ -12,7 +12,11 @@ import {
 import { isWorkModelAllowed } from "@/lib/work/models";
 import { DEFAULT_WORK_PERMISSION_POLICY } from "@/lib/work/domain";
 import { getUserPlan } from "@/lib/usage";
-import { createSessionSchema, parseSessionListQuery } from "@/app/api/work/protocol";
+import {
+  createSessionSchema,
+  parseSessionListQuery,
+  sessionListOrder,
+} from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
 
@@ -165,7 +169,8 @@ export async function GET(req: Request) {
   if (!parsed.ok) {
     return NextResponse.json({ error: "Invalid input", parameter: parsed.parameter }, { status: 400 });
   }
-  const { status, needsAttention, pinned, archived, projectId, limit } = parsed.query;
+  const { status, needsAttention, pinned, archived, projectId, conversationId, limit } =
+    parsed.query;
 
   const sessions = await prisma.workSession.findMany({
     where: {
@@ -179,11 +184,14 @@ export async function GET(req: Request) {
       ...(needsAttention !== undefined ? { needsAttention } : {}),
       ...(pinned !== undefined ? { pinned } : {}),
       ...(projectId ? { projectId } : {}),
+      // The chat asking about its own run. Scoped by `userId` like every other
+      // clause here, so an id guessed from another account selects nothing
+      // rather than reading that account's task.
+      ...(conversationId ? { conversationId } : {}),
     },
-    // Pinned first so a session the user pinned does not fall off the end of a
-    // clamped page, then most recently active — which is the order the indexes
-    // on (userId, lastActivityAt) are built for.
-    orderBy: [{ pinned: "desc" }, { lastActivityAt: "desc" }],
+    // Pinned first, except when one conversation is being asked about its own
+    // task — the argument is written out over `sessionListOrder`.
+    orderBy: sessionListOrder(parsed.query),
     take: limit,
   });
 
@@ -255,6 +263,7 @@ export async function POST(req: Request) {
     requestedTarget,
     preferredHostId,
     projectId,
+    conversationId,
     model,
     reasoningEffort,
     permissionPolicy,
@@ -302,6 +311,19 @@ export async function POST(req: Request) {
       select: { id: true },
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  // The chat this task was delegated from, checked the same way and for a
+  // sharper reason than the project: this pointer is what makes the run render
+  // inside a transcript, so an id accepted on trust would put somebody's task —
+  // its goal, its plan, its questions — into another account's conversation.
+  if (conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId: user.id },
+      select: { id: true },
+    });
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
   }
 
   // Attachments get the same treatment, and it matters more here than for the
@@ -395,6 +417,8 @@ export async function POST(req: Request) {
       title: title ?? goal.slice(0, 60),
       goal,
       projectId: projectId ?? null,
+      // Absent stays null, which is what a standalone task has always been.
+      conversationId: conversationId ?? null,
       requestedTarget,
       preferredHostId: preferredHostId ?? null,
       requestedModel: model ?? null,

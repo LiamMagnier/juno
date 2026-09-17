@@ -161,6 +161,8 @@ export interface WorkSessionRow {
   goal: string;
   status: string;
   projectId: string | null;
+  /** Where the hit is READ. Null for a task with no chat behind it. */
+  conversationId: string | null;
   updatedAt: Date;
   rank: number;
 }
@@ -173,6 +175,8 @@ export interface WorkEventRow {
   sessionId: string;
   sessionTitle: string;
   projectId: string | null;
+  /** The session's conversation, for the same reason as above. */
+  conversationId: string | null;
   snippetSource: string;
   updatedAt: Date;
   rank: number;
@@ -388,6 +392,7 @@ export function workSessionSearchSql(o: SearchSqlOptions): Prisma.Sql {
            ${snippetOf(Prisma.sql`s."goal"`, o.firstTerm)} AS goal,
            s."status",
            s."projectId",
+           s."conversationId",
            s."lastActivityAt" AS "updatedAt",
            ts_rank(to_tsvector('simple', ${body}), ${query(o.tsquery)}) AS rank
       FROM "WorkSession" s
@@ -425,6 +430,7 @@ export function workEventSearchSql(o: SearchSqlOptions): Prisma.Sql {
            r."sessionId",
            s."title" AS "sessionTitle",
            s."projectId",
+           s."conversationId",
            ${snippetOf(body, o.firstTerm)} AS "snippetSource",
            e."createdAt" AS "updatedAt",
            ts_rank(to_tsvector('simple', ${body}), ${query(o.tsquery)}) AS rank
