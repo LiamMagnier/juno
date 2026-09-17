@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
-import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
+import type { ClientActivityEvent, ClientAttachment, ClientMessage } from "@/types/chat";
 
 /*
  * State for one Juno Code session (a kind:"code" conversation): persisted
@@ -21,6 +21,19 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  */
 
 export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
+
+/**
+ * The states in which a task can be handed a new instruction.
+ *
+ * "There is a task row, and a host is either holding it or on its way to it."
+ * `queued` is in the set because a host reads the same control list the moment
+ * it claims the task — a cloud driver out of its runner-context handoff, a Mac
+ * out of its first events POST — so the words are in front of the run before it
+ * takes its first step rather than being refused for the minute a machine takes
+ * to appear. `stopping` is not: that run is being taken down. `submitting` is
+ * not either — there is no row yet for a control to hang off.
+ */
+const STEERABLE = new Set<CodeSessionStatus>(["queued", "running", "awaiting_approval"]);
 
 /**
  * A Code activity row: the chat vocabulary plus the two keys only Juno Code
@@ -931,23 +944,46 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
    * to the live one and the host takes the text as its next user message. The
    * USER row the route persists is placed BEFORE the live bubble, so the
    * transcript reads the way a reload will show it — the run's single
-   * ASSISTANT row settles after every instruction it took. A cloud run takes
-   * one once it is running; the route refuses a queued one with a sentence,
-   * and `canSteer` keeps the composer from offering it before then.
+   * ASSISTANT row settles after every instruction it took.
+   *
+   * A QUEUED TASK TAKES ONE TOO. A cloud run spends its first minute starting a
+   * machine and a device run spends it waiting for a Mac to claim the task, and
+   * an instruction sent during either is folded into the prompt the run opens
+   * with (runner-context hands the driver its backlog; a Mac reads the same
+   * controls on its first events POST). The minute a machine takes to appear is
+   * the minute a person remembers the thing they left out, and refusing them
+   * for it cost a cancel and a retype.
+   *
+   * Attachments ride along: the route folds their extracted text into what the
+   * agent reads, exactly as the create route does for a first prompt.
    */
   const steer = React.useCallback(
-    async (text: string): Promise<{ accepted: boolean }> => {
+    async (text: string, attachments: ClientAttachment[] = []): Promise<{ accepted: boolean }> => {
       const task = activeTask;
       const trimmed = text.trim();
-      if (!task || !trimmed) return { accepted: false };
-      if (statusRef.current !== "running" && statusRef.current !== "awaiting_approval") return { accepted: false };
+      // Words, or something attached. The composer's `+` stays live while a run
+      // goes, so a screenshot with nothing typed has to be sendable — the route
+      // takes it on the same terms the create route takes an attachment-only
+      // first prompt.
+      if (!task || (!trimmed && attachments.length === 0)) return { accepted: false };
+      if (!STEERABLE.has(statusRef.current)) return { accepted: false };
       const requestId = tempId();
-      setSteering({ requestId, text: trimmed, phase: "sending", message: null });
+      // What the pending-instruction line shows. An attachment-only steer has
+      // no sentence of its own, so it is named by what it is rather than
+      // rendered as an empty row under "Juno Code has your instruction".
+      const shown =
+        trimmed ||
+        (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
+      setSteering({ requestId, text: shown, phase: "sending", message: null });
       try {
         const res = await fetch(`/api/code/tasks/${task.id}/steer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: trimmed, requestId }),
+          body: JSON.stringify({
+            text: trimmed,
+            requestId,
+            ...(attachments.length > 0 ? { attachmentIds: attachments.map((a) => a.id) } : {}),
+          }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           userMessage?: ClientMessage;
@@ -1163,12 +1199,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     responding,
     isBusy: status !== "idle",
     /**
-     * Whether the composer may send an instruction INTO the live run: a
-     * device run that is running or waiting on an approval, or a cloud run
-     * that is running (its driver reads controls between agent steps). A
-     * queued cloud task has no runner yet, and the route refuses it.
+     * Whether the composer may send an instruction INTO the live run.
+     *
+     * Every non-terminal state a task can be in while a host is on its way to
+     * it or already holding it — see `STEERABLE`. The one thing excluded is
+     * `submitting`, where there is no task row yet for a control to hang off.
      */
-    canSteer: status === "running" || status === "awaiting_approval",
+    canSteer: STEERABLE.has(status),
     send,
     steer,
     resume,

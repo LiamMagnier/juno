@@ -35,6 +35,8 @@ const hook = read("src/hooks/use-code-session.ts");
 const composer = read("src/components/code/code-session-composer.tsx");
 const driver = read("scripts/cloud-code-runner.mjs");
 const controls = read("src/app/api/code/tasks/[id]/controls/route.ts");
+const context = read("src/app/api/code/tasks/[id]/runner-context/route.ts");
+const create = read("src/app/api/code/tasks/route.ts");
 
 test("steer is both a control kind and an event kind; the ack flows host → web only", () => {
   const controlKinds = arrayLiteral(taskEvents, "CONTROL_KINDS");
@@ -55,14 +57,63 @@ test("the steer route authorises exactly like cancel, and is idempotent by reque
   assert.match(route, /key: `steer:\$\{requestId\}`/, "a retried POST must not queue the instruction twice");
 });
 
-test("the steer route refuses what cannot be steered, with a reason", () => {
+test("the steer route refuses only what cannot be steered, with a reason", () => {
   assert.match(route, /isTerminalTaskStatus\(task\.status\)[\s\S]*?status: 409/);
-  // Cloud: steerable once the runner is running (it reads controls between
-  // steps); before that there is no process to take the instruction.
-  assert.match(route, /task\.target === "cloud" && task\.status !== "running"[\s\S]*?"task_not_started"[\s\S]*?status: 409/);
+  /*
+   * A QUEUED TASK IS NOT A REFUSAL ANY MORE. It used to be, for cloud: 409
+   * `task_not_started`, on the grounds that no process was holding the task.
+   * The instruction reaches the run through runner-context instead, folded into
+   * the prompt the agent opens with — so the sentence has to be gone from the
+   * route AND the delivery has to exist, or this is a control that queues words
+   * nothing will read.
+   */
+  assert.doesNotMatch(route, /"task_not_started"/, "a queued cloud task takes an instruction now");
+  assert.doesNotMatch(route, /task\.status !== "running"/);
+  assert.match(context, /pendingSteers/, "runner-context must hand the backlog over");
+  assert.match(context, /kind: \{ in: \["steer", "steer_ack"\] \}/);
+  assert.match(driver, /readPendingSteers\(ctx\.pendingSteers\)/);
+  assert.match(driver, /await session\.prompt\(openingPrompt\)/, "the backlog has to reach the first turn");
+  // Handed over once. The control rows are still above the driver's cursor, so
+  // the first poll returns them again and only the ledger stops a second inject.
+  assert.match(driver, /this\.consumedSteers\.has\(requestId\)\) continue;/);
   // And it answers `queued`, never `delivered`: the host has not read it yet.
   assert.match(route, /status: "queued"/);
   assert.doesNotMatch(route, /status: "delivered"/);
+});
+
+test("an attachment reaches a running agent the same way a first prompt's does", () => {
+  /*
+   * The `+` menu used to rest mid-run because "an attachment cannot ride a
+   * steer". Nothing in the transport said so — a steer is text and a first
+   * prompt is text, and the create route folds an attachment's extracted text
+   * into that string. The fold is one function now, so the two cannot drift;
+   * what this pins is that both call it and that the TRANSCRIPT row still
+   * carries what the person typed rather than a hundred kilobytes of PDF.
+   */
+  assert.match(route, /foldAttachmentsIntoPrompt/);
+  assert.match(create, /foldAttachmentsIntoPrompt/);
+  assert.match(route, /content: encryptMessageText\(text\)/, "the bubble shows what was typed");
+  assert.match(route, /payload: \{ requestId, text: agentText \}/, "the agent gets the folded text");
+  // Claimed exactly as the create route claims them: unclaimed rows only, so a
+  // retry cannot steal an attachment that already belongs to a turn.
+  for (const source of [route, create]) {
+    assert.match(source, /messageId: null, deletedAt: null/);
+  }
+});
+
+test("the fold puts an attachment's own words in front of the agent", async () => {
+  const { foldAttachmentsIntoPrompt } = await import("@/lib/code-attachment-prompt");
+  const folded = foldAttachmentsIntoPrompt("fix the header", [
+    { fileName: "spec.md", kind: "DOCUMENT", mimeType: "text/markdown", extractedText: "Headers are 48px." },
+    { fileName: "shot.png", kind: "IMAGE", mimeType: "image/png", extractedText: null },
+  ]);
+  assert.match(folded, /^fix the header\n\n---\n/, "the typed instruction still leads");
+  assert.match(folded, /Headers are 48px\./);
+  assert.match(folded, /Attached image: shot\.png/, "a binary is named even though it cannot be read");
+  // Nothing attached must never invent a sentence: an empty prompt with no
+  // attachments is the caller's problem to refuse, not this function's to fill.
+  assert.equal(foldAttachmentsIntoPrompt("just this", []), "just this");
+  assert.equal(foldAttachmentsIntoPrompt("", []), "");
 });
 
 test("the cloud driver takes a steer between steps and acks only when taken", () => {

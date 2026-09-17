@@ -39,6 +39,8 @@ type Sink = {
   cancelled: boolean;
   onSteer: ((steer: Steer) => void) | null;
   steerBacklog: Steer[];
+  /** requestIds already folded into the opening prompt out of runner-context. */
+  consumedSteers: Set<string>;
 };
 type Control = { seq?: unknown; kind?: string; payload?: Record<string, unknown> };
 
@@ -53,6 +55,7 @@ function sink(overrides: Partial<Sink> = {}): Sink {
     cancelled: false,
     onSteer: null,
     steerBacklog: [],
+    consumedSteers: new Set(),
     ...overrides,
   };
 }
@@ -70,6 +73,31 @@ test("a steer is handed to the session once, however many paths return it", () =
 
   assert.deepEqual(taken, [{ requestId: "r1", text: "also run the tests" }]);
   assert.equal(s.afterControlSeq, 7, "the cursor advances past a handled control");
+});
+
+test("an instruction folded into the opening prompt is never handed over twice", () => {
+  /*
+   * An instruction sent while the machine was starting reaches the driver
+   * through runner-context, which folds it into the prompt the agent opens
+   * with. The control row that carried it is still in the task's event log with
+   * a sequence number above the cursor, so the first poll after the run starts
+   * returns it again — and queueing it there would tell the agent the same
+   * thing twice, once in its prompt and once as a mid-run steer.
+   *
+   * The cursor cannot be the guard: advancing it past that row would skip any
+   * cancel_request that arrived in between, which is the one control that must
+   * never be missed. So the ledger is by requestId, and the row still advances
+   * the cursor on its way past.
+   */
+  const taken: Steer[] = [];
+  const s = sink({ onSteer: (steer) => taken.push(steer), consumedSteers: new Set(["r1"]) });
+  handleControls.call(s, [
+    { seq: 4, kind: "steer", payload: { requestId: "r1", text: "target node 20" } },
+    { seq: 5, kind: "cancel_request", payload: {} },
+  ]);
+  assert.deepEqual(taken, [], "an already-folded instruction must not be queued a second time");
+  assert.equal(s.cancelled, true, "a cancel behind a consumed steer still has to land");
+  assert.equal(s.afterControlSeq, 5);
 });
 
 test("a steer that arrives before the session exists waits in the backlog", () => {

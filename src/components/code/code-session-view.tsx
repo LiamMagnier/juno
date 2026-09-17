@@ -12,9 +12,14 @@ import { CodeSessionBanner } from "@/components/code/code-session-banner";
 import { CodeSessionComposer } from "@/components/code/code-session-composer";
 import {
   CodeRunStack,
+  totalChurn,
   useCurrentActivity,
   useSessionFileChanges,
 } from "@/components/code/code-run-cards";
+import { CodeSessionMenu } from "@/components/code/code-session-menu";
+import { RunReviewPane } from "@/components/code/run-review";
+import { useRunDetail } from "@/components/code/use-code-runs";
+import { useCodeChecks } from "@/components/code/use-code-checks";
 import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -24,6 +29,8 @@ import { useCodeActivityContents } from "@/components/code/code-activity";
 import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
+import { Button } from "@/components/ui/button";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { DEFAULT_MODEL } from "@/lib/models";
 import type { ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
@@ -55,10 +62,25 @@ import type {
  *   CodeSessionBanner    what this session is and what it is doing now
  *   CodeRunStack         what changed, who is helping, what needs an answer
  *   CodeSessionComposer  the next instruction
+ *   RunReviewPane        the diff, docked as a column beside the transcript
  *
  * Everything below reads as one screen's worth of decisions, which is the point
  * of the split. Nothing about the transport, the task API or the event
  * vocabulary moved.
+ *
+ * ── THE DIFF IS A COLUMN IN HERE NOW ───────────────────────────────────────
+ *
+ * RunReviewPane used to mount from the run list and nowhere else, so the review
+ * — files on the left, changes on the right, per-line notes — was reachable only
+ * from a page that is going away, and a person reading their session had no way
+ * to see what it had written beyond a collapsed card of filenames. It is the
+ * third docked column now, on exactly the terms the thought dock and the canvas
+ * already keep: an in-flow flex sibling, no z-index, the newest request wins.
+ *
+ * Its notes do NOT dispatch themselves. They land in a tray above the composer
+ * and go out with whatever the reader types next, because a review is a draft
+ * instruction and sending one nobody pressed send on was the behaviour this
+ * replaced.
  */
 
 interface CodeSessionViewProps {
@@ -127,6 +149,22 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   }, [meta.loaded, meta.activeTask]);
 
   const [draft, setDraft] = React.useState("");
+  /*
+   * THE REVIEW TRAY: notes written in the diff, waiting for the reader to send.
+   *
+   * The review pane used to deliver its bundle by parking it in the session
+   * hand-off and navigating — after which a device session AUTO-DISPATCHED it as
+   * its own task and a cloud session silently left it as the draft. Neither was
+   * what the reader asked for: one sent words they had not finished, the other
+   * lost the fact that they were a review at all.
+   *
+   * So the bundle sits HERE, drawn above the composer, and rides out with
+   * whatever is typed next. It is one string rather than a list of notes because
+   * the pane owns the note model and the composer only has to carry the sentence
+   * — and because merging two note collections on their way to one message is a
+   * problem nobody has.
+   */
+  const [reviewNotes, setReviewNotes] = React.useState<string | null>(null);
   const [dictating, setDictating] = React.useState(false);
   const [model, setModel] = React.useState(conversation.model || settings.defaultModel || DEFAULT_MODEL);
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(null);
@@ -220,21 +258,35 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    * this only forwards the answer. */
   const submit = React.useCallback(
     async (overrideText?: string): Promise<boolean> => {
-      const text = (overrideText ?? draft).trim();
+      const typed = (overrideText ?? draft).trim();
+      /*
+       * THE REVIEW GOES FIRST, AND IT IS ONE MESSAGE WITH WHAT WAS TYPED.
+       *
+       * Notes before prose: the notes name files and lines, and an agent reading
+       * them wants the specifics before the covering sentence. Two separate
+       * messages would have been the easier build and the worse outcome — a run
+       * that took the notes and then took "and please be careful with the
+       * migration" as a fresh instruction has already started acting on the
+       * first when the second arrives.
+       */
+      const text = reviewNotes ? [reviewNotes, typed].filter(Boolean).join("\n\n") : typed;
       const attachments = readyAttachments;
 
       /*
-       * A BUSY SESSION IS NOT A CLOSED ONE. While a device run is going the
-       * words go INTO it as its next instruction rather than starting a
-       * second task. Text only: an attachment cannot ride a steer, so with
-       * anything staged this falls through to the refusal below and the
-       * composer's own gate has already said why.
+       * A BUSY SESSION IS NOT A CLOSED ONE. While a run is going the words go
+       * INTO it as its next instruction rather than starting a second task —
+       * including while it is still queued, where the host folds them into the
+       * prompt it opens with. Attachments ride along now: the steer route folds
+       * their extracted text into what the agent reads exactly as the create
+       * route does, so the only thing still gating this is an upload in flight.
        */
       if (session.isBusy) {
-        if (!session.canSteer || !text || attachments.length > 0 || uploads.length > 0) return false;
-        const { accepted } = await session.steer(text);
+        if (!session.canSteer || (!text && attachments.length === 0) || isUploading) return false;
+        const { accepted } = await session.steer(text, attachments);
         if (accepted) {
           setDraft("");
+          setReviewNotes(null);
+          clear();
           requestAnimationFrame(() => textareaRef.current?.focus());
         }
         return accepted;
@@ -258,6 +310,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
         );
         if (accepted) {
           setDraft("");
+          setReviewNotes(null);
           clear();
           clearPendingCodePrompt(conversation.id);
           nameSessionFromFirstPrompt(text, attachments);
@@ -285,6 +338,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       );
       if (accepted) {
         setDraft("");
+        setReviewNotes(null);
         clear();
         // The words have landed on a run: the hand-off has done its job.
         clearPendingCodePrompt(conversation.id);
@@ -308,22 +362,29 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       presence.device,
       readyAttachments,
       reasoningEffort,
+      reviewNotes,
       session,
-      uploads.length,
       workspaceKey,
       workspacePath,
     ],
   );
 
-  const hasPayload = !!draft.trim() || readyAttachments.length > 0;
+  // A queued review is a payload of its own: a reader who wrote six notes and
+  // typed nothing still has something to send, and a disabled circle there
+  // would strand the notes in the tray with no way out.
+  const hasPayload = !!draft.trim() || readyAttachments.length > 0 || !!reviewNotes;
   const canSend =
     hasPayload &&
     canTarget &&
     (isCloud || !!workspacePath) &&
     !session.isBusy &&
     !isUploading;
-  // Text, and nothing staged that a steer cannot carry.
-  const steerReady = session.canSteer && !!draft.trim() && readyAttachments.length === 0 && uploads.length === 0;
+  // Something to say, and nothing still uploading. A staged attachment counts:
+  // the `+` menu is live while a run goes, so dropping a screenshot into one
+  // has to be a thing the circle can then send — the steer route takes an empty
+  // instruction when something is attached, exactly as the create route does.
+  const steerReady =
+    session.canSteer && (!!draft.trim() || !!reviewNotes || readyAttachments.length > 0) && !isUploading;
 
   // Dictate: drop the transcript into the draft, or merge + send immediately.
   // Same append semantics as chat — existing typed text is preserved. If the
@@ -349,7 +410,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
         return;
       }
       const canFire = session.isBusy
-        ? session.canSteer && readyAttachments.length === 0 && uploads.length === 0
+        ? session.canSteer && !isUploading
         : (isCloud ? !!cloudRepoFull : !!presence.device && !!workspacePath) && !isUploading;
       if (!canFire) {
         park();
@@ -368,7 +429,6 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       session.canSteer,
       session.isBusy,
       submit,
-      uploads.length,
       workspacePath,
     ],
   );
@@ -465,12 +525,20 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
   const hasMessages = session.messages.length > 0;
   const sessionTitle = isCloud ? cloudRepoFull ?? workspaceName : workspaceName;
-  // Neither promise is safe to make before the session's kind is known — see
-  // `resolving`. What both halves say is the half that is always true.
+  /*
+   * Neither promise is safe to make before the session's kind is known — see
+   * `resolving`. What both halves say is the half that is always true.
+   *
+   * The cloud half no longer says "opens a pull request", and that is a
+   * correction rather than a rewording: a run inside a web session leaves the
+   * pull request to its reader now (runner-context sends `openPullRequest:
+   * "never"`), so a sentence promising one would be describing the behaviour
+   * this session deliberately does not have.
+   */
   const footerNote = resolving
     ? "Review the changes before you ship them."
     : isCloud
-      ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
+      ? "Runs in the cloud and pushes a branch — read the diff, then open the pull request yourself."
       : "Runs with Juno Code on your Mac — review the changes before you ship them.";
 
   /*
@@ -494,6 +562,33 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   const layoutRef = React.useRef<HTMLDivElement>(null);
 
   /*
+   * THE REVIEW DOCK — the third column, and the one this session was missing.
+   *
+   * It streams the run's event log through `useRunDetail`, and ONLY while it is
+   * open. That is not a nicety: the events endpoint holds a database poll open
+   * for up to four minutes per connection, and this surface already has one of
+   * those for the live session — a second, permanent one per open tab would
+   * double the cost of every session anybody leaves open. Passing null when the
+   * dock is shut tears it down (see the hook's own note on following at most one
+   * run at a time).
+   *
+   * It reads the LATEST task rather than the live one. A session whose run
+   * finished ten minutes ago has no active task and still has a diff worth
+   * reading, and that is the commonest moment to want this open.
+   */
+  const [reviewOpen, setReviewOpen] = React.useState(false);
+  const reviewTaskId = meta.latestTask?.id ?? null;
+  /*
+   * One expression for "the dock is on screen", used by the column AND by the
+   * class that narrows the transcript beside it. Read separately they drift:
+   * `reviewOpen` alone is true for a session that has no task to review yet, so
+   * the transcript hid itself below 52rem to make room for a column that was
+   * never rendered.
+   */
+  const reviewDocked = reviewOpen && !!reviewTaskId;
+  const reviewDetail = useRunDetail(reviewDocked ? reviewTaskId : null);
+
+  /*
    * THE CANVAS, WHICH THIS SURFACE HAD STUBBED OUT.
    *
    * `artifacts={[]}` plus `onOpenArtifact={() => {}}` meant MessageList could
@@ -511,6 +606,10 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     setArtifacts(initialArtifacts);
     setOpenArtifactId(null);
     setArtifactFullscreen(false);
+    // The review dock belongs to the run it was opened on. Left standing across
+    // a navigation it would draw the next session's newest diff over a
+    // transcript nobody had asked to read it against.
+    setReviewOpen(false);
     // Session identity, exactly as the transcript reset above: `initialArtifacts`
     // is a new array on every parent render, and depending on it would slam the
     // canvas shut mid-read.
@@ -531,10 +630,12 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       if (!found) return;
       setOpenArtifactId(found.id);
       setArtifactFullscreen(!!opts?.fullscreen);
-      // COEXISTENCE RULE, the same one chat-view states: the canvas and the
-      // thought dock are both docked right-hand columns, and transcript +
-      // canvas + dock does not fit. The newest request wins.
+      // COEXISTENCE RULE, the same one chat-view states, now over three
+      // columns: the canvas, the thought dock and the review dock all want the
+      // right-hand side, and transcript + any two of them does not fit. The
+      // newest request wins.
       setThoughtOpenId(null);
+      setReviewOpen(false);
     },
     [artifacts],
   );
@@ -549,10 +650,22 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
       setThoughtOpenId(id);
-      if (id) closeArtifact();
+      if (id) {
+        closeArtifact();
+        setReviewOpen(false);
+      }
     },
     [closeArtifact],
   );
+
+  const toggleReview = React.useCallback(() => {
+    setReviewOpen((open) => {
+      if (open) return false;
+      closeArtifact();
+      setThoughtOpenId(null);
+      return true;
+    });
+  }, [closeArtifact]);
   const thoughtPanel = React.useMemo(
     () => ({
       openId: thoughtOpenId,
@@ -572,17 +685,32 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     if (!session.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
   }, [session.messages, thoughtOpenId]);
   // Esc closes it — a docked, non-modal panel gets none of a dialog's dismissal
-  // for free. Only if a nearer layer hasn't already claimed the key.
+  // for free. Only if a nearer layer hasn't already claimed the key: the review
+  // dock's own note composer and its Create PR menu are both nearer, and both
+  // call preventDefault on the key they consume.
   React.useEffect(() => {
-    if (!thoughtOpenId) return;
+    if (!thoughtOpenId && !reviewOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) setThoughtOpenId(null);
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setThoughtOpenId(null);
+      setReviewOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [thoughtOpenId]);
+  }, [thoughtOpenId, reviewOpen]);
 
   const fileChanges = useSessionFileChanges(session.messages, session.fileChanges);
+  /*
+   * +N −M FOR THE BANNER, read off what the session already has.
+   *
+   * Deliberately NOT a second stream and not a new server field. Every file
+   * change this session has seen is already here — live events while a run goes,
+   * and the persisted activity rows after a reload — and `totalChurn` is the
+   * parser the changed-files card has always used for the same figures. A
+   * server-side sum would have meant reading every `file_change` payload for
+   * every row of a hundred-run list to answer a question one open session asks.
+   */
+  const churn = React.useMemo(() => totalChurn(fileChanges), [fileChanges]);
   const currentActivity = useCurrentActivity(
     session.messages,
     session.status === "running" || session.status === "awaiting_approval",
@@ -598,6 +726,16 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     [session.messages],
   );
   const codeActivity = useCodeActivityContents(session.messages, streamingId);
+
+  /*
+   * WHAT CI SAYS, ONCE THERE IS A BRANCH TO ASK ABOUT.
+   *
+   * Gated on the branch rather than on the session being cloud, because that is
+   * the thing that makes the question answerable: a device run writes to a
+   * checkout on a Mac and pushes nothing, so there is no ref for GitHub to have
+   * an opinion about, and the route refuses it for the same reason.
+   */
+  const checks = useCodeChecks(reviewTaskId, !!meta.latestTask?.branch);
 
   /*
    * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
@@ -678,34 +816,47 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     [session.rollbackSupport, session.rollbacks, session.requestRollback],
   );
 
-  // Queue copy, and the same sentence the live region reads out.
+  /*
+   * Queue copy, and the same sentence the live region reads out.
+   *
+   * Each one now says that the wait is still a conversation. The field used to
+   * go dark here — an instruction sent during the minute a machine takes to
+   * appear was refused — so a person who thought of the constraint they had left
+   * out could only cancel and start over. It is delivered into the prompt the
+   * run opens with, which is what these sentences promise.
+   */
   const queuedNote =
     session.status !== "queued"
       ? null
       : isCloud
-        ? "Queued — starting a cloud machine (this can take a moment)…"
+        ? "Queued — starting a cloud machine (this can take a moment). Anything you add now goes in with the first instruction."
         : presence.state === "offline"
-          ? "Queued — runs when your Mac reconnects."
-          : "Queued — waiting for your Mac to pick this up.";
+          ? "Queued — runs when your Mac reconnects. Anything you add now goes in with the first instruction."
+          : "Queued — waiting for your Mac to pick this up. Anything you add now goes in with the first instruction.";
 
   const composer = (
     <CodeSessionComposer
       above={
-        <CodeRunStack
-          files={fileChanges}
-          agents={session.agents}
-          pendingApproval={session.pendingApproval}
-          responding={session.responding}
-          onRespond={(approve) => {
-            const request = session.pendingApproval;
-            if (request) void session.respond(request.requestId, approve);
-          }}
-          queuedNote={queuedNote}
-          blocked={blockedNote}
-          rollback={rollbackControls}
-          isCloud={isCloud}
-          steering={session.steering}
-        />
+        <>
+          {reviewNotes && (
+            <ReviewTray notes={reviewNotes} onDiscard={() => setReviewNotes(null)} onOpenDiff={toggleReview} />
+          )}
+          <CodeRunStack
+            files={fileChanges}
+            agents={session.agents}
+            pendingApproval={session.pendingApproval}
+            responding={session.responding}
+            onRespond={(approve) => {
+              const request = session.pendingApproval;
+              if (request) void session.respond(request.requestId, approve);
+            }}
+            queuedNote={queuedNote}
+            blocked={blockedNote}
+            rollback={rollbackControls}
+            isCloud={isCloud}
+            steering={session.steering}
+          />
+        </>
       }
       voicePanel={
         codeVoice.open ? (
@@ -787,21 +938,33 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           presence={presence}
           prUrl={meta.prUrl}
           activity={currentActivity}
+          churn={churn}
+          reviewOpen={reviewOpen}
+          // No figures, no door: a session that has changed nothing has no diff
+          // to open, and a control that opened an empty pane would be the
+          // product asking a question it has no answer to.
+          onToggleReview={churn && reviewTaskId ? toggleReview : null}
+          checks={checks}
+          menu={<CodeSessionMenu conversation={conversation} />}
         />
 
-        {/* Transcript column ⇄ thought dock ⇄ canvas. Below the split a dock
-            replaces the transcript entirely, the precedent chat-view sets for
-            both of its docked columns: a split there leaves the transcript
-            narrower than a phone. Each dock has its own step, derived from its
-            width plus the transcript's 320 floor (split-layout.ts): the 30rem
-            dock from 50rem of mount, the 34rem canvas from 54rem. Derived, so
-            the transcript can never be under 320 while split — which is why
-            the column carries no floor of its own; a `min-w` beside `shrink-0`
-            panes would only overflow the row. A fullscreened canvas takes the
-            row at every width, which is what "fullscreen" means. One
-            expression rather than stacked conditional classes: `hidden
-            @[50rem]/split:flex` and `@[50rem]/split:hidden` land in the same
-            cascade layer, so which won would depend on stylesheet order. */}
+        {/* Transcript column ⇄ thought dock ⇄ review dock ⇄ canvas. Below its
+            own step a dock replaces the transcript entirely, the precedent
+            chat-view sets for both of its docked columns: a split there leaves
+            the transcript narrower than a phone. Each has its own step, derived
+            from its width plus the transcript's 320 floor (split-layout.ts):
+            the 30rem thought dock from 50rem of mount, the 32rem review dock
+            from 52rem, the 34rem canvas from 54rem. Derived, so the transcript
+            can never be under 320 while split — which is why the column carries
+            no floor of its own; a `min-w` beside `shrink-0` panes would only
+            overflow the row. A fullscreened canvas takes the row at every
+            width, which is what "fullscreen" means. One expression rather than
+            stacked conditional classes: `hidden @[50rem]/split:flex` and
+            `@[50rem]/split:hidden` land in the same cascade layer, so which won
+            would depend on stylesheet order.
+
+            At most ONE of the three is ever open — see the coexistence rule
+            above — so the branches are exclusive rather than additive. */}
         <div className="flex min-h-0 flex-1">
           <div
             className={cn(
@@ -810,7 +973,9 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                 ? "hidden"
                 : thoughtOpenId
                   ? "hidden @[50rem]/split:flex"
-                  : openArtifact && "hidden @[54rem]/split:flex",
+                  : reviewDocked
+                    ? "hidden @[52rem]/split:flex"
+                    : openArtifact && "hidden @[54rem]/split:flex",
             )}
           >
             {hasMessages ? (
@@ -861,7 +1026,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                       {resolving
                         ? "Describe what to build or fix — Juno Code streams the work here."
                         : isCloud
-                          ? "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
+                          ? "Describe what to build or fix — the run happens in the cloud and pushes a branch you can read here, then turn into a pull request."
                           : "Describe what to build or fix — Juno Code runs it on your Mac and streams the work here."}
                     </p>
                   </div>
@@ -888,6 +1053,54 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               // z-popper.
               className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l"
             />
+          )}
+
+          {/* The diff, on the same terms as the thought dock beside it: an
+              in-flow flex sibling with no z-index (naming a layer here would
+              put it over the composer's portalled dropdowns), and a width
+              derived rather than picked — 32rem of diff plus the transcript's
+              320px floor is the 52rem step above, so the transcript can never
+              be narrower than a phone while the two are side by side.
+
+              Keyed by task so the pane's per-run state — its persisted notes,
+              its file selection — is re-read when a follow-up run becomes the
+              latest one, which is the same rule the run list mounted it under. */}
+          {reviewDocked && (
+            <div className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 @[52rem]/split:w-[32rem] @[52rem]/split:min-w-0 @[52rem]/split:border-l">
+              <RunReviewPane
+                key={reviewTaskId}
+                placement="dock"
+                run={{ id: reviewTaskId, title: sessionTitle, conversationId: conversation.id }}
+                detail={reviewDetail}
+                onClose={() => setReviewOpen(false)}
+                // The notes land in the tray above the composer rather than
+                // dispatching themselves — see `reviewNotes`. Appended when
+                // there is already a bundle waiting, because a reader who
+                // reviewed two files in two passes wrote one review.
+                onQueueNotes={(bundle) => {
+                  setReviewNotes((prev) => (prev ? `${prev}\n\n${bundle}` : bundle));
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                pullRequest={{
+                  taskId: reviewTaskId,
+                  // THIS run's facts, because the route reads this run's row:
+                  // a subject built from the conversation's branch would draw
+                  // the control over a run that has pushed nothing.
+                  subject: {
+                    target: meta.latestTask?.target ?? "device",
+                    repoOwner: meta.repoOwner,
+                    repoName: meta.repoName,
+                    branch: meta.latestTask?.branch ?? null,
+                    prUrl: meta.prUrl,
+                  },
+                  // Straight back to the server for the row, rather than
+                  // patching `meta` locally: the banner's PR chip reads the
+                  // task rows, and a local guess that disagreed with them would
+                  // put a link on screen that the next poll took away.
+                  onOpened: () => meta.refresh(),
+                }}
+              />
+            </div>
           )}
 
           {/* The canvas, on the same terms as the dock beside it: a real column,
@@ -922,5 +1135,68 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
         </div>
       </div>
     </ThoughtPanelProvider>
+  );
+}
+
+/* ── The review tray ──────────────────────────────────────────────────────── */
+
+/**
+ * The notes written in the diff, waiting above the composer.
+ *
+ * It is a TRAY, not a message. Nothing here has been sent, and the sentence
+ * says so in the verb — a card that read "Review sent" over text still sitting
+ * in a buffer is the failure this whole arrangement replaced. It sits in
+ * ComposerShell's `above` slot beside the attachment tray, which is the
+ * established place for "this is riding out with your next message", and it
+ * wears the same inset material and radius as the run stack under it.
+ *
+ * The body is folded to a few lines. A ten-note bundle is genuinely long, the
+ * reader wrote every word of it moments ago, and the diff it came from is one
+ * press away — so the tray's job is to prove the notes are still here, not to
+ * be a second place to read them.
+ */
+function ReviewTray({
+  notes,
+  onDiscard,
+  onOpenDiff,
+}: {
+  notes: string;
+  onDiscard: () => void;
+  onOpenDiff: () => void;
+}) {
+  const lines = notes.split("\n").filter((line) => line.trim());
+  // Every line that starts a note, which is what the count is counting.
+  const count = lines.filter((line) => line.startsWith("- ")).length;
+
+  return (
+    <div className="surface-inset mb-2 rounded-field px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <CodeIcons.file className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <p className="min-w-0 flex-1 truncate text-ui font-medium">
+          {count === 0
+            ? "Your review of the changes"
+            : `${count} review ${count === 1 ? "note" : "notes"} from the changes`}
+        </p>
+        <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" onClick={onOpenDiff}>
+          <ActionIcons.edit className="size-3.5" aria-hidden="true" />
+          Back to the diff
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="size-7 shrink-0"
+          onClick={onDiscard}
+          aria-label="Discard this review"
+        >
+          <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
+        </Button>
+      </div>
+      <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-caption text-muted-foreground">
+        {notes}
+      </p>
+      <p className="mt-1.5 text-caption text-muted-foreground">
+        Goes out with your next message — add anything else you want to say first.
+      </p>
+    </div>
   );
 }

@@ -94,7 +94,7 @@ function placeSentence(input: CodeVoiceBriefingInput): string {
   if (input.target === "cloud") {
     const where = input.place ? `the GitHub repository ${input.place}` : "a GitHub repository I have not picked yet";
     const branch = input.baseRef ? ` It starts from the ${input.baseRef} branch.` : "";
-    return `It runs on a fresh cloud machine against ${where}, and opens a pull request when it is done.${branch}`;
+    return `It runs on a fresh cloud machine against ${where} and pushes a branch when it is done; I open the pull request myself once I have read the diff.${branch}`;
   }
   if (input.target === "device") {
     const where = input.place ? `my project "${input.place}"` : "a project I have not picked yet";

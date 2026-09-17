@@ -455,7 +455,7 @@ function changeTone(kind: string): string {
  *  because the producer already folded the numbers into a display string —
  *  see `useSessionFileChanges`. A row whose churn does not parse contributes
  *  nothing rather than a zero, so a partial parse never understates loudly. */
-function totalChurn(files: CodeFileChange[]): { added: number; removed: number } | null {
+export function totalChurn(files: CodeFileChange[]): { added: number; removed: number } | null {
   let added = 0;
   let removed = 0;
   let seen = false;
