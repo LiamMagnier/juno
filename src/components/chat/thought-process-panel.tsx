@@ -1533,7 +1533,7 @@ export function ThoughtProcessPanel({
                   onSelect={(e) => e.preventDefault()}
                 >
                   {f.label}
-                  <span className="ml-auto pl-4 font-mono text-micro tabular-nums text-muted-foreground">
+                  <span className="ml-auto pl-4 font-mono text-caption tabular-nums text-muted-foreground">
                     {counts.get(f.kind)}
                   </span>
                 </DropdownMenuCheckboxItem>
@@ -1637,7 +1637,7 @@ export function ThoughtProcessPanel({
                of them in a colour that appears nowhere else in the product. */
             className="w-full min-w-0 bg-transparent text-ui text-foreground placeholder:text-muted-foreground focus:outline-none [&::-webkit-search-cancel-button]:appearance-none"
           />
-          <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">
+          <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
             {query ? (visible.length ? `${visible.length} of ${allSteps.length}` : "No matches") : ""}
           </span>
           <Pressable
@@ -1679,12 +1679,18 @@ export function ThoughtProcessPanel({
               {recapSentence}
             </p>
 
+            {/* Two voices, `ui` and `label`, which is the whole budget for
+                chrome (docs/design/PREMIUM_AUDIT.md §3 rule 5: no numerals
+                above ui size anywhere in it). These were 17px mono figures
+                over micro captions — the loudest type in the panel spent on
+                three numbers nobody acts on. Ink carries the hierarchy now:
+                foreground for the figure, muted for its name. */}
             <div className="mt-3 grid grid-cols-3 gap-3">
               <div className="min-w-0">
-                <div className="truncate font-mono text-body-lg tabular-nums text-foreground">
+                <div className="truncate font-mono text-ui tabular-nums text-foreground">
                   {run.elapsedMs === null ? "—" : formatSpan(run.elapsedMs, { live: streaming })}
                 </div>
-                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">Elapsed</div>
+                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">Elapsed</div>
               </div>
               <div className="min-w-0">
                 {/* THE ONE PLACE THIS PANEL PRINTS A PLACEHOLDER, and it is
@@ -1694,17 +1700,17 @@ export function ThoughtProcessPanel({
                     comment defending. */}
                 <div
                   className={cn(
-                    "truncate font-mono text-body-lg tabular-nums",
+                    "truncate font-mono text-ui tabular-nums",
                     money ? "text-foreground" : "text-muted-foreground/60",
                   )}
                 >
                   {money ?? "—"}
                 </div>
-                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">Cost</div>
+                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">Cost</div>
               </div>
               <div className="min-w-0">
-                <div className="truncate font-mono text-body-lg tabular-nums text-foreground">{figureThird.value}</div>
-                <div className="mt-0.5 truncate font-mono text-micro text-muted-foreground">
+                <div className="truncate font-mono text-ui tabular-nums text-foreground">{figureThird.value}</div>
+                <div className="mt-0.5 truncate font-mono text-label text-muted-foreground">
                   {figureThird.caption}
                 </div>
               </div>
@@ -1722,7 +1728,7 @@ export function ThoughtProcessPanel({
                 aria-labelledby={`${id}-notice`}
                 className="-mx-3 mt-3 border-l-2 border-warning/35 bg-warning/5 px-3 py-2 dark:bg-warning/10"
               >
-                <h3 id={`${id}-notice`} className="font-mono text-micro text-warning">
+                <h3 id={`${id}-notice`} className="font-mono text-label text-warning">
                   Notice
                 </h3>
                 <ul className="mt-1 space-y-1">
@@ -1762,12 +1768,13 @@ export function ThoughtProcessPanel({
             sections.map((section) => (
               <section key={section.key} aria-labelledby={`${id}-phase-${section.key}`}>
                 {/* `sticky` gives the reader orientation in a sixty-row list
-                    without a second navigation. `text-micro`, not `text-label`:
-                    a separator inside a dense list is a waypoint, not an
-                    eyebrow. */}
+                    without a second navigation. `text-label` because this IS
+                    the section voice: chrome has two, row and section, and
+                    a third one for "waypoints" is how this panel came to
+                    speak in six. */}
                 <h3
                   id={`${id}-phase-${section.key}`}
-                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-micro text-muted-foreground"
+                  className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-label text-muted-foreground"
                 >
                   <span>{PHASE_LABEL[section.key]}</span>
                   <span className="tabular-nums text-muted-foreground/70">
@@ -1843,7 +1850,7 @@ export function ThoughtProcessPanel({
                       )}
                       {memorySteps.length > 0 && (
                         <>
-                          <h4 className="mt-4 px-2 font-mono text-micro text-muted-foreground">
+                          <h4 className="mt-4 px-2 font-mono text-label text-muted-foreground">
                             Memory used
                           </h4>
                           <ol className="relative mt-1">
@@ -2019,7 +2026,7 @@ function StepRow({
   const figure = (
     <span className="col-start-3 row-start-1 flex shrink-0 items-baseline gap-2 pt-px">
       {step.failed && step.kind === "tool" && (
-        <span className="font-mono text-micro text-warning/80">Failed</span>
+        <span className="font-mono text-caption text-warning/80">Failed</span>
       )}
       {step.ms !== null && (
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
@@ -2067,7 +2074,7 @@ function StepRow({
                 }}
                 aria-label={`Jump to citation ${citeIndex}`}
               >
-                <span className="flex size-5 items-center justify-center rounded-xs border border-border font-mono text-micro tabular-nums text-muted-foreground">
+                <span className="flex size-5 items-center justify-center rounded-xs border border-border font-mono text-caption tabular-nums text-muted-foreground">
                   {citeIndex}
                 </span>
               </Pressable>

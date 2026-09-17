@@ -227,17 +227,19 @@ export function ActivityTimeline({
   // this key, so the collapsed UI stays calm during long streams.
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
 
-  // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. message-item mounts this inside an
-  // `aria-live="polite"` region, so every mutating text node underneath is
-  // announced. The elapsed number alone rewrites once a second. Left visible
-  // to the a11y tree, a screen reader would read
-  // "4.2s, 4.3s, 4.4s…" for the whole pre-first-token wait, which route.ts
-  // documents as lasting MINUTES on hidden-reasoning models, with no way to
-  // reach the answer. A stable aria-label on the button does not help while the
-  // live region can still see the text nodes inside it — so the visual content
-  // is hidden from the tree outright and the label carries the full state
-  // instead. It changes exactly once per run, on settle, which is the one
-  // announcement actually worth making.
+  // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. The elapsed number alone rewrites
+  // once a second. While message-item still mounted this strip inside the
+  // turn's `aria-live="polite"` region (the region is the answer body now),
+  // every mutating text node underneath was announced, and a screen reader
+  // read "4.2s, 4.3s, 4.4s…" for the whole pre-first-token wait, which
+  // route.ts documents as lasting MINUTES on hidden-reasoning models, with no
+  // way to reach the answer. A stable aria-label on the button does not help
+  // while the tree can still see the text nodes inside it — so the visual
+  // content is hidden from the tree outright and the label carries the full
+  // state instead. It changes exactly once per run, on settle, which is the
+  // one announcement actually worth making, and it stays the control's one
+  // name now that the region has moved: a ticking text node is noise on every
+  // path a reader takes through the strip.
   const label = streaming
     ? "Open thought process — in progress"
     : [
@@ -289,8 +291,8 @@ export function ActivityTimeline({
           hasLiveBlocks ? "mb-0.5" : "mb-1.5"
         )}
       >
-        {/* aria-hidden: see `label`. The button is named by aria-label, so this
-            stops the surrounding live region announcing every clock tick. */}
+        {/* aria-hidden: see `label`. The button is named by aria-label; its
+            visible content is a clock the tree has no reason to see. */}
         {streaming ? (
           <>
             {/* ONE BREATHING ELEMENT ON SCREEN AT A TIME. While the panel is
@@ -359,11 +361,12 @@ export function ActivityTimeline({
           reader moves, and a half-finished sentence is the last of six quiet grey
           lines instead of a wall.
 
-          `aria-hidden` because message-item mounts this inside an
-          `aria-live="polite"` region: every delta rewrites these nodes, and a
-          screen reader would read the model's entire private reasoning aloud,
-          twice-revised, before ever reaching the answer. The strip's own
-          aria-label already names the state. */}
+          `aria-hidden` because every delta rewrites these nodes: while
+          message-item mounted this strip inside the turn's `aria-live="polite"`
+          region (the answer body now), a screen reader read the model's
+          entire private reasoning aloud, twice-revised, before ever reaching
+          the answer. The strip's own aria-label already names the state, and
+          a reader who wants the reasoning opens the panel. */}
       {hasLiveBlocks && (
         <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
           {showSearch && (

@@ -10,6 +10,7 @@ import { AicssCodeBlock, splitHighlightedLines } from "@/components/aicss/code-b
 import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
 import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
 import { SourceChip } from "@/components/chat/source-chip";
+import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
@@ -569,6 +570,9 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
   );
   const components = React.useMemo<Components>(
     () => ({
+      // `#` → h3 and downward, so no heading the model writes can outrank the
+      // conversation title or sit level with the turn markers. See the module.
+      ...DEMOTED_HEADINGS,
       pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
       // Wide tables scroll inside their own container instead of stretching the
       // message column past the viewport on phones.

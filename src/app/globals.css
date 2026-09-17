@@ -2486,6 +2486,14 @@
        Newsreader on that variable, leaving the old line in place would have
        silently flipped every transcript to serif. */
     font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* The `body` rung (tailwind.config.ts), stated rather than inherited.
+       Nothing above the transcript sets a size, so the reply used to land on
+       the UA's 16px — on no rung of the ladder — beside a user bubble on
+       `text-body` at 15px: two speakers in one column, a pixel apart. The
+       headings and code below are in `em` and follow. A consumer that wants
+       another rung (`text-body-lg` on the report reader) still wins: this
+       block is in the components layer, utilities come after it. */
+    font-size: 0.9375rem;
     line-height: 1.65;
     word-break: break-word;
     /* 45–75ch is the readability band and the transcript runs about 104ch, so
@@ -2520,14 +2528,19 @@
    * the two rules intended.
    */
   .prose-juno.prose-juno > * + * { margin-top: 0.85em; }
-  .prose-juno h1, .prose-juno h2, .prose-juno h3, .prose-juno h4 {
+  /* h3–h6, never h1/h2: the model's headings are demoted two levels before
+     they reach the DOM (src/lib/markdown-headings.ts), because the turn
+     markers ("Juno replied") are the page's h2s and the conversation title is
+     its h1. The sizes are the ones `#` / `##` / `###` always had, so nothing
+     visual moved — only the outline a screen reader lists. */
+  .prose-juno h3, .prose-juno h4, .prose-juno h5, .prose-juno h6 {
     font-weight: 600;
     line-height: 1.3;
     margin-top: 1.3em;
   }
-  .prose-juno h1 { font-size: 1.5em; }
-  .prose-juno h2 { font-size: 1.3em; }
-  .prose-juno h3 { font-size: 1.12em; }
+  .prose-juno h3 { font-size: 1.5em; }
+  .prose-juno h4 { font-size: 1.3em; }
+  .prose-juno h5 { font-size: 1.12em; }
   /* Kills the UA's 1em block margins so the rhythm rule above is the only
      thing spacing blocks. It must NOT be the thing that spaces them: see the
      specificity note there. */

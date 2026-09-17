@@ -1810,17 +1810,23 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           >
             {/* The page's visible <h1> from md up; the transcript's own
                 heading (message-list.tsx) leaves the tree at this width so
-                there is exactly one. Empty until a conversation exists — a
-                new chat has nothing to be titled yet. */}
-            <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
-              {headerTitle ? (
+                there is exactly one. A new chat has nothing to be titled yet,
+                and an <h1> with nothing in it is a blank entry at the top of
+                the heading list — the first thing a screen-reader user opens
+                on a page — so before a conversation exists the slot is a
+                spacer instead: it keeps `justify-between` pushing the cluster
+                right and the h-11 collapse exactly as it was. */}
+            {headerTitle ? (
+              <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
                 <AnimatedTitle
                   title={headerTitle}
                   animate={headerTitleSource === "ai"}
                   className="max-w-[40rem]"
                 />
-              ) : null}
-            </h1>
+              </h1>
+            ) : (
+              <div className="min-w-0 flex-1" aria-hidden="true" />
+            )}
             <div className="hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
           </div>
         )}
