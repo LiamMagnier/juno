@@ -111,10 +111,17 @@ test("the review pane kept an entry point when the list that opened it went", ()
     /<RunReviewPane/,
     "the session view no longer mounts the review pane",
   );
+  /*
+   * The entry point is the SESSION BANNER, not the changed-files card. This
+   * assertion named the card while the review was a cover the card opened;
+   * the pane is a docked column now and the control that opens it is the
+   * banner's diff indicator — the `+N −M` a reader presses to read the change.
+   * The card states what was touched, which is a different sentence.
+   */
   assert.match(
-    read("src/components/code/code-run-cards.tsx"),
-    /onReview/,
-    "the changed-files card no longer offers a way into the review",
+    read("src/components/code/code-session-banner.tsx"),
+    /onToggleReview/,
+    "the session banner no longer offers a way into the review",
   );
 });
 

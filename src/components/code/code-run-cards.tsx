@@ -8,7 +8,6 @@ import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
-import type { ReviewFile } from "@/components/code/run-review";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -246,50 +245,6 @@ export function useSessionFileChanges(
   }, [messages, live]);
 }
 
-/**
- * How many turns this transcript holds, for "was there ever a second one".
- *
- * The review pane offers its "Last turn" scope only where a boundary exists,
- * because on a single-turn session that control is a choice between a thing and
- * itself. Counting user messages is the cheapest honest answer: one instruction
- * is one turn.
- */
-export function hasTurnBoundary(messages: readonly ClientMessage[]): boolean {
-  let seen = 0;
-  for (const message of messages) {
-    if (message.role !== "USER") continue;
-    seen += 1;
-    if (seen > 1) return true;
-  }
-  return false;
-}
-
-/**
- * A changed file as the review pane reads it: the same facts, with the churn
- * string split back into numbers.
- *
- * The producer folded `+3 −1` into one display string on the way in and the
- * card header re-parses it (`totalChurn`) rather than recomputing, for the
- * reason given there. The pane needs the pair per file rather than summed, so
- * it parses the same string the same way. A row whose churn does not parse
- * contributes zeroes, which understates quietly — the alternative is dropping
- * the file from the review, which hides a change.
- */
-export function reviewFilesOf(files: readonly CodeFileChange[]): ReviewFile[] {
-  return files.map((file) => {
-    // U+2212 MINUS SIGN first, hyphen second: the producer writes the former.
-    const match = file.churn?.match(/\+(\d+)\s+[−-](\d+)/);
-    return {
-      path: file.path,
-      changeKind: file.changeKind,
-      added: match ? Number(match[1]) : 0,
-      removed: match ? Number(match[2]) : 0,
-      patch: file.patch,
-      fromLastTurn: file.fromLastTurn,
-    };
-  });
-}
-
 /** The last thing the runner said it was doing, or null when nothing is live. */
 export function useCurrentActivity(messages: ClientMessage[], live: boolean): string | null {
   const last = messages[messages.length - 1];
@@ -329,7 +284,6 @@ export interface CodeRunStackProps {
    * and the judgement vocabulary (per-file verdicts, per-line notes at three
    * severities, bundled into the next instruction) lives in the pane it opens.
    */
-  onReview: (() => void) | null;
 }
 
 /** The lifecycle line under a steer, phase by phase. */
@@ -357,7 +311,6 @@ export function CodeRunStack({
   rollback,
   isCloud,
   steering,
-  onReview,
 }: CodeRunStackProps) {
   return (
     <MotionConfig reducedMotion="user">
@@ -381,7 +334,7 @@ export function CodeRunStack({
             : (queuedNote ?? "")}
       </p>
 
-      {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} onReview={onReview} />}
+      {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} />}
       {agents.length > 0 && <AgentsCard agents={agents} />}
       {blocked && <BlockedNote reason={blocked.reason} onRecheck={blocked.onRecheck} />}
       {queuedNote && (
@@ -728,11 +681,9 @@ function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
 function ChangedFilesCard({
   files,
   rollback,
-  onReview,
 }: {
   files: CodeFileChange[];
   rollback: CodeRollbackControls | null;
-  onReview: (() => void) | null;
 }) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
@@ -823,23 +774,6 @@ function ChangedFilesCard({
             </span>
           )}
         </Pressable>
-        {onReview && (
-          // BEFORE the undo, because reading is what a reader does first and
-          // the destructive control should never be the nearest thing to the
-          // thumb. Ghost against the undo's outline for the same ranking: one
-          // of these two buttons changes the checkout and the other opens a
-          // pane, and they must not look equally consequential.
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onReview}
-            className="shrink-0 gap-1.5 coarse:h-11"
-          >
-            <CodeIcons.file className="size-3.5" aria-hidden="true" />
-            Review
-          </Button>
-        )}
         {rollback && (
           // "Last turn", not "everything": the checkpoint index truncates on
           // rewind, so only the most recent file-changing turn can be popped

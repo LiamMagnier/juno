@@ -989,7 +989,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                 <MessageList
                   messages={session.messages}
                   surface="code"
-                  researchContents={codeActivity}
+                  inlineRuns={codeActivity}
                   busy={session.isBusy}
                   status={listStatus}
                   artifacts={artifacts}

@@ -156,7 +156,17 @@ test("the session never promises a pull request it no longer opens", () => {
     ["the voice briefing", briefing],
     ["the new-task page", read("src/app/(app)/code/new/page.tsx")],
     ["the target picker", read("src/components/code/code-target-picker.tsx")],
-    ["the run list empty state", read("src/components/code/run-list.tsx")],
+    /*
+     * The run list's empty state was the sixth surface here and its file is
+     * gone: /code is a greeting and a composer now (docs/design/TWO_PRODUCTS.md
+     * §3). The sentence it used to carry moved with the screen, so the guard
+     * follows it — to the landing and to the composer that dispatches from it.
+     * Dropping the row instead would have narrowed this scan at exactly the
+     * moment the copy was rewritten, which is the failure its own note above
+     * warns about.
+     */
+    ["the Code landing", read("src/app/(app)/code/page.tsx")],
+    ["the landing composer", read("src/components/code/code-composer.tsx")],
   ] as const) {
     assert.doesNotMatch(
       strip(source),
