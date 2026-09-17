@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+// Aliased, because `path` below is this file's own helper for "where does this
+// /work URL land" — the noun every test above is about.
+import nodePath from "node:path";
 import test from "node:test";
 
 import { chatPathForSession, resolveWorkUrl } from "../src/lib/work-url-migration";
@@ -87,10 +91,12 @@ test("a single unknown segment is a session id", () => {
 
 test("a shape this product never served lands on the front door rather than a 404", () => {
   // Nothing under `/work` was ever three segments deep, so there is no history
-  // to honour and nothing to explain. Forwarding the extra segment verbatim
+  // to honour and nothing to explain. Forwarding the extra segments verbatim
   // would convert a URL that never existed into a 404 on the NEW tree, which is
-  // the one outcome this whole module exists to prevent — so each family falls
-  // back to its own index instead.
+  // the one outcome this whole module exists to prevent — so everything past
+  // the first extra segment is dropped, and the answer is the deepest page the
+  // family actually serves: `/skills/skl_123`, not `/skills`. A first segment
+  // that names no family has no such page, and gets `/chat`.
   assert.equal(path(["cl_sess_1", "settings"]), "/chat");
   assert.equal(path(["permissions", "anything"]), "/permissions");
   assert.equal(path(["skills", "skl_123", "versions"]), "/skills/skl_123");
@@ -105,4 +111,63 @@ test("a resolved session goes to its conversation, and one without goes to the i
   assert.equal(chatPathForSession(null), "/chat");
   assert.equal(chatPathForSession(undefined), "/chat");
   assert.equal(chatPathForSession("a b"), "/chat/a%20b");
+});
+
+/*
+ * AND THE DESTINATION ITSELF, WHICH TYPESCRIPT CANNOT CHECK.
+ *
+ * `useParams<{ id: string }>()` is an unchecked assertion: it names a shape and
+ * Next hands back whatever the FOLDER is called. Rename `[id]` to `[hostId]` —
+ * which the move of the Macs page into the Permissions hub did — and the page
+ * still compiles, reads `undefined` on every render, fetches
+ * `/api/work/hosts/undefined`, takes the 404 and draws "Mac not found" for
+ * every Mac, for ever. There is no type error and no failing render, and the
+ * only way to find it is to click a row. So the folder's parameter name and the
+ * page's are pinned against each other here, beside the map that sends people
+ * to them.
+ */
+
+const appRoot = nodePath.join(process.cwd(), "src/app/(app)");
+
+/** The folder's own parameter name: `[hostId]` gives `hostId`. */
+function segmentName(folder: string): string {
+  const match = /^\[(?:\.\.\.)?([^\]]+)\]$/.exec(nodePath.basename(folder));
+  assert.ok(match, `${folder} is not a dynamic segment`);
+  return match[1];
+}
+
+/** Every key the page destructures out of `useParams`. */
+function readParams(file: string): string[] {
+  const match = /const\s*\{([^}]*)\}\s*=\s*useParams</.exec(fs.readFileSync(file, "utf8"));
+  assert.ok(match, `${file} does not destructure useParams`);
+  return match[1]
+    .split(",")
+    .map((part) => part.split(":")[0].trim())
+    .filter((part) => part.length > 0);
+}
+
+test("every page the map hands an id to reads the parameter its own folder declares", () => {
+  // The three families `resolveWorkUrl` can build a deep path for. A fourth
+  // wants adding here on the day it is added there.
+  for (const folder of ["skills/[id]", "automations/[id]", "permissions/[hostId]"]) {
+    const page = nodePath.join(appRoot, folder, "page.tsx");
+    assert.ok(fs.existsSync(page), `${folder} is a redirect destination with no page`);
+    assert.deepEqual(
+      readParams(page),
+      [segmentName(folder)],
+      `src/app/(app)/${folder}/page.tsx must read "${segmentName(folder)}", the name of its own folder`
+    );
+  }
+});
+
+test("the in-app link to one Mac has the same shape as the redirect to it", () => {
+  // Two callers reach that page: `WorkHostRow` from the list, and the
+  // `/work/hosts/<id>` leg of this map from a bookmark. A page only one of them
+  // can open is the same defect seen from one side.
+  const row = fs.readFileSync(
+    nodePath.join(process.cwd(), "src/components/work/work-host-row.tsx"),
+    "utf8"
+  );
+  assert.match(row, /href=\{`\/permissions\/\$\{host\.id\}`\}/);
+  assert.equal(path(["hosts", "host_123"]), "/permissions/host_123");
 });

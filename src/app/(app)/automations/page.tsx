@@ -87,7 +87,7 @@ export default function AutomationsPage() {
         </WorkList>
       ) : schedules.length === 0 ? (
         <EmptyState
-          icon={AppIcons.tasks}
+          icon={AppIcons.automations}
           title="No automations yet"
           description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
           action={action}

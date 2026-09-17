@@ -1160,8 +1160,11 @@ executor — its own vocabulary lives in `src/lib/work/domain.ts` (statuses, eve
 capabilities, risk levels, command kinds), is mirrored to the native clients through
 `contracts/work/juno-work-v1.json`, and `src/lib/work/contract.ts` asserts at runtime that
 the two still agree. **A value that is not in `domain.ts` is not a value Work has.**
-`/api/work/**` is byte-identical: the macOS and iOS clients are generated from that
-contract and they still ship the Work product they always had.
+**The contract and its vocabulary did not move**, and the sessions route gained a
+conversation filter (`GET /api/work/sessions?conversationId=`) plus the field that writes
+the pointer on create — additions the older clients never send and never read. The macOS
+and iOS clients are generated from that contract and still ship the Work product they
+always had.
 
 **What a person sees.** A `WorkSession` carries a `conversationId` — an indexed column
 that has existed since Work shipped and that only the legacy `ScheduledTask` adopter ever

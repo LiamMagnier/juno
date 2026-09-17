@@ -77,7 +77,7 @@ export default function SkillsPage() {
         </WorkList>
       ) : skills.length === 0 ? (
         <EmptyState
-          icon={AppIcons.assistants}
+          icon={AppIcons.skills}
           title="No skills yet"
           description="The easiest way to get one is to not write it. Delegate a task from the chat composer, and when the run finishes well, press “Save this as a skill” on it — Juno drafts the instructions from the steps it actually took and you edit them before anything is saved."
           action={

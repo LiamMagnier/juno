@@ -212,6 +212,13 @@ export function WorkScheduleRow({
           (`ClientWorkSchedule`), and turning one into the other is an
           owner-scoped lookup only the server can do — see
           src/lib/work-url-migration.ts.
+
+          There is a conversation to resolve to because POST /api/work/schedules
+          now creates one with the session it mints, which is what makes the
+          history above a thing you can press rather than a claim. A schedule
+          created before that landed resolves to the chat index instead: the
+          resolver reads the column every time rather than caching an answer, so
+          those rows start working the moment a conversation is attached.
         */}
         <Button
           asChild

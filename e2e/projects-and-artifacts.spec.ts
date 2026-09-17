@@ -38,7 +38,13 @@ test.describe("Projects, Automations and Library", () => {
       ["/work/hosts", "/permissions"],
     ] as const) {
       await page.goto(from);
-      await expect(page).toHaveURL(new RegExp(`${to}$`), { timeout: 15_000 });
+      // The PATHNAME, compared whole. `new RegExp(`${to}$`)` is unanchored at
+      // the front, so `/work/skills` matches `/skills$` and the row passes with
+      // no redirect at all — three of the seven cases below were vacuous for
+      // exactly that reason, and they are the three this test exists for.
+      await expect
+        .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+        .toBe(to);
     }
   });
 

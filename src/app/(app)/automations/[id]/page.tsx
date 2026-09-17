@@ -241,6 +241,13 @@ export default function AutomationPage() {
                     (src/lib/work-url-migration.ts), and a conversation id
                     baked into a link here would be stale the moment the
                     conversation was deleted.
+
+                    Every run of a schedule shares that one session, so all of
+                    these rows open the same transcript — which is the point:
+                    the fires accumulate in it. The conversation exists because
+                    POST /api/work/schedules creates one alongside the session;
+                    a schedule older than that change still resolves to the chat
+                    index until one is attached.
                   */}
                   <Link
                     href={`/work/${run.sessionId}`}

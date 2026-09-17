@@ -84,7 +84,11 @@ function first(value: string | string[] | undefined): string | undefined {
  * ONE, because that is as deep as any of these families ever went: `new`, or an
  * id. Forwarding a deeper path verbatim would turn a URL that never existed
  * into a 404 on the new tree, which is the single outcome this module exists to
- * prevent — the family's index is the truthful answer instead.
+ * prevent — so anything past the first extra segment is DROPPED rather than
+ * carried, and `/work/skills/skl_123/versions` lands on `/skills/skl_123`. The
+ * deepest page the new tree actually serves, rather than the family index: the
+ * id in a URL that went one level too far is still the thing the reader was
+ * looking at, and throwing it away would cost them the row as well as the tab.
  *
  * The segment is re-encoded. Next hands `params` already percent-decoded, so an
  * id that arrived encoded would otherwise be emitted raw into a `Location`
@@ -120,12 +124,17 @@ function joinPath(base: string, rest: readonly string[]): string {
  * redirect costs a second round trip for a URL that is in the composer's own
  * refusal notes.
  *
- * ANYTHING ELSE falls back rather than 404ing: to the family's index when the
- * first segment names one, and to `/chat` when it does not. A URL shape that
- * was never real cannot be a bookmark, so there is no history to honour and
- * nothing to explain — but forwarding its extra segments verbatim would turn a
- * path that used to 404 under `/work` into one that 404s under `/skills`, which
- * moves the dead end rather than removing it.
+ * ANYTHING ELSE falls back rather than 404ing. When the first segment names a
+ * family, the path is rebuilt from that family plus at most one more segment
+ * and everything past it is dropped — `/work/skills/skl_123/versions` lands on
+ * `/skills/skl_123`, the deepest page that family actually serves. The
+ * exception is `permissions`, which never had a child at all, so anything under
+ * it is a typed URL and gets the hub. When the first segment names no family,
+ * the answer is `/chat`. A URL shape that was never real cannot be a bookmark,
+ * so there is no history to honour and nothing to explain — but forwarding its
+ * extra segments verbatim would turn a path that used to 404 under `/work` into
+ * one that 404s under `/skills`, which moves the dead end rather than removing
+ * it.
  */
 export function resolveWorkUrl(
   segments: readonly string[] | undefined,

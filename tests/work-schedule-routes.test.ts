@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import {
   WORK_TRIGGER_KINDS,
   selectTarget,
@@ -14,6 +16,7 @@ import {
   createScheduleSchema,
   patchScheduleSchema,
   runNowSchema,
+  scheduleConversationSeed,
   type WorkHostRow,
 } from "@/lib/work/schedule";
 import {
@@ -478,4 +481,58 @@ test("a Run-now with no body at all is the ordinary case", () => {
   // manual fires colliding on it would hand the second one the first one's run.
   assert.equal(runNowSchema.safeParse({ idempotencyKey: "abc" }).success, false);
   assert.equal(runNowSchema.safeParse({ idempotencyKey: "run-now-2026-08-05" }).success, true);
+});
+
+// ---------------------------------------------------------------------------
+// The transcript an automation writes into
+// ---------------------------------------------------------------------------
+
+/*
+ * A SCHEDULE'S SESSION MUST HAVE A CONVERSATION.
+ *
+ * Since Work stopped being a place, a `WorkSession` is readable only through
+ * the conversation it points at: the transcript draws the live run, its plan,
+ * its questions and its approval cards, and `/work/<sessionId>` — which is what
+ * a schedule row's "Its task" and the automation editor's run rows link to —
+ * is the owner-scoped resolver from a session id to that conversation. The
+ * create route used to mint the session with `conversationId: null`, so every
+ * automation in the account had no web surface at all and a run that stopped to
+ * ask whether it could send the email could not be answered.
+ *
+ * Two halves are pinned. The columns the thread is born with are a pure
+ * function and are checked as one; that the route actually uses it is checked
+ * as SOURCE, the way tests/code-rollback.test.ts reads its route guards — the
+ * route imports Prisma, which imports `server-only`, and cannot be loaded here.
+ */
+
+test("a schedule's thread is an ordinary chat named after the schedule", () => {
+  const seed = scheduleConversationSeed("Morning digest", "the-model-the-schedule-names");
+  // "chat", never a new kind: a run is not a different kind of conversation,
+  // and the phone drops kinds it does not know (TWO_PRODUCTS.md §4).
+  assert.equal(seed.kind, "chat");
+  assert.equal(seed.title, "Morning digest");
+  // `manual`, so the first fire's auto-titler cannot rename a row the person
+  // named — the same reason the session it belongs to carries it.
+  assert.equal(seed.titleSource, "manual");
+  assert.equal(seed.model, "the-model-the-schedule-names");
+});
+
+test("a schedule that names no model leaves the column's own default standing", () => {
+  // Absent rather than null: null would overwrite the schema default with
+  // nothing and leave the thread with no model at all.
+  assert.equal("model" in scheduleConversationSeed("Untitled", null), false);
+  assert.equal("model" in scheduleConversationSeed("Untitled", undefined), false);
+});
+
+test("the create route attaches that thread to the session it mints", () => {
+  const source = fs.readFileSync(
+    path.join(process.cwd(), "src/app/api/work/schedules/route.ts"),
+    "utf8"
+  );
+  assert.match(source, /scheduleConversationSeed\(/, "the route must build the thread from the seed");
+  assert.match(
+    source,
+    /conversationId:\s*conversation\.id/,
+    "the session the route creates must carry the conversation it just made"
+  );
 });

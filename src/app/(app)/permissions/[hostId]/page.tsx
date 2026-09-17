@@ -57,7 +57,12 @@ import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
  * the one thing that can be done about it.
  */
 export default function HostPermissionsPage() {
-  const { id } = useParams<{ id: string }>();
+  // `hostId`, because the folder is `[hostId]` — `useParams<T>()` is an
+  // unchecked assertion, so a name that does not match the segment compiles
+  // clean and hands every call below `undefined`, which reads the page as a
+  // Mac that does not exist. tests/work-url-migration.test.ts pins the two
+  // names against each other for that reason.
+  const { hostId } = useParams<{ hostId: string }>();
 
   const [host, setHost] = React.useState<ClientWorkHost | null>(null);
   const [grants, setGrants] = React.useState<ClientWorkGrant[] | null>(null);
@@ -78,7 +83,7 @@ export default function HostPermissionsPage() {
   }, [busy]);
 
   const load = React.useCallback(async () => {
-    const result = await fetchWorkHost(id);
+    const result = await fetchWorkHost(hostId);
     if (result.kind === "ok") {
       setHost(result.value.host);
       setGrants(result.value.grants);
@@ -95,7 +100,7 @@ export default function HostPermissionsPage() {
     // this Mac, and blanking the page would state that it is unreachable — which
     // is a claim about the machine rather than about the connection to Juno.
     setFailed(true);
-  }, [id]);
+  }, [hostId]);
 
   React.useEffect(() => {
     void load();
@@ -125,7 +130,7 @@ export default function HostPermissionsPage() {
   const applyPatch = React.useCallback(
     async (patch: PatchWorkHostInput) => {
       setBusy(true);
-      const result = await patchWorkHost(id, patch);
+      const result = await patchWorkHost(hostId, patch);
       setBusy(false);
       if (result.kind === "ok") {
         setHost(result.value.host);
@@ -148,12 +153,12 @@ export default function HostPermissionsPage() {
               "Couldn’t change that. This Mac is exactly as it was — nothing was half-applied.")
       );
     },
-    [id]
+    [hostId]
   );
 
   const revoke = React.useCallback(async () => {
     setBusy(true);
-    const result = await revokeWorkHost(id);
+    const result = await revokeWorkHost(hostId);
     setBusy(false);
     setConfirmingRevoke(false);
     if (result.kind === "ok") {
@@ -182,7 +187,7 @@ export default function HostPermissionsPage() {
         : (result.message ??
           "Couldn’t revoke this Mac. Its access is unchanged, so it is safe to try again.")
     );
-  }, [id]);
+  }, [hostId]);
 
   if (missing) {
     return (
