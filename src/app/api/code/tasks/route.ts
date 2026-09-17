@@ -1,7 +1,8 @@
 import { after, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, type CodeTask } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { latestTaskPerConversationQuery } from "@/lib/code-task-page";
 import { sweepStuckCodeTasksOpportunistically } from "@/lib/sweep-stuck-code-tasks";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
@@ -155,6 +156,13 @@ export async function GET(req: Request) {
    * Tasks with no conversation are excluded rather than bunched under one null
    * key, because the caller's unit is the conversation and a run pointing at
    * nothing has no row to land on.
+   *
+   * WHAT RUNS: a hand-written `SELECT DISTINCT ON ("conversationId")`, built by
+   * `latestTaskPerConversationQuery`. Prisma's `distinct` option would NOT have
+   * produced one here — it compiles to `DISTINCT ON` only under the
+   * `nativeDistinct` preview feature, which this schema does not declare, and
+   * otherwise de-duplicates in memory after the `LIMIT` has already been
+   * applied to tasks. That module's docblock carries the full argument.
    */
   const latestPerConversation = searchParams.get("latestPerConversation") === "1";
 
@@ -162,23 +170,12 @@ export async function GET(req: Request) {
     userId: user.id,
     ...(deviceId ? { deviceId } : {}),
     ...(status ? { status } : {}),
-    ...(conversationId ? { conversationId } : latestPerConversation ? { conversationId: { not: null } } : {}),
+    ...(conversationId ? { conversationId } : {}),
   };
   const tasks = latestPerConversation
-    ? await prisma.codeTask.findMany({
-        where,
-        // Postgres DISTINCT ON requires the distinct column to lead the sort, so
-        // this cannot ALSO be ordered by recency. The caller re-sorts, which it
-        // does regardless because its rows are conversations. Descending
-        // conversation id is the best available tiebreak for the clamp: a
-        // session created on the web carries a cuid, whose leading component is
-        // a timestamp, so the page favours the newest; a client that mints its
-        // own ids gets a slice that is arbitrary but at least stable between
-        // polls, which is what stops rows flickering in and out of the panel.
-        orderBy: [{ conversationId: "desc" }, { createdAt: "desc" }],
-        distinct: ["conversationId"],
-        take: limit,
-      })
+    ? await prisma.$queryRaw<CodeTask[]>(
+        latestTaskPerConversationQuery({ userId: user.id, deviceId, status, conversationId, limit }),
+      )
     : await prisma.codeTask.findMany({ where, orderBy: { createdAt: "desc" }, take: limit });
   // One grouped query for the page, so a finished device run can be "Ready to
   // review" without the list reading every run's event log.

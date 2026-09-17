@@ -106,13 +106,24 @@ export const PRODUCTS = [
  * entire time somebody was inside a Code session: the switcher was wrong
  * precisely when the reader was doing the thing it names. The conversation's
  * own kind is the tiebreak.
+ *
+ * THE TIEBREAK IS ANCHORED TO `/chat/<id>`, and that anchor carries as much
+ * weight as the tiebreak itself. `activeConversationId` is set when a
+ * conversation view mounts and is never cleared when it unmounts, so its kind
+ * outlives the route that produced it. Unanchored, opening one Code session
+ * would make every later /library, /projects, /design or /settings draw Code's
+ * column — no Library, no Projects, not one chat row — and the switch would
+ * claim Code while the reader stood on a Chat page. The kind answers "which
+ * product is THIS CONVERSATION", so it may only speak while a conversation is
+ * what the reader is looking at. (The mobile title six lines up in `AppShell`
+ * learned the same lesson from the same stale id.)
  */
 export function productOf(
   pathname: string | null,
   activeConversationKind?: "chat" | "code" | null,
 ): ProductSurface {
   if (pathname?.startsWith("/code")) return "code";
-  if (activeConversationKind === "code") return "code";
+  if (pathname?.startsWith("/chat/") && activeConversationKind === "code") return "code";
   return "chat";
 }
 

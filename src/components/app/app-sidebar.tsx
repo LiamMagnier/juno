@@ -806,16 +806,26 @@ export function AppSidebar({
         >
           {(isCode
             ? ([
-                /* Code's destinations, and there are two.
+                /* Code's destination, and for now there is one.
                    Artifacts is shared with Chat — one library of generated
-                   things, not one per product. Customize is Code's alone
-                   because Code is the product with page-sized configuration:
-                   repositories, Mac workspaces, the default permission mode
-                   (docs/design/TWO_PRODUCTS.md §2.2). Chat's equivalents are
-                   already destinations or settings, which is why there is no
-                   Customize row over there. */
+                   things, not one per product.
+
+                   CUSTOMIZE IS MISSING ON PURPOSE, and belongs here the moment
+                   it can be pressed. Code is the product with page-sized
+                   configuration — repositories, Mac workspaces, the default
+                   permission mode (docs/design/TWO_PRODUCTS.md §2.2) — and
+                   Chat's equivalents are already destinations or settings,
+                   which is why there is no Customize row over there either.
+                   But `/code/customize` is served by no branch yet, and this
+                   package already decided how it treats a route in that state:
+                   the palette's Skills, Automations and Permissions commands
+                   were left out of this same commit because their routes do not
+                   exist. One rule, and the persistent chrome is the surface
+                   that can least afford the other one — a palette result you
+                   never type is invisible, while a row sitting in the column on
+                   every page is an invitation to a 404. The page's own package
+                   adds the row back beside it. */
                 { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-                { href: "/code/customize", kind: "settings", label: "Customize", active: pathname === "/code/customize" },
               ] as const)
             : ([
                 { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
@@ -887,6 +897,22 @@ export function AppSidebar({
                         used to raise against landing on a composer: you no
                         longer have to be standing anywhere in particular to see
                         it. */}
+                    {/* The one live region in the panel, and it announces the
+                        only number here that can require the reader to act.
+                        The Code run list carried this and is retiring; the
+                        count moved into the fold's heading, where it is a
+                        glance rather than an announcement, so a reader working
+                        somewhere else in the panel was never told that a run
+                        had stopped to ask them something. It sits OUTSIDE the
+                        fold's own condition because the fold unmounts at zero,
+                        and "nothing is waiting any more" is the other half of
+                        what this has to say. */}
+                    <p role="status" className="sr-only">
+                      {needsYouRows.length === 0
+                        ? "Nothing is waiting on you."
+                        : `${needsYouRows.length} ${needsYouRows.length === 1 ? "run is" : "runs are"} waiting on you.`}
+                    </p>
+
                     {needsYouRows.length > 0 && (
                       <NeedsYouFold
                         rows={needsYouRows}
@@ -927,6 +953,7 @@ export function AppSidebar({
                             key={p.id}
                             project={p}
                             chats={live.filter((c) => c.projectId === p.id)}
+                            signals={rowSignals}
                             active={pathname === `/projects/${p.id}`}
                             activePath={pathname}
                             starred={p.starred}
@@ -1228,8 +1255,13 @@ function NeedsYouFold({
             className={cn(
               // The date folds' geometry exactly — `h-6`, the panel's 40px text
               // edge — so this reads as the first fold rather than as a banner
-              // over the list.
-              "h-6 select-none gap-1.5 border-0 py-0 pl-8 pr-2 hover:bg-sidebar-accent/60",
+              // over the list. `coarse:h-11` because this panel IS the phone
+              // drawer (AppShell renders it inside SheetContent) and a date
+              // fold's heading is not pressable, while this one is: at 24px it
+              // would be the one control in the drawer at half the 44px every
+              // row, flyout entry and section heading beside it guarantees. On
+              // a fine pointer the resting geometry is untouched.
+              "h-6 select-none gap-1.5 border-0 py-0 pl-8 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
               only && "bg-sidebar-accent"
             )}
           >
@@ -1768,6 +1800,12 @@ function ConversationRow({
   /* The row names itself from its own conversation rather than from the column
      it is drawn in, so a Code session says "session" wherever it appears. */
   const isCodeSession = conversation.kind === "code";
+  /* One name for this row, computed once and used by every place that speaks
+     it. A conversation with no stored title is ordinary — it has one until its
+     first reply is summarised — and when the visible label and the tooltip
+     each applied their own fallback, the tooltip did not: a row carrying a run
+     opened its tooltip with " — Running now.", a sentence with no subject. */
+  const rowLabel = conversation.title || (isCodeSession ? "Untitled session" : "New chat");
 
   const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
     const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
@@ -1852,7 +1890,7 @@ function ConversationRow({
            attribute is also how a truncated title gets read, and a row that
            answered "what is this" with "Juno has asked you something" would
            have traded one fact for another. */
-        title={signal ? `${conversation.title} — ${signal.meaning}` : conversation.title}
+        title={signal ? `${rowLabel} — ${signal.meaning}` : rowLabel}
       >
         {/* THE MARK IS THE STATE, when there is one. Same slot, same 6px, same
             place in the row: a conversation carrying a run swaps its hollow
@@ -1874,7 +1912,7 @@ function ConversationRow({
           )}
         </span>
         <AnimatedTitle
-          title={conversation.title || (isCodeSession ? "Untitled session" : "New chat")}
+          title={rowLabel}
           animate={conversation.titleSource === "ai"}
           className="min-w-0 flex-1"
         />
@@ -1884,7 +1922,15 @@ function ConversationRow({
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" className={KEBAB_CLASS} aria-label="Conversation options">
+              {/* Named from the row's own conversation, like every other
+                  string on it: a screen reader landing on a Code row heard
+                  "Conversation options" while the rename field, the delete
+                  dialog and the archive toast it opens all said "session". */}
+              <Pressable
+                kind="icon"
+                className={KEBAB_CLASS}
+                aria-label={isCodeSession ? "Session options" : "Conversation options"}
+              >
                 <SidebarMotionIcon kind="more" className="size-3.5" />
               </Pressable>
             </DropdownMenuTrigger>
@@ -1951,6 +1997,7 @@ function ConversationRow({
 function ProjectRow({
   project,
   chats,
+  signals,
   active,
   activePath,
   starred,
@@ -1962,6 +2009,12 @@ function ProjectRow({
 }: {
   project: SidebarProject;
   chats: ClientConversation[];
+  /* The same join the folds read. These rows are hand-rolled rather than
+     `ConversationRow` — they are 28px, guided, and carry no kebab — but a
+     conversation's state is a property of the conversation, not of where it is
+     drawn, and one panel showing a toned dot in Today and a hollow bullet for
+     the same chat under its pinned project is one state with two drawings. */
+  signals: Map<string, RowSignal>;
   active: boolean;
   activePath: string;
   starred: boolean;
@@ -2066,13 +2119,16 @@ function ProjectRow({
               half of `size-4` (8) = 16px — instead of the arbitrary 21px it
               used to be measured at, so `ml-4` is the whole geometry. */}
           <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
-            {visibleChats.map((c) => (
+            {visibleChats.map((c) => {
+              const signal = signals.get(c.id);
+              const label = c.title || "New chat";
+              return (
               <Link
                 key={c.id}
                 href={`/chat/${c.id}`}
                 onClick={onNavigate}
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
-                title={c.title}
+                title={signal ? `${label} — ${signal.meaning}` : label}
                 className={cn(
                   "group group/pc flex h-7 items-center gap-2 rounded-control px-2 text-ui font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
                   activePath === `/chat/${c.id}`
@@ -2080,19 +2136,30 @@ function ProjectRow({
                     : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
                 )}
               >
-                <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                      activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
-                    )}
-                  />
+                {/* The mark is the state when there is one, exactly as in the
+                    folds: same slot, same 6px, never a second mark beside the
+                    bullet (docs/design/PREMIUM_AUDIT.md rule 6). */}
+                <span
+                  className="flex size-4 shrink-0 items-center justify-center"
+                  aria-hidden={signal ? undefined : true}
+                >
+                  {signal ? (
+                    <StatusDot tone={signal.tone} label={signal.label} />
+                  ) : (
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
+                        activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
+                      )}
+                    />
+                  )}
                 </span>
                 <span dir="auto" className="min-w-0 flex-1 truncate">
-                  {c.title || "New chat"}
+                  {label}
                 </span>
               </Link>
-            ))}
+              );
+            })}
             {chats.length > PREVIEW && (
               <button
                 type="button"

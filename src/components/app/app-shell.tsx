@@ -108,7 +108,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    * renders `<CodeSessionView>` when the conversation's kind is "code" — so the
    * path alone says "Chat" for the entire time somebody is inside a Code
    * session, which is precisely when the column must not be Chat's. The open
-   * conversation's own kind is the tiebreak; `productOf` holds that rule.
+   * conversation's own kind is the tiebreak; `productOf` holds that rule, and
+   * holds the anchor with it — the kind is consulted only on /chat/<id>, so
+   * the stale `activeConversationId` described just above cannot follow you to
+   * /library and swap the whole column for Code's.
    *
    * It is computed here rather than inside the sidebar because the sidebar
    * mounts twice (the desktop aside and the phone drawer) and two copies of a

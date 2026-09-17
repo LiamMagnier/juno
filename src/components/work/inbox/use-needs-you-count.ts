@@ -51,6 +51,18 @@ const SESSION_PAGE = 100;
  * Null until the first answer lands, and the last good answer STAYS on a failed
  * read: a dropped request is not evidence that nothing is waiting, and a fold
  * that empties itself on a flaky connection is worse than one that is stale.
+ *
+ * THIS REVERSES WHAT THIS FILE USED TO DO, for both callers, so it is worth
+ * saying which ones. `useWorkNeedsYouCount` — the badge on
+ * `ComposerModeSwitch` — went back to null after a failed read, and the reason
+ * recorded then was that a badge reading 0 on a dropped request tells the
+ * reader nothing is waiting when Juno simply could not find out. That argument
+ * is untouched and is still satisfied here: keeping the last good answer never
+ * shows 0 on a dropped read either, and it is the stronger of the two, because
+ * a badge that blinks out mid-poll says "resolved" just as loudly as a 0 does.
+ * What it costs is a count that can be a poll interval out of date while the
+ * connection is bad — a number that was true thirty seconds ago, which is what
+ * every polled count in this product already is.
  */
 function useWorkSessionPoll(options: { needsAttention?: boolean }, enabled: boolean): WorkInboxSession[] | null {
   const [sessions, setSessions] = React.useState<WorkInboxSession[] | null>(null);

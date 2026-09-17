@@ -14,13 +14,25 @@
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/chat", "Juno"], // the new-chat screen has no subject yet
-  /* No /work entries. There are two products (docs/design/TWO_PRODUCTS.md), so
-     a window switcher must not offer a third — and the routes that used to live
-     under /work are moving out from under it, which means an entry keyed to
-     that prefix would be wrong twice over. The pages that survive the move
-     re-enter this list under their own names when they land. */
+  /* THE /work ENTRIES STAY UNTIL THE /work ROUTES GO, and they go in the same
+     commit. There are two products (docs/design/TWO_PRODUCTS.md) and this list
+     is not one of the places that says so: it is not a switcher, it is the
+     caption on the window you are actually in, and the same map captions the
+     mobile top bar. Deleting these while `src/app/(app)/work/**` still answers
+     bought nothing and cost five real pages their names — a person standing on
+     /work/hosts read "Juno" in their tab and "Juno" at the top of their phone,
+     which is the guess this file exists to prevent. A title describes what is
+     served; the package that stops serving these deletes them with the pages.
+     Whichever of those survive the move re-enter under their own names. */
+  ["/work/skills", "Skills"],
+  ["/work/schedules", "Schedules"],
+  ["/work/permissions", "Permissions"],
+  ["/work/hosts", "Macs"],
+  ["/work", "Work"],
   ["/code/pulls", "Pull requests"],
-  ["/code/customize", "Customize"],
+  /* No /code/customize. Same rule read the other way: `/code/customize` is
+     served by no branch yet, so a title for it would caption a 404. It arrives
+     with its page — see the note on Code's destinations in app-sidebar.tsx. */
   ["/code/new", "New run"],
   ["/code", "Code"],
   ["/design", "Design"],
