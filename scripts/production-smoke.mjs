@@ -116,7 +116,35 @@ async function main() {
   const first = await json(firstResponse);
   assert(firstResponse.ok, `chat submit failed (${firstResponse.status}): ${first.text.slice(0, 500)}`);
   assert(/(?:done|finishReason|receiptState)/i.test(first.text), "chat response never reached a terminal SSE/recovery marker");
-  assert(!/\"type\"\s*:\s*\"error\"/i.test(first.text), "chat smoke returned an error event");
+  /*
+   * QUOTE THE ERROR, do not merely name it.
+   *
+   * This assertion used to read "chat smoke returned an error event" and stop
+   * there. When it fired on a real deploy, the release rolled back correctly
+   * and left nobody a way to find out WHY: the SSE body was in this process's
+   * memory and nowhere else, the server-side log was on the VM, and the run
+   * log said only that an error had occurred. Diagnosing it meant re-deploying
+   * with better logging — which is this change, made once.
+   *
+   * The `message` field of a Juno error frame is already reader-facing copy
+   * (providerErrorMessage), so it carries no secret the smoke account could not
+   * see; the surrounding frame is trimmed to keep a stack trace or a prompt
+   * echo out of a public build log.
+   */
+  const errorFrame = first.text.match(/\{[^\n]*"type"\s*:\s*"error"[^\n]*\}/i);
+  if (errorFrame) {
+    let quoted = errorFrame[0].slice(0, 400);
+    try {
+      const parsed = JSON.parse(errorFrame[0]);
+      if (parsed && typeof parsed.message === "string") {
+        quoted = `${parsed.message}${parsed.finishReason ? ` (finishReason: ${parsed.finishReason})` : ""}`;
+      }
+    } catch {
+      // Not a whole frame on one line — the trimmed raw match is still better
+      // than the sentence this replaced.
+    }
+    assert(false, `chat smoke returned an error event: ${quoted}`);
+  }
   console.log("PASS chat submission reached a terminal response");
 
   let receipt = null;
