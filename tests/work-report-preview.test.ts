@@ -379,17 +379,27 @@ test("a real report renders in the preview saying what the file says", () => {
 // 9. Which kinds are offered a preview at all
 // ---------------------------------------------------------------------------
 
-test("preview is offered for exactly the two kinds that guarantee something to show", async () => {
+test("preview is offered for exactly the kinds that guarantee something to show", async () => {
   const { canPreviewArtifact } = await import("@/components/work/work-site-preview");
   const { WORK_ARTIFACT_KINDS } = await import("@/lib/work/domain");
 
-  assert.deepEqual(WORK_ARTIFACT_KINDS.filter(canPreviewArtifact), ["report", "site"]);
+  // `spreadsheet` joined the list once there was a reader for it: exceljs is
+  // the same library that wrote the file, and a grid is the one document shape
+  // that survives being drawn as a plain table with nothing a reviewer was
+  // going to check lost on the way.
+  assert.deepEqual(WORK_ARTIFACT_KINDS.filter(canPreviewArtifact), [
+    "spreadsheet",
+    "report",
+    "site",
+  ]);
 
   // Named individually rather than by the filter above, so that adding a kind
   // to WORK_ARTIFACT_KINDS cannot quietly satisfy this test: the four refusals
   // below are arguments in `canPreviewArtifact`'s comment, and each is a claim
-  // that this build cannot show that kind honestly.
-  for (const refused of ["bundle", "archive", "document", "pdf"]) {
+  // that this build cannot show that kind honestly. `presentation` is the fifth
+  // and it is refused for the reason it always was — a deck without its layout
+  // is a list of bullet points, which is a different document.
+  for (const refused of ["bundle", "archive", "document", "pdf", "presentation"]) {
     assert.equal(canPreviewArtifact(refused), false, `${refused} has no guaranteed, faithful preview`);
   }
 });
