@@ -5,6 +5,8 @@ import test from "node:test";
 
 import {
   DEFAULT_CLOUD_PERMISSION_MODE,
+  isAllowedEnvVarName,
+  parseEnvVars,
   SETUP_SCRIPT_OUTPUT_LIMIT,
   SETUP_SCRIPT_TIMEOUT_MS,
 } from "@/lib/code-environments";
@@ -175,10 +177,16 @@ test("a follow-up keeps the environment the first message chose", () => {
   }
   // A value the client sent always wins, which is how a mid-conversation
   // change of mode reaches the run.
-  assert.match(createRoute, /inheritedEnvironmentId = environmentId \?\? last\?\.environmentId \?\? null;/);
+  assert.match(
+    createRoute,
+    /if \(inheritEnvironment\) inheritedEnvironmentId = last\?\.environmentId \?\? null;/,
+  );
   // And a mode written by a deploy that offered a value this one no longer
   // does is checked rather than carried forward forever.
-  assert.match(createRoute, /isCodePermissionMode\(last\?\.permissionMode\) \? last\.permissionMode : null/);
+  assert.match(
+    createRoute,
+    /isCodePermissionMode\(last\?\.permissionMode\)\s*\?\s*last\.permissionMode\s*:\s*null/,
+  );
 });
 
 test("a client can read back what a run was dispatched with", () => {
@@ -230,7 +238,7 @@ test("the environment's egress overrides the workflow's default", () => {
   // were a ceiling rather than a default, the network control would never do
   // anything — and the workflow says so in a comment so the next reader does
   // not "fix" it back.
-  assert.match(driver, /environment\.network === "full" \? \{ network: "full" \} : \{\}/);
+  assert.match(driver, /environment\.network === "full"[\s\S]{0,120}?\{ network: "full" \}/);
   assert.match(workflow, /The DEFAULT egress for the agent's container, not a ceiling over it/);
 });
 
@@ -275,6 +283,121 @@ test("a forwarded name can never shadow one the runner depends on", () => {
   assert.match(build, /if \(name in env\) continue;/);
 });
 
+test("every name the driver drops is a name the route refuses", () => {
+  /*
+   * THE LOCK THE PREVIOUS TEST COULD NOT SEE.
+   *
+   * `carriedEnvVars` drops every name in AGENT_ENV_ALLOW, and the test above
+   * pins that line as text — so it passes whether or not the route agrees. It
+   * did not agree: LANG, LC_ALL, LC_CTYPE, TZ, TERM and TMPDIR were accepted by
+   * POST /api/code/environments with a 201, listed back in `envVarNames` as
+   * something the run would carry, and then discarded by the driver with
+   * nothing logged and nothing in the transcript. The submitter's only evidence
+   * was a run that behaved as if they had never typed the variable.
+   *
+   * So the two lists are compared directly, from the driver's own source. A
+   * name added to AGENT_ENV_ALLOW without being reserved fails here, at the
+   * seam, instead of silently at run time.
+   */
+  const block = /const AGENT_ENV_ALLOW = \[([\s\S]*?)\];/.exec(driver)?.[1];
+  assert.ok(block, "AGENT_ENV_ALLOW is no longer a literal array in the driver");
+  const names = [...block.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"/g)].map((m) => m[1]);
+  assert.ok(names.length >= 10, `AGENT_ENV_ALLOW parsed as only ${names.length} name(s)`);
+  for (const name of names) {
+    assert.equal(
+      isAllowedEnvVarName(name),
+      false,
+      `${name} is dropped by carriedEnvVars but accepted by the environments route: a run would silently ignore it`,
+    );
+  }
+});
+
+test("a submitted locale or terminal variable is refused with a reason", () => {
+  // The visible half of the fix above: the rejection reaches the person who
+  // typed it, as a 400 naming the variable, rather than a 201 followed by a run
+  // that ignores it.
+  for (const name of ["LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "TMPDIR"]) {
+    const parsed = parseEnvVars({ [name]: "x" });
+    assert.equal(parsed.ok, false, `${name} was accepted`);
+    if (!parsed.ok) {
+      assert.equal(parsed.rejection.reason, "reserved_name");
+      assert.equal((parsed.rejection as { name: string }).name, name);
+    }
+  }
+  // JUNO_HOME is the twelfth name, and it is covered by the prefix rule rather
+  // than by the list — asserted here so a later tidy-up of the prefixes cannot
+  // quietly reopen it.
+  const juno = parseEnvVars({ JUNO_HOME: "/tmp" });
+  assert.equal(juno.ok, false);
+});
+
+test("a denied tool produces one transcript row, and it is the honest one", () => {
+  /*
+   * The engine follows a `deny` from the approval callback with its own
+   * `tool_denied` whose reason is "The user declined this action."
+   * (runner/agent-core/src/agent.ts). No user is attached to a cloud run, so
+   * that sentence is the same invented human the callback's comment says it
+   * removed from the allow path — arriving as a second row right after the one
+   * that names the mode. The driver's row is the only one that survives.
+   */
+  assert.match(driver, /if \(!allowed\) sink\.denialsAnswered \+= 1;/);
+  const denied = /case "tool_denied":[\s\S]*?\n    case /.exec(driver)?.[0] ?? "";
+  assert.ok(denied, "onAgentEvent no longer handles tool_denied");
+  assert.match(denied, /if \(sink\.denialsAnswered > 0\) \{[\s\S]*?break;/);
+  // Plan mode and project rules deny without ever reaching the callback, so
+  // their rows must still be pushed.
+  assert.match(denied, /sink\.push\("tool", \{/);
+});
+
+test("a chatty setup script is not killed for being chatty", () => {
+  /*
+   * execFile's `maxBuffer` KILLS the child on overflow and reports it exactly
+   * as it reports a timeout, so a setup script that succeeded but printed more
+   * than the buffer failed the whole task with "exited 124" and no true reason.
+   * Output is bounded in JS now, and the process keeps its own exit status.
+   */
+  const fn = /function runSetupScriptProcess\(script, \{ cwd, env \}\) \{[\s\S]*?\n\}\n/.exec(driver)?.[0] ?? "";
+  assert.ok(fn, "runSetupScriptProcess is no longer declared as a function statement");
+  assert.equal(/maxBuffer/.test(fn), false, "the output cap must not be able to kill the script");
+  assert.match(fn, /output = output\.slice\(-keep\)/);
+  assert.match(fn, /slice\(-SETUP_SCRIPT_OUTPUT_LIMIT\)/);
+  // The timeout still kills, and kills the whole group: a script that started a
+  // background server used to leave it holding the runner for the rest of the
+  // job, because execFile signals bash alone.
+  assert.match(fn, /detached: true/);
+  assert.match(fn, /process\.kill\(-child\.pid, "SIGKILL"\)/);
+  assert.match(fn, /SETUP_SCRIPT_TIMEOUT_MS/);
+  // And the two are distinguishable in what the run reports.
+  assert.match(driver, /timedOut \? "timed out" : "failed"/);
+  assert.match(driver, /ran longer than \$\{Math\.round\(SETUP_SCRIPT_TIMEOUT_MS \/ 60_000\)\} minutes/);
+  assert.equal(/execFileAsync\("\/bin\/bash"/.test(driver), false);
+});
+
+test("choosing full egress cannot drop a run out of a filtered network", () => {
+  // `full` lifts the workflow's `none`. On a deployment running the
+  // capability-aware egress proxy, `proxied` is the filtered path and leaving
+  // it is not what "full" was chosen to mean.
+  assert.match(
+    driver,
+    /environment\.network === "full" && fromWorkflow\.network !== "proxied"/,
+  );
+});
+
+test("an environment and a mode can be cleared, not only changed", () => {
+  /*
+   * A composer offering "No environment", or resetting to "Auto" after a Plan
+   * run, has to be able to SAY so. With `.optional()` alone, absent meant
+   * inherit and there was no other value — so the picker would show one setting
+   * while the next message quietly ran with the previous one.
+   */
+  assert.match(createRoute, /environmentId: z\.string\(\)[\s\S]{0,60}?\.nullable\(\)\.optional\(\)/);
+  assert.match(createRoute, /permissionMode: z\.enum\(CODE_PERMISSION_MODES\)\.nullable\(\)\.optional\(\)/);
+  // Only ABSENT inherits; null is an answer.
+  assert.match(createRoute, /const inheritEnvironment = environmentId === undefined;/);
+  assert.match(createRoute, /const inheritPermissionMode = permissionMode === undefined;/);
+  assert.match(createRoute, /if \(inheritEnvironment\) inheritedEnvironmentId = last\?\.environmentId \?\? null;/);
+});
+
 // ---------------------------------------------------------------------------
 // The setup step
 // ---------------------------------------------------------------------------
@@ -302,7 +425,7 @@ test("it runs on the host, which is the only place with a network", () => {
   // The container has no egress by default, and container-sandbox.ts's own
   // header says dependencies should be fetched by the driver outside it —
   // which is exactly what a setup script is.
-  assert.match(driver, /execFileAsync\("\/bin\/bash", \["-c", script\], \{\s*cwd,\s*env,/);
+  assert.match(driver, /spawn\("\/bin\/bash", \["-c", script\], \{\s*cwd,\s*env,/);
   assert.match(sandbox, /fetched by the driver, outside the/);
 });
 
@@ -314,10 +437,10 @@ test("a failed setup script fails the run, with its output already flushed", () 
   const fn = /async function runSetupScript\([\s\S]*?\n\}/.exec(driver)?.[0] ?? "";
   assert.ok(fn, "runSetupScript is no longer declared as a function statement");
   assert.ok(fn.indexOf("await sink.flushing;") < fn.indexOf("if (exitCode !== 0) {"));
-  assert.match(fn, /throw new Error\(\s*`The environment's setup script exited/);
+  assert.match(fn, /The environment's setup script exited \$\{exitCode\}/);
   // The tail of the output, not the head: a build log's last lines are the
   // reason it stopped.
-  assert.match(fn, /\.slice\(-SETUP_SCRIPT_OUTPUT_LIMIT\)/);
+  assert.match(driver, /\.slice\(-SETUP_SCRIPT_OUTPUT_LIMIT\)/);
 });
 
 test("the driver and the server agree on the setup script's bounds", () => {

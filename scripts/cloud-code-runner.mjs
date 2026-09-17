@@ -51,7 +51,7 @@
  * runner/agent-core/src/providers/proxy.ts, the vendored `authorization` field).
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
@@ -261,6 +261,18 @@ class EventSink {
     this.onSteer = null;
     /** Steers that arrived before the session existed (during the clone). */
     this.steerBacklog = [];
+    /**
+     * Denials this driver's `requestApproval` has already written a row for.
+     *
+     * The engine follows a `deny` from that callback with its own `tool_denied`
+     * event whose reason is "The user declined this action." (agent.ts). In a
+     * cloud run there is no user: that sentence is the same invented human the
+     * approval callback's comment says it removed from the allow path, and it
+     * would arrive as a SECOND row right after the honest one that names the
+     * permission mode. Counted rather than flagged because several tool calls
+     * in one step can each be denied before any event is drained.
+     */
+    this.denialsAnswered = 0;
     /** When controls were last read, by a POST or a poll — see pollControls. */
     this.lastControlSyncAt = Date.now();
     this.polling = false;
@@ -786,7 +798,14 @@ async function main() {
   const containerSandbox = fromWorkflow
     ? {
         ...fromWorkflow,
-        ...(environment.network === "full" ? { network: "full" } : {}),
+        // `full` lifts the workflow's `none`, and must not also lift a
+        // `proxied` network: that value means the deployment is running the
+        // capability-aware egress proxy, and a user asking for full access
+        // would otherwise leave the filtered path entirely rather than be
+        // granted the widest egress the deployment actually offers.
+        ...(environment.network === "full" && fromWorkflow.network !== "proxied"
+          ? { network: "full" }
+          : {}),
         ...(carriedNames.length > 0 ? { forwardEnv: carriedNames } : {}),
       }
     : null;
@@ -887,6 +906,7 @@ async function main() {
           ...(allowed ? { autoAllowed: true } : {}),
           ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
         });
+        if (!allowed) sink.denialsAnswered += 1;
         return allowed ? "allow" : "deny";
       },
     },
@@ -1153,6 +1173,16 @@ function onAgentEvent(sink, event) {
       break;
     }
     case "tool_denied":
+      // The row this driver's approval callback already pushed says which mode
+      // refused the call. The engine's follow-up says "The user declined this
+      // action.", which is untrue of a run nobody is watching — so the honest
+      // row is the only one, and this one is swallowed. Denials the engine
+      // reached on its own (plan mode, project rules) never touched the
+      // callback, so their counter is zero and their row still arrives.
+      if (sink.denialsAnswered > 0) {
+        sink.denialsAnswered -= 1;
+        break;
+      }
       sink.push("tool", {
         name: event.name,
         summary: `Denied ${event.name}: ${event.reason}`,
@@ -1319,37 +1349,12 @@ async function runSetupScript(script, { cwd, env, sink }) {
   sink.kick();
 
   const started = Date.now();
-  let stdout = "";
-  let stderr = "";
-  let exitCode = 0;
-  try {
-    const result = await execFileAsync("/bin/bash", ["-c", script], {
-      cwd,
-      env,
-      timeout: SETUP_SCRIPT_TIMEOUT_MS,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    stdout = result.stdout ?? "";
-    stderr = result.stderr ?? "";
-  } catch (err) {
-    stdout = err?.stdout ?? "";
-    stderr = err?.stderr ?? "";
-    // `killed` is how execFile reports the two limits this driver imposes — the
-    // timeout and the output cap — and in both cases its `code` is not a
-    // number. 124 is the conventional "killed by a timeout" status, and any
-    // non-zero is what matters below; what must not happen is a killed script
-    // reporting 0 and the run proceeding on a half-installed tree.
-    exitCode = err?.killed ? 124 : typeof err?.code === "number" ? err.code : 1;
-    if (exitCode === 0) exitCode = 1;
-  }
+  const { exitCode, output, timedOut } = await runSetupScriptProcess(script, { cwd, env });
 
   const seconds = Math.round((Date.now() - started) / 1000);
-  // Tail, not head: a build log's first lines are the banner and its last are
-  // the reason it stopped.
-  const output = `${stdout}${stderr}`.slice(-SETUP_SCRIPT_OUTPUT_LIMIT);
   sink.push("tool", {
     name: "bash",
-    summary: `Setup script — ${exitCode === 0 ? "ok" : "failed"} (${seconds}s)`,
+    summary: `Setup script — ${exitCode === 0 ? "ok" : timedOut ? "timed out" : "failed"} (${seconds}s)`,
     detail: output,
     exitCode,
   });
@@ -1361,9 +1366,86 @@ async function runSetupScript(script, { cwd, env, sink }) {
   await sink.flushing;
   if (exitCode !== 0) {
     throw new Error(
-      `The environment's setup script exited ${exitCode}. ${firstLine(stderr || stdout) || "No output."}`,
+      timedOut
+        ? `The environment's setup script ran longer than ${Math.round(SETUP_SCRIPT_TIMEOUT_MS / 60_000)} minutes and was stopped. ${firstLine(output) || "No output."}`
+        : `The environment's setup script exited ${exitCode}. ${firstLine(output) || "No output."}`,
     );
   }
+}
+
+/**
+ * Run the setup script and return its status with a bounded tail of its output.
+ *
+ * Spawned rather than `execFile`d, for two failures execFile could not express.
+ *
+ * The first is that execFile's `maxBuffer` KILLS the child on overflow and
+ * reports it as `err.killed`, indistinguishable from the timeout. A setup
+ * script that succeeds but is chatty — a verbose `pip install -v`, a monorepo
+ * build — therefore failed the whole task with "exited 124" and no true
+ * reason. Output is bounded in JS instead: the process is allowed to finish and
+ * report its own exit status, and only the RECORD of it is trimmed.
+ *
+ * The second is the kill. execFile signals bash alone, so a script that started
+ * a background server left it holding the runner's CPU and file handles for the
+ * rest of the job; `detached` plus a negative pid addresses the whole group,
+ * the way the bash tool already does (runner/agent-core/src/tools/bash.ts).
+ *
+ * Tail, not head: a build log's first lines are the banner and its last are the
+ * reason it stopped. Twice the reported limit is retained while running so the
+ * slice at the end is never short.
+ */
+function runSetupScriptProcess(script, { cwd, env }) {
+  return new Promise((resolve) => {
+    const child = spawn("/bin/bash", ["-c", script], {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
+    const keep = SETUP_SCRIPT_OUTPUT_LIMIT * 2;
+    let output = "";
+    let timedOut = false;
+    const collect = (chunk) => {
+      output += chunk;
+      if (output.length > keep) output = output.slice(-keep);
+    };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+
+    const killGroup = () => {
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // The group is already gone, or vanished between the check and the
+        // signal. Fall back to the direct kill so a live child still dies.
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* nothing left to kill */
+        }
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup();
+    }, SETUP_SCRIPT_TIMEOUT_MS);
+    if (typeof timer.unref === "function") timer.unref();
+
+    const finish = (code) => {
+      clearTimeout(timer);
+      // A killed script must never report 0: the run would otherwise proceed on
+      // a half-installed tree and every later failure would point at the code.
+      const exitCode = timedOut ? 124 : typeof code === "number" ? code : 1;
+      resolve({ exitCode, output: output.slice(-SETUP_SCRIPT_OUTPUT_LIMIT), timedOut });
+    };
+    child.on("error", (err) => {
+      collect(`\n${err?.message ?? String(err)}`);
+      finish(1);
+    });
+    child.on("close", (code) => finish(code));
+  });
 }
 
 /** Env var names safe to expose to agent-spawned shells: enough for build/test
@@ -1393,11 +1475,20 @@ const AGENT_ENV_ALLOW = [
  * that is not in the environment docker was spawned with, and the run would
  * behave as if it had simply never been set.
  *
- * The route that stores an environment already refuses `PATH`, `HOME` and
- * their neighbours (RESERVED_ENV_VAR_NAMES in src/lib/code-environments.ts).
- * This is the second lock on the same door, because the failure it prevents —
- * a stored variable deciding which binary `npm` is, for a process holding the
- * task token — is not one worth relying on a single check for.
+ * The route that stores an environment already refuses every name in
+ * AGENT_ENV_ALLOW (RESERVED_ENV_VAR_NAMES in src/lib/code-environments.ts, plus
+ * the `JUNO_` prefix that covers JUNO_HOME). This is the second lock on the
+ * same door, because the failure it prevents — a stored variable deciding which
+ * binary `npm` is, for a process holding the task token — is not one worth
+ * relying on a single check for.
+ *
+ * It must stay the SECOND lock and never the only one. A name this function
+ * drops but the route accepts is stored, listed back to the submitter in
+ * `envVarNames` as something the run will carry, and then silently discarded
+ * here — no error, no log, no transcript row, and a run that behaves exactly as
+ * if the variable had never been typed. That is why the two lists are asserted
+ * to agree in tests/code-environment-runtime.test.ts: adding a name here
+ * without adding it there turns a visible rejection into an invisible one.
  */
 function carriedEnvVars(vars) {
   const out = {};

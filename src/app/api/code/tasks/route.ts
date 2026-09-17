@@ -74,13 +74,23 @@ const postSchema = z.object({
   reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
   // The cloud environment this run executes in — egress, variables, setup
   // script. Cloud-only, checked below.
-  environmentId: z.string().trim().min(1).max(200).optional(),
+  //
+  // Nullable as well as optional, and the difference is the whole reason a
+  // composer can offer "No environment". ABSENT means "no opinion", which the
+  // inheritance block below reads as "keep what the last message in this
+  // conversation used". NULL is an opinion: run with the built-in shape. With
+  // only `optional()` there was no way to say the second, so a picker reset to
+  // "No environment" would show one thing and the run would silently do
+  // another — the exact defect this package exists to remove.
+  environmentId: z.string().trim().min(1).max(200).nullable().optional(),
   // How much the agent may do before it would have to ask. Cloud-only, and
   // that restriction is the point rather than an oversight: the Mac host runs
   // its own approval gating from its own settings and reads nothing from this
   // column, so accepting it for a device task would persist a preference the
   // thing executing the task never sees.
-  permissionMode: z.enum(CODE_PERMISSION_MODES).optional(),
+  // Null for the same reason as `environmentId`: after a Plan run, "Auto" has
+  // to be expressible as something other than silence.
+  permissionMode: z.enum(CODE_PERMISSION_MODES).nullable().optional(),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -415,21 +425,29 @@ export async function POST(req: Request) {
          * ever pushed — and folding the two would make each answer the other's
          * predicate.
          */
+        // Absent is the only thing that inherits. An explicit null is the
+        // composer saying "no environment" / "back to Auto", and carrying the
+        // previous message's value forward over it would leave the picker
+        // showing one setting while the run used another.
+        const inheritEnvironment = environmentId === undefined;
+        const inheritPermissionMode = permissionMode === undefined;
         let inheritedEnvironmentId: string | null = environmentId ?? null;
         let inheritedPermissionMode: CodePermissionMode | null = permissionMode ?? null;
-        if (conversationId && (!environmentId || !permissionMode)) {
+        if (conversationId && (inheritEnvironment || inheritPermissionMode)) {
           const last = await tx.codeTask.findFirst({
             where: { userId: user.id, conversationId, target: "cloud" },
             orderBy: { createdAt: "desc" },
             select: { environmentId: true, permissionMode: true },
           });
-          inheritedEnvironmentId = environmentId ?? last?.environmentId ?? null;
+          if (inheritEnvironment) inheritedEnvironmentId = last?.environmentId ?? null;
           // Checked rather than copied: the column is a plain string, and a
           // mode written by a deploy that offered a value this one no longer
           // does would otherwise be carried forward forever.
-          inheritedPermissionMode =
-            permissionMode ??
-            (isCodePermissionMode(last?.permissionMode) ? last.permissionMode : null);
+          if (inheritPermissionMode) {
+            inheritedPermissionMode = isCodePermissionMode(last?.permissionMode)
+              ? last.permissionMode
+              : null;
+          }
         }
         return tx.codeTask.create({
           data: {

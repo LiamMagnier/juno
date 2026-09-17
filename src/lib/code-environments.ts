@@ -42,6 +42,14 @@ import { z } from "zod";
  *   full — the container joins Docker's default bridge and can reach anything
  *          the runner VM can. Chosen knowingly: it is also the level at which
  *          an agent that can run `curl` can post the worktree somewhere.
+ *
+ * "Agent-authored" in the first line is load-bearing and a picker must repeat
+ * it. The setup script runs on the runner HOST, before the container exists,
+ * precisely so it can install dependencies — so it has full egress whatever
+ * this column says. That is defensible, because the script is the submitter's
+ * own text rather than the model's, but a label reading "Network access: None"
+ * would be untrue of that step. The label to write is about the agent's
+ * commands, not about the run.
  */
 export const CODE_NETWORK_ACCESS = ["none", "full"] as const;
 export type CodeNetworkAccess = (typeof CODE_NETWORK_ACCESS)[number];
@@ -146,6 +154,18 @@ const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * exactly the names `hardenDriverEnv()` strips and `AGENT_ENV_ALLOW` decides
  * about. A user-settable variable in one of those namespaces would be reasoned
  * about by that code as if the runner had set it.
+ *
+ * The locale/terminal group at the end — LANG, LC_ALL, LC_CTYPE, TZ, TERM,
+ * TMPDIR — is here for a third reason, and it is the one that makes this list
+ * a contract rather than a preference. The cloud driver's `carriedEnvVars()`
+ * drops every name in its own `AGENT_ENV_ALLOW` before the map reaches either
+ * the container's `--env` list or the agent's shell environment. Anything the
+ * driver drops and this list accepts is stored, echoed back in `envVarNames`
+ * — which both route docblocks describe as what a run will carry — and then
+ * discarded at run time with nothing logged and nothing in the transcript. A
+ * name the runtime will not honour has to be refused HERE, where the submitter
+ * is still on the other end of the request and can be told why. The test in
+ * tests/code-environment-runtime.test.ts asserts the two lists still agree.
  */
 const RESERVED_ENV_VAR_NAMES = new Set([
   "BASH_ENV",
@@ -154,6 +174,9 @@ const RESERVED_ENV_VAR_NAMES = new Set([
   "GLOBIGNORE",
   "HOME",
   "IFS",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
   "LD_AUDIT",
   "LD_LIBRARY_PATH",
   "LD_PRELOAD",
@@ -164,6 +187,9 @@ const RESERVED_ENV_VAR_NAMES = new Set([
   "PYTHONSTARTUP",
   "SHELL",
   "SHELLOPTS",
+  "TERM",
+  "TMPDIR",
+  "TZ",
   "USER",
 ]);
 
@@ -335,8 +361,11 @@ export interface CodeEnvironmentRow {
  *
  * The setup script is not a secret in the same sense — it is a shell script the
  * user wrote and has to be able to edit — so it rides the single-environment
- * read. It is left off the list, where a screen that draws a chip per
- * environment would otherwise pull down 25 scripts to render 25 names.
+ * read. The list answers `hasSetupScript` instead. That is not a saving on the
+ * database: `hasSetupScript` is computed from the column, so the list query
+ * reads all 25 scripts either way. What it saves is the RESPONSE, and with it
+ * the chance that a screen drawing a chip per environment holds 25 stale copies
+ * of a script the edit screen is the only place allowed to show.
  */
 export function serializeCodeEnvironment(
   row: CodeEnvironmentRow,

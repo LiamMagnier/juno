@@ -202,6 +202,21 @@ test("runner-context gates the app token on that check, and logs one line either
   assert.match(route, /clone credential = \$\{credential\.source\} \(\$\{credential\.reason\}\)/);
   const line = /console\.info\([\s\S]*?\);/.exec(route)?.[0] ?? "";
   assert.ok(!/token/i.test(line), `the credential log line must name no token: ${line}`);
+  /*
+   * The slice above keeps the claim about the credential block, but it also
+   * means the route can grow logging anywhere else without this test noticing —
+   * and the landmarks it slices on are prose a later edit may rewrite. So the
+   * whole file is held to a denylist too: every console call in the route, in
+   * order, and nothing else. A new line here is not forbidden; it is required
+   * to be added deliberately, by someone who has read what the run's public
+   * Actions log may say about a user's repository and secrets.
+   */
+  const everyLog = [...route.matchAll(/console\.(\w+)\(/g)].map((m) => m[1]);
+  assert.deepEqual(
+    everyLog,
+    ["error", "warn", "info"],
+    "the route's logging changed: error = unsealable environment, warn = app-outage fallback, info = the credential line",
+  );
 });
 
 test("the config is read only when both halves are set, and a flattened PEM is restored", () => {
