@@ -8,6 +8,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { OUTLINE_HEADING_SELECTOR } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
@@ -73,12 +74,21 @@ export function ReportReader({
   // the markdown pipeline: the renderer is shared with streaming chat, where
   // per-heading ids and a ToC have no meaning, and forking it for one page
   // would put two markdown pipelines behind one product.
+  //
+  // The selector is the DEMOTED set (h3–h5), not the `h1, h2, h3` the writer
+  // prompt speaks in: the shared renderer drops every markdown heading two
+  // levels so a reply cannot outrank the transcript's outline, and a walk
+  // that asked for h1–h3 matched only the title here — one entry, under the
+  // two the ToC needs, so the rail and the scrollspy vanished from every
+  // report. `level` still comes from the tag digit; the `minLevel`
+  // normalisation below makes the indentation relative, so 3/4/5 lays out
+  // exactly as 1/2/3 did.
   React.useEffect(() => {
     const root = articleRef.current;
     if (!root) return;
     const used = new Set<string>();
     const items: TocItem[] = [];
-    root.querySelectorAll<HTMLElement>("h1, h2, h3").forEach((heading) => {
+    root.querySelectorAll<HTMLElement>(OUTLINE_HEADING_SELECTOR).forEach((heading) => {
       const text = heading.textContent?.trim() ?? "";
       if (!text) return;
       let id = slugify(text);
@@ -340,7 +350,10 @@ export function ReportReader({
           // scroll-mt matches READING_LINE_PX so a ToC jump puts the heading on
           // the same line the scrollspy calls "being read" — off by even a few
           // pixels and every jump highlights the section ABOVE the one clicked.
-          className="min-w-0 flex-1 [&_:is(h1,h2,h3)]:scroll-mt-24"
+          // The tag list is OUTLINE_HEADING_TAGS spelled out, because Tailwind
+          // only sees a literal class; tests/markdown-headings.test.ts keeps
+          // the two in step.
+          className="min-w-0 flex-1 [&_:is(h3,h4,h5)]:scroll-mt-24"
         >
           <Markdown content={report} sources={clientSources} className="text-body-lg" />
         </article>

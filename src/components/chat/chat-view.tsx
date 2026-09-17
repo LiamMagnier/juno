@@ -2014,8 +2014,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 currentModelId={model}
                 conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
                 // The header band above draws the visible h1 from md up,
-                // except in incognito, where the band is dropped.
-                titleShownInHeader={topActionsSlotOwner && !privateMode}
+                // except in incognito, where the band is dropped — and only
+                // once it has a title. On the first send the messages exist
+                // before the new conversation reaches the app context's list,
+                // so `headerTitle` is "" and the band renders its spacer, not
+                // an <h1>; keying this on the band alone left the page with no
+                // h1 at all for that window. The list's hidden fallback stays
+                // until the band has something to show.
+                titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
               />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root

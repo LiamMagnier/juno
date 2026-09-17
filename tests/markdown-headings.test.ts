@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown, { type Options } from "react-markdown";
-import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { DEMOTED_HEADINGS, OUTLINE_HEADING_SELECTOR, OUTLINE_HEADING_TAGS } from "@/lib/markdown-headings";
 
 type HastNode = {
   type: string;
@@ -43,6 +45,42 @@ test("every markdown heading level is in the map", () => {
   for (const level of [1, 2, 3, 4, 5, 6]) {
     assert.ok(`h${level}` in DEMOTED_HEADINGS, `h${level} is not remapped`);
   }
+});
+
+test("the outline selector is the demoted image of the levels the writer prompt uses", () => {
+  // The research report reader walks the rendered DOM by tag to build its
+  // table of contents. When the demotion landed it was still asking for
+  // `h1, h2, h3`, matched only the title, and the ToC and scrollspy vanished
+  // from every report. The selector is derived from the map; this pins that
+  // derivation so a literal cannot creep back in on either side.
+  const rendered = new Set(Object.values(DEMOTED_HEADINGS));
+  for (const level of ["h1", "h2", "h3"] as const) {
+    assert.ok(
+      OUTLINE_HEADING_TAGS.includes(DEMOTED_HEADINGS[level]),
+      `${level} renders as ${DEMOTED_HEADINGS[level]}, which the outline selector does not walk`
+    );
+  }
+  for (const tag of OUTLINE_HEADING_TAGS) {
+    assert.ok(rendered.has(tag), `${tag} is in the outline selector but nothing renders as it`);
+  }
+  assert.equal(OUTLINE_HEADING_SELECTOR, OUTLINE_HEADING_TAGS.join(", "));
+  // A demoted document must produce exactly the outline entries the old
+  // `h1, h2, h3` walk found in an undemoted one.
+  const html = render("# Title\n\n## Section\n\n### Sub\n\n#### Four");
+  const matched = OUTLINE_HEADING_TAGS.flatMap((tag) => html.match(new RegExp(`<${tag}>`, "g")) ?? []);
+  assert.equal(matched.length, 3);
+});
+
+test("the report reader uses the outline selector and pins scroll-mt to the same tags", () => {
+  // The scroll margin is a Tailwind arbitrary variant, which has to be a
+  // literal in the source for the class scanner to see it — so it cannot
+  // read the constant, and this is what keeps it from drifting instead.
+  const source = readFileSync(join(process.cwd(), "src/components/research/report-reader.tsx"), "utf8");
+  assert.match(source, /querySelectorAll<HTMLElement>\(OUTLINE_HEADING_SELECTOR\)/);
+  assert.ok(
+    source.includes(`[&_:is(${OUTLINE_HEADING_TAGS.join(",")})]:scroll-mt-24`),
+    "the report article's scroll-mt variant does not name the outline heading tags"
+  );
 });
 
 test("the demotion keeps the attributes a rehype plugin stamped on the heading", () => {

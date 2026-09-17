@@ -1679,12 +1679,15 @@ export function ThoughtProcessPanel({
               {recapSentence}
             </p>
 
-            {/* Two voices, `ui` and `label`, which is the whole budget for
-                chrome (docs/design/PREMIUM_AUDIT.md §3 rule 5: no numerals
-                above ui size anywhere in it). These were 17px mono figures
-                over micro captions — the loudest type in the panel spent on
-                three numbers nobody acts on. Ink carries the hierarchy now:
-                foreground for the figure, muted for its name. */}
+            {/* Two voices in this figure block, `ui` and `label`. The rows
+                below keep their older recipe of ui over caption, so the panel
+                as a whole is still one voice over the two that
+                docs/design/PREMIUM_AUDIT.md §3 rule 5 allows; what the rule
+                does settle here is numerals, none above ui size anywhere in
+                chrome. These were 17px mono figures over micro captions — the
+                loudest type in the panel spent on three numbers nobody acts
+                on. Ink carries the hierarchy now: foreground for the figure,
+                muted for its name. */}
             <div className="mt-3 grid grid-cols-3 gap-3">
               <div className="min-w-0">
                 <div className="truncate font-mono text-ui tabular-nums text-foreground">

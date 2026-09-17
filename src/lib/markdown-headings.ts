@@ -30,3 +30,25 @@ export const DEMOTED_HEADINGS = {
   h5: "h6",
   h6: "h6",
 } satisfies Components;
+
+/**
+ * The tags the writer's `#`, `##` and `###` actually render as, for anything
+ * that walks the rendered DOM by tag name rather than through the components
+ * map. The research report reader builds its table of contents from a
+ * `querySelectorAll` on the article and pins `scroll-mt` to the same set;
+ * when the demotion landed it was still asking for `h1, h2, h3`, matched only
+ * the title, and the ToC — gated on two or more entries — silently vanished
+ * from every report, scrollspy and all. Derived from the map rather than
+ * typed a second time so the two cannot drift again; tests/markdown-headings
+ * pins it. Three levels, not four, because that is the outline the reader
+ * has always offered: the writer prompt stops at `###`, and everything from
+ * `####` down shares the h6 floor and could not be indented meaningfully.
+ */
+export const OUTLINE_HEADING_TAGS = [
+  DEMOTED_HEADINGS.h1,
+  DEMOTED_HEADINGS.h2,
+  DEMOTED_HEADINGS.h3,
+] as const;
+
+/** `OUTLINE_HEADING_TAGS` as a selector list, for `querySelectorAll`. */
+export const OUTLINE_HEADING_SELECTOR: string = OUTLINE_HEADING_TAGS.join(", ");

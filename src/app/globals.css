@@ -2492,7 +2492,14 @@
        `text-body` at 15px: two speakers in one column, a pixel apart. The
        headings and code below are in `em` and follow. A consumer that wants
        another rung (`text-body-lg` on the report reader) still wins: this
-       block is in the components layer, utilities come after it. */
+       block is in the components layer, utilities come after it. The move is
+       not transcript-only: every consumer of the shared Markdown component
+       that passes no size class — the inline artifact card's markdown
+       runtime, the canvas panel's preview, the work site preview, the
+       shared artifact viewer and the shared chat transcript — comes down
+       from the inherited 16px to this rung with it. Deliberate: none of
+       them was on a rung either, and a document surface that wants a
+       larger measure says so the way the report reader does. */
     font-size: 0.9375rem;
     line-height: 1.65;
     word-break: break-word;
