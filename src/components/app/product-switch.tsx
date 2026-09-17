@@ -89,8 +89,17 @@ type Product = {
  *
  * Exported so `use-global-shortcuts` and the shell read one list rather than
  * three copies of it. (The macOS app binds its own order to ⌘1/2/3 — see
- * native/macOS/.../DesktopProductMode.swift; the web cannot take ⌘1–⌘3, which
- * are browser tab switching.)
+ * native/macOS/.../DesktopProductMode.swift; that split is recorded in the
+ * spec's risks, and the web cannot take ⌘1–⌘3, which are browser tab
+ * switching.)
+ *
+ * Where the third one went: the "+" menu of the chat composer, as "Do this as
+ * a task" beside Deep research. You hand Juno an errand with a finish line
+ * instead of opening a conversation, and that choice belongs where you write
+ * the ask — not in the column you navigate with. The run it starts is drawn
+ * inside the conversation that started it. The pill that briefly stood between
+ * those two arrangements was navigation wearing a toggle's clothes, and it is
+ * gone with the rest.
  */
 export const PRODUCTS = [
   { id: "chat", label: "Chat", href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },

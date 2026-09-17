@@ -7,6 +7,7 @@ import {
   NotebookPen,
   Cpu,
   FileUp,
+  Hand,
   Loader2,
   MessageSquarePlus,
   Mic,
@@ -53,9 +54,28 @@ import {
 import { RESEARCH_EFFORT_COPY, researchEffortLabel } from "@/components/research/effort-copy";
 import { researchEffortFor } from "@/lib/research/auto-effort";
 import type { ResearchEffort } from "@/lib/research/domain";
+import {
+  DEFAULT_WORK_PERMISSION_POLICY,
+  WORK_APPROVAL_MODE_LABEL,
+  WORK_APPROVAL_MODE_SUMMARY,
+  WORK_PERMISSION_POLICIES,
+  describeCapability,
+  type WorkPermissionPolicy,
+} from "@/lib/work/domain";
+import { delegationOffer } from "@/lib/work/delegation";
+import { selectForInferred, inferCapabilities, describeInference } from "@/lib/work/inference";
+import {
+  WorkRunDisclosure,
+  runApprovalPhrase,
+} from "@/components/work/clarify/run-disclosure";
+import {
+  fetchWorkHosts,
+  hostCapabilities,
+  hostIsReachable,
+} from "@/components/work/work-transport";
+import type { ClientWorkHost } from "@/lib/work/serializers";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ConnectorMark } from "@/components/connections/connector-logos";
-import { ComposerModeSwitch } from "@/components/chat/composer-mode-switch";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
@@ -108,6 +128,41 @@ import type {
   ReasoningEffort,
 } from "@/types/chat";
 
+/**
+ * The chat field's id, so a card in the transcript can put the cursor in it.
+ *
+ * Named rather than written out at the `<textarea>`, because the run components
+ * the Work merge mounts inside this transcript were built against the /work
+ * thread composer and reach for its field by id. A card that says "Reply below"
+ * and focuses nothing is worse than one that says nothing at all, so the id is
+ * an export a caller can hand to them.
+ */
+export const CHAT_COMPOSER_FIELD_ID = "juno-composer-textarea";
+
+/** Everything a delegated run is created with, assembled in the composer. */
+export interface DelegateInput {
+  /** The sentence, verbatim. It is what the plan is checked back against. */
+  goal: string;
+  /**
+   * Files the reader attached, already uploaded.
+   *
+   * Whole attachments rather than ids, because the caller needs both halves of
+   * them: the ids go to the create route, and the rest is what the USER turn it
+   * writes into the transcript draws its chips from. Handed over as ids alone,
+   * that turn showed no files at all until the conversation was next reloaded,
+   * on a task that had in fact been given every one of them.
+   */
+  attachments: ClientAttachment[];
+  /**
+   * The connected apps this task may reach — the ones switched on in the "+"
+   * menu, and no others. An empty array is a real answer and is sent as one:
+   * the task reaches nothing.
+   */
+  connectorIds: string[];
+  /** How often the run stops to ask, as the pill states it. */
+  permissionPolicy: WorkPermissionPolicy;
+}
+
 interface ComposerProps {
   initialResearch?: boolean;
   conversationId: string | null;
@@ -122,28 +177,77 @@ interface ComposerProps {
   status: GenerationStatus;
   onStop: () => void;
   /**
-   * A deep-research run is gathering, and this composer steers it.
+   * A durable run is going on this conversation, and this composer steers it.
    *
-   * The research surface used to carry its own steering form and its own
-   * pause/stop buttons — a second text field and a second set of transport
-   * controls sitting a few hundred pixels above the real ones, for the same
-   * conversation. The composer is where a person types at a conversation, so
-   * while a run is live it is what direction goes into: text becomes a
-   * constraint (or a pinned source, if it is a URL) on the running
-   * investigation rather than a queued message, and the primary button's Stop
-   * face ends the run rather than only the stream.
+   * Two things arrive here: a deep-research run gathering, and a delegated task
+   * working. Both used to carry their own text field and their own transport
+   * controls — a second box and a second Stop a few hundred pixels above the
+   * real ones, for the same conversation. The composer is where a person types
+   * at a conversation, so while a run is live it is what direction goes into:
+   * text becomes a constraint on the investigation, or an answer to the
+   * question the task asked, rather than a queued message, and the primary
+   * button's Stop face ends the run rather than only the stream.
    *
-   * `active` is narrower than "a run exists": it is true only while a worker is
-   * actually spending, because that is the window in which added direction can
-   * still change what gets read. Absent or inactive and every path below
-   * behaves exactly as it did.
+   * `active` is narrower than "a run exists": the caller sets it only while
+   * typing at the run can still change what it does — a paused research run, a
+   * run at the plan gate and a finished task all steer nothing. Absent or
+   * inactive and every path below behaves exactly as it did.
+   *
+   * The two labels are the caller's because the verbs are not interchangeable.
+   * "Add to the research" and "Answer the task's question" are different
+   * promises, and a component that guessed between them would get it wrong on
+   * exactly the surface where being wrong costs the reader their sentence.
    */
   steering?: {
     active: boolean;
+    /**
+     * The run is not this conversation's generation.
+     *
+     * A deep-research turn and the stream that narrates it are one turn from
+     * the reader's side, so steering one is gated on `isBusy` — the field is
+     * only taken over while the answer is arriving. A delegated task is not a
+     * turn at all: it was dispatched minutes ago, nothing is streaming, and
+     * `isBusy` is false for its entire life. Without this flag the composer
+     * would offer a delegated run no way to be answered, which is precisely the
+     * gap this exists to close.
+     */
+    standalone?: boolean;
     placeholder: string;
+    /** What the primary action says while it sends into the run, not the chat. */
+    sendLabel: string;
+    /** What Stop ends — the run, not only a stream. */
+    stopLabel: string;
+    /** Anything the run needs said directly above the field, e.g. a steer queue. */
+    above?: React.ReactNode;
     /** Resolves true when the server accepted it; the draft clears only then. */
     onSteer: (text: string) => Promise<boolean>;
   } | null;
+  /**
+   * Dispatch this message as a delegated task instead of sending it as a turn.
+   *
+   * Absent means the surface cannot delegate at all — the Code composer, the
+   * project composer — and the "+" menu then has no Task row to switch on. Given
+   * one, the composer arms, draws the pill and the disclosure, and hands over
+   * what the reader assembled; every request the dispatch makes belongs to the
+   * caller, because each is a different call with different preconditions and
+   * this component's job is to say which one is about to be made.
+   *
+   * Resolves false when nothing was started, and the draft stays put — a
+   * refused dispatch that had already emptied the box costs somebody the
+   * paragraph they would then have to retype from memory.
+   */
+  onDelegate?: (input: DelegateInput) => Promise<boolean>;
+  /**
+   * True from the first request of a dispatch to the last.
+   *
+   * `onDelegate` is up to four sequential round trips, and the composer is the
+   * only thing that can stop a second Enter arriving inside that window: the
+   * caller's own guard refuses the second press, but a primary action that stays
+   * lit and a field that still takes Enter say nothing happened, so the reader
+   * presses again. It joins `sendBlocked` rather than `sendLocked` because the
+   * field itself stays live — the draft is still theirs to edit while it goes.
+   */
+  delegating?: boolean;
   pendingClarification?: PendingPreflightClarification | null;
   onSubmitClarification?: (
     answers: PreflightClarificationAnswer[],
@@ -375,6 +479,8 @@ export function Composer({
   status,
   onStop,
   steering,
+  onDelegate,
+  delegating = false,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -515,6 +621,68 @@ export function Composer({
    * flag.
    */
   const researchArmed = research && researchAvailable;
+
+  /*
+   * ── Running this message as a task ────────────────────────────────────────
+   *
+   * Per-send, exactly like deep research, and for the sharper version of the
+   * same reason: a delegated run spends real money on a clock, so "I meant this
+   * one to be a task" must not quietly become "every message I send is a task".
+   * It is cleared on every successful send below.
+   *
+   * Armed only where it is also available. Incognito has no conversation to
+   * attach a run to and an image model has no errand to run, so the row is
+   * absent there rather than disabled — a control that can never work is
+   * furniture (see the "+" menu's own note on screenshots).
+   */
+  const [task, setTask] = React.useState(false);
+  const [taskApprovalMode, setTaskApprovalMode] = React.useState<WorkPermissionPolicy>(
+    DEFAULT_WORK_PERMISSION_POLICY
+  );
+  // `!steering?.active` is not tidiness: while a run is being steered every
+  // send goes into that run, so a Task row would arm something the button
+  // cannot start and the reader would be told a message was delegated when it
+  // had been handed to a run already going.
+  const taskAvailable =
+    !!onDelegate && !privateMode && !voiceActive && !steering?.active && modality === "chat";
+  const taskArmed = task && taskAvailable;
+
+  /*
+   * Where this task will run, read the way the dispatch will read it.
+   *
+   * The host list is fetched only once somebody arms the toggle: every chat in
+   * the product would otherwise ask `/api/work/hosts` on mount for a control
+   * most of them never touch. `null` means "not asked yet", which the
+   * disclosure renders as "Checking where this will run" rather than as a
+   * claim about the cloud it cannot support.
+   *
+   * NEITHER OF THOSE TWO STATES DISABLES SEND, and that is a deliberate
+   * disagreement with `work-composer.tsx`, whose `canStart` refuses both. That
+   * surface is a form whose whole subject is one task, so waiting for the answer
+   * costs a moment; this is a chat box that is also a chat box, and taking the
+   * primary action away from somebody mid-sentence because a list of Macs has
+   * not come back is a worse trade. The dispatch route re-runs the same
+   * selection against real facts and refuses in words if it has to, so nothing
+   * is decided here that the server does not decide again.
+   */
+  const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
+  const [hostsFailed, setHostsFailed] = React.useState(false);
+  React.useEffect(() => {
+    if (!taskArmed || hosts !== null) return;
+    let cancelled = false;
+    void fetchWorkHosts().then((result) => {
+      if (cancelled) return;
+      // A failed load leaves `hosts` null, and the disclosure says Juno cannot
+      // tell rather than naming the cloud. "You have no Mac" and "Juno could not
+      // find out" are different sentences and only one of them is true here.
+      if (result.kind === "ok") setHosts(result.value);
+      else setHostsFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskArmed, hosts]);
+
   const placeholder = pendingClarification
     ? "Or type your own answer…"
     : quote
@@ -528,6 +696,59 @@ export function Composer({
             ? "Describe a video to generate…"
             : "Message Juno…"));
   const [text, setText] = React.useState("");
+
+  /** What the draft looks like it will need, read the way the dispatch reads it. */
+  const taskInference = React.useMemo(
+    () => (taskArmed ? inferCapabilities(text) : null),
+    [taskArmed, text]
+  );
+  const taskSelection = React.useMemo(() => {
+    if (taskInference === null) return null;
+    return selectForInferred({
+      requested: "automatic",
+      inferred: taskInference.capabilities,
+      hosts: (hosts ?? []).filter(hostIsReachable).map((host) => ({
+        hostId: host.id,
+        displayName: host.displayName,
+        state: host.state,
+        enabled: host.enabled,
+        revoked: host.revokedAt !== null,
+        capabilities: hostCapabilities(host),
+      })),
+      // The browser cannot observe whether the cloud executor is accepting
+      // work — `/api/work/hosts` describes Macs and nothing else — so the
+      // preview assumes it is and lets the dispatch be the authority. Assuming
+      // the other way would grey out the send on a fact nobody established.
+      cloudAvailable: true,
+    });
+  }, [taskInference, hosts]);
+
+  /*
+   * The second, quieter trigger: Juno reads the sentence and offers.
+   *
+   * DEBOUNCED, AND ONLY EVER A SUGGESTION. `delegationOffer` is a handful of
+   * regexes over the draft, so running it per keystroke is cheap — what is not
+   * cheap is a caption that appears and disappears under somebody's hands while
+   * they type. 300ms is long enough that it lands on a pause rather than
+   * mid-word.
+   *
+   * Suppressed the moment anything is already armed, and while a run is being
+   * steered: offering to run as a task a message that is on its way into a
+   * running task would be the product arguing with itself.
+   */
+  const [settledDraft, setSettledDraft] = React.useState("");
+  React.useEffect(() => {
+    const timer = setTimeout(() => setSettledDraft(text), 300);
+    return () => clearTimeout(timer);
+  }, [text]);
+  const offer = React.useMemo(
+    () =>
+      taskAvailable && !task && !research && !steering?.active
+        ? delegationOffer(settledDraft)
+        : null,
+    [taskAvailable, task, research, steering?.active, settledDraft]
+  );
+
   // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
   // multi-10k curricula don't freeze / blank the tab. Expand to edit inline.
   const [draftExpanded, setDraftExpanded] = React.useState(false);
@@ -824,19 +1045,35 @@ export function Composer({
 
   const clarificationOpen = !!pendingClarification;
   /**
-   * Steering mode: busy, but with somewhere for typing to go.
+   * Steering mode: a run is going, and typing has somewhere to go.
    *
-   * Gated on `isBusy` as well as on the caller's flag, because a run and a
-   * generation are the same turn from the user's side and the field is only
-   * locked during the second. A clarification owns the composer outright while
-   * it is up, so it wins over steering — answering the question is the only
-   * thing that moves anything forward.
+   * A deep-research run is gated on `isBusy` as well as on the caller's flag,
+   * because that run and the generation narrating it are the same turn from the
+   * reader's side and the field is only taken over while the answer is
+   * arriving. That argument holds for research and only for research: a
+   * delegated task was dispatched minutes ago, nothing is streaming, and
+   * `isBusy` is false for its whole life — so a caller whose run is not this
+   * conversation's generation says `standalone` and is taken at its word. See
+   * the prop.
+   *
+   * A clarification owns the composer outright while it is up, so it wins over
+   * steering either way — answering the question is the only thing that moves
+   * anything forward.
    */
   const steerMode =
     !!steering?.active &&
-    isBusy &&
+    (isBusy || steering.standalone === true) &&
     status !== "checking" &&
     !pendingClarification;
+  /**
+   * A run that is going while nothing is streaming.
+   *
+   * This is what makes Stop mean the run rather than the generation: with a
+   * delegated task there IS no generation, so `isBusy` is false and the primary
+   * action would otherwise sit on its send face over an empty field, offering
+   * the one verb that does nothing. The caller's `onStop` cancels the run.
+   */
+  const standaloneRun = !!steering?.active && steering.standalone === true;
   const controlsLocked = isBusy || sendLocked || uploading || !!quotaReached;
   /**
    * What the "+" menu is locked by, which is much less than the send button is.
@@ -856,16 +1093,27 @@ export function Composer({
    * ordinary thing a person does in a chat, and Enter hands the draft to
    * the chat hook, which queues it for the moment the reply ends — or
    * refuses it, in which case the draft simply stays where it was.
+   *
+   * A dispatch in flight IS on this list, and it is the one case where a request
+   * already sent blocks the next send: a delegation is four calls that spend a
+   * run ceiling, not a stream that queues.
    */
-  const sendBlocked = sendLocked || uploading || !!quotaReached;
+  const sendBlocked = sendLocked || uploading || !!quotaReached || delegating;
   const canSend = steerMode
     ? // No attachments and no clarification answers: direction is words, and a
       // file cannot be handed to a run that is already reading.
       text.trim().length > 0 && !sendLocked && !quotaReached
-    : (text.trim().length > 0 ||
-        sendAttachments.length > 0 ||
-        clarificationAnswers.length > 0) &&
-      !sendBlocked;
+    : taskArmed
+      ? // A task needs a sentence. Files alone satisfy an ordinary send — "look
+        // at this" is a complete message — but they are not an errand, and
+        // `submit` refuses a task with an empty draft. Left out of this
+        // condition, attaching a file to an armed pill lit the primary action
+        // for a press that returned silently and said nothing.
+        text.trim().length > 0 && !sendBlocked
+      : (text.trim().length > 0 ||
+          sendAttachments.length > 0 ||
+          clarificationAnswers.length > 0) &&
+        !sendBlocked;
 
   /*
    * VOICE IS BACK IN THE SEND SLOT, under one condition: there is nothing to
@@ -900,7 +1148,7 @@ export function Composer({
       ? "checking"
       : steerMode && text.trim().length > 0
         ? "send"
-        : isBusy
+        : isBusy || standaloneRun
           ? "stop"
           : canSend || !voiceAvailable
             ? "send"
@@ -994,6 +1242,58 @@ export function Composer({
     ],
   );
 
+  /**
+   * Hands the draft over as a delegated run, and clears the row on success.
+   *
+   * A callback of its own because two paths reach it — Enter, and a dictation
+   * ended with Send — and dictation is the one that would go wrong silently: it
+   * builds its own outgoing message and calls `onSend` directly, so without
+   * this a spoken errand with the Task pill armed would be sent as an ordinary
+   * chat turn and the pill would simply disappear.
+   *
+   * The quote and the connector detection below `submit` are deliberately not
+   * applied. A task has no artifact selection to anchor on, and the apps it may
+   * reach are the ones switched on in the "+" menu and no others: auto-enabling
+   * an app from a phrase is reasonable for a chat turn, which answers in ten
+   * seconds and can be read, and is a permission granted by a regex for a run
+   * that will act through that app for the next twenty minutes — with the
+   * disclosure line above the button describing a different set from the one
+   * dispatched.
+   *
+   * The approval mode goes back to the default afterwards, on the same argument
+   * the arming itself is per-send: "just do it" chosen for one errand is a
+   * licence granted to that errand, not a setting somebody turned on.
+   */
+  const dispatchTask = React.useCallback(
+    async (goal: string): Promise<boolean> => {
+      if (!onDelegate) return false;
+      const started = await onDelegate({
+        goal,
+        attachments: sendAttachments,
+        connectorIds: [...connectorsEnabled],
+        permissionPolicy: taskApprovalMode,
+      });
+      if (!started) return false;
+      setText("");
+      setDraftExpanded(false);
+      setTask(false);
+      setTaskApprovalMode(DEFAULT_WORK_PERMISSION_POLICY);
+      clear();
+      onClearQuote?.();
+      requestAnimationFrame(autoresize);
+      return true;
+    },
+    [
+      onDelegate,
+      sendAttachments,
+      connectorsEnabled,
+      taskApprovalMode,
+      clear,
+      onClearQuote,
+      autoresize,
+    ]
+  );
+
   const submit = async (overrideText?: string) => {
     const draft = overrideText !== undefined ? overrideText : text;
     const trimmedDraft = draft.trim();
@@ -1022,6 +1322,15 @@ export function Composer({
         if (success) {
           setClarificationAnswers([]);
         }
+        return;
+      }
+      // Delegated, not sent. Before the quote and connector work below because
+      // none of it applies — see `dispatchTask`. `taskArmed` already carries
+      // "there is an `onDelegate`", so re-testing it here would be a condition
+      // TypeScript can prove is always true.
+      if (taskArmed) {
+        if (!trimmedDraft) return;
+        await dispatchTask(trimmedDraft);
         return;
       }
       // A quoted selection wraps the user text in a structured block the model
@@ -1070,6 +1379,17 @@ export function Composer({
         });
         return;
       }
+      // A spoken errand with the Task pill armed is still a task. Without this
+      // the dictation path — which builds its own outgoing message rather than
+      // going through `submit` — would send it as an ordinary chat turn and
+      // quietly drop the arming.
+      if (taskArmed) {
+        void (async () => {
+          const started = await dispatchTask(merged);
+          if (!started) setText(merged); // keep the words on a refusal
+        })();
+        return;
+      }
       interceptedDraftRef.current = merged;
       const outgoing = quote ? serializeQuote(quote, merged) : merged;
       void (async () => {
@@ -1101,6 +1421,8 @@ export function Composer({
       autoresize,
       setDictating,
       resolveSendConnectors,
+      taskArmed,
+      dispatchTask,
     ],
   );
 
@@ -1846,6 +2168,7 @@ export function Composer({
   // axis that wasn't. Order matches the menu, so hearing the label and opening
   // the menu agree.
   const armedToolsInGroup = [
+    taskArmed ? `task, ${runApprovalPhrase(taskApprovalMode)}` : null,
     researchArmed ? "deep research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
     settings.memoryEnabled ? "memory" : null,
@@ -1995,6 +2318,67 @@ export function Composer({
     </>
   );
 
+  /*
+   * Arming is exclusive, and the exclusion is real rather than tidy. A deep
+   * research turn is a generation this conversation waits for; a task is a run
+   * dispatched to an executor. One sentence cannot be both, and `onDelegate`
+   * ignores `sendOptions` entirely — so a message armed as both would silently
+   * lose the research flag at the moment of send, which is the quietest kind of
+   * wrong this composer can be.
+   */
+  const armResearch = React.useCallback(() => {
+    setResearch((on) => !on);
+    setTask(false);
+  }, []);
+  const armTask = React.useCallback(() => {
+    setTask((on) => !on);
+    setResearch(false);
+  }, []);
+
+  /** The three modes, as radio rows. Each carries its own sentence, because
+   *  "Just do it" alone reads as a promise never to interrupt — which is false
+   *  in four cases, and discovering that from a prompt you were told would not
+   *  come is how somebody concludes the control does not work. */
+  const taskApprovalPanel = () => (
+    <>
+      {WORK_PERMISSION_POLICIES.map((policy) => (
+        <PlusMenuRow
+          key={policy}
+          selected={policy === taskApprovalMode}
+          description={WORK_APPROVAL_MODE_SUMMARY[policy]}
+          onSelect={() => setTaskApprovalMode(policy)}
+        >
+          {WORK_APPROVAL_MODE_LABEL[policy]}
+        </PlusMenuRow>
+      ))}
+    </>
+  );
+
+  const taskRow: PlusMenuItem | null = taskAvailable
+    ? {
+        kind: "toggle",
+        id: "task",
+        label: "Do this as a task",
+        icon: ComposerIcons.task,
+        checked: task,
+        // Only while it is ON, like the research row's depth: a mode named on an
+        // off row reads as the state rather than as what the state would be.
+        detail: task ? WORK_APPROVAL_MODE_LABEL[taskApprovalMode] : undefined,
+        onToggle: armTask,
+      }
+    : null;
+
+  const taskApprovalRow: PlusMenuItem | null = taskArmed
+    ? {
+        kind: "sub",
+        id: "task-approvals",
+        label: "How often it asks",
+        icon: Hand,
+        detail: WORK_APPROVAL_MODE_LABEL[taskApprovalMode],
+        render: taskApprovalPanel,
+      }
+    : null;
+
   const researchRow: PlusMenuItem | null =
     researchAvailable
       ? {
@@ -2008,7 +2392,7 @@ export function Composer({
           // would be, which is the one thing a row with no switch cannot
           // afford to get wrong.
           detail: research ? researchEffortLabel(researchEffort) : undefined,
-          onToggle: () => setResearch((v) => !v),
+          onToggle: armResearch,
         }
       : null;
 
@@ -2103,6 +2487,12 @@ export function Composer({
         // switch and nothing that can be left switched off by accident.
         [
           ...(researchRow ? [researchRow] : []),
+          // Beside Deep research, because they are the same kind of decision
+          // about the same sentence: how far Juno should go with it. The mode
+          // row appears only once the toggle is on — how often a task asks is
+          // not a question anybody has while composing an ordinary message.
+          ...(taskRow ? [taskRow] : []),
+          ...(taskApprovalRow ? [taskApprovalRow] : []),
           {
             kind: "toggle",
             id: "search",
@@ -2230,6 +2620,12 @@ export function Composer({
           )}
           above={
             <>
+              {/* Whatever the run needs said directly above the field — for a
+                  task, the instructions it has been given and not yet taken a
+                  turn on. It sits here rather than in the transcript because the
+                  question it answers ("did my redirect land?") is asked at the
+                  moment of typing the next one. */}
+              {steerMode && steering?.above}
               {dragging && !privateMode && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
                   <FileUp className="size-6 text-primary" />
@@ -2572,7 +2968,7 @@ export function Composer({
             !showCollapsedDraft && (
               <textarea
                 ref={textareaRef}
-                id="juno-composer-textarea"
+                id={CHAT_COMPOSER_FIELD_ID}
                 aria-label={
                   steerMode && steering
                     ? steering.placeholder
@@ -2638,11 +3034,41 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
-            {/* AFTER "+", not before it. "+" is the composer's own left
-                anchor — it is the control that has always started this row and
-                the one the hand goes to without looking — so the mode switch
-                sits beside it rather than displacing it. */}
-            <ComposerModeSwitch />
+            {taskArmed && (
+              /* The armed task, beside "+", on the research pill's recipe —
+                 same height, same tonal fill, same removable tail. Two ways of
+                 arming one message should not look like two different kinds of
+                 object. */
+              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-10">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setPlusOpen(true)}
+                      aria-label={`This message runs as a task, and ${runApprovalPhrase(taskApprovalMode)}. Opens the add menu.`}
+                      className="inline-flex h-full items-center gap-1.5 pl-2.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      <ComposerIcons.task aria-hidden className="size-3.5" />
+                      <span>Task</span>
+                      <span aria-hidden className="text-primary-ink/60">·</span>
+                      <span>{runApprovalPhrase(taskApprovalMode)}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-64 text-center">
+                    {WORK_APPROVAL_MODE_SUMMARY[taskApprovalMode]}
+                  </TooltipContent>
+                </Tooltip>
+                <button
+                  type="button"
+                  disabled={controlsLocked}
+                  onClick={() => setTask(false)}
+                  aria-label="Don’t run this as a task"
+                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+                >
+                  <X aria-hidden className="size-3.5" />
+                </button>
+              </span>
+            )}
             {researchArmed && (
               /* h-8, like every other control on this row: a pill one pixel
                  taller or shorter than its neighbours is the kind of thing you
@@ -2745,14 +3171,21 @@ export function Composer({
                         primaryFace === "stop"
                           ? status === "stopping"
                             ? "Stopping generation"
-                            : "Stop generating"
+                            : // The caller names what Stop ends. A delegated run
+                              // and a streaming answer are both "stop" on this
+                              // button and they end very different things, and
+                              // the one word the button can afford has to be the
+                              // right one.
+                              (steerMode && steering ? steering.stopLabel : "Stop generating")
                           : primaryFace === "voice"
                             ? "Start voice conversation"
                             : uploading
                               ? "Send — waiting for the attachment to finish uploading"
-                              : steerMode
-                                ? "Add this to the research"
-                                : "Send message"
+                              : steerMode && steering
+                                ? steering.sendLabel
+                                : taskArmed
+                                  ? "Start this as a task"
+                                  : "Send message"
                       }
                     />
                   </TooltipTrigger>
@@ -2762,20 +3195,72 @@ export function Composer({
                         silently, and the only clue was a progress ring on a
                         56px tile. The button now names its own blocker. */}
                     {primaryFace === "stop"
-                      ? steerMode
-                        ? "Stop the research"
+                      ? steerMode && steering
+                        ? steering.stopLabel
                         : "Stop"
                       : primaryFace === "voice"
                         ? "Voice conversation"
                         : uploading
                           ? "Waiting for the upload to finish"
-                          : steerMode
-                            ? "Add to the research"
-                            : "Send"}
+                          : steerMode && steering
+                            ? steering.sendLabel
+                            : taskArmed
+                              ? "Start as a task"
+                              : "Send"}
                   </TooltipContent>
                 </Tooltip>
           }
         />
+
+            {/* What this run commits to, under the field, computed by the same
+                function the dispatch route runs — so the sentence read is the
+                sentence acted on. One line and one chevron; see
+                `run-disclosure.tsx` for why it is not a stack of five. */}
+            {taskArmed && taskSelection !== null && (
+              <WorkRunDisclosure
+                target={taskSelection.target}
+                hostName={
+                  (hosts ?? []).find((host) => host.id === taskSelection.hostId)?.displayName ??
+                  null
+                }
+                loading={hosts === null && !hostsFailed}
+                unknown={hostsFailed && hosts === null}
+                connectorLabels={connectors
+                  .filter((connector) => connectorsEnabled.includes(connector.id))
+                  .map((connector) => connector.label)}
+                approvalMode={taskApprovalMode}
+                inferenceLine={
+                  taskInference === null
+                    ? null
+                    : describeInference(taskInference, describeCapability)
+                }
+                // `|| null` rather than the raw string: `TargetSelection`
+                // always carries an `explanation` field and an empty one would
+                // draw a labelled row with nothing under it.
+                runLine={taskSelection.explanation || null}
+              />
+            )}
+
+            {/* The quieter trigger: Juno reads the sentence and offers, once,
+                with one chip. It never arms itself — see `delegation.ts` for the
+                asymmetry that makes suggesting right and deciding wrong. */}
+            {offer !== null && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1.5">
+                <p className="min-w-0 flex-1 text-caption leading-relaxed text-muted-foreground">
+                  {offer.caption}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 gap-1.5"
+                  onClick={armTask}
+                >
+                  <ComposerIcons.task className="size-3.5" aria-hidden="true" />
+                  {offer.chip}
+                </Button>
+              </div>
+            )}
 
             <input
               ref={imageInputRef}

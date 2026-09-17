@@ -21,7 +21,7 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  * This is the renderer the strip was standing in for: a mono command card
  * with its output one press away and its exit status on the row, a file row
  * with churn and its diff one press away, and an approval row. It is mounted
- * through `MessageList`'s `researchContents` slot (see
+ * through `MessageList`'s `inlineRuns` slot (see
  * `useCodeActivityContents`), the one hook the chat transcript offers for
  * placing a surface's own nodes beside a turn without the chat components
  * knowing what they are.
@@ -336,7 +336,7 @@ export function CodeActivity({
 }
 
 /**
- * The transcript's Code rows, shaped for `MessageList`'s `researchContents`.
+ * The transcript's Code rows, shaped for `MessageList`'s `inlineRuns`.
  *
  * One node per ASSISTANT turn that has rows to draw, dated at the turn so the
  * list places it directly under that turn. `CodeActivityEvent` is the hook's

@@ -15,7 +15,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { ComposerModeSwitch } from "@/components/chat/composer-mode-switch";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -1043,10 +1042,13 @@ export function WorkComposer({
                 project={project === null ? { projects, onPick: setProject } : undefined}
                 onTalk={voice.onOpenVoiceMode}
               />
-              {/* The way back, in the same position it holds in the chat
-                  composer: after "+". The switch is the same control on both
-                  sides, so Chat and Work are one choice made in one place. */}
-              <ComposerModeSwitch />
+              {/* No Chat|Work switch here any more. Work stopped being a place
+                  you navigate to: a delegated run is armed from the chat
+                  composer's "+" menu and lives in the conversation that started
+                  it (docs/design/TWO_PRODUCTS.md §2). A pill offering to
+                  navigate between two products, on a surface that is itself
+                  being retired, would be teaching the idea this change exists to
+                  remove. */}
               </>
             }
             trailing={
