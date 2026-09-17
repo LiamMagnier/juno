@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import { needsYou } from "@/components/work/inbox/triage";
 import { newestPerConversation, workRunNeedsYou } from "@/lib/conversation-status";
+import { describeNeedsYouRise } from "@/lib/work/notifications";
 import {
   WORK_POLL_MS,
   WORK_SYNC_EVENT,
@@ -40,6 +42,29 @@ import {
  * recently active ones can. It is still in its transcript and still in search —
  * what it loses is the fold. The honest fix if an account ever grows that far
  * is a server-side triage query, not a second poll here.
+ *
+ * ── Saying it, not only listing it ──────────────────────────────────────────
+ *
+ * A fold in a column is a notification only for somebody already looking at
+ * that column, and a Work run outlives the tab that started it — so the reader
+ * this list exists for is usually reading something else. When the number of
+ * conversations waiting on a person RISES, `useWorkRunsByConversation` says so
+ * twice: a toast for the reader who is in the app, and a system notification
+ * for the reader whose browser is behind another window.
+ *
+ * The system notification is deliberately best-effort and never prompts. Asking
+ * for permission unbidden is the pattern every browser built a mute button for;
+ * a reader who has already granted it to this origin gets it, and everybody
+ * else gets the toast. It cannot reach a tab that is hidden, because nothing is
+ * polled while the tab is hidden — that is the trade the paragraph above makes
+ * and it is not being reopened for a nicer notification. The channel that does
+ * reach a closed tab is the account change feed, and Work joins it when
+ * `prisma/migrations-pending/20260815141000_work_change_capture_triggers` is
+ * safe to apply; see `src/lib/work/notify/deliver.ts` for why it is not yet.
+ *
+ * IT ANNOUNCES FROM THE SIDEBAR'S POLL, not from `useWorkNeedsYouCount`. That
+ * hook's only caller was the Chat|Work pill this merge deletes, so announcing
+ * there would be announcing from a surface nobody mounts.
  */
 
 const SESSION_PAGE = 100;
@@ -125,7 +150,7 @@ const EMPTY: WorkRunsByConversation = {
 export function useWorkRunsByConversation({ enabled = true }: { enabled?: boolean } = {}): WorkRunsByConversation {
   const sessions = useWorkSessionPoll({}, enabled);
 
-  return React.useMemo(() => {
+  const result = React.useMemo(() => {
     if (sessions === null) return EMPTY;
     const byConversation = newestPerConversation(
       sessions,
@@ -138,6 +163,22 @@ export function useWorkRunsByConversation({ enabled = true }: { enabled?: boolea
     }
     return { byConversation, needsYou: needsYouIds, loaded: true };
   }, [sessions]);
+
+  /*
+   * Announced in an effect rather than in the memo above, because saying
+   * something out loud is a side effect and a memo may run twice. The previous
+   * value lives in a ref so the effect depends only on the number it is
+   * comparing: a dependency on the count's own state would re-run the effect
+   * that sets it.
+   */
+  const previous = React.useRef<number | null>(null);
+  const waiting = result.loaded ? result.needsYou.size : null;
+  React.useEffect(() => {
+    announceRise(previous.current, waiting);
+    previous.current = waiting;
+  }, [waiting]);
+
+  return result;
 }
 
 /**
@@ -155,3 +196,32 @@ export function useWorkNeedsYouCount(): number | null {
   const sessions = useWorkSessionPoll({ needsAttention: true }, true);
   return sessions === null ? null : sessions.filter(needsYou).length;
 }
+
+/**
+ * Says a rise out loud, in whichever of the two ways is available.
+ *
+ * Never throws. Every branch here is optional browser surface — `Notification`
+ * is absent in an insecure context and in some embedded webviews, and its
+ * constructor throws on a few platforms even when the object exists — and a
+ * counter that stopped updating because an announcement failed would be a
+ * strictly worse outcome than an announcement nobody heard.
+ */
+function announceRise(previous: number | null, next: number | null): void {
+  const sentence = describeNeedsYouRise(previous, next);
+  if (sentence === null) return;
+
+  toast(sentence, { description: "Open the task to answer it." });
+
+  try {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    // `tag` collapses successive notifications into one entry rather than
+    // stacking them: the reader needs to know that something is waiting, not
+    // to clear four of them.
+    new Notification(sentence, { body: "Open Juno to answer it.", tag: WORK_NEEDS_YOU_TAG });
+  } catch {
+    // Permission granted and the constructor still refused. The toast is out.
+  }
+}
+
+/** One notification for this, replaced rather than repeated. */
+const WORK_NEEDS_YOU_TAG = "juno-work-needs-you";

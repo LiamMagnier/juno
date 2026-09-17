@@ -18,7 +18,9 @@ import {
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
 import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import type { Plan } from "@prisma/client";
+import { ceilingFieldValue, runBudgetForPlan } from "@/lib/work/budget";
+import { useApp } from "@/components/app/app-provider";
 import { MODEL_LIST } from "@/lib/models";
 import { isWorkCapableModel } from "@/lib/work/models";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
@@ -157,8 +159,8 @@ interface ScheduleDraft {
   maxConcurrentRuns: number;
   /**
    * Per-run ceilings, as the reader types them: dollars, tokens and minutes.
-   * Empty means "the standard ceiling" — the dispatchers merge zeros with
-   * `DEFAULT_RUN_BUDGET`, so an empty field is the honest default, not
+   * Empty means "whatever my plan allows" — the dispatchers merge zeros with
+   * `runBudgetForPlan`, so an empty field is the honest default, not
    * "unlimited".
    */
   budget: { costUsd: string; tokens: string; minutes: string };
@@ -170,23 +172,27 @@ function oneOf<T extends string>(options: readonly T[], value: string, fallback:
   return (options as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
-/** The standard ceilings in the units the fields take, for placeholders and caps. */
-const STANDARD_CEILING = {
-  costUsd: DEFAULT_RUN_BUDGET.maxCostMicroUsd / 1_000_000,
-  tokens: DEFAULT_RUN_BUDGET.maxTokens,
-  minutes: Math.round(DEFAULT_RUN_BUDGET.maxRuntimeMs / 60_000),
-} as const;
+/**
+ * This account's ceilings in the units the fields take, for placeholders and
+ * caps.
+ *
+ * Read from the plan, because a schedule may only ever LOWER a ceiling: a
+ * placeholder or a cap showing PRO's twenty minutes to a trial account would
+ * invite a number the dispatcher then silently narrows to ten, and the reader
+ * would have no way to tell that from a bug.
+ */
+function standardCeiling(plan: Plan) {
+  const budget = runBudgetForPlan(plan);
+  return {
+    costUsd: budget.maxCostMicroUsd / 1_000_000,
+    tokens: budget.maxTokens,
+    minutes: Math.round(budget.maxRuntimeMs / 60_000),
+  };
+}
 
 /** A stored ceiling as a field value: zero is "standard", and shows as empty. */
 function ceilingField(value: number): string {
   return value > 0 ? String(value) : "";
-}
-
-/** A typed ceiling as a number, or null when it is not one this form can send. */
-function ceilingValue(raw: string): number | null {
-  if (raw.trim() === "") return 0;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function draftFrom(schedule: ClientWorkSchedule): ScheduleDraft {
@@ -267,6 +273,9 @@ export function WorkScheduleEditor({
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
   const [grants, setGrants] = React.useState<ClientWorkGrant[] | null>(null);
+  // The account's own ceilings, which the fields below can only lower.
+  const { quota } = useApp();
+  const ceiling = standardCeiling(quota.plan);
 
   React.useEffect(() => {
     if (draft.timezone.length > 0) return;
@@ -314,10 +323,15 @@ export function WorkScheduleEditor({
   // a local schedule has to name its Mac, or a 07:00 fire lands on whichever
   // laptop happens to be awake.
   const missingHost = draft.target === "local" && draft.hostId === null;
+  // Checked against this account's own ceilings, not merely against zero. The
+  // `max` attributes below are advisory — a browser flags the overflow and
+  // still reports the value — so without this the form saved a figure the
+  // dispatcher then narrowed, which is the outcome the placeholders exist to
+  // prevent.
   const budget = {
-    costUsd: ceilingValue(draft.budget.costUsd),
-    tokens: ceilingValue(draft.budget.tokens),
-    minutes: ceilingValue(draft.budget.minutes),
+    costUsd: ceilingFieldValue(draft.budget.costUsd, ceiling.costUsd),
+    tokens: ceilingFieldValue(draft.budget.tokens, ceiling.tokens),
+    minutes: ceilingFieldValue(draft.budget.minutes, ceiling.minutes),
   };
   const budgetValid = budget.costUsd !== null && budget.tokens !== null && budget.minutes !== null;
   const canSave =
@@ -520,9 +534,9 @@ export function WorkScheduleEditor({
         `maxConcurrentRuns` on both schedule routes — and the editor sent
         defaults for all of them: zeros for the budget, nothing for the model,
         one for concurrency. Zero on a budget column means "no ceiling of the
-        schedule's own"; the dispatchers now merge it with the standard run
-        budget, so an empty field here is that standard, and a number is a
-        LOWER one. The placeholders say what the standard is so the reader is
+        schedule's own"; the dispatchers now merge it with the account's plan
+        ceiling, so an empty field here is that ceiling, and a number is a
+        LOWER one. The placeholders say what the plan allows so the reader is
         never asked to lower a ceiling they were not told.
       */}
       <section>
@@ -532,16 +546,19 @@ export function WorkScheduleEditor({
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="schedule-budget-cost">Cost, in US dollars</Label>
+            {/* A cent, not a quarter. FREE's whole run ceiling is $0.15, so
+                every quarter-step above zero was above the max as well, and a
+                trial account's cost field could hold nothing but empty. */}
             <Input
               id="schedule-budget-cost"
               type="number"
               inputMode="decimal"
               min={0}
-              max={STANDARD_CEILING.costUsd}
-              step="0.25"
+              max={ceiling.costUsd}
+              step="0.01"
               value={draft.budget.costUsd}
               onChange={(event) => set("budget", { ...draft.budget, costUsd: event.target.value })}
-              placeholder={String(STANDARD_CEILING.costUsd)}
+              placeholder={String(ceiling.costUsd)}
               disabled={saving}
               className="mt-1"
             />
@@ -553,11 +570,11 @@ export function WorkScheduleEditor({
               type="number"
               inputMode="numeric"
               min={0}
-              max={STANDARD_CEILING.tokens}
+              max={ceiling.tokens}
               step={10_000}
               value={draft.budget.tokens}
               onChange={(event) => set("budget", { ...draft.budget, tokens: event.target.value })}
-              placeholder={String(STANDARD_CEILING.tokens)}
+              placeholder={String(ceiling.tokens)}
               disabled={saving}
               className="mt-1"
             />
@@ -569,26 +586,28 @@ export function WorkScheduleEditor({
               type="number"
               inputMode="numeric"
               min={0}
-              max={STANDARD_CEILING.minutes}
+              max={ceiling.minutes}
               step={1}
               value={draft.budget.minutes}
               onChange={(event) => set("budget", { ...draft.budget, minutes: event.target.value })}
-              placeholder={String(STANDARD_CEILING.minutes)}
+              placeholder={String(ceiling.minutes)}
               disabled={saving}
               className="mt-1"
             />
           </div>
         </div>
         <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-          Empty means the standard ceiling — ${STANDARD_CEILING.costUsd},{" "}
-          {STANDARD_CEILING.tokens.toLocaleString("en-US")} tokens or {STANDARD_CEILING.minutes}{" "}
+          Empty means your plan’s ceiling — ${ceiling.costUsd},{" "}
+          {ceiling.tokens.toLocaleString("en-US")} tokens or {ceiling.minutes}{" "}
           minutes of working time, whichever comes first. A number here lowers one of them for this
           schedule; nothing raises them. A run fired while nobody is watching is capped at $
-          {Math.min(STANDARD_CEILING.costUsd, 1)} unless you set a lower figure.
+          {Math.min(ceiling.costUsd, 1)} unless you set a lower figure.
         </p>
         {!budgetValid && (
           <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
-            Each ceiling has to be a number of zero or more, or left empty.
+            Each ceiling has to be left empty, or a number between zero and your plan’s own —
+            ${ceiling.costUsd}, {ceiling.tokens.toLocaleString("en-US")} tokens, {ceiling.minutes}{" "}
+            minutes.
           </p>
         )}
 

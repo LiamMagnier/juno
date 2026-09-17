@@ -60,6 +60,9 @@ import {
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
+import { maxStepsForBudget } from "@/lib/work/budget";
+import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
+import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
@@ -285,17 +288,19 @@ async function withDeadline<T>(work: Promise<T>, ms: number, whenLate: string): 
  * log with rows already in it, and a route that switched to writing `answer`
  * would leave every row written before the deploy unreadable. The reader is the
  * side that can afford to be tolerant of both, and the only side that can be.
+ *
+ * The query selects the answer to THIS question rather than reading the newest
+ * answer and testing its id afterwards; `answer-lookup.ts` states what goes
+ * wrong when it does not, which for a question asked under a fixed id is a
+ * gate the run can never leave.
  */
 async function pollAnswer(runId: string, questionId: string): Promise<string | null> {
   const event = await prismaUnguarded.workEvent.findFirst({
-    where: { runId, kind: "question_answered" },
+    where: answeredQuestionWhere(runId, questionId),
     orderBy: { seq: "desc" },
   });
   if (!event) return null;
-  const payload = event.payload as { questionId?: string; text?: string; answer?: string } | null;
-  if (!payload || payload.questionId !== questionId) return null;
-  if (typeof payload.text === "string") return payload.text;
-  return typeof payload.answer === "string" ? payload.answer : null;
+  return answerTextFromPayload(event.payload, questionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -2815,7 +2820,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     egressDomains,
   });
 
-  const policy = (run.permissionPolicy ?? {}) as { policy?: unknown };
+  const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
   const skill = await applySkill({
     userId: input.userId,
     goal: run.session.goal,
@@ -2975,6 +2980,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     tools: effectiveTools,
     plan,
     budget,
+    // The step cap, scaled to the runtime this run was actually given.
+    //
+    // The runtime's own MAX_STEPS_PER_RUN is 200, a figure sized for the twenty
+    // minutes every run used to get. Now that the ceiling is shaped by the plan
+    // a longer run would still stop at two hundred model turns, which makes the
+    // clock it was sold decorative: the budget bar would read a quarter full
+    // and the run would end anyway, for a reason no surface names. Scaled by
+    // the runtime ratio the two ceilings agree again, and the step cap goes
+    // back to being what it was written as - a backstop against a run going in
+    // a circle, not the thing that ends long work.
+    maxSteps: maxStepsForBudget(budget, runtime.MAX_STEPS_PER_RUN),
     // What a token costs, so the run's spend is a number and its ceiling is a
     // ceiling.
     //
@@ -3034,6 +3050,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // unreadable: a run whose mode did not survive should ask more, not less.
     // The narrowing against a Mac's own floor already happened at dispatch.
     approvalMode: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
+    // Show the plan to the reader before acting on it, when the mode they chose
+    // says to. The rule is `confirmPlanBeforeActing` and the whole argument for
+    // it is there; what matters here is that the dispatcher's blob is the only
+    // input, so a run reproduces the same decision on every resume.
+    //
+    // `attended` is absent on the blob the manual dispatch route writes and
+    // false on the one the scheduler and the trigger poller write, so an
+    // absent value reads as attended - which is what a run started by somebody
+    // pressing a button is. Read the other way round, every manual run would
+    // silently skip the gate.
+    confirmPlan: confirmPlanBeforeActing({
+      policy: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
+      attended: policy.attended !== false,
+    }),
     callbacks: {
       onEvent: (event) => {
         // Narrowed rather than cast. The runtime and the database share a

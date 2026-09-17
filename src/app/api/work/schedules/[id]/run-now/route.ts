@@ -3,13 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
+import { getUserPlan } from "@/lib/usage";
 import {
   WORK_LIVE_STATUSES,
   narrowestBudget,
   narrowestPolicy,
   selectTarget,
 } from "@/lib/work/domain";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import { runBudgetForPlan } from "@/lib/work/budget";
 import { createRun } from "@/lib/work/store";
 import { serializeRun } from "@/lib/work/serializers";
 import {
@@ -145,6 +146,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     attended: true,
   };
 
+  // Read once and used twice: it shapes the ceiling below and it is what spend
+  // admission measures the run against. Reading it separately in each place is
+  // two chances for a subscription that lapsed mid-request to be refused
+  // against one plan and dispatched under another's ceiling.
+  const plan = await getUserPlan(user.id);
+
   const created = await createRun({
     sessionId: schedule.sessionId,
     userId: user.id,
@@ -163,20 +170,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     availableCapabilities: selection.available,
     degradation: selection.degradation,
     permissionPolicy,
-    // The schedule's own figures, narrowed against the standard ceiling. A
-    // schedule with no budget of its own stores zeros, and zero means "no
+    // The schedule's own figures, narrowed against this account's plan ceiling.
+    // A schedule with no budget of its own stores zeros, and zero means "no
     // ceiling" to `budgetExceeded` — so before this merge a run pressed from
     // the schedule page was the only kind with nothing but the 200-turn cap
-    // bounding it, while the same task started from the composer got $2.
-    // `narrowestBudget` skips the zeros rather than clamping to them.
+    // bounding it, while the same task started from the composer got a real
+    // one. `narrowestBudget` skips the zeros rather than clamping to them.
     budget: narrowestBudget(
       {
         maxCostMicroUsd: schedule.maxCostMicroUsd,
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      DEFAULT_RUN_BUDGET
+      runBudgetForPlan(plan)
     ),
+    plan,
     idempotencyKey,
   });
 

@@ -1118,6 +1118,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Gemini Flash"
   },
   {
+    "id": "0fab0f03766302f7",
+    "source": "Open the task to answer it."
+  },
+  {
     "id": "0fad5664b3746785",
     "source": "Juno reviewed this skill. That is a claim only Juno can make, so it is not something this page can set or take away."
   },
@@ -1542,6 +1546,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Save"
   },
   {
+    "id": "1523bdab74280db9",
+    "source": "This workbook could not be opened for preview. The download is unaffected."
+  },
+  {
     "id": "15606396d1358a58",
     "source": "Hide these controls"
   },
@@ -1636,6 +1644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1707f1c019543342",
     "source": "Refraction"
+  },
+  {
+    "id": "172b682a60ce619e",
+    "source": "Reading the spreadsheet…"
   },
   {
     "id": "172eac21b886bc76",
@@ -1948,10 +1960,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1b933329d22a42d5",
     "source": "destructive"
-  },
-  {
-    "id": "1b9f384c1436f607",
-    "source": "Unread"
   },
   {
     "id": "1bcbf1dcad4ffe49",
@@ -3658,10 +3666,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every chat and its messages, immediately. Memories and projects stay."
   },
   {
-    "id": "33d85e8c5632c2a7",
-    "source": "Empty means the standard ceiling — $"
-  },
-  {
     "id": "33e06e0094e334f0",
     "source": "No replacement file provided."
   },
@@ -3736,6 +3740,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "356b897bc8575a5e",
     "source": "Send confirmation link"
+  },
+  {
+    "id": "3579d1de91e7e03c",
+    "source": "minutes."
   },
   {
     "id": "357f9729ca190712",
@@ -3952,6 +3960,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3837dfe40e0ad739",
     "source": "Fast agentic coding — successor to Grok Code Fast."
+  },
+  {
+    "id": "383aba5d0052620a",
+    "source": "It also writes its plan before it starts and waits for you to read it; the clock does not run while it waits."
   },
   {
     "id": "3840d9d29421c46c",
@@ -4416,6 +4428,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3f83cf53868f24b7",
     "source": "First 5-series GLM."
+  },
+  {
+    "id": "3f8ef913dc5599b1",
+    "source": "Only a spreadsheet can be previewed as a table. Download this one instead."
   },
   {
     "id": "3f9c991f63a9a376",
@@ -4922,10 +4938,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ", joignable à"
   },
   {
-    "id": "4724f344c1c0e4a1",
-    "source": "Scheduled"
-  },
-  {
     "id": "472590ae974d4c1f",
     "source": "Provider"
   },
@@ -5164,6 +5176,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4acea78d4b3cc400",
     "source": "Name it, or leave it blank and Juno will name it from your first chat."
+  },
+  {
+    "id": "4adabb419566743e",
+    "source": "1 more sheet"
   },
   {
     "id": "4addb0cd14a2a8fc",
@@ -6404,6 +6420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5df6d0c683fbcc17",
     "source": "Loading designs"
+  },
+  {
+    "id": "5e0d0f92b2d4b6f9",
+    "source": "tokens,"
   },
   {
     "id": "5e135cd8ecf865b5",
@@ -7766,6 +7786,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The stored file is unavailable and cannot be restored."
   },
   {
+    "id": "6f256d90244fd5bd",
+    "source": "in the file."
+  },
+  {
     "id": "6f38236b0918c7b0",
     "source": "Message cannot be empty."
   },
@@ -8148,6 +8172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "741d2d54005d8a4b",
     "source": "Stopped after an error"
+  },
+  {
+    "id": "7424b6937eeaf7fb",
+    "source": "kind_not_previewable"
   },
   {
     "id": "74273989b0966e23",
@@ -10524,6 +10552,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "98a835241def3b31",
     "source": "EU infrastructure, GDPR by default, messages encrypted at rest — and your conversations are never used to train models."
+  },
+  {
+    "id": "98b4f3e4289b5e28",
+    "source": "Empty means your plan’s ceiling — $"
   },
   {
     "id": "98d0e677fd5c939d",
@@ -13486,6 +13518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "github"
   },
   {
+    "id": "c0b03b81c30f3e70",
+    "source": "preview_unavailable"
+  },
+  {
     "id": "c0bf75bd78bf9572",
     "source": "Change"
   },
@@ -13760,10 +13796,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c4eca51db1471ab7",
     "source": "Couldn’t load archived chats."
-  },
-  {
-    "id": "c4ede3c27a7743bd",
-    "source": "Each ceiling has to be a number of zero or more, or left empty."
   },
   {
     "id": "c51e455b41df6c01",
@@ -14812,6 +14844,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d2e7426de94081e6",
     "source": "Running now…"
+  },
+  {
+    "id": "d2fb9ecd0eb680ab",
+    "source": "There are no sheets in this version. It can still be downloaded."
   },
   {
     "id": "d2fe9116400cf32a",
@@ -16274,6 +16310,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno builds this from your chats and projects as you go. You can also just tell it something with the pencil below — “remember that I prefer short answers”, for instance."
   },
   {
+    "id": "e54998431448eca9",
+    "source": "Each ceiling has to be left empty, or a number between zero and your plan’s own — $"
+  },
+  {
     "id": "e562e1d6f362b5fd",
     "source": "The board is open."
   },
@@ -16476,6 +16516,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e8bdfdb3e96e750f",
     "source": "Archived chats stay searchable. Restore one to bring it back to Recents."
+  },
+  {
+    "id": "e8c2fcef77cdbfa8",
+    "source": "Open Juno to answer it."
   },
   {
     "id": "e8e08858d5af1867",
@@ -17656,6 +17700,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f98832b88e777fd0",
     "source": "Older open GLM-4 32B long-context model."
+  },
+  {
+    "id": "f9913eeaf766ebba",
+    "source": "This sheet is empty."
   },
   {
     "id": "f99d39f9deb53f82",

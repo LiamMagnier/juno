@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   ALWAYS_CONFIRM_ACTIONS,
   WORK_RISK_LEVELS,
@@ -1331,4 +1332,32 @@ test("a run-history cursor that does not parse is refused, not dropped", () => {
   assert.equal(valid.ok, true);
   if (!valid.ok) throw new Error("unreachable");
   assert.equal(valid.query.before?.toISOString(), "2026-08-05T09:00:00.000Z");
+});
+
+
+/*
+ * A scheduled or trigger-fired run carries the task's files.
+ *
+ * The runner reads a run's attachments from its `WorkRunIO` input rows and
+ * from nowhere else (`attachedSources` in scripts/work-runner.ts), and those
+ * rows are written by `recordRunInputsFromGrants`. Only the manual dispatch
+ * route called it - so a schedule pointed at a task with three documents
+ * attached fired every morning against none of them, produced something
+ * plausible from the instruction alone, and said nothing about the difference.
+ * That is the worst shape a bug can have here: the run succeeds.
+ *
+ * A source check, because the failure is a missing call. Everything it would
+ * take to observe the rows themselves - a session, grants, a run - is Prisma,
+ * and the suite this file belongs to runs without a database.
+ */
+test("the scheduler and the trigger poller both snapshot the session's grants", () => {
+  for (const file of ["../scripts/work-scheduler.ts", "../scripts/work-trigger-poller.ts"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.match(source, /recordRunInputsFromGrants\(\{/, file);
+    // After `createRun`, not instead of it: the call needs the run id, and a
+    // replayed idempotency key must not write the manifest a second time.
+    const created = source.indexOf("await createRun({");
+    const recorded = source.indexOf("recordRunInputsFromGrants({");
+    assert.ok(created >= 0 && recorded > created, `${file} records inputs before it has a run`);
+  }
 });

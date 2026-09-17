@@ -1229,8 +1229,8 @@ export interface WorkScheduleInput {
   maxConcurrentRuns: number;
   /**
    * Per-run ceilings. Zero on any axis means "no ceiling of the schedule's
-   * own" — the standard run budget then applies, because the dispatchers merge
-   * this with `DEFAULT_RUN_BUDGET` through `narrowestBudget`.
+   * own" — the account's plan ceiling then applies, because the dispatchers
+   * merge this with `runBudgetForPlan` through `narrowestBudget`.
    */
   budget?: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
   /** The model every fire runs on. Null clears the override; absent leaves it. */

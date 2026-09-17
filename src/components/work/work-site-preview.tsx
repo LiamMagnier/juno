@@ -19,6 +19,10 @@ import {
   prepareReportPreview,
   REPORT_PREVIEW_MAX_CHARS,
 } from "@/lib/work/deliverables/report-preview";
+import {
+  describePreviewOmissions,
+  type SpreadsheetPreview,
+} from "@/lib/work/deliverables/spreadsheet-preview";
 
 /*
  * LOOKING AT WHAT A RUN PRODUCED, WITHOUT DOWNLOADING IT.
@@ -144,11 +148,21 @@ const STYLESHEET = "styles.css";
  *   `no_text_layer` verdict and nothing at all. That is not a preview of a PDF,
  *   it is a different document; the row's download and its size say more.
  *
- *   `spreadsheet`, `presentation` and `image` are outside this milestone rather
- *   than judged: nobody has argued them either way here, so they are absent.
+ *   `spreadsheet` has since been argued and admitted, and it is the only one of
+ *   the three Office kinds that could be. exceljs is already in the tree and
+ *   already WROTE the file, so reading it back is the same library rather than
+ *   a parser nobody has; and a workbook is a grid, which is the one document
+ *   shape that survives being drawn as a plain table with nothing a reviewer
+ *   was going to check lost in the process. `buildSpreadsheet` refuses a spec
+ *   with no sheets, so there is always something to show. The parse happens in
+ *   /api/work/artifacts/[id]/preview, not here — see that route for why the
+ *   library stays on the server.
+ *
+ *   `presentation` and `image` remain outside this milestone rather than
+ *   judged: nobody has argued them either way here, so they are absent.
  */
 export function canPreviewArtifact(kind: string): boolean {
-  return kind === "site" || kind === "report";
+  return kind === "site" || kind === "report" || kind === "spreadsheet";
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +382,13 @@ export function WorkDeliverableInlinePreview({
     return (
       <div className="max-h-[min(40rem,70vh)] overflow-y-auto overscroll-contain rounded-field border border-border/60 bg-card px-5 py-4">
         <ReportPreviewBody artifactId={artifactId} version={version} active />
+      </div>
+    );
+  }
+  if (kind === "spreadsheet") {
+    return (
+      <div className="max-h-[min(36rem,70vh)] overflow-auto overscroll-contain rounded-field border border-border/60 bg-card">
+        <SpreadsheetPreviewBody artifactId={artifactId} version={version} active />
       </div>
     );
   }
@@ -768,6 +789,159 @@ function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: P
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Spreadsheets
+// ---------------------------------------------------------------------------
+
+type SheetState =
+  | { kind: "loading" }
+  | { kind: "ready"; preview: SpreadsheetPreview }
+  | { kind: "failed"; message: string };
+
+/**
+ * The workbook's grid, read from the route that verified its hash.
+ *
+ * `active` and the generation counter are the site previewer's, for the same
+ * two reasons: a closed panel should not hold a workbook, and a scheduled task
+ * can write a new version while this one is on screen, so going active
+ * re-reads rather than reusing what is in memory.
+ */
+function useSpreadsheetPreview(artifactId: string, version: number, active: boolean) {
+  const [state, setState] = React.useState<SheetState>({ kind: "loading" });
+  const generation = React.useRef(0);
+
+  const load = React.useCallback(async () => {
+    const mine = ++generation.current;
+    setState({ kind: "loading" });
+    try {
+      const response = await fetch(
+        `/api/work/artifacts/${encodeURIComponent(artifactId)}/preview?version=${version}`
+      );
+      if (generation.current !== mine) return;
+      if (!response.ok) {
+        setState({
+          kind: "failed",
+          message: await downloadProblem(
+            response,
+            "Couldn\u2019t read this spreadsheet. The download beside it is unaffected."
+          ),
+        });
+        return;
+      }
+      const body = (await response.json()) as SpreadsheetPreview;
+      if (generation.current !== mine) return;
+      setState({ kind: "ready", preview: body });
+    } catch {
+      if (generation.current !== mine) return;
+      setState({ kind: "failed", message: UNREACHABLE });
+    }
+  }, [artifactId, version]);
+
+  React.useEffect(() => {
+    if (!active) {
+      generation.current += 1;
+      setState({ kind: "loading" });
+      return;
+    }
+    void load();
+  }, [active, load]);
+
+  return { state, load };
+}
+
+function SpreadsheetPreviewBody({
+  artifactId,
+  version,
+  active,
+}: {
+  artifactId: string;
+  version: number;
+  active: boolean;
+}) {
+  const sheet = useSpreadsheetPreview(artifactId, version, active);
+
+  if (sheet.state.kind === "loading") return <PreviewWait label="Reading the spreadsheet…" />;
+  if (sheet.state.kind === "failed") {
+    return <PreviewProblem message={sheet.state.message} onRetry={() => void sheet.load()} />;
+  }
+
+  const { sheets, omittedSheets } = sheet.state.preview;
+  if (sheets.length === 0) {
+    // `buildSpreadsheet` refuses a spec with no sheets, so an empty workbook
+    // here is not an empty answer to the reader's question - it is a file that
+    // is not the one the run wrote.
+    return (
+      <PreviewProblem
+        message="There are no sheets in this version. It can still be downloaded."
+        onRetry={() => void sheet.load()}
+      />
+    );
+  }
+
+  return (
+    <div className="p-4">
+      {sheets.map((entry) => {
+        const omissions = describePreviewOmissions(entry);
+        // The first row is drawn as a header, and that is a fact about the file
+        // rather than a guess: `buildSpreadsheet` writes row one from the
+        // sheet's `columns` list before any data row, and the spec cannot
+        // express a sheet without columns.
+        const [header, ...body] = entry.rows;
+        return (
+          <section key={entry.name} className="mb-5 last:mb-0">
+            <h3 className="mb-1.5 font-mono text-label text-muted-foreground">{entry.name}</h3>
+            {header === undefined ? (
+              <p className="text-caption leading-relaxed text-muted-foreground">
+                This sheet is empty.
+              </p>
+            ) : (
+              <table className="w-full border-collapse text-caption tabular-nums">
+                <thead>
+                  <tr>
+                    {header.map((cell, column) => (
+                      <th
+                        key={column}
+                        scope="col"
+                        className="border border-border/60 bg-muted/40 px-2 py-1 text-left font-medium text-foreground"
+                      >
+                        {cell}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {body.map((row, index) => (
+                    <tr key={index}>
+                      {row.map((cell, column) => (
+                        <td
+                          key={column}
+                          className="border border-border/60 px-2 py-1 align-top text-muted-foreground"
+                        >
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {omissions !== null && (
+              <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
+                {omissions}
+              </p>
+            )}
+          </section>
+        );
+      })}
+      {omittedSheets > 0 && (
+        <p className="text-caption leading-relaxed text-muted-foreground">
+          {omittedSheets === 1 ? "1 more sheet" : `${omittedSheets} more sheets`} in the file.
+        </p>
+      )}
+    </div>
   );
 }
 

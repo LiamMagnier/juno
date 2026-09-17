@@ -484,8 +484,9 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
       </div>
       {/* No sentence for a run with every ceiling at zero. There is no "plan
           default" behind a zero — `budgetExceeded` reads it as no ceiling — and
-          every dispatcher now merges `DEFAULT_RUN_BUDGET` in, so a zero here is
-          a run written before that landed. The bars already show "no ceiling"
+          every dispatcher now merges the account's plan ceiling in
+          (`runBudgetForPlan`), so a zero here is a run written before that
+          landed. The bars already show "no ceiling"
           by having no total. */}
       {unlimited && (
         <p className="mt-2 text-caption leading-relaxed text-muted-foreground">

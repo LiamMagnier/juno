@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   decideNotification,
+  describeNeedsYouRise,
   describeNotification,
   notificationKey,
   WORK_NOTIFY_POLICIES,
@@ -195,4 +196,41 @@ test("an interrupted run says it was not restarted, and why", () => {
 test("an empty title still produces something readable", () => {
   const message = describeNotification({ title: "   ", status: "completed" });
   assert.match(message.subject, /Your Juno task/);
+});
+
+
+/*
+ * Saying it, not only counting it.
+ *
+ * The web app has always had the number - a dot on the composer switch, a pill
+ * in the inbox - and a number that is quietly two instead of one is a
+ * notification nobody receives. These cases pin the two ways that goes wrong:
+ * announcing a fall, which is the reader answering something and needs no
+ * announcement, and announcing the first reading, which would greet every page
+ * load with "a task needs you" about tasks that have been waiting since
+ * yesterday.
+ */
+test("only a rise is announced, and never the first reading", () => {
+  assert.equal(describeNeedsYouRise(null, 3), null);
+  assert.equal(describeNeedsYouRise(1, 1), null);
+  assert.equal(describeNeedsYouRise(2, 1), null);
+  assert.equal(describeNeedsYouRise(2, 0), null);
+});
+
+test("a rise names what is new, and the total only when they differ", () => {
+  assert.equal(describeNeedsYouRise(0, 1), "A task needs you");
+  assert.equal(describeNeedsYouRise(0, 2), "2 tasks need you");
+  // One more on top of two already waiting: "a task needs you" alone would
+  // read as though the other two had been dealt with.
+  assert.equal(describeNeedsYouRise(2, 3), "A task needs you \u2014 3 in total");
+  assert.equal(describeNeedsYouRise(1, 3), "2 tasks need you \u2014 3 in total");
+});
+
+test("a failed reading is not a change in either direction", () => {
+  // The hook reports null when it could not find out, and a badge that showed
+  // 0 on a dropped request would be telling the reader nothing is waiting.
+  // Announcing that as a fall - or the recovery as a rise - would be the same
+  // lie with a sound.
+  assert.equal(describeNeedsYouRise(3, null), null);
+  assert.equal(describeNeedsYouRise(null, null), null);
 });

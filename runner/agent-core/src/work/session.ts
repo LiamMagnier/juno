@@ -188,6 +188,23 @@ export const WORK_WRITE_PLAN_TOOL_NAME = 'write_plan';
 /** How many times one run may (re)write its plan. See the comment above. */
 const MAX_PLAN_WRITES = 2;
 
+/**
+ * The reserved id the plan-review question is asked under, and its two answers.
+ *
+ * Mirrors src/lib/work/plan-review.ts, which is where the rule that turns this
+ * on lives and where the web client reads the same three strings from. Repeated
+ * rather than imported because this package has no dependency on the web app
+ * and must not gain one for three literals; the pairing is asserted by
+ * tests/work-plan-review.test.ts, which reads this file.
+ *
+ * Fixed rather than derived from the tool call's id, so a client can recognise
+ * the question as the plan and draw it as one. Safe to fix because only the
+ * first of the two permitted plan writes is gated, so one run asks it once.
+ */
+const PLAN_REVIEW_QUESTION_ID = 'plan-review';
+const PLAN_REVIEW_APPROVE = 'Go ahead';
+const PLAN_REVIEW_REVISE = 'Change it';
+
 export function writePlanToolSpec(): ToolSpec {
   return {
     name: WORK_WRITE_PLAN_TOOL_NAME,
@@ -303,6 +320,23 @@ export interface WorkSessionOptions {
   pricing?: WorkModelPricing;
   clock?: Clock;
   maxSteps?: number;
+  /**
+   * Park on the plan and let a person read it before anything is done about it.
+   *
+   * The plan is the model's first tool call and the run used to carry straight
+   * on from it, so the one statement of intent that is not a guess was the one
+   * the reader never saw in time to change it. With this set the run asks the
+   * reserved question below after its FIRST `write_plan`, which parks it in
+   * `waiting_input` exactly as any other question does - the clock suspends,
+   * the transcript shows the plan, and the answer either releases the run or
+   * becomes the note the model rewrites the plan from.
+   *
+   * Decided by the dispatcher, not here: `confirmPlanBeforeActing` in
+   * src/lib/work/plan-review.ts is the rule, and it never sets this on a run
+   * nobody is watching, because a question from an unattended run checkpoints
+   * it instead of waiting.
+   */
+  confirmPlan?: boolean;
   /** Extra guidance appended to the built system prompt. */
   systemSuffix?: string;
   /**
@@ -930,11 +964,11 @@ export class WorkAgentSession {
    * them — whereas a collision or a renamed id silently breaks every subsequent
    * status call. Positional ids are stable by construction.
    */
-  private handlePlanWrite(call: {
+  private async handlePlanWrite(call: {
     id: string;
     name: string;
     input: Record<string, unknown>;
-  }): UserContent {
+  }): Promise<UserContent> {
     if (this.planWrites >= MAX_PLAN_WRITES) {
       return this.toolResult(
         call.id,
@@ -961,10 +995,69 @@ export class WorkAgentSession {
     this.planWrites += 1;
     this.revisePlan(steps);
     const listed = steps.map((step) => `${step.id}: ${step.title}`).join('\n');
+
+    /*
+     * The review, on the first plan only.
+     *
+     * After `revisePlan`, so the plan the reader is asked about is the plan the
+     * transcript is already showing - asking first would put a list in a
+     * question that no other surface could see, and a reader answering "change
+     * it" would be revising something they had read once, in a dialog.
+     *
+     * The second write is deliberately not gated. `MAX_PLAN_WRITES` is 2 and
+     * the second one exists precisely to answer this review; gating it would
+     * ask the reader to approve their own edit and leave the run no write to
+     * act on.
+     */
+    if (this.options.confirmPlan && this.planWrites === 1) {
+      const answer = await this.reviewPlan(listed);
+      if (!answer.approved) {
+        return this.toolResult(
+          call.id,
+          `The plan is recorded, but it has not been approved. They said:\n${answer.text}\n\n`
+            + `Call ${WORK_WRITE_PLAN_TOOL_NAME} once more with a plan that answers that, then `
+            + 'get on with it. Do not do any of the work until you have rewritten the plan.',
+        );
+      }
+    }
+
     return this.toolResult(
       call.id,
       `The plan is now:\n${listed}\n\nUse these ids with ${WORK_PLAN_TOOL_NAME} as you go.`,
     );
+  }
+
+  /**
+   * Parks the run on the plan and waits for a person.
+   *
+   * Everything here mirrors `handleQuestion`, including the suspended clock,
+   * and that is the point rather than duplication to be factored away: a plan
+   * review IS a question as far as the run, the database and every client are
+   * concerned, so it has to travel the one path all of them already understand.
+   * Inventing a `awaiting_plan` status instead would be a new value in a
+   * vocabulary four clients decode, for a state that behaves identically to one
+   * they already have.
+   */
+  private async reviewPlan(listed: string): Promise<{ approved: boolean; text: string }> {
+    const question: WorkQuestion = {
+      id: PLAN_REVIEW_QUESTION_ID,
+      question: `Here is the plan before I start:\n${listed}\n\nShall I go ahead?`,
+      why: 'You asked to be asked before every change, so this is the whole list of them, before the first one.',
+      options: [PLAN_REVIEW_APPROVE, PLAN_REVIEW_REVISE],
+    };
+    this.emit({ kind: 'question_asked', question });
+    // Waiting on a person is not time the run spent working. Without this the
+    // gate would eat the runtime ceiling of exactly the runs that asked first.
+    this.budget.suspend();
+    try {
+      const answer = await this.options.callbacks.askQuestion(question);
+      this.emit({ kind: 'question_answered', questionId: question.id, answer });
+      this.plan.recordAnswer(question.id);
+      const trimmed = answer.trim();
+      return { approved: trimmed === PLAN_REVIEW_APPROVE, text: trimmed || PLAN_REVIEW_REVISE };
+    } finally {
+      this.budget.start();
+    }
   }
 
   private handlePlanUpdate(call: {

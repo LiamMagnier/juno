@@ -7,7 +7,10 @@ import {
   type WorkEffectiveTarget,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import type { Plan } from "@prisma/client";
+import { runBudgetForPlan } from "@/lib/work/budget";
+import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
+import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
 /*
@@ -31,24 +34,49 @@ import { cn } from "@/lib/utils";
  *
  * Nothing here is computed. `selectForInferred` in the composer already decided
  * the target, the [+] already holds the connector selection, the chip holds the
- * mode, and the ceilings are `DEFAULT_RUN_BUDGET`. Recomputing any of them
- * would produce a second answer that could disagree with the one the dispatch
- * acts on.
+ * mode, and the ceilings are `runBudgetForPlan`. Recomputing any of them would
+ * produce a second answer that could disagree with the one the dispatch acts
+ * on.
  */
+
+export interface RunCeilings {
+  costUsd: number;
+  tokens: number;
+  minutes: number;
+}
 
 /**
  * The run budget, restated for the reader in the units a person thinks in.
  *
- * Derived from `DEFAULT_RUN_BUDGET` rather than mirrored: this used to be a
+ * Derived from `runBudgetForPlan` rather than mirrored: this used to be a
  * hand-copied constant with a comment asking whoever moved the original to
  * come and move this too, and no test guarding it. Read from the source, the
  * sentence cannot be wrong about the number.
+ *
+ * It takes the plan because the ceiling does. A flat sentence was honest while
+ * every account got the same $2; now that a trial account's run stops at
+ * fifteen cents and ten minutes, a composer telling every reader "$2 / 20 min"
+ * would be describing a run only some of them will get — and the reader most
+ * misled by it is the one whose run stops soonest.
  */
-export const RUN_CEILINGS = {
-  costUsd: DEFAULT_RUN_BUDGET.maxCostMicroUsd / 1_000_000,
-  tokens: DEFAULT_RUN_BUDGET.maxTokens,
-  minutes: Math.round(DEFAULT_RUN_BUDGET.maxRuntimeMs / 60_000),
-} as const;
+export function runCeilingsFor(plan: Plan): RunCeilings {
+  const budget = runBudgetForPlan(plan);
+  return {
+    costUsd: budget.maxCostMicroUsd / 1_000_000,
+    tokens: budget.maxTokens,
+    minutes: Math.round(budget.maxRuntimeMs / 60_000),
+  };
+}
+
+/**
+ * The figures a surface states when it has not been told whose account it is.
+ *
+ * PRO's, matching `DEFAULT_RUN_BUDGET` for the reason that constant still
+ * exists: every surface written before ceilings were plan-shaped was written
+ * against these numbers, and a fallback that guessed lower would understate a
+ * paying reader's run. Anything with the plan in hand calls `runCeilingsFor`.
+ */
+export const RUN_CEILINGS: RunCeilings = runCeilingsFor("PRO");
 
 /**
  * The approval mode as the tail of a sentence.
@@ -120,8 +148,32 @@ export function WorkRunDisclosure({
   runLine,
 }: RunDisclosureProps) {
   const [open, setOpen] = React.useState(false);
+  /*
+   * The reader's own plan, not a constant. `useApp` is where every other leaf
+   * in this app reads it (see `task-dialog.tsx`), and reading it here rather
+   * than taking it as a prop means the composer cannot forget to pass it and
+   * quietly fall back to somebody else's figures.
+   */
+  const { quota } = useApp();
+  const ceilings = runCeilingsFor(quota.plan);
+  /*
+   * Stated because the runtime does it, and read from the same rule the
+   * dispatcher passes to the executor. A sentence here that the run did not
+   * honour would be worse than saying nothing: the reader would wait for a plan
+   * that never arrives. A composer press is attended by definition.
+   *
+   * Cloud only, and the asymmetry is real rather than cautious. The cloud
+   * executor is `scripts/work-runner.ts`, which is the one place in this
+   * repository that builds a `WorkSessionOptions` and therefore the one place
+   * `confirmPlan` can be set. A Mac runs its own bundled agent, driven by a
+   * start command that carries the approval mode and not this, so promising the
+   * gate to somebody dispatching to their laptop would promise them a pause
+   * that never comes.
+   */
+  const confirmsPlan =
+    target === "cloud" && confirmPlanBeforeActing({ policy: approvalMode, attended: true });
 
-  const stops = `stops at $${RUN_CEILINGS.costUsd} / ${RUN_CEILINGS.minutes} min`;
+  const stops = `stops at $${ceilings.costUsd} / ${ceilings.minutes} min`;
   const asks = APPROVAL_PHRASE[approvalMode];
   /*
    * Every state of the summary is a real sentence. "Checking…" while the host
@@ -203,9 +255,12 @@ export function WorkRunDisclosure({
             <Row label="Asks">
               {WORK_APPROVAL_MODE_SUMMARY[approvalMode]} Anything it cannot take back — a permanent
               delete, a message sent, a purchase — is asked about under every mode.
+              {confirmsPlan
+                ? " It also writes its plan before it starts and waits for you to read it; the clock does not run while it waits."
+                : ""}
             </Row>
             <Row label="Stops at">
-              {`$${RUN_CEILINGS.costUsd}, ${RUN_CEILINGS.tokens.toLocaleString("en-US")} tokens, or ${RUN_CEILINGS.minutes} minutes of working time — whichever comes first. If one is reached the task stops and tells you where it got to; waiting for you does not count against the clock.`}
+              {`$${ceilings.costUsd}, ${ceilings.tokens.toLocaleString("en-US")} tokens, or ${ceilings.minutes} minutes of working time — whichever comes first. If one is reached the task stops and tells you where it got to; waiting for you does not count against the clock. These are your plan’s ceilings; a project, a skill or a schedule can lower them and nothing raises them.`}
             </Row>
           </dl>
         </div>

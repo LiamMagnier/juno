@@ -9,7 +9,7 @@ import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
-  UNIT_CEILING_MICRO_USD,
+  unitCeilingMicroUsd,
   effectiveBudget,
   type BudgetCapSource,
   type EffectiveBudget,
@@ -714,14 +714,20 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
   // 0 and refuse every caller that did not happen to know the plan, which is
   // most of them — a gate that fails closed on its own ignorance is a gate that
   // gets deleted.
-  const eff =
-    input.budget ??
-    (await resolveEffectiveBudget(input.userId, input.plan ?? (await getUserPlan(input.userId))));
+  // Resolved once and used twice. The per-unit ceiling for a Work run is the
+  // plan's own run ceiling (`runBudgetForPlan`), so this is no longer only an
+  // input to the monthly figure — reading the plan separately for each would
+  // let admission refuse a run against one plan while the guard measured it
+  // against another. Every Work dispatcher therefore passes the plan it already
+  // loaded for the model gate and the ceiling, through `createRun`; the
+  // fallback read is for callers that genuinely have none.
+  const plan = input.plan ?? (await getUserPlan(input.userId));
+  const eff = input.budget ?? (await resolveEffectiveBudget(input.userId, plan));
 
   // The per-unit ceiling is a separate refusal from the monthly one: a research
   // run that fans out into searches, or a Work run that loops, can burn a whole
   // month's budget in an afternoon while every individual check passes.
-  const unitCeiling = UNIT_CEILING_MICRO_USD[input.kind];
+  const unitCeiling = unitCeilingMicroUsd(input.kind, plan);
   if (!eff.capDisabled && unitCeiling != null && estimate > unitCeiling) {
     return {
       allowed: false,

@@ -14,6 +14,9 @@
  * without limit. Giving the owner a real, finite ceiling turns both back on.
  */
 
+import type { Plan } from "@prisma/client";
+import { runBudgetForPlan } from "@/lib/work/budget";
+
 /**
  * The personal account's monthly ceiling in EUR when nothing else says
  * otherwise. Not "unlimited": an account with no plan budget is the one that
@@ -161,11 +164,35 @@ export const DEFAULT_ESTIMATE_MICRO_USD: Record<SpendKind, number> = {
  * whole month in an afternoon, and the two surfaces where that is a realistic
  * shape — a research run that fans out into searches, and a Work run that loops
  * — are exactly the two with no per-request human in the loop.
+ *
+ * `work` is the PRO figure here and the plan's own figure through
+ * `unitCeilingMicroUsd` below. It stays in the table because the two numbers
+ * are one number: this ceiling is what admission refuses a run by, and the run
+ * budget is what the executor's guard stops it at, so a build where they
+ * disagree either refuses runs it would have allowed to finish or allows runs
+ * it will kill halfway. Reading the plan is what keeps them the same figure.
  */
 export const UNIT_CEILING_MICRO_USD: Partial<Record<SpendKind, number>> = {
   research: 1_000_000, // $1 per deep-research run
-  work: 2_000_000, // $2, the same figure a manually started Work run gets
+  work: 2_000_000, // $2, the figure a PRO run is dispatched under
 };
+
+/**
+ * The per-unit ceiling that binds for this account, on this kind of work.
+ *
+ * Only `work` varies by plan, and it varies because the run ceiling it has to
+ * agree with does. The alternative — leaving this flat at $2 while
+ * `runBudgetForPlan` hands a MAX run $6 — is worse than either number alone:
+ * admission would refuse every MAX run at the door, with a message about a
+ * per-run spending ceiling the account had in fact paid past.
+ *
+ * Everything else reads straight from the table, so a kind that has no entry
+ * still has no per-unit ceiling and the monthly one remains its only bound.
+ */
+export function unitCeilingMicroUsd(kind: SpendKind, plan: Plan): number | undefined {
+  if (kind === "work") return runBudgetForPlan(plan).maxCostMicroUsd;
+  return UNIT_CEILING_MICRO_USD[kind];
+}
 
 /**
  * The ceiling for a Work run nobody is watching.
