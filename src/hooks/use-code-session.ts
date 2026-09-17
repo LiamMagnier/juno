@@ -3,7 +3,8 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
-import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
+import type { ClientActivityEvent, ClientAttachment, ClientMessage } from "@/types/chat";
+import { canSteerRun } from "@/lib/code-steer-policy";
 
 /*
  * State for one Juno Code session (a kind:"code" conversation): persisted
@@ -931,23 +932,51 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
    * to the live one and the host takes the text as its next user message. The
    * USER row the route persists is placed BEFORE the live bubble, so the
    * transcript reads the way a reload will show it — the run's single
-   * ASSISTANT row settles after every instruction it took. A cloud run takes
-   * one once it is running; the route refuses a queued one with a sentence,
-   * and `canSteer` keeps the composer from offering it before then.
+   * ASSISTANT row settles after every instruction it took.
+   *
+   * A QUEUED CLOUD TASK TAKES ONE TOO. That run spends its first minute starting
+   * a machine, and an instruction sent during it is folded into the prompt the
+   * run opens with — runner-context hands the driver its unconsumed backlog. The
+   * minute a machine takes to appear is the minute a person remembers the thing
+   * they left out, and refusing them for it cost a cancel and a retype. A device
+   * task is not offered the verb at all; `canSteerRun` says why.
+   *
+   * Attachments ride along: the route folds their extracted text into what the
+   * agent reads, exactly as the create route does for a first prompt.
    */
   const steer = React.useCallback(
-    async (text: string): Promise<{ accepted: boolean }> => {
+    async (text: string, attachments: ClientAttachment[] = []): Promise<{ accepted: boolean }> => {
       const task = activeTask;
       const trimmed = text.trim();
-      if (!task || !trimmed) return { accepted: false };
-      if (statusRef.current !== "running" && statusRef.current !== "awaiting_approval") return { accepted: false };
+      // Words, or something attached. The composer's `+` stays live while a run
+      // goes, so a screenshot with nothing typed has to be sendable — the route
+      // takes it on the same terms the create route takes an attachment-only
+      // first prompt.
+      if (!task || (!trimmed && attachments.length === 0)) return { accepted: false };
+      /*
+       * The same decision the composer draws its control from. A device host
+       * never acts on a `steer` control, so a POST here would queue an event
+       * nothing reads and leave the pending-instruction line waiting on an ack
+       * that cannot come.
+       */
+      if (!canSteerRun(statusRef.current, task.target)) return { accepted: false };
       const requestId = tempId();
-      setSteering({ requestId, text: trimmed, phase: "sending", message: null });
+      // What the pending-instruction line shows. An attachment-only steer has
+      // no sentence of its own, so it is named by what it is rather than
+      // rendered as an empty row under "Juno Code has your instruction".
+      const shown =
+        trimmed ||
+        (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
+      setSteering({ requestId, text: shown, phase: "sending", message: null });
       try {
         const res = await fetch(`/api/code/tasks/${task.id}/steer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: trimmed, requestId }),
+          body: JSON.stringify({
+            text: trimmed,
+            requestId,
+            ...(attachments.length > 0 ? { attachmentIds: attachments.map((a) => a.id) } : {}),
+          }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           userMessage?: ClientMessage;
@@ -1163,12 +1192,14 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     responding,
     isBusy: status !== "idle",
     /**
-     * Whether the composer may send an instruction INTO the live run: a
-     * device run that is running or waiting on an approval, or a cloud run
-     * that is running (its driver reads controls between agent steps). A
-     * queued cloud task has no runner yet, and the route refuses it.
+     * Whether the composer may send an instruction INTO the live run.
+     *
+     * Target-aware, because only the cloud driver acts on a `steer` control —
+     * see `canSteerRun` for why a Mac cannot. Offering the verb for a device run
+     * drew a live field over a transport that silently dropped what was typed
+     * into it.
      */
-    canSteer: status === "running" || status === "awaiting_approval",
+    canSteer: canSteerRun(status, activeTask?.target),
     send,
     steer,
     resume,

@@ -231,6 +231,19 @@ class EventSink {
     this.onSteer = null;
     /** Steers that arrived before the session existed (during the clone). */
     this.steerBacklog = [];
+    /**
+     * Steers this run has already taken, by requestId.
+     *
+     * The controls cursor cannot do this job alone. An instruction sent while
+     * the machine was still starting reaches the driver through runner-context
+     * (folded into the opening prompt), and the control row that carried it is
+     * still sitting in the task's event log with a sequence number above the
+     * cursor — so the first `pollControls` would hand it over a second time and
+     * the agent would be told the same thing twice. Advancing the cursor past it
+     * instead would skip any `cancel_request` that arrived in between, which is
+     * the one control that must never be missed.
+     */
+    this.consumedSteers = new Set();
     /** When controls were last read, by a POST or a poll — see pollControls. */
     this.lastControlSyncAt = Date.now();
     this.polling = false;
@@ -405,7 +418,19 @@ class EventSink {
         const requestId = typeof ctl.payload?.requestId === "string" ? ctl.payload.requestId : null;
         const text = typeof ctl.payload?.text === "string" ? ctl.payload.text.trim() : "";
         if (!requestId || !text) continue;
-        const steer = { requestId, text };
+        // Already folded into the opening prompt — see `consumedSteers`.
+        if (this.consumedSteers.has(requestId)) continue;
+        this.consumedSteers.add(requestId);
+        // `text` is what the agent reads (attachments folded in); `displayText`
+        // is what the person typed. Native clients render the `user` event, so
+        // the echo has to be the second one or a reader's own bubble fills with
+        // extracted PDF. Absent on a steer with nothing attached, and on one
+        // from an older server, where the two are the same string anyway.
+        const displayText =
+          typeof ctl.payload?.displayText === "string" && ctl.payload.displayText.trim()
+            ? ctl.payload.displayText.trim()
+            : text;
+        const steer = { requestId, text, displayText };
         if (this.onSteer) this.onSteer(steer);
         else this.steerBacklog.push(steer);
       }
@@ -597,6 +622,34 @@ async function main() {
   // step 3/7). Both absent on a first run, which behaves as it always has.
   const history = readHistory(ctx.history);
   const continuation = readContinuation(ctx.continuation);
+  /*
+   * INSTRUCTIONS THAT ARRIVED BEFORE THIS MACHINE EXISTED.
+   *
+   * Starting a cloud runner takes a minute or more, and that is exactly when a
+   * person notices the constraint they left out. The steer route used to refuse
+   * them for want of a process to read the control; runner-context hands them
+   * over instead, and they become part of the prompt this run opens with. The
+   * original ask stays the `user` row and the pull request's title — an
+   * afterthought is an addition to the instruction, not a replacement for it.
+   */
+  const pendingSteers = readPendingSteers(ctx.pendingSteers);
+  /*
+   * WHETHER THIS RUN OPENS ITS OWN PULL REQUEST.
+   *
+   * "auto" is what this runner has always done and stays the default for
+   * anything runner-context does not explicitly hold back — a task dispatched
+   * from the phone or by a schedule has no surface to offer the choice on, and
+   * a pushed branch with no pull request there is work that quietly goes
+   * missing. "never" is a run inside a web session, whose reader gets the diff
+   * and a Create PR control over it with three shapes to choose from. The push
+   * is unconditional either way; only the creation is deferred.
+   *
+   * Defaulting an unknown value to "auto" keeps an older server working with a
+   * newer runner: a response with no such field behaves exactly as before.
+   */
+  const pullRequestPolicy = ctx.openPullRequest === "never" ? "never" : "auto";
+  const openingPrompt =
+    pendingSteers.length > 0 ? [prompt, ...pendingSteers.map((s) => s.text)].join("\n\n") : prompt;
   // Which credential runner-context handed over, for the PR's authorship: an
   // app-authored pull request still has to name the person it is for.
   const credentialSource = ctx.cloneCredential === "github_app" ? "github_app" : "oauth";
@@ -614,6 +667,9 @@ async function main() {
   );
 
   const sink = new EventSink(freshToken);
+  // Before a single control is polled, so the rows that carried these can never
+  // be delivered a second time (see EventSink#consumedSteers).
+  for (const steer of pendingSteers) sink.consumedSteers.add(steer.requestId);
 
   // 2. Claim -> running, then announce.
   const claimRes = await junoFetch(`/api/code/tasks/${TASK_ID}/claim`, freshToken, { method: "POST", body: "{}" });
@@ -779,12 +835,23 @@ async function main() {
   // moment "the run has your instruction" is true.
   const takeSteer = (steer) => {
     void session.queueUserMessage(steer.text).then(() => {
-      sink.push("user", { text: steer.text, requestId: steer.requestId, steer: true });
+      sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
       sink.push("steer_ack", { requestId: steer.requestId });
     });
   };
   sink.onSteer = takeSteer;
   for (const steer of sink.steerBacklog.splice(0)) takeSteer(steer);
+  /*
+   * The acknowledgement for an instruction that arrived while this machine was
+   * starting. It is posted HERE and not at the handshake because "delivered"
+   * has one meaning on this surface — the far side has the words — and until
+   * the session existed nothing could have taken them. `openingPrompt` already
+   * carries the text, so this is the moment that becomes true.
+   */
+  for (const steer of pendingSteers) {
+    sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
+    sink.push("steer_ack", { requestId: steer.requestId });
+  }
 
   let finalStopReason = "end_turn";
   const controlWatch = setInterval(() => {
@@ -793,7 +860,7 @@ async function main() {
   }, CONTROL_WATCH_MS);
   if (typeof controlWatch.unref === "function") controlWatch.unref();
   try {
-    await session.prompt(prompt);
+    await session.prompt(openingPrompt);
     // An instruction that arrived after the turn's last step starts a turn of
     // its own, rather than being left queued for a session that has ended.
     while (!sink.cancelled && session.hasQueuedUserMessages) {
@@ -883,7 +950,10 @@ async function main() {
   const github = { repoOwner, repoName, cloneToken };
   let pr = continuation ? await findOpenPullRequest({ ...github, branch }) : null;
   let reused = !!pr;
-  if (!pr) {
+  // A continuation that found its pull request still appends to it under both
+  // policies: that pull request exists, the commits have just landed on it, and
+  // holding the note back would leave it describing only its first run.
+  if (!pr && pullRequestPolicy === "auto") {
     pr = await openPullRequest({
       ...github,
       branch,
@@ -909,7 +979,13 @@ async function main() {
       ? reused
         ? `Pushed to the open pull request: ${pr.url}`
         : `Opened pull request: ${pr.url}`
-      : `Pushed branch ${branch}, but the pull request could not be created automatically.`,
+      : pullRequestPolicy === "never"
+        ? // NOT a failure, and it must not read like one. The branch is on
+          // origin and the session above this transcript can open a pull
+          // request from it in three shapes; saying which control does that is
+          // the difference between a finished run and an abandoned one.
+          `Pushed branch ${branch}. Open a pull request from the review panel in this session when you are ready.`
+        : `Pushed branch ${branch}, but the pull request could not be created automatically.`,
   });
   sink.push("done", {
     finishReason: finalStopReason,
@@ -917,7 +993,7 @@ async function main() {
     ...(pr ? { prUrl: pr.url, prNumber: pr.number } : {}),
   });
   await sink.finalize("done");
-  log(pr ? `done, PR #${pr.number}` : `done, pushed the branch (no PR)`);
+  log(pr ? `done, PR #${pr.number}` : `done, pushed the branch (pull request ${pullRequestPolicy})`);
 }
 
 /** The conversation turns runner-context handed over, validated to the shape agent-core seeds. */
@@ -932,6 +1008,25 @@ function readHistory(raw) {
     if (role && text.trim()) turns.push({ role, text });
   }
   return turns;
+}
+
+/** Steers runner-context handed over because they were sent before the run started. */
+function readPendingSteers(raw) {
+  if (!Array.isArray(raw)) return [];
+  /** @type {{ requestId: string; text: string; displayText: string }[]} */
+  const steers = [];
+  const seen = new Set();
+  for (const entry of raw.slice(0, 20)) {
+    if (!entry || typeof entry !== "object") continue;
+    const requestId = typeof entry.requestId === "string" ? entry.requestId : "";
+    const text = typeof entry.text === "string" ? entry.text.trim() : "";
+    if (!requestId || !text || seen.has(requestId)) continue;
+    seen.add(requestId);
+    // The transcript echo, when the server sent one — see `handleControls`.
+    const shown = typeof entry.displayText === "string" && entry.displayText.trim() ? entry.displayText.trim() : text;
+    steers.push({ requestId, text, displayText: shown });
+  }
+  return steers;
 }
 
 /** The branch this run continues, or null for a first run. Same name rules as the server's validator. */

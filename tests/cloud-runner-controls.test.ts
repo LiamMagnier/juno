@@ -32,13 +32,20 @@ function fn(name: string): string {
 
 /* ── EventSink.handleControls ─────────────────────────────────────────────── */
 
-type Steer = { requestId: string; text: string };
+/**
+ * `text` is what the agent reads — the typed words with every attachment's
+ * extracted text folded in by the steer route. `displayText` is what a
+ * transcript shows. They differ only when something was attached.
+ */
+type Steer = { requestId: string; text: string; displayText: string };
 type Sink = {
   lastControlSyncAt: number;
   afterControlSeq: number;
   cancelled: boolean;
   onSteer: ((steer: Steer) => void) | null;
   steerBacklog: Steer[];
+  /** requestIds already folded into the opening prompt out of runner-context. */
+  consumedSteers: Set<string>;
 };
 type Control = { seq?: unknown; kind?: string; payload?: Record<string, unknown> };
 
@@ -53,6 +60,7 @@ function sink(overrides: Partial<Sink> = {}): Sink {
     cancelled: false,
     onSteer: null,
     steerBacklog: [],
+    consumedSteers: new Set(),
     ...overrides,
   };
 }
@@ -68,8 +76,35 @@ test("a steer is handed to the session once, however many paths return it", () =
   handleControls.call(s, control);
   handleControls.call(s, control);
 
-  assert.deepEqual(taken, [{ requestId: "r1", text: "also run the tests" }]);
+  assert.deepEqual(taken, [
+    { requestId: "r1", text: "also run the tests", displayText: "also run the tests" },
+  ]);
   assert.equal(s.afterControlSeq, 7, "the cursor advances past a handled control");
+});
+
+test("an instruction folded into the opening prompt is never handed over twice", () => {
+  /*
+   * An instruction sent while the machine was starting reaches the driver
+   * through runner-context, which folds it into the prompt the agent opens
+   * with. The control row that carried it is still in the task's event log with
+   * a sequence number above the cursor, so the first poll after the run starts
+   * returns it again — and queueing it there would tell the agent the same
+   * thing twice, once in its prompt and once as a mid-run steer.
+   *
+   * The cursor cannot be the guard: advancing it past that row would skip any
+   * cancel_request that arrived in between, which is the one control that must
+   * never be missed. So the ledger is by requestId, and the row still advances
+   * the cursor on its way past.
+   */
+  const taken: Steer[] = [];
+  const s = sink({ onSteer: (steer) => taken.push(steer), consumedSteers: new Set(["r1"]) });
+  handleControls.call(s, [
+    { seq: 4, kind: "steer", payload: { requestId: "r1", text: "target node 20" } },
+    { seq: 5, kind: "cancel_request", payload: {} },
+  ]);
+  assert.deepEqual(taken, [], "an already-folded instruction must not be queued a second time");
+  assert.equal(s.cancelled, true, "a cancel behind a consumed steer still has to land");
+  assert.equal(s.afterControlSeq, 5);
 });
 
 test("a steer that arrives before the session exists waits in the backlog", () => {
@@ -78,7 +113,36 @@ test("a steer that arrives before the session exists waits in the backlog", () =
   // an instruction the web has already shown as queued.
   const s = sink();
   handleControls.call(s, [{ seq: 1, kind: "steer", payload: { requestId: "r1", text: "use pnpm" } }]);
-  assert.deepEqual(s.steerBacklog, [{ requestId: "r1", text: "use pnpm" }]);
+  assert.deepEqual(s.steerBacklog, [{ requestId: "r1", text: "use pnpm", displayText: "use pnpm" }]);
+});
+
+test("the transcript echo is the typed words, never the attachment fold", () => {
+  /*
+   * A steer carrying a PDF reaches the agent as the typed sentence plus up to
+   * 100 000 characters of extracted text per attachment. The driver echoes each
+   * instruction back as a `user` event, and the native clients RENDER that event
+   * (NativeCodeEvent.Kind.user) rather than the persisted message the web reads
+   * — so echoing the folded string put the whole extract in an iOS reader's own
+   * bubble. `displayText` is what the route sends for that purpose.
+   */
+  const taken: Steer[] = [];
+  const s = sink({ onSteer: (steer) => taken.push(steer) });
+  handleControls.call(s, [
+    {
+      seq: 1,
+      kind: "steer",
+      payload: { requestId: "r1", text: "match this\n\n---\nspec.md\n<40kB of extract>", displayText: "match this" },
+    },
+  ]);
+  assert.equal(taken[0]?.displayText, "match this");
+  assert.match(taken[0]!.text, /40kB of extract/, "the agent still gets everything that was attached");
+
+  // An older server sends no `displayText`, and a steer with nothing attached
+  // never will: the two strings are the same, so the echo is unchanged.
+  const legacy: Steer[] = [];
+  const s2 = sink({ onSteer: (steer) => legacy.push(steer) });
+  handleControls.call(s2, [{ seq: 1, kind: "steer", payload: { requestId: "r2", text: "use pnpm" } }]);
+  assert.equal(legacy[0]?.displayText, "use pnpm");
 });
 
 test("a malformed steer is ignored, and cancel still stops the run", () => {

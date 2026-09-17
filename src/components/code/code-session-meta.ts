@@ -102,6 +102,15 @@ export type CodeTaskMeta = {
    * request for exactly this one row.
    */
   activeTask: { id: string; status: string; target: string | null } | null;
+  /**
+   * The newest task in this session, live or finished.
+   *
+   * `activeTask` answers "is something running"; this answers "which run is the
+   * one on screen", which is a different question and the one the review dock,
+   * the Create PR control and the CI poll all ask. A session whose last run
+   * finished ten minutes ago has no active task and still has a diff to read.
+   */
+  latestTask: { id: string; status: string; target: string | null; branch: string | null } | null;
 };
 
 type TaskMetaRow = {
@@ -131,6 +140,7 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
     branch: null,
     prUrl: null,
     activeTask: null,
+    latestTask: null,
   });
 
   const refresh = React.useCallback(async () => {
@@ -157,6 +167,21 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
         branch,
         prUrl,
         activeTask: live ? { id: live.id!, status: live.status!, target: live.target ?? null } : null,
+        latestTask:
+          latest && typeof latest.id === "string" && typeof latest.status === "string"
+            ? {
+                id: latest.id,
+                status: latest.status,
+                target: latest.target ?? null,
+                // THIS run's branch, not the conversation's. The two differ for
+                // exactly one case and it is the one that matters: a first run
+                // still going has no branch, while `branch` above already names
+                // one from an earlier run — and asking GitHub about a ref this
+                // run has not pushed is a 409 every thirty seconds, or a Create
+                // PR button over commits that are not there yet.
+                branch: typeof latest.branch === "string" && latest.branch ? latest.branch : null,
+              }
+            : null,
       });
     } catch {
       // Keep the last reading; a device session simply stays non-cloud. But

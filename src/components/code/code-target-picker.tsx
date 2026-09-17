@@ -486,7 +486,7 @@ const TARGETS: { value: Target; label: string; hint: string; icon: React.ReactNo
   {
     value: "cloud",
     label: "Cloud",
-    hint: "A fresh machine, opens a pull request.",
+    hint: "A fresh machine, pushes a branch you review.",
     icon: <CodeIcons.cloud className="size-4" aria-hidden="true" />,
   },
 ];
@@ -716,7 +716,7 @@ function CloudList({
         body={
           reconnect
             ? "Juno can’t list your repositories until it is reconnected. Nothing was started, and sessions on your device are unaffected."
-            : "Cloud runs clone one of your GitHub repositories onto a fresh machine and open a pull request. Connect GitHub to pick one."
+            : "Cloud runs clone one of your GitHub repositories onto a fresh machine and push a branch back. Connect GitHub to pick one."
         }
         action={
           <Button asChild variant="outline" size="sm" className="gap-1.5 coarse:h-11">

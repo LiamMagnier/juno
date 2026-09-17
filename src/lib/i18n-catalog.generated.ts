@@ -302,6 +302,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fill"
   },
   {
+    "id": "035213328b2556f2",
+    "source": "Goes out with your next message — add anything else you want to say first."
+  },
+  {
     "id": "036bac15413bfccd",
     "source": "request_in_progress"
   },
@@ -534,6 +538,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen Long"
   },
   {
+    "id": "07091051921a6560",
+    "source": "text_or_attachments_required"
+  },
+  {
     "id": "07115b69124731dc",
     "source": "Enter a current code or one of your recovery codes."
   },
@@ -696,6 +704,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0924b7a76ad23a2f",
     "source": "Legacy long-context text model."
+  },
+  {
+    "id": "0927f0f8d18a69d2",
+    "source": "attachments_require_session"
   },
   {
     "id": "0937c32da2498f51",
@@ -870,6 +882,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Directness"
   },
   {
+    "id": "0bccf5854f073474",
+    "source": "Session options"
+  },
+  {
     "id": "0bcd66e677f4ee72",
     "source": "Layers"
   },
@@ -880,6 +896,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0bd1a3d6fcf206cf",
     "source": "Let a task start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+  },
+  {
+    "id": "0bd6a1a4937b104f",
+    "source": "Could not reach GitHub. The branch is pushed — try again."
   },
   {
     "id": "0c0070929512c260",
@@ -970,10 +990,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Redirecting…"
   },
   {
-    "id": "0d960fe3d1d15d87",
-    "source": "The cloud runner hasn’t started this task yet. Wait for it to start, then send the instruction."
-  },
-  {
     "id": "0d9e907710f7117c",
     "source": "Most capable Opus — complex agentic coding and hard tasks."
   },
@@ -1012,6 +1028,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0e17661d8ed13013",
     "source": "Usage limit reached"
+  },
+  {
+    "id": "0e2372a4ef2648c0",
+    "source": "Delete this session?"
   },
   {
     "id": "0e2516993c17d812",
@@ -1430,6 +1450,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The stream was interrupted. The partial answer was preserved."
   },
   {
+    "id": "136a71a25be726da",
+    "source": "Session name"
+  },
+  {
     "id": "1372a3810da5224a",
     "source": "Unclassified"
   },
@@ -1544,6 +1568,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1509f561f2416598",
     "source": "Save"
+  },
+  {
+    "id": "1522840a6f350cb7",
+    "source": "Describe what to build or fix — the run happens in the cloud and pushes a branch you can read here, then turn into a pull request."
   },
   {
     "id": "1523bdab74280db9",
@@ -2418,6 +2446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Leaves Juno"
   },
   {
+    "id": "21fde3822f9b9c33",
+    "source": "This run hasn’t pushed a branch yet. A pull request needs commits on GitHub to compare."
+  },
+  {
     "id": "220e2069b211afb5",
     "source": "Web search is being used too quickly. Try again in a moment."
   },
@@ -2528,6 +2560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "23873eb68af458b4",
     "source": "How Juno sounds, and how you talk to it."
+  },
+  {
+    "id": "238c38132fc4ce6f",
+    "source": "Attachments can only be sent from a signed-in session."
   },
   {
     "id": "2395ae245093c55c",
@@ -2708,6 +2744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "264ec3cda37fa95f",
     "source": "quiz · multi-question + recap"
+  },
+  {
+    "id": "2659201d6f866751",
+    "source": "Discard this review"
   },
   {
     "id": "265e035259e0c6b4",
@@ -3252,6 +3292,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2d882788e9ad6b50",
     "source": "mfa_required"
+  },
+  {
+    "id": "2d8de4bbfa38152f",
+    "source": "Runs in the cloud · pushes a branch"
   },
   {
     "id": "2d9c8e66ddf203a6",
@@ -4534,6 +4578,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This is saved paused. Nothing runs until you switch it on."
   },
   {
+    "id": "413116293eb3f201",
+    "source": "Opens the session with your notes as the next instruction."
+  },
+  {
     "id": "4145d75c834fd9b5",
     "source": "suppression de compte intégrée"
   },
@@ -4576,6 +4624,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "41a4c9a0e84b07c3",
     "source": "Only chats in this project can see this memory."
+  },
+  {
+    "id": "41ac80070e428e17",
+    "source": "Could not reach Juno to open the pull request."
   },
   {
     "id": "41b0199e5fd03fb0",
@@ -5962,6 +6014,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
   {
+    "id": "56eb4bab06fe1111",
+    "source": "no_branch"
+  },
+  {
     "id": "573b8c055df44536",
     "source": "Tell me"
   },
@@ -6742,6 +6798,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Start private chat"
   },
   {
+    "id": "6217be157f379f41",
+    "source": "Runs in the cloud and pushes a branch — read the diff, then open the pull request yourself."
+  },
+  {
     "id": "622969c61e1fb812",
     "source": "Google returned no streaming response body"
   },
@@ -7134,6 +7194,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Incognito chats are not saved or added to memory."
   },
   {
+    "id": "67499eafd5407b81",
+    "source": "Could not work out which branch this should merge into."
+  },
+  {
     "id": "6749e7006d192f42",
     "source": "Loading scheduled tasks"
   },
@@ -7228,6 +7292,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "683b1007e0e9265a",
     "source": "[message could not be decrypted]"
+  },
+  {
+    "id": "684a7b6f070eac47",
+    "source": "This run happened on your Mac, so nothing has been pushed to GitHub. Commit and push from the Mac, then open the pull request there."
   },
   {
     "id": "685394345b4000bb",
@@ -7746,6 +7814,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "/chat"
   },
   {
+    "id": "6ec31dcde39ea4a9",
+    "source": "GitHub accepted the request but described no pull request."
+  },
+  {
     "id": "6ecc3df6bffdd06c",
     "source": "Move"
   },
@@ -8010,6 +8082,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Saving voice transcript…"
   },
   {
+    "id": "71e2bc1698e68dcf",
+    "source": "Create pull request"
+  },
+  {
     "id": "71ebacb6bbdbf010",
     "source": "Autoregression"
   },
@@ -8084,10 +8160,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "72ed2bd767cef627",
     "source": "Current password"
-  },
-  {
-    "id": "72ed7fd894a0c07a",
-    "source": "task_not_started"
   },
   {
     "id": "730d813367179dfd",
@@ -8618,6 +8690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sign in to continue to Juno."
   },
   {
+    "id": "7aa5bd1fb508ff5d",
+    "source": "There was nothing left to send — the attached files are no longer available."
+  },
+  {
     "id": "7aadb6cc46264d1f",
     "source": "A Music-User-Token is required."
   },
@@ -9070,10 +9146,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Save your recovery codes"
   },
   {
-    "id": "817761389ce0eeeb",
-    "source": "Puts your notes in the composer as the next instruction."
-  },
-  {
     "id": "819481abf1dd47f2",
     "source": "What's inside"
   },
@@ -9096,6 +9168,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "81d7cb29b5a76c02",
     "source": "This design couldn’t open"
+  },
+  {
+    "id": "81dffa2f0fce2569",
+    "source": "no_base"
   },
   {
     "id": "81ed15ffe36364e3",
@@ -9284,6 +9360,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8453e9e99229730e",
     "source": "Legacy alias routing to V4 Flash."
+  },
+  {
+    "id": "8461251bf6efa269",
+    "source": "Add to the instruction this task starts with…"
   },
   {
     "id": "848dad9ba0a4bacc",
@@ -10006,6 +10086,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Composio has no shared OAuth app for"
   },
   {
+    "id": "90eeb6484d4fbac7",
+    "source": "This run was started outside Juno on the web, so there is no session here to reply into. Open it on the machine that started it to respond."
+  },
+  {
     "id": "90f41411fa9dc38e",
     "source": "Loading your library…"
   },
@@ -10088,6 +10172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "92240a91fcb3a48e",
     "source": "Select a layer first."
+  },
+  {
+    "id": "9232207aab7015c0",
+    "source": "Opening on GitHub…"
   },
   {
     "id": "92340695899bd2d8",
@@ -10216,6 +10304,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "93d8874c8c86f0fc",
     "source": "console"
+  },
+  {
+    "id": "93df6e8ed17d5f9c",
+    "source": "Could not delete this session."
   },
   {
     "id": "942087cc2d41e013",
@@ -10366,12 +10458,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No sources yet"
   },
   {
+    "id": "95bf851227b6c326",
+    "source": "github_failed"
+  },
+  {
     "id": "95c6fae3b7c96afd",
     "source": "Click to upload files"
   },
   {
     "id": "95c91385659e3c73",
     "source": "No favorites yet"
+  },
+  {
+    "id": "95c9255a9ec943b5",
+    "source": "They wait in the composer until you send — add anything else you want to say first."
   },
   {
     "id": "95d3f179cfe80e1b",
@@ -10400,6 +10500,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "964863cd44cc97be",
     "source": "This request did not arrive with the signature Juno needs to accept an answer from the web. Decide it in the Juno app on the Mac that raised it."
+  },
+  {
+    "id": "9650158d68d9d5d2",
+    "source": "Write it on GitHub"
   },
   {
     "id": "966f3dee73a2e757",
@@ -10516,6 +10620,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "97ebc65eba0bf96e",
     "source": "Snapshot ·"
+  },
+  {
+    "id": "9808814aa6366cee",
+    "source": "Session archived."
   },
   {
     "id": "9819d0c57b2418be",
@@ -11262,10 +11370,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ban lifted; strikes reset."
   },
   {
-    "id": "a13e6afc724bf9a2",
-    "source": "Runs in the cloud · opens a pull request"
-  },
-  {
     "id": "a13fdb7fab1cb83d",
     "source": "Waiting for the upload to finish"
   },
@@ -11742,6 +11846,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Restore"
   },
   {
+    "id": "a76e937c18239f30",
+    "source": "nothing_to_send"
+  },
+  {
     "id": "a770b43f9eb38e29",
     "source": "Couldn’t fork — the transcript is too large to carry over."
   },
@@ -11784,6 +11892,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7e1ae2bb2f7b663",
     "source": "Don’t"
+  },
+  {
+    "id": "a7e2d0791061a5e3",
+    "source": "Back to the diff"
   },
   {
     "id": "a7ebb9583dc8c204",
@@ -12758,10 +12870,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Choose the best AI"
   },
   {
-    "id": "b57c2d03a0eed406",
-    "source": "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
-  },
-  {
     "id": "b57ef478f9bacbf9",
     "source": "Ungroup"
   },
@@ -13086,6 +13194,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skill available"
   },
   {
+    "id": "ba2b6cbfd788d969",
+    "source": "Delete session"
+  },
+  {
     "id": "ba2b6f469d69a3c5",
     "source": "Easing out of this keyframe"
   },
@@ -13318,6 +13430,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reload"
   },
   {
+    "id": "bdd83fa22473d9cc",
+    "source": "Add this to the instruction this task starts with"
+  },
+  {
     "id": "bdea820e5570ba26",
     "source": "No requests here"
   },
@@ -13462,6 +13578,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hide the searches"
   },
   {
+    "id": "c05515899abe2e11",
+    "source": "The name in the sidebar and at the top of the transcript. It never changes the workspace or the repository this session runs against."
+  },
+  {
     "id": "c0559fb17294ba5a",
     "source": "How Juno should address you"
   },
@@ -13512,6 +13632,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c0acecedfcc4b189",
     "source": "Studies"
+  },
+  {
+    "id": "c0af21f9451801a5",
+    "source": "This permanently removes the transcript and everything in it. Any branch or pull request a run already pushed stays on GitHub, and anything it changed on your Mac stays there."
   },
   {
     "id": "c0b0109d9439de57",
@@ -14242,6 +14366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stop"
   },
   {
+    "id": "cae94dc34333f35b",
+    "source": "This session already has a pull request — it is linked in the banner above."
+  },
+  {
     "id": "caf48582934de3e1",
     "source": "Thinking + Reasoning"
   },
@@ -14270,12 +14398,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Account suspended"
   },
   {
+    "id": "cb5462698b967c8e",
+    "source": "Add your review to the next message"
+  },
+  {
     "id": "cb597f5dbec3d220",
     "source": "Conditions générales (CGU / CGV)"
   },
   {
     "id": "cb6d66bd52cb1d38",
     "source": "No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget — changes apply right away and show up here, with Undo if you change your mind."
+  },
+  {
+    "id": "cb77087dda57fe8b",
+    "source": "Queued — starting a cloud machine (this can take a moment). Anything you add now goes in with the first instruction."
   },
   {
     "id": "cb904bad6967ce58",
@@ -15666,6 +15802,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Review the changes before you ship them."
   },
   {
+    "id": "dcd0fe5ea74a79fa",
+    "source": ", with the commits this run pushed."
+  },
+  {
     "id": "dcd1d5223f73b3a9",
     "source": "Name"
   },
@@ -16286,10 +16426,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Sonnet, 200K context."
   },
   {
-    "id": "e4df06976781be61",
-    "source": "Runs in the cloud and opens a pull request — review the changes before you merge them."
-  },
-  {
     "id": "e4e15dd262533549",
     "source": "characters are laid out here. The download has the whole file."
   },
@@ -16642,6 +16778,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "not recorded"
   },
   {
+    "id": "ea8f584811ed98c2",
+    "source": "This run is not linked to a repository."
+  },
+  {
     "id": "ea93d6a262ecb87a",
     "source": "Tools"
   },
@@ -16906,6 +17046,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "MiniMax Highspeed"
   },
   {
+    "id": "ee25cdcd0f8fe4e0",
+    "source": "Open as a draft"
+  },
+  {
     "id": "ee30bf8fbf8a94d5",
     "source": "Computer Use Unavailable"
   },
@@ -16988,6 +17132,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ef5320e014f95800",
     "source": "Every run starts from this text and nothing else, so it has to stand on its own — nobody is there to answer a follow-up at seven in the morning."
+  },
+  {
+    "id": "ef60dcdfb2627701",
+    "source": "Your review of the changes"
   },
   {
     "id": "ef6691545d2c5523",
@@ -17078,10 +17226,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This skill couldn’t load"
   },
   {
-    "id": "f0de7f7a243c100a",
-    "source": "Queued — starting a cloud machine (this can take a moment)…"
-  },
-  {
     "id": "f102986b39effb31",
     "source": "Scale"
   },
@@ -17160,6 +17304,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f1f8f5198bc05c9c",
     "source": "Older high-capability GLM-4.5 variant."
+  },
+  {
+    "id": "f1fefc9bb89d6589",
+    "source": "Open for review"
   },
   {
     "id": "f1ff64c41e901701",
@@ -17248,6 +17396,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f31ca38a3538dc2e",
     "source": "Qwen Flash"
+  },
+  {
+    "id": "f3226919738c23ba",
+    "source": "Rename this session"
   },
   {
     "id": "f3380f7b44bd70af",
@@ -17408,6 +17560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f54ad4f29baf0a52",
     "source": "Mac connected"
+  },
+  {
+    "id": "f557186e04052f95",
+    "source": "Share a read-only link (no run log)"
   },
   {
     "id": "f5610b27681e0f55",

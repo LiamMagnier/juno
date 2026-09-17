@@ -57,13 +57,15 @@ export interface CodeSessionComposerProps {
   onCancel: () => void;
 
   /**
-   * Mid-run steering. `canSteer` is the session's own answer (a run that is
-   * running, or a device run waiting on an approval — a cloud run reads its
-   * controls between agent steps, so it takes one too); `steerReady` narrows it to
-   * "there is text to send and nothing staged that a steer cannot carry".
-   * While `canSteer` the field stays live and the primary action's send face
-   * reads "Send to running task"; Stop is what the circle shows when the
-   * field is empty, because that is the other thing left to press.
+   * Mid-run steering. `canSteer` is the session's own answer — a cloud run in
+   * any state where a driver is holding the task or on its way to it, which
+   * includes `queued`: the driver reads its backlog out of runner-context, so
+   * words sent while a machine is starting go in with the prompt it opens with.
+   * A device run is never steerable, because no Mac host acts on the control.
+   * `steerReady` narrows it to "there is something to send and nothing still
+   * uploading". While `canSteer` the field stays live and the primary action's
+   * send face names the verb; Stop is what the circle shows when the field is
+   * empty, because that is the other thing left to press.
    */
   canSteer: boolean;
   steerReady: boolean;
@@ -109,11 +111,13 @@ export interface CodeSessionComposerProps {
  * connectors chip that used to sit here are gone, because a row that shows
  * every option at once reads as a settings panel (docs/design/FLAT_UI.md §4).
  *
- * The field does not go dark while a device run is going. It used to — the
- * only verb left was Stop — so a reader who watched the agent head the wrong
- * way had to kill the run and start over. Now typed text goes INTO the run as
- * its next instruction (see `useCodeSession.steer`), and the send circle
- * names that verb.
+ * The field does not go dark while a run is going. It used to — the only verb
+ * left was Stop — so a reader who watched the agent head the wrong way had to
+ * kill the run and start over. Now typed text goes INTO the run as its next
+ * instruction (see `useCodeSession.steer`), and the send circle names that
+ * verb. That holds from the moment the task exists, including the minute a
+ * cloud machine takes to start: those words become part of the prompt the run
+ * opens with rather than being refused, which is what the queue note promises.
  */
 export function CodeSessionComposer({
   above,
@@ -152,12 +156,13 @@ export function CodeSessionComposer({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  // Locked means "nothing can be typed": submitting, stopping, or queued —
-  // including a cloud task whose runner has not claimed it yet, which has no
-  // process to read an instruction. A steerable run leaves the field open.
+  // Locked means "nothing can be typed": every busy state whose far side will
+  // not act on a `steer`. A queued CLOUD run is no longer one of them — its
+  // driver takes the words with the prompt it starts on — while a device run of
+  // any status still is, because no Mac host acknowledges the verb.
   const locked = isBusy && !canSteer;
   const settling = status === "stopping" || status === "submitting";
-  const dropEnabled = attachments.enabled && !isBusy && !dictation.active;
+  const dropEnabled = attachments.enabled && !locked && !dictation.active;
 
   const modelInfo = React.useMemo(() => resolveModel(model), [model]);
   const effortOptions = React.useMemo(() => (modelInfo ? reasoningOptions(modelInfo) : []), [modelInfo]);
@@ -189,6 +194,14 @@ export function CodeSessionComposer({
    * thing people pressed by accident most.
    */
   const face: ComposerPrimaryFace = settling ? "busy" : isBusy ? (steerReady ? "send" : "stop") : "send";
+  /*
+   * A QUEUED RUN HAS NOT STARTED, SO THE VERB MUST NOT SAY IT HAS. "Send to
+   * running task" over a task that is still waiting for a machine would be the
+   * composer asserting the one thing the reader is watching the queue note to
+   * find out. Only reached while `canSteer`, i.e. for a cloud run, so the
+   * "starts with" wording below describes a fold that really happens.
+   */
+  const starting = isBusy && status === "queued";
   const primaryLabel = settling
     ? status === "stopping"
       ? "Stopping task"
@@ -196,7 +209,9 @@ export function CodeSessionComposer({
     : face === "stop"
       ? "Stop this task"
       : isBusy
-        ? "Send to running task"
+        ? starting
+          ? "Add this to the instruction this task starts with"
+          : "Send to running task"
         : isCloud
           ? "Start a cloud run"
           : "Send to your Mac";
@@ -207,7 +222,9 @@ export function CodeSessionComposer({
     : face === "stop"
       ? "Stop"
       : isBusy
-        ? "Send to running task"
+        ? starting
+          ? "Add to the first instruction"
+          : "Send to running task"
         : "Send";
   const onPrimary = face === "stop" ? onCancel : isBusy ? onSteer : onSubmit;
   const primaryDisabled = settling || (face === "send" && !(isBusy ? steerReady : canSend));
@@ -215,7 +232,9 @@ export function CodeSessionComposer({
   const runLabel = resolving ? "Getting this session ready…" : isCloud ? (cloudRepoFull ?? workspaceName) : workspaceName;
 
   const placeholder = canSteer
-    ? "Add an instruction to the running task…"
+    ? starting
+      ? "Add to the instruction this task starts with…"
+      : "Add an instruction to the running task…"
     : isCloud
       ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
       : presenceState === "offline"
@@ -279,19 +298,30 @@ export function CodeSessionComposer({
                   rows={1}
                   disabled={locked}
                   placeholder={placeholder}
-                  aria-label={canSteer ? "Instruction for the running task" : "Prompt for this code session"}
+                  aria-label={
+                    canSteer
+                      ? starting
+                        ? "Extra instruction for the task that is starting"
+                        : "Instruction for the running task"
+                      : "Prompt for this code session"
+                  }
                   aria-describedby={blockedReason ? blockedId : undefined}
                   className={composerFieldClass}
                 />
               }
               leading={
                 attachments.enabled && (
-                  // Attachments cannot ride a steer, so the `+` rests while a
-                  // run is going even though the field does not.
+                  // The `+` stays live for as long as the field does. It used
+                  // to rest while a run was going because "an attachment cannot
+                  // ride a steer" — which was true of nothing but the absence
+                  // of a fold: the steer route puts an attachment's extracted
+                  // text in front of the agent exactly as the create route does
+                  // for a first prompt, so a screenshot dropped mid-run is as
+                  // readable as one dropped before it started.
                   <ComposerAddMenu
                     open={plusOpen}
                     onOpenChange={setPlusOpen}
-                    disabled={isBusy}
+                    disabled={locked}
                     onPickPhotos={() => imageInputRef.current?.click()}
                     onPickFiles={() => fileInputRef.current?.click()}
                     onPickLibrary={() => setLibraryOpen(true)}

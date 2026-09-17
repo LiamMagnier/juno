@@ -81,8 +81,18 @@ test("every @[…]/split: step in the chat surfaces is the split's own number", 
 test("the code session's docks each derive their step from their width plus the floor", () => {
   const src = read("src/components/code/code-session-view.tsx");
   const canvasStep = CHAT_MIN_WIDTH + 34 * ROOT_PX;
-  assert.deepEqual(containerSteps(src, "split"), [remOf(SPLIT_MIN_WIDTH), remOf(canvasStep)].sort());
+  // The review dock is the third column, and it is sized by the same equation
+  // rather than by eye: 32rem of unified diff on top of the transcript's floor.
+  // If someone widens the pane without moving its step, the transcript goes
+  // under 320px while both are on screen — which is the whole failure this
+  // derivation exists to make impossible.
+  const reviewStep = CHAT_MIN_WIDTH + 32 * ROOT_PX;
+  assert.deepEqual(
+    containerSteps(src, "split"),
+    [remOf(SPLIT_MIN_WIDTH), remOf(reviewStep), remOf(canvasStep)].sort(),
+  );
   assert.match(src, /@\[54rem\]\/split:w-\[34rem\]/, "the 34rem canvas engages at its own step");
+  assert.match(src, /@\[52rem\]\/split:w-\[32rem\]/, "the 32rem review dock engages at its own step");
   assert.match(src, /@\[50rem\]\/split:w-\[30rem\]/, "the 30rem dock engages at the shared one");
   assert.ok(!/\blg:/.test(stripComments(src)));
   assert.ok(!src.includes("(max-width: 1023px)"));

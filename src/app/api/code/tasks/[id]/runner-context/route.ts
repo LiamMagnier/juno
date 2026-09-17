@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
+import { MAX_PENDING_STEERS, MAX_PENDING_STEER_CHARS } from "@/lib/code-steer-policy";
 import { decryptSecret } from "@/lib/crypto";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { isTerminalTaskStatus, requireOidcRunnerAuth } from "@/lib/code-remote";
@@ -54,7 +55,12 @@ export const runtime = "nodejs";
  *     models: BackendAgentModel[],      // agent-core proxy catalog
  *     reasoningEffort,
  *     history: [{ role, text }],        // the conversation so far, oldest first
- *     continuation: { branch, prUrl, prNumber, baseRef } | null
+ *     continuation: { branch, prUrl, prNumber, baseRef } | null,
+ *     pendingSteers: [{ requestId, text, displayText? }],
+ *                                       // steers sent before the run started,
+ *                                       // oldest first, capped in count and in
+ *                                       // total characters
+ *     openPullRequest: "auto" | "never"  // whether the runner opens the PR itself
  *   }
  *         401 unauthenticated / invalid OIDC token
  *         403 authenticated browser session (runner-only endpoint)
@@ -233,6 +239,78 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     };
   }
 
+  /*
+   * INSTRUCTIONS THAT ARRIVED WHILE THIS MACHINE WAS STARTING.
+   *
+   * Starting a cloud runner takes a minute or more, and the steer route used to
+   * refuse anything sent during it (409 `task_not_started`) because there was no
+   * process holding the task to read a control. That is true of the control
+   * CHANNEL and false of the run: the driver has not called the agent yet, so an
+   * instruction that lands before it does can simply be part of the first
+   * prompt — which is a better outcome than the one the refusal forced, where a
+   * person who thought of a constraint during the wait had to cancel and start
+   * over.
+   *
+   * So every `steer` this task has collected and not yet acknowledged is handed
+   * over here, in order, and the driver folds them into the prompt before it
+   * calls the agent. The ack still comes from the driver, never from this route:
+   * the composer's "delivered" has always meant the far side took the words, and
+   * a route that claimed it on the far side's behalf would be asserting
+   * something it cannot see.
+   *
+   * Acks are filtered out for the replay case only. This handoff is single-use,
+   * so in practice nothing is acknowledged yet; the filter costs one pass over a
+   * short list and means a future second handoff could never re-inject an
+   * instruction the agent has already had.
+   */
+  const controlRows = await prisma.codeTaskEvent.findMany({
+    where: { taskId: id, kind: { in: ["steer", "steer_ack"] } },
+    orderBy: { seq: "asc" },
+    select: { kind: true, payload: true },
+  });
+  const acked = new Set<string>();
+  for (const row of controlRows) {
+    if (row.kind !== "steer_ack") continue;
+    const requestId = (row.payload as { requestId?: unknown } | null)?.requestId;
+    if (typeof requestId === "string") acked.add(requestId);
+  }
+  /*
+   * BOUNDED, BECAUSE A STEER IS NOT A SENTENCE ANY MORE.
+   *
+   * Since the steer route folds attachments into the control's text, one entry
+   * can be the typed words plus MAX_ATTACHMENT_EXTRACT_CHARS per attachment —
+   * of the order of a megabyte. Nothing on this side used to cap the list, so a
+   * handful of attachment-carrying instructions sent while the machine was
+   * provisioning made a multi-megabyte handoff that the runner then concatenated
+   * into `openingPrompt` in full: a response nobody can read and a first prompt
+   * no model can use.
+   *
+   * The count matches `readPendingSteers` in scripts/cloud-code-runner.mjs
+   * exactly, so this never sends what the far side would silently discard, and
+   * the character budget stops before the response gets large. Both cut from the
+   * end: the earliest instructions are the ones the run was started around, so
+   * they are the ones worth keeping when something has to be left out.
+   */
+  const pendingSteers: { requestId: string; text: string; displayText?: string }[] = [];
+  let steerChars = 0;
+  for (const row of controlRows) {
+    if (row.kind !== "steer") continue;
+    if (pendingSteers.length >= MAX_PENDING_STEERS) break;
+    const payload = row.payload as { requestId?: unknown; text?: unknown; displayText?: unknown } | null;
+    const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
+    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+    if (!requestId || !text || acked.has(requestId)) continue;
+    // A first entry over budget on its own still goes: dropping the only
+    // instruction somebody sent would be worse than one large prompt.
+    if (pendingSteers.length > 0 && steerChars + text.length > MAX_PENDING_STEER_CHARS) break;
+    steerChars += text.length;
+    // `displayText` is what a transcript shows; `text` is what the agent reads.
+    // Carried through so the runner's echo is the typed words rather than the
+    // attachment fold — see the steer route for why that distinction exists.
+    const displayText = typeof payload?.displayText === "string" ? payload.displayText.trim() : "";
+    pendingSteers.push({ requestId, text, ...(displayText ? { displayText } : {}) });
+  }
+
   const availableModels = await loadAvailableModels();
   const capabilityProbes = await loadModelCapabilityMap(availableModels.map((model) => model.id));
   const catalog = backendAgentCatalog(availableModels, capabilityProbes);
@@ -278,6 +356,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       reasoningEffort: task.reasoningEffort,
       history,
       continuation,
+      // Instructions that landed while this machine was starting. The driver
+      // folds them into the first prompt and acknowledges each one itself.
+      pendingSteers,
+      /*
+       * WHO OPENS THE PULL REQUEST, AND WHY IT IS NOT ALWAYS THE RUNNER.
+       *
+       * The runner used to open one at the end of every run that changed a
+       * file — non-draft, titled from the first line of the prompt, body
+       * written by us — and the person who asked for the work had no say in
+       * any of it. That is the right behaviour for a run nobody is watching:
+       * a task dispatched from the phone or by a schedule has no surface to
+       * offer the choice on, and a branch with no pull request there is work
+       * that quietly goes missing.
+       *
+       * A run inside a web session is the opposite case. Its reader has the
+       * diff, a Create PR control above it and three shapes to pick from —
+       * ready for review, a draft, or GitHub's own compose form — and a pull
+       * request opened before they have read a line takes that choice away
+       * and notifies reviewers about a change nobody has looked at.
+       *
+       * `conversationId` is what distinguishes them, and it needs no new
+       * column: the create route sets it for a website session and native
+       * clients omit it (see CodeTask.conversationId). The runner still
+       * pushes the branch and still appends to the pull request a follow-up
+       * is continuing — only the CREATION is deferred.
+       */
+      openPullRequest: task.conversationId ? "never" : "auto",
     },
     { headers: { "Cache-Control": "no-store" } },
   );

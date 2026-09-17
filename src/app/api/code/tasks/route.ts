@@ -18,6 +18,7 @@ import {
 } from "@/lib/code-remote";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
 import { rateLimit } from "@/lib/rate-limit";
+import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 
@@ -80,7 +81,12 @@ const postSchema = z.object({
 
 /** Fold claimed attachments into the agent-facing prompt (text extract when we
  *  have it; otherwise a short filename note so the agent knows something was
- *  attached even if it can't open the binary). */
+ *  attached even if it can't open the binary).
+ *
+ *  The FORMAT moved to lib/code-attachment-prompt.ts so mid-run steering can
+ *  reach its agent the same way — an attachment dropped into a running session
+ *  has to read exactly like one attached before it started, and two copies of
+ *  this fold would have drifted the first time either was touched. */
 async function enrichPromptWithAttachments(
   prompt: string,
   attachmentIds: string[],
@@ -91,18 +97,10 @@ async function enrichPromptWithAttachments(
     where: { id: { in: attachmentIds }, userId, deletedAt: null },
     select: { fileName: true, kind: true, mimeType: true, extractedText: true },
   });
+  // Ids that name nothing this user owns any more: the prompt may be empty (a
+  // screenshot alone is a valid ask), so it still needs a sentence.
   if (atts.length === 0) return prompt || "See attached files.";
-  const blocks = atts.map((att) => {
-    if (att.extractedText?.trim()) {
-      return `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}`;
-    }
-    if (att.kind === "IMAGE") {
-      return `Attached image: ${att.fileName} (${att.mimeType}). The user shared this image with the task for visual reference.`;
-    }
-    return `Attached file: ${att.fileName} (${att.mimeType}).`;
-  });
-  const joined = blocks.join("\n\n");
-  return prompt ? `${prompt}\n\n---\n${joined}` : joined;
+  return foldAttachmentsIntoPrompt(prompt, atts);
 }
 
 export async function GET(req: Request) {

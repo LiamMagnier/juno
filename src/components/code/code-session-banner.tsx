@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { AppIcons, CodeIcons } from "@/lib/app-icons";
+import { checksLabel, type ChecksReport } from "@/lib/code-checks";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { CodeSessionStatus } from "@/hooks/use-code-session";
@@ -31,9 +32,16 @@ import { PRESENCE_META, type Presence } from "@/components/code/code-session-met
  *                  is live, and it collapses to nothing the moment it settles,
  *                  so a resting session is a single quiet line.
  *
- * The chips shed their labels below `sm` rather than wrapping: a coloured dot
- * with an accessible name is the same fact in a tenth of the width, and it is
- * the fact — not the sentence — that a reader is scanning for.
+ * The chips shed their labels on a narrow row rather than wrapping: a coloured
+ * dot with an accessible name is the same fact in a tenth of the width, and it
+ * is the fact — not the sentence — that a reader is scanning for.
+ *
+ * Every width here is measured against `@container/split`, the mount the
+ * session view declares and sizes its docked columns from. `sm:` and `md:`
+ * measured the WINDOW, and this header never has the window: the shell's
+ * sidebar takes a slice of it and the thought dock, the canvas and the review
+ * dock each take another, so a 1000px browser can leave this row 420px wide
+ * with its labels still at full length. Same numbers, right question.
  */
 
 /*
@@ -46,7 +54,7 @@ import { PRESENCE_META, type Presence } from "@/components/code/code-session-met
  * the black ground, which is below the hairline that rings it.
  */
 const BANNER_CHIP =
-  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 text-caption text-muted-foreground sm:px-2.5";
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 text-caption text-muted-foreground @[40rem]/split:px-2.5";
 /** The chip's leading dot, at the one size all four use. */
 const BANNER_DOT = "h-1.5 w-1.5 shrink-0 rounded-full";
 
@@ -57,15 +65,34 @@ const TASK_CHIP: Partial<Record<CodeSessionStatus, { label: string; dot: string 
   stopping: { label: "Stopping…", dot: "bg-muted-foreground" },
 };
 
-/** A chip label that survives a phone by becoming its own accessible name. */
+/**
+ * A chip label that survives a phone by becoming its own accessible name.
+ *
+ * Measured against the SPLIT CONTAINER, not the window. `sm:` asked how wide
+ * the browser was, and this header sits inside a shell whose sidebar, thought
+ * dock and canvas each take a third of it — so on a 900px window with the
+ * review dock open the labels stayed at full length in a row half that wide and
+ * the chips wrapped. `@[40rem]/split:` is the same 640px asking the right
+ * question, and it is the mount every other docked column on this surface is
+ * sized from.
+ */
 function ChipLabel({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <span className="hidden min-w-0 truncate sm:inline">{children}</span>
-      <span className="sr-only sm:hidden">{children}</span>
+      <span className="hidden min-w-0 truncate @[40rem]/split:inline">{children}</span>
+      <span className="sr-only @[40rem]/split:hidden">{children}</span>
     </>
   );
 }
+
+/** The dot colour for a CI rollup, in the same three inks the rest of the product uses. */
+const CHECKS_DOT: Record<ChecksReport["state"], string> = {
+  failing: "bg-destructive",
+  running: "bg-muted-foreground motion-safe:animate-pulse",
+  passing: "bg-success",
+  neutral: "bg-muted-foreground",
+  none: "bg-muted-foreground",
+};
 
 export interface CodeSessionBannerProps {
   /** True until the session's own kind (device or cloud) is known. */
@@ -73,7 +100,7 @@ export interface CodeSessionBannerProps {
   isCloud: boolean;
   /** The workspace name, or `owner/name` for a cloud session. */
   title: string;
-  /** The local path, or `on <baseRef>`. Secondary; hidden below `sm`. */
+  /** The local path, or `on <baseRef>`. Secondary; hidden on a narrow row. */
   subtitle: string | null;
   status: CodeSessionStatus;
   presence: Presence;
@@ -83,6 +110,20 @@ export interface CodeSessionBannerProps {
    * Null whenever nothing is live, which is what collapses the second tier.
    */
   activity: string | null;
+  /**
+   * How much this session has changed, summed over every file it has touched.
+   * Null until something has been reported, which is what keeps a session that
+   * has only talked from wearing "+0 −0".
+   */
+  churn: { added: number; removed: number } | null;
+  /** Whether the review dock is the open column right now. */
+  reviewOpen: boolean;
+  /** Opens or closes the review dock. Null where there is no diff to open. */
+  onToggleReview: (() => void) | null;
+  /** What CI says about the branch, or null when we have not been told. */
+  checks: ChecksReport | null;
+  /** Rename / Share / Archive / Delete, rendered by the view that owns the row. */
+  menu?: React.ReactNode;
 }
 
 export function CodeSessionBanner({
@@ -94,6 +135,11 @@ export function CodeSessionBanner({
   presence,
   prUrl,
   activity,
+  churn,
+  reviewOpen,
+  onToggleReview,
+  checks,
+  menu,
 }: CodeSessionBannerProps) {
   const presenceMeta = PRESENCE_META[presence.state];
   const taskChip = TASK_CHIP[status];
@@ -125,7 +171,7 @@ export function CodeSessionBanner({
         className="shrink-0 border-b border-border bg-background"
         aria-label={`Session: ${title}`}
       >
-        <div className="flex items-center gap-2 px-3 py-2 md:px-4">
+        <div className="flex items-center gap-2 px-3 py-2 @[48rem]/split:px-4">
           {/* `bg-primary/20 border-primary/45` — at /10 and /25 the fill was ~2%
               lightness and the border ~4%, so the badge vanished and only the
               12px glyph inside it survived. Same recipe as the PR chip below, so
@@ -154,13 +200,64 @@ export function CodeSessionBanner({
                 before the kind is known dressed a repo up as a folder on your
                 disk — which is why the caller passes null while resolving. */}
             {subtitle && (
-              <span className="hidden min-w-0 truncate font-mono text-caption text-muted-foreground sm:inline">
+              <span className="hidden min-w-0 truncate font-mono text-caption text-muted-foreground @[40rem]/split:inline">
                 {subtitle}
               </span>
             )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            {/*
+              +N −M, AND IT IS THE DOOR TO THE DIFF.
+              This is the single most useful fact about a finished coding run
+              and the banner carried none of it: the figures lived in a
+              collapsed card above the composer and in a review pane that only
+              the run list could open. As a control it answers "what did it do"
+              and opens the thing that answers "and is it right" in one press —
+              which is the whole arrangement this session view was missing.
+
+              The numbers never shed their labels the way the chips beside them
+              do: they ARE the label, they are four characters wide, and a
+              phone that hid them would be hiding the row's only content.
+            */}
+            {churn && onToggleReview && (
+              <button
+                type="button"
+                onClick={onToggleReview}
+                aria-expanded={reviewOpen}
+                aria-label={`${reviewOpen ? "Close" : "Open"} the changes: ${churn.added} added, ${churn.removed} removed`}
+                className={cn(
+                  "pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-1 font-mono text-caption tabular-nums hover:bg-accent @[40rem]/split:px-2.5",
+                  reviewOpen && "border-border bg-secondary",
+                )}
+              >
+                <span className="text-success">+{churn.added}</span>
+                <span className="text-destructive">−{churn.removed}</span>
+              </button>
+            )}
+
+            {/*
+              CI, AND ONLY WHEN GITHUB HAS SAID SOMETHING.
+              `state: "none"` covers both "this repository has no checks" and
+              "the checks have not been created yet", and the two are
+              indistinguishable over the API — so neither draws a chip. A green
+              tick for a branch nobody tested is the one thing a CI indicator
+              must never do.
+            */}
+            {checks && checks.state !== "none" && (
+              <span
+                role="status"
+                title={checks.checks
+                  .slice(0, 6)
+                  .map((check) => `${check.name}: ${check.outcome}`)
+                  .join("\n")}
+                className={BANNER_CHIP}
+              >
+                <span className={cn(BANNER_DOT, CHECKS_DOT[checks.state])} aria-hidden="true" />
+                <ChipLabel>{checksLabel(checks)}</ChipLabel>
+              </span>
+            )}
+
             {/*
               THE ONE THING ON THIS ROW THAT CHANGES, so it is the one thing
               given real motion. It is framer rather than a CSS keyframe
@@ -219,16 +316,16 @@ export function CodeSessionBanner({
                   href={prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2 py-1 text-caption font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in sm:px-2.5"
+                  className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2 py-1 text-caption font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in @[40rem]/split:px-2.5"
                 >
                   <AppIcons.pulls className="size-3.5" aria-hidden="true" />
                   <ChipLabel>View pull request</ChipLabel>
-                  <CodeIcons.external className="hidden size-3 sm:block" aria-hidden="true" />
+                  <CodeIcons.external className="hidden size-3 @[40rem]/split:block" aria-hidden="true" />
                 </a>
               ) : (
                 <span role="status" className={BANNER_CHIP}>
                   <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
-                  <ChipLabel>Runs in the cloud · opens a pull request</ChipLabel>
+                  <ChipLabel>Runs in the cloud · pushes a branch</ChipLabel>
                 </span>
               )
             ) : (
@@ -237,6 +334,8 @@ export function CodeSessionBanner({
                 <ChipLabel>{presenceMeta.label}</ChipLabel>
               </span>
             )}
+
+            {menu}
           </div>
         </div>
 
@@ -254,7 +353,7 @@ export function CodeSessionBanner({
         */}
         <div
           className={cn(
-            "grid px-3 transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none md:px-4",
+            "grid px-3 transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none @[48rem]/split:px-4",
             activity ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
           )}
         >
