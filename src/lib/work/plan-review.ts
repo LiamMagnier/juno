@@ -38,7 +38,14 @@ import type { WorkPermissionPolicy } from "@/lib/work/domain";
 export function confirmPlanBeforeActing(input: {
   /** The resolved mode, after narrowing by host, project, schedule and session. */
   policy: WorkPermissionPolicy;
-  /** False when the run was started by a schedule, a trigger or a resume. */
+  /**
+   * False when the run was started by a schedule or a trigger.
+   *
+   * Not a resume: a resume re-claims the same WorkRun row and the runner reads
+   * this off that row's stored `permissionPolicy`, so a manual run that parked
+   * and was picked up again is still attended and still parks on its plan.
+   * Only the scheduler and the trigger poller ever write `attended: false`.
+   */
   attended: boolean;
 }): boolean {
   if (!input.attended) return false;
@@ -54,30 +61,33 @@ export function confirmPlanBeforeActing(input: {
  * free-text prompt.
  *
  * Fixing it is safe, and the reason is worth stating because it is the first
- * thing a reviewer will ask. Only the first plan write is gated, so one session
- * asks it once. A run that parked here and was resumed on another worker starts
- * its write counter again and can therefore reach the gate a second time — and
- * that resolves immediately rather than waiting, because the answer is already
- * in the log under this id and `pollAnswer` finds it. The answer route's own
- * event key is `answer:<questionId>`, so the reader cannot answer the same
- * review twice either: the second is dropped as a duplicate before it takes a
- * sequence number. Both of those are the behaviour a fixed id should have.
+ * thing a reviewer will ask, and because what makes it safe lives in another
+ * file. Only the first plan write is gated, so one session asks it once. A run
+ * that parked here and was resumed on another worker starts its write counter
+ * again and can therefore reach the gate a second time — and that resolves
+ * immediately rather than waiting, because the answer is already in the log
+ * under this id and the runner's `pollAnswer` selects on the id it asked for
+ * (see `answer-lookup.ts`). That last part is load-bearing: a poll that read
+ * the newest answer and tested its id afterwards would miss this one as soon as
+ * the run had asked anything else, and the answer route's `answer:<questionId>`
+ * event key — the same key on every attempt, because a re-claimed run keeps its
+ * id and its log — would then drop every further press as a duplicate, leaving
+ * a gate nobody can get past. A fixed id is only safe next to a poll that looks
+ * for it.
  */
 export const PLAN_REVIEW_QUESTION_ID = "plan-review";
 
-/** The two answers the question offers. Anything else is read as a change. */
+/**
+ * The two answers the question offers. Anything else is read as a change.
+ *
+ * The runtime decides approval by exact match on `PLAN_REVIEW_APPROVE`
+ * (`reviewPlan` in the agent core), so a sentence the reader typed instead of
+ * pressing either button is a revision. Failing this way round is the safe one:
+ * a run that reads a vague answer as approval has acted on a plan nobody
+ * approved, while one that reads it as a revision spends one more model turn.
+ * There is deliberately no second copy of that comparison here — a helper the
+ * runtime does not call would be a rule that could pass its tests while the
+ * real decision drifted.
+ */
 export const PLAN_REVIEW_APPROVE = "Go ahead";
 export const PLAN_REVIEW_REVISE = "Change it";
-
-/**
- * Whether an answer to the plan question was "get on with it".
- *
- * Exact match on the offered option, and everything else — including
- * "Change it" and including a sentence the reader typed instead of pressing
- * either button — is a revision. Failing this way round is the safe one: a run
- * that reads a vague answer as approval has acted on a plan nobody approved,
- * while one that reads it as a revision spends one more model turn.
- */
-export function planReviewApproved(answer: string): boolean {
-  return answer.trim() === PLAN_REVIEW_APPROVE;
-}

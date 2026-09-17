@@ -146,6 +146,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     attended: true,
   };
 
+  // Read once and used twice: it shapes the ceiling below and it is what spend
+  // admission measures the run against. Reading it separately in each place is
+  // two chances for a subscription that lapsed mid-request to be refused
+  // against one plan and dispatched under another's ceiling.
+  const plan = await getUserPlan(user.id);
+
   const created = await createRun({
     sessionId: schedule.sessionId,
     userId: user.id,
@@ -176,8 +182,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      runBudgetForPlan(await getUserPlan(user.id))
+      runBudgetForPlan(plan)
     ),
+    plan,
     idempotencyKey,
   });
 

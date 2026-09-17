@@ -863,7 +863,7 @@ function SpreadsheetPreviewBody({
 }) {
   const sheet = useSpreadsheetPreview(artifactId, version, active);
 
-  if (sheet.state.kind === "loading") return <PreviewWait label="Reading the spreadsheet\u2026" />;
+  if (sheet.state.kind === "loading") return <PreviewWait label="Reading the spreadsheet…" />;
   if (sheet.state.kind === "failed") {
     return <PreviewProblem message={sheet.state.message} onRetry={() => void sheet.load()} />;
   }

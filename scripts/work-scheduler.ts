@@ -583,6 +583,10 @@ async function dispatchOne(
             },
             runBudgetForPlan(limits.plan)
           ),
+          // The same plan the ceiling above was built from, so spend admission
+          // measures the run against it rather than reading the row a second
+          // time and possibly getting a different answer.
+          plan: limits.plan,
           idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
         });
         // A replay is a fire this process already made and is seeing again, so

@@ -7,7 +7,6 @@ import {
   PLAN_REVIEW_QUESTION_ID,
   PLAN_REVIEW_REVISE,
   confirmPlanBeforeActing,
-  planReviewApproved,
 } from "@/lib/work/plan-review";
 
 /*
@@ -45,14 +44,30 @@ test("a run nobody is watching never parks on its plan", () => {
 });
 
 test("anything that is not the approval is a revision", () => {
-  assert.equal(planReviewApproved(PLAN_REVIEW_APPROVE), true);
-  assert.equal(planReviewApproved(`  ${PLAN_REVIEW_APPROVE}  `), true);
-  assert.equal(planReviewApproved(PLAN_REVIEW_REVISE), false);
-  // The reader may type instead of pressing either button, and a sentence is
-  // not consent. Failing this way costs one model turn; failing the other way
-  // means the run acted on a plan nobody approved.
-  assert.equal(planReviewApproved("go ahead but skip step 3"), false);
-  assert.equal(planReviewApproved(""), false);
+  // Asserted against the runtime's own comparison rather than a helper beside
+  // it. There used to be a `planReviewApproved` in the web app that nothing
+  // called — the executor inlines this — so five assertions passed while
+  // proving nothing about the code that actually decides. The runtime trims and
+  // compares for exact equality with the offered option, so a sentence the
+  // reader typed instead of pressing either button is a revision: failing this
+  // way round costs one model turn, and failing the other way means the run
+  // acted on a plan nobody approved.
+  assert.match(SESSION, /const trimmed = answer\.trim\(\);/);
+  assert.match(SESSION, /approved: trimmed === PLAN_REVIEW_APPROVE/);
+});
+
+test("the fixed question id is only safe next to a poll that looks for it", () => {
+  // A question id is normally the tool call's own, so `answer:<questionId>` —
+  // the answer route's event key — differs on every attempt. This one does not,
+  // and a re-claimed run keeps its id and its whole event log, so the reader
+  // gets exactly one writable answer under this key for the life of the run. If
+  // the executor's poll ever goes back to reading the newest answered question
+  // and testing its id afterwards, it will miss that answer as soon as the run
+  // asks anything else, re-ask the gate, and silently drop every further press
+  // as a duplicate — a two-button control that does nothing, for ever.
+  assert.equal(PLAN_REVIEW_QUESTION_ID, "plan-review");
+  const runner = readFileSync(new URL("../scripts/work-runner.ts", import.meta.url), "utf8");
+  assert.match(runner, /answeredQuestionWhere\(runId, questionId\)/);
 });
 
 test("the runtime and the web app speak the same three strings", () => {

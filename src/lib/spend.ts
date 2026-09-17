@@ -718,7 +718,9 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
   // plan's own run ceiling (`runBudgetForPlan`), so this is no longer only an
   // input to the monthly figure — reading the plan separately for each would
   // let admission refuse a run against one plan while the guard measured it
-  // against another.
+  // against another. Every Work dispatcher therefore passes the plan it already
+  // loaded for the model gate and the ceiling, through `createRun`; the
+  // fallback read is for callers that genuinely have none.
   const plan = input.plan ?? (await getUserPlan(input.userId));
   const eff = input.budget ?? (await resolveEffectiveBudget(input.userId, plan));
 

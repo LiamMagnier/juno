@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Plan } from "@prisma/client";
 import { NO_BUDGET, narrowestBudget } from "@/lib/work/domain";
-import { DEFAULT_RUN_BUDGET, maxStepsForBudget, runBudgetForPlan } from "@/lib/work/budget";
+import {
+  DEFAULT_RUN_BUDGET,
+  ceilingFieldValue,
+  maxStepsForBudget,
+  runBudgetForPlan,
+} from "@/lib/work/budget";
 import { UNIT_CEILING_MICRO_USD, unitCeilingMicroUsd } from "@/lib/spend-ceiling";
 import { RUN_CEILINGS, runCeilingsFor } from "@/components/work/clarify/run-disclosure";
 
@@ -161,4 +166,97 @@ test("every dispatcher merges the plan's budget in", () => {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.match(source, /narrowestBudget\(/, file);
   }
+});
+
+test("a schedule field may hold the plan's ceiling and nothing above it", () => {
+  const free = runBudgetForPlan("FREE").maxCostMicroUsd / 1_000_000;
+  // Empty is zero, which every dispatcher reads as "the standard ceiling" —
+  // that is what makes an untouched field mean "whatever my plan allows".
+  assert.equal(ceilingFieldValue("", free), 0);
+  assert.equal(ceilingFieldValue("   ", free), 0);
+  // FREE's whole run ceiling is $0.15, so the figures a trial account can
+  // actually type are cents. The field used to step by 0.25, which put every
+  // non-zero step above the max and left the field able to hold nothing.
+  assert.equal(ceilingFieldValue("0.15", free), 0.15);
+  assert.equal(ceilingFieldValue("0.05", free), 0.05);
+  // Above the plan's ceiling is refused rather than saved and narrowed at
+  // dispatch, which would leave a stored schedule whose numbers are not the
+  // numbers it runs under. `max` alone does not stop this: the browser flags
+  // the overflow and still reports the value to the form.
+  assert.equal(ceilingFieldValue("0.25", free), null);
+  assert.equal(ceilingFieldValue("2", free), null);
+  assert.equal(ceilingFieldValue("-1", free), null);
+  assert.equal(ceilingFieldValue("lots", free), null);
+  // A paid account keeps the same rule against its own, larger ceiling.
+  const pro = runBudgetForPlan("PRO").maxCostMicroUsd / 1_000_000;
+  assert.equal(ceilingFieldValue("0.25", pro), 0.25);
+  assert.equal(ceilingFieldValue(String(pro), pro), pro);
+  assert.equal(ceilingFieldValue(String(pro + 1), pro), null);
+});
+
+test("the schedule editor checks its fields against the plan, not against zero", () => {
+  // The editor is a client component a test cannot import, so its source is
+  // what holds the wiring. A `ceilingFieldValue` call with no limit argument
+  // would typecheck as `undefined` nowhere, but a reintroduced local parser
+  // that only checked finiteness would — and that is the advisory-`max` bug.
+  const editor = readFileSync(
+    new URL("../src/components/work/work-schedule-editor.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(editor, /ceilingFieldValue\(draft\.budget\.costUsd, ceiling\.costUsd\)/);
+  assert.match(editor, /ceilingFieldValue\(draft\.budget\.tokens, ceiling\.tokens\)/);
+  assert.match(editor, /ceilingFieldValue\(draft\.budget\.minutes, ceiling\.minutes\)/);
+  // A quarter-dollar step is larger than FREE's entire run ceiling.
+  assert.doesNotMatch(editor, /step="0\.25"/);
+});
+
+/** The argument text of a `createRun({ ... })` call, by counting braces. */
+function createRunArguments(source: string): string[] {
+  const calls: string[] = [];
+  const opener = "createRun({";
+  for (let at = source.indexOf(opener); at !== -1; at = source.indexOf(opener, at + 1)) {
+    let depth = 0;
+    let cursor = at + opener.length - 1;
+    for (; cursor < source.length; cursor += 1) {
+      if (source[cursor] === "{") depth += 1;
+      else if (source[cursor] === "}") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    calls.push(source.slice(at + opener.length, cursor));
+  }
+  return calls;
+}
+
+test("every dispatcher hands the plan it resolved to spend admission", () => {
+  // Admission's per-unit ceiling for a Work run IS the plan's run ceiling, so
+  // the plan that shaped `budget` and the plan admission measures against have
+  // to be one value. `reserveSpend` will read the row itself when handed
+  // nothing, and a dispatcher that let it would give a subscription lapsing
+  // mid-request the chance to refuse the run against one plan while the guard
+  // measured it against another.
+  let checked = 0;
+  for (const file of [
+    "../src/app/api/work/sessions/[id]/runs/route.ts",
+    "../src/app/api/work/schedules/[id]/run-now/route.ts",
+    "../scripts/work-scheduler.ts",
+    "../scripts/work-trigger-poller.ts",
+  ]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    const calls = createRunArguments(source);
+    assert.ok(calls.length > 0, file);
+    for (const args of calls) {
+      // A scheduler marker row never dispatches an executor and never reserves
+      // spend, so it has no plan to hand on and needs none.
+      if (args.includes("spendReservation: false")) continue;
+      assert.match(args, /^\s*plan[,:]/m, file);
+      checked += 1;
+    }
+  }
+  // The skip above must not be able to empty the case out.
+  assert.equal(checked, 4);
+  // And the store passes it on rather than dropping it on the floor.
+  const store = readFileSync(new URL("../src/lib/work/store.ts", import.meta.url), "utf8");
+  assert.match(store, /plan: input\.plan,/);
 });

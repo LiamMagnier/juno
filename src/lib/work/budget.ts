@@ -130,6 +130,31 @@ export function runBudgetForPlan(plan: Plan): WorkBudget {
 export const DEFAULT_RUN_BUDGET: WorkBudget = runBudgetForPlan("PRO");
 
 /**
+ * A ceiling typed into a form, or null when the form may not send it.
+ *
+ * Empty is zero, which every dispatcher reads as "the standard ceiling" — that
+ * is what makes an untouched field mean "whatever my plan allows" rather than
+ * "nothing".
+ *
+ * Above `limit` is refused rather than accepted and narrowed later. A schedule
+ * may only ever LOWER a ceiling, so a larger figure was already going to be
+ * silently cut to the plan's at dispatch; storing it anyway leaves the reader a
+ * saved schedule whose numbers are not the numbers it runs under, and no way to
+ * tell that from a bug. The `max` attribute alone does not prevent this: a
+ * browser reports the overflow but still hands the value to `onChange`, and the
+ * form saved whatever was in state.
+ *
+ * Pure and here rather than in the editor so a test can hold it, since the
+ * editor is a client component a test cannot import.
+ */
+export function ceilingFieldValue(raw: string, limit: number): number | null {
+  if (raw.trim() === "") return 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value <= limit ? value : null;
+}
+
+/**
  * How many model turns one run may take, scaled to the runtime it was given.
  *
  * The runtime's own `MAX_STEPS_PER_RUN` is 200, sized for PRO's twenty minutes.

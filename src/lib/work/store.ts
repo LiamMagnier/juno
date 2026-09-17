@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import type { WorkCommand, WorkRun, WorkSession } from "@prisma/client";
+import type { Plan, WorkCommand, WorkRun, WorkSession } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import type { EventVisibility } from "@/lib/event-envelope";
 import {
@@ -238,6 +238,17 @@ export interface CreateRunInput {
   /** The resolved policy, after narrowing by host, project, schedule, session. */
   permissionPolicy?: Prisma.InputJsonValue;
   budget?: WorkBudget;
+  /**
+   * The plan the caller already resolved, handed to spend admission.
+   *
+   * Omitted only by a caller that has no plan in hand; `reserveSpend` then
+   * reads it itself. Passed wherever there is one, because admission's per-unit
+   * ceiling is now the plan's own run ceiling — the very figure the caller used
+   * to build `budget` — and two reads of the same row can disagree when a
+   * subscription lapses between them, refusing the run against one plan while
+   * it was measured against another.
+   */
+  plan?: Plan;
   /** A schedule firing twice resolves to the same run rather than a second one. */
   idempotencyKey?: string | null;
   /** Set false for scheduler marker rows that never dispatch an executor. */
@@ -340,6 +351,7 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
       kind: "work",
       ref: spendReservationRef,
       estimateMicroUsd: budget.maxCostMicroUsd,
+      plan: input.plan,
     });
     if (!reservation.allowed) throw new WorkSpendAdmissionError(reservation);
   }

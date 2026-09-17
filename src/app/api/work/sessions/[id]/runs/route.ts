@@ -747,6 +747,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // ceiling, and reading it twice would let a subscription that lapsed
         // between the two reads gate on one plan and spend on another.
         budget: runBudgetForPlan(plan),
+        // The same plan value, handed on to spend admission rather than left
+        // for it to read again. Admission's per-unit ceiling is now this run
+        // ceiling, so a second read is a second chance for the two to disagree
+        // — a lapse between them would refuse the run against one plan while
+        // the guard measured it against the other.
+        plan,
         idempotencyKey: body.idempotencyKey ?? null,
         // Written in the run's own transaction, so this attempt cannot exist
         // without the instruction that drives it, nor the instruction without

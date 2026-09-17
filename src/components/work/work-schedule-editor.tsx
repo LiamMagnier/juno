@@ -19,7 +19,7 @@ import {
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
 import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
 import type { Plan } from "@prisma/client";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import { ceilingFieldValue, runBudgetForPlan } from "@/lib/work/budget";
 import { useApp } from "@/components/app/app-provider";
 import { MODEL_LIST } from "@/lib/models";
 import { isWorkCapableModel } from "@/lib/work/models";
@@ -195,13 +195,6 @@ function ceilingField(value: number): string {
   return value > 0 ? String(value) : "";
 }
 
-/** A typed ceiling as a number, or null when it is not one this form can send. */
-function ceilingValue(raw: string): number | null {
-  if (raw.trim() === "") return 0;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : null;
-}
-
 function draftFrom(schedule: ClientWorkSchedule): ScheduleDraft {
   return {
     budget: {
@@ -330,10 +323,15 @@ export function WorkScheduleEditor({
   // a local schedule has to name its Mac, or a 07:00 fire lands on whichever
   // laptop happens to be awake.
   const missingHost = draft.target === "local" && draft.hostId === null;
+  // Checked against this account's own ceilings, not merely against zero. The
+  // `max` attributes below are advisory — a browser flags the overflow and
+  // still reports the value — so without this the form saved a figure the
+  // dispatcher then narrowed, which is the outcome the placeholders exist to
+  // prevent.
   const budget = {
-    costUsd: ceilingValue(draft.budget.costUsd),
-    tokens: ceilingValue(draft.budget.tokens),
-    minutes: ceilingValue(draft.budget.minutes),
+    costUsd: ceilingFieldValue(draft.budget.costUsd, ceiling.costUsd),
+    tokens: ceilingFieldValue(draft.budget.tokens, ceiling.tokens),
+    minutes: ceilingFieldValue(draft.budget.minutes, ceiling.minutes),
   };
   const budgetValid = budget.costUsd !== null && budget.tokens !== null && budget.minutes !== null;
   const canSave =
@@ -548,13 +546,16 @@ export function WorkScheduleEditor({
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="schedule-budget-cost">Cost, in US dollars</Label>
+            {/* A cent, not a quarter. FREE's whole run ceiling is $0.15, so
+                every quarter-step above zero was above the max as well, and a
+                trial account's cost field could hold nothing but empty. */}
             <Input
               id="schedule-budget-cost"
               type="number"
               inputMode="decimal"
               min={0}
               max={ceiling.costUsd}
-              step="0.25"
+              step="0.01"
               value={draft.budget.costUsd}
               onChange={(event) => set("budget", { ...draft.budget, costUsd: event.target.value })}
               placeholder={String(ceiling.costUsd)}
@@ -604,7 +605,9 @@ export function WorkScheduleEditor({
         </p>
         {!budgetValid && (
           <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
-            Each ceiling has to be a number of zero or more, or left empty.
+            Each ceiling has to be left empty, or a number between zero and your plan’s own —
+            ${ceiling.costUsd}, {ceiling.tokens.toLocaleString("en-US")} tokens, {ceiling.minutes}{" "}
+            minutes.
           </p>
         )}
 

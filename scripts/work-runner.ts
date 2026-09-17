@@ -61,6 +61,7 @@ import {
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import { maxStepsForBudget } from "@/lib/work/budget";
+import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
@@ -287,17 +288,19 @@ async function withDeadline<T>(work: Promise<T>, ms: number, whenLate: string): 
  * log with rows already in it, and a route that switched to writing `answer`
  * would leave every row written before the deploy unreadable. The reader is the
  * side that can afford to be tolerant of both, and the only side that can be.
+ *
+ * The query selects the answer to THIS question rather than reading the newest
+ * answer and testing its id afterwards; `answer-lookup.ts` states what goes
+ * wrong when it does not, which for a question asked under a fixed id is a
+ * gate the run can never leave.
  */
 async function pollAnswer(runId: string, questionId: string): Promise<string | null> {
   const event = await prismaUnguarded.workEvent.findFirst({
-    where: { runId, kind: "question_answered" },
+    where: answeredQuestionWhere(runId, questionId),
     orderBy: { seq: "desc" },
   });
   if (!event) return null;
-  const payload = event.payload as { questionId?: string; text?: string; answer?: string } | null;
-  if (!payload || payload.questionId !== questionId) return null;
-  if (typeof payload.text === "string") return payload.text;
-  return typeof payload.answer === "string" ? payload.answer : null;
+  return answerTextFromPayload(event.payload, questionId);
 }
 
 // ---------------------------------------------------------------------------
