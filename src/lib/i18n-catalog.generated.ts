@@ -362,10 +362,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "instead — or"
   },
   {
-    "id": "0437016a6bb1fc0d",
-    "source": "Queued — waiting for your Mac to pick this up. Anything you add now goes in with the first instruction."
-  },
-  {
     "id": "043e67d35b2b8a10",
     "source": "Allow what I have approved"
   },
@@ -720,6 +716,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0924b7a76ad23a2f",
     "source": "Legacy long-context text model."
+  },
+  {
+    "id": "0927f0f8d18a69d2",
+    "source": "attachments_require_session"
   },
   {
     "id": "0937c32da2498f51",
@@ -1124,6 +1124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0f589c19cd5c9c86",
     "source": "All models"
+  },
+  {
+    "id": "0f5c8d18d661ceac",
+    "source": "Queued — waiting for your Mac to pick this up."
   },
   {
     "id": "0f6a01c568958d03",
@@ -2326,10 +2330,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a change to a security setting — is asked about under every one of these. There is no setting that turns that off."
   },
   {
-    "id": "20831e09777c72ba",
-    "source": "Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
-  },
-  {
     "id": "20839fbc3ef4890c",
     "source": "step-lab"
   },
@@ -2568,6 +2568,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "23873eb68af458b4",
     "source": "How Juno sounds, and how you talk to it."
+  },
+  {
+    "id": "238c38132fc4ce6f",
+    "source": "Attachments can only be sent from a signed-in session."
   },
   {
     "id": "2395ae245093c55c",
@@ -3984,10 +3988,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "376b6d99a9b22d68",
     "source": "Could not send the request."
-  },
-  {
-    "id": "377da2b6fe55824f",
-    "source": "Share a read-only link"
   },
   {
     "id": "3792384a7081e9a7",
@@ -5462,10 +5462,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fournisseurs de modèles d'IA"
   },
   {
-    "id": "4c6222eb4c287c46",
-    "source": "Runs on a fresh cloud runner and opens a pull request to review."
-  },
-  {
     "id": "4c6cdd5d4b9aee5b",
     "source": "No folders shared"
   },
@@ -5536,10 +5532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4d5c5fd482f67348",
     "source": "Delete this task?"
-  },
-  {
-    "id": "4d7c7c24a66e1fef",
-    "source": "Queued — runs when your Mac reconnects. Anything you add now goes in with the first instruction."
   },
   {
     "id": "4d7e1c4673657ec0",
@@ -5988,6 +5980,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "543f1a829dea3d92",
     "source": "Zoom to fit"
+  },
+  {
+    "id": "54464315e7960f0e",
+    "source": "Queued — runs when your Mac reconnects."
   },
   {
     "id": "54840a4c0a060fef",
@@ -8474,6 +8470,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The voice transcript could not be saved."
   },
   {
+    "id": "755ea2ad624cd1fb",
+    "source": "Runs on a fresh cloud runner and pushes a branch — open the pull request from the review panel."
+  },
+  {
     "id": "756d8e49571547a6",
     "source": "reset your password"
   },
@@ -8612,6 +8612,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "77c314230a24569c",
     "source": "slug_taken"
+  },
+  {
+    "id": "77ddc4d15eddbcc4",
+    "source": "Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that pushes a branch for you to review."
   },
   {
     "id": "77deabe238de2f6d",
@@ -9768,10 +9772,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "889015fe11bea4d3",
     "source": "Chat restored."
-  },
-  {
-    "id": "8896f3db0de72362",
-    "source": "Juno Code works in a project on your Mac, or on a fresh cloud machine that opens a pull request. Anything you start here, in the Mac app or on your phone shows up in this list."
   },
   {
     "id": "88a550e0f44eff78",
@@ -12130,10 +12130,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Back to the diff"
   },
   {
-    "id": "a7ebb9583dc8c204",
-    "source": "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review."
-  },
-  {
     "id": "a80fe6a2b077b907",
     "source": "That instruction expired before this Mac could act on it."
   },
@@ -12600,6 +12596,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ae32399816fd8ca5",
     "source": "Pin to the top"
+  },
+  {
+    "id": "ae3a2969c2485cef",
+    "source": "Juno Code works in a project on your Mac, or on a fresh cloud machine that pushes a branch for you to review. Anything you start here, in the Mac app or on your phone shows up in this list."
   },
   {
     "id": "ae4c036a4d9fd37b",
@@ -13324,6 +13324,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b7e83a1cbaaea032",
     "source": "Where this run executes"
+  },
+  {
+    "id": "b7f23b320be74fa0",
+    "source": "A cloud runner executes in a sandboxed CI environment and pushes a branch — you read the diff and open the pull request yourself."
   },
   {
     "id": "b80012851cf027c6",
@@ -14548,6 +14552,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c9a8dc336964db7f",
     "source": "them"
+  },
+  {
+    "id": "c9acc460a18cde66",
+    "source": "Full access, reviewed as a diff"
   },
   {
     "id": "c9bbbe8347222271",
@@ -16358,10 +16366,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Unknown locale"
   },
   {
-    "id": "dfbfcb5e186f5e89",
-    "source": "Full access, reviewed as a PR"
-  },
-  {
     "id": "dfc1acca7d38ce07",
     "source": "Notification not found or already read"
   },
@@ -17924,6 +17928,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f54ad4f29baf0a52",
     "source": "Mac connected"
+  },
+  {
+    "id": "f557186e04052f95",
+    "source": "Share a read-only link (no run log)"
   },
   {
     "id": "f5610b27681e0f55",

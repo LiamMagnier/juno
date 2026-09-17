@@ -1000,7 +1000,7 @@ function SeededEmptyState() {
     <EmptyState
       icon={AppIcons.code}
       title="No runs yet"
-      description="Juno Code works in a project on your Mac, or on a fresh cloud machine that opens a pull request. Anything you start here, in the Mac app or on your phone shows up in this list."
+      description="Juno Code works in a project on your Mac, or on a fresh cloud machine that pushes a branch for you to review. Anything you start here, in the Mac app or on your phone shows up in this list."
       action={
         <div className="w-full">
           <ul role="list" className="mx-auto grid max-w-lg gap-2 text-left sm:grid-cols-2">

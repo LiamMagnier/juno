@@ -25,11 +25,13 @@ export const runtime = "nodejs";
  * Modelled on ../rollback/route.ts, because it uses the same and only
  * mechanism a running task has for inbound control: an event appended to the
  * task's own stream and handed to the host on its next events POST (see
- * CONTROL_KINDS in src/lib/code-task-events.ts). The host injects the text as
- * the next user message of its live session and answers with `steer_ack`.
- * Nothing here reaches the machine directly.
+ * CONTROL_KINDS in src/lib/code-task-events.ts). A host that honours the verb
+ * injects the text as the next user message of its live session and answers
+ * with `steer_ack`. Nothing here reaches the machine directly, and nothing here
+ * can make a host act — today only the cloud driver does.
  *
- * AUTHORISATION IS `requireTaskAuth` VERBATIM, with no widening.
+ * AUTHORISATION IS `requireTaskAuth`, WITH NO WIDENING — and one narrowing:
+ * attachments are refused from a task-token caller (see the POST).
  */
 
 const schema = z
@@ -66,13 +68,32 @@ const schema = z
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, error } = await requireTaskAuth(id, req);
+  const { user, viaTaskToken, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const { text, requestId } = parsed.data;
+  /*
+   * ATTACHMENTS ARE FOR THE READER'S OWN SESSION, NEVER FOR A TASK TOKEN.
+   *
+   * `requireTaskAuth` also accepts the cloud runner's `cct_` bearer, which the
+   * events route calls out as untrusted — it lives on a machine the user does
+   * not control. Claiming `attachmentIds` links rows the owner uploaded but has
+   * not yet sent to a conversation, so a leaked task token could attach the
+   * owner's unclaimed files to the conversation behind its own task. The scope
+   * is narrow (their own `messageId: null` rows) but it is reach that token
+   * never needed: nothing on a runner uploads a file. So the field is refused
+   * rather than ignored, because a silently dropped attachment is the kind of
+   * failure a caller repeats.
+   */
   const attachmentIds = [...new Set(parsed.data.attachmentIds ?? [])];
+  if (viaTaskToken && attachmentIds.length > 0) {
+    return NextResponse.json(
+      { error: "attachments_require_session", message: "Attachments can only be sent from a signed-in session." },
+      { status: 403 },
+    );
+  }
 
   const task = await prisma.codeTask.findFirst({
     where: { id, userId: user.id },
@@ -104,9 +125,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
    * alongside `history`, and the driver folds them into the first prompt before
    * it calls the agent (scripts/cloud-code-runner.mjs), acking each one so the
    * composer's lifecycle still moves on the host's word rather than on ours.
-   * A device task needed nothing: its host is handed the same controls on its
-   * first events POST after claiming, which is how `cancel_request` has always
-   * reached a queued run.
+   * A DEVICE TASK IS A DIFFERENT MATTER, AND THIS ROUTE IS NOT WHERE IT IS
+   * SETTLED. Its host is handed the same control list on its first events POST
+   * after claiming — that is how `cancel_request` reaches a queued run — but
+   * delivery of the list is not handling of an entry. DesktopCodeHost.apply
+   * switches on `approval_response` and `cancel_request` and drops the rest into
+   * `default: break`, so a `steer` sent to a Mac is appended, never read and
+   * never acked. Rather than refuse it here (a 409 the web would have to explain
+   * after the fact), the verb is simply not offered for a device run: see
+   * `canSteerRun` in src/lib/code-steer-policy.ts, which both the composer and
+   * the hook's own guard read. A native client that starts honouring the control
+   * needs no change on this side.
    *
    * So the only refusal left is the terminal one above. `queued` is accepted,
    * and the composer says "reads this before it starts" rather than lying about
@@ -167,12 +196,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // that was deleted between upload and send contributes nothing rather than a
   // dangling filename.
   let agentText = text;
+  /*
+   * What a TRANSCRIPT shows for this instruction, which is not what the agent
+   * reads.
+   *
+   * The web hook renders the persisted Message row and ignores the `user` event
+   * the runner echoes back, but the native clients decode that event and draw it
+   * (NativeCodeEvent.Kind.user). Sending the folded string as the event text put
+   * up to 100 000 characters of extracted PDF per attachment into an iOS or Mac
+   * reader's own bubble — the exact thing the asymmetry above exists to prevent,
+   * arriving by the other door. So the control carries both: `text` for the
+   * agent, `displayText` for anything that renders it.
+   */
+  let displayText = text;
   if (attachmentIds.length > 0) {
     const rows = await prisma.attachment.findMany({
       where: { id: { in: attachmentIds }, userId: user.id, deletedAt: null },
       select: { fileName: true, kind: true, mimeType: true, extractedText: true },
     });
     agentText = foldAttachmentsIntoPrompt(text, rows);
+    // An attachment-only instruction has no sentence of its own, so it is named
+    // by what it is rather than drawn as an empty bubble.
+    const names = rows.map((row) => row.fileName).filter(Boolean);
+    if (!text && names.length > 0) displayText = `Sent ${names.join(", ")}`;
   }
   /*
    * A control with no text is a control a host cannot act on. It can only
@@ -188,7 +234,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const events: TaskEventInput[] = [
-    { kind: "steer", payload: { requestId, text: agentText }, key: `steer:${requestId}` },
+    {
+      kind: "steer",
+      // `displayText` only when it differs, so an instruction with nothing
+      // attached is the one string it has always been on the wire.
+      payload: { requestId, text: agentText, ...(displayText === agentText ? {} : { displayText }) },
+      key: `steer:${requestId}`,
+    },
   ];
   const { lastSeq } = await appendTaskEvents(task.id, events);
   // `queued`, never `delivered`. The far side has not read it yet — it will,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
+import { MAX_PENDING_STEERS, MAX_PENDING_STEER_CHARS } from "@/lib/code-steer-policy";
 import { decryptSecret } from "@/lib/crypto";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { isTerminalTaskStatus, requireOidcRunnerAuth } from "@/lib/code-remote";
@@ -55,7 +56,10 @@ export const runtime = "nodejs";
  *     reasoningEffort,
  *     history: [{ role, text }],        // the conversation so far, oldest first
  *     continuation: { branch, prUrl, prNumber, baseRef } | null,
- *     pendingSteers: [{ requestId, text }], // steers sent before the run started
+ *     pendingSteers: [{ requestId, text, displayText? }],
+ *                                       // steers sent before the run started,
+ *                                       // oldest first, capped in count and in
+ *                                       // total characters
  *     openPullRequest: "auto" | "never"  // whether the runner opens the PR itself
  *   }
  *         401 unauthenticated / invalid OIDC token
@@ -270,14 +274,41 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const requestId = (row.payload as { requestId?: unknown } | null)?.requestId;
     if (typeof requestId === "string") acked.add(requestId);
   }
-  const pendingSteers: { requestId: string; text: string }[] = [];
+  /*
+   * BOUNDED, BECAUSE A STEER IS NOT A SENTENCE ANY MORE.
+   *
+   * Since the steer route folds attachments into the control's text, one entry
+   * can be the typed words plus MAX_ATTACHMENT_EXTRACT_CHARS per attachment —
+   * of the order of a megabyte. Nothing on this side used to cap the list, so a
+   * handful of attachment-carrying instructions sent while the machine was
+   * provisioning made a multi-megabyte handoff that the runner then concatenated
+   * into `openingPrompt` in full: a response nobody can read and a first prompt
+   * no model can use.
+   *
+   * The count matches `readPendingSteers` in scripts/cloud-code-runner.mjs
+   * exactly, so this never sends what the far side would silently discard, and
+   * the character budget stops before the response gets large. Both cut from the
+   * end: the earliest instructions are the ones the run was started around, so
+   * they are the ones worth keeping when something has to be left out.
+   */
+  const pendingSteers: { requestId: string; text: string; displayText?: string }[] = [];
+  let steerChars = 0;
   for (const row of controlRows) {
     if (row.kind !== "steer") continue;
-    const payload = row.payload as { requestId?: unknown; text?: unknown } | null;
+    if (pendingSteers.length >= MAX_PENDING_STEERS) break;
+    const payload = row.payload as { requestId?: unknown; text?: unknown; displayText?: unknown } | null;
     const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
     const text = typeof payload?.text === "string" ? payload.text.trim() : "";
     if (!requestId || !text || acked.has(requestId)) continue;
-    pendingSteers.push({ requestId, text });
+    // A first entry over budget on its own still goes: dropping the only
+    // instruction somebody sent would be worse than one large prompt.
+    if (pendingSteers.length > 0 && steerChars + text.length > MAX_PENDING_STEER_CHARS) break;
+    steerChars += text.length;
+    // `displayText` is what a transcript shows; `text` is what the agent reads.
+    // Carried through so the runner's echo is the typed words rather than the
+    // attachment fold — see the steer route for why that distinction exists.
+    const displayText = typeof payload?.displayText === "string" ? payload.displayText.trim() : "";
+    pendingSteers.push({ requestId, text, ...(displayText ? { displayText } : {}) });
   }
 
   const availableModels = await loadAvailableModels();

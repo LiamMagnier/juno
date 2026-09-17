@@ -57,15 +57,15 @@ export interface CodeSessionComposerProps {
   onCancel: () => void;
 
   /**
-   * Mid-run steering. `canSteer` is the session's own answer — any state in
-   * which a host is holding the task or on its way to it, which now includes
-   * `queued`: a cloud driver reads its backlog out of runner-context and a Mac
-   * reads the same controls on its first events POST, so words sent while a
-   * machine is starting go in with the prompt it opens with. `steerReady`
-   * narrows it to "there is something to send and nothing still uploading".
-   * While `canSteer` the field stays live and the primary action's send face
-   * names the verb; Stop is what the circle shows when the field is empty,
-   * because that is the other thing left to press.
+   * Mid-run steering. `canSteer` is the session's own answer — a cloud run in
+   * any state where a driver is holding the task or on its way to it, which
+   * includes `queued`: the driver reads its backlog out of runner-context, so
+   * words sent while a machine is starting go in with the prompt it opens with.
+   * A device run is never steerable, because no Mac host acts on the control.
+   * `steerReady` narrows it to "there is something to send and nothing still
+   * uploading". While `canSteer` the field stays live and the primary action's
+   * send face names the verb; Stop is what the circle shows when the field is
+   * empty, because that is the other thing left to press.
    */
   canSteer: boolean;
   steerReady: boolean;
@@ -156,9 +156,10 @@ export function CodeSessionComposer({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  // Locked means "nothing can be typed": submitting or stopping, the two states
-  // with nothing on the far side to receive an instruction. A queued task is no
-  // longer one of them — its host takes the words with the prompt it starts on.
+  // Locked means "nothing can be typed": every busy state whose far side will
+  // not act on a `steer`. A queued CLOUD run is no longer one of them — its
+  // driver takes the words with the prompt it starts on — while a device run of
+  // any status still is, because no Mac host acknowledges the verb.
   const locked = isBusy && !canSteer;
   const settling = status === "stopping" || status === "submitting";
   const dropEnabled = attachments.enabled && !locked && !dictation.active;
@@ -197,7 +198,8 @@ export function CodeSessionComposer({
    * A QUEUED RUN HAS NOT STARTED, SO THE VERB MUST NOT SAY IT HAS. "Send to
    * running task" over a task that is still waiting for a machine would be the
    * composer asserting the one thing the reader is watching the queue note to
-   * find out.
+   * find out. Only reached while `canSteer`, i.e. for a cloud run, so the
+   * "starts with" wording below describes a fold that really happens.
    */
   const starting = isBusy && status === "queued";
   const primaryLabel = settling

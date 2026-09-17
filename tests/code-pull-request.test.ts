@@ -140,12 +140,29 @@ test("the session never promises a pull request it no longer opens", () => {
   const banner = read("src/components/code/code-session-banner.tsx");
   const view = read("src/components/code/code-session-view.tsx");
   const briefing = read("src/components/code/code-voice-briefing.ts");
+  /*
+   * The loop covers the surfaces that DISPATCH a cloud run as well as the ones
+   * that report on it. Scanning only the three files the change happened to
+   * touch let the promise survive at /code/new — the screen whose send button
+   * posts a `conversationId` and therefore guarantees `openPullRequest:
+   * "never"` — in its lede, its send-button caption, its permission tooltip and
+   * its chip, plus the target picker row that is the control being pressed and
+   * the /code empty state. A guard that stops at the edited files is a guard
+   * for the diff, not for the reader.
+   */
   for (const [name, source] of [
     ["the banner chip", banner],
     ["the session footer and empty state", view],
     ["the voice briefing", briefing],
+    ["the new-task page", read("src/app/(app)/code/new/page.tsx")],
+    ["the target picker", read("src/components/code/code-target-picker.tsx")],
+    ["the run list empty state", read("src/components/code/run-list.tsx")],
   ] as const) {
-    assert.doesNotMatch(strip(source), /opens a pull request/, `${name} still promises an automatic pull request`);
+    assert.doesNotMatch(
+      strip(source),
+      /opens? a pull request/,
+      `${name} still promises an automatic pull request`,
+    );
   }
   assert.match(banner, /pushes a branch/);
   assert.match(view, /then open the pull request yourself/);

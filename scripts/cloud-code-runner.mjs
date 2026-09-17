@@ -421,7 +421,16 @@ class EventSink {
         // Already folded into the opening prompt — see `consumedSteers`.
         if (this.consumedSteers.has(requestId)) continue;
         this.consumedSteers.add(requestId);
-        const steer = { requestId, text };
+        // `text` is what the agent reads (attachments folded in); `displayText`
+        // is what the person typed. Native clients render the `user` event, so
+        // the echo has to be the second one or a reader's own bubble fills with
+        // extracted PDF. Absent on a steer with nothing attached, and on one
+        // from an older server, where the two are the same string anyway.
+        const displayText =
+          typeof ctl.payload?.displayText === "string" && ctl.payload.displayText.trim()
+            ? ctl.payload.displayText.trim()
+            : text;
+        const steer = { requestId, text, displayText };
         if (this.onSteer) this.onSteer(steer);
         else this.steerBacklog.push(steer);
       }
@@ -826,7 +835,7 @@ async function main() {
   // moment "the run has your instruction" is true.
   const takeSteer = (steer) => {
     void session.queueUserMessage(steer.text).then(() => {
-      sink.push("user", { text: steer.text, requestId: steer.requestId, steer: true });
+      sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
       sink.push("steer_ack", { requestId: steer.requestId });
     });
   };
@@ -840,7 +849,7 @@ async function main() {
    * carries the text, so this is the moment that becomes true.
    */
   for (const steer of pendingSteers) {
-    sink.push("user", { text: steer.text, requestId: steer.requestId, steer: true });
+    sink.push("user", { text: steer.displayText ?? steer.text, requestId: steer.requestId, steer: true });
     sink.push("steer_ack", { requestId: steer.requestId });
   }
 
@@ -1004,7 +1013,7 @@ function readHistory(raw) {
 /** Steers runner-context handed over because they were sent before the run started. */
 function readPendingSteers(raw) {
   if (!Array.isArray(raw)) return [];
-  /** @type {{ requestId: string; text: string }[]} */
+  /** @type {{ requestId: string; text: string; displayText: string }[]} */
   const steers = [];
   const seen = new Set();
   for (const entry of raw.slice(0, 20)) {
@@ -1013,7 +1022,9 @@ function readPendingSteers(raw) {
     const text = typeof entry.text === "string" ? entry.text.trim() : "";
     if (!requestId || !text || seen.has(requestId)) continue;
     seen.add(requestId);
-    steers.push({ requestId, text });
+    // The transcript echo, when the server sent one — see `handleControls`.
+    const shown = typeof entry.displayText === "string" && entry.displayText.trim() ? entry.displayText.trim() : text;
+    steers.push({ requestId, text, displayText: shown });
   }
   return steers;
 }

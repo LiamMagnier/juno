@@ -61,12 +61,12 @@ function PermissionFact({ target }: { target: Target }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="cursor-help underline decoration-dotted underline-offset-2">
-          {cloud ? "Full access, reviewed as a PR" : "Asks before changes"}
+          {cloud ? "Full access, reviewed as a diff" : "Asks before changes"}
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">
         {cloud
-          ? "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review."
+          ? "A cloud runner executes in a sandboxed CI environment and pushes a branch — you read the diff and open the pull request yourself."
           : "Your Mac pauses and prompts for approval before applying high-impact changes or terminal commands."}
       </TooltipContent>
     </Tooltip>
@@ -500,7 +500,7 @@ export default function NewCodeSessionPage() {
         // "New task" is the name the header button on /code and /code/pulls
         // already uses for this destination. It had three names for one thing.
         heading="New task"
-        lede="Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
+        lede="Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that pushes a branch for you to review."
         // Back to the surface this belongs to. It silently inherited
         // AppPageHeader's "/chat" default, which walked out of Code entirely.
         backHref="/code"
@@ -691,7 +691,7 @@ export default function NewCodeSessionPage() {
         <p className="mt-3 text-center text-caption text-muted-foreground">
           {gateHint && !cloudBlocked ? <span className="text-foreground/70">{gateHint}. </span> : null}
           {target === "cloud"
-            ? "Runs on a fresh cloud runner and opens a pull request to review. "
+            ? "Runs on a fresh cloud runner and pushes a branch — open the pull request from the review panel. "
             : "Runs with Juno Code on your Mac and streams the output directly. "}
           <PermissionFact target={target} />
         </p>

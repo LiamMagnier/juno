@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientActivityEvent, ClientAttachment, ClientMessage } from "@/types/chat";
+import { canSteerRun } from "@/lib/code-steer-policy";
 
 /*
  * State for one Juno Code session (a kind:"code" conversation): persisted
@@ -21,19 +22,6 @@ import type { ClientActivityEvent, ClientAttachment, ClientMessage } from "@/typ
  */
 
 export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
-
-/**
- * The states in which a task can be handed a new instruction.
- *
- * "There is a task row, and a host is either holding it or on its way to it."
- * `queued` is in the set because a host reads the same control list the moment
- * it claims the task — a cloud driver out of its runner-context handoff, a Mac
- * out of its first events POST — so the words are in front of the run before it
- * takes its first step rather than being refused for the minute a machine takes
- * to appear. `stopping` is not: that run is being taken down. `submitting` is
- * not either — there is no row yet for a control to hang off.
- */
-const STEERABLE = new Set<CodeSessionStatus>(["queued", "running", "awaiting_approval"]);
 
 /**
  * A Code activity row: the chat vocabulary plus the two keys only Juno Code
@@ -946,13 +934,12 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
    * transcript reads the way a reload will show it — the run's single
    * ASSISTANT row settles after every instruction it took.
    *
-   * A QUEUED TASK TAKES ONE TOO. A cloud run spends its first minute starting a
-   * machine and a device run spends it waiting for a Mac to claim the task, and
-   * an instruction sent during either is folded into the prompt the run opens
-   * with (runner-context hands the driver its backlog; a Mac reads the same
-   * controls on its first events POST). The minute a machine takes to appear is
-   * the minute a person remembers the thing they left out, and refusing them
-   * for it cost a cancel and a retype.
+   * A QUEUED CLOUD TASK TAKES ONE TOO. That run spends its first minute starting
+   * a machine, and an instruction sent during it is folded into the prompt the
+   * run opens with — runner-context hands the driver its unconsumed backlog. The
+   * minute a machine takes to appear is the minute a person remembers the thing
+   * they left out, and refusing them for it cost a cancel and a retype. A device
+   * task is not offered the verb at all; `canSteerRun` says why.
    *
    * Attachments ride along: the route folds their extracted text into what the
    * agent reads, exactly as the create route does for a first prompt.
@@ -966,7 +953,13 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       // takes it on the same terms the create route takes an attachment-only
       // first prompt.
       if (!task || (!trimmed && attachments.length === 0)) return { accepted: false };
-      if (!STEERABLE.has(statusRef.current)) return { accepted: false };
+      /*
+       * The same decision the composer draws its control from. A device host
+       * never acts on a `steer` control, so a POST here would queue an event
+       * nothing reads and leave the pending-instruction line waiting on an ack
+       * that cannot come.
+       */
+      if (!canSteerRun(statusRef.current, task.target)) return { accepted: false };
       const requestId = tempId();
       // What the pending-instruction line shows. An attachment-only steer has
       // no sentence of its own, so it is named by what it is rather than
@@ -1201,11 +1194,12 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     /**
      * Whether the composer may send an instruction INTO the live run.
      *
-     * Every non-terminal state a task can be in while a host is on its way to
-     * it or already holding it — see `STEERABLE`. The one thing excluded is
-     * `submitting`, where there is no task row yet for a control to hang off.
+     * Target-aware, because only the cloud driver acts on a `steer` control —
+     * see `canSteerRun` for why a Mac cannot. Offering the verb for a device run
+     * drew a live field over a transport that silently dropped what was typed
+     * into it.
      */
-    canSteer: STEERABLE.has(status),
+    canSteer: canSteerRun(status, activeTask?.target),
     send,
     steer,
     resume,

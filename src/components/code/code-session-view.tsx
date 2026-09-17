@@ -819,11 +819,17 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   /*
    * Queue copy, and the same sentence the live region reads out.
    *
-   * Each one now says that the wait is still a conversation. The field used to
-   * go dark here — an instruction sent during the minute a machine takes to
-   * appear was refused — so a person who thought of the constraint they had left
-   * out could only cancel and start over. It is delivered into the prompt the
-   * run opens with, which is what these sentences promise.
+   * The cloud line says the wait is still a conversation, because it is: the
+   * field used to go dark during the minute a machine takes to appear, so a
+   * person who thought of the constraint they had left out could only cancel and
+   * start over. Now runner-context hands the driver the backlog and it is folded
+   * into the prompt the run opens with, which is what that sentence promises.
+   *
+   * The two device lines make no such promise, and must not: a Mac host reads
+   * the control list but acts on `approval_response` and `cancel_request` only,
+   * so words added to a queued device run would go nowhere. `canSteerRun` keeps
+   * the field shut there; a sentence inviting the reader to type into it would
+   * put the promise back by other means.
    */
   const queuedNote =
     session.status !== "queued"
@@ -831,8 +837,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       : isCloud
         ? "Queued — starting a cloud machine (this can take a moment). Anything you add now goes in with the first instruction."
         : presence.state === "offline"
-          ? "Queued — runs when your Mac reconnects. Anything you add now goes in with the first instruction."
-          : "Queued — waiting for your Mac to pick this up. Anything you add now goes in with the first instruction.";
+          ? "Queued — runs when your Mac reconnects."
+          : "Queued — waiting for your Mac to pick this up.";
 
   const composer = (
     <CodeSessionComposer

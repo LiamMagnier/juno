@@ -15,9 +15,10 @@ export const runtime = "nodejs";
  *
  *   GET → 200 { state, checks: [{ name, outcome, url }], counts, branch }
  *         401 unauthenticated
+ *         401 { error: "github_unauthorized" } the stored token will not decrypt
  *         404 no such task
+ *         404 { error: "github_not_connected" }  no GitHub link to ask with
  *         409 { error: "no_branch" }             nothing pushed yet — nothing to check
- *         409 { error: "github_not_connected" }  no GitHub link to ask with
  *         502 { error: "github_unreachable" }    GitHub errored, rate-limited or is down
  *
  * ── READ-ONLY, AND WITH THE READER'S OWN TOKEN ─────────────────────────────

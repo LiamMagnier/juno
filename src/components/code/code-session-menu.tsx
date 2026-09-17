@@ -54,7 +54,8 @@ import type { ClientConversation } from "@/types/chat";
  * shared code session is the conversation without the tool rows. That stays: a
  * run's activity log is every command it ran and every path it touched in a
  * private repository, and a link anyone can open is the last place that belongs.
- * The menu item says so rather than letting a reader find out from the page.
+ * The menu item says so — "(no run log)" — rather than letting a reader find
+ * out from the page after they have sent the link.
  */
 export function CodeSessionMenu({ conversation }: { conversation: ClientConversation }) {
   const router = useRouter();
@@ -150,7 +151,7 @@ export function CodeSessionMenu({ conversation }: { conversation: ClientConversa
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setSharing(true)}>
-            <ActionIcons.share className="size-4" aria-hidden="true" /> Share a read-only link
+            <ActionIcons.share className="size-4" aria-hidden="true" /> Share a read-only link (no run log)
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void archive()}>
             <Archive className="size-4" aria-hidden="true" /> Archive

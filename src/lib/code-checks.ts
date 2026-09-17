@@ -1,9 +1,11 @@
 /*
  * CI, AS THE SESSION'S OWN BANNER CAN HONESTLY REPORT IT.
  *
- * A cloud run ends by pushing a branch and opening a pull request, and then the
- * single most useful fact about that branch is produced by a machine Juno does
- * not own: did the checks pass. Nothing in the product read it — there was no
+ * A cloud run ends by pushing a branch — the pull request is the reader's to
+ * open from the review panel — and the single most useful fact about that
+ * branch is produced by a machine Juno does not own: did the checks pass. CI
+ * runs on the pushed ref, so this answer exists whether or not anyone has opened
+ * a pull request yet. Nothing in the product read it — there was no
  * check-run or commit-status call anywhere under src/app/api, src/lib or
  * scripts — so a reader had to leave for GitHub to find out, which is the one
  * question a session banner should be able to answer without a tab change.

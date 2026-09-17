@@ -29,7 +29,7 @@ export const runtime = "nodejs";
  *     → 200 { mode: "compose", url }                    nothing was written
  *     → 200 { mode, url, number, reused }               a pull request exists now
  *       400 invalid input
- *       401 unauthenticated · { error: "github_unauthorized" } token revoked
+ *       401 unauthenticated
  *       404 no such task
  *       409 { error: <blocker code>, message }          see `pullRequestBlocker`
  *       409 { error: "github_not_connected" }           no credential of either kind

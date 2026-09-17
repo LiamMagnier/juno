@@ -136,7 +136,22 @@ test("the session menu acts through the conversation API and says what delete ke
   assert.match(menu, /method: "PATCH"/);
   assert.match(menu, /method: "DELETE"/);
   assert.match(menu, /ShareDialog/);
-  assert.match(menu, /titleSource: "manual"/, "a chosen name must survive the server's own naming");
+  /*
+   * A chosen name has to survive the server's own first-prompt naming, and that
+   * is a two-sided fact: the client sends the title and PATCH
+   * /api/conversations/[id] stamps `titleSource: "manual"` whenever one is
+   * present. Matching only the optimistic `updateConversation` call pinned the
+   * local echo — it would still have passed with the request body gone
+   * entirely — so both sides are read here.
+   */
+  assert.match(menu, /updateConversation\(conversation\.id, \{ title: next, titleSource: "manual" \}\)/);
+  assert.match(menu, /patch\(\{ title: next \}/, "the rename must actually send the title");
+  const conversations = read("src/app/api/conversations/[id]/route.ts");
+  assert.match(
+    conversations,
+    /fields\.title != null \? \{ titleSource: "manual" \}/,
+    "the server is what makes a sent title manual; nothing else in the body says so",
+  );
   /*
    * The one sentence that has to be exactly true. Deleting the conversation
    * removes the transcript; it cannot take back a branch that was pushed, a
