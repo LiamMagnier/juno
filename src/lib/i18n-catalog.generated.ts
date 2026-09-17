@@ -2,10 +2,6 @@
 // It contains static interface copy only; user content is never included.
 export const UI_TRANSLATION_CATALOG = [
   {
-    "id": "0009f2f141adf96b",
-    "source": "Start a task"
-  },
-  {
     "id": "001fdc0bfcc104a0",
     "source": "Wrapped up"
   },
@@ -318,6 +314,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "request_in_progress"
   },
   {
+    "id": "037a06cfde1a1663",
+    "source": "There is one cloud environment and it is not configurable yet. These are its facts rather than its settings — every line is lifted from the runner workflow in this repository, and a test fails if the two stop agreeing."
+  },
+  {
     "id": "038635e7bc3e725c",
     "source": "Read and change, nothing removed"
   },
@@ -482,10 +482,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "DeepSeek"
   },
   {
-    "id": "064a3e4ccae88263",
-    "source": "Couldn’t load your runs"
-  },
-  {
     "id": "0650ed2e8eef577d",
     "source": "Couldn’t load your skills. This page is empty because the request failed, not because you have none."
   },
@@ -568,6 +564,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "07297fa94a997d0f",
     "source": "Needs review"
+  },
+  {
+    "id": "07437cd651bed86e",
+    "source": "Environments"
   },
   {
     "id": "07548c2c6511d4d1",
@@ -784,6 +784,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0a36fe0ee95bb60e",
     "source": "Restrict tools in this project"
+  },
+  {
+    "id": "0a3d235eafb0e5ba",
+    "source": "What are we building"
   },
   {
     "id": "0a3fd059382e84da",
@@ -1146,6 +1150,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Preparing video"
   },
   {
+    "id": "0fce87431cb179f4",
+    "source": "This screen failed to draw. Nothing here was changed — this page states what your runs use, and it sets none of it."
+  },
+  {
     "id": "0fd1b6bf0a54a546",
     "source": "The computer action to perform."
   },
@@ -1200,6 +1208,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1085105438190932",
     "source": "GPT Codex"
+  },
+  {
+    "id": "1093115897879aa3",
+    "source": "Runtime"
   },
   {
     "id": "10a0c5f853c3da31",
@@ -1392,6 +1404,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "130011756125313c",
     "source": "On"
+  },
+  {
+    "id": "130b2707ff593327",
+    "source": "No project folders have synced yet. Open one in the Juno app on your Mac and it appears here, ready for a run."
   },
   {
     "id": "130f70ae5b44ed4c",
@@ -1672,10 +1688,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "17be3fec75a1a073",
     "source": "Use the browser profile on this Mac, with the sessions already signed in to it. Anything you are logged in to, a task can reach."
-  },
-  {
-    "id": "17dc61eeed25f5a0",
-    "source": "Where this run was started from"
   },
   {
     "id": "17e28e2302175d33",
@@ -2162,6 +2174,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cancel clarification"
   },
   {
+    "id": "1e32af87ea74279d",
+    "source": "Repositories"
+  },
+  {
     "id": "1e3abf61a37e3cad",
     "source": "If"
   },
@@ -2198,6 +2214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Journaux techniques"
   },
   {
+    "id": "1efe278bdd54d470",
+    "source": "What a run is allowed to do without stopping to ask. It follows from where the run happens, which is the chip above the composer — there is no separate switch, because nothing between this browser and a runner carries one."
+  },
+  {
     "id": "1f18954340c22bca",
     "source": "Stops at the next clean point and keeps its progress. You can resume it."
   },
@@ -2220,10 +2240,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1f63bf47bd52c80a",
     "source": "People with the link see the conversation up to now — new messages stay private."
-  },
-  {
-    "id": "1f64fff08d787e73",
-    "source": "runs"
   },
   {
     "id": "1f6a9c1aecea172b",
@@ -2300,10 +2316,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2074ee8e8406ca0e",
     "source": "Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a change to a security setting — is asked about under every one of these. There is no setting that turns that off."
-  },
-  {
-    "id": "20831e09777c72ba",
-    "source": "Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
   },
   {
     "id": "20839fbc3ef4890c",
@@ -2756,10 +2768,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "26cfc93bf8716962",
     "source": "You asked Juno to forget this. It will not be relearned."
-  },
-  {
-    "id": "26d6d37f90dc1f5d",
-    "source": "Search runs"
   },
   {
     "id": "270b4a85d9450298",
@@ -3610,10 +3618,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting for Apple…"
   },
   {
-    "id": "3285d60c4806da78",
-    "source": "Couldn’t send your answer. Check your connection and try again."
-  },
-  {
     "id": "329b3c4622ceca56",
     "source": "Project management"
   },
@@ -3656,10 +3660,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "330509caa0f2887d",
     "source": "Invalid request"
-  },
-  {
-    "id": "330527363ffac302",
-    "source": "Answered from here — your Mac denies on its own after 5 minutes."
   },
   {
     "id": "331551b0de4157c9",
@@ -4138,10 +4138,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Read sources"
   },
   {
-    "id": "39c43cc4dbf4e10e",
-    "source": "The list is served by your Juno account, not by GitHub — so this is usually a connection problem rather than a permissions one."
-  },
-  {
     "id": "39ca188b1873e64f",
     "source": "Skip blocks with no other attendees"
   },
@@ -4314,10 +4310,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No checkable claims in this answer"
   },
   {
-    "id": "3c1e5a6828b871b2",
-    "source": "What the runs opened on GitHub"
-  },
-  {
     "id": "3c218bc581bcf842",
     "source": "A URL you have opened."
   },
@@ -4392,6 +4384,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3d9b327bebf8f115",
     "source": "something on a website"
+  },
+  {
+    "id": "3da7a98cdfb75d2d",
+    "source": "Your GitHub connection has expired, so Juno cannot list your repositories. Nothing was started, and runs on your Mac are unaffected."
   },
   {
     "id": "3da88cb4b782961b",
@@ -4546,6 +4542,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Start a design"
   },
   {
+    "id": "400fe23cb0ae58ee",
+    "source": "The repositories, Macs and machine your runs use — and what each of them lets a run do."
+  },
+  {
     "id": "4012cdbf3620e324",
     "source": "and v"
   },
@@ -4596,10 +4596,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "412192974716608f",
     "source": "This is saved paused. Nothing runs until you switch it on."
-  },
-  {
-    "id": "413116293eb3f201",
-    "source": "Opens the session with your notes as the next instruction."
   },
   {
     "id": "4145d75c834fd9b5",
@@ -5050,10 +5046,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently shipped"
   },
   {
-    "id": "4776016c15d07359",
-    "source": "PR settled"
-  },
-  {
     "id": "4787eaf7c938045f",
     "source": "Legal"
   },
@@ -5418,10 +5410,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fournisseurs de modèles d'IA"
   },
   {
-    "id": "4c6222eb4c287c46",
-    "source": "Runs on a fresh cloud runner and opens a pull request to review."
-  },
-  {
     "id": "4c6cdd5d4b9aee5b",
     "source": "No folders shared"
   },
@@ -5552,10 +5540,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4e21d6a0c67a7b37",
     "source": "Add an instruction to the running task…"
-  },
-  {
-    "id": "4e4f112a80add8e5",
-    "source": "Search runs, repos, branches…"
   },
   {
     "id": "4e545960f1bffc13",
@@ -5722,6 +5706,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Select area"
   },
   {
+    "id": "50c9a2fb9aabf052",
+    "source": "No Mac"
+  },
+  {
     "id": "50cbffee01bcdecc",
     "source": "The language Juno replies in."
   },
@@ -5740,6 +5728,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "514971900a6a82fa",
     "source": "No base URL for provider."
+  },
+  {
+    "id": "514b0e0f6c9fcc1a",
+    "source": "Describe a task or ask a question…"
   },
   {
     "id": "51537eea4f55c1fe",
@@ -5772,10 +5764,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "51aa5e65f4a9d4a7",
     "source": "Too many sign-up attempts. Please try again later."
-  },
-  {
-    "id": "51c6f095981e10ad",
-    "source": "Loading runs"
   },
   {
     "id": "51c93e60fae26510",
@@ -6218,6 +6206,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This file contains binary data, so there is no text to index. If it is a document, upload it in its original format."
   },
   {
+    "id": "5914ab570d1713ed",
+    "source": "GitHub isn’t connected. A cloud run clones one of your repositories onto a fresh machine and opens a pull request, so it needs the connection before it can reach anything."
+  },
+  {
     "id": "59272b33acad4386",
     "source": "connector_not_linked"
   },
@@ -6440,10 +6432,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5c39123805ffb4e2",
     "source": "Prompt"
-  },
-  {
-    "id": "5c398d0217111325",
-    "source": "My Macs"
   },
   {
     "id": "5c3c0f0bc3e91104",
@@ -6674,10 +6662,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Researchers are searching and reading"
   },
   {
-    "id": "5f497935ad25dec6",
-    "source": "Asked the run to stop."
-  },
-  {
     "id": "5f53c925befc950a",
     "source": "work.connector.delete"
   },
@@ -6906,10 +6890,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "recent developments"
   },
   {
-    "id": "626190515afdea12",
-    "source": "The session composer didn’t come up. No run has been started, and any session already going is unaffected."
-  },
-  {
     "id": "626c72f78152d8c2",
     "source": "Sorts incoming invoices into the right folder and renames them."
   },
@@ -7112,10 +7092,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "64f89cf423ee1a16",
     "source": "Answer:"
-  },
-  {
-    "id": "651164b9df67e052",
-    "source": "No runs are waiting on you."
   },
   {
     "id": "6515ecd1c23f0d82",
@@ -7386,6 +7362,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "[message could not be decrypted]"
   },
   {
+    "id": "685394345b4000bb",
+    "source": "Ceiling"
+  },
+  {
     "id": "685fdb489644bc05",
     "source": "Animated and varied"
   },
@@ -7456,6 +7436,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "692ff6f0ac24b7a0",
     "source": "Invalid receipt lookup."
+  },
+  {
+    "id": "69342fd35a09d77f",
+    "source": "Mac workspaces"
   },
   {
     "id": "6949b6514f7e414a",
@@ -7856,6 +7840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6e6b86c9f024b5bd",
     "source": "Couldn’t rename the artifact."
+  },
+  {
+    "id": "6e7d50e84f4731ef",
+    "source": "Result"
   },
   {
     "id": "6e818ffe86ddf264",
@@ -8466,10 +8454,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "no results"
   },
   {
-    "id": "7647f8995bd532e1",
-    "source": "Stop this run"
-  },
-  {
     "id": "7669628f6556c54e",
     "source": "Couldn’t delete the assistant. Nothing was removed."
   },
@@ -8858,6 +8842,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ask Juno"
   },
   {
+    "id": "7c45bc627e9a7d07",
+    "source": "not_connected"
+  },
+  {
     "id": "7c86a0b2f9420e5d",
     "source": "Describe an image to generate…"
   },
@@ -9066,8 +9054,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Upgrade"
   },
   {
+    "id": "7ecb7d79fe965371",
+    "source": "· asleep"
+  },
+  {
     "id": "7ed41c126536ea75",
     "source": "Think"
+  },
+  {
+    "id": "7ef4b111663b2d3d",
+    "source": "Juno couldn’t reach GitHub, so this list is empty rather than wrong. Nothing was disconnected."
   },
   {
     "id": "7f220c0a262823b9",
@@ -9220,6 +9216,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "816913b64fb0c9ca",
     "source": "Save your recovery codes"
+  },
+  {
+    "id": "817761389ce0eeeb",
+    "source": "Puts your notes in the composer as the next instruction."
   },
   {
     "id": "819481abf1dd47f2",
@@ -9446,14 +9446,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete this chat?"
   },
   {
-    "id": "848f54e89660cea4",
-    "source": "Runs"
-  },
-  {
-    "id": "84d3db3edc21238b",
-    "source": "Not started yet — waiting for its machine to pick it up."
-  },
-  {
     "id": "84e017e94393ec29",
     "source": "Full reasoning trace"
   },
@@ -9610,6 +9602,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "On key"
   },
   {
+    "id": "876c2c81914f5c3d",
+    "source": "Change it by changing where this runs."
+  },
+  {
     "id": "8783b2704f792ad1",
     "source": "% likely"
   },
@@ -9628,10 +9624,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "87a8811758bb4dbd",
     "source": "Kimi Code High-Speed"
-  },
-  {
-    "id": "87ad2af336c1617d",
-    "source": "Answered from here — the cloud runner is waiting on it."
   },
   {
     "id": "87b3c3e4769c56c5",
@@ -9692,10 +9684,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "889015fe11bea4d3",
     "source": "Chat restored."
-  },
-  {
-    "id": "8896f3db0de72362",
-    "source": "Juno Code works in a project on your Mac, or on a fresh cloud machine that opens a pull request. Anything you start here, in the Mac app or on your phone shows up in this list."
   },
   {
     "id": "88a550e0f44eff78",
@@ -10090,6 +10078,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Searches or sources worth trying next."
   },
   {
+    "id": "8f1cc42d7c1ceb0c",
+    "source": "Machine"
+  },
+  {
     "id": "8f2364e11b8be3ff",
     "source": "Day"
   },
@@ -10174,10 +10166,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Started. This run is extra — the schedule still fires when it was going to."
   },
   {
-    "id": "90823c014ef8a6d0",
-    "source": "Loading your Juno Code runs"
-  },
-  {
     "id": "9089e4b79eb7fd01",
     "source": "Interactions"
   },
@@ -10200,10 +10188,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "90e7403053ef0a0d",
     "source": "Composio has no shared OAuth app for"
-  },
-  {
-    "id": "90eeb6484d4fbac7",
-    "source": "This run was started outside Juno on the web, so there is no session here to reply into. Open it on the machine that started it to respond."
   },
   {
     "id": "90f41411fa9dc38e",
@@ -10308,10 +10292,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "923dac27d087982d",
     "source": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><propfind xmlns=\"DAV:\"><prop><current-user-principal/></prop></propfind>"
-  },
-  {
-    "id": "9248c3ee67829f89",
-    "source": "Everything Juno Code is doing"
   },
   {
     "id": "9255d6a7f3fa0c79",
@@ -10606,10 +10586,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stripe"
   },
   {
-    "id": "962d7f58d5e42c41",
-    "source": "Denied. The run was told no."
-  },
-  {
     "id": "964863cd44cc97be",
     "source": "This request did not arrive with the signature Juno needs to accept an answer from the web. Decide it in the Juno app on the Mac that raised it."
   },
@@ -10728,10 +10704,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "97c52f5b20a90bfb",
     "source": "Claude Haiku"
-  },
-  {
-    "id": "97e8cf606d83cbbf",
-    "source": "Allowed. The run is picking up where it stopped."
   },
   {
     "id": "97ebc65eba0bf96e",
@@ -11510,10 +11482,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting for the upload to finish"
   },
   {
-    "id": "a14248d03c481c55",
-    "source": "Runs with Juno Code on your Mac and streams the output directly."
-  },
-  {
     "id": "a14debcc6c822ee7",
     "source": "Download source"
   },
@@ -11564,6 +11532,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a1d57f459c897818",
     "source": "Prices are per month, before VAT. Checkout opens soon — a free account works today, and everything you bring with you carries over when you upgrade."
+  },
+  {
+    "id": "a1df5b5a1d150250",
+    "source": "What a cloud run can clone. Juno sees what your GitHub connection grants it, so this list is changed in Connections rather than here."
   },
   {
     "id": "a1df76a2e9df7494",
@@ -12742,10 +12714,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "select"
   },
   {
-    "id": "b1ac929f8006c350",
-    "source": "Describe the task for this Juno Code session"
-  },
-  {
     "id": "b1b129fd43984ada",
     "source": "Subject contains"
   },
@@ -12800,10 +12768,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b269dc4e81a528a4",
     "source": "Commands"
-  },
-  {
-    "id": "b26c381e5d5ce697",
-    "source": "Try a different search, or clear the machine filter."
   },
   {
     "id": "b27ad06d123c6145",
@@ -12916,6 +12880,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b3d0c00535ca2d48",
     "source": "Not connected right now. The block still applies if you reconnect it."
+  },
+  {
+    "id": "b3f7f4016185c383",
+    "source": "In the cloud"
   },
   {
     "id": "b3fd592930178bac",
@@ -13190,10 +13158,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Host not found"
   },
   {
-    "id": "b7a18946ce0a7fd9",
-    "source": "more not shown. Narrow the list with search."
-  },
-  {
     "id": "b7af1e32f457e0d9",
     "source": "Recent ·"
   },
@@ -13220,10 +13184,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b7e2957f30396e50",
     "source": "This deletes your account and everything in it — conversations, memories, uploaded files, and your subscription. It takes effect immediately, and nothing can be recovered afterwards."
-  },
-  {
-    "id": "b7e83a1cbaaea032",
-    "source": "Where this run executes"
   },
   {
     "id": "b80012851cf027c6",
@@ -13462,10 +13422,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Compare frontier models in one conversation, see the cost of every answer, and continue the same work on web, Mac and iPhone."
   },
   {
-    "id": "bb85bb5f109c9030",
-    "source": "Open the pull request on GitHub"
-  },
-  {
     "id": "bb8c8605c55dcc2d",
     "source": "also"
   },
@@ -13548,10 +13504,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bcda257cf2693ac6",
     "source": "Les présentes sont soumises au"
-  },
-  {
-    "id": "bd0718154e568a2c",
-    "source": "No runs match"
   },
   {
     "id": "bd075fa7cb660b9c",
@@ -13654,6 +13606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Background blur"
   },
   {
+    "id": "be7cc9099653df17",
+    "source": "Loading your Juno Code settings"
+  },
+  {
     "id": "be7e2f20129365c2",
     "source": "Images"
   },
@@ -13752,10 +13708,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c0128e1c59adf979",
     "source": "The apps this task may use could not be changed, so nothing else was changed. Try again."
-  },
-  {
-    "id": "c018c0c89380ef31",
-    "source": "Starting points"
   },
   {
     "id": "c023d120dd17bd62",
@@ -14112,6 +14064,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c5251c356cf03ce9",
     "source": "Save assistant defaults"
+  },
+  {
+    "id": "c5276e27afba47df",
+    "source": "Customize"
   },
   {
     "id": "c54e3625467b4fde",
@@ -15278,6 +15234,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "More"
   },
   {
+    "id": "d48a617c7da5163c",
+    "source": "Credentials"
+  },
+  {
     "id": "d4b1ea5708dd5329",
     "source": "Overview"
   },
@@ -15288,6 +15248,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d4ea4de6477412cc",
     "source": "claim cited"
+  },
+  {
+    "id": "d4eb4eb6f9cf3850",
+    "source": "The project folders a device run can work in. A folder appears here once you open it in the Juno app on that Mac; the Mac has to be awake for a run to start in it."
   },
   {
     "id": "d4fb1b323f045871",
@@ -15594,10 +15558,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This branch isn't saved — it continues from the fork point with full context."
   },
   {
-    "id": "d8c3eadacacd5341",
-    "source": "Couldn’t show your runs"
-  },
-  {
     "id": "d8da2c49df39d91d",
     "source": "Note"
   },
@@ -15732,6 +15692,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d9f5c3356cdb6b0d",
     "source": "Upload limit reached. Try again later."
+  },
+  {
+    "id": "d9ff930917193218",
+    "source": "more —"
   },
   {
     "id": "da0a55787f44bb23",
@@ -15978,10 +15942,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Grok"
   },
   {
-    "id": "dca9d1e190bafda3",
-    "source": "Asks before changes"
-  },
-  {
     "id": "dcb25ec5e2afd3be",
     "source": "Add a variable"
   },
@@ -16094,6 +16054,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Runs at once"
   },
   {
+    "id": "ddbadeac94407ba9",
+    "source": "Couldn’t open your Juno Code settings"
+  },
+  {
     "id": "ddbe6dbba0c6396f",
     "source": ", so opening this preview tells nobody’s server that you did."
   },
@@ -16116,10 +16080,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "de289f463a3b51a7",
     "source": "Describe the task for Juno to carry out"
-  },
-  {
-    "id": "de2f9fbeafa8c478",
-    "source": "Describe what to build, test, refactor, or fix…"
   },
   {
     "id": "de3f769e4f7e5595",
@@ -16224,10 +16184,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dfb167939789bfc4",
     "source": "Unknown locale"
-  },
-  {
-    "id": "dfbfcb5e186f5e89",
-    "source": "Full access, reviewed as a PR"
   },
   {
     "id": "dfc1acca7d38ce07",
@@ -16532,6 +16488,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e370b33c1413b4ac",
     "source": "Large paste ready to send. Press Enter to send."
+  },
+  {
+    "id": "e372b05828b3f50c",
+    "source": "Juno couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced."
   },
   {
     "id": "e38f590afdee2664",
@@ -17198,10 +17158,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Preferred model"
   },
   {
-    "id": "ec9e9a909b70ba26",
-    "source": "Reading the run log…"
-  },
-  {
     "id": "ecbc89cd37a03734",
     "source": "Started"
   },
@@ -17378,6 +17334,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing in this document animates yet."
   },
   {
+    "id": "ef79b0a2a7511db0",
+    "source": "On your Mac"
+  },
+  {
     "id": "ef8e4285827f32b5",
     "source": "Brief rationale of what is being computed or analyzed."
   },
@@ -17428,6 +17388,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f069db4c28376014",
     "source": "Loading Juno"
+  },
+  {
+    "id": "f07a6dfa6b1df806",
+    "source": "This GitHub account has no repositories Juno can see. Granting Juno access to an organisation in Connections adds its repositories here."
   },
   {
     "id": "f07f98522b0e2d1f",
@@ -17898,10 +17862,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "bad_state"
   },
   {
-    "id": "f746f5a7b123d50d",
-    "source": "Every Juno Code run, wherever you started it — this Mac, the cloud, or the app on your phone."
-  },
-  {
     "id": "f75714bec79ff230",
     "source": "passages kept from"
   },
@@ -18260,10 +18220,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fca27d14a66c3b27",
     "source": "Google's flagship multimodal Flash model with hybrid reasoning."
-  },
-  {
-    "id": "fcb055ffe50c4cc8",
-    "source": "Couldn’t stop the run. Check your connection and try again."
   },
   {
     "id": "fcc41bccbdb8b793",

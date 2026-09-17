@@ -12,9 +12,12 @@ import { CodeSessionBanner } from "@/components/code/code-session-banner";
 import { CodeSessionComposer } from "@/components/code/code-session-composer";
 import {
   CodeRunStack,
+  hasTurnBoundary,
+  reviewFilesOf,
   useCurrentActivity,
   useSessionFileChanges,
 } from "@/components/code/code-run-cards";
+import { RunReviewPane } from "@/components/code/run-review";
 import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -583,6 +586,32 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   }, [thoughtOpenId]);
 
   const fileChanges = useSessionFileChanges(session.messages, session.fileChanges);
+  /*
+   * READING THE DIFF PROPERLY, FROM THE CARD THAT KNOWS THERE IS ONE.
+   *
+   * The changed-files card above the composer answers "what did it touch"; it
+   * is a summary that must stay small, and it has nowhere to put a judgement.
+   * `RunReviewPane` is where a reader says "looks right" or "needs a change"
+   * per file and leaves per-line notes at three severities — the review model
+   * docs/design/TWO_PRODUCTS.md §1 keeps, and the reason its buttons are not
+   * Accept and Reject: the browser has no checkout, so nothing here can apply
+   * or land anything and the vocabulary is judgement rather than writes.
+   *
+   * The pane's whole input is the changes this session already holds, so it
+   * needs no second data path: the files are the card's own rows with their
+   * churn strings split back into numbers, and the turn boundary is the
+   * transcript's. `loading` is false because nothing is being fetched — the
+   * rows are here or they are not.
+   */
+  const [reviewing, setReviewing] = React.useState(false);
+  const changeset = React.useMemo(
+    () => ({
+      loading: false,
+      files: reviewFilesOf(fileChanges),
+      hasTurnBoundary: hasTurnBoundary(session.messages),
+    }),
+    [fileChanges, session.messages],
+  );
   const currentActivity = useCurrentActivity(
     session.messages,
     session.status === "running" || session.status === "awaiting_approval",
@@ -603,8 +632,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
    * `onRegenerate` is supplied, and this surface supplied neither that nor
    * `onEdit` — so the only way back from a failure was retyping the prompt,
-   * which the composer cleared on send. One screen earlier, /code/new's own
-   * dispatch failure has exactly this button.
+   * which the composer cleared on send. One screen earlier, the landing
+   * composer's own dispatch failure has exactly this button.
    *
    * Re-dispatch when the session can run, and otherwise put the words back in
    * the composer — a Mac that went offline mid-run is the common case, and the
@@ -705,6 +734,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           rollback={rollbackControls}
           isCloud={isCloud}
           steering={session.steering}
+          onReview={fileChanges.length > 0 ? () => setReviewing(true) : null}
         />
       }
       voicePanel={
@@ -921,6 +951,30 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           )}
         </div>
       </div>
+
+      {/* Outside the split row, because it covers the whole surface rather than
+          taking a column beside the transcript — see the pane's own note on why
+          the docked variant went with the run list. */}
+      {reviewing && (
+        <RunReviewPane
+          run={{ id: conversation.id, title: sessionTitle }}
+          detail={changeset}
+          /*
+           * The notes land in this session's own composer rather than being
+           * dispatched. A review that fired straight into a live run would be
+           * the one press on this surface that cannot be taken back, and the
+           * reader almost always has a sentence to add to it.
+           */
+          onSend={(text) => {
+            setDraft((current) => [current.trim(), text].filter(Boolean).join("\n\n"));
+            requestAnimationFrame(() => {
+              autoresize();
+              textareaRef.current?.focus();
+            });
+          }}
+          onClose={() => setReviewing(false)}
+        />
+      )}
     </ThoughtPanelProvider>
   );
 }

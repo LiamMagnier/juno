@@ -23,9 +23,9 @@ import type { PendingUpload } from "@/hooks/use-uploads";
 /*
  * THE PARTS BOTH CODE COMPOSERS ARE MADE OF.
  *
- * /code/new and the session view draw the same composer twice: the same
- * attachment tray, the same "+" menu, the same drop overlay, the same pair of
- * hidden file inputs. They were two copies, and the comments in each of them
+ * The landing composer and the session view draw the same composer twice: the
+ * same attachment tray, the same "+" menu, the same drop overlay, the same pair
+ * of hidden file inputs. They were two copies, and the comments in each of them
  * had already started recording the drift they were correcting in the other —
  * "`p-3 pb-0`, the inset the session view's tray uses", "identical to the
  * session view's chip on purpose". A comment saying two things must stay the

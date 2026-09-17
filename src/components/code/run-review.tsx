@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -11,22 +10,27 @@ import { ScrollFade } from "@/components/ui/scroll-fade";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
 import { parseUnifiedDiff, type DiffRow } from "@/components/aicss/file-diff";
-import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { classifyRisk, RISK_META, type CodeRun } from "@/lib/code-runs";
+import { classifyRisk, RISK_META } from "@/lib/code-runs";
 import { cn } from "@/lib/utils";
-import type { RunDetail, RunFile } from "@/components/code/use-code-runs";
 
 /*
- * THE REVIEW PANE — A PANE, NEVER A MODAL, AND THE REASONS ARE BOTH PRACTICAL.
+ * THE REVIEW PANE — NOT A MODAL, AND ITS HOST IS NOW THE SESSION.
  *
- * A modal review dialog forces the reader to choose between the diff and the
- * list, and the list is where the other eleven runs are. Every product that got
- * this right independently arrived at the same arrangement: files on one side,
- * changes on the other, run list still on screen. Below 52rem of content
- * column there is no room for that, so the pane covers — but it is still not a
- * dialog: it traps no focus and it makes no claim that the page behind it is
- * unusable.
+ * It was built beside the run list: files on one side, changes on the other,
+ * the other eleven runs still on screen, and a docked 27rem column from 52rem
+ * of content width. The list is gone (docs/design/TWO_PRODUCTS.md §3), and with
+ * it the second half that arrangement existed to keep visible — so the docked
+ * variant went too rather than being kept for a column that no longer sits
+ * beside it. Inside a session transcript a sticky 27rem pane would take its
+ * width from the transcript and stand over the composer, which is the one
+ * control that must never be covered.
+ *
+ * What is left is what the pane already did on every narrow window: it covers.
+ * It is still not a dialog — it traps no focus and it makes no claim that the
+ * page behind it is unusable — and it is opened from the session's changed-
+ * files card, which is the only place in the product that knows a run has
+ * written something worth reading.
  *
  * ── WHAT THIS PANE CAN AND CANNOT DO, STATED ONCE ──────────────────────────
  *
@@ -80,16 +84,59 @@ type Verdict = "ok" | "change";
 
 type Scope = "last-turn" | "everything";
 
+/**
+ * One file as this pane reads it.
+ *
+ * Declared here rather than imported from the run list's hook, which is where
+ * it used to come from: that hook is parked for the sidebar, and importing a
+ * type from it kept a live surface pointing at a module nothing mounts. The
+ * shape is unchanged, so `RunDetail.files` still satisfies it structurally and
+ * a sidebar can hand this pane its rows with no translation layer.
+ */
+export interface ReviewFile {
+  path: string;
+  changeKind: string;
+  added: number;
+  removed: number;
+  /**
+   * Null means NO PATCH ARRIVED, never "the change was empty" — every device
+   * host in the field sends path/kind/counts and no hunks.
+   */
+  patch: string | null;
+  /** Written after the reader's most recent instruction. Drives "Last turn". */
+  fromLastTurn: boolean;
+}
+
+/** The changes a review is about, and whether they are all here yet. */
+export interface ReviewChangeset {
+  loading: boolean;
+  files: ReviewFile[];
+  /** True once a turn boundary exists, so "Last turn" can be offered honestly. */
+  hasTurnBoundary: boolean;
+}
+
 export function RunReviewPane({
   run,
   detail,
+  onSend,
   onClose,
 }: {
-  run: CodeRun;
-  detail: RunDetail;
+  run: { id: string; title: string };
+  detail: ReviewChangeset;
+  /**
+   * Hand the assembled review to whoever mounted the pane, as plain text.
+   *
+   * The pane used to park the text against the conversation and navigate to
+   * it, because it was mounted on a different page from the run. Its host is
+   * now the session itself, where that navigation would be a round trip to the
+   * screen already on display — so the host takes the text and puts it in its
+   * own composer instead. Either way the notes travel exactly the path a typed
+   * instruction would, which is what stops a review asking for something the
+   * composer could not have asked for.
+   */
+  onSend: (text: string) => void;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [scope, setScope] = React.useState<Scope>("last-turn");
   const [activePath, setActivePath] = React.useState<string | null>(null);
   /*
@@ -103,7 +150,6 @@ export function RunReviewPane({
   const [notes, setNotes] = React.useState<Note[]>(() => readReviewDraft(run.id).notes);
   const [verdicts, setVerdicts] = React.useState<Record<string, Verdict>>(() => readReviewDraft(run.id).verdicts);
   const [drafting, setDrafting] = React.useState<{ path: string; line: number | null } | null>(null);
-  const [sending, setSending] = React.useState(false);
 
   React.useEffect(() => {
     writeReviewDraft(run.id, { notes, verdicts });
@@ -151,16 +197,13 @@ export function RunReviewPane({
   /**
    * Hand the whole review to the run as its next instruction.
    *
-   * This is the "notes bundle into the agent's next message" behaviour, built on
-   * the hand-off the New session screen already uses: the text is parked in
-   * sessionStorage against the conversation and the session view picks it up,
-   * pre-fills the composer and dispatches it. Nothing new in the transport, and
-   * the notes travel exactly the same path a typed instruction would — so a
-   * review cannot ask for something the composer could not have asked for.
+   * This is the "notes bundle into the agent's next message" behaviour. The
+   * text is assembled here and given to `onSend`; what happens to it after that
+   * belongs to the host, because only the host knows whether the composer it
+   * should land in is on this screen or another one.
    */
   const sendNotes = () => {
-    if (!run.conversationId || (notes.length === 0 && Object.keys(verdicts).length === 0)) return;
-    setSending(true);
+    if (notes.length === 0 && Object.keys(verdicts).length === 0) return;
     const lines: string[] = [];
     lines.push(
       scope === "last-turn" && canScope
@@ -182,16 +225,18 @@ export function RunReviewPane({
     if (needsChange.length > 0) lines.push(`Files I marked as needing a change: ${needsChange.join(", ")}`);
     if (looksRight.length > 0) lines.push(`Files I marked as looking right: ${looksRight.join(", ")}`);
 
-    setPendingCodePrompt(run.conversationId, lines.join("\n").trim());
-    // Sent means handed to the composer's own hand-off, which is durable;
-    // the draft has done its job.
+    onSend(lines.join("\n").trim());
+    // Sent means handed to the composer, where the reader can see it and edit
+    // it before it goes; the per-run draft has done its job.
     clearReviewDraft(run.id);
-    router.push(`/chat/${run.conversationId}`);
+    // Closing is part of sending: the notes are now in a field behind this
+    // pane, and leaving the pane over them would hide the thing just written.
+    onClose();
   };
 
   const noteCount = notes.length;
   const verdictCount = Object.keys(verdicts).length;
-  const canSend = !!run.conversationId && noteCount + verdictCount > 0;
+  const canSend = noteCount + verdictCount > 0;
 
   // Closing with unsent notes is not a loss any more — say so, quietly,
   // rather than blocking the close with a dialog over a draft that is kept.
@@ -208,24 +253,12 @@ export function RunReviewPane({
   return (
     <aside
       aria-label={`Review changes from ${run.title}`}
-      className={cn(
-        // Below 52rem of CONTENT COLUMN the pane covers, because two columns
-        // do not fit; from there it is an ordinary column beside the list,
-        // which stays readable. 52rem is what both halves need — the 27rem
-        // pane, ~22rem of run row and the 1.25rem gap, plus the gutter — and it
-        // is the column's width, not the window's: `lg:` docked the pane at a
-        // 1024 window, where with the sidebar out the column is 720 and the
-        // rows beside a 432px pane were 220px wide. One element in both cases
-        // — a second copy behind a breakpoint is two panes that drift.
-        // Full-bleed it is the page's own ground; beside the list it is a
-        // raised card, the same material as every other card in the product.
-        "surface-raised fixed inset-0 z-modal flex flex-col overflow-hidden",
-        // `sticky` once docked so the pane stays put while the run list scrolls
-        // past it — a review pane that scrolls away is a modal with extra
-        // steps, and the whole reason it is not a modal is that both halves
-        // have to stay on screen together.
-        "@[52rem]/page:sticky @[52rem]/page:top-4 @[52rem]/page:z-auto @[52rem]/page:h-[calc(100dvh-9rem)] @[52rem]/page:w-[27rem] @[52rem]/page:shrink-0 @[52rem]/page:rounded-card",
-      )}
+      // It covers, at every width. The docked 27rem variant this used to carry
+      // from 52rem of content column was there so the run list stayed beside
+      // it; there is no list, and the surface that mounts it now is a
+      // transcript with a composer pinned to the bottom, where a sticky column
+      // would narrow the transcript and stand over the field.
+      className="surface-raised fixed inset-0 z-modal flex flex-col overflow-hidden"
     >
       <header className="flex items-start gap-3 border-b border-border/60 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -343,31 +376,19 @@ export function RunReviewPane({
       )}
 
       <footer className="shrink-0 border-t border-border/60 px-4 py-3">
-        {run.conversationId ? (
-          <>
-            <Button className="w-full gap-1.5" disabled={!canSend || sending} onClick={sendNotes}>
-              {sending ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <ActionIcons.share className="size-3.5" aria-hidden="true" />
-              )}
-              {noteCount + verdictCount === 0
-                ? "Send review to the run"
-                : `Send ${noteCount + verdictCount} ${noteCount + verdictCount === 1 ? "note" : "notes"} to the run`}
-            </Button>
-            <p className="mt-2 text-center text-caption text-muted-foreground">
-              Opens the session with your notes as the next instruction.
-            </p>
-          </>
-        ) : (
-          // A run started outside the web has no conversation to reply into.
-          // Saying so is better than a disabled button with no explanation —
-          // the reader would assume the feature is broken rather than absent.
-          <p className="text-center text-caption text-muted-foreground">
-            This run was started outside Juno on the web, so there is no session here to reply into.
-            Open it on the machine that started it to respond.
-          </p>
-        )}
+        <Button className="w-full gap-1.5" disabled={!canSend} onClick={sendNotes}>
+          <ActionIcons.share className="size-3.5" aria-hidden="true" />
+          {noteCount + verdictCount === 0
+            ? "Send review to the run"
+            : `Send ${noteCount + verdictCount} ${noteCount + verdictCount === 1 ? "note" : "notes"} to the run`}
+        </Button>
+        {/* Said rather than assumed: the notes land in the field, not in the
+            run, so a reader who wanted to add a sentence before sending still
+            can. A button that dispatched straight into a live run would be the
+            one place on this surface where a press cannot be taken back. */}
+        <p className="mt-2 text-center text-caption text-muted-foreground">
+          Puts your notes in the composer as the next instruction.
+        </p>
       </footer>
     </aside>
   );
@@ -383,7 +404,7 @@ function FileRow({
   onSelect,
   onVerdict,
 }: {
-  file: RunFile;
+  file: ReviewFile;
   active: boolean;
   verdict: Verdict | undefined;
   noteCount: number;
@@ -466,7 +487,7 @@ function FileDiffBody({
   onAddNote,
   onRemoveNote,
 }: {
-  file: RunFile;
+  file: ReviewFile;
   notes: Note[];
   /** The line currently being annotated — `undefined` when nothing is. */
   drafting: number | null | undefined;
@@ -807,8 +828,27 @@ function RiskLine({ risk }: { risk: ReturnType<typeof classifyRisk> }) {
   );
 }
 
+/** What the receipt reads: the changeset, plus the evidence only the run's own
+ *  event log carries. `RunDetail` satisfies it — see the note on the receipt. */
+export interface ReceiptDetail {
+  files: ReviewFile[];
+  checks: readonly { summary: string; outcome: "ok" | "failed" | "unknown" }[];
+  /** The run's own error text, when it reported one. */
+  error: string | null;
+}
+
 /**
  * THE VERIFICATION RECEIPT — the thing no competitor ships.
+ *
+ * PARKED, DELIBERATELY, AND WITH THE HOOK THAT FEEDS IT. Nothing mounts this
+ * today. `checks` is the reason: it is built by `useRunDetail` in
+ * use-code-runs.ts, which walks a run's event log for commands that look like
+ * verification and reads how each one ended, and no surface in the product
+ * derives that from a transcript. The pane above was re-homed onto the session
+ * because it needs only the files a session already has; the receipt needs the
+ * event log, so it waits where its data waits, for the sidebar package that
+ * brings `useRunDetail` back. Writing it again from a git ref is the cost of
+ * deleting it, and the sentences below are the argument, not the markup.
  *
  * Every agent surface in this category lists runs and diffs them, and stops
  * there. The consequence is that reviewing a one-line copy change and reviewing
@@ -828,7 +868,7 @@ export function RunReceipt({
   onOpenReview,
   className,
 }: {
-  detail: RunDetail;
+  detail: ReceiptDetail;
   onOpenReview?: () => void;
   className?: string;
 }) {

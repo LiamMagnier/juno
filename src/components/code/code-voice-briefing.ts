@@ -22,10 +22,11 @@
  *
  * ── Why the two Code surfaces share one briefing ───────────────────────────
  *
- * /code/new and a live session are the same conversation at two moments: where
- * this runs, what I want done, and (once there is one) what happened. Two
- * builders would drift, and the drift would surface as Juno describing the
- * arrangement differently depending on which screen you called from.
+ * The landing composer and a live session are the same conversation at two
+ * moments: where this runs, what I want done, and (once there is one) what
+ * happened. Two builders would drift, and the drift would surface as Juno
+ * describing the arrangement differently depending on which screen you called
+ * from.
  */
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";
@@ -44,17 +45,18 @@ export interface CodeVoiceBriefingInput {
    * "new" — nothing exists yet and the call is about deciding what to ask for.
    * "session" — a session exists and the call is about what it has done.
    *
-   * The distinction is not cosmetic: on /code/new the model must not talk as if
-   * a run were under way, and in a session it must not offer to choose a repo.
+   * The distinction is not cosmetic: on the landing the model must not talk
+   * as if a run were under way, and in a session it must not offer to choose a
+   * repo.
    */
   stage: "new" | "session";
-  /** Null while /code/new is still resolving which machine it will be. */
+  /** Null while the landing composer is still resolving which machine it is. */
   target: "device" | "cloud" | null;
   /** Workspace name (device) or `owner/name` (cloud). Null when unpicked. */
   place: string | null;
   /** The branch a cloud run starts from, when one is known. */
   baseRef: string | null;
-  /** The session transcript so far, oldest first. Empty on /code/new. */
+  /** The session transcript so far, oldest first. Empty on the landing. */
   turns: readonly { role: "user" | "assistant"; text: string }[];
   /**
    * The app's own reason a run cannot be dispatched right now — the composer's

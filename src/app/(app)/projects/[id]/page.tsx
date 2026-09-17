@@ -896,7 +896,12 @@ export default function ProjectDetailPage() {
                   lastMessageAt: c.lastMessageAt,
                 }))}
               onNewCodeSession={() => {
-                router.push(`/code/new?project=${data.project.id}`);
+                // `/code` — the Code composer is the landing now, and
+                // `/code/new` only redirects here. The `?project=` this used to
+                // append was never read by anything on the other end, so it is
+                // dropped rather than carried through a bounce; a project does
+                // not name a checkout, which is what that composer asks for.
+                router.push("/code");
               }}
             />
           </TabsContent>

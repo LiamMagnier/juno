@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
@@ -17,10 +18,10 @@ import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /*
- * "Where does this run" — one chip on the New session composer's first row,
- * opening one popover that answers both halves of the question: which machine
- * (Device ⇄ Cloud) and which checkout on it (a synced project, or a GitHub
- * repository).
+ * "Where does this run" — two chips above the Code composer's field, one for
+ * each half of the question: `CodeEnvironmentChip` chooses the machine
+ * (Device ⇄ Cloud) and `CodeTargetPicker` chooses the checkout on it (a synced
+ * project, or a GitHub repository and the branch to cut from).
  *
  * Device lists the real synced workspaces (GET /api/code/workspaces); Cloud
  * lists the user's real GitHub repos (GET /api/code/github/repos). Every
@@ -32,7 +33,23 @@ import { cn } from "@/lib/utils";
  *   unreachable          → a note that says the list is empty because the
  *                          request failed, not because there is nothing, + Retry
  *
- * ——— Why the Device/Cloud track is gone ———
+ * ——— Why the Device/Cloud track is gone, and why a second CHIP is not it ———
+ *
+ * The machine is a chip again, and the paragraph below is why it is a chip
+ * rather than the track it used to be. What that argument rejected was a
+ * `SegmentedControl` — an inset well with a floating thumb, in a second
+ * typeface, at a third radius, on the composer's controls row. It did not
+ * reject the machine being asked separately. `CodeEnvironmentChip` wears the
+ * shared `composerChipClass`, on the chip row ABOVE the field where
+ * docs/design/TWO_PRODUCTS.md §3 puts the two facts a run needs before it can
+ * start — so the row is two objects of one species, and the controls row below
+ * it keeps the three objects FLAT_UI.md §4 allows it.
+ *
+ * What the split buys back is the sentence each machine carries. Folded into
+ * one chip, "Device" was a word on a trigger and its meaning ("your Mac,
+ * streamed here as it works") lived one press down; the composer's permission
+ * chip now states the consequence of that choice on the row below, where it is
+ * read before send rather than discovered after it.
  *
  * It used to be a `SegmentedControl` sitting beside this chip, and the two were
  * lit in opposite directions: the track is an inset well (a shadow cast INTO
@@ -50,15 +67,13 @@ import { cn } from "@/lib/utils";
  * this mess — the previous version already overrode `bg-black/[0.04]` against
  * the shared `bg-black/[0.055]`, silently, with no reason recorded.
  *
- * So the machine moved into the popover as its first two rows, and the chip
- * carries the answer instead: `[Laptop] Device │ juno-web`. Three gains. The
- * composer's first row is one flat control in the same language as the model
- * selector one row below it. The choice is stated where its consequence can be
- * stated with it — each row now says what the machine actually does, which the
- * two-word track never had room for and which previously only appeared in the
- * page's footer copy. And the popover became one thing: a stack of rows, all
- * the same row, where the first two choose the machine and the rest choose the
- * checkout on it.
+ * So the machine became a POPOVER OF ROWS rather than a track, and that is the
+ * part that survives the split: `TargetRows` is still two rows of the same row
+ * every list here is made of, each saying what its machine actually does —
+ * which the two-word track never had room for, and which previously only
+ * appeared in the page's footer copy. `CodeEnvironmentChip` is the trigger that
+ * opens it; `CodeTargetPicker` opens the checkout list beside it. Two triggers,
+ * one row, one recipe, and neither of them a well.
  *
  * What went with the track is `SegmentedControl`'s keyboard contract — one tab
  * stop, arrows to traverse, selection following focus. `TargetRows` below
@@ -128,9 +143,117 @@ const ROW_HEIGHT = "min-h-[46px]";
 const ROW_SKELETON_HEIGHT = "h-[46px]";
 const SKELETON_ROWS = 4;
 
-export function CodeTargetPicker({
+/**
+ * The chip idiom both triggers on this row wear: `composerChipClass`, the
+ * shared recipe (components/ui/composer-shell.tsx), plus the 6px gap these two
+ * need for a leading glyph and a trailing fact.
+ *
+ * It used to be a hand-written copy of that recipe, thirteen classes long,
+ * annotated as "the composer's flat-ghost idiom, verbatim (model-selector.tsx:
+ * 488)" — which is a comment asking two files to stay equal, the cheapest
+ * possible substitute for one file. They had already drifted: this one pressed
+ * with `active:scale-[0.97]` and skipped the inset focus ring on the grounds
+ * that composer controls carry no ring, while the model chip one row below
+ * takes the ring and does not press. Both chips now take the recipe, which is
+ * the one FLAT_UI.md §4 names, so the drift has nowhere left to happen.
+ *
+ * Still a plain `<button>` rather than `<Button variant="ghost">`, for the
+ * reason the model selector gives: every ghost Button carries the shared
+ * `rounded-field`, the ring offset and the `[&_svg]` sizing, and unpicking
+ * those costs more overrides than the element saves.
+ *
+ * ONE THING CHANGED SIZE, AND IT IS WORTH SAYING WHICH. The hand-written list
+ * carried `coarse:h-11`; the shared recipe carries `coarse:h-10`, so on a touch
+ * screen the checkout chip came down from 44px to 40px. That is well above
+ * WCAG 2.5.8's 24px floor and it is what every other chip on a composer row in
+ * this product is, which is the point of taking the recipe — a row where one
+ * chip is 4px taller than its neighbour is the drift this constant exists to
+ * end. If 44 is the right answer it is the right answer for
+ * `composerChipClass`, and it gets changed there, once, for every composer.
+ */
+const CHIP_CLASS = cn(composerChipClass, "max-w-full gap-1.5");
+
+/**
+ * WHICH MACHINE — the left chip of the composer's context row.
+ *
+ * It holds no fetch of its own — Device and Cloud are two constants, and the
+ * lists that cost a request are drawn by the checkout chip beside it. What it
+ * does do is CHOOSE, and that is not free: `CodeTargetPicker` fetches the
+ * repository list from a target effect, so picking Cloud here is what warms it,
+ * not opening the chip that shows it. (The Mac workspaces and device presence
+ * are fetched on mount whatever the target, because the device side is the
+ * default and its rows have to be there when the chip opens.)
+ */
+export function CodeEnvironmentChip({
   target,
   onTargetChange,
+  disabled = false,
+  className,
+}: {
+  target: Target;
+  onTargetChange: (t: Target) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const current = TARGETS.find((t) => t.value === target) ?? TARGETS[0];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          // The visible word is in the accessible name (WCAG 2.5.3), and the
+          // hint after it is the same sentence the row inside says — a chip
+          // that a voice user cannot address by the word on it, or that says
+          // only that word, are the two failures this label sits between.
+          aria-label={`Where this runs: ${current.label}. ${current.hint} Change it`}
+          className={cn(CHIP_CLASS, className)}
+        >
+          {target === "device" ? (
+            <CodeIcons.device className="size-3.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
+          )}
+          <span className="min-w-0 truncate">{current.label}</span>
+          <ChevronDown className={composerChevronClass} aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        // The checkout popover's width, exactly. Two chips a gap apart must not
+        // open two differently sized panels — that is the same complaint the
+        // note below the checkout's own `PopoverContent` records about Device
+        // and Cloud once having different caps inside one popover, now one
+        // level out.
+        className="w-[calc(100vw-2rem)] max-w-[92vw] overflow-hidden p-0 sm:w-[23rem]"
+      >
+        <TargetRows
+          value={target}
+          onChange={(next) => {
+            onTargetChange(next);
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * WHICH CHECKOUT — the right chip of the composer's context row, and the one
+ * that owns every fetch on it.
+ *
+ * It follows the machine rather than choosing it: Device lists synced
+ * workspaces, Cloud lists GitHub repositories and offers the base branch to cut
+ * from. Each target keeps its own selection, so switching machine to check
+ * something and switching back finds the pick exactly as it was left.
+ */
+export function CodeTargetPicker({
+  target,
   selectedWorkspace,
   onSelectWorkspace,
   selectedRepo,
@@ -138,11 +261,9 @@ export function CodeTargetPicker({
   baseRef,
   onBaseRefChange,
   disabled = false,
-  showTarget = true,
   className,
 }: {
   target: Target;
-  onTargetChange: (t: Target) => void;
   selectedWorkspace: Workspace | null;
   onSelectWorkspace: (w: Workspace) => void;
   selectedRepo: CloudRepo | null;
@@ -150,20 +271,7 @@ export function CodeTargetPicker({
   baseRef: string;
   onBaseRefChange: (v: string) => void;
   disabled?: boolean;
-  /**
-   * Whether this control also carries the machine choice (the Device / Cloud
-   * rows at the top of the popover and the word on the chip). A host that
-   * draws its own Device / Cloud switch beside the chip — the New session
-   * composer does, as a `SegmentedControl` — passes false, so the machine is
-   * asked once rather than twice on one row.
-   */
-  showTarget?: boolean;
-  /**
-   * Trigger overrides for the host. The chip used to sit in a row of its own
-   * above the field and could take the composer's full 32px control height; it
-   * now lives in the composer's utility strip, which is a quieter tier and is
-   * only a tier at all if it is shorter than the send row above it.
-   */
+  /** Trigger overrides for the host. */
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -261,82 +369,59 @@ export function CodeTargetPicker({
 
   // The chip's label reflects the current target's selection (each target keeps
   // its own, so toggling back and forth never loses a pick). "Pick a project" /
-  // "Pick a repository" is the same sentence the page's gate hint uses, so the
-  // thing that is missing is named identically in both places.
+  // "Pick a repository" is the same sentence the composer's gate hint uses, so
+  // the thing that is missing is named identically in both places.
   const chipLabel =
     target === "device"
       ? selectedWorkspace?.name ?? "Pick a project"
       : selectedRepo?.fullName ?? "Pick a repository";
   const hasSelection = target === "device" ? !!selectedWorkspace : !!selectedRepo;
+  /*
+   * The branch a cloud run cuts from, ON the chip rather than one press inside
+   * it. It is the second half of "which checkout" — `owner/name` names a
+   * repository, not a starting point — and it is the fact a reader most wants
+   * confirmed before pressing send, because the override is sticky per repo and
+   * a run started from the wrong base opens a pull request against the wrong
+   * thing. Falls back to the repo's own default branch, which is what the run
+   * uses when the override is empty, so the chip never shows a blank where the
+   * run has a value.
+   */
+  const branch = target === "cloud" && selectedRepo ? baseRef.trim() || selectedRepo.defaultBranch : null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        {/*
-          The composer's flat-ghost idiom, verbatim (model-selector.tsx:488): no
-          border, no fill, no shadow at rest — fill only on hover and while open
-          — mono, 12px stepping to 13px at 480px, a `size-3.5` leading glyph and
-          an `h-3 w-3` chevron at half opacity. It is a plain <button> rather
-          than <Button variant="ghost">, for the same reason the model selector
-          is: every ghost Button still carries the shared `rounded-field`, the ring
-          offset and the `[&_svg]` sizing, and unpicking those costs more
-          overrides than the element saves.
-
-          Two facts, one hairline apart, because the row exists to say both: the
-          machine (glyph + word) and the checkout on it. The hairline is the
-          same 1px `bg-border/60` that separates the controls in the toolbar
-          below — the separator atom this composer already owns.
-        */}
         <button
           type="button"
           disabled={disabled}
           aria-label={
             target === "device"
               ? selectedWorkspace
-                ? `Runs on this device, in ${selectedWorkspace.name}. Change where this session runs`
-                : "Runs on this device. No project picked yet — pick one"
+                ? `Runs in ${selectedWorkspace.name}. Change the project`
+                : "No project picked yet — pick one"
               : selectedRepo
-                ? `Runs in the cloud, on ${selectedRepo.fullName}. Change where this session runs`
-                : "Runs in the cloud. No repository picked yet — pick one"
+                ? `Runs on ${selectedRepo.fullName}, from ${branch}. Change the repository or the base branch`
+                : "No repository picked yet — pick one"
           }
-          className={cn(
-            // The UI face, like the model chip beside it: a chip is a label on a
-            // control, and one mono chip in a sans row read as a different
-            // species of object.
-            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground",
-            "transition-[background-color,color,transform] duration-fast ease-out-soft",
-            "hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground",
-            // Focus fills, exactly as the thinking button beside it does, and
-            // deliberately does NOT set `outline-none`: the composer's controls
-            // carry no ring (docs/JUNO.md §3.6 records that decision), so the
-            // UA's own outline is the only thing left standing between a
-            // keyboard user and an invisible focus.
-            "focus-visible:bg-accent focus-visible:text-foreground",
-            "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100",
-            "min-[480px]:text-ui coarse:h-11",
-            className,
-          )}
+          className={cn(CHIP_CLASS, className)}
         >
           {target === "device" ? (
-            <CodeIcons.device className="size-3.5 shrink-0" aria-hidden="true" />
+            <AppIcons.projects className="size-3.5 shrink-0" aria-hidden="true" />
           ) : (
-            <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
+            <GitHubMark className="size-3.5 shrink-0" />
           )}
-          <span className="shrink-0">{target === "device" ? "Device" : "Cloud"}</span>
-          {/* h-4, the height COMPOSER_DIVIDER draws in the same utility strip an
-              inch to the right — this one was h-3.5, putting two divider heights
-              on one row. */}
-          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border/60" />
           <span className={cn("min-w-0 truncate", !hasSelection && "text-muted-foreground")}>{chipLabel}</span>
-          {/* `ease-out-soft`, the easing the two composer chips this trigger is
-              copied from already use (model-selector.tsx:567,
-              chat/composer.tsx:2349). `ease-in-out` is the stock Tailwind curve
-              and belongs to <Select>; on a chip sitting one gap away from those
-              two, the same gesture was arriving on a different curve. */}
-          <ChevronDown
-            className="h-3 w-3 shrink-0 opacity-60 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-            aria-hidden="true"
-          />
+          {branch && (
+            <>
+              {/* The hairline that separates the two facts on one chip: the
+                  same 1px `bg-border/60` the popover's own bands use, at h-4 —
+                  the height the composer's other seams are drawn at. */}
+              <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border/60" />
+              <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate font-mono">{branch}</span>
+            </>
+          )}
+          <ChevronDown className={composerChevronClass} aria-hidden="true" />
         </button>
       </PopoverTrigger>
 
@@ -356,7 +441,6 @@ export function CodeTargetPicker({
         style={{ maxHeight: "min(28rem, var(--radix-popover-content-available-height))" }}
         className="flex w-[calc(100vw-2rem)] max-w-[92vw] flex-col overflow-hidden p-0 sm:w-[23rem]"
       >
-        {showTarget && <TargetRows value={target} onChange={onTargetChange} />}
         {target === "device" ? (
           <DeviceList
             load={wsLoad}
@@ -444,16 +528,16 @@ function TargetRows({ value, onChange }: { value: Target; onChange: (t: Target) 
       role="radiogroup"
       aria-label="Where the session runs"
       /*
-       * `border-border` at full strength, on all three of this panel's band
-       * separators. Inside a popover both sides of the seam are `--popover`
-       * (13% on dark), so a /60 hairline composited to ~14.8% — under two
-       * points off the fill it is meant to divide, i.e. no seam at all. These
-       * are not decorative rules: they are the only thing separating "which
-       * machine" from "which checkout on it", and the list from the base-branch
-       * field. `.overlay-glass` makes the same argument for the panel's outer
-       * edge, and it is the same argument one level in.
+       * No bottom rule any more. It used to separate "which machine" from
+       * "which checkout on it" inside one popover; now that the machine has its
+       * own chip this group is the whole panel, and a hairline along the last
+       * row would be an edge with nothing on the other side of it. The
+       * remaining band separator — the list from the base-branch field — keeps
+       * its `border-border/60` for the reason recorded there: inside a popover
+       * both sides of a seam are `--popover`, so the hairline is the only thing
+       * dividing them.
        */
-      className="shrink-0 space-y-0.5 border-b border-border/60 p-2"
+      className="shrink-0 space-y-0.5 p-2"
     >
       {TARGETS.map((t) => (
         <PickerRow

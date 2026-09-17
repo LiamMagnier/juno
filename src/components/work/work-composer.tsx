@@ -232,7 +232,7 @@ import { cn } from "@/lib/utils";
  * Where the reader's model choice is kept.
  *
  * `localStorage` rather than the account settings for the same reason
- * `/code/new` keeps its target there: this is a per-browser habit, not a
+ * the Code composer keeps its target there: this is a per-browser habit, not a
  * preference the Mac app should inherit. It is read in a mount effect and never
  * in `useState`'s initialiser — the server renders this component too, and a
  * first render that consulted `localStorage` would disagree with the HTML that
@@ -341,9 +341,9 @@ export function WorkComposer({
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } =
     useUploads(null);
 
-  // Thinking effort, read from the same account-wide preference chat and
-  // /code/new write to, so a Work task opens on whatever the reader last chose
-  // rather than inventing a second answer to the same question.
+  // Thinking effort, read from the same account-wide preference chat and the
+  // Code composer write to, so a Work task opens on whatever the reader last
+  // chose rather than inventing a second answer to the same question.
   //
   // It is now editable here, and that is a change of fact rather than of taste.
   // This composer showed no effort control for as long as the Work executor
