@@ -22,6 +22,10 @@ export type SidebarMotionIconKind =
   | "assistants"
   | "tasks"
   | "pulls"
+  /** Code's Customize row. The same gear the account menu draws Settings with,
+   *  because it is the same idea one level down: configuration for a product
+   *  rather than for the account. */
+  | "settings"
   | "search"
   | "panel-open"
   | "panel-close"
@@ -57,6 +61,7 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   assistants: AppIcons.assistants,
   tasks: AppIcons.tasks,
   pulls: AppIcons.pulls,
+  settings: AppIcons.settings,
   search: AppIcons.search,
   "panel-open": PanelLeft,
   "panel-close": PanelLeftClose,

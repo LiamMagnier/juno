@@ -70,7 +70,25 @@ export interface CodeRunsData {
   reachableFor: (run: CodeRun) => boolean | null;
 }
 
-export function useCodeRuns(): CodeRunsData {
+/**
+ * Who is asking, and it changes both requests this hook makes.
+ *
+ * The run list wants every run, because its rows ARE runs. The sidebar wants
+ * one row per Code session, because its rows are conversations — and a
+ * conversation row never decays out of the panel when its pull request merges,
+ * so the pull-request read that exists solely to decay a settled run out of the
+ * list would be a third poll answering a question the sidebar does not ask.
+ * `perConversation` is therefore one switch for one caller shape rather than
+ * two loose flags that can be set in a combination nothing means.
+ */
+export interface CodeRunsOptions {
+  /** False while the surface is mounted but not showing runs — no fetch, no timer. */
+  enabled?: boolean;
+  /** Ask for the newest run per Code session instead of the newest runs. */
+  perConversation?: boolean;
+}
+
+export function useCodeRuns({ enabled = true, perConversation = false }: CodeRunsOptions = {}): CodeRunsData {
   const [runs, setRuns] = React.useState<CodeRun[]>([]);
   const [devices, setDevices] = React.useState<DeviceRow[] | null>(null);
   const [openPrUrls, setOpenPrUrls] = React.useState<Set<string> | null>(null);
@@ -81,13 +99,14 @@ export function useCodeRuns(): CodeRunsData {
   const refresh = React.useCallback(() => setNonce((n) => n + 1), []);
 
   React.useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const controller = new AbortController();
 
     const load = async () => {
       try {
         const [tasksRes, devicesRes] = await Promise.all([
-          fetch(`/api/code/tasks?limit=${RUN_PAGE_SIZE}`, {
+          fetch(`/api/code/tasks?limit=${RUN_PAGE_SIZE}${perConversation ? "&latestPerConversation=1" : ""}`, {
             cache: "no-store",
             signal: controller.signal,
           }),
@@ -147,7 +166,7 @@ export function useCodeRuns(): CodeRunsData {
     };
 
     void load();
-    void loadPulls();
+    if (!perConversation) void loadPulls();
 
     /*
      * Visibility-gated polling, the same rule `useDevicePresence` keeps. A
@@ -162,7 +181,7 @@ export function useCodeRuns(): CodeRunsData {
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         void load();
-        void loadPulls();
+        if (!perConversation) void loadPulls();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -175,7 +194,7 @@ export function useCodeRuns(): CodeRunsData {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener(CODE_SYNC_EVENT, load);
     };
-  }, [nonce]);
+  }, [nonce, enabled, perConversation]);
 
   const reachableFor = React.useCallback(
     (run: CodeRun): boolean | null => {

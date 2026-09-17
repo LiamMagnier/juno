@@ -8,6 +8,7 @@ import {
   matchesFilter,
   mergeRecents,
   perSourceLimit,
+  workRecentHref,
   type RecentItem,
 } from "@/lib/work/recents";
 
@@ -79,6 +80,7 @@ export async function GET(req: Request) {
         needsAttention: true,
         pinned: true,
         projectId: true,
+        conversationId: true,
         lastActivityAt: true,
       },
     }),
@@ -92,6 +94,9 @@ export async function GET(req: Request) {
 
   const chatItems: RecentItem[] = [];
   const codeItems: RecentItem[] = [];
+  /** Conversations already on the list, so a run does not add a second row to
+   *  the same destination. See the note over `workItems`. */
+  const listedConversations = new Set<string>();
   for (const row of conversations) {
     const isCode = row.kind === "code";
     const item: RecentItem = {
@@ -104,19 +109,29 @@ export async function GET(req: Request) {
       href: `/chat/${row.id}`,
     };
     (isCode ? codeItems : chatItems).push(item);
+    listedConversations.add(row.id);
   }
 
-  const workItems: RecentItem[] = workSessions.map((row) => ({
-    id: row.id,
-    kind: "work",
-    title: row.title || "Untitled task",
-    updatedAt: row.lastActivityAt.toISOString(),
-    pinned: row.pinned,
-    status: row.status,
-    needsAttention: row.needsAttention,
-    projectId: row.projectId,
-    href: `/work/${row.id}`,
-  }));
+  // A run is read in the conversation that asked for it, and a session with no
+  // conversation — or one whose conversation is already a row above — is not
+  // listed at all. `workRecentHref` holds that rule and the argument for it.
+  const workItems: RecentItem[] = workSessions.flatMap((row) => {
+    const href = workRecentHref(row.conversationId, listedConversations);
+    if (!href) return [];
+    return [
+      {
+        id: row.id,
+        kind: "work",
+        title: row.title || "Untitled task",
+        updatedAt: row.lastActivityAt.toISOString(),
+        pinned: row.pinned,
+        status: row.status,
+        needsAttention: row.needsAttention,
+        projectId: row.projectId,
+        href,
+      },
+    ];
+  });
 
   const projectItems: RecentItem[] = projects.map((row) => ({
     id: row.id,

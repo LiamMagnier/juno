@@ -38,8 +38,13 @@ import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useApp } from "@/components/app/app-provider";
-import { ProductSwitch, productOf } from "@/components/app/product-switch";
+import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
+import { useCodeRuns } from "@/components/code/use-code-runs";
+import { useWorkRunsByConversation } from "@/components/work/inbox/use-needs-you-count";
+import { StatusDot, statusLabel, statusSentence, statusTone } from "@/components/work/work-vocabulary";
+import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
+import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -49,10 +54,33 @@ import type { ClientConversation } from "@/types/chat";
  * The sidebar (docs/design/FLAT_UI.md §3).
  *
  * A flat panel (the frame is painted by `.app-sidebar-frame` in the shell)
- * holding, top to bottom: brand + Search + collapse, the Chat · Work · Code
- * product switch, New chat, the nav destinations, Pinned, Recents folded by
- * date, and a footer of exactly two blocks: Design, then one 36px account
- * band.
+ * holding, top to bottom: brand + Search + collapse, the Chat · Code product
+ * switch, New, the nav destinations, the folds, and a footer of one 36px
+ * account band.
+ *
+ * ONE SHAPE, TWO PRODUCTS (docs/design/TWO_PRODUCTS.md §3). `product` picks the
+ * destinations and which conversations the folds hold; NOTHING else forks. That
+ * is deliberate and it is the whole point: Code used to have its sessions on a
+ * list PAGE with its own header, its own tabs, its own search field and its own
+ * All | Cloud | My Macs filter, while this panel filtered every Code
+ * conversation OUT — so an open Code session had no row anywhere in the shell
+ * and the run that had stopped to ask you something was only visible if you
+ * happened to be standing on /code. A session is a conversation in both
+ * products; the panel that lists conversations lists both.
+ *
+ * WHAT A ROW CAN SAY ABOUT A RUN. Every row is a title and one 6px mark in a
+ * `size-4` slot. At rest that mark is the hollow bullet it has always been;
+ * when the conversation is carrying a run it becomes that run's toned status
+ * dot (`StatusDot`), which is a state and not a decoration — the same mark, the
+ * same five tones and the same 3:1 argument as the transcript's, read from
+ * `lib/conversation-status.ts` so a status cannot be amber here and coral
+ * there. One mark, never two (docs/design/PREMIUM_AUDIT.md rule 6): the run's
+ * sentence rides the row's tooltip and its label rides the accessible name.
+ *
+ * AND ONE FETCH BEHIND ALL OF THEM. The join from conversation to run is a
+ * single account-wide poll per product, keyed by `conversationId` in memory.
+ * A fetch per row would be forty requests every few seconds for the quietest
+ * column in the product.
  *
  * SEARCH IS IN THE HEADER, not in the navigation, and that is the one thing
  * about this layout worth arguing over. It is the eight-source search palette
@@ -130,6 +158,17 @@ const SECTION_KEYS = {
 
 type SectionKey = keyof typeof SECTION_KEYS;
 
+/**
+ * What one row is allowed to say about the run behind it: a tone for its mark,
+ * a label for a screen reader, and the sentence that explains the state.
+ *
+ * The three come from the vocabulary that owns the run — `work-vocabulary.tsx`
+ * for a task, `RUN_STATE_META` for a Code run — and are never written here. A
+ * row restating a status in its own words is how one state ends up with two
+ * names, which is the failure both of those modules exist to prevent.
+ */
+type RowSignal = { tone: StatusTone; label: string; meaning: string };
+
 /** Recents fall into ChatGPT's four buckets, in this order. */
 const RECENTS_GROUPS = ["Today", "Yesterday", "Previous 7 days", "Older"] as const;
 type RecentsGroup = (typeof RECENTS_GROUPS)[number];
@@ -164,10 +203,19 @@ const KEBAB_CLASS =
 export function AppSidebar({
   collapsed = false,
   onToggleCollapse,
+  product,
 }: {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
-} = {}) {
+  /**
+   * Which product's column this is. Derived once in `AppShell` — where the
+   * route and the open conversation's kind both already live — and passed down,
+   * rather than each of the two mounts (the aside and the phone drawer) working
+   * it out again and being able to disagree.
+   */
+  product: ProductSurface;
+}) {
+  const isCode = product === "code";
   const router = useRouter();
   const pathname = usePathname();
   const reduceMotion = useReducedMotion();
@@ -197,6 +245,18 @@ export function AppSidebar({
   const [renamingProject, setRenamingProject] = React.useState(false);
   const [shareId, setShareId] = React.useState<string | null>(null);
   const [archivedOpen, setArchivedOpen] = React.useState(false);
+  /*
+   * The triage the Work inbox did, as a filter rather than as a page.
+   *
+   * The rejected alternative was a `/tasks` destination — the inbox under a new
+   * name, which is the thing being removed (docs/design/TWO_PRODUCTS.md §2.2).
+   * Pressing the "Needs you" header hides everything else in the panel, so the
+   * list you are already reading becomes the queue instead of sending you to a
+   * second list somewhere else. Not persisted: it is a stance you take for a
+   * minute, not a preference, and a panel that came back filtered tomorrow
+   * would look like a panel that had lost your chats.
+   */
+  const [needsYouOnly, setNeedsYouOnly] = React.useState(false);
   const [recentsLimit, setRecentsLimit] = React.useState(RECENTS_PAGE);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
@@ -359,6 +419,10 @@ export function AppSidebar({
 
   const archiveConversation = React.useCallback(
     async (c: ClientConversation) => {
+      // The row's own kind names it, rather than the column it was pressed in:
+      // a Code session archived from a search result is still a session, and a
+      // product that calls one thing two things in two toasts has no vocabulary.
+      const noun = c.kind === "code" ? "session" : "chat";
       removeConversation(c.id);
       const res = await fetch(`/api/conversations/${c.id}`, {
         method: "PATCH",
@@ -367,10 +431,10 @@ export function AppSidebar({
       }).catch(() => null);
       if (!res?.ok) {
         upsertConversation(c);
-        toast.error("Couldn’t archive the chat.");
+        toast.error(`Couldn’t archive the ${noun}.`);
         return;
       }
-      toast.success("Chat archived.", {
+      toast.success(c.kind === "code" ? "Session archived." : "Chat archived.", {
         action: {
           label: "Undo",
           onClick: async () => {
@@ -384,22 +448,104 @@ export function AppSidebar({
         },
       });
       if (c.id === activeConversationId) {
-        router.push("/chat");
-        window.dispatchEvent(new CustomEvent("juno:new-chat"));
+        // The product the row belonged to, not always Chat — archiving the Code
+        // session you are reading should not move you to another product.
+        router.push(c.kind === "code" ? "/code" : "/chat");
+        if (c.kind !== "code") window.dispatchEvent(new CustomEvent("juno:new-chat"));
       }
     },
     [activeConversationId, removeConversation, router, upsertConversation]
   );
 
+  /* ── What is running behind these rows ───────────────────────────────── */
+
+  /*
+   * One poll per product, and only the one this column is showing.
+   *
+   * Hooks cannot be called conditionally, so both are mounted and the inactive
+   * one is told not to fetch. That is not a trick to get around the rule: a
+   * Chat column has nothing to say about Code runs and vice versa, so a poll
+   * for the other product is a request whose answer is discarded.
+   */
+  const workRuns = useWorkRunsByConversation({ enabled: !isCode });
+  const { runs: codeRuns, reachableFor } = useCodeRuns({ enabled: isCode, perConversation: true });
+
+  /*
+   * The two products' runs, reduced to the same three facts per conversation.
+   *
+   * A Chat row only lights up while its run is still the reader's business —
+   * a finished task leaves the conversation a conversation, and a permanent
+   * green tick on every chat that ever delegated something is decoration. A
+   * Code row always carries its state, because in that product the row IS the
+   * session and "finished, nothing to review" is the answer somebody opened
+   * the panel for.
+   */
+  const rowSignals = React.useMemo(() => {
+    const signals = new Map<string, RowSignal>();
+    if (isCode) {
+      const newest = newestPerConversation(
+        codeRuns,
+        (run) => run.conversationId,
+        (run) => run.createdAt,
+      );
+      for (const [conversationId, run] of newest) {
+        const state = runState(run, reachableFor(run));
+        const meta = RUN_STATE_META[state];
+        signals.set(conversationId, { tone: codeRunTone(state), label: meta.label, meaning: meta.meaning });
+      }
+      return signals;
+    }
+    for (const [conversationId, session] of workRuns.byConversation) {
+      if (!workRunIsOpen(session.status, session.needsAttention)) continue;
+      signals.set(conversationId, {
+        tone: statusTone(session.status),
+        label: statusLabel(session.status),
+        meaning: statusSentence(session.status),
+      });
+    }
+    return signals;
+  }, [isCode, codeRuns, reachableFor, workRuns.byConversation]);
+
+  /** The conversations whose newest run has stopped for a person. */
+  const needsYouIds = React.useMemo(() => {
+    if (!isCode) return workRuns.needsYou;
+    const ids = new Set<string>();
+    const newest = newestPerConversation(
+      codeRuns,
+      (run) => run.conversationId,
+      (run) => run.createdAt,
+    );
+    for (const [conversationId, run] of newest) {
+      if (isBlockedOnYou(run, reachableFor(run))) ids.add(conversationId);
+    }
+    return ids;
+  }, [isCode, codeRuns, reachableFor, workRuns.needsYou]);
+
   /* ── Lists ───────────────────────────────────────────────────────────── */
 
-  const live = React.useMemo(() => conversations.filter((c) => !c.archivedAt && c.kind !== "code"), [conversations]);
-  const pinned = React.useMemo(() => live.filter((c) => c.pinned), [live]);
+  /*
+   * The panel holds ONE product's conversations. It used to hold Chat's and
+   * filter `kind === "code"` out unconditionally, which is why an open Code
+   * session had no row anywhere in the shell.
+   */
+  const live = React.useMemo(
+    () => conversations.filter((c) => !c.archivedAt && (c.kind === "code") === isCode),
+    [conversations, isCode]
+  );
+  /*
+   * Needs you takes precedence over Pinned, and over the date folds.
+   *
+   * A row can only be in one place, and of the three this is the one with a
+   * deadline attached to a person: a pinned chat that has stopped to ask a
+   * question is not usefully filed under "you like this one".
+   */
+  const needsYouRows = React.useMemo(() => live.filter((c) => needsYouIds.has(c.id)), [live, needsYouIds]);
+  const pinned = React.useMemo(() => live.filter((c) => c.pinned && !needsYouIds.has(c.id)), [live, needsYouIds]);
   // Project chats stay in Recents as well as under their project, because a
   // project is a workspace rather than a filing.
   const recents = React.useMemo(
-    () => live.filter((c) => !c.pinned),
-    [live]
+    () => live.filter((c) => !c.pinned && !needsYouIds.has(c.id)),
+    [live, needsYouIds]
   );
   // The page in view, bucketed by day. Grouped AFTER the slice so the
   // infinite-scroll page size still counts chats, not groups; a group with
@@ -416,6 +562,17 @@ export function AppSidebar({
       return rows ? [{ group, rows }] : [];
     });
   }, [recents, recentsLimit]);
+
+  /*
+   * Answer the last question and the filter lets go of the panel.
+   *
+   * Without this, clearing the fold leaves the reader looking at an empty
+   * column with the thing that emptied it no longer on screen to press again —
+   * a filter that has hidden every row including its own control.
+   */
+  React.useEffect(() => {
+    if (needsYouRows.length === 0) setNeedsYouOnly(false);
+  }, [needsYouRows.length]);
 
   const newChat = () => {
     router.push("/chat");
@@ -436,28 +593,6 @@ export function AppSidebar({
   };
 
   const plan = PLANS[quota.plan];
-  // A Juno Code session is served at /chat/<id> (app/(app)/chat/[id]/page.tsx
-  // renders <CodeSessionView> when the conversation's kind is "code"), so the
-  // path alone lit "Chat" for the whole session. The conversation's own kind
-  // is the tiebreak — see productOf().
-  const activeKind = activeConversationId
-    ? conversations.find((c) => c.id === activeConversationId)?.kind ?? null
-    : null;
-  /*
-   * Work reads as Chat IN THIS SWITCHER, and that is the point of moving it.
-   *
-   * `productOf` still answers "work" — the command palette and the keyboard
-   * chords need the real surface. But the sidebar's switcher is Chat / Code
-   * now, and on /work it was drawing both segments unselected with no thumb,
-   * which reads as a broken control rather than as an honest "neither".
-   *
-   * Selecting Chat is not a fudge: Work is a MODE of the chat surface now, not
-   * a third place. The column says which product you are in; the composer's
-   * own switch says which mode you are in within it. Two controls, two
-   * questions, no overlap.
-   */
-  const surface = productOf(pathname, activeKind);
-  const activeProduct = surface === "work" ? "chat" : surface;
   /*
    * Usage in the footer is a WORD, not a meter.
    *
@@ -590,7 +725,7 @@ export function AppSidebar({
           </motion.div>
         </motion.div>
 
-        {/* ── Chat · Work · Code ───────────────────────────────────────── */}
+        {/* ── Chat · Code ──────────────────────────────────────────────── */}
         {/* The ONE product switch in the shell, at both widths: a hairline
             pill with a tonal thumb when expanded, a 44px icon column at the
             rail (which never had a Chat row at all — the wordmark was the only
@@ -600,7 +735,7 @@ export function AppSidebar({
             and FOLDS, like every other row in this column. */}
         <ProductSwitch
           collapsed={collapsed}
-          active={activeProduct}
+          active={product}
           plan={quota.plan}
           onNavigate={() => setSidebarOpen(false)}
         />
@@ -630,15 +765,23 @@ export function AppSidebar({
               navigation. Moving it there costs its visible label and buys back
               a row at the top of the list of things you actually navigate to.
               (It keeps a tooltip, and the mobile magnifier is unchanged.) */}
+          {/* The same recipe in both products, because it is the same row: the
+              one you press to start. Code's says "New session" rather than
+              "New" alone so the rail's tooltip and a screen reader both get the
+              noun the list under it is made of; the plus is the mark either
+              way. It is a LINK in Code — /code is the composer — where Chat's
+              is a button, because Chat has to clear the open conversation as
+              well as route. */}
           <NavRow
             collapsed={collapsed}
-            onClick={newChat}
+            href={isCode ? "/code" : undefined}
+            onClick={isCode ? () => setSidebarOpen(false) : newChat}
             /* Plain, like every sibling. The 22px tinted tile that used to sit
                behind this glyph was the only chip in the panel, and it is what
                made the one row people press most read as the chunkiest. */
             icon={<SidebarMotionIcon kind="new" />}
-            label="New chat"
-            trailing={<Kbd>⌘⇧O</Kbd>}
+            label={isCode ? "New session" : "New chat"}
+            trailing={isCode ? undefined : <Kbd>⌘⇧O</Kbd>}
             layoutId="nav-new"
             transition={layoutTransition}
           />
@@ -661,21 +804,43 @@ export function AppSidebar({
           )}
           aria-label="Primary"
         >
-          {(
-            [
-              { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
-              { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
-              { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-              /* Design is a destination like the four above it and is drawn
-                 like one. It used to be pinned on its own above the footer
-                 hairline, on the reasoning that it must never scroll away —
-                 but this whole block sits ABOVE the scroll region (the only
-                 thing that scrolls is the conversation list), so it never
-                 scrolled away here either. The pin was solving a problem that
-                 did not exist, and it cost a row stranded at the bottom of the
-                 column with a void above it. */
-              { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
-            ] as const
+          {(isCode
+            ? ([
+                /* Code's destination, and for now there is one.
+                   Artifacts is shared with Chat — one library of generated
+                   things, not one per product.
+
+                   CUSTOMIZE IS MISSING ON PURPOSE, and belongs here the moment
+                   it can be pressed. Code is the product with page-sized
+                   configuration — repositories, Mac workspaces, the default
+                   permission mode (docs/design/TWO_PRODUCTS.md §2.2) — and
+                   Chat's equivalents are already destinations or settings,
+                   which is why there is no Customize row over there either.
+                   But `/code/customize` is served by no branch yet, and this
+                   package already decided how it treats a route in that state:
+                   the palette's Skills, Automations and Permissions commands
+                   were left out of this same commit because their routes do not
+                   exist. One rule, and the persistent chrome is the surface
+                   that can least afford the other one — a palette result you
+                   never type is invisible, while a row sitting in the column on
+                   every page is an invitation to a 404. The page's own package
+                   adds the row back beside it. */
+                { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
+              ] as const)
+            : ([
+                { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
+                { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
+                { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
+                /* Design is a destination like the four above it and is drawn
+                   like one. It used to be pinned on its own above the footer
+                   hairline, on the reasoning that it must never scroll away —
+                   but this whole block sits ABOVE the scroll region (the only
+                   thing that scrolls is the conversation list), so it never
+                   scrolled away here either. The pin was solving a problem that
+                   did not exist, and it cost a row stranded at the bottom of the
+                   column with a void above it. */
+                { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
+              ] as const)
           ).map((item) => (
             <NavRow
               key={item.href}
@@ -691,6 +856,7 @@ export function AppSidebar({
           ))}
           <MoreFlyout
             collapsed={collapsed}
+            product={product}
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             onOpenArchived={() => setArchivedOpen(true)}
@@ -724,9 +890,48 @@ export function AppSidebar({
                   </div>
                 ) : (
                   <>
-                    {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
+                    {/* NEEDS YOU — above everything, and only when there is
+                        something in it. A run that stopped to ask a question is
+                        the first row of this panel on every page in the product,
+                        which is the answer to the objection the Code list page
+                        used to raise against landing on a composer: you no
+                        longer have to be standing anywhere in particular to see
+                        it. */}
+                    {/* The one live region in the panel, and it announces the
+                        only number here that can require the reader to act.
+                        The Code run list carried this and is retiring; the
+                        count moved into the fold's heading, where it is a
+                        glance rather than an announcement, so a reader working
+                        somewhere else in the panel was never told that a run
+                        had stopped to ask them something. It sits OUTSIDE the
+                        fold's own condition because the fold unmounts at zero,
+                        and "nothing is waiting any more" is the other half of
+                        what this has to say. */}
+                    <p role="status" className="sr-only">
+                      {needsYouRows.length === 0
+                        ? "Nothing is waiting on you."
+                        : `${needsYouRows.length} ${needsYouRows.length === 1 ? "run is" : "runs are"} waiting on you.`}
+                    </p>
 
-                    {sidebarProjects.length > 0 && (
+                    {needsYouRows.length > 0 && (
+                      <NeedsYouFold
+                        rows={needsYouRows}
+                        signals={rowSignals}
+                        only={needsYouOnly}
+                        onToggle={() => setNeedsYouOnly((v) => !v)}
+                        activeConversationId={activeConversationId}
+                        rowProps={rowProps}
+                      />
+                    )}
+
+                    {projectsError && !isCode && !needsYouOnly && (
+                      <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />
+                    )}
+
+                    {/* Projects are Chat's filing, not Code's: a Code session
+                        belongs to a repository or a workspace, which is a fact
+                        about where it RUNS and is already on the session. */}
+                    {!isCode && !needsYouOnly && sidebarProjects.length > 0 && (
                       // "Pinned projects", because that is what `sidebarProjects`
                       // is — the starred subset — and because the nav row ~40px
                       // above this heading already says "Projects" and already
@@ -748,6 +953,7 @@ export function AppSidebar({
                             key={p.id}
                             project={p}
                             chats={live.filter((c) => c.projectId === p.id)}
+                            signals={rowSignals}
                             active={pathname === `/projects/${p.id}`}
                             activePath={pathname}
                             starred={p.starred}
@@ -767,14 +973,25 @@ export function AppSidebar({
                       </Section>
                     )}
 
-                    {pinned.length > 0 && (
+                    {!needsYouOnly && pinned.length > 0 && (
                       // "Pinned chats", for the reason the section above is
                       // "Pinned projects": the same word at the same rung one
                       // section apart, naming two kinds of thing, reads as one
-                      // list cut in half rather than two lists.
-                      <Section label="Pinned chats" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
+                      // list cut in half rather than two lists. In Code the
+                      // noun is "sessions", because that is what the rows are.
+                      <Section
+                        label={isCode ? "Pinned sessions" : "Pinned chats"}
+                        isCollapsed={sectionCollapsed.pinned}
+                        onToggleCollapse={() => toggleSection("pinned")}
+                      >
                         {pinned.map((c) => (
-                          <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                          <ConversationRow
+                            key={c.id}
+                            conversation={c}
+                            active={c.id === activeConversationId}
+                            signal={rowSignals.get(c.id)}
+                            {...rowProps}
+                          />
                         ))}
                       </Section>
                     )}
@@ -788,7 +1005,7 @@ export function AppSidebar({
                         eyebrows above them can no longer be confused for one
                         another. Grouping, paging and the sentinel are
                         untouched. */}
-                    {recents.length > 0 ? (
+                    {needsYouOnly ? null : recents.length > 0 ? (
                       <div className="mt-6 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
                           <div key={group} className="space-y-1.5 pt-6 first:pt-0">
@@ -802,7 +1019,13 @@ export function AppSidebar({
                               {group}
                             </p>
                             {rows.map((c) => (
-                              <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                              <ConversationRow
+                                key={c.id}
+                                conversation={c}
+                                active={c.id === activeConversationId}
+                                signal={rowSignals.get(c.id)}
+                                {...rowProps}
+                              />
                             ))}
                           </div>
                         ))}
@@ -814,9 +1037,12 @@ export function AppSidebar({
                       </div>
                     ) : (
                       live.length === 0 &&
-                      sidebarProjects.length === 0 && (
+                      // Projects are not drawn in the Code column, so a starred
+                      // project must not suppress the one sentence that says a
+                      // person has no sessions yet.
+                      (isCode || sidebarProjects.length === 0) && (
                         <p className="px-2 py-8 text-center text-ui text-muted-foreground" aria-live="polite">
-                          No conversations yet.
+                          {isCode ? "No sessions yet." : "No conversations yet."}
                           <br />
                           Start one above.
                         </p>
@@ -973,12 +1199,94 @@ export function AppSidebar({
 
         <ArchivedChatsDialog
           open={archivedOpen}
+          product={product}
           onOpenChange={setArchivedOpen}
           onRestored={(c) => upsertConversation({ ...c, archivedAt: null })}
           onRequestConfirm={setConfirm}
         />
       </div>
     </LayoutGroup>
+  );
+}
+
+/**
+ * "Needs you" — a fold, not a destination.
+ *
+ * The rejected alternative was a `/tasks` page, which is the inbox this rework
+ * removes wearing a new name (docs/design/TWO_PRODUCTS.md §2.2). So the triage
+ * survives as a stance you take on the list you are already reading: the header
+ * is a toggle, and while it is on the rest of the panel is hidden and these are
+ * the only rows. Zero new destinations.
+ *
+ * It borrows the date folds' heading rather than `Section`'s, because it is a
+ * date fold's sibling and not a collapsible section — pressing it filters, it
+ * does not hide these rows, so a chevron would be a lie about what it does. The
+ * count rides IN the heading rather than beside it: a second element on the
+ * right would be a trailing signal on a row that already has one job
+ * (docs/design/PREMIUM_AUDIT.md rule 6), and the number changes width, which in
+ * a 24px heading reads as the heading moving.
+ */
+function NeedsYouFold({
+  rows,
+  signals,
+  only,
+  onToggle,
+  activeConversationId,
+  rowProps,
+}: {
+  rows: ClientConversation[];
+  signals: Map<string, RowSignal>;
+  only: boolean;
+  onToggle: () => void;
+  activeConversationId: string | null;
+  rowProps: RowSharedProps;
+}) {
+  return (
+    // No bottom margin: whatever follows — Pinned projects, Pinned chats, the
+    // date folds — opens with its own `mt-6`, and two margins meeting would put
+    // 48px between this fold and the list it heads.
+    <div className="space-y-1.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Pressable
+            kind="row"
+            onClick={onToggle}
+            aria-pressed={only}
+            className={cn(
+              // The date folds' geometry exactly — `h-6`, the panel's 40px text
+              // edge — so this reads as the first fold rather than as a banner
+              // over the list. `coarse:h-11` because this panel IS the phone
+              // drawer (AppShell renders it inside SheetContent) and a date
+              // fold's heading is not pressable, while this one is: at 24px it
+              // would be the one control in the drawer at half the 44px every
+              // row, flyout entry and section heading beside it guarantees. On
+              // a fine pointer the resting geometry is untouched.
+              "h-6 select-none gap-1.5 border-0 py-0 pl-8 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
+              only && "bg-sidebar-accent"
+            )}
+          >
+            <span
+              className={cn(
+                "min-w-0 truncate font-mono text-label",
+                only ? "text-foreground" : "text-muted-foreground/70"
+              )}
+            >
+              {`Needs you · ${rows.length}`}
+            </span>
+          </Pressable>
+        </TooltipTrigger>
+        <TooltipContent side="right">{only ? "Show everything" : "Show only these"}</TooltipContent>
+      </Tooltip>
+      {rows.map((c) => (
+        <ConversationRow
+          key={c.id}
+          conversation={c}
+          active={c.id === activeConversationId}
+          signal={signals.get(c.id)}
+          {...rowProps}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -1150,28 +1458,42 @@ function navRowClass(collapsed: boolean, active: boolean) {
  */
 function MoreFlyout({
   collapsed,
+  product,
   pathname,
   onNavigate,
   onOpenArchived,
 }: {
   collapsed: boolean;
+  product: ProductSurface;
   pathname: string | null;
   onNavigate: () => void;
   onOpenArchived: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const isCode = product === "code";
   /*
    * Work and Code are NOT here any more. They used to lead this list because
    * the only other way to reach them was a header switcher hidden below `md`;
-   * the sidebar's product switch now carries all three products at every
-   * width (the drawer renders the expanded sidebar, the rail gets icon rows),
-   * so a second door in More was the third copy of the same control.
+   * the sidebar's product switch now carries both products at every width (the
+   * drawer renders the expanded sidebar, the rail gets icon rows), so a second
+   * door in More was the third copy of the same control.
+   *
+   * Pull requests is Code's, and it is HERE rather than a top-level row because
+   * it is where a finished run's outcome is read rather than a place work
+   * happens — it used to be a tab on the Code list page, beside a Runs tab that
+   * duplicated the panel you are reading. Connections is in both lists: a Code
+   * session reaches GitHub through exactly the same connector a chat does.
    */
-  const items = [
-    { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
-    { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
-    { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
-  ];
+  const items = isCode
+    ? [
+        { href: "/code/pulls", kind: "pulls" as const, label: "Pull requests", active: pathname === "/code/pulls" },
+        { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
+      ]
+    : [
+        { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
+        { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
+        { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
+      ];
   const anyActive = items.some((item) => item.active);
   const rowClass =
     "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-ui font-medium text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
@@ -1243,7 +1565,7 @@ function MoreFlyout({
           className={rowClass}
         >
           <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-left">Archived chats</span>
+          <span className="min-w-0 flex-1 truncate text-left">{isCode ? "Archived sessions" : "Archived chats"}</span>
         </button>
       </PopoverContent>
     </Popover>
@@ -1455,6 +1777,7 @@ function ConversationRow({
   conversation,
   active,
   nested,
+  signal,
   renamingId,
   setRenaming,
   projects,
@@ -1469,9 +1792,20 @@ function ConversationRow({
   active: boolean;
   /** Indented under a folder or project. */
   nested?: boolean;
+  /** The run behind this conversation, when one is worth a mark. */
+  signal?: RowSignal;
 }) {
   const router = useRouter();
   const renaming = renamingId === conversation.id;
+  /* The row names itself from its own conversation rather than from the column
+     it is drawn in, so a Code session says "session" wherever it appears. */
+  const isCodeSession = conversation.kind === "code";
+  /* One name for this row, computed once and used by every place that speaks
+     it. A conversation with no stored title is ordinary — it has one until its
+     first reply is summarised — and when the visible label and the tooltip
+     each applied their own fallback, the tooltip did not: a row carrying a run
+     opened its tooltip with " — Running now.", a sentence with no subject. */
+  const rowLabel = conversation.title || (isCodeSession ? "Untitled session" : "New chat");
 
   const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
     const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
@@ -1486,9 +1820,11 @@ function ConversationRow({
 
   const remove = () => {
     onRequestConfirm({
-      title: "Delete this conversation?",
-      description: "This permanently removes the conversation and its messages. This can't be undone.",
-      confirmLabel: "Delete chat",
+      title: isCodeSession ? "Delete this session?" : "Delete this conversation?",
+      description: isCodeSession
+        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
+        : "This permanently removes the conversation and its messages. This can't be undone.",
+      confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
         const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" });
@@ -1497,8 +1833,12 @@ function ConversationRow({
           return;
         }
         if (active) {
-          router.push("/chat");
-          window.dispatchEvent(new CustomEvent("juno:new-chat"));
+          // Back to the product this row belonged to, not always to Chat: a
+          // reader who deletes the Code session they are inside should land on
+          // Code's own landing, with the column they were using still under
+          // their pointer.
+          router.push(isCodeSession ? "/code" : "/chat");
+          if (!isCodeSession) window.dispatchEvent(new CustomEvent("juno:new-chat"));
         }
       },
     });
@@ -1508,7 +1848,7 @@ function ConversationRow({
     return (
       <InlineNameInput
         initial={conversation.title}
-        placeholder="Chat name"
+        placeholder={isCodeSession ? "Session name" : "Chat name"}
         nested={nested}
         onCommit={(value) => {
           setRenaming(null);
@@ -1546,24 +1886,51 @@ function ConversationRow({
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
         className="flex min-w-0 flex-1 items-center gap-2 text-ui font-normal"
-        title={conversation.title}
+        /* The run's sentence joins the title rather than replacing it: this
+           attribute is also how a truncated title gets read, and a row that
+           answered "what is this" with "Juno has asked you something" would
+           have traded one fact for another. */
+        title={signal ? `${rowLabel} — ${signal.meaning}` : rowLabel}
       >
-        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-          <span
-            className={cn(
-              "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-              active ? "bg-current opacity-100" : "opacity-50 group-hover:opacity-100"
-            )}
-          />
+        {/* THE MARK IS THE STATE, when there is one. Same slot, same 6px, same
+            place in the row: a conversation carrying a run swaps its hollow
+            bullet for that run's toned dot rather than gaining a second mark
+            beside it (docs/design/PREMIUM_AUDIT.md rule 6). The bullet's job —
+            carrying selection — is not lost, because an active row is already
+            a filled `bg-sidebar-accent` row; the bullet was the second way of
+            saying that, and only for rows with nothing else to say. */}
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden={signal ? undefined : true}>
+          {signal ? (
+            <StatusDot tone={signal.tone} label={signal.label} />
+          ) : (
+            <span
+              className={cn(
+                "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
+                active ? "bg-current opacity-100" : "opacity-50 group-hover:opacity-100"
+              )}
+            />
+          )}
         </span>
-        <AnimatedTitle title={conversation.title || "New chat"} animate={conversation.titleSource === "ai"} className="min-w-0 flex-1" />
+        <AnimatedTitle
+          title={rowLabel}
+          animate={conversation.titleSource === "ai"}
+          className="min-w-0 flex-1"
+        />
         {conversation.pinned && !nested && <Pin className="size-3 shrink-0 fill-current text-muted-foreground/60" aria-hidden />}
       </Link>
       <DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" className={KEBAB_CLASS} aria-label="Conversation options">
+              {/* Named from the row's own conversation, like every other
+                  string on it: a screen reader landing on a Code row heard
+                  "Conversation options" while the rename field, the delete
+                  dialog and the archive toast it opens all said "session". */}
+              <Pressable
+                kind="icon"
+                className={KEBAB_CLASS}
+                aria-label={isCodeSession ? "Session options" : "Conversation options"}
+              >
                 <SidebarMotionIcon kind="more" className="size-3.5" />
               </Pressable>
             </DropdownMenuTrigger>
@@ -1578,6 +1945,11 @@ function ConversationRow({
             <Pin className={cn("size-4", conversation.pinned && "fill-primary text-primary")} />
             {conversation.pinned ? "Unpin" : "Pin"}
           </DropdownMenuItem>
+          {/* A project is Chat's filing and a Code session has its own — the
+              repository or workspace it runs in — so this submenu would offer
+              to file a session into a folder the Code column never draws. */}
+          {!isCodeSession && (
+            <>
           <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
@@ -1602,6 +1974,8 @@ function ConversationRow({
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
             <ActionIcons.share className="size-4" /> Share
@@ -1623,6 +1997,7 @@ function ConversationRow({
 function ProjectRow({
   project,
   chats,
+  signals,
   active,
   activePath,
   starred,
@@ -1634,6 +2009,12 @@ function ProjectRow({
 }: {
   project: SidebarProject;
   chats: ClientConversation[];
+  /* The same join the folds read. These rows are hand-rolled rather than
+     `ConversationRow` — they are 28px, guided, and carry no kebab — but a
+     conversation's state is a property of the conversation, not of where it is
+     drawn, and one panel showing a toned dot in Today and a hollow bullet for
+     the same chat under its pinned project is one state with two drawings. */
+  signals: Map<string, RowSignal>;
   active: boolean;
   activePath: string;
   starred: boolean;
@@ -1738,13 +2119,16 @@ function ProjectRow({
               half of `size-4` (8) = 16px — instead of the arbitrary 21px it
               used to be measured at, so `ml-4` is the whole geometry. */}
           <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
-            {visibleChats.map((c) => (
+            {visibleChats.map((c) => {
+              const signal = signals.get(c.id);
+              const label = c.title || "New chat";
+              return (
               <Link
                 key={c.id}
                 href={`/chat/${c.id}`}
                 onClick={onNavigate}
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
-                title={c.title}
+                title={signal ? `${label} — ${signal.meaning}` : label}
                 className={cn(
                   "group group/pc flex h-7 items-center gap-2 rounded-control px-2 text-ui font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
                   activePath === `/chat/${c.id}`
@@ -1752,19 +2136,30 @@ function ProjectRow({
                     : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
                 )}
               >
-                <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-                  <span
-                    className={cn(
-                      "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                      activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
-                    )}
-                  />
+                {/* The mark is the state when there is one, exactly as in the
+                    folds: same slot, same 6px, never a second mark beside the
+                    bullet (docs/design/PREMIUM_AUDIT.md rule 6). */}
+                <span
+                  className="flex size-4 shrink-0 items-center justify-center"
+                  aria-hidden={signal ? undefined : true}
+                >
+                  {signal ? (
+                    <StatusDot tone={signal.tone} label={signal.label} />
+                  ) : (
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
+                        activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
+                      )}
+                    />
+                  )}
                 </span>
                 <span dir="auto" className="min-w-0 flex-1 truncate">
-                  {c.title || "New chat"}
+                  {label}
                 </span>
               </Link>
-            ))}
+              );
+            })}
             {chats.length > PREVIEW && (
               <button
                 type="button"
@@ -1790,16 +2185,21 @@ function ProjectRow({
 
 function ArchivedChatsDialog({
   open,
+  product,
   onOpenChange,
   onRestored,
   onRequestConfirm,
 }: {
   open: boolean;
+  /** Archived rows are filtered to the product whose panel opened this, so the
+   *  Code column's "Archived sessions" cannot answer with a year of chats. */
+  product: ProductSurface;
   onOpenChange: (o: boolean) => void;
   onRestored: (c: ClientConversation) => void;
   onRequestConfirm: (c: ConfirmState) => void;
 }) {
   const router = useRouter();
+  const isCode = product === "code";
   const [items, setItems] = React.useState<ClientConversation[] | null>(null);
   const [failed, setFailed] = React.useState(false);
 
@@ -1811,7 +2211,13 @@ function ArchivedChatsDialog({
     fetch("/api/conversations?archived=only")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data: { conversations?: ClientConversation[] }) => {
-        if (!cancelled) setItems(Array.isArray(data.conversations) ? data.conversations : []);
+        if (!cancelled) {
+          const rows = Array.isArray(data.conversations) ? data.conversations : [];
+          // Filtered here rather than in the route: the payload is one page of
+          // archived rows and both products read it, so a `kind` parameter
+          // would be a second query shape for a dialog that opens rarely.
+          setItems(rows.filter((c) => (c.kind === "code") === isCode));
+        }
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -1819,7 +2225,7 @@ function ArchivedChatsDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, isCode]);
 
   const restore = async (c: ClientConversation) => {
     setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);
@@ -1830,18 +2236,20 @@ function ArchivedChatsDialog({
     }).catch(() => null);
     if (!r?.ok) {
       setItems((prev) => (prev ? [c, ...prev] : prev));
-      toast.error("Couldn’t restore the chat.");
+      toast.error(isCode ? "Couldn’t restore the session." : "Couldn’t restore the chat.");
       return;
     }
     onRestored(c);
-    toast.success("Chat restored.");
+    toast.success(isCode ? "Session restored." : "Chat restored.");
   };
 
   const destroy = (c: ClientConversation) => {
     onRequestConfirm({
-      title: "Delete this conversation?",
-      description: "This permanently removes the conversation and its messages. This can't be undone.",
-      confirmLabel: "Delete chat",
+      title: isCode ? "Delete this session?" : "Delete this conversation?",
+      description: isCode
+        ? "This permanently removes the session and its transcript. Anything it already changed on a machine or in a pull request stays where it is. This can't be undone."
+        : "This permanently removes the conversation and its messages. This can't be undone.",
+      confirmLabel: isCode ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);
         const r = await fetch(`/api/conversations/${c.id}`, { method: "DELETE" });
@@ -1854,8 +2262,12 @@ function ArchivedChatsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Archived chats</DialogTitle>
-          <DialogDescription>Archived chats stay searchable. Restore one to bring it back to Recents.</DialogDescription>
+          <DialogTitle>{isCode ? "Archived sessions" : "Archived chats"}</DialogTitle>
+          <DialogDescription>
+            {isCode
+              ? "Archived sessions stay searchable. Restore one to bring it back to the list."
+              : "Archived chats stay searchable. Restore one to bring it back to Recents."}
+          </DialogDescription>
         </DialogHeader>
         <div className="-mx-1 max-h-[50vh] overflow-y-auto">
           {failed ? (
@@ -1880,9 +2292,14 @@ function ArchivedChatsDialog({
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                   >
-                    <SidebarMotionIcon kind="conversation" className="size-4 shrink-0 text-muted-foreground" />
+                    <SidebarMotionIcon
+                      kind={isCode ? "code" : "conversation"}
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-ui font-medium">{c.title || "New chat"}</span>
+                      <span className="block truncate text-ui font-medium">
+                        {c.title || (isCode ? "Untitled session" : "New chat")}
+                      </span>
                       <span className="block truncate font-mono text-caption text-muted-foreground">
                         Archived {c.archivedAt ? new Date(c.archivedAt).toLocaleDateString() : ""}
                       </span>

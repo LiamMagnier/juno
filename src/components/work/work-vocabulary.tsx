@@ -4,6 +4,14 @@ import * as React from "react";
 import { Ban, Cloud, Laptop } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { describeCapability, type WorkCapability, type WorkDegradation, type WorkRiskLevel, type WorkStatus } from "@/lib/work/domain";
+/*
+ * The tone union is imported rather than declared here, because the sidebar
+ * now draws this same mark for a Code run as well as for a Work session and
+ * the two vocabularies had five identical meanings under ten different names.
+ * The names below won; the file they live in is pure, so the join that picks a
+ * tone can be tested without a DOM.
+ */
+import type { StatusTone } from "@/lib/conversation-status";
 import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +28,6 @@ import { cn } from "@/lib/utils";
  * going. It is not used to decorate a heading or a chip border, because on this
  * page "the accent colour" has to keep meaning "this is happening now".
  */
-
-type StatusTone = "neutral" | "live" | "attention" | "good" | "bad";
 
 interface StatusMeta {
   label: string;
@@ -146,6 +152,16 @@ export function statusSentence(status: WorkStatus): string {
 }
 
 /**
+ * The tone a status paints in, for a caller that draws its own mark — the
+ * sidebar row, which puts the dot inside the `size-4` slot its hollow bullet
+ * already occupies rather than beside it. Reading it from here is what keeps
+ * one status from being coral in the transcript and amber in the panel.
+ */
+export function statusTone(status: WorkStatus): StatusTone {
+  return STATUS_META[status].tone;
+}
+
+/**
  * How long a task that is supposed to be executing may record nothing before a
  * row says so out loud.
  *
@@ -253,15 +269,28 @@ export function WorkTag({
   );
 }
 
+/**
+ * A toned 6px dot with its meaning available to a screen reader, and nothing
+ * else. The row-density mark.
+ *
+ * Exported by tone rather than by `WorkStatus` because the sidebar draws it for
+ * a Code run too, and Code's states are not Work's. The tones, the classes and
+ * the 3:1 argument above them are the same for both — which is the whole reason
+ * the sidebar can be one component with a `product` prop rather than two.
+ */
+export function StatusDot({ tone, label, title }: { tone: StatusTone; label: string; title?: string }) {
+  return (
+    <span className="flex shrink-0 items-center" title={title}>
+      <span className={cn("size-1.5 rounded-full", DOT_CLASS[tone])} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 /** The same fact at row density: a dot with the label only for screen readers. */
 export function WorkStatusDot({ status }: { status: WorkStatus }) {
   const meta = STATUS_META[status];
-  return (
-    <span className="flex shrink-0 items-center" title={meta.label}>
-      <span className={cn("size-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
-      <span className="sr-only">{meta.label}</span>
-    </span>
-  );
+  return <StatusDot tone={meta.tone} label={meta.label} title={meta.label} />;
 }
 
 // ---------------------------------------------------------------------------

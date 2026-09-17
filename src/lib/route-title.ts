@@ -1,6 +1,6 @@
 /**
- * Pathname prefix → tab title. Longest prefix wins, so "/work/skills" beats
- * "/work". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
+ * Pathname prefix → tab title. Longest prefix wins, so "/code/pulls" beats
+ * "/code". The root layout's template is "%s · Juno" (src/app/layout.tsx), so
  * these are the bare nouns; the suffix is added once, at the call site, because
  * `document.title` is set imperatively and no metadata template applies to it.
  *
@@ -14,12 +14,25 @@
  */
 export const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
   ["/chat", "Juno"], // the new-chat screen has no subject yet
+  /* THE /work ENTRIES STAY UNTIL THE /work ROUTES GO, and they go in the same
+     commit. There are two products (docs/design/TWO_PRODUCTS.md) and this list
+     is not one of the places that says so: it is not a switcher, it is the
+     caption on the window you are actually in, and the same map captions the
+     mobile top bar. Deleting these while `src/app/(app)/work/**` still answers
+     bought nothing and cost five real pages their names — a person standing on
+     /work/hosts read "Juno" in their tab and "Juno" at the top of their phone,
+     which is the guess this file exists to prevent. A title describes what is
+     served; the package that stops serving these deletes them with the pages.
+     Whichever of those survive the move re-enter under their own names. */
   ["/work/skills", "Skills"],
   ["/work/schedules", "Schedules"],
   ["/work/permissions", "Permissions"],
   ["/work/hosts", "Macs"],
   ["/work", "Work"],
   ["/code/pulls", "Pull requests"],
+  /* No /code/customize. Same rule read the other way: `/code/customize` is
+     served by no branch yet, so a title for it would caption a 404. It arrives
+     with its page — see the note on Code's destinations in app-sidebar.tsx. */
   ["/code/new", "New run"],
   ["/code", "Code"],
   ["/design", "Design"],
