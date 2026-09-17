@@ -48,7 +48,13 @@ function PaneStreamStatus({ writing }: { writing: boolean }) {
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
-      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow">
+      {/* Plain muted text beside the dots — the dots are the one moving thing
+          in this row, exactly as message-item.tsx renders the same row. The
+          sentence breathed as well (status-glow, 2.8s) beside a 1.8s matrix:
+          two loops that share no phase for 25 seconds, and Compare shows the
+          row once per pane, so a screen meant to say "still working" read as
+          four unrelated events. */}
+      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground">
         {statusCopy}
         {!writing && elapsedSec > 0 && (
           <span className="whitespace-nowrap tabular-nums">

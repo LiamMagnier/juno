@@ -345,7 +345,11 @@ export function MessageList(props: MessageListProps) {
           // resolves to ~5% lightness while the blur has no colour to smear —
           // so the message text scrolling underneath showed straight through the
           // glyph. A floating layer takes the floating rung.
-          "absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 coarse:size-11",
+          // `active:duration-press`: transform is in the transition list, so
+          // without it the dip ran at --dur-base — 220ms to reach 0.95, three
+          // times the rung `.pressable` splits transform onto because a press
+          // that slow is felt as lag. The hover lift keeps the base timing.
+          "absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 active:duration-press coarse:size-11",
           "motion-reduce:transition-none motion-reduce:active:scale-100",
           atBottom
             ? "pointer-events-none translate-y-2 opacity-0"

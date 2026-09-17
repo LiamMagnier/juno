@@ -219,7 +219,9 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           // `caption`, matching the video card's "Open" pill — the same
           // media-overlay action role. `label` is the uppercase-eyebrow rung;
           // its 0.10em tracking has no business on a mixed-case verb.
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          // The press dips at --dur-press, not the base rung the reveal and
+          // the colour run on: 220ms to reach scale(0.95) is felt as lag.
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="size-3.5" aria-hidden="true" /> Edit
         </button>
@@ -302,7 +304,9 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${attachment.fileName} in a new tab`}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-95 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          // The press dips at --dur-press, not the base rung the hover fill
+          // runs on: 220ms to reach scale(0.95) is felt as lag.
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-95 active:duration-press coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
           <ActionIcons.external className="size-3" aria-hidden="true" />

@@ -327,8 +327,17 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         type={type}
         data-face={face}
         className={cn(
-          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full transition-[background-color,color] duration-fast ease-out-soft",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card active:scale-95",
+          // `.pressable` owns the press. This button also carried
+          // `transition-[background-color,color]` and `active:scale-95`, both
+          // emitted after the components layer at the same specificity, so the
+          // utility list REPLACED the class's transition shorthand — transform
+          // was not in it, and the dip snapped with no timing at all — while
+          // the 0.95 beat the class's 0.97. The most-pressed control in the
+          // product was the one `.pressable` that did not press like one.
+          // The class already transitions colour and background at --dur-fast
+          // and transform at --dur-press, which is everything this needed.
+          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
           face === "voice"
             ? // Quiet, and reaching the accent only on hover — enough to say it
               // is live without competing with the send circle it becomes.
