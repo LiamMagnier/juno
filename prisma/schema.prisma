@@ -1537,8 +1537,8 @@ model CodeTask {
   branch            String?
   prNumber          Int?
   // What the submitter chose to run this task with. Both were offered by the
-  // composer — a model picker and a thinking slider, on /code/new AND inside a
-  // live session — and neither was accepted by the create route or read by any
+  // composer — a model picker and a thinking slider, on the /code landing AND
+  // inside a live session — and neither was accepted by the create route or read by any
   // runner: the cloud runner simply took the first available model in the
   // catalog. Four visible controls decided nothing. Null means "no preference",
   // which keeps that first-available fallback for native clients and for tasks

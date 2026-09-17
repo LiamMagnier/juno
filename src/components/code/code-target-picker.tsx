@@ -161,15 +161,28 @@ const SKELETON_ROWS = 4;
  * reason the model selector gives: every ghost Button carries the shared
  * `rounded-field`, the ring offset and the `[&_svg]` sizing, and unpicking
  * those costs more overrides than the element saves.
+ *
+ * ONE THING CHANGED SIZE, AND IT IS WORTH SAYING WHICH. The hand-written list
+ * carried `coarse:h-11`; the shared recipe carries `coarse:h-10`, so on a touch
+ * screen the checkout chip came down from 44px to 40px. That is well above
+ * WCAG 2.5.8's 24px floor and it is what every other chip on a composer row in
+ * this product is, which is the point of taking the recipe — a row where one
+ * chip is 4px taller than its neighbour is the drift this constant exists to
+ * end. If 44 is the right answer it is the right answer for
+ * `composerChipClass`, and it gets changed there, once, for every composer.
  */
 const CHIP_CLASS = cn(composerChipClass, "max-w-full gap-1.5");
 
 /**
  * WHICH MACHINE — the left chip of the composer's context row.
  *
- * It holds no fetch of its own. Device and Cloud are two constants; the lists
- * that cost a request belong to the checkout chip beside it, which is why
- * opening this one is free and opening that one is what warms the repo list.
+ * It holds no fetch of its own — Device and Cloud are two constants, and the
+ * lists that cost a request are drawn by the checkout chip beside it. What it
+ * does do is CHOOSE, and that is not free: `CodeTargetPicker` fetches the
+ * repository list from a target effect, so picking Cloud here is what warms it,
+ * not opening the chip that shows it. (The Mac workspaces and device presence
+ * are fetched on mount whatever the target, because the device side is the
+ * default and its rows have to be there when the chip opens.)
  */
 export function CodeEnvironmentChip({
   target,

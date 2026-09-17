@@ -25,6 +25,21 @@ export const dynamic = "force-dynamic";
  * All | Cloud | My Macs filter and a "Wrapped up" fold — stacked above the
  * first row a person actually wanted.
  *
+ * WHERE THE REVIEW PANE WENT, because the list took more with it than chrome.
+ * `run-list.tsx` was the only thing that opened `RunReviewPane` — the per-file
+ * "Looks right / Needs a change", the per-line notes at three severities, all
+ * of it bundled into the next instruction the agent receives, and deliberately
+ * NOT accept/reject, because the browser has no checkout and a button that
+ * cannot apply anything must not be called Accept. Deleting the list without
+ * re-homing that would have removed a capability the product has nowhere else
+ * and called it tidying up. So the pane now opens from the session's
+ * changed-files card (`CodeRunStack` → `ChangedFilesCard`), which is the only
+ * surface that knows a run has written something, and its notes land in that
+ * session's composer instead of being parked and navigated to. What stayed
+ * behind is named where it sits: `RunReceipt` waits for `useRunDetail`, the
+ * hook that builds the verification evidence it exists to show, and both are
+ * parked for the sidebar package rather than deleted.
+ *
  * THE GREETING IS THE ONE THIS SURFACE ALREADY HAD, and it is worth saying why
  * it is allowed back. `/code/new` opened with "What are we building today,
  * Liam?" at display size and that was removed as a marketing hero — correctly,

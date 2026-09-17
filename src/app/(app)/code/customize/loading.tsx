@@ -2,8 +2,13 @@ import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * `/code/customize` while the shell resolves: the header, then the four
- * sections' own shape — a mono section label, a lede, and rows on hairlines.
+ * `/code/customize` while the shell resolves: the header, then the sections'
+ * own shape — a mono section label, a lede, and rows on hairlines.
+ *
+ * FOUR OF THEM, which is how many `CodeCustomize` draws (repositories, Macs,
+ * what a run may do, the cloud machine). A skeleton that reserves two sections
+ * for a page with four does the one thing a skeleton exists to prevent: the
+ * column grows under the reader's eyes at the moment the real page arrives.
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -12,9 +17,13 @@ import { Skeleton } from "@/components/ui/skeleton";
  * replaced, so this stops at the section frame rather than sketching rows
  * twice.
  *
- * No `error.tsx` beside it: this page has no failure of its own to explain.
- * Its two lists each say what could not be reached, in place and with a retry,
- * and anything above that is the app group's boundary.
+ * There IS an `error.tsx` beside it, and the reason is worth stating here
+ * because this file used to claim the opposite. Failing to draw is not the same
+ * failure as a list that could not be reached: the two lists each report their
+ * own, in place and with a retry, but if the page itself throws the nearest
+ * boundary above is `/code/error.tsx`, which is written for the landing and
+ * tells the reader a composer failed and that no run was cancelled — neither of
+ * which is about a settings page.
  */
 export default function CodeCustomizeLoading() {
   return (
@@ -24,7 +33,7 @@ export default function CodeCustomizeLoading() {
     <AppPage measure="wide" role="status" aria-label="Loading your Juno Code settings">
       <AppPageHeaderSkeleton headingWidth="w-44" ledeLines={2} />
       <div className="divide-y divide-border/60">
-        {[0, 1].map((section) => (
+        {[0, 1, 2, 3].map((section) => (
           <div key={section} className="py-6 first:pt-0">
             <Skeleton className="h-3 w-28 rounded-xs" />
             <Skeleton className="mt-2 h-5 w-full max-w-prose rounded-xs" />

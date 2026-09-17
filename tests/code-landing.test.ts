@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   AGENT_MEMORY_FILES,
+  AGENT_MEMORY_SENTENCE,
   CLOUD_ENVIRONMENT_FACTS,
   CLOUD_RUNNER_NODE_VERSION,
   CLOUD_RUN_TIMEOUT_MINUTES,
@@ -84,6 +85,37 @@ test("the list page and its chrome are gone, with no import left behind", () => 
       assert.ok(!source.includes(dead), `${file} still imports ${dead}`);
     }
   }
+});
+
+test("the review pane kept an entry point when the list that opened it went", () => {
+  /*
+   * THE DEFECT THIS EXISTS FOR. Deleting run-list.tsx removed the only thing
+   * that mounted `RunReviewPane`, and the assertions above would all have
+   * passed with nine hundred lines of review vocabulary left unreachable —
+   * per-file verdicts, per-line notes at three severities, bundled into the
+   * agent's next instruction, which the product has nowhere else. A deletion
+   * that quietly takes a capability with it is the expensive kind, so the pane
+   * has to be reachable from somewhere that is itself reachable.
+   */
+  const importers = [...sourceOf].filter(
+    ([file, source]) => file !== "src/components/code/run-review.tsx" && /["']@\/components\/code\/run-review["']/.test(source),
+  );
+  assert.ok(
+    importers.length > 0,
+    "nothing imports run-review.tsx — the review pane has no entry point again",
+  );
+  // The session's changed-files card is that entry point: it is the one place
+  // that knows a run has written something worth reading.
+  assert.match(
+    read("src/components/code/code-session-view.tsx"),
+    /<RunReviewPane/,
+    "the session view no longer mounts the review pane",
+  );
+  assert.match(
+    read("src/components/code/code-run-cards.tsx"),
+    /onReview/,
+    "the changed-files card no longer offers a way into the review",
+  );
 });
 
 test("/code/new is a redirect rather than a second composer", () => {
@@ -180,6 +212,26 @@ test("the files a run reads at start are the agent core's memory files", () => {
   assert.ok(declared, "agent.ts no longer declares MEMORY_FILES");
   const names = [...declared[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
   assert.deepEqual(names, [...AGENT_MEMORY_FILES]);
+});
+
+test("the memory sentence promises precedence, because the loop stops at the first hit", () => {
+  /*
+   * The names and their order were already pinned above, and that was not
+   * enough: the card said a run reads all three while `buildSystemPrompt`
+   * reads exactly one, so a repository with both AGENTS.md and CLAUDE.md was
+   * told its CLAUDE.md applied when nothing had opened it. Both halves of that
+   * are asserted here — the loop still breaks, and the sentence still says so
+   * — because either one drifting on its own puts the lie back.
+   */
+  const agent = read("runner/agent-core/src/agent.ts");
+  const loop = /for \(const name of MEMORY_FILES\) \{([\s\S]*?)\n  \}/.exec(agent);
+  assert.ok(loop, "agent.ts no longer loops MEMORY_FILES");
+  assert.match(loop[1], /\bbreak;/, "the loop reads every memory file it finds — the sentence says it reads one");
+
+  assert.match(AGENT_MEMORY_SENTENCE, /the first of/, "the sentence must state precedence, not a list");
+  for (const name of AGENT_MEMORY_FILES) {
+    assert.ok(AGENT_MEMORY_SENTENCE.includes(name), `the sentence no longer names ${name}`);
+  }
 });
 
 test("every fact the card states carries the constant it came from", () => {

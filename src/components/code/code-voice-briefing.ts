@@ -23,10 +23,10 @@
  * ── Why the two Code surfaces share one briefing ───────────────────────────
  *
  * The landing composer and a live session are the same conversation at two
- * moments: where
- * this runs, what I want done, and (once there is one) what happened. Two
- * builders would drift, and the drift would surface as Juno describing the
- * arrangement differently depending on which screen you called from.
+ * moments: where this runs, what I want done, and (once there is one) what
+ * happened. Two builders would drift, and the drift would surface as Juno
+ * describing the arrangement differently depending on which screen you called
+ * from.
  */
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";

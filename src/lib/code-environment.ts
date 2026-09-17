@@ -64,8 +64,16 @@ export const CODE_PERMISSIONS: Record<CodeTarget, CodePermission> = {
 };
 
 /**
- * The files the agent reads before its first move, in this order.
- * Source of truth: `MEMORY_FILES` in runner/agent-core/src/agent.ts.
+ * The files the agent LOOKS FOR before its first move, in precedence order —
+ * the first one found is the only one read.
+ *
+ * Source of truth: `MEMORY_FILES` in runner/agent-core/src/agent.ts, whose loop
+ * `break`s on the first path that exists. The order matters and the "first one
+ * wins" part matters more: a repository holding both AGENTS.md and CLAUDE.md
+ * gets AGENTS.md into the system prompt and nothing from CLAUDE.md, so anything
+ * on this side that says a run reads all three is telling a reader their
+ * instructions apply when they do not. `tests/code-landing.test.ts` pins both
+ * the names and the `break`.
  */
 export const AGENT_MEMORY_FILES = ["JUNO.md", "AGENTS.md", "CLAUDE.md"] as const;
 
@@ -110,5 +118,16 @@ export const CLOUD_ENVIRONMENT_FACTS: readonly EnvironmentFact[] = [
 /**
  * The sentence the Customize page uses to say what a run reads before it
  * starts. Kept beside the list it names so the two cannot disagree.
+ *
+ * It says "the first of", not "all of", because that is what the runner does —
+ * see `AGENT_MEMORY_FILES`. The card this sits on claims every line is lifted
+ * from the runner workflow in this repository; a card that advertises itself as
+ * verified is the last place a promise the runtime cannot keep may stand.
  */
-export const AGENT_MEMORY_SENTENCE = `Every run reads ${AGENT_MEMORY_FILES.join(", ")} from the checkout before its first move, so repository instructions apply without being pasted into the prompt.`;
+export const AGENT_MEMORY_SENTENCE = `Every run reads the first of ${orList(AGENT_MEMORY_FILES)} it finds in the checkout, before its first move, so repository instructions apply without being pasted into the prompt.`;
+
+/** `a, b or c` — the sentence above reads as English whatever the list holds. */
+function orList(names: readonly string[]): string {
+  if (names.length < 2) return names.join("");
+  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}

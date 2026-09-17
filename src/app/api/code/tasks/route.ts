@@ -64,8 +64,9 @@ const postSchema = z.object({
     .optional(),
   baseRef: z.string().trim().min(1).max(200).optional(),
   // What to run the task with. The composer has offered both of these since
-  // Juno Code shipped — a model picker and a thinking slider, on /code/new and
-  // inside a live session — and this schema accepted neither, so the values
+  // Juno Code shipped — a model picker and a thinking slider, on the /code
+  // landing and inside a live session — and this schema accepted neither, so
+  // the values
   // were persisted onto the Conversation (where they LOOKED durable) and never
   // reached a run. Optional: omitted means "no preference", which keeps the
   // runner's first-available fallback for native clients.
