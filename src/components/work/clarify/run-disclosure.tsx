@@ -9,6 +9,7 @@ import {
 } from "@/lib/work/domain";
 import type { Plan } from "@prisma/client";
 import { runBudgetForPlan } from "@/lib/work/budget";
+import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
@@ -143,6 +144,22 @@ export function WorkRunDisclosure({
    */
   const { quota } = useApp();
   const ceilings = runCeilingsFor(quota.plan);
+  /*
+   * Stated because the runtime does it, and read from the same rule the
+   * dispatcher passes to the executor. A sentence here that the run did not
+   * honour would be worse than saying nothing: the reader would wait for a plan
+   * that never arrives. A composer press is attended by definition.
+   *
+   * Cloud only, and the asymmetry is real rather than cautious. The cloud
+   * executor is `scripts/work-runner.ts`, which is the one place in this
+   * repository that builds a `WorkSessionOptions` and therefore the one place
+   * `confirmPlan` can be set. A Mac runs its own bundled agent, driven by a
+   * start command that carries the approval mode and not this, so promising the
+   * gate to somebody dispatching to their laptop would promise them a pause
+   * that never comes.
+   */
+  const confirmsPlan =
+    target === "cloud" && confirmPlanBeforeActing({ policy: approvalMode, attended: true });
 
   const stops = `stops at $${ceilings.costUsd} / ${ceilings.minutes} min`;
   const asks = APPROVAL_PHRASE[approvalMode];
@@ -226,6 +243,9 @@ export function WorkRunDisclosure({
             <Row label="Asks">
               {WORK_APPROVAL_MODE_SUMMARY[approvalMode]} Anything it cannot take back — a permanent
               delete, a message sent, a purchase — is asked about under every mode.
+              {confirmsPlan
+                ? " It also writes its plan before it starts and waits for you to read it; the clock does not run while it waits."
+                : ""}
             </Row>
             <Row label="Stops at">
               {`$${ceilings.costUsd}, ${ceilings.tokens.toLocaleString("en-US")} tokens, or ${ceilings.minutes} minutes of working time — whichever comes first. If one is reached the task stops and tells you where it got to; waiting for you does not count against the clock. These are your plan’s ceilings; a project, a skill or a schedule can lower them and nothing raises them.`}

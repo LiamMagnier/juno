@@ -61,6 +61,7 @@ import {
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import { maxStepsForBudget } from "@/lib/work/budget";
+import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
@@ -2816,7 +2817,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     egressDomains,
   });
 
-  const policy = (run.permissionPolicy ?? {}) as { policy?: unknown };
+  const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
   const skill = await applySkill({
     userId: input.userId,
     goal: run.session.goal,
@@ -3046,6 +3047,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // unreadable: a run whose mode did not survive should ask more, not less.
     // The narrowing against a Mac's own floor already happened at dispatch.
     approvalMode: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
+    // Show the plan to the reader before acting on it, when the mode they chose
+    // says to. The rule is `confirmPlanBeforeActing` and the whole argument for
+    // it is there; what matters here is that the dispatcher's blob is the only
+    // input, so a run reproduces the same decision on every resume.
+    //
+    // `attended` is absent on the blob the manual dispatch route writes and
+    // false on the one the scheduler and the trigger poller write, so an
+    // absent value reads as attended - which is what a run started by somebody
+    // pressing a button is. Read the other way round, every manual run would
+    // silently skip the gate.
+    confirmPlan: confirmPlanBeforeActing({
+      policy: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
+      attended: policy.attended !== false,
+    }),
     callbacks: {
       onEvent: (event) => {
         // Narrowed rather than cast. The runtime and the database share a
