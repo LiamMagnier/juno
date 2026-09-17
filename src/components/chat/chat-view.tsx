@@ -24,6 +24,19 @@ import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
+import { useConversationWork } from "@/components/chat/use-conversation-work";
+import { WorkRunPanel } from "@/components/chat/work-run-panel";
+import { PendingSteers } from "@/components/work/steering/pending-steers";
+import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
+import {
+  WORK_SYNC_EVENT,
+  createWorkSession,
+  startWorkRun,
+  workIdempotencyKey,
+} from "@/components/work/work-transport";
+import { describeFailure } from "@/components/work/composer-home/start-attempt";
+import type { DelegateInput } from "@/components/chat/composer";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId } from "@/lib/models";
@@ -389,6 +402,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    */
   const research = useConversationResearch(privateMode ? null : currentConversationId, privateMode ? undefined : initialResearchRun);
   const researchSteering = research.steering;
+
+  /**
+   * The delegated task attached to this conversation, on exactly the same
+   * terms: one hook, one cursor, two readers — the panel in the transcript and
+   * the composer at the bottom. Never in incognito, which writes no rows for a
+   * `WorkSession.conversationId` to point at.
+   */
+  const work = useConversationWork(privateMode ? null : currentConversationId);
+  const workSteering = work.steering;
+  // Destructured so the dispatch below depends on the one stable callback
+  // rather than on the whole hook result, which is a fresh object every render.
+  const adoptWorkSession = work.adopt;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
   // message is a non-empty assistant reply. Flipping this false while a new send
@@ -1103,7 +1128,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return lines;
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
-  const hasMessages = displayMessages.length > 0 || voiceOpen || !!research.run;
+  // A task counts, the same way a research run does: a conversation whose only
+  // content is a run is not an empty chat, and showing the greeting over a live
+  // run would be the product denying the thing it is in the middle of doing.
+  const hasMessages =
+    displayMessages.length > 0 || voiceOpen || !!research.run || !!work.session;
 
   /* ─── First-message handoff ────────────────────────────────────────────────
    * The centered empty-state composer and the transcript's bottom dock are two
@@ -1356,6 +1385,203 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [chat, hasMessages, realtimeVoice, voiceOpen, voiceSaveError]
   );
 
+  /*
+   * One press of "start this as a task", and what it costs when it half works.
+   *
+   * Four things have to happen, and the ORDER is the whole design:
+   *
+   *   1. A conversation to hang the run on. A task started from a blank chat has
+   *      no row to point `WorkSession.conversationId` at yet.
+   *   2. The reader's sentence, persisted as a USER turn, so the transcript
+   *      shows what was asked. It is the same append the native clients push
+   *      their finished turns through.
+   *   3. `POST /api/work/sessions` — the draft, with the conversation on it.
+   *   4. `POST /sessions/[id]/runs` — the attempt.
+   *
+   * The turn is written BEFORE anything is dispatched because of how the two
+   * failures differ. A create that fails after the turn landed leaves the
+   * reader's words in their own chat with a sentence saying nothing started —
+   * recoverable by pressing the button again, and nothing has been spent. A
+   * dispatch that succeeded while the turn failed would leave a run spending a
+   * budget inside a conversation that shows no sign of having asked for it,
+   * which is the failure nobody can act on.
+   *
+   * NO ACKNOWLEDGEMENT TURN IS WRITTEN. Deep research persists one because its
+   * dispatch happens inside a streaming chat turn that has to say something;
+   * here the panel IS Juno's side of the exchange, and an application-authored
+   * "I'll get on it" directly above a live panel narrating what it is doing
+   * would be the product speaking twice about one thing.
+   */
+  const delegateAttemptRef = React.useRef<{
+    goal: string;
+    sessionKey: string;
+    runKey: string;
+    session: ClientWorkSession | null;
+  } | null>(null);
+
+  const delegate = React.useCallback(
+    async (input: DelegateInput): Promise<boolean> => {
+      if (privateMode) return false;
+      // The same first-message handoff a send arms (see the choreography block
+      // above): delegating from an empty chat replaces the greeting with a
+      // transcript exactly as a first message does, and without this the
+      // greeting would vanish in one frame instead of handing over.
+      if (!hasMessages) handoffArmedAtRef.current = Date.now();
+
+      let id = currentConversationId;
+      if (!id) {
+        try {
+          const response = await fetch("/api/conversations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "chat", model }),
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            conversation?: ClientConversation;
+          };
+          if (!response.ok || !data.conversation) throw new Error("conversation");
+          id = data.conversation.id;
+          upsertConversation(data.conversation);
+          createdIdRef.current = id;
+          setActiveConversationId(id);
+          if (typeof window !== "undefined") {
+            window.history.replaceState(null, "", `/chat/${id}`);
+            window.__junoSoftRoutePath = `/chat/${id}`;
+          }
+        } catch {
+          toast.error("Couldn’t start a chat for this task, so nothing was queued.");
+          return false;
+        }
+      }
+
+      try {
+        const response = await fetch(`/api/conversations/${id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            turns: [
+              {
+                // A client id, so a retried append lands on the row the first
+                // attempt created rather than writing the sentence twice.
+                clientId: `task-${crypto.randomUUID()}`,
+                role: "USER",
+                content: input.goal,
+                ...(input.attachmentIds.length > 0
+                  ? { attachmentIds: input.attachmentIds }
+                  : {}),
+              },
+            ],
+          }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          messages?: Array<{ id: string; content: string; createdAt: string }>;
+        };
+        const persisted = data.messages?.[0];
+        if (!response.ok || !persisted) throw new Error("append");
+        chat.setMessages((current) => [
+          ...current,
+          {
+            id: persisted.id,
+            role: "USER",
+            content: persisted.content,
+            createdAt: persisted.createdAt,
+            conversationId: id ?? undefined,
+            attachments: [],
+          },
+        ]);
+      } catch {
+        toast.error("Couldn’t save your message, so nothing was started. Try again.");
+        return false;
+      }
+
+      /*
+       * A fresh pair of keys whenever the errand changed, and the SAME pair when
+       * it did not. A press that created the draft and then failed to dispatch
+       * must land on that same draft next time — `POST /sessions` replays an
+       * existing id for a repeated key — or every refused start leaves another
+       * orphan draft in the reader's list.
+       */
+      let attempt = delegateAttemptRef.current;
+      if (attempt === null || attempt.goal !== input.goal) {
+        attempt = {
+          goal: input.goal,
+          sessionKey: workIdempotencyKey(),
+          runKey: workIdempotencyKey(),
+          session: null,
+        };
+        delegateAttemptRef.current = attempt;
+      }
+
+      let session = attempt.session;
+      if (session === null) {
+        const created = await createWorkSession({
+          goal: input.goal,
+          conversationId: id,
+          requestedTarget: "automatic",
+          preferredHostId: null,
+          projectId: activeProjectId,
+          model,
+          reasoningEffort,
+          permissionPolicy: input.permissionPolicy,
+          attachmentIds: input.attachmentIds,
+          // Sent even when empty, because empty is an answer: this task reaches
+          // no connected app. Absent would mean a client with no control for it.
+          connectorIds: input.connectorIds,
+          idempotencyKey: attempt.sessionKey,
+        });
+        if (created.kind !== "ok") {
+          toast.error(
+            created.kind === "blocked"
+              ? created.explanation
+              : describeFailure(created, "save").message
+          );
+          return false;
+        }
+        session = created.value;
+        attempt.session = session;
+      }
+
+      // No `requiredCapabilities`: the server infers them from the goal it was
+      // given. Sending a list derived in this bundle would look like agreement
+      // and act like an override.
+      const started = await startWorkRun(session.id, {
+        origin: "manual",
+        requestedTarget: "automatic",
+        model,
+        reasoningEffort,
+        idempotencyKey: attempt.runKey,
+      });
+      if (started.kind !== "ok") {
+        toast.error(
+          started.kind === "blocked"
+            ? started.explanation
+            : describeFailure(started, "start").message
+        );
+        return false;
+      }
+
+      // Shown immediately rather than four seconds later, when the discovery
+      // poll would have found it: this is the one moment the reader is most
+      // certain something should have happened.
+      adoptWorkSession(session);
+      delegateAttemptRef.current = null;
+      window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+      return true;
+    },
+    [
+      activeProjectId,
+      chat,
+      currentConversationId,
+      hasMessages,
+      model,
+      privateMode,
+      reasoningEffort,
+      setActiveConversationId,
+      upsertConversation,
+      adoptWorkSession,
+    ]
+  );
+
   const openVoice = React.useCallback(() => {
     if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
     closeArtifact();
@@ -1572,13 +1798,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               researchSteering.stop();
               chat.stop();
             }
-          : chat.stop
+          : workSteering
+            ? // A delegated run is not this conversation's generation, so there
+              // is no stream to tear down beside it — Stop ends the attempt, the
+              // way it already ends a research run.
+              workSteering.stop
+            : chat.stop
       }
       steering={
         researchSteering?.accepting
           ? {
               active: true,
               placeholder: "Add a constraint, or paste a source to include…",
+              sendLabel: "Add to the research",
+              stopLabel: "Stop the research",
               onSteer: async (value: string) => {
                 const accepted = await researchSteering.steer(value);
                 if (accepted) toast.success("Added to this research run");
@@ -1586,8 +1819,24 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 return accepted;
               },
             }
-          : null
+          : workSteering
+            ? {
+                active: true,
+                // Nothing is streaming: the run was dispatched minutes ago and
+                // `isBusy` is false for its whole life. See the prop's note.
+                standalone: true,
+                placeholder: delegatedComposerPlaceholder(workSteering.mode),
+                sendLabel:
+                  workSteering.mode.kind === "answer"
+                    ? "Answer the task’s question"
+                    : "Add this to the running task",
+                stopLabel: "Stop the task",
+                above: <PendingSteers steers={work.pendingSteers} />,
+                onSteer: workSteering.send,
+              }
+            : null
       }
+      onDelegate={privateMode ? undefined : delegate}
       pendingClarification={chat.pendingClarification}
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
@@ -1924,9 +2173,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <MessageList
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
-                researchContents={privateMode ? [] : [
+                inlineRuns={privateMode ? [] : [
                   ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} className="mt-5" /> }] : []),
                   ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
+                  // Placed by its own createdAt, so it lands under the turn that
+                  // asked for it rather than at the end of a transcript the
+                  // reader has carried on adding to while it worked.
+                  ...(work.session ? [{ id: work.session.id, createdAt: work.session.createdAt, node: <WorkRunPanel work={work} className="mt-5" /> }] : []),
                 ]}
                 busy={chat.isBusy}
                 status={chat.status}

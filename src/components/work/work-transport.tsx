@@ -445,11 +445,14 @@ export function fetchWorkSessions(
     archived?: boolean;
     /** Only the rows blocked on a person — the whole account's, not a page's. */
     needsAttention?: boolean;
+    /** Only the tasks delegated from one chat, newest first. */
+    conversationId?: string;
   } = {}
 ): Promise<WorkResult<WorkInboxSession[]>> {
   const query = new URLSearchParams({ limit: String(options.limit ?? 40) });
   if (options.archived) query.set("archived", "true");
   if (options.needsAttention) query.set("needsAttention", "true");
+  if (options.conversationId) query.set("conversationId", options.conversationId);
   return get(`/api/work/sessions?${query.toString()}`, (data) =>
     list<Record<string, unknown>>(data.sessions).map((entry) => ({
       ...(entry as unknown as ClientWorkSession),
@@ -613,6 +616,15 @@ export interface CreateWorkSessionInput {
   preferredHostId: string | null;
   /** The Project this task belongs to, so its files and instructions apply. */
   projectId?: string | null;
+  /**
+   * The chat this task was delegated from.
+   *
+   * What makes the run findable again from the transcript it was started in —
+   * `?conversationId=` on the session list is the other half. Absent is a task
+   * that belongs to no conversation, which is every task the /work composer and
+   * the native clients create.
+   */
+  conversationId?: string | null;
   /** A catalog id, or the Auto sentinel for "you choose when you dispatch". */
   model?: string | null;
   /**
@@ -681,6 +693,7 @@ export function createWorkSession(
       requestedTarget: input.requestedTarget,
       ...(input.preferredHostId === null ? {} : { preferredHostId: input.preferredHostId }),
       ...(input.projectId ? { projectId: input.projectId } : {}),
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
       ...(input.permissionPolicy === undefined

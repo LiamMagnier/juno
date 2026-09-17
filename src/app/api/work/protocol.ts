@@ -126,6 +126,27 @@ export const createSessionSchema = z.object({
   requestedTarget: z.enum(WORK_TARGETS),
   preferredHostId: id.optional(),
   projectId: id.optional(),
+  /**
+   * The chat this task was delegated from.
+   *
+   * `WorkSession.conversationId` has been on the model, indexed, and serialised
+   * to every client since Work shipped, and until now no create route had a
+   * field for it — so the only writer was the legacy `ScheduledTask` adopter and
+   * a task started from a conversation had no way to say which one. That is the
+   * whole of the Work-in-Chat merge on the wire: the run is drawn inside the
+   * conversation that started it, and it is found again by this column.
+   *
+   * Optional, and absent means exactly what it has always meant — a task that
+   * belongs to no conversation. A native client that has never heard of the
+   * field keeps creating standalone tasks, which is the behaviour it already
+   * has; nothing here changes for it.
+   *
+   * Ownership is a claim like every other id in this body, and the route
+   * re-checks it against a `Conversation` row carrying the signed-in account
+   * before it is written. A conversation id accepted on trust would be a way to
+   * hang a task off somebody else's chat.
+   */
+  conversationId: id.optional(),
   // Passed through to `requestedModel` unvalidated against the catalog: the
   // executor resolves and may substitute the model, and records that
   // substitution as a `model_substituted` degradation. Refusing an unknown id
@@ -805,6 +826,17 @@ export interface SessionListQuery {
    */
   archived: boolean;
   projectId?: string;
+  /**
+   * The chat whose task to find — the merge's read half.
+   *
+   * A conversation draws the run it started, so the transcript has to be able
+   * to ask "is there one" from an id it already holds, without scanning a list
+   * of the whole account. `?conversationId=` answers that question and nothing
+   * else, which is why it is a filter here rather than a new route: this list
+   * already orders by `lastActivityAt` desc, so the newest task on the chat is
+   * the first row.
+   */
+  conversationId?: string;
   limit: number;
 }
 
@@ -859,6 +891,19 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
     return { ok: false, parameter: "projectId" };
   }
 
+  // Bounded and refused on the same terms as `projectId` rather than passed
+  // through. An empty string would select every session whose conversation is
+  // null — which is every standalone task in the account — from a filter that
+  // reads as "this chat's task", and the caller would have no way to tell the
+  // difference between a chat with no task and a chat it asked about wrongly.
+  const conversationId = params.get("conversationId");
+  if (
+    conversationId !== null &&
+    (conversationId.length === 0 || conversationId.length > MAX_ID_CHARS)
+  ) {
+    return { ok: false, parameter: "conversationId" };
+  }
+
   return {
     ok: true,
     query: {
@@ -867,6 +912,7 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
       ...(pinned !== undefined ? { pinned } : {}),
       archived: archived ?? false,
       ...(projectId !== null ? { projectId } : {}),
+      ...(conversationId !== null ? { conversationId } : {}),
       limit: limitParam(params.get("limit"), SESSION_LIST_DEFAULT_LIMIT, SESSION_LIST_MAX_LIMIT),
     },
   };

@@ -9,7 +9,16 @@ import type { ClientArtifact, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
   messages: ChatMessage[];
-  researchContents?: Array<{ id: string; createdAt: string; node: React.ReactNode }>;
+  /**
+   * Durable runs drawn inside the transcript, each placed after the turn that
+   * started it.
+   *
+   * Called `researchContents` while a deep-research run was the only thing that
+   * could live in a conversation. A delegated task is the second
+   * (`work-run-panel.tsx`), and a slot named after one of its two occupants is
+   * how the next reader concludes the other one does not belong here.
+   */
+  inlineRuns?: Array<{ id: string; createdAt: string; node: React.ReactNode }>;
   busy: boolean;
   status?: GenerationStatus;
   artifacts: ClientArtifact[];
@@ -88,15 +97,15 @@ const ATTACH_SLOP_PX = 24;
 
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
-  const researchByMessage = new Map<number, React.ReactNode[]>();
-  for (const item of props.researchContents ?? []) {
+  const runsByMessage = new Map<number, React.ReactNode[]>();
+  for (const item of props.inlineRuns ?? []) {
     const time = Date.parse(item.createdAt);
     let index = -1;
     for (let i = 0; i < messages.length; i++) {
       if (messages[i].role === "USER" && Date.parse(messages[i].createdAt) <= time) index = i;
     }
     if (index >= 0 && messages[index + 1]?.role === "ASSISTANT") index++;
-    researchByMessage.set(index, [...(researchByMessage.get(index) ?? []), <React.Fragment key={item.id}>{item.node}</React.Fragment>]);
+    runsByMessage.set(index, [...(runsByMessage.get(index) ?? []), <React.Fragment key={item.id}>{item.node}</React.Fragment>]);
   }
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -313,10 +322,10 @@ export function MessageList(props: MessageListProps) {
               onImageEdit={props.onImageEdit}
               currentModelId={props.currentModelId}
             />
-            {researchByMessage.get(i)}
+            {runsByMessage.get(i)}
             </div>
           ))}
-          {researchByMessage.get(-1)}
+          {runsByMessage.get(-1)}
           <div ref={bottomRef} />
         </div>
       </div>

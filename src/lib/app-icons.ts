@@ -195,6 +195,15 @@ export const ComposerIcons = {
   canvas: SquarePen,
   /** Deep research. A telescope, never binoculars. */
   research: Telescope,
+  /** Run this message as a delegated task.
+   *
+   *  The SAME workflow mark `AppIcons.work` carries, on the same argument the
+   *  telescope above is kept in both groups: one feature, one drawing. Work is
+   *  no longer a place you navigate to — a run lives in the conversation that
+   *  asked for it — but the concept is still named in the shell and in the
+   *  native apps, and a second glyph for it here would make the composer's
+   *  toggle and the run it starts look like two different things. */
+  task: Workflow,
   /** Web search — Lucide's globe, which is a different drawing from SF's. */
   web: Globe,
   /** The canvas-and-artifacts tool. */

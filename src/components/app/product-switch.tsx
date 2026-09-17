@@ -92,9 +92,11 @@ type Product = {
  * it is not a place you go, it is a way of ASKING — you hand Juno an errand
  * with a finish line instead of opening a conversation — and that choice
  * belongs where you write the ask, not in the column you navigate with. It
- * lives in the composer now (`ComposerModeSwitch`), which is also why it is
- * set in words with no glyph there: it qualifies the sentence you are about
- * to send, and a mark beside it would make it look like a destination again.
+ * lives in the chat composer's "+" menu now — "Do this as a task", beside Deep
+ * research — and the run it starts is drawn inside the conversation that
+ * started it rather than on a surface of its own
+ * (docs/design/TWO_PRODUCTS.md §2). The pill that briefly stood between those
+ * two arrangements was navigation wearing a toggle's clothes, and it is gone.
  *
  * `PRODUCTS` keeps all three, because the command palette, the keyboard
  * chords and `productOf` still reason about Work as a surface.
