@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Loader2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -170,21 +169,17 @@ export default function ConnectionsPage() {
   };
 
   const loading = connectors === null;
-  const connectedCount = connectors?.filter((c) => c.connected).length ?? 0;
 
   return (
     <AppPage measure="wide">
+      {/* No count in the header. It carried a "{n} connected" badge directly
+          above a toolbar whose "Connected" segment prints the same number —
+          and the segment is the control that filters to them, so its copy of
+          the integer is the one that earns its place. */}
       <AppPageHeader
         eyebrow="Connections"
         heading="Connect your tools"
         lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
-        actions={
-          !loading && !error && connectedCount > 0 ? (
-            <Badge variant="outline" className="hidden sm:inline-flex">
-              {connectedCount} connected
-            </Badge>
-          ) : null
-        }
       />
 
       {error ? (

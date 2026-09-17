@@ -1,68 +1,18 @@
+/**
+ * There is no `Tile` here any more. It was the settings surface's container
+ * before `SettingsGroup` (setting-row.tsx) took that job, and it outlived the
+ * migration in exactly one place — PermissionsSection — so the Connectors pane
+ * ran two container systems back to back: a 4px eyebrow-to-lede gap over a
+ * 16px one, a stagger on one block and not the other, and Tile's full-width
+ * bottom hairline ruled under the last block on the pane with nothing beneath
+ * it. The save status below is what the file still owns, and the file keeps
+ * its name because three sections import it by that path.
+ */
 import * as React from "react";
 import { Loader2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 
-import { Card, CardEyebrow } from "@/components/ui/card";
-import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-
-/**
- * One container system for every section of the settings surface: same radius,
- * same border (the Card default border-border/70), same padding, same eyebrow
- * margin. flex-col so internals can pin a footer to the bottom edge with
- * mt-auto if the tile ever gains a fixed height.
- *
- * It lives here rather than inside settings/page.tsx because PermissionsSection
- * was reproducing the container by copying its class string verbatim — including
- * the stagger, which is why it took an `index` prop at all. A shared container
- * that is shared by transcription is not shared: any change to this file used to
- * leave that one card behind.
- *
- * There is no `span` prop any more. It set `col-span-full` for a two-column
- * grid that SettingsGroup no longer renders — the groups went single column
- * when the section rail landed — so every tile spans, always, and a prop that
- * claims to control layout while controlling nothing is the next person's
- * wrong turn.
- */
-export function Tile({
-  eyebrow,
-  aside,
-  i,
-  className,
-  children,
-}: {
-  eyebrow: React.ReactNode;
-  /** Trailing content on the eyebrow row — a save status, a count. */
-  aside?: React.ReactNode;
-  i: number;
-  /**
-   * Note for anyone recolouring the edge: the container below is
-   * `border-0 border-b`, so there is exactly ONE border here and it is the
-   * bottom one. A plain `border-destructive/20` passed in only recolours that
-   * hairline — the Danger zone tile shipped with precisely that class and it
-   * was dead code, because at 20% over pure black it was invisible too. Target
-   * the side you mean (`border-b-*`) and give it enough alpha to read.
-   */
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card
-      variant="flat"
-      style={staggerDelay(i, "loose")}
-      className={cn(
-        "flex flex-col rounded-none border-0 border-b border-border/70 bg-transparent px-0 py-6 shadow-none motion-safe:animate-fade-in [animation-fill-mode:backwards]",
-        className
-      )}
-    >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <CardEyebrow>{eyebrow}</CardEyebrow>
-        {aside}
-      </div>
-      {children}
-    </Card>
-  );
-}
 
 export type TileSaveState = "idle" | "saving" | "saved" | "failed";
 

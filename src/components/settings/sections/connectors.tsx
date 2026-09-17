@@ -47,9 +47,12 @@ export function ConnectorsSection() {
 
   return (
     <>
+      {/* The title stays — "Connected apps" is a narrower thing than the pane
+          ("Connectors", which also covers the policy below) — but it takes no
+          lede: the one it carried was the registry's sentence re-worded, ~60px
+          under the original. */}
       <SettingsGroup
         title="Connected apps"
-        description="Apps Juno can read from and act on, on your behalf."
         aside={
           <Button asChild variant="outline" size="sm" className="gap-1.5">
             <Link href="/connections">
@@ -118,7 +121,7 @@ export function ConnectorsSection() {
         </div>
       </SettingsGroup>
 
-      <PermissionsSection index={0} />
+      <PermissionsSection />
     </>
   );
 }

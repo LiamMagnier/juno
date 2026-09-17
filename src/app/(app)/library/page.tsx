@@ -776,22 +776,16 @@ export default function LibraryPage() {
         }
         actions={
           <>
-            {!loading && !error && (
-              <p className="hidden items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
-                {/* load() asks for 100 at a time, so until the cursor is spent
-                    this is a floor, and the byte total is a partial sum that
-                    must not be presented as a total. */}
-                <span>
-                  {nextCursor
-                    ? `${libraryItems.length}+ items`
-                    : `${libraryItems.length} ${libraryItems.length === 1 ? "item" : "items"}`}
-                </span>
-                {!nextCursor && (
-                  <>
-                    <span aria-hidden="true" className="size-1 rounded-full bg-border" />
-                    <span>{formatBytes(totalSize)}</span>
-                  </>
-                )}
+            {/* Only the byte total up here. The item count used to sit beside
+                it, 24px above the "All" segment in the toolbar, which prints
+                the same `libraryItems.length` — one integer on two adjacent
+                surfaces, and the segment's copy is the better one because it
+                is attached to the control that changes it. load() asks for
+                100 at a time, so until the cursor is spent the byte total is
+                a partial sum that must not be presented as a total. */}
+            {!loading && !error && !nextCursor && (
+              <p className="hidden font-mono text-caption tabular-nums text-muted-foreground sm:block">
+                {formatBytes(totalSize)}
               </p>
             )}
             <Button
@@ -894,12 +888,13 @@ export default function LibraryPage() {
       ) : loading ? (
         <LoadingBrowser view={view} />
       ) : libraryEmpty && showDeleted ? (
-        // An empty TRASH is not an empty library.
+        // An empty TRASH is not an empty library. No description: the header's
+        // lede, ~180px above on this same screen, already says where deleted
+        // files land, and this used to print that sentence a second time.
         <EmptyState
           className="mt-6"
           icon={AppIcons.library}
           title="Nothing in Recently deleted"
-          description="Files you delete land here and stay recoverable."
           action={
             <Button
               variant="ghost"
