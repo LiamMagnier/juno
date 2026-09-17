@@ -164,6 +164,12 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // silently accept one account's recovery code as another account's second
   // factor. The scope is what makes that impossible rather than unlikely.
   ["MfaRecoveryCode", "userId"],
+  // A cloud Code environment holds encrypted environment variables and a setup
+  // script that runs on the runner host. An unscoped read is one account's
+  // secrets; an unscoped update is one account editing another's build step.
+  // Every call site already carries userId, so guarding costs nothing and the
+  // tripwire is worth having on a table like this one.
+  ["CodeEnvironment", "userId"],
 ]);
 
 /**

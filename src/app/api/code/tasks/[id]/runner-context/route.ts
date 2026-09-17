@@ -14,6 +14,13 @@ import {
   type InstallationToken,
 } from "@/lib/github-app";
 import { trimRunnerHistory, type RunnerHistoryTurn } from "@/lib/code-runner-history";
+import {
+  DEFAULT_CLOUD_PERMISSION_MODE,
+  DEFAULT_CODE_NETWORK_ACCESS,
+  isCodeNetworkAccess,
+  isCodePermissionMode,
+  readStoredEnvVars,
+} from "@/lib/code-environments";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
 
@@ -54,6 +61,11 @@ export const runtime = "nodejs";
  *     taskToken,                        // fresh cct_ for claim/events/respond/cancel
  *     models: BackendAgentModel[],      // agent-core proxy catalog
  *     reasoningEffort,
+ *     permissionMode,                   // plan | auto-edit | full, resolved here
+ *     environment: {                    // the CodeEnvironment this run chose,
+ *       id, network, setupScript,       // null for the built-in shape
+ *       env: {NAME: value}              // the ONLY place these are unsealed
+ *     } | null,
  *     history: [{ role, text }],        // the conversation so far, oldest first
  *     continuation: { branch, prUrl, prNumber, baseRef } | null,
  *     pendingSteers: [{ requestId, text, displayText? }],
@@ -68,6 +80,7 @@ export const runtime = "nodejs";
  *         409 { error: "task_terminal" }             run already finished
  *         409 { error: "runner_context_consumed" }   handoff already redeemed
  *         409 { error: "github_not_connected" }       no credential of either kind
+ *         409 { error: "environment_secrets_unreadable" } sealed under a dropped key
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -86,8 +99,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       status: true,
       model: true,
       reasoningEffort: true,
+      permissionMode: true,
       conversationId: true,
       createdAt: true,
+      environment: {
+        // No `name`: the driver does not read one, and the only thing that
+        // would is a log line in this run's public Actions log — which the
+        // repository's own name is kept out of for the same reason.
+        select: { id: true, network: true, envVars: true, setupScript: true },
+      },
     },
   });
   if (!task || task.target !== "cloud" || !task.repoOwner || !task.repoName) {
@@ -98,6 +118,48 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // (or one otherwise past its start) never hands out fresh credentials.
   if (isTerminalTaskStatus(task.status) || (task.status !== "queued" && task.status !== "running")) {
     return NextResponse.json({ error: "task_terminal" }, { status: 409 });
+  }
+
+  /*
+   * THE ENVIRONMENT, UNSEALED — before the claim below, deliberately.
+   *
+   * This is the one place in the product where a CodeEnvironment's variables
+   * are decrypted, and the one caller allowed to see them is the GitHub Actions
+   * runner: a browser session was already refused with 403 above, for the same
+   * reason it is refused the clone token.
+   *
+   * It happens BEFORE the single-use claim because a key that has been rotated
+   * out from under a sealed row makes this throw, and a throw after the claim
+   * would spend the handoff — leaving a task that can never be bootstrapped by
+   * any retry. Refusing first leaves the task exactly where it was, so a
+   * re-dispatch after the key is restored still works. Failing rather than
+   * running with an empty map is the deliberate half: a build whose registry
+   * token silently vanished fails somewhere far from the cause.
+   */
+  let environment: {
+    id: string;
+    network: string;
+    setupScript: string | null;
+    env: Record<string, string>;
+  } | null = null;
+  if (task.environment) {
+    let vars: Record<string, string> = {};
+    if (task.environment.envVars) {
+      try {
+        vars = readStoredEnvVars(JSON.parse(decryptSecret(task.environment.envVars)));
+      } catch (err) {
+        console.error(`[cloud-code] runner-context ${id}: environment variables could not be unsealed`, err);
+        return NextResponse.json({ error: "environment_secrets_unreadable" }, { status: 409 });
+      }
+    }
+    environment = {
+      id: task.environment.id,
+      network: isCodeNetworkAccess(task.environment.network)
+        ? task.environment.network
+        : DEFAULT_CODE_NETWORK_ACCESS,
+      setupScript: task.environment.setupScript,
+      env: vars,
+    };
   }
 
   // SINGLE-USE: atomically claim the one-time runner handoff. The first caller
@@ -354,6 +416,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // How hard to think, when the agent's model supports it. Null means the
       // submitter expressed no preference.
       reasoningEffort: task.reasoningEffort,
+      /*
+       * How much the agent may do before it would have to ask, and the shape it
+       * runs in. Both are resolved here rather than in the driver so there is
+       * one answer to "what did this run execute under" and it is the server's.
+       *
+       * A task with no stored mode resolves to `full`, which is the literal
+       * string the driver hardcoded before this column — a default that
+       * narrowed running tasks would be a behaviour change wearing a default's
+       * clothes. A task with no environment sends null, and the driver keeps
+       * the workflow-level shape: no network, no variables, no setup step.
+       */
+      permissionMode: isCodePermissionMode(task.permissionMode)
+        ? task.permissionMode
+        : DEFAULT_CLOUD_PERMISSION_MODE,
+      environment,
       history,
       continuation,
       // Instructions that landed while this machine was starting. The driver

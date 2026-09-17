@@ -77,6 +77,14 @@ export class PermissionEngine {
     if (risk === 'sensitive') return 'ask';
     if (mode === 'plan') return risk === 'safe' ? 'allow' : 'deny';
     if (risk === 'safe') return 'allow';
+    // The project's own `.juno/settings.json` is consulted BEFORE the mode, so
+    // a cloned repository containing `{"allow":["bash"]}` makes `auto-edit`
+    // behave exactly like `full`. That is the intended contract on a developer's
+    // machine — the repo is theirs and the allow list is how they stop being
+    // asked — but in a cloud run the mode is a product control the submitter
+    // chose, and the repository can widen it. Plan mode is unaffected: its
+    // branch returns above. Anyone making the mode stricter than the repo can
+    // ask for has to move this line below the switch for cloud sessions.
     if (this.rules.allow.includes(toolName) || this.alwaysAllowed.has(toolName)) return 'allow';
     switch (mode) {
       case 'ask':

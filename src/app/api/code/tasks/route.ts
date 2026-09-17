@@ -17,6 +17,7 @@ import {
   TASK_STATUSES,
 } from "@/lib/code-remote";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
+import { CODE_PERMISSION_MODES, isCodePermissionMode, type CodePermissionMode } from "@/lib/code-environments";
 import { rateLimit } from "@/lib/rate-limit";
 import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
@@ -74,6 +75,25 @@ const postSchema = z.object({
   // runner's first-available fallback for native clients.
   model: z.string().trim().min(1).max(200).optional(),
   reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
+  // The cloud environment this run executes in — egress, variables, setup
+  // script. Cloud-only, checked below.
+  //
+  // Nullable as well as optional, and the difference is the whole reason a
+  // composer can offer "No environment". ABSENT means "no opinion", which the
+  // inheritance block below reads as "keep what the last message in this
+  // conversation used". NULL is an opinion: run with the built-in shape. With
+  // only `optional()` there was no way to say the second, so a picker reset to
+  // "No environment" would show one thing and the run would silently do
+  // another — the exact defect this package exists to remove.
+  environmentId: z.string().trim().min(1).max(200).nullable().optional(),
+  // How much the agent may do before it would have to ask. Cloud-only, and
+  // that restriction is the point rather than an oversight: the Mac host runs
+  // its own approval gating from its own settings and reads nothing from this
+  // column, so accepting it for a device task would persist a preference the
+  // thing executing the task never sees.
+  // Null for the same reason as `environmentId`: after a Plan run, "Auto" has
+  // to be expressible as something other than silence.
+  permissionMode: z.enum(CODE_PERMISSION_MODES).nullable().optional(),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -211,8 +231,33 @@ export async function POST(req: Request) {
     baseRef,
     model,
     reasoningEffort,
+    environmentId,
+    permissionMode,
   } = parsed.data;
   const isCloud = target === "cloud";
+  /*
+   * A CONTROL THAT IMPLIES SOMETHING THE RUNTIME CANNOT DO IS A DEFECT.
+   *
+   * Both of these are honoured by exactly one executor: the cloud runner reads
+   * them out of runner-context and acts on them (scripts/cloud-code-runner.mjs
+   * applies the network level, injects the variables, runs the setup script and
+   * passes the mode to AgentSession.create). A device task is claimed by a Mac
+   * that has its own permission UI and no idea these columns exist, so storing
+   * them on one would produce a run that ignored a setting the composer had
+   * shown as being in force. Refusing here is what keeps the composer honest:
+   * the picker is for cloud targets, and the API says so rather than accepting
+   * the value and quietly dropping it.
+   */
+  if (!isCloud && (environmentId || permissionMode)) {
+    return NextResponse.json(
+      {
+        error: "cloud_only_option",
+        message:
+          "Environments and permission modes apply to cloud runs. A run on your own computer uses that computer's settings.",
+      },
+      { status: 400 },
+    );
+  }
   // Existing-session tasks are explicit: the task and the local SwiftData
   // Conversation share this stable id, and the host must never make another
   // Conversation. Omitted flags preserve the legacy new-session behavior.
@@ -303,6 +348,23 @@ export async function POST(req: Request) {
   let userMessage = null;
   if (isCloud) {
     if (!repo) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    // The environment is resolved before anything is dispatched, so a stale id
+    // from a composer whose environment was deleted in another tab fails as a
+    // 404 the user can act on rather than as a run that silently executed in a
+    // shape nobody chose. Existence is all that is read here — the variables
+    // are unsealed once, by runner-context, for the runner alone.
+    if (environmentId) {
+      const environment = await prisma.codeEnvironment.findFirst({
+        where: { id: environmentId, userId: user.id },
+        select: { id: true },
+      });
+      if (!environment) {
+        return NextResponse.json(
+          { error: "environment_not_found", message: "That environment no longer exists." },
+          { status: 404 },
+        );
+      }
+    }
     // A cloud run clones + opens a PR as the user, so it needs a linked GitHub
     // connector. No connector → honest 400, never a silent fake run.
     const github = await prisma.connection.findFirst({
@@ -371,6 +433,48 @@ export async function POST(req: Request) {
           });
           continueOn = previous?.branch ?? null;
         }
+        /*
+         * The environment and the mode are inherited the same way, and for the
+         * same reason continuity exists at all.
+         *
+         * A follow-up that dropped them would clone the branch the first run
+         * pushed and then work it with no network, none of the variables and
+         * none of the setup step the first run had — a tree whose dependencies
+         * were installed by a step that is no longer running. The user changed
+         * nothing; the second message would simply behave differently from the
+         * first, which is the worst kind of difference.
+         *
+         * A value the client DID send always wins: that is how a mid-
+         * conversation change of mode reaches the run. This is a separate
+         * query from the branch lookup above because it asks a different
+         * question — the newest run of this conversation, whether or not it
+         * ever pushed — and folding the two would make each answer the other's
+         * predicate.
+         */
+        // Absent is the only thing that inherits. An explicit null is the
+        // composer saying "no environment" / "back to Auto", and carrying the
+        // previous message's value forward over it would leave the picker
+        // showing one setting while the run used another.
+        const inheritEnvironment = environmentId === undefined;
+        const inheritPermissionMode = permissionMode === undefined;
+        let inheritedEnvironmentId: string | null = environmentId ?? null;
+        let inheritedPermissionMode: CodePermissionMode | null = permissionMode ?? null;
+        if (conversationId && (inheritEnvironment || inheritPermissionMode)) {
+          const last = await tx.codeTask.findFirst({
+            where: { userId: user.id, conversationId, target: "cloud" },
+            orderBy: { createdAt: "desc" },
+            select: { environmentId: true, permissionMode: true },
+          });
+          if (inheritEnvironment) inheritedEnvironmentId = last?.environmentId ?? null;
+          // Checked rather than copied: the column is a plain string, and a
+          // mode written by a deploy that offered a value this one no longer
+          // does would otherwise be carried forward forever.
+          if (inheritPermissionMode) {
+            inheritedPermissionMode = isCodePermissionMode(last?.permissionMode)
+              ? last.permissionMode
+              : null;
+          }
+        }
         return tx.codeTask.create({
           data: {
             userId: user.id,
@@ -394,6 +498,13 @@ export async function POST(req: Request) {
             idempotencyKey: idempotencyKey ?? null,
             model: model ?? null,
             reasoningEffort: reasoningEffort ?? null,
+            // What was chosen — by this request, or by the message before it
+            // in the same conversation — and never what it resolves to. Null
+            // keeps meaning "no preference", which runner-context turns into
+            // the built-in shape and `full`: the behaviour of every task
+            // created before these columns existed.
+            environmentId: inheritedEnvironmentId,
+            permissionMode: inheritedPermissionMode,
           },
         });
       });
@@ -403,6 +514,20 @@ export async function POST(req: Request) {
         return NextResponse.json(
           { error: `You already have ${n} cloud runs in progress. Let one finish first.` },
           { status: 429 },
+        );
+      }
+      // The environment was deleted between the ownership check above and this
+      // insert. Rare, and the foreign key is what notices; answering with the
+      // same 404 the check would have given keeps one outcome for one cause
+      // rather than a 500 whose body says nothing.
+      if (
+        environmentId &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2003"
+      ) {
+        return NextResponse.json(
+          { error: "environment_not_found", message: "That environment no longer exists." },
+          { status: 404 },
         );
       }
       // Idempotency race (same key, concurrent) — return the winner, never a

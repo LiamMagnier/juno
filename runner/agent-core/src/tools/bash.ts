@@ -58,9 +58,13 @@ export const bashTool: ToolDefinition = {
     const timeout = Math.min(Number(input.timeout_ms ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
     return new Promise((resolveResult) => {
       // In the cloud runner the command goes to a container holding only the
-      // worktree; locally it runs here. Either way the environment passed is
-      // the scrubbed one — `docker run` receives no `--env`, so the container
-      // starts from the image's environment and nothing of the host's.
+      // worktree; locally it runs here. Either way the environment passed below
+      // is the scrubbed one, and it is the only source the container can draw
+      // from: buildContainerArgs emits `--env NAME` (no value) for each name in
+      // `forwardEnv`, and docker copies those from THIS spawn's environment. A
+      // name the caller did not put in `ctx.env` therefore arrives unset rather
+      // than carrying the host's value, and nothing else of the host's crosses
+      // the boundary. See runner/agent-core/VENDORED.md (divergence #3).
       const invocation = ctx.containerSandbox
         ? { file: 'docker', args: buildContainerArgs(command, ctx.containerSandbox) }
         : { file: '/bin/bash', args: ['-c', command] };

@@ -1136,6 +1136,41 @@ repository the app happens to be installed on and be handed write access to it. 
 else (app unset, not installed there, no push access, GitHub unreachable) falls back to
 the OAuth token, which is never a widening.
 
+**The environment, and the permission mode.** For the life of Cloud Code four facts were
+the same for every run on the planet: no egress, twelve allowlisted environment variable
+names, no step between the clone and the first model turn, and `mode: "full"` hardcoded
+in the driver — so the engine's four permission modes existed and none of them could ever
+be picked. A `CodeEnvironment` (`src/lib/code-environments.ts`, `/api/code/environments`)
+makes the first three a per-session choice: `network` (`none` — the default and what every
+run had — or `full`), a `setupScript`, and `envVars`. `CodeTask.permissionMode`
+(`plan | auto-edit | full`) is the fourth; it belongs to the task rather than the
+environment because it is a decision about one prompt. Both are **cloud-only** — a Mac
+host runs its own approval gating and reads neither column, so the create route refuses
+them on a device task rather than storing a preference nothing honours — and both are
+inherited by a follow-up in the same conversation, for the same reason `baseRef` is.
+
+runner-context resolves both (a null mode → `full`) and the driver acts on them: it
+raises the container's network above the workflow's `JUNO_RUNNER_SANDBOX_NETWORK`
+default, runs the setup script on the **host** — after the askpass teardown and after
+`hardenDriverEnv()`, with the scrubbed agent environment, because the container has no
+network by design and the sandbox's own header says dependencies should be fetched
+outside it — and passes the mode to `AgentSession.create`. The mode is real because the
+driver's `requestApproval` answers `deny` under anything narrower than `full`: the engine
+routes everything it cannot decide to that callback, so a callback that always allowed
+made "Accept edits" byte-identical to "Auto".
+
+**The variables are secrets.** They are sealed as ONE ciphertext under the connector
+keyring (`src/lib/crypto.ts`), never returned by any endpoint a browser can reach — the
+list and the detail answer with `envVarNames` only — and unsealed in exactly one place,
+runner-context, which 403s a browser session for the same reason it does for the clone
+token. The unsealing happens *before* the single-use `runnerClaimedAt` stamp, so a key
+dropped from the ring refuses the handoff instead of spending it. In the driver every
+value is added to `SECRETS` before anything can log, they reach agent shells through the
+same scrubbed `env` the driver already built, and they cross into the container as
+`docker run --env NAME` (a name, never a value in an argv). The proxy-allowlist network
+levels Claude Code on the web offers are deliberately absent: they mean a filter an egress
+proxy enforces, and no deployment runs that proxy.
+
 `requireTaskAuth` lets the claim/events/respond/cancel routes and the `/api/agent` proxy
 accept either a real session **or** a valid task token for that exact task, and refuse a
 task-token caller once the task is terminal. `runner/agent-core/` is a vendored,
@@ -1712,7 +1747,7 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 
 ## 17. Data model
 
-Prisma schema: `prisma/schema.prisma` (92 models, 13 enums). Message `content`,
+Prisma schema: `prisma/schema.prisma` (95 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
 So are `Message.activity`, `MemorySummary.content` and `ScheduledTask.prompt`, through
@@ -1766,9 +1801,13 @@ micro-USD, `kind`/`source`). `RateLimit` (fixed-window buckets).
 
 **Code.** `CodeDevice` (host registration, platform macos|windows), `CodeTask` (queue +
 cloud fields `target`/`repoOwner`/`repoName`/`baseRef`/`prUrl`/`runnerClaimedAt`, session
-fields `parentSessionId`/`createsNewSession`/`origin`/`idempotencyKey`), `CodeTaskEvent`
+fields `parentSessionId`/`createsNewSession`/`origin`/`idempotencyKey`, dispatch fields
+`environmentId`/`permissionMode`), `CodeTaskEvent`
 (append-only), `CodeRemoteSession` / `CodeRemoteSessionEvent` / `CodeSessionCommand`
-(phone↔Mac remote control), `CodeWorkspace` (stable `key` workspace identity).
+(phone↔Mac remote control), `CodeWorkspace` (stable `key` workspace identity),
+`CodeEnvironment` (a cloud run's shape: `network`, a setup script, and `envVars` — one
+AES-256-GCM ciphertext over a JSON map under the connector keyring, with `envVarNames`
+in the clear so a list can describe it without a decryption key).
 
 **Sharing / tasks / roadmap / prompts.** `Share` (`ShareKind` CHAT|ARTIFACT, token,
 `snapshotAt`, `revokedAt`, views). `ScheduledTask` (`TaskCadence`) + `ScheduledTaskRun`.

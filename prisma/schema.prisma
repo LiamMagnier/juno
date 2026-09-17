@@ -105,6 +105,7 @@ model User {
   entityRevisions             EntityRevision[]
   mutationReceipts            MutationReceipt[]
   codeWorkspaces              CodeWorkspace[]
+  codeEnvironments            CodeEnvironment[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations             ToolInvocation[]
   actionApprovalReceipts      ActionApprovalReceipt[]
@@ -1545,6 +1546,21 @@ model CodeTask {
   // created before this column existed.
   model             String?
   reasoningEffort   String?
+  // The cloud environment this run executes in: egress, the variables its
+  // shells carry, and the setup step that runs before the first model turn.
+  // Null means the built-in shape every cloud run had before environments
+  // existed — no network, no variables, no setup — so an old task and a native
+  // client that knows nothing about this column behave exactly as they did.
+  // SetNull rather than Cascade on delete: retiring an environment must not
+  // delete the history of the runs that used it.
+  environmentId     String?
+  // How much this run may do before it would have to ask (plan | auto-edit |
+  // full, src/lib/code-environments.ts). Null means no preference, which the
+  // cloud resolves to `full` — the literal mode the driver hardcoded before
+  // this column, so nothing created earlier is narrowed retroactively. Only
+  // cloud tasks accept it today: the Mac host owns its own approval gating and
+  // does not read this, and a value a runner ignores is worse than no value.
+  permissionMode    String?
   // Cloud runner one-time handoff: set the first time the GitHub Actions runner
   // successfully exchanges its dispatch code for runner-context (clone token +
   // fresh task token). A non-null value means that handoff is spent, so a
@@ -1554,9 +1570,10 @@ model CodeTask {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device CodeDevice?     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  events CodeTaskEvent[]
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device      CodeDevice?      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  environment CodeEnvironment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  events      CodeTaskEvent[]
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
@@ -1568,6 +1585,7 @@ model CodeTask {
   @@index([userId, target, status])
   @@index([deviceId, status])
   @@index([conversationId])
+  @@index([environmentId])
 }
 
 /// Relay-side index/cache of the local SwiftData Conversation(kind: .code).
@@ -1837,6 +1855,57 @@ model CodeWorkspace {
 
   @@unique([userId, path])
   @@index([userId, lastOpenedAt])
+}
+
+// A cloud environment: the shape a Cloud Code run executes in, chosen per
+// session instead of compiled into the workflow file.
+//
+// Four facts used to be fixed for every run on the planet — no egress, twelve
+// allowlisted variable names, no setup step between the clone and the first
+// model turn, and `mode: "full"` — and three of them live here. (The fourth,
+// the permission mode, belongs to the task rather than the environment,
+// because it is a decision about one prompt rather than about a machine.)
+//
+// There is deliberately no seeded "Default" row per user. A task with no
+// environment runs with the built-in shape, which is exactly what every run
+// got before this table existed; `isDefault` only marks which environment a
+// composer should preselect for the NEXT run.
+model CodeEnvironment {
+  id          String  @id @default(cuid())
+  userId      String
+  name        String
+  /// Egress for agent-authored commands: "none" (the default, and what every
+  /// run had until now) | "full". See src/lib/code-environments.ts for why the
+  /// proxy-allowlist levels are absent rather than stored-and-ignored.
+  network     String  @default("none")
+  /// The variables, as ONE AES-256-GCM ciphertext over a JSON object, sealed
+  /// with the same keyring as the connector OAuth tokens (src/lib/crypto.ts).
+  /// One payload rather than a row per variable: it is read in exactly one
+  /// place (runner-context, for the runner alone), so a per-key schema would
+  /// buy queryability nobody wants over values nobody may query.
+  envVars     String? @db.Text
+  /// The names of those variables, in the clear, so a list can say what a run
+  /// will carry without unsealing anything — and so nothing is ever tempted to
+  /// decrypt on a path that renders a browser response.
+  envVarNames String[] @default([])
+  /// Shell run in the freshly-cloned worktree before the agent starts. It runs
+  /// on the runner host, not inside the agent's container: the container has no
+  /// network by design, and fetching dependencies is precisely the thing the
+  /// sandbox's own header says the driver should do outside it.
+  setupScript String? @db.Text
+  /// Which environment a composer preselects. Enforced as one per user by a
+  /// partial unique index (see the migration) — Prisma cannot express a
+  /// filtered index, and without one a failed edit can leave two.
+  isDefault   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks CodeTask[]
+
+  @@unique([userId, name])
+  @@index([userId, updatedAt])
 }
 
 // ----------------------------------------------------------------------------

@@ -31,10 +31,19 @@
  *    command line, or .git/config. Git auth flows through a transient GIT_ASKPASS
  *    helper that exists ONLY during clone/push and is deleted before any agent
  *    bash runs.
- *  - Before the agent phase we hand the agent a HARD-SCRUBBED env (allowlist
- *    only) AND strip CI-runtime + secret-shaped vars from this driver's own
+ *  - Before the agent phase we hand the agent a HARD-SCRUBBED env (an allowlist,
+ *    plus the variables the submitter's own CodeEnvironment names and nothing
+ *    else) AND strip CI-runtime + secret-shaped vars from this driver's own
  *    process.env (including ACTIONS_* and the OIDC request token), so even reading
  *    the driver's /proc/environ yields no usable credential.
+ *  - The environment's SETUP SCRIPT runs on this host rather than in the
+ *    agent's container, because the container has no network by design and
+ *    fetching dependencies before the agent starts is exactly what the sandbox's
+ *    own header says the driver should do outside it. It runs AFTER the askpass
+ *    teardown and AFTER hardenDriverEnv(), with the same scrubbed environment
+ *    the agent gets, so it holds no git credential and no Juno secret. It is the
+ *    submitter's own script, not the model's, and everything it can reach —
+ *    their repository, their variables — is already theirs.
  *
  * The DRIVER (not the agent) streams events and proxies /api/agent using the
  * `cct_` token from memory — provider calls proxy through Juno's
@@ -42,7 +51,7 @@
  * runner/agent-core/src/providers/proxy.ts, the vendored `authorization` field).
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import os from "node:os";
@@ -93,6 +102,27 @@ const OIDC_AUDIENCE = "juno-cloud-code";
 /** The six effort tiers agent-core accepts (providers/types.ts). Anything else
  *  from runner-context is dropped rather than sent to a provider that 400s. */
 const REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * The permission modes a cloud run can be dispatched under
+ * (src/lib/code-environments.ts). `ask` is absent from this set as well as from
+ * that one: it means "stop and put it to a person", and there is nobody here.
+ * Anything unrecognised falls back to `full`, which is what this driver did
+ * unconditionally before the mode existed.
+ */
+const CLOUD_PERMISSION_MODES = new Set(["plan", "auto-edit", "full"]);
+
+/** POSIX variable name. A Cloud Code environment's variables are re-checked
+ *  here as well as at the route that stored them, because this is the process
+ *  that hands them to a shell. */
+const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** How long a setup script may run before it is killed, and how much of its
+ *  output rides the event that reports it. Mirrors the constants in
+ *  src/lib/code-environments.ts; tests/code-environment-runtime.test.ts pins
+ *  the two files to the same numbers. */
+const SETUP_SCRIPT_TIMEOUT_MS = 10 * 60_000;
+const SETUP_SCRIPT_OUTPUT_LIMIT = 8_000;
 
 /**
  * How long the runner may go without hearing about controls before it asks.
@@ -244,6 +274,19 @@ class EventSink {
      * the one control that must never be missed.
      */
     this.consumedSteers = new Set();
+
+    /*
+     * Denials this driver's `requestApproval` has already written a row for.
+     *
+     * The engine follows a `deny` from that callback with its own `tool_denied`
+     * event whose reason is "The user declined this action." (agent.ts). In a
+     * cloud run there is no user: that sentence is the same invented human the
+     * approval callback's comment says it removed from the allow path, and it
+     * would arrive as a SECOND row right after the honest one that names the
+     * permission mode. Counted rather than flagged because several tool calls
+     * in one step can each be denied before any event is drained.
+     */
+    this.denialsAnswered = 0;
     /** When controls were last read, by a POST or a poll — see pollControls. */
     this.lastControlSyncAt = Date.now();
     this.polling = false;
@@ -617,6 +660,23 @@ async function main() {
   // The submitter's thinking effort, finally read. runner-context has returned
   // it since the column existed; nothing here ever looked at it.
   const reasoningEffort = REASONING_EFFORTS.has(ctx.reasoningEffort) ? ctx.reasoningEffort : undefined;
+  /*
+   * How much the agent may do before it would have to ask, and the shape this
+   * run executes in. Both were resolved by runner-context; anything this driver
+   * does not recognise falls back to what it did before they existed — `full`,
+   * and the workflow-level container — rather than to something stricter it
+   * would then be silently enforcing.
+   */
+  const permissionMode = CLOUD_PERMISSION_MODES.has(ctx.permissionMode) ? ctx.permissionMode : "full";
+  const environment = readEnvironment(ctx.environment);
+  /*
+   * The submitter's variables are secrets: they are sealed at rest under the
+   * connector keyring and they are the one thing in this process the submitter
+   * pasted by hand. Registering them means a value echoed by a failing setup
+   * script — `npm ERR! authToken=…` — is replaced before it reaches this run's
+   * PUBLIC Actions log or the transcript the event sink posts.
+   */
+  for (const value of Object.values(environment.env)) SECRETS.add(value);
   if (!repoOwner || !repoName) throw new Error("runner-context is missing repoOwner/repoName");
   // The conversation so far, and the branch this run continues (see main's
   // step 3/7). Both absent on a first run, which behaves as it always has.
@@ -662,9 +722,19 @@ async function main() {
   // same reason it stays out of the workflow inputs — and so does the branch.
   log(
     `model ${chosen.provider}/${chosen.model}, effort ${reasoningEffort ?? "(default)"}, ` +
-      `credential ${credentialSource}, ${history.length} earlier turn(s)` +
+      `mode ${permissionMode}, credential ${credentialSource}, ${history.length} earlier turn(s)` +
       (continuation ? ", continuing an existing branch" : ""),
   );
+  // The environment by its shape, never by its contents — and not by its name
+  // either, for the same reason the repository's stays out of this public log:
+  // the count of variables and whether there is a setup step is what an
+  // operator reading a failed run needs, and it tells them nothing private.
+  if (environment.id) {
+    log(
+      `environment: network ${environment.network}, ${environment.names.length} variable(s), ` +
+        `${environment.setupScript ? "a setup script" : "no setup script"}`,
+    );
+  }
 
   const sink = new EventSink(freshToken);
   // Before a single control is polled, so the rows that carried these can never
@@ -760,7 +830,42 @@ async function main() {
   // Reading first rather than adding the names to the allowlist: the allowlist
   // governs what an agent shell can see, and the sandbox configuration has no
   // business being visible from inside the sandbox it describes.
-  const containerSandbox = containerSandboxFromEnv(process.env, workdir);
+  const fromWorkflow = containerSandboxFromEnv(process.env, workdir);
+  /*
+   * The environment's egress wins over the workflow variable.
+   *
+   * JUNO_RUNNER_SANDBOX_NETWORK is pinned to `none` in code-runner.yml, which
+   * was the only answer while there was nothing to ask. It is now the DEFAULT
+   * for a run that named no environment rather than a ceiling over one that
+   * did — a ceiling would mean the network control in the composer never did
+   * anything, which is the defect this whole package exists to remove. The
+   * deployment still decides the image, the limits and whether there is a
+   * container at all; those are not negotiable from a row in Postgres.
+   *
+   * `forwardEnv` carries NAMES only. The values reach the container because
+   * docker is spawned with `agentEnv` below and `--env NAME` copies from it —
+   * so a variable has to be in both lists to arrive, and none is ever written
+   * into an argv. `carried` is what makes "both lists" true by construction:
+   * one filtered map feeds the names here AND the environment below, so the
+   * container can never be told to forward a variable the agent's shells were
+   * not given.
+   */
+  const carried = carriedEnvVars(environment.env);
+  const carriedNames = Object.keys(carried);
+  const containerSandbox = fromWorkflow
+    ? {
+        ...fromWorkflow,
+        // `full` lifts the workflow's `none`, and must not also lift a
+        // `proxied` network: that value means the deployment is running the
+        // capability-aware egress proxy, and a user asking for full access
+        // would otherwise leave the filtered path entirely rather than be
+        // granted the widest egress the deployment actually offers.
+        ...(environment.network === "full" && fromWorkflow.network !== "proxied"
+          ? { network: "full" }
+          : {}),
+        ...(carriedNames.length > 0 ? { forwardEnv: carriedNames } : {}),
+      }
+    : null;
   if (!containerSandbox) {
     // Cloud Code executes model-authored shell commands without a human in the
     // loop. A missing Docker image is therefore a security failure, not a
@@ -775,13 +880,36 @@ async function main() {
   // minimal, secret-free env for agent-spawned shells. The agent needs zero Juno
   // secrets — it only runs build/test tools in the workdir.
   hardenDriverEnv();
-  const agentEnv = buildAgentEnv();
+  const agentEnv = buildAgentEnv(carried);
+
+  /*
+   * THE SETUP STEP, between the clone and the first model turn.
+   *
+   * Here, and not earlier, on purpose. It runs after removeAskpass() so no git
+   * credential is on disk while it executes, and after hardenDriverEnv() so
+   * reading this process's /proc/environ yields nothing either. It gets
+   * `agentEnv` — the allowlist plus the submitter's own variables — which is
+   * why a private registry token belongs in an environment variable rather
+   * than pasted into the script itself.
+   *
+   * It runs on the HOST, outside the container, because the container has no
+   * network by default and installing dependencies is precisely what
+   * container-sandbox.ts's header says should happen out here beforehand.
+   */
+  if (environment.setupScript) {
+    await runSetupScript(environment.setupScript, { cwd: workdir, env: agentEnv, sink });
+  }
 
   const session = AgentSession.create({
     provider,
     cwd: workdir,
     model: chosen.model,
-    mode: "full", // headless: the engine still hard-gates "sensitive" -> requestApproval
+    // What the submitter chose, resolved server-side. `full` was hardcoded here
+    // for the life of Cloud Code — the engine already had four modes and this
+    // one line decided that none of them could ever be picked. The engine still
+    // hard-gates "sensitive" to requestApproval in every mode, including this
+    // one; see the callback below for what each mode makes that mean.
+    mode: permissionMode,
     // The bash tool spawns children with THIS env, not process.env — so agent
     // shell receives none of {exchange code, task token, clone token, JUNO_*,
     // GIT_ASKPASS, ACTIONS_*}. See runner/agent-core/VENDORED.md (divergence #3).
@@ -798,24 +926,45 @@ async function main() {
     callbacks: {
       onEvent: (event) => onAgentEvent(sink, event),
       /*
-       * No human is attached; auto-approve, and SAY SO. The agent holds no
-       * secrets and runs inside a container on a throwaway VM, so allowing is
-       * safe here — but this used to emit an `approval_request` followed in
-       * the same batch by an `approval_response approve:true`, and the
-       * transcript then read "Approval requested … Approved" as if somebody
-       * had been asked. Nobody was. One tool row that names what happened is
-       * the honest record; the risk rides along so a reader can still see
-       * which commands the engine would have stopped a Mac on.
+       * No human is attached, so this callback IS the answer — and which answer
+       * it gives is what makes the permission mode a real setting rather than a
+       * label on the composer.
+       *
+       * Under `full`, allow, and SAY SO. The agent holds no secrets and runs
+       * inside a container on a throwaway VM, so allowing is safe — but this
+       * used to emit an `approval_request` followed in the same batch by an
+       * `approval_response approve:true`, and the transcript then read
+       * "Approval requested … Approved" as if somebody had been asked. Nobody
+       * was. One tool row that names what happened is the honest record; the
+       * risk rides along so a reader can still see which commands the engine
+       * would have stopped a Mac on.
+       *
+       * Under any NARROWER mode, deny. This is the half that could not be left
+       * out: the engine sends everything it cannot decide here, so a callback
+       * that always allowed made `auto-edit` byte-identical to `full` — the run
+       * would edit files AND run every command, under a control that said it
+       * would only do the first. Denying is also the only answer available,
+       * since the alternative is to wait for a person who does not exist. The
+       * row says which mode refused it, so the fix is one dropdown away.
        */
       requestApproval: async (request) => {
+        const allowed = permissionMode === "full";
         sink.push("tool", {
           name: "approval",
-          summary: `Auto-allowed in sandbox: ${request.summary}`,
+          // `Denied ` is the prefix the transcript already reads as a failed
+          // row (toolOutcome in src/components/code/code-activity.tsx), so the
+          // refusal draws itself without a new vocabulary word — and the
+          // sentence after it says which setting refused, because "denied" with
+          // no reason is the least actionable thing a run can say.
+          summary: allowed
+            ? `Auto-allowed in sandbox: ${request.summary}`
+            : `Denied — this run is set to ${PERMISSION_MODE_LABELS[permissionMode]}: ${request.summary}`,
           risk: riskToTaskRisk(request.risk),
-          autoAllowed: true,
+          ...(allowed ? { autoAllowed: true } : {}),
           ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
         });
-        return "allow";
+        if (!allowed) sink.denialsAnswered += 1;
+        return allowed ? "allow" : "deny";
       },
     },
   });
@@ -1120,6 +1269,16 @@ function onAgentEvent(sink, event) {
       break;
     }
     case "tool_denied":
+      // The row this driver's approval callback already pushed says which mode
+      // refused the call. The engine's follow-up says "The user declined this
+      // action.", which is untrue of a run nobody is watching — so the honest
+      // row is the only one, and this one is swallowed. Denials the engine
+      // reached on its own (plan mode, project rules) never touched the
+      // callback, so their counter is zero and their row still arrives.
+      if (sink.denialsAnswered > 0) {
+        sink.denialsAnswered -= 1;
+        break;
+      }
       sink.push("tool", {
         name: event.name,
         summary: `Denied ${event.name}: ${event.reason}`,
@@ -1222,6 +1381,169 @@ async function openPullRequest({ repoOwner, repoName, cloneToken, branch, baseBr
   return { url: data.html_url, number: data.number };
 }
 
+/** How each mode reads in a refusal the person will see in the transcript. */
+const PERMISSION_MODE_LABELS = {
+  plan: "Plan",
+  "auto-edit": "Accept edits",
+  full: "Auto",
+};
+
+/**
+ * Read the CodeEnvironment runner-context resolved for this run.
+ *
+ * Re-validated here rather than trusted, even though the route that stored it
+ * validated it and runner-context is authenticated: this is the process that
+ * puts a name in front of a shell, and a name like `PATH` or `LD_PRELOAD`
+ * arriving from anywhere would change how this driver's own children start.
+ * A rejected entry is dropped rather than failing the run — the alternative is
+ * a task that can never start because of a row written by an older deploy.
+ *
+ * The environment's NAME is deliberately not read. Nothing here needs it, and
+ * the one thing that would use it is a log line — this run's public Actions
+ * log, which the repository's own name is kept out of for the same reason.
+ */
+function readEnvironment(raw) {
+  const empty = { id: null, network: "none", setupScript: "", env: {}, names: [] };
+  if (!raw || typeof raw !== "object") return empty;
+  const env = {};
+  const source = raw.env && typeof raw.env === "object" ? raw.env : {};
+  for (const [name, value] of Object.entries(source)) {
+    if (!ENV_VAR_NAME_RE.test(name)) continue;
+    if (typeof value !== "string") continue;
+    env[name] = value;
+  }
+  const script = typeof raw.setupScript === "string" ? raw.setupScript.trim() : "";
+  return {
+    id: typeof raw.id === "string" ? raw.id : null,
+    // Anything unrecognised is `none`: a value this driver does not understand
+    // must not be the thing that opens egress.
+    network: raw.network === "full" ? "full" : "none",
+    setupScript: script,
+    env,
+    names: Object.keys(env),
+  };
+}
+
+/**
+ * Run the environment's setup script in the freshly-cloned worktree.
+ *
+ * A failure FAILS THE RUN. The alternative — log it and start the agent anyway
+ * — hands the model a tree where `npm ci` did not finish, and every subsequent
+ * failure points at the code rather than at the one step that actually broke.
+ * The error thrown here reaches the fatal handler, which posts a terminal
+ * `failed` with this message, so the transcript names the setup script rather
+ * than a test suite that never had a chance.
+ *
+ * Output is captured and truncated onto one tool row: a `npm ci` log is tens of
+ * thousands of lines, and the reason a setup script failed is in the last few.
+ */
+async function runSetupScript(script, { cwd, env, sink }) {
+  log("running the environment's setup script");
+  sink.push("tool", { name: "bash", summary: "Setup script", detail: firstLine(script) });
+  // Announced before it runs, and flushed now: a ten-minute `npm ci` would
+  // otherwise be ten minutes in which the transcript says nothing at all.
+  sink.kick();
+
+  const started = Date.now();
+  const { exitCode, output, timedOut } = await runSetupScriptProcess(script, { cwd, env });
+
+  const seconds = Math.round((Date.now() - started) / 1000);
+  sink.push("tool", {
+    name: "bash",
+    summary: `Setup script — ${exitCode === 0 ? "ok" : timedOut ? "timed out" : "failed"} (${seconds}s)`,
+    detail: output,
+    exitCode,
+  });
+  // Drained before the throw below. The fatal handler posts its terminal
+  // `failed` with its own fetch, bypassing this sink entirely — so a row left
+  // buffered here is a row nobody ever sees, and it is the row holding the
+  // output that says what went wrong.
+  sink.kick();
+  await sink.flushing;
+  if (exitCode !== 0) {
+    throw new Error(
+      timedOut
+        ? `The environment's setup script ran longer than ${Math.round(SETUP_SCRIPT_TIMEOUT_MS / 60_000)} minutes and was stopped. ${firstLine(output) || "No output."}`
+        : `The environment's setup script exited ${exitCode}. ${firstLine(output) || "No output."}`,
+    );
+  }
+}
+
+/**
+ * Run the setup script and return its status with a bounded tail of its output.
+ *
+ * Spawned rather than `execFile`d, for two failures execFile could not express.
+ *
+ * The first is that execFile's `maxBuffer` KILLS the child on overflow and
+ * reports it as `err.killed`, indistinguishable from the timeout. A setup
+ * script that succeeds but is chatty — a verbose `pip install -v`, a monorepo
+ * build — therefore failed the whole task with "exited 124" and no true
+ * reason. Output is bounded in JS instead: the process is allowed to finish and
+ * report its own exit status, and only the RECORD of it is trimmed.
+ *
+ * The second is the kill. execFile signals bash alone, so a script that started
+ * a background server left it holding the runner's CPU and file handles for the
+ * rest of the job; `detached` plus a negative pid addresses the whole group,
+ * the way the bash tool already does (runner/agent-core/src/tools/bash.ts).
+ *
+ * Tail, not head: a build log's first lines are the banner and its last are the
+ * reason it stopped. Twice the reported limit is retained while running so the
+ * slice at the end is never short.
+ */
+function runSetupScriptProcess(script, { cwd, env }) {
+  return new Promise((resolve) => {
+    const child = spawn("/bin/bash", ["-c", script], {
+      cwd,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
+    const keep = SETUP_SCRIPT_OUTPUT_LIMIT * 2;
+    let output = "";
+    let timedOut = false;
+    const collect = (chunk) => {
+      output += chunk;
+      if (output.length > keep) output = output.slice(-keep);
+    };
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+
+    const killGroup = () => {
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // The group is already gone, or vanished between the check and the
+        // signal. Fall back to the direct kill so a live child still dies.
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* nothing left to kill */
+        }
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup();
+    }, SETUP_SCRIPT_TIMEOUT_MS);
+    if (typeof timer.unref === "function") timer.unref();
+
+    const finish = (code) => {
+      clearTimeout(timer);
+      // A killed script must never report 0: the run would otherwise proceed on
+      // a half-installed tree and every later failure would point at the code.
+      const exitCode = timedOut ? 124 : typeof code === "number" ? code : 1;
+      resolve({ exitCode, output: output.slice(-SETUP_SCRIPT_OUTPUT_LIMIT), timedOut });
+    };
+    child.on("error", (err) => {
+      collect(`\n${err?.message ?? String(err)}`);
+      finish(1);
+    });
+    child.on("close", (code) => finish(code));
+  });
+}
+
 /** Env var names safe to expose to agent-spawned shells: enough for build/test
  *  tooling to work, nothing Juno- or CI-secret. */
 const AGENT_ENV_ALLOW = [
@@ -1240,16 +1562,64 @@ const AGENT_ENV_ALLOW = [
 ];
 
 /**
+ * The submitter's variables, minus anything that would shadow a name the runner
+ * depends on.
+ *
+ * Applied once and its result used twice — as the container's `forwardEnv` and
+ * as the extras `buildAgentEnv` folds in — because those two lists disagreeing
+ * is a bug with no symptom: the container would be told to forward a variable
+ * that is not in the environment docker was spawned with, and the run would
+ * behave as if it had simply never been set.
+ *
+ * The route that stores an environment already refuses every name in
+ * AGENT_ENV_ALLOW (RESERVED_ENV_VAR_NAMES in src/lib/code-environments.ts, plus
+ * the `JUNO_` prefix that covers JUNO_HOME). This is the second lock on the
+ * same door, because the failure it prevents — a stored variable deciding which
+ * binary `npm` is, for a process holding the task token — is not one worth
+ * relying on a single check for.
+ *
+ * It must stay the SECOND lock and never the only one. A name this function
+ * drops but the route accepts is stored, listed back to the submitter in
+ * `envVarNames` as something the run will carry, and then silently discarded
+ * here — no error, no log, no transcript row, and a run that behaves exactly as
+ * if the variable had never been typed. That is why the two lists are asserted
+ * to agree in tests/code-environment-runtime.test.ts: adding a name here
+ * without adding it there turns a visible rejection into an invisible one.
+ */
+function carriedEnvVars(vars) {
+  const out = {};
+  for (const [name, value] of Object.entries(vars)) {
+    if (AGENT_ENV_ALLOW.includes(name)) continue;
+    out[name] = value;
+  }
+  return out;
+}
+
+/**
  * Build the minimal, secret-free environment handed to agent-spawned shells via
  * AgentSession's `env` option. An allowlist (not a denylist) so a
  * newly-introduced secret-shaped var can never leak by omission: only the names
  * above are copied through; everything else — the spent exchange code, JUNO_*,
  * GIT_ASKPASS, ACTIONS_* — is simply absent.
+ *
+ * `extra` is the submitter's own CodeEnvironment variables, and it is the one
+ * thing that is allowed in on top. It never comes from `process.env`: it comes
+ * from runner-context, which unsealed it from a column the user wrote. Note
+ * that this map is also what `docker run --env NAME` copies from when the
+ * container carries a variable, so the two paths cannot disagree.
+ *
+ * An allowlisted name is still never overwritten here, even though
+ * `carriedEnvVars` has already removed them: this function is the one that
+ * hands the map to a shell, and the check costs a comparison.
  */
-function buildAgentEnv() {
+function buildAgentEnv(extra = {}) {
   const env = {};
   for (const name of AGENT_ENV_ALLOW) {
     if (process.env[name] != null) env[name] = process.env[name];
+  }
+  for (const [name, value] of Object.entries(extra)) {
+    if (name in env) continue;
+    env[name] = value;
   }
   return env;
 }
