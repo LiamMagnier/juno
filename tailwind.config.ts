@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
 import animate from "tailwindcss-animate";
+import containerQueries from "@tailwindcss/container-queries";
 
 /*
  * Juno design tokens (Slice 0 — Foundation)
@@ -818,6 +819,17 @@ const config: Config = {
   },
   plugins: [
     animate,
+    /*
+     * `@sm:` / `@md:` / `@lg:` / `@[40rem]:` — size classes measured on the
+     * nearest `@container` ancestor instead of the window. PREMIUM_AUDIT.md
+     * rule 11 has said "size by the container, never the viewport" since the
+     * September audit, and `<main>` has been `container-type: inline-size`
+     * (globals.css `.app-main-canvas`) just as long — but no variant existed
+     * to write it with, so every one of ~42 files kept keying on `sm:`/`md:`/
+     * `lg:`, and the migration the rule describes was unimplementable as
+     * written. This is the missing half.
+     */
+    containerQueries,
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
     plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");
