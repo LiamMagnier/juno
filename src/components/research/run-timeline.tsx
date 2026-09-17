@@ -93,7 +93,7 @@ export const TIMELINE_COPY = {
   workerDone: "Done",
   findings: "findings",
   oneFinding: "finding",
-  calls: "calls",
+  researcher: "researcher",
   leadContinue: "Lead review: another round",
   leadSynthesize: "Lead review: evidence is ready",
   /* The search backends, and what each of them did. See ENGINE_STATUS. */
@@ -665,13 +665,22 @@ function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
  *
  * The glyph breathes while the worker is out and settles to a check when it
  * reports back — the same "is anything happening" question the search rows
- * answer, asked of an agent instead of a query. Counts sit on the right in
- * the metadata voice; the worker's own summary replaces the live action line
- * when it is done, because that is the sentence a reader wants from it.
+ * answer, asked of an agent instead of a query. ONE count sits on the right:
+ * the findings, which are what the worker was sent for. The tool-call count
+ * used to sit under it, and "23 calls" is machinery a reader cannot act on —
+ * two trailing figures on every lane, one of them noise (PREMIUM_AUDIT rule
+ * 6). The count is still tallied on the step; nothing draws it.
+ *
+ * The badge is the researcher's number WITHIN ITS ROUND, so a deep run's
+ * second round used to put a second "1" in the same list as the first
+ * round's — two lanes, one identity. The round is on the step already
+ * (`w<round>-<n>`), so a later round's lane is "2.1" and the tooltip says
+ * so in words.
  */
 function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | null }; live: boolean }) {
   const working = live && step.status === "working";
   const index = step.workerId.replace(/^w\d+-/, "");
+  const badge = step.round > 1 ? `${step.round}.${index}` : index;
   return (
     <li className="flex min-w-0 items-start gap-2.5 py-1.5">
       <span className="relative mt-0.5 flex size-5 shrink-0 items-center justify-center">
@@ -679,12 +688,13 @@ function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | 
           <span aria-hidden className="absolute inset-0 rounded-full border border-primary/40 motion-safe:animate-pulse-ring" />
         )}
         <span
+          title={`${TIMELINE_COPY.round} ${step.round} · ${TIMELINE_COPY.researcher} ${index}`}
           className={cn(
             "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
             working ? "bg-primary/15 text-primary-ink" : "bg-muted text-muted-foreground"
           )}
         >
-          {step.status === "done" ? <StatusIcons.success aria-hidden className="size-3" /> : index}
+          {step.status === "done" ? <StatusIcons.success aria-hidden className="size-3" /> : badge}
         </span>
       </span>
       <span className="min-w-0 flex-1">
@@ -701,13 +711,8 @@ function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | 
             : step.lastAction ?? TIMELINE_COPY.workerStarting}
         </span>
       </span>
-      <span className="flex shrink-0 flex-col items-end gap-0.5 text-caption tabular-nums text-muted-foreground/70">
-        <span>
-          {step.findings} {step.findings === 1 ? TIMELINE_COPY.oneFinding : TIMELINE_COPY.findings}
-        </span>
-        <span>
-          {step.toolCalls} {TIMELINE_COPY.calls}
-        </span>
+      <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">
+        {step.findings} {step.findings === 1 ? TIMELINE_COPY.oneFinding : TIMELINE_COPY.findings}
       </span>
     </li>
   );
@@ -716,10 +721,18 @@ function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | 
 export function RunTimeline({
   events,
   live,
+  empty = null,
   className,
 }: {
   events: ResearchEventDTO[];
   live: boolean;
+  /**
+   * What to draw when there are no steps yet. Null by default because the
+   * recap stacks this under the evidence panel and the deck and relies on a
+   * stepless run rendering nothing; the console's Activity tab passes a
+   * sentence, because an empty tab region reads as a broken tab.
+   */
+  empty?: React.ReactNode;
   className?: string;
 }) {
   // A run still working opens itself: the whole point is that the gather phase
@@ -739,7 +752,7 @@ export function RunTimeline({
     searches.reduce((total, step) => total + step.sites.filter((site) => site.state === "done").length, 0) +
     workers.reduce((total, step) => total + step.pages, 0);
 
-  if (steps.length === 0) return null;
+  if (steps.length === 0) return empty;
 
   const hidden = Math.max(0, steps.length - MAX_STEPS);
   const visible = steps.slice(hidden);
@@ -827,14 +840,14 @@ export function RunTimeline({
                     />
                     <EngineStrip engines={step.engines} />
                   </div>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    {step.results !== null && (
-                      <span className="text-caption tabular-nums text-muted-foreground/70">
-                        {step.results} {TIMELINE_COPY.results}
-                      </span>
-                    )}
-                    <StepDuration ms={step.durationMs} />
-                  </span>
+                  {/* The yield is the one trailing figure on a search row. The
+                      step's duration used to sit beside it; a note row still
+                      carries its duration because a note has no yield. */}
+                  {step.results !== null && (
+                    <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">
+                      {step.results} {TIMELINE_COPY.results}
+                    </span>
+                  )}
                 </li>
               ) : step.kind === "worker" ? (
                 <WorkerLane key={step.key} step={step} live={live} />

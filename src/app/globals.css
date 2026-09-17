@@ -3161,6 +3161,17 @@
   .research-enter, .research-tab-body { animation: research-arrive var(--dur-exit) var(--ease-out-soft) both; }
   @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
+/* Printing a document that lives in a dialog (the research report reader).
+   The dialog unpins itself with `print:` utilities, but it is portalled to
+   <body>, so its siblings are the whole app shell and no class on the dialog
+   can reach them — without this, the chat page printed underneath the report.
+   `!important` on the overflow because the open-dialog scroll lock writes
+   `overflow: hidden` on <body> as an inline style, and a body that cannot
+   overflow prints one page. */
+@media print {
+  body:has([data-print-document]) > :not(:has([data-print-document])) { display: none; }
+  html:has([data-print-document]), body:has([data-print-document]) { height: auto; overflow: visible !important; }
+}
 
 /* The account page's activity graph: one square per day, sized by viewport
    so a year fits the settings measure on desktop and scrolls on a phone. The

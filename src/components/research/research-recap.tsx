@@ -1,34 +1,45 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Clock, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ShieldCheck } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { SourceRail } from "@/components/research/source-rail";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
 import { reportTitle } from "@/components/research/report-dialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isResearchState, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "@/components/research/use-research-run";
 
 /**
- * What a finished run leaves in the conversation: an elevated, authoritative report cover.
+ * What a finished run leaves in the conversation: a report cover.
  *
- * Designed according to ChatGPT Deep Research and Claude Research standards:
- * - Clear verification & completion status badge
- * - Prominent document title and duration
- * - Provenance pills (sources read, objectives covered)
- * - Trustworthy citation audit verdict
- * - Distinct, prominent CTA to open the full report
- * - Collapsible provenance machinery (sources deck, evidence panel, timeline)
+ * The verdict as a word, the report's own title, one line of provenance, the
+ * citation verdict, a door into the document, and the machinery behind a
+ * disclosure — in that order, because the reader's question is "can I trust
+ * it and where do I read it".
+ *
+ * TWO VOICES. The cover speaks in `ui` for the verdict and `caption` for
+ * every fact; the serif title is content, not chrome. It used to speak in
+ * five rungs and three faces — a mono `micro` elapsed, a captioned cost
+ * capsule, two bordered provenance capsules, a `body` CTA — which is the
+ * "control panel" diagnosis PREMIUM_AUDIT §2 made of the model picker,
+ * repeated on a report cover. Facts are plain text now, separated by a
+ * middot, and nothing on the cover wears a capsule.
+ *
+ * NOTHING NESTED WEARS A BOX. `.research-surface` is a 16px radius padded by
+ * 16px, so FLAT_UI §6 gives a full-width child a radius of zero: the audit
+ * verdict is an icon and a sentence on the panel, and the door is a button —
+ * narrower than the content box, which is what puts it outside the rule.
  */
 
 const RECAP_COPY = {
   kicker: "Deep research report",
   complete: "Research complete",
-  sources: "sources",
-  oneSource: "source",
-  read: "read in full",
+  read: "sources read",
+  oneRead: "source read",
+  found: "found",
   covered: "objectives answered",
   openReport: "Read the full report",
   noReport: "This run stopped before it wrote a report.",
@@ -104,16 +115,14 @@ export function ResearchRecap({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-caption tabular-nums text-muted-foreground">
           {elapsed && (
-            <span className="inline-flex items-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
-              <Clock className="size-3 text-muted-foreground" />
-              {elapsed}
-            </span>
+            <>
+              <span>{elapsed}</span>
+              <span aria-hidden>·</span>
+            </>
           )}
-          <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-caption tabular-nums text-muted-foreground">
-            {formatMicroUsd(run.costMicroUsd)}
-          </span>
+          <span>{formatMicroUsd(run.costMicroUsd)}</span>
           {onDismiss && (
             <button
               type="button"
@@ -134,17 +143,16 @@ export function ResearchRecap({
         </h3>
       </div>
 
-      {/* Provenance Badges */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 text-caption text-foreground/90 tabular-nums">
-          {run.sources.length} {run.sources.length === 1 ? RECAP_COPY.oneSource : RECAP_COPY.sources} ({read} {RECAP_COPY.read})
-        </span>
-        {objectives.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 text-caption text-foreground/90 tabular-nums">
-            {covered}/{objectives.length} {RECAP_COPY.covered}
-          </span>
-        )}
-      </div>
+      {/* Provenance. "Read" leads because it is the number the reader will
+          meet again in the report: the reader is handed the read corpus, so
+          its "7 sources read" and this line's "7 sources read" are the same
+          count in the same words. The old capsule led with the found total
+          and the reader answered with the read one — two totals for one run,
+          one click apart. */}
+      <p className="mt-2 text-caption tabular-nums text-muted-foreground">
+        {read} {read === 1 ? RECAP_COPY.oneRead : RECAP_COPY.read} · {run.sources.length} {RECAP_COPY.found}
+        {objectives.length > 0 && ` · ${covered}/${objectives.length} ${RECAP_COPY.covered}`}
+      </p>
 
       {/* Publishers Rail */}
       {run.sources.length > 0 && (
@@ -153,31 +161,23 @@ export function ResearchRecap({
         </div>
       )}
 
-      {/* Citation Audit Verdict Banner */}
+      {/* The citation verdict: an icon and a sentence on the panel. */}
       {audit && (
-        <div className="mt-4 flex items-center gap-2.5 rounded-card border border-border/60 bg-secondary/30 p-3 text-caption">
+        <div className="mt-4 flex items-center gap-2.5 text-caption">
           <ShieldCheck className={cn("size-4 shrink-0", auditClean ? "text-success" : "text-warning-foreground")} />
           <span className="flex-1 font-medium text-foreground/90">{auditHeadline(audit)}</span>
         </div>
       )}
 
-      {/* Primary Report CTA */}
+      {/* The door into the document. */}
       {onOpenReport ? (
-        <button
-          type="button"
-          onClick={onOpenReport}
-          className={cn(
-            "group mt-4 flex w-full items-center justify-between gap-3 rounded-field border border-border bg-secondary/30 px-4 py-3.5 text-left text-foreground transition-colors duration-fast",
-            "hover:border-foreground/25 hover:bg-secondary/60 motion-reduce:transition-none",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          )}
-        >
-          <span className="text-body font-semibold">{RECAP_COPY.openReport}</span>
+        <Button type="button" variant="secondary" onClick={onOpenReport} className="group mt-4">
+          {RECAP_COPY.openReport}
           <ArrowRight
             aria-hidden
-            className="size-4 shrink-0 transition-transform duration-fast ease-out-soft motion-safe:group-hover:translate-x-0.5"
+            className="ml-2 size-4 shrink-0 transition-transform duration-fast ease-out-soft motion-safe:group-hover:translate-x-0.5"
           />
-        </button>
+        </Button>
       ) : (
         <p className="mt-4 text-caption text-muted-foreground">{RECAP_COPY.noReport}</p>
       )}

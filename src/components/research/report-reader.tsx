@@ -151,10 +151,6 @@ export function ReportReader({
               </span>
               <span className="mt-0.5 block truncate text-caption text-muted-foreground">
                 {hostOf(source.url)}
-                {/* "Found, not read" is worth a word here: an unread source is
-                    one the report could not have cited, and hiding that turns
-                    the rail into a claim of more evidence than there was. */}
-                {source.read ? "" : " · found, not read"}
               </span>
             </span>
           </>
@@ -236,18 +232,24 @@ export function ReportReader({
 
   return (
     <div className={cn("space-y-6", className)}>
-      {/* Top Action & Metadata Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 pr-8">
+      {/* The toolbar: metadata in one muted voice, then the actions. The
+          document's own <h1> is directly below, so nothing here is a title.
+          "Deep research report" was an accent-tinted capsule — the accent is
+          state, never furniture (FLAT_UI §2.4), and the recap already had the
+          same shape removed once for the same reason. No clearance for a
+          dialog's close button either: the reader is a document and does not
+          know what it is mounted in; the container pads for its own chrome.
+          `print:hidden` because a printed report needs its text, not its
+          buttons. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 print:hidden">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
-            Deep Research Report
-          </span>
+          <span>Deep research report</span>
           <span>·</span>
           <span>{wordCount.toLocaleString()} words</span>
           <span>·</span>
           <span>~{readingTimeMin} min read</span>
           <span>·</span>
-          <span>{sources.length} sources</span>
+          <span>{sources.length} sources read</span>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -292,12 +294,12 @@ export function ReportReader({
         </div>
       </div>
 
-      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
+      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden print:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
       <div className="flex items-start gap-8">
         {toc.length >= 2 && (
           <nav
             aria-label="Report contents"
-            className="sticky top-6 hidden max-h-[calc(100vh-6rem)] w-44 shrink-0 overflow-y-auto lg:block"
+            className="sticky top-6 hidden max-h-[calc(100vh-6rem)] w-44 shrink-0 overflow-y-auto lg:block print:hidden"
           >
             {/* Sentence case, interface face — the rail headings here were
                 `font-mono text-label uppercase`, the metadata voice used for
@@ -346,11 +348,15 @@ export function ReportReader({
         </article>
 
         {sources.length > 0 && (
-          <aside aria-label="Report sources" className="sticky top-6 hidden shrink-0 xl:block">
+          <aside aria-label="Report sources" className="sticky top-6 hidden shrink-0 xl:block print:hidden">
             {sourcesOpen ? (
               <div className="flex max-h-[calc(100vh-6rem)] w-72 flex-col rounded-card border border-border/60 bg-card">
                 <div className="flex items-center justify-between gap-2 border-b border-border/50 py-2 pl-4 pr-2">
-                  <p className="text-ui font-medium text-foreground">Sources · {sources.length}</p>
+                  {/* "Read", in the same words as the recap card: the reader
+                      is handed the read corpus (see research-run-panel.tsx),
+                      so this count is the recap's read count, never its found
+                      total. */}
+                  <p className="text-ui font-medium text-foreground">Sources read · {sources.length}</p>
                   <button
                     type="button"
                     onClick={() => setSourcesOpen(false)}
@@ -369,7 +375,7 @@ export function ReportReader({
                 className="pressable inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-caption text-muted-foreground shadow-soft transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
               >
                 <PanelRightOpen className="size-3.5" aria-hidden />
-                Sources · {sources.length}
+                Sources read · {sources.length}
               </button>
             )}
           </aside>
@@ -377,10 +383,12 @@ export function ReportReader({
       </div>
 
       {/* Below xl the rail has no column to live in, so the corpus stacks after
-          the text — the print convention: references at the end. */}
+          the text — the print convention: references at the end. And on paper
+          it is always this list, whatever the window was doing: the sticky
+          rail is hidden for print and this section is shown. */}
       {sources.length > 0 && (
-        <section aria-label="Report sources" className="mt-10 border-t border-border/60 pt-6 xl:hidden">
-          <p className="text-ui font-medium text-foreground">Sources · {sources.length}</p>
+        <section aria-label="Report sources" className="mt-10 border-t border-border/60 pt-6 xl:hidden print:block">
+          <p className="text-ui font-medium text-foreground">Sources read · {sources.length}</p>
           <div className="mt-3">{sourceRows}</div>
         </section>
       )}

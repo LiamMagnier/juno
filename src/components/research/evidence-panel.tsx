@@ -113,12 +113,20 @@ export function EvidencePanel({
   coverage,
   conflicts,
   sources,
+  empty = null,
   className,
 }: {
   objectives: Objective[];
   coverage: Coverage;
   conflicts: Conflict[];
   sources: ResearchRunView["sources"];
+  /**
+   * What to draw with no objectives, no read sources and no conflicts. Null
+   * by default: the recap guards this panel itself and stacks it with others
+   * that must collapse together. The console's Evidence tab passes a sentence
+   * so the tab never opens on a void.
+   */
+  empty?: React.ReactNode;
   className?: string;
 }) {
   const covered = objectives.filter((objective) => objective.status === "covered").length;
@@ -143,7 +151,7 @@ export function EvidencePanel({
     return { ordered, unclassified, total: readable.length };
   }, [readable]);
 
-  if (objectives.length === 0 && mix.total === 0 && conflicts.length === 0) return null;
+  if (objectives.length === 0 && mix.total === 0 && conflicts.length === 0) return empty;
 
   return (
     <div className={cn("space-y-4", className)}>

@@ -81,13 +81,28 @@ export function ReportDialog({
         // inside this has three columns (contents, prose, sources) that only
         // exist above `lg`. `p-0` because the reader owns its own padding and
         // its sticky rails measure against the scroll container.
-        className="max-w-[min(96rem,calc(100vw-2rem))] p-0 sm:p-0"
+        //
+        // ON PAPER the dialog stops being a dialog. A fixed, height-capped,
+        // overflow-scrolling panel prints as one clipped page, with the chat
+        // behind it — which is what "Print or save as PDF" produced for a
+        // several-thousand-word report. The `print:` rules unpin it and let
+        // it run to its full height; `data-print-document` is what
+        // globals.css keys on to hide everything else on the page, because
+        // the portal's siblings are the app shell and no class here can
+        // reach them.
+        data-print-document=""
+        className="max-w-[min(96rem,calc(100vw-2rem))] p-0 sm:p-0 print:static print:max-h-none print:w-auto print:max-w-none print:overflow-visible print:rounded-none print:shadow-none print:[translate:none]"
       >
         {/* The accessible name. Visually hidden because the report's own <h1>
             is the title a sighted reader sees, and printing "Research report"
             above it would be the same string twice. */}
         <DialogTitle className="sr-only">{`${REPORT_COPY.title} — ${goal}`}</DialogTitle>
-        <div className="app-page-scroll max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-8">
+        {/* The right inset is this container's, not the reader's: the dialog
+            puts its close button at `right-4 top-4` (a 36px target, so it
+            reaches 52px in), and the reader's toolbar starts on that line.
+            The reader used to carry `pr-8` for it — a document that knew
+            what it was mounted in. */}
+        <div className="app-page-scroll max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 pr-14 sm:p-8 sm:pr-16 print:max-h-none print:overflow-visible print:p-0">
           <ReportReader report={body} sources={sources} />
         </div>
       </DialogContent>

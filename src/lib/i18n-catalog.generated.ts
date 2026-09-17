@@ -134,10 +134,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Upload failed — check your connection and try again."
   },
   {
-    "id": "00e9e2b463e3e25f",
-    "source": "sources ·"
-  },
-  {
     "id": "00efcee9cb2a3a1f",
     "source": "approximate"
   },
@@ -406,10 +402,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Track"
   },
   {
-    "id": "0535cc32e8ccd430",
-    "source": "History could not load. Retrying…"
-  },
-  {
     "id": "0539c8e4bd7bf19f",
     "source": "Add a constraint"
   },
@@ -640,10 +632,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "081aa84db6332fcd",
     "source": "quiz · single question (degrades cleanly)"
-  },
-  {
-    "id": "0822dedf991b6ffe",
-    "source": "Preparing your plan…"
   },
   {
     "id": "0827ed75c08f6d61",
@@ -882,10 +870,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Dictate"
   },
   {
-    "id": "0b74f62773b60c77",
-    "source": "Recent research"
-  },
-  {
     "id": "0b9b9c2e8194d16b",
     "source": "Describe what to build or fix — Juno Code streams the work here."
   },
@@ -992,10 +976,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0d415e5e1c5ed0db",
     "source": "Turn on the full app directory"
-  },
-  {
-    "id": "0d7bd02d8aa3eb92",
-    "source": "New research"
   },
   {
     "id": "0d7d12ac624c66e6",
@@ -1598,10 +1578,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Starters"
   },
   {
-    "id": "1644ecfb6fa87bb8",
-    "source": "awaiting_plan_confirmation"
-  },
-  {
     "id": "1651031bf58d8eea",
     "source": "Regenerate"
   },
@@ -1924,6 +1900,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1aba415fc42ca315",
     "source": "Nothing is linked, so this task reaches nothing outside Juno."
+  },
+  {
+    "id": "1abcc6e51825cc46",
+    "source": "Sources read ·"
   },
   {
     "id": "1aca80e8b55c802f",
@@ -2298,10 +2278,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Background work is limited to on-device models, and none is available in this deployment. You can change this under Settings → Memory → Background processing."
   },
   {
-    "id": "1fecc3fd6b50a8e8",
-    "source": "Read report"
-  },
-  {
     "id": "1ff57a29d7c9d11b",
     "source": "Next"
   },
@@ -2360,10 +2336,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "20ee1ccb0222d05a",
     "source": "Juno only ever offers to remember an approval for reversible actions. Anything destructive or sensitive is asked again every single time."
-  },
-  {
-    "id": "20f84d606217394d",
-    "source": "Focus or constraints"
   },
   {
     "id": "20f9fded12d9e418",
@@ -2618,16 +2590,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Resize sidebar"
   },
   {
-    "id": "2454b3b28afba169",
-    "source": "This run could not be found or your session has expired."
-  },
-  {
     "id": "2456d866eeb3ff92",
     "source": "sign in"
-  },
-  {
-    "id": "246f74b28a4d4a7d",
-    "source": "Create research plan"
   },
   {
     "id": "247173b2ceedaf2f",
@@ -3146,6 +3110,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Block body must be key: value data."
   },
   {
+    "id": "2b16cf2811e8870a",
+    "source": "researchers reported"
+  },
+  {
     "id": "2b291cd5cd2fb9bc",
     "source": "Account recovery"
   },
@@ -3216,10 +3184,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c21600ed133de4b",
     "source": "Talk with any model — live, interruptible, transcribed both ways. Voice notes drop straight into chat."
-  },
-  {
-    "id": "2c4c7b28b81c14e3",
-    "source": "Go deeper into a question."
   },
   {
     "id": "2c4e6f6c46954cd6",
@@ -3502,10 +3466,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Chat with Claude, GPT, Gemini and models from a dozen more labs in one calm workspace. Plans are metered by real API cost — you see what every answer costs. Hosted in France, GDPR by default."
   },
   {
-    "id": "304d9877340fed48",
-    "source": "· optional"
-  },
-  {
     "id": "305386421b6b3438",
     "source": "Artifact name"
   },
@@ -3636,10 +3596,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "32084eeb5890aeae",
     "source": "High-volume, low-latency, cost-sensitive tier."
-  },
-  {
-    "id": "32303b9e22842596",
-    "source": "Researching your question"
   },
   {
     "id": "3236aeec43e563ca",
@@ -4606,10 +4562,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "and v"
   },
   {
-    "id": "402031c3e7af8128",
-    "source": "https://example.com/report — one URL per line"
-  },
-  {
     "id": "4027e5b24418520f",
     "source": "Connect GitHub"
   },
@@ -4818,10 +4770,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno could not complete this request."
   },
   {
-    "id": "435f9b1f34a8136c",
-    "source": "Focus and preferred sources"
-  },
-  {
     "id": "437aea62a5bd6ad4",
     "source": "Contents"
   },
@@ -4892,10 +4840,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "44700474f3c5f932",
     "source": "GPT-5.1"
-  },
-  {
-    "id": "4488fba9eb090e40",
-    "source": "read in full"
   },
   {
     "id": "44a910b7e6524a93",
@@ -5750,10 +5694,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Voice mode accepts images from your library only."
   },
   {
-    "id": "504c551589e28ca5",
-    "source": "Your progress is saved."
-  },
-  {
     "id": "505fe1151d095901",
     "source": "Reading and reversible changes such as labelling, archiving, or renaming run on their own. Anything that leaves your account, deletes, or that Juno cannot classify still waits for you."
   },
@@ -6020,10 +5960,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "54840a4c0a060fef",
     "source": "Something it cannot undo"
-  },
-  {
-    "id": "5486434fad0c82d9",
-    "source": "Your plans and reports will appear here."
   },
   {
     "id": "54a0e8c17ebb21a1",
@@ -6698,10 +6634,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Severity"
   },
   {
-    "id": "5ea29b513ff0e294",
-    "source": "Describe your question and what a useful answer would cover…"
-  },
-  {
     "id": "5ea44c3961f16643",
     "source": "lines"
   },
@@ -6958,10 +6890,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Start private chat"
   },
   {
-    "id": "621c2e4c4b7734c7",
-    "source": "· found, not read"
-  },
-  {
     "id": "622969c61e1fb812",
     "source": "Google returned no streaming response body"
   },
@@ -7128,10 +7056,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "64460ea220ad3406",
     "source": "The mask is invalid — expected a PNG data URL under 8MB."
-  },
-  {
-    "id": "645978287991a6f4",
-    "source": "Lead"
   },
   {
     "id": "646a456e9b2986ce",
@@ -7720,10 +7644,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6b3cf57c7b136ef3",
     "source": "IMAGE"
-  },
-  {
-    "id": "6b44a0f04fdfdbf2",
-    "source": "No report was produced. Any gathered sources remain available above."
   },
   {
     "id": "6b6b18b794872d33",
@@ -8346,10 +8266,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Web search is not configured on this Juno deployment."
   },
   {
-    "id": "73797f4300bb385e",
-    "source": "Build a plan, explore the evidence, and come back to a report with sources you can check."
-  },
-  {
     "id": "7384c91d94c678a9",
     "source": "All steps"
   },
@@ -8822,10 +8738,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pre-filter matched a stated intent to kill/harm a specific target."
   },
   {
-    "id": "7a0821a09f9c9502",
-    "source": "Juno searches the public web and prioritizes these URLs. Preferred sources do not restrict the rest of the search. Up to 24 URLs."
-  },
-  {
     "id": "7a1f2a83aca9a081",
     "source": "Favorites"
   },
@@ -9170,10 +9082,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The schedule cannot be saved while this trigger is on it. Remove it, and everything else you have set up here is kept."
   },
   {
-    "id": "7f2c862aad8e62a4",
-    "source": "Stopped early"
-  },
-  {
     "id": "7f3c0782afd7e955",
     "source": "Add to favorites"
   },
@@ -9208,10 +9116,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7f98506ac7260e0e",
     "source": "checking"
-  },
-  {
-    "id": "7f989bfe959b88ce",
-    "source": "Update research focus"
   },
   {
     "id": "7fa6f415fc0fcef7",
@@ -9288,10 +9192,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "808b8be2b3df8c04",
     "source": "Loading memory"
-  },
-  {
-    "id": "80a567865db835c5",
-    "source": "Sources ·"
   },
   {
     "id": "80c66f498e9b1bdf",
@@ -10530,10 +10430,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "console"
   },
   {
-    "id": "93de0bb26ca4eff1",
-    "source": "Review and edit the plan before research begins."
-  },
-  {
     "id": "942087cc2d41e013",
     "source": "Retry"
   },
@@ -11222,6 +11118,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Getting ready"
   },
   {
+    "id": "9c80215feda714d7",
+    "source": "The plan appears here once Juno has worked out what to look up."
+  },
+  {
     "id": "9c80b04be55470cf",
     "source": "Export your data"
   },
@@ -11422,10 +11322,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· last seen"
   },
   {
-    "id": "9f0908ec7077f1f7",
-    "source": "Deep Research Report"
-  },
-  {
     "id": "9f1e8ab9c9961541",
     "source": "Projects & memory"
   },
@@ -11594,10 +11490,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Copy run"
   },
   {
-    "id": "a0f859bc4db2c234",
-    "source": "Retry loading"
-  },
-  {
     "id": "a10a36fa109818be",
     "source": "Search apps"
   },
@@ -11668,6 +11560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a1b62373f3261ae7",
     "source": "A word, phrase or regular expression to find."
+  },
+  {
+    "id": "a1c0dbf808ef9816",
+    "source": "Nothing yet — what each question rests on appears here as sources are read."
   },
   {
     "id": "a1d57f459c897818",
@@ -11830,6 +11726,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Tip"
   },
   {
+    "id": "a4262e1c9bcbc172",
+    "source": "about"
+  },
+  {
     "id": "a43688480cabbac6",
     "source": "expensive_confirmation_required"
   },
@@ -11864,6 +11764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a4c3ed04a95a3da1",
     "source": "done"
+  },
+  {
+    "id": "a4cb890bbc5e5f58",
+    "source": "researchers working"
   },
   {
     "id": "a4ccb36fb41f33c8",
@@ -11916,10 +11820,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a5339b85003f8003",
     "source": "Your plan is a monthly amount of real usage. Light models stretch it; frontier models spend it. Your call, visibly."
-  },
-  {
-    "id": "a5343e4976f33eb8",
-    "source": "Adjust the focus"
   },
   {
     "id": "a54084383e3cf7c2",
@@ -12162,10 +12062,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT-5.3 Codex"
   },
   {
-    "id": "a8a4f909ea1cccb0",
-    "source": "Add a constraint or a source URL…"
-  },
-  {
     "id": "a8aa078b7ea67c00",
     "source": "Go to"
   },
@@ -12232,10 +12128,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a9c2e2487f978e3a",
     "source": "Attachment not found."
-  },
-  {
-    "id": "a9ca7f3cee660012",
-    "source": "What would you like to understand?"
   },
   {
     "id": "a9d81eae22d9843a",
@@ -13130,10 +13022,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reported problem"
   },
   {
-    "id": "b50068950144df39",
-    "source": "Research depth"
-  },
-  {
     "id": "b512d97e7cbf97c2",
     "source": "User"
   },
@@ -13686,10 +13574,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Family"
   },
   {
-    "id": "bd34c75ab19cf80c",
-    "source": "Research unavailable"
-  },
-  {
     "id": "bd41e30016640a3a",
     "source": "Only when it needs me"
   },
@@ -13998,10 +13882,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Execution Time"
   },
   {
-    "id": "c1ba84c9fd199010",
-    "source": "Loading your research…"
-  },
-  {
     "id": "c1d5c40b2fef2b96",
     "source": "Lighten"
   },
@@ -14196,10 +14076,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c440bea29354081f",
     "source": "Couldn’t play that preview."
-  },
-  {
-    "id": "c454578c7ad023a9",
-    "source": "Audience, region, date range, or questions to prioritize"
   },
   {
     "id": "c461dbb2bab7d8bc",
@@ -14696,10 +14572,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cb597f5dbec3d220",
     "source": "Conditions générales (CGU / CGV)"
-  },
-  {
-    "id": "cb61a91fb4e541c6",
-    "source": "Research continues when you leave this page."
   },
   {
     "id": "cb6d66bd52cb1d38",
@@ -15648,6 +15520,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d7d8467478fdd922",
     "source": "This canvas changed while the edit was being prepared. Select the part again and retry."
+  },
+  {
+    "id": "d7da7943ac539d8c",
+    "source": "Nothing yet — steps appear here as researchers search and read."
   },
   {
     "id": "d80c28b5ea9c7a31",
@@ -17786,10 +17662,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Justify"
   },
   {
-    "id": "f3c2df82b869d818",
-    "source": "Inspect research"
-  },
-  {
     "id": "f3c6939021738e53",
     "source": "It has not run yet. Fires that were skipped — a Mac that was away, a budget that was spent — appear here too, so this staying empty means nothing has fired at all."
   },
@@ -17840,10 +17712,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f45cb54c74d8f716",
     "source": "Apple Music isn’t set up on this server yet."
-  },
-  {
-    "id": "f46f5990ebfadcab",
-    "source": "calls"
   },
   {
     "id": "f47350c0433fe1a9",

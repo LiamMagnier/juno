@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { ResearchClarification, ResearchEventDTO } from "@/lib/research/domain";
+import type { ResearchClarification, ResearchEffort, ResearchEventDTO } from "@/lib/research/domain";
 
 /**
  * One research run, kept fresh — the client half of GET /api/research/[id].
@@ -131,6 +131,8 @@ export interface ResearchRunView {
       resolved: boolean;
     }>;
     followUpRound?: number;
+    /** The tier the run was started at, for the plan gate to state what it is asking approval for. */
+    effort?: ResearchEffort | null;
   };
   auditSummary?: {
     claims: number;
