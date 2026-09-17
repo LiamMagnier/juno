@@ -141,7 +141,11 @@ export default function DesignPage() {
       {/* Starting a design is the primary action, so it is the first thing on
           the page rather than a button hiding above a list. */}
       <section aria-label="Start a design">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {/* Four across from 40rem of the page, not of the window: inside the
+            shell the page is what the sidebar leaves, and `sm:` put four
+            presets in a column the window's width had said nothing about. The
+            skeleton in loading.tsx draws the same grid at the same step. */}
+        <div className="grid grid-cols-2 gap-2 @[40rem]/page:grid-cols-4">
           {PRESETS.map((preset) => (
             <button
               key={preset.key}

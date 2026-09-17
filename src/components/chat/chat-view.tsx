@@ -941,9 +941,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // applyFork, switching conversations, and regenerate (which re-adds the answer
   // under a fresh id) all unmount the ActivityTimeline that portals the panel —
   // and with it the only close button. What is left is an empty bg-card column
-  // that hides the whole chat below lg. One reconciliation covers them all;
-  // clearing at each call site would keep missing the ones that are not call
-  // sites at all.
+  // that hides the whole chat below the split. One reconciliation covers them
+  // all; clearing at each call site would keep missing the ones that are not
+  // call sites at all.
   React.useEffect(() => {
     if (!thoughtOpenId) return;
     if (!chat.messages.some((m) => m.id === thoughtOpenId)) {
@@ -1696,6 +1696,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // inside it (split-layout.ts). Every `@[50rem]/split:` step below, and
       // the ones the thought and canvas panels carry, reads its width — never
       // the window's, which the sidebar takes 304px of without telling anyone.
+      // A `container-type` box is also the containing block for `position:
+      // fixed` descendants, so a fullscreened canvas (`fixed inset-0` in
+      // canvas-panel) fills this mount rather than `<main>`, the nearest
+      // container before this one: the verify-email banner and the mobile top
+      // bar the shell mounts above the page stay in view over it, where they
+      // used to be covered. Kept on purpose — the shell's chrome is how the
+      // user leaves a conversation, and a canvas is a view of one.
       className="@container/split relative flex h-full min-h-0 w-full overflow-hidden"
     >
       {/* Chat column */}
@@ -2060,8 +2067,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       {/* Thought dock — a real column, not an overlay. The chat narrows beside it
           and stays fully readable, scrollable and typeable: no backdrop, no
           dimming, no focus trap, no scroll lock. Sized like the canvas (shrink-0
-          column at lg, full-bleed below it) and, since this session, resizable
-          like it too — the handle below.
+          column at the split, full-bleed below it) and, since this session,
+          resizable like it too — the handle below.
           ActivityTimeline portals the panel in here — see thought-panel-context.
           `duration-slow` sits on an `animate-*` element ON PURPOSE, exactly as
           the canvas does below: tailwindcss-animate makes it the slide's

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { splitBounds } from "../src/hooks/use-split-pane";
 import {
   CANVAS_MIN_WIDTH,
   CHAT_MIN_WIDTH,
@@ -93,13 +94,32 @@ test("the Work thread's split is the file's own floor plus its narrowest rail", 
   const floor = src.match(/const WORK_CONVERSATION_MIN_WIDTH = (\d+) \+ (\d+);/);
   const rail = src.match(/const WORK_RAIL_DEFAULT_WIDTH = (\d+);/);
   const railMax = src.match(/const WORK_RAIL_CSS_WIDTH = (\d+);/);
-  assert.ok(floor && rail && railMax, "the constants the thresholds derive from are still declared");
+  const share = src.match(/const WORK_RAIL_SHARE = 0\.(\d+);/);
+  assert.ok(floor && rail && railMax && share, "the constants the thresholds derive from are still declared");
   const splitAt = Number(floor[1]) + Number(floor[2]) + Number(rail[1]);
   assert.deepEqual(containerSteps(src, "thread"), [remOf(splitAt)]);
   // The undragged rail is a share of the grid between the two rem values the
   // constants name — no second step, so the conversation never narrows as the
-  // grid widens.
-  assert.match(src, new RegExp(`clamp\\(${remOf(Number(rail[1]))},\\d+%,${remOf(Number(railMax[1]))}\\)`));
+  // grid widens. The class is matched as `clamp(<min>,<share>%,<max>)` with no
+  // spaces, which is how the page writes it; a rewrite that spells the share
+  // differently (a custom property, a `min()`) has to update this line too.
+  assert.match(src, new RegExp(`clamp\\(${remOf(Number(rail[1]))},${share[1]}%,${remOf(Number(railMax[1]))}\\)`));
+  // At the split the CSS draws the rail at its narrowest, and the bounds must
+  // say so: a `cssWidth` fixed at the top of the clamp kept 416 reachable
+  // there, so a drag left the conversation 456 wide under a 520 floor.
+  const primaryMin = Number(floor[1]) + Number(floor[2]);
+  const cssAt = (w: number) =>
+    Math.min(Number(railMax[1]), Math.max(Number(rail[1]), Math.round(w * Number(`0.${share[1]}`))));
+  const atSplit = splitBounds({
+    containerWidth: splitAt,
+    paneMin: 288,
+    paneFloor: 240,
+    primaryMin,
+    fraction: 0.5,
+    cssWidth: cssAt(splitAt),
+  });
+  assert.equal(atSplit.maxWidth, Number(rail[1]), "the rail's max at the split is its CSS width");
+  assert.equal(splitAt - atSplit.maxWidth, primaryMin, "the conversation keeps its floor at the split");
   const code = stripComments(src);
   assert.ok(!/\b(lg|xl):/.test(code), "the grid still keys a class on the window");
   assert.ok(!src.includes("(max-width: 1023px)"));

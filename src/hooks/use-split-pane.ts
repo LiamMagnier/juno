@@ -29,6 +29,23 @@ import * as React from "react";
 export type SplitBounds = { minWidth: number; maxWidth: number };
 
 /**
+ * The observed box's inline size, from what a ResizeObserver hands its
+ * callback. `contentBoxSize` is the spec's answer and `contentRect` the fallback
+ * for an engine that has not shipped it; `null` means the callback carried no
+ * entry, which the hook treats as "cannot tell" and re-measures. Pure and
+ * exported so the one comparison the hook makes on it can be pinned by a test
+ * that has no DOM.
+ */
+export function observedInlineSize(
+  entries: readonly Pick<ResizeObserverEntry, "contentBoxSize" | "contentRect">[],
+): number | null {
+  const entry = entries[0];
+  if (!entry) return null;
+  const box = entry.contentBoxSize?.[0];
+  return box ? box.inlineSize : entry.contentRect.width;
+}
+
+/**
  * The width range a docked pane may be dragged through.
  *
  * The shape is the same everywhere and the three call sites only disagree
@@ -272,7 +289,19 @@ export function useSplitPane({
     // until `active` re-runs this with the grid in place.
     const container = containerRef.current;
     if (container && typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => sync());
+      // Inline size only. The observer also reports block-size changes, and
+      // `sync` writes a fresh bounds object every time it runs, so an
+      // unfiltered observer re-rendered the owning page for each one. The
+      // chat mount is `h-full` and never grows, but the Work grid below its
+      // split is a stacked column that gets taller with every streamed
+      // line — a re-render per line for a width that had not moved.
+      let lastInlineSize: number | null = null;
+      const observer = new ResizeObserver((entries) => {
+        const inlineSize = observedInlineSize(entries);
+        if (inlineSize != null && inlineSize === lastInlineSize) return;
+        lastInlineSize = inlineSize;
+        sync();
+      });
       observer.observe(container);
       return () => observer.disconnect();
     }

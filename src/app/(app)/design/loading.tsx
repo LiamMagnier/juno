@@ -18,7 +18,9 @@ export default function DesignLoading() {
     <AppPage measure="wide" role="status" aria-label="Loading designs">
         <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-40" actions />
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {/* The same step as the presets grid in page.tsx, so the skeleton
+            does not reflow into the page it stands in for. */}
+        <div className="grid grid-cols-2 gap-2 @[40rem]/page:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <Skeleton
               key={i}

@@ -170,6 +170,23 @@ const WORK_CONVERSATION_MIN_WIDTH = 480 + 40;
 const WORK_RAIL_CSS_WIDTH = 416;
 /* 22rem — the narrowest, and the one the split engages with. */
 const WORK_RAIL_DEFAULT_WIDTH = 352;
+/* The share of the grid the undragged rail takes between those two rems —
+ * the `35%` inside `clamp(22rem, 35%, 26rem)` in the class string below, and
+ * tests/split-layout.test.ts pins the two to each other. */
+const WORK_RAIL_SHARE = 0.35;
+/* What the CSS renders for an undragged rail in a grid this wide: the clamp
+ * above, in pixels. The bounds take THIS as their `cssWidth`, not the static
+ * top of the clamp: 416 kept 26rem reachable at every grid width, so at the
+ * 872px split — where the CSS draws 352 — a drag could take the rail to 416
+ * and leave the conversation 456, under the floor declared a few lines up.
+ * The handle's own aria-valuenow still names the top of the clamp for an
+ * undragged rail; the number a drag can reach is the one that matters. */
+function workRailCssWidth(containerWidth: number) {
+  return Math.min(
+    WORK_RAIL_CSS_WIDTH,
+    Math.max(WORK_RAIL_DEFAULT_WIDTH, Math.round(containerWidth * WORK_RAIL_SHARE)),
+  );
+}
 /* Where the grid splits into two columns: the conversation at its floor (gap
  * included) beside the rail at its narrowest — 872px, and the class strings say
  * the same thing as `@[54.5rem]/thread:`. The `thread` container is the page's
@@ -191,7 +208,7 @@ function workRailBounds(containerWidth: number) {
     // conversation beside it, so a rail wider than the thing it annotates is
     // never the layout the reader wanted.
     fraction: 0.5,
-    cssWidth: WORK_RAIL_CSS_WIDTH,
+    cssWidth: workRailCssWidth(containerWidth),
   });
 }
 
