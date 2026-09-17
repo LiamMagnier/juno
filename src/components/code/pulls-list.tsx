@@ -222,7 +222,10 @@ export function PullsList({ account, connected = true }: { account: string | nul
           description="Pull requests you open — including the ones Juno Code pushes from your sessions — show up here."
           action={
             <Button asChild variant="outline" className="gap-1.5">
-              <Link href="/code/new">
+              {/* `/code` — the composer itself. `/code/new` still resolves, as
+                  a redirect to here, but an empty state should not send a
+                  reader through a bounce. */}
+              <Link href="/code">
                 <AppIcons.code className="size-4" /> Start a code session
               </Link>
             </Button>

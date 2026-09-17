@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { PullsList } from "@/components/code/pulls-list";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { Button } from "@/components/ui/button";
 import { AppIcons } from "@/lib/app-icons";
 
@@ -20,9 +19,12 @@ export const dynamic = "force-dynamic";
  * pointed here because `/code` had no page to point at — so a list of OUTCOMES
  * was standing in as the front door of the feature that produces them.
  *
- * It now sits under the same header and the same view switcher as the run list,
- * in the same `AppPage measure="wide"` column, so the two read as one surface
- * and the shell does not resize when a reader changes tabs.
+ * It is a destination of its own now, reached from More in the Code sidebar.
+ * The view switcher it used to share with the run list went with that list: a
+ * tab row says "these two things are one surface seen twice", and with one of
+ * the two deleted it was a row of tabs containing a single tab. The
+ * `AppPage measure="wide"` column stays — it is what the rest of the product is
+ * read at, and the landing's full-height composer is the exception, not this.
  */
 export default async function CodePullsPage() {
   const user = await requireUser();
@@ -39,20 +41,17 @@ export default async function CodePullsPage() {
         lede="What your runs opened on GitHub, plus anything else waiting on your review."
         // The way back to the thing that produces this list. It matters most
         // when the list is empty, which is exactly when it is least obvious
-        // that pull requests come from runs. Same primary action as `/code`,
-        // byte for byte, so the two tabs of one surface agree about what the
-        // primary thing to do here is.
+        // that pull requests come from runs — and with the tab row gone it is
+        // the only route back on this page. It points at `/code`, which is now
+        // the composer itself rather than a page with a composer on it.
         actions={
           <Button asChild className="gap-1.5">
-            <Link href="/code/new">
+            <Link href="/code">
               <AppIcons.new className="size-4" aria-hidden="true" /> New task
             </Link>
           </Button>
         }
-        // The tab row under this header carries the page's single rule.
-        className="mb-4 border-b-0 pb-0"
       />
-      <CodeSurfaceNav active="pulls" />
 
       {/* The disconnected state is PullsList's own `disconnected` phase — it
           was written out a second time on this page once, byte-for-byte, and a

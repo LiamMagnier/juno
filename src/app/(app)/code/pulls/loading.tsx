@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { staggerDelay } from "@/lib/motion";
 
 /**
- * The pull-request list: header, view switcher, then one column of rows.
+ * The pull-request list: header, then one column of rows.
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -15,13 +15,11 @@ export default function CodePullsLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading pull requests">
-      {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
-          heading and its lede. */}
-      {/* The header gives its rule to the tab row below, as the real
-          AppPageHeader does on these pages (`mb-4 border-b-0 pb-0`). */}
-      <div className="mb-4">
+      {/* AppPageHeader, at its own metrics: the mb-3 eyebrow row, the
+          display-size heading, its lede, and the rule it now keeps for itself
+          — the tab row it used to hand that rule to is gone. */}
+      <div className="mb-6 border-b border-border pb-5">
         <div className="mb-3 flex items-center gap-2">
-          <Skeleton className="size-8 shrink-0" />
           <Skeleton className="h-3 w-12 rounded-xs" />
         </div>
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
@@ -31,12 +29,6 @@ export default function CodePullsLoading() {
           </div>
           <Skeleton className="h-9 w-28" />
         </div>
-      </div>
-      {/* The underline tab row CodeSurfaceNav draws under the header: two
-          labels on the page ground over the single rule, no track. */}
-      <div className="mb-6 flex items-center gap-1 border-b border-border" aria-hidden="true">
-        <Skeleton className="mx-3 my-2 h-5 w-10 rounded-xs" />
-        <Skeleton className="mx-3 my-2 h-5 w-24 rounded-xs" />
       </div>
       <div className="mb-4 flex items-center justify-between gap-2">
         <Skeleton className="h-4 w-52 rounded-xs" />

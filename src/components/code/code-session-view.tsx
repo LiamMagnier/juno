@@ -603,8 +603,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
    * `onRegenerate` is supplied, and this surface supplied neither that nor
    * `onEdit` — so the only way back from a failure was retyping the prompt,
-   * which the composer cleared on send. One screen earlier, /code/new's own
-   * dispatch failure has exactly this button.
+   * which the composer cleared on send. One screen earlier, the landing
+   * composer's own dispatch failure has exactly this button.
    *
    * Re-dispatch when the session can run, and otherwise put the words back in
    * the composer — a Mac that went offline mid-run is the common case, and the
