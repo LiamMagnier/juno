@@ -60,11 +60,12 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import type { Plan } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
 import { unattendedRunCeiling } from "@/lib/spend-ceiling";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import { runBudgetForPlan } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import { appendEvents, createRun, finishRun } from "@/lib/work/store";
@@ -189,24 +190,37 @@ function log(message: string, extra?: Record<string, unknown>): void {
 // Budgets
 // ---------------------------------------------------------------------------
 
+/** One account's two dispatch-time facts, read together. */
+interface AccountLimits {
+  plan: Plan;
+  remainingMicroUsd: number | null;
+}
+
 /**
- * What each account may still spend, remembered for the length of one tick.
+ * What each account is on and what it may still spend, remembered for the
+ * length of one tick.
  *
  * The same cache the scheduler keeps, for the same reason: ten triggers
- * belonging to one user become one budget read rather than ten. Nothing here
- * enforces the budget — the executor does, per token — so a figure a few seconds
- * old can only affect whether a run is started, never whether it overspends.
+ * belonging to one user become one read rather than ten. Nothing here enforces
+ * the budget — the executor does, per token — so a figure a few seconds old
+ * can only affect whether a run is started, never whether it overspends.
+ *
+ * The plan is kept as well as the remaining budget, and for the same reason it
+ * is in the scheduler: `runBudgetForPlan` needs it at dispatch, and reading it
+ * a second time there would be a second read of the same row that could give a
+ * different answer from the one admission was decided on.
  */
-async function remainingBudgetMicroUsd(
+async function accountLimits(
   userId: string,
-  cache: Map<string, number | null>
-): Promise<number | null> {
+  cache: Map<string, AccountLimits>
+): Promise<AccountLimits> {
   const cached = cache.get(userId);
   if (cached !== undefined) return cached;
   const plan = await getUserPlan(userId);
   const status = await checkBudget(userId, plan);
-  cache.set(userId, status.remainingMicroUsd);
-  return status.remainingMicroUsd;
+  const limits: AccountLimits = { plan, remainingMicroUsd: status.remainingMicroUsd };
+  cache.set(userId, limits);
+  return limits;
 }
 
 // ---------------------------------------------------------------------------
@@ -832,7 +846,7 @@ async function offer(
   trigger: TriggerRow,
   schedule: ScheduleRow,
   event: TriggerEvent,
-  context: { now: Date; recent: readonly string[]; budgets: Map<string, number | null> }
+  context: { now: Date; recent: readonly string[]; budgets: Map<string, AccountLimits> }
 ): Promise<Settlement> {
   const state: TriggerState = {
     id: trigger.id,
@@ -892,6 +906,10 @@ async function offer(
     }),
   ]);
 
+  // Read before the planner, so the figure it refuses on and the ceiling the
+  // dispatch below writes are the same account's answer from one moment.
+  const limits = await accountLimits(schedule.userId, context.budgets);
+
   const decision = planTriggerDispatch({
     schedule: {
       enabled: schedule.enabled,
@@ -905,7 +923,7 @@ async function offer(
     hosts: views,
     requiredCapabilities: runConfig.requiredCapabilities,
     cloudAvailable: CLOUD_WORK_AVAILABLE,
-    remainingBudgetMicroUsd: await remainingBudgetMicroUsd(schedule.userId, context.budgets),
+    remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
 
   const idempotencyKey = triggerRunIdempotencyKey(
@@ -981,7 +999,7 @@ async function offer(
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      DEFAULT_RUN_BUDGET
+      runBudgetForPlan(limits.plan)
     ),
     idempotencyKey,
   });
@@ -1008,7 +1026,7 @@ async function offer(
  * poll that decided to do nothing must not leave the trigger locked until the
  * lease lapses.
  */
-async function pollOne(trigger: TriggerRow, budgets: Map<string, number | null>): Promise<void> {
+async function pollOne(trigger: TriggerRow, budgets: Map<string, AccountLimits>): Promise<void> {
   const now = new Date();
 
   // Asked here as well as at the write, and that repetition is the point: this
@@ -1174,7 +1192,7 @@ async function findDueTriggers(now: Date, limit: number) {
 
 async function tick(): Promise<void> {
   const now = new Date();
-  const budgets = new Map<string, number | null>();
+  const budgets = new Map<string, AccountLimits>();
 
   for (const trigger of await findDueTriggers(now, MAX_TRIGGERS_PER_TICK)) {
     if (stopping) return;

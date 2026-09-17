@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { useApp } from "@/components/app/app-provider";
 import {
   buildWorkComposerVoiceBriefing,
   type WorkComposerVoiceBriefingInput,
@@ -70,8 +71,17 @@ export function WorkComposerVoicePanel({
   const startedRef = React.useRef(false);
   const voiceRef = React.useRef(voice);
   voiceRef.current = voice;
-  const briefingRef = React.useRef(briefing);
-  briefingRef.current = briefing;
+  /*
+   * The plan is joined to the briefing here rather than asked of the composer,
+   * because the composer already hands this panel everything else the briefing
+   * needs and the plan is not a property of the task being written — it is a
+   * property of who is writing it. The ceilings section 2 reads out loud is
+   * shaped by it, and a voice that agreed to a two-hour errand on a trial
+   * account would be agreeing to something the run stops ten minutes into.
+   */
+  const { quota } = useApp();
+  const briefingRef = React.useRef<WorkComposerVoiceBriefingInput>({ ...briefing, plan: quota.plan });
+  briefingRef.current = { ...briefing, plan: quota.plan };
   React.useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;

@@ -20,7 +20,7 @@ import {
   type WorkPermissionPolicy,
   type WorkTarget,
 } from "@/lib/work/domain";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import { runBudgetForPlan } from "@/lib/work/budget";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import {
   defaultWorkModelId,
@@ -79,10 +79,10 @@ const MAX_FAILOVER_HISTORY = 4;
 const CLOUD_WORK_AVAILABLE = true;
 
 /*
- * The ceilings a run is dispatched with are `DEFAULT_RUN_BUDGET` in
+ * The ceilings a run is dispatched with come from `runBudgetForPlan` in
  * src/lib/work/budget.ts — hoisted out of this file so the scheduler, the
- * run-now route and the composer's own "Stops at $2" sentence read the one
- * constant rather than each keeping a copy. Nothing wrote a budget before it
+ * run-now route and the composer's own "Stops at …" sentence read the one
+ * table rather than each keeping a copy. Nothing wrote a budget before it
  * existed, and a zero budget is what `MAX_STEPS_PER_RUN = 200` alone bounds:
  * two hundred model turns on a frontier model for a task that went in a circle
  * at step eleven.
@@ -741,7 +741,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // in the UI read. Written at dispatch rather than derived later,
         // because an approval digest and a budget bar both have to describe
         // the run as it was started, not as the defaults happen to be today.
-        budget: DEFAULT_RUN_BUDGET,
+        //
+        // Shaped by the plan, through the same `plan` the model gate above was
+        // decided on. A trial account and a Max account do not get the same
+        // ceiling, and reading it twice would let a subscription that lapsed
+        // between the two reads gate on one plan and spend on another.
+        budget: runBudgetForPlan(plan),
         idempotencyKey: body.idempotencyKey ?? null,
         // Written in the run's own transaction, so this attempt cannot exist
         // without the instruction that drives it, nor the instruction without

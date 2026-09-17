@@ -40,7 +40,8 @@
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
-import { RUN_CEILINGS } from "@/components/work/clarify/run-disclosure";
+import type { Plan } from "@prisma/client";
+import { RUN_CEILINGS, runCeilingsFor } from "@/components/work/clarify/run-disclosure";
 import { readEvent, str } from "@/components/work/work-payload";
 import { deriveApprovals, deriveOpenQuestions } from "@/components/work/work-decisions";
 import { deriveCurrentAction, derivePlan, type PlanStep } from "@/components/work/work-timeline";
@@ -290,6 +291,16 @@ export interface WorkComposerVoiceBriefingInput {
   approvalSummary: string;
   /** Where it would run, in the reader's words. Null while that is unknown. */
   where: string | null;
+  /**
+   * The reader's plan, because the ceilings the briefing reads out loud are
+   * shaped by it.
+   *
+   * Optional, and absent falls back to PRO's figures — the same fallback
+   * `RUN_CEILINGS` is. The point of section 2 is that the voice does not agree
+   * to an errand the run cannot finish, and on a trial account the run it
+   * cannot finish is a much smaller one.
+   */
+  plan?: Plan;
 }
 
 /**
@@ -316,6 +327,7 @@ export function buildWorkComposerVoiceBriefing(
   input: WorkComposerVoiceBriefingInput
 ): WorkVoiceBriefing {
   const goal = input.goal.trim();
+  const ceilings = input.plan ? runCeilingsFor(input.plan) : RUN_CEILINGS;
 
   const ordered: (string | null)[] = [
     // 1 — the job, and the rules of this conversation. Never dropped.
@@ -336,7 +348,7 @@ export function buildWorkComposerVoiceBriefing(
     // 2 — what a run can actually finish, so nothing agreed here is impossible.
     [
       "What a Juno Work run can do, so we do not agree on something it cannot finish:",
-      `- It stops at $${RUN_CEILINGS.costUsd}, ${RUN_CEILINGS.tokens.toLocaleString("en-US")} tokens, or ${RUN_CEILINGS.minutes} minutes of working time, whichever comes first.`,
+      `- It stops at $${ceilings.costUsd}, ${ceilings.tokens.toLocaleString("en-US")} tokens, or ${ceilings.minutes} minutes of working time, whichever comes first.`,
       "- It runs unattended and reports back. It can stop to ask me something, but it cannot " +
         "wait around for hours.",
       "- It works from what I hand it: the task, the project, any files I attach and the apps I " +

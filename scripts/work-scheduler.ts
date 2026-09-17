@@ -45,7 +45,7 @@ import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
 import { unattendedRunCeiling } from "@/lib/spend-ceiling";
-import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import { runBudgetForPlan } from "@/lib/work/budget";
 import {
   createRun,
   createWorkSession,
@@ -79,7 +79,7 @@ import {
   type WorkTriggerRow,
 } from "@/lib/work/schedule";
 import { effectiveHostState } from "@/app/api/work/protocol";
-import { Prisma } from "@prisma/client";
+import { Prisma, type Plan } from "@prisma/client";
 
 /** How often to look for due schedules. Well under the shortest cadence a user
  *  can express (`hourly`), and short enough that `MISSED_RUN_GRACE_MS` is never
@@ -120,24 +120,38 @@ function log(message: string, extra?: Record<string, unknown>): void {
 // Budgets
 // ---------------------------------------------------------------------------
 
+/** One account's two dispatch-time facts, read together. */
+interface AccountLimits {
+  plan: Plan;
+  remainingMicroUsd: number | null;
+}
+
 /**
- * What each account may still spend, remembered for the length of one tick.
+ * What each account is on, and what it may still spend, for the length of one
+ * tick.
  *
- * Ten schedules belonging to one user become one budget read rather than ten,
- * and the staleness that buys is bounded by the tick. Nothing here enforces the
- * budget — the executor does, per token — so a figure a few seconds old can
- * only affect whether a run is started, never whether it overspends.
+ * Ten schedules belonging to one user become one read rather than ten, and the
+ * staleness that buys is bounded by the tick. Nothing here enforces the budget
+ * — the executor does, per token — so a figure a few seconds old can only
+ * affect whether a run is started, never whether it overspends.
+ *
+ * The plan is kept rather than discarded, and that is why this cache holds a
+ * record instead of a number. `runBudgetForPlan` needs it at dispatch, and a
+ * second `getUserPlan` there would be a second read of the same row — worse, a
+ * read that could disagree with the one the admission check was made against if
+ * the subscription lapsed between them.
  */
-async function remainingBudgetMicroUsd(
+async function accountLimits(
   userId: string,
-  cache: Map<string, number | null>
-): Promise<number | null> {
+  cache: Map<string, AccountLimits>
+): Promise<AccountLimits> {
   const cached = cache.get(userId);
   if (cached !== undefined) return cached;
   const plan = await getUserPlan(userId);
   const status = await checkBudget(userId, plan);
-  cache.set(userId, status.remainingMicroUsd);
-  return status.remainingMicroUsd;
+  const limits: AccountLimits = { plan, remainingMicroUsd: status.remainingMicroUsd };
+  cache.set(userId, limits);
+  return limits;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +417,7 @@ type ScheduleWithSession = Prisma.WorkScheduleGetPayload<{ include: { session: t
 async function dispatchOne(
   schedule: ScheduleWithSession,
   now: Date,
-  budgets: Map<string, number | null>
+  budgets: Map<string, AccountLimits>
 ): Promise<void> {
   const dueAt = schedule.nextRunAt;
   if (!dueAt) {
@@ -447,6 +461,11 @@ async function dispatchOne(
       )
     : hosts;
 
+  // Read before the planner is called, because the planner is handed its
+  // remaining budget and the dispatch below is handed its plan, and the two
+  // must be the same account's answer from the same moment.
+  const limits = await accountLimits(schedule.userId, budgets);
+
   const [inFlightForSchedule, inFlightForUser] = await Promise.all([
     prisma.workRun.count({
       where: {
@@ -489,7 +508,7 @@ async function dispatchOne(
     hosts: ordered.map((host) => hostCapabilityView(host, effectiveHostState(host, now))),
     requiredCapabilities: runConfig.requiredCapabilities,
     cloudAvailable: CLOUD_WORK_AVAILABLE,
-    remainingBudgetMicroUsd: await remainingBudgetMicroUsd(schedule.userId, budgets),
+    remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
 
   /**
@@ -545,19 +564,23 @@ async function dispatchOne(
           // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
           // set a figure defaulted to 0 — so the runs firing at 03:00 with
           // nobody watching were the only ones with no ceiling at all, while a
-          // manually started run got $2 / 600k tokens / 20 minutes. The cost
-          // axis takes the unattended default ($1) first; then every axis is
-          // narrowed against the standard run budget, which is what fills the
-          // token and runtime ceilings a schedule left at zero. Substituted
-          // here rather than in `budgetExceeded` because 0-means-unlimited is
-          // the persisted contract the column and every client already speak.
+          // manually started run got a real one. The cost axis takes the
+          // unattended default ($1) first; then every axis is narrowed against
+          // this account's plan ceiling, which is what fills the token and
+          // runtime ceilings a schedule left at zero. Substituted here rather
+          // than in `budgetExceeded` because 0-means-unlimited is the persisted
+          // contract the column and every client already speak.
+          //
+          // The plan is read through the same cache the admission check used,
+          // so a schedule cannot be admitted against one plan and dispatched
+          // under another's ceiling.
           budget: narrowestBudget(
             {
               maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
               maxTokens: schedule.maxTokens,
               maxRuntimeMs: schedule.maxRuntimeMs,
             },
-            DEFAULT_RUN_BUDGET
+            runBudgetForPlan(limits.plan)
           ),
           idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
         });
@@ -710,7 +733,7 @@ async function tick(): Promise<void> {
     );
   }
 
-  const budgets = new Map<string, number | null>();
+  const budgets = new Map<string, AccountLimits>();
   for (const schedule of await findDueSchedules(now, MAX_SCHEDULES_PER_TICK)) {
     if (stopping) return;
     if (!(await claimSchedule(schedule, now))) continue;

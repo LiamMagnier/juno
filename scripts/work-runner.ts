@@ -60,6 +60,7 @@ import {
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
+import { maxStepsForBudget } from "@/lib/work/budget";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
@@ -2975,6 +2976,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     tools: effectiveTools,
     plan,
     budget,
+    // The step cap, scaled to the runtime this run was actually given.
+    //
+    // The runtime's own MAX_STEPS_PER_RUN is 200, a figure sized for the twenty
+    // minutes every run used to get. Now that the ceiling is shaped by the plan
+    // a longer run would still stop at two hundred model turns, which makes the
+    // clock it was sold decorative: the budget bar would read a quarter full
+    // and the run would end anyway, for a reason no surface names. Scaled by
+    // the runtime ratio the two ceilings agree again, and the step cap goes
+    // back to being what it was written as - a backstop against a run going in
+    // a circle, not the thing that ends long work.
+    maxSteps: maxStepsForBudget(budget, runtime.MAX_STEPS_PER_RUN),
     // What a token costs, so the run's spend is a number and its ceiling is a
     // ceiling.
     //
