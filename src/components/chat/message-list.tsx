@@ -261,11 +261,11 @@ export function MessageList(props: MessageListProps) {
         the transcript had no role, no label and no landmark of any kind.
 
         aria-live="off" is deliberate and load-bearing. role="log" carries an
-        implicit aria-live="polite", and each assistant turn is ALREADY its own
-        polite region (message-item.tsx). Leaving both on makes every reply
-        announce twice. Speech comes from three narrower places instead:
-        StreamStatus ("Thinking" / "Writing"), the per-turn region once the turn
-        is complete, and the completion announcer below.
+        implicit aria-live="polite", and each assistant turn's answer body is
+        ALREADY its own polite region (message-item.tsx). Leaving both on makes
+        every reply announce twice. Speech comes from three narrower places
+        instead: StreamStatus ("Thinking" / "Writing"), the per-turn region
+        once the turn is complete, and the completion announcer below.
       */}
       {/* The page's <h1> once the empty state is gone, for heading
           navigation — how screen-reader users orient. Visually hidden here:

@@ -113,16 +113,28 @@ function StreamStatus({
   const showClock = !writing && !checking && !submitting && elapsedSec > 0;
 
   return (
-    <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
+    <div className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
       {/* Plain muted text beside the dots — the dots are the one moving thing
           in this row. The sentence used to shimmer as well, which put two
           animations on one line and a fifth "working" signal on the reply
           (the run strip, the tail mask and the shell sweep were the others). */}
-      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground">
-        {statusCopy}
+      <span className="flex min-w-0 items-baseline text-body-lg leading-6 text-muted-foreground">
+        {/* The live region is the sentence and nothing else. The clock used to
+            tick INSIDE it, and role="status" is atomic, so a screen reader
+            re-announced "Thinking about your request, 41 seconds" once a
+            second for the whole pre-first-token wait — which the copy above
+            expects to run for minutes. The keyed child still announces a copy
+            change exactly once; the clock is a sibling the tree cannot see,
+            kept because the panel's own Elapsed is only visible when the
+            panel is open. */}
+        <span role="status" className="min-w-0 truncate">
+          <span key={statusCopy}>{statusCopy}</span>
+        </span>
         {showClock && (
-          <span className="whitespace-nowrap tabular-nums"> · {formatStreamElapsed(elapsedSec)}</span>
+          <span aria-hidden="true" className="ml-1 shrink-0 whitespace-nowrap tabular-nums">
+            · {formatStreamElapsed(elapsedSec)}
+          </span>
         )}
       </span>
     </div>
@@ -961,14 +973,18 @@ export function MessageItem({
       {/* Turn marker — see the note on the user branch. */}
       <h2 className="sr-only">Juno replied</h2>
       {/*
-        Silent while streaming, polite once the turn is settled.
-        Markdown re-renders the final block on every delta, so a polite region
-        during streaming re-announces the growing paragraph token by token —
-        which is noise, not access. MessageList's role="status" announcer says
-        "Response complete, N words" on the finishing edge instead. This was
-        already the behaviour for realtime voice; it is right for every turn.
+        NOT a live region. The turn's polite region is the answer body further
+        down, and it used to be this root — which meant everything that lands
+        after `streaming` flips false announced itself into a settled reply.
+        The citation audit resolves idle → loading → ready seconds later (with
+        a 6s retry), so its panel and the sources pill rewrote inside a live
+        region on top of the aria-live spans citation-audit.tsx keeps for
+        itself, and each change was spoken twice. The activity strip had to
+        hide its own clock and reasoning from the region for the same reason.
+        The bibliography, the audit and the toolbar are content a reader
+        navigates to, not announcements.
       */}
-      <div className="min-w-0 flex-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
+      <div className="min-w-0 flex-1">
         {/* A Code turn draws its commands, file writes and approvals as its
             own cards (code-activity.tsx) beside the turn; the research-shaped
             strip would list the same rows a second time, minus the output. */}
@@ -1028,7 +1044,17 @@ export function MessageItem({
             )}
           </div>
         ) : (
-          <div className="space-y-1">
+          /*
+            The turn's one live region: silent while streaming, polite once
+            the turn is settled. Markdown re-renders the final block on every
+            delta, so a polite region during streaming re-announces the
+            growing paragraph token by token — which is noise, not access.
+            MessageList's role="status" announcer says "Response complete,
+            N words" on the finishing edge instead. This was already the
+            behaviour for realtime voice; it is right for every turn. Scoped
+            to the answer body, not the turn root — see the note there.
+          */
+          <div className="space-y-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
             {mediaAttachments.length > 0 && (
               <div className="mb-1 flex flex-wrap gap-2">
                 {mediaAttachments.map((a) =>

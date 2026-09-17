@@ -84,7 +84,6 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      aria-label={`${isVideo ? "Video" : "Image"} generation in progress — ${detail}`}
       data-modality={modality}
       data-stage={stage}
       className={cn("w-full", isVideo ? "max-w-[min(100%,440px)]" : "max-w-[min(100%,288px)]")}
@@ -102,10 +101,21 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         )}
       </div>
 
-      <div className="mt-2.5 flex flex-col gap-0.5" aria-hidden="true">
+      {/* A live region announces its CONTENT, so the content has to be in the
+          tree. This stack was aria-hidden, with an aria-label on the region
+          standing in for it — and an attribute rewrite on a live region is
+          not a text mutation, so most screen readers said nothing at any
+          stage change, and the long-wait sentence was in neither place: the
+          one reassurance this component exists to give never reached the
+          reader it was written for. The hidden prefix names the work, because
+          the stage word alone ("Refining") means nothing spoken. */}
+      <div className="mt-2.5 flex flex-col gap-0.5">
+        <span className="sr-only">{isVideo ? "Video" : "Image"} generation: </span>
         {/* Keyed on the stage so a change fades rather than swapping under the
-            shine — one element, so the two animations cannot collide. */}
-        <ThinkingState key={detail} tone="strong" className="text-[0.875rem] motion-safe:animate-fade-in">
+            shine — one element, so the two animations cannot collide. `body`
+            is the sibling sentence's rung; the label sat on an arbitrary 14px
+            that is on no rung and that the lint rule's px-only regex never saw. */}
+        <ThinkingState key={detail} tone="strong" className="text-body motion-safe:animate-fade-in">
           {detail}
         </ThinkingState>
         {longWait && (

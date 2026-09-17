@@ -2616,13 +2616,15 @@ export function Composer({
                     ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}`
                     : undefined
                 }
-                className={cn(
-                  composerFieldClass,
-                  // `text-base` (16px) at rest is load-bearing, not stylistic: iOS
-                  // Safari zooms the whole page into any focused field below 16px.
-                  // The clarification / huge-draft states step down to the body rung.
-                  (clarificationOpen || hugeDraft) && "text-body",
-                )}
+                // 16px in EVERY state, and composerFieldClass is the only thing
+                // that sets it: iOS Safari zooms the whole page into a focused
+                // field below 16px and does not zoom back out on blur. The
+                // clarification and expanded-huge-draft states used to step
+                // down to the body rung right here — which re-opened exactly
+                // the zoom the base class exists to prevent, on the two states
+                // where the field is longest. Their density comes from
+                // useComposerAutosize's maxLines / maxHeight instead.
+                className={composerFieldClass}
               />
             )
           }

@@ -1810,17 +1810,23 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           >
             {/* The page's visible <h1> from md up; the transcript's own
                 heading (message-list.tsx) leaves the tree at this width so
-                there is exactly one. Empty until a conversation exists — a
-                new chat has nothing to be titled yet. */}
-            <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
-              {headerTitle ? (
+                there is exactly one. A new chat has nothing to be titled yet,
+                and an <h1> with nothing in it is a blank entry at the top of
+                the heading list — the first thing a screen-reader user opens
+                on a page — so before a conversation exists the slot is a
+                spacer instead: it keeps `justify-between` pushing the cluster
+                right and the h-11 collapse exactly as it was. */}
+            {headerTitle ? (
+              <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
                 <AnimatedTitle
                   title={headerTitle}
                   animate={headerTitleSource === "ai"}
                   className="max-w-[40rem]"
                 />
-              ) : null}
-            </h1>
+              </h1>
+            ) : (
+              <div className="min-w-0 flex-1" aria-hidden="true" />
+            )}
             <div className="hidden shrink-0 items-center gap-1.5 md:flex">{actionsContent}</div>
           </div>
         )}
@@ -2008,8 +2014,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 currentModelId={model}
                 conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
                 // The header band above draws the visible h1 from md up,
-                // except in incognito, where the band is dropped.
-                titleShownInHeader={topActionsSlotOwner && !privateMode}
+                // except in incognito, where the band is dropped — and only
+                // once it has a title. On the first send the messages exist
+                // before the new conversation reaches the app context's list,
+                // so `headerTitle` is "" and the band renders its spacer, not
+                // an <h1>; keying this on the band alone left the page with no
+                // h1 at all for that window. The list's hidden fallback stays
+                // until the band has something to show.
+                titleShownInHeader={topActionsSlotOwner && !privateMode && !!headerTitle}
               />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and gutter as the composer's root
