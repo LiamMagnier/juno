@@ -17,13 +17,14 @@ import { cn } from "@/lib/utils";
 export type TileSaveState = "idle" | "saving" | "saved" | "failed";
 
 /**
- * The save status a tile hangs in its eyebrow row, for controls that write in
- * the background rather than behind a Save button.
+ * The save status a section hangs beside a control that writes in the
+ * background rather than behind a Save button — in a group's or block's
+ * `aside`, or in a row's `control` slot next to the field itself.
  *
  * PermissionsSection invented this shape and Custom instructions saved with no
  * feedback at all — a blur-save whose only success signal was nothing
- * happening. One component, so the two autosaving tiles on this surface (and
- * the next one) confirm in the same voice, at the same place.
+ * happening. One component, so every autosaving block on the settings surface
+ * confirms in the same voice, at the same place.
  *
  * Rendered in EVERY state, not mounted on demand: the live region has to exist
  * before the first save for the announcement to be reliable.

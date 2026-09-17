@@ -768,7 +768,11 @@ export function AppSidebar({
                     )}
 
                     {pinned.length > 0 && (
-                      <Section label="Pinned" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
+                      // "Pinned chats", for the reason the section above is
+                      // "Pinned projects": the same word at the same rung one
+                      // section apart, naming two kinds of thing, reads as one
+                      // list cut in half rather than two lists.
+                      <Section label="Pinned chats" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
                         {pinned.map((c) => (
                           <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
                         ))}

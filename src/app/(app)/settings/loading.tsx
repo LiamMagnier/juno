@@ -1,5 +1,5 @@
 import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
-import { SettingsPaneHeaderSkeleton } from "@/components/settings/setting-row";
+import { SettingRowSkeleton, SettingsPaneHeaderSkeleton } from "@/components/settings/setting-row";
 import { Skeleton } from "@/components/ui/skeleton";
 import { staggerDelay } from "@/lib/motion";
 
@@ -8,9 +8,12 @@ import { staggerDelay } from "@/lib/motion";
  * heading and a few rows on the right — so nothing jumps when the real
  * sections land.
  *
- * The pane header comes from setting-row.tsx, where the real one lives. This
- * file used to draw it by hand at three wrong numbers and the pane dropped
- * 7.5px on arrival; see SettingsPaneHeaderSkeleton for the arithmetic.
+ * The pane header and the rows come from setting-row.tsx, where the real ones
+ * live. This file used to draw the header by hand at three wrong numbers and
+ * the pane dropped 7.5px on arrival; see SettingsPaneHeaderSkeleton for the
+ * arithmetic. Under it stood four `h-16` cards on `space-y-4` for a pane that
+ * has no cards — every section is rows on hairlines — so the placeholder was
+ * the outline of a different page than the one that replaced it.
  */
 export default function SettingsLoading() {
   return (
@@ -33,11 +36,11 @@ export default function SettingsLoading() {
         </div>
         <div className="min-w-0 max-w-3xl">
           <SettingsPaneHeaderSkeleton />
-          <div className="space-y-4">
+          <div className="divide-y divide-border/60">
             {[...Array(4)].map((_, i) => (
-              <Skeleton
+              <SettingRowSkeleton
                 key={i}
-                className="h-16 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 style={staggerDelay(i, "base")}
               />
             ))}

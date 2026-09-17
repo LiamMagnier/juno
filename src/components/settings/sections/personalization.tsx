@@ -83,10 +83,11 @@ export function PersonalizationSection() {
 
   return (
     <>
-      <SettingsGroup
-        title="Response style"
-        description="How Juno writes. Your custom instructions still take priority."
-      >
+      {/* The lede is the priority rule alone. It used to open with "How Juno
+          writes." — the clause the pane's own lede ("How Juno writes and what
+          it keeps in mind.") had printed ~60px above it, and a sentence a
+          reader has just read is a sentence they stop to compare. */}
+      <SettingsGroup title="Response style" description="Your custom instructions still take priority.">
         <SettingBlock label="Personality">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Response style">
             {PERSONALITIES.map((p, i) => {

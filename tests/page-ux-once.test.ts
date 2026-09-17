@@ -41,6 +41,20 @@ test("an untitled SettingsGroup renders its rows with no header block", () => {
   assert.ok(!html.includes("mb-2"), "no header margin reserved for a heading that is not there");
 });
 
+test("a SettingsGroup whose description resolves to false renders no header block either", () => {
+  // `description={cond && "…"}` is how voice.tsx writes an optional
+  // description on SettingRow, so a SettingsGroup will get the same shape
+  // sooner or later. `hasHeader` used to test `!= null`, which `false`
+  // passes, while the render tested truthiness — an empty header `div` with
+  // its `mb-2` and nothing inside it, the exact dead space the test above
+  // guards against.
+  const html = renderToStaticMarkup(
+    SettingsGroup({ description: false, children: createElement("div", { "data-row": "" }, "row") })
+  );
+  assert.ok(html.includes('data-row=""'), "the rows still render");
+  assert.ok(!html.includes("mb-2"), "a falsy description reserves no header margin");
+});
+
 test("a titled SettingsGroup still draws the eyebrow, the lede and the aside", () => {
   const html = renderToStaticMarkup(
     SettingsGroup({
@@ -83,6 +97,30 @@ test("the settings loading page takes its pane header from setting-row.tsx", () 
     !/border-b border-border pb-4/.test(loading),
     "loading.tsx no longer draws the pane header block by hand"
   );
+});
+
+test("the settings loading page stands rows on hairlines in for rows on hairlines", () => {
+  // The pane has no cards — every section is SettingRows under
+  // `divide-y divide-border/60` — but the skeleton used to be four `h-16`
+  // cards on `space-y-4`, the outline of a page that was not the one about
+  // to replace it. The row placeholder lives beside SettingRow, and takes the
+  // row's own line boxes in em so the two cannot drift apart.
+  const settingRow = fs.readFileSync(SETTING_ROW, "utf8");
+  const loading = fs.readFileSync(SETTINGS_LOADING, "utf8");
+
+  assert.ok(/export function SettingRowSkeleton/.test(settingRow), "the row's skeleton lives beside the row");
+  assert.ok(/h-\[1\.6em\] w-40 max-w-full rounded-xs text-body/.test(settingRow), "label bar is one text-body line box");
+  assert.ok(
+    /mt-0\.5 h-\[1\.5em\] w-64 max-w-full rounded-xs text-ui/.test(settingRow),
+    "description bar is one text-ui line box at the row's mt-0.5"
+  );
+  assert.ok(/SettingRowSkeleton/.test(loading), "loading.tsx uses the shared row skeleton");
+  assert.ok(/divide-y divide-border\/60/.test(loading), "the rows are separated by the hairlines the real rows use");
+  // The class strings the old card skeletons carried, not the bare tokens:
+  // the rail well is a `rounded-card` surface for real, and the docblock
+  // names both tokens while explaining why they left.
+  assert.ok(!/h-16 w-full rounded-card/.test(loading), "no card placeholders on a pane that draws no cards");
+  assert.ok(!/className="space-y-4"/.test(loading), "no card spacing on a pane that draws no cards");
 });
 
 test("WorkStatusPill carries its sentence as a tooltip by default", () => {

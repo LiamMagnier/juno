@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * The three shapes every settings section is built from.
  *
- *   <SettingsGroup>   an eyebrow, an optional lede, then rows on hairlines.
+ *   <SettingsGroup>   an optional eyebrow and lede, then rows on hairlines.
  *   <SettingRow>      label + description on the left, the control on the
  *                     right; stacks when the control is wide.
  *   <SettingBlock>    a labelled full-width control (a picker grid, a
@@ -46,7 +46,12 @@ export function SettingsGroup({
   children: React.ReactNode;
   className?: string;
 }) {
-  const hasHeader = title != null || description != null || aside != null;
+  // `Boolean(description)`, not `!= null`, because the render below tests
+  // truthiness: a call site that passes `description={cond && "…"}` (the
+  // pattern voice.tsx uses on SettingRow) hands `false` in, and an untitled
+  // group would then reserve an empty header block and its `mb-2` — the dead
+  // space an untitled group exists to not have.
+  const hasHeader = title != null || Boolean(description) || aside != null;
   return (
     <section className={cn("py-6 first:pt-0", className)}>
       {hasHeader && (
@@ -158,5 +163,23 @@ export function SettingsPaneHeaderSkeleton() {
       <Skeleton className="h-[1.25em] w-32 text-title" />
       <Skeleton className="mt-1 h-6 w-72 max-w-full rounded-xs" />
     </header>
+  );
+}
+
+/**
+ * One SettingRow's placeholder, drawn from the row's own metrics for the same
+ * reason the header's is. `/settings/loading.tsx` stood four `h-16` cards on
+ * `space-y-4` in for a pane that draws no cards at all: every section is rows
+ * on hairlines, `py-3.5` around a `text-body` label (1.6em) over a `text-ui`
+ * description (1.5em) at `mt-0.5`. Stack these under `divide-y
+ * divide-border/60`, as SettingsGroup stacks the real rows, and the pane lands
+ * on its own outline instead of a different page's.
+ */
+export function SettingRowSkeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <div className={cn("py-3.5", className)} style={style} aria-hidden="true">
+      <Skeleton className="h-[1.6em] w-40 max-w-full rounded-xs text-body" />
+      <Skeleton className="mt-0.5 h-[1.5em] w-64 max-w-full rounded-xs text-ui" />
+    </div>
   );
 }

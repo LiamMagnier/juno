@@ -5790,10 +5790,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Filter by type"
   },
   {
-    "id": "511a7125342dd901",
-    "source": "How Juno writes. Your custom instructions still take priority."
-  },
-  {
     "id": "512b760984717cf8",
     "source": "Mentions légales de Juno (chat.liams.dev) : éditeur, directeur de la publication, hébergeur et propriété intellectuelle, conformément à la loi pour la confiance dans l'économie numérique (LCEN)."
   },
@@ -6536,10 +6532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5cdaf86ba3219832",
     "source": "Edit this memory"
-  },
-  {
-    "id": "5ce440535c622bdb",
-    "source": "Juno saves durable facts from this project's chats here."
   },
   {
     "id": "5ce44dd77dae789f",
@@ -11790,6 +11782,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Loading Juno Work"
   },
   {
+    "id": "a38776bc6077b18d",
+    "source": "Juno saves durable facts from your chats here."
+  },
+  {
     "id": "a39a7ffad4a3013f",
     "source": "assistant"
   },
@@ -16300,6 +16296,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ded4ea674a939deb",
     "source": "Couldn’t delete the task."
+  },
+  {
+    "id": "dedefd288735d471",
+    "source": "Your custom instructions still take priority."
   },
   {
     "id": "dee6a104e47f7773",

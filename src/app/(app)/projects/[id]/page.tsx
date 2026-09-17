@@ -737,12 +737,17 @@ export default function ProjectDetailPage() {
                         // No action, because nothing the reader does here
                         // resolves it — memories arrive from chats — and the
                         // "Automatically updated" footer stays with the list,
-                        // since this description already says as much.
+                        // since this description already says as much. No
+                        // icon either: the section head 20px above already
+                        // paints NotebookPen beside "Memory", and Instructions
+                        // beneath carries none. "Your chats", not "this
+                        // project's": the list is `/api/memory` with no
+                        // project parameter — the user's global memory, which
+                        // is what the "Only you" chip beside it is saying.
                         <EmptyState
                           size="panel"
-                          icon={NotebookPen}
                           title="No memories yet"
-                          description="Juno saves durable facts from this project's chats here."
+                          description="Juno saves durable facts from your chats here."
                         />
                       ) : (
                         <>
