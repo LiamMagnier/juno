@@ -182,14 +182,17 @@ export function parseStructuredPlan(text: string, opts: { maxQueries: number }):
   const objectives: ResearchObjective[] = [];
   const queries: string[] = [];
   const seenQueries = new Set<string>();
-  const pushQuery = (q: string) => {
+  /** True when the query made the list; false when it was short, a repeat, or over the cap. */
+  const pushQuery = (q: string): boolean => {
     const key = q.toLowerCase();
-    if (q.length < 8 || seenQueries.has(key) || queries.length >= opts.maxQueries) return;
+    if (q.length < 8 || seenQueries.has(key) || queries.length >= opts.maxQueries) return false;
     seenQueries.add(key);
     queries.push(q);
+    return true;
   };
 
-  const unsearched: string[] = [];
+  /** Each objective's own searches, in the order it listed them, taken in turn below. */
+  const perObjective: string[][] = [];
   for (const item of plan.objectives) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const o = item as Record<string, unknown>;
@@ -251,16 +254,36 @@ export function parseStructuredPlan(text: string, opts: { maxQueries: number }):
       evidenceRequirements: evidence,
       childObjectiveIds: [],
     });
-    const own = strList(o.queries, 4, MAX_QUERY_CHARS);
-    for (const q of own) pushQuery(q);
-    if (own.length === 0) unsearched.push(question);
+    perObjective.push(strList(o.queries, 4, MAX_QUERY_CHARS));
     if (objectives.length >= MAX_RESEARCH_OBJECTIVES) break;
   }
   if (objectives.length === 0) return null;
 
-  // A sub-question the planner wrote no search for is still searched: the
-  // question itself beats nothing, and the worker rounds refine it from there.
-  for (const question of unsearched) pushQuery(question.replace(/\?$/, ""));
+  /*
+   * Round-robin, not objective by objective. The cap used to be applied while
+   * walking the objectives in order, so a deep plan of eight sub-questions
+   * with three searches each filled sixteen slots by the sixth objective and
+   * the last two were never searched at all — and nothing downstream knew,
+   * because the "no search of its own" fallback only caught objectives whose
+   * list was empty. Taking every objective's first search before any
+   * objective's second means the cap costs each sub-question its least
+   * important searches rather than costing the least important sub-questions
+   * everything.
+   */
+  const accepted = objectives.map(() => 0);
+  const widest = perObjective.reduce((max, own) => Math.max(max, own.length), 0);
+  for (let k = 0; k < widest; k += 1) {
+    perObjective.forEach((own, i) => {
+      const q = own[k];
+      if (q !== undefined && pushQuery(q)) accepted[i] += 1;
+    });
+  }
+  // A sub-question with no search of its own — none written, or every one
+  // lost to the cap or to deduplication — is still searched: the question
+  // itself beats nothing, and the worker rounds refine it from there.
+  objectives.forEach((objective, i) => {
+    if (accepted[i] === 0) pushQuery(objective.question.replace(/\?$/, ""));
+  });
 
   const steps = strList(plan.steps, MAX_PLAN_STEPS, MAX_STEP_CHARS)
     .filter((line) => line.length >= 24 && /\s/.test(line))

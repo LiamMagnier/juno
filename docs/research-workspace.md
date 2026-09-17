@@ -94,8 +94,10 @@ one JSON object the parser bounds and the engine stores on `ResearchRun.plan`:
 - `successCriteria` — the planner's bar for done.
 - `risks` — where evidence is expected to be thin, disputed or stale.
 
-`queries` on the plan are flattened from the objectives in importance order, so
-the sweep still has its list; the objectives, not the queries, are what the
+`queries` on the plan are taken from the objectives in turn — every
+sub-question's first search before any sub-question's second, so the query cap
+costs no sub-question all of its searches — and the sweep still has its list;
+the objectives, not the queries, are what the
 coverage matrix, the delegation briefs and the lead's review key on. The brief,
 approach and success criteria are persisted and handed to every worker and to
 the lead (`researchBriefText`), so a worker knows how its evidence will be

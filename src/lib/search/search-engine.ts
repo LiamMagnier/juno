@@ -1,6 +1,7 @@
 import "server-only";
 import { isDisallowedHost } from "./url-safety";
 import { fetchSafePublicUrl } from "./fetch-safe";
+import { isPotentialSpa, parseRetryAfterMs } from "./page-signals";
 import { fuseRankedLists, type EngineSpec, type SearchResult } from "./fusion";
 import {
   extractPdfText,
@@ -36,6 +37,14 @@ export interface ExtractResult {
   publishedAt?: Date;
   /** Resolved, SSRF-filtered, de-duplicated — in the order the page listed them. */
   links: PageLink[];
+  /**
+   * True when the HTML looks like a client-rendered shell — an empty framework
+   * root, a "please enable JavaScript" notice — so the text above is the
+   * loading screen rather than the page. Only the extractor sees the raw HTML,
+   * so only it can say; the research crawler uses this to decide whether a
+   * headless render is worth attempting.
+   */
+  shell?: boolean;
 }
 
 /**
@@ -51,7 +60,8 @@ export interface ExtractResult {
 export type ExtractFailure =
   | { reason: "blocked_host" }
   | { reason: "redirect_limit" }
-  | { reason: "http_error"; httpStatus: number }
+  /** `retryAfterMs` carries the server's own `Retry-After`, when it sent one, for a caller that may retry. */
+  | { reason: "http_error"; httpStatus: number; retryAfterMs?: number }
   | { reason: "unsupported_content_type"; contentType: string }
   | { reason: "response_too_large"; limitBytes: number }
   | { reason: "empty_document" }
@@ -327,7 +337,13 @@ export async function extractUrlDocument(
     if (fetched.kind === "redirect_limit") return { ok: false, failure: { reason: "redirect_limit" } };
     const { response: res, url: finalUrl } = fetched;
 
-    if (!res.ok) return { ok: false, failure: { reason: "http_error", httpStatus: res.status } };
+    if (!res.ok) {
+      const retryAfterMs = parseRetryAfterMs(res.headers.get("retry-after"));
+      return {
+        ok: false,
+        failure: { reason: "http_error", httpStatus: res.status, ...(retryAfterMs !== null ? { retryAfterMs } : {}) },
+      };
+    }
     const contentType = res.headers.get("content-type") ?? "";
     const baseType = contentType.split(";")[0].trim().toLowerCase();
 
@@ -358,6 +374,7 @@ export async function extractUrlDocument(
         author: parsed.author,
         publishedAt: parsed.publishedAt,
         links: parsed.links,
+        shell: isPotentialSpa(html, parsed.text.length),
       },
     };
   } catch (e) {

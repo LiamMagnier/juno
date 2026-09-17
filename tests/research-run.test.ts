@@ -24,6 +24,7 @@ import {
   PLANNER_PROMPT_CHARS,
   REFERENCE_INPUT_MICRO_USD_PER_TOKEN,
   REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN,
+  RESEARCH_TIERS,
   resumeStateFor,
   SEARCH_FEE_MICRO_USD,
   stageForState,
@@ -31,14 +32,15 @@ import {
   SYSTEM_PROMPT_CHARS,
   transitionAllowed,
   VENDOR_ESTIMATE_MARGIN,
-  type ResearchState,
 } from "@/lib/research/domain";
 import {
   CITATION_AUDIT_ESTIMATE_MICRO_USD,
   createResearchEngine,
   citationMarkersOutsideCode,
   EXPANSION_ESTIMATE_MICRO_USD,
+  HOP_PAGE_SHARE,
   pageSkipMessage,
+  permanentSkip,
   PLAN_ESTIMATE_MICRO_USD,
   READ_ESTIMATE_MICRO_USD,
   SEARCH_CONCURRENCY,
@@ -46,11 +48,10 @@ import {
   SNAPSHOT_CHARS,
   synthesisEstimateMicroUsd,
   type ResearchDeps,
-  type ResearchEventRow,
-  type ResearchRunRow,
   type ResearchSourceRow,
   type ResearchStore,
 } from "@/lib/research/engine";
+import { memoryStore } from "./fixtures/research-store";
 
 /*
  * The whole engine, no database.
@@ -61,200 +62,6 @@ import {
  * lets a test cancel a run between two searches, or hand it a budget that runs
  * out halfway, which is exactly where the interesting bugs live.
  */
-
-// ---------------------------------------------------------------------------
-// An in-memory ResearchStore
-// ---------------------------------------------------------------------------
-
-interface MemoryRow extends ResearchRunRow {
-  planObject: Record<string, unknown>;
-}
-
-function memoryStore() {
-  const runs = new Map<string, MemoryRow>();
-  const events: Array<ResearchEventRow & { runId: string }> = [];
-  const sources: Array<ResearchSourceRow & { runId: string; userId: string }> = [];
-  const passages: Array<{ sourceId: string; text: string; ordinal: number }> = [];
-  let ids = 0;
-  const nextId = (prefix: string) => `${prefix}_${(ids += 1)}`;
-
-  const own = (runId: string, userId: string) => {
-    const row = runs.get(runId);
-    // Every ResearchRun query in production is scoped by userId; the fake
-    // enforces the same thing so a test cannot pass against a store that is
-    // more permissive than the real one.
-    return row && row.userId === userId ? row : null;
-  };
-
-  const store: ResearchStore = {
-    async createRun({ userId, goal, conversationId, budgetMicroUsd, plan }) {
-      const now = new Date();
-      const row: MemoryRow = {
-        id: nextId("run"),
-        userId,
-        conversationId,
-        goal,
-        state: "accepted",
-        plan: { ...plan },
-        planObject: { ...plan },
-        queries: [],
-        costMicroUsd: BigInt(0),
-        budgetMicroUsd,
-        error: null,
-        report: null,
-        createdAt: now,
-        updatedAt: now,
-        startedAt: now,
-        finishedAt: null,
-      };
-      runs.set(row.id, row);
-      return { ...row };
-    },
-
-    async loadRun(runId, userId) {
-      const row = own(runId, userId);
-      return row ? { ...row } : null;
-    },
-
-    async claimRun({ runId, userId, workerId, leaseMs = 120_000 }) {
-      const row = own(runId, userId);
-      const now = new Date();
-      if (
-        !row ||
-        !["accepted", ...RESEARCH_WORKING_STATES].includes(row.state as never) ||
-        (row.workerLeaseUntil && row.workerLeaseUntil > now && row.workerLeaseOwner !== workerId)
-      ) {
-        return null;
-      }
-      row.workerLeaseOwner = workerId;
-      row.workerLeaseUntil = new Date(now.getTime() + leaseMs);
-      row.lastHeartbeatAt = now;
-      row.updatedAt = now;
-      return { ...row };
-    },
-
-    async moveState({ runId, userId, from, to, patch }) {
-      const row = own(runId, userId);
-      if (!row || !from.includes(row.state as ResearchState)) return null;
-      row.state = to;
-      if (patch?.plan) {
-        row.planObject = { ...patch.plan };
-        row.plan = row.planObject;
-      }
-      if (patch && "error" in patch) row.error = patch.error ?? null;
-      if (patch && "report" in patch && patch.report !== undefined) row.report = patch.report;
-      if (RESEARCH_TERMINAL_STATES.includes(to as never)) row.finishedAt = new Date();
-      return { ...row };
-    },
-
-    async savePlan({ runId, userId, plan }) {
-      const row = own(runId, userId);
-      if (!row) return null;
-      row.planObject = { ...plan };
-      row.plan = row.planObject;
-      return { ...row };
-    },
-
-    async recordQueries({ runId, userId, queries }) {
-      const row = own(runId, userId);
-      if (row) row.queries = [...queries];
-    },
-
-    async appendEvents({ runId, userId, events: batch }) {
-      const row = own(runId, userId);
-      if (!row) return { lastSeq: 0, appended: [] };
-      const top = events
-        .filter((event) => event.runId === runId)
-        .reduce((max, event) => Math.max(max, event.seq), 0);
-      const appended = batch.map((event, index) => ({
-        runId,
-        id: nextId("ev"),
-        seq: top + index + 1,
-        kind: event.kind,
-        payload: event.payload ?? {},
-        createdAt: new Date(),
-      }));
-      events.push(...appended);
-      return {
-        lastSeq: top + batch.length,
-        appended: appended.map((event) => ({ seq: event.seq, kind: event.kind as never })),
-      };
-    },
-
-    async readEvents({ runId, userId, after, limit }) {
-      if (!own(runId, userId)) return [];
-      return events
-        .filter((event) => event.runId === runId && event.seq > after)
-        .sort((a, b) => a.seq - b.seq)
-        .slice(0, limit);
-    },
-
-    async progress(runId, userId) {
-      const row = own(runId, userId);
-      const mine = sources.filter((source) => source.runId === runId);
-      return {
-        planConfirmed: typeof row?.planObject.confirmedAt === "string",
-        queryCount: row?.queries.length ?? 0,
-        sourceCount: mine.length,
-        readCount: mine.filter((source) => source.snapshot).length,
-        passageCount: passages.filter((passage) =>
-          mine.some((source) => source.id === passage.sourceId)
-        ).length,
-        hasReport: !!row?.report,
-      };
-    },
-
-    async upsertSource({ runId, userId, url, title, contentHash, snapshot, authority }) {
-      const existing = sources.find((source) => source.runId === runId && source.url === url);
-      if (existing) {
-        existing.title = title;
-        // Mirrors the Prisma store: a snapshot never shrinks, and the hash moves
-        // with it or not at all. See the note in src/lib/research/run.ts.
-        const keepsMoreText = snapshot != null && snapshot.length > (existing.snapshot?.length ?? 0);
-        if (keepsMoreText && contentHash !== undefined) existing.contentHash = contentHash;
-        if (keepsMoreText) existing.snapshot = snapshot;
-        if (authority !== undefined) existing.authority = authority;
-        return { id: existing.id, created: false };
-      }
-      const row = {
-        runId,
-        userId,
-        id: nextId("src"),
-        url,
-        title,
-        contentHash: contentHash ?? null,
-        snapshot: snapshot ?? null,
-        publishedAt: null,
-        authority: authority ?? null,
-        fetchedAt: new Date(),
-      };
-      sources.push(row);
-      return { id: row.id, created: true };
-    },
-
-    async savePassages({ sourceId, passages: batch }) {
-      for (let i = passages.length - 1; i >= 0; i -= 1) {
-        if (passages[i].sourceId === sourceId) passages.splice(i, 1);
-      }
-      passages.push(...batch.map((p) => ({ sourceId, text: p.text, ordinal: p.ordinal })));
-      return batch.length;
-    },
-
-    async listSources(runId, userId) {
-      if (!own(runId, userId)) return [];
-      return sources.filter((source) => source.runId === runId).map((source) => ({ ...source }));
-    },
-
-    async addSpend({ runId, userId, microUsd }) {
-      const row = own(runId, userId);
-      if (!row) return BigInt(0);
-      row.costMicroUsd += BigInt(microUsd);
-      return row.costMicroUsd;
-    },
-  };
-
-  return { store, events, runs, sources };
-}
 
 /**
  * A run whose every farmed-out call succeeds, cheaply and instantly.
@@ -1612,4 +1419,214 @@ test("an unknown PDF detail degrades to a true sentence, not a crash", () => {
     "That PDF could not be read."
   );
   assert.equal(pageSkipMessage({ skipped: "pdf_unreadable" }), "That PDF could not be read.");
+});
+
+test("a page that needed a browser, or was stopped mid-fetch, says so", () => {
+  assert.equal(pageSkipMessage({ skipped: "headless_render_failed" }), "The page needs a browser to render and this build has none.");
+  assert.equal(pageSkipMessage({ skipped: "aborted" }), "The fetch was stopped before the page arrived.");
+  // The status is the one fact a reader can act on for a refused request.
+  assert.equal(pageSkipMessage({ skipped: "http_error", detail: "HTTP 429" }), "The site refused the request (HTTP 429).");
+});
+
+test("only a skip that cannot change between passes is remembered as dead", () => {
+  assert.equal(permanentSkip({ skipped: "http_error", httpStatus: 404 }), true);
+  assert.equal(permanentSkip({ skipped: "pdf_unreadable", detail: "encrypted" }), true);
+  assert.equal(permanentSkip({ skipped: "blocked_host" }), true);
+  // "Not now" is not "not ever": these are exactly the ones worth a second try.
+  assert.equal(permanentSkip({ skipped: "http_error", httpStatus: 429 }), false);
+  assert.equal(permanentSkip({ skipped: "http_error", httpStatus: 503 }), false);
+  assert.equal(permanentSkip({ skipped: "http_error" }), false);
+  assert.equal(permanentSkip({ skipped: "fetch_failed" }), false);
+  assert.equal(permanentSkip({ skipped: "headless_render_failed" }), false);
+});
+
+// ---------------------------------------------------------------------------
+// One numbering for the writer and the audit
+// ---------------------------------------------------------------------------
+
+/*
+ * The writer numbered the rows with a snapshot; the audit was handed every
+ * row, read or not, and numbered those. Rows list in creation order and read
+ * and unread rows interleave from the first search wave, so the two
+ * numberings diverged at the first unread row — and every citation was then
+ * judged against a page with no passages, marked unsupported, and "repaired"
+ * into a sentence saying the evidence was insufficient.
+ */
+test("the citation audit is numbered over exactly the rows the writer saw", async () => {
+  const { store } = memoryStore();
+  const dead = "https://example.com/dead";
+  const live = "https://example.com/live";
+  let written: string[] = [];
+  let audited: string[] = [];
+  const engine = createResearchEngine(
+    deps(store, {
+      async search() {
+        // The dead row is created first, so it sits at index 1 of an unfiltered list.
+        return {
+          hits: [
+            { url: dead, title: "Dead", snippet: "…" },
+            { url: live, title: "Live", snippet: "…" },
+          ],
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        if (url === dead) return { skipped: "http_error", httpStatus: 404 };
+        return { title: "Live", text: `${"a".repeat(200)}\n\n${"b".repeat(200)}`, costMicroUsd: 0 };
+      },
+      async synthesize({ sources }) {
+        written = sources.map((source) => source.url);
+        return { report: "# Report\n\nA finding [1].", costMicroUsd: 0 };
+      },
+      async validateReport({ report, sources }) {
+        audited = sources.map((source) => source.url);
+        return {
+          report,
+          repaired: false,
+          summary: { claims: 1, supported: 1, partiallySupported: 0, unsupported: 0, contradicted: 0, unverified: 0, duplicateSources: 0 },
+        };
+      },
+    })
+  );
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.deepEqual(written, [live], "the writer numbers only readable rows");
+  assert.deepEqual(audited, [live], "the audit must index the identical list, or [1] is judged against the wrong page");
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "completed");
+});
+
+// ---------------------------------------------------------------------------
+// The sweep's dead links and the hop's room
+// ---------------------------------------------------------------------------
+
+test("a URL that failed for good is not fetched again on the follow-up pass", async () => {
+  const { store, events } = memoryStore();
+  const dead = "https://example.com/gone";
+  const live = "https://example.com/live";
+  const fetched: string[] = [];
+  const engine = createResearchEngine(
+    deps(store, {
+      async search() {
+        return {
+          hits: [
+            { url: dead, title: "Gone", snippet: "…" },
+            { url: live, title: "Live", snippet: "…" },
+          ],
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        fetched.push(url);
+        if (url === dead) return { skipped: "http_error", httpStatus: 404, detail: "HTTP 404" };
+        // Unrelated to the plan, so coverage schedules a follow-up pass — the
+        // pass that used to fetch the dead link a second time.
+        return { title: "Live", text: `${"a".repeat(200)}\n\n${"b".repeat(200)}`, costMicroUsd: 0 };
+      },
+    })
+  );
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.ok(events.some((event) => event.kind === "follow_up_scheduled"), "without a second pass this test proves nothing");
+  assert.equal(fetched.filter((url) => url === dead).length, 1, "a 404 is a fact about the URL, not about the moment");
+  assert.ok(parsePlan((await store.loadRun(run.id, run.userId))?.plan).unreadable?.includes(dead), "the plan remembers it");
+});
+
+/*
+ * The hop's room used to be the page budget minus the number of source ROWS,
+ * read or not. Every tier discovers more rows than it has pages, so the room
+ * was negative on every production run and the stage returned before ranking
+ * a single link — the cited methodology was one click away and unreachable.
+ */
+test("the link hop keeps its allowance however many rows the sweep discovered", async () => {
+  const { store, events } = memoryStore();
+  const pages = RESEARCH_TIERS.quick.pages;
+  const engine = createResearchEngine(
+    deps(store, {
+      async plan() {
+        return { queries: ["scope three emissions methodology 2024"], costMicroUsd: 0 };
+      },
+      async search() {
+        return {
+          hits: Array.from({ length: pages * 3 }, (_, i) => ({
+            url: `https://news.example.com/story/${i}`,
+            title: `Story ${i}`,
+            snippet: "…",
+          })),
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        if (url.startsWith("https://news.example.com/")) {
+          return {
+            title: "A story",
+            text: `${"a".repeat(200)}\n\n${"b".repeat(200)}`,
+            costMicroUsd: 0,
+            links: [
+              {
+                href: "https://registry.example.org/scope-three-emissions-methodology-2024",
+                text: "the 2024 scope three emissions methodology",
+              },
+            ],
+          };
+        }
+        return { title: "Methodology 2024", text: `${"c".repeat(200)}\n\n${"d".repeat(200)}`, costMicroUsd: 0 };
+      },
+    })
+  );
+  const run = await started(engine, { effort: "quick" });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const hopped = events.filter((event) => event.kind === "source_found" && (event.payload as { hop?: number }).hop === 1);
+  assert.equal(hopped.length, 1, "the cited methodology is followed, once");
+  assert.ok(hopped.length <= Math.ceil(pages * HOP_PAGE_SHARE), "and never past the hop's own share of the pages");
+});
+
+// ---------------------------------------------------------------------------
+// Syndication, during the run
+// ---------------------------------------------------------------------------
+
+/*
+ * The only duplicate test during a run was an exact hash match, which two
+ * 12,000-character reprints never satisfy, so every row carried independence
+ * 1 and two copies of one wire story satisfied "two independent sources".
+ * The shingle test the audit already ran afterwards now runs after the sweep.
+ */
+test("two reprints of one story are marked as one witness while the run is still going", async () => {
+  const { store, events } = memoryStore();
+  const wire = "https://wire.example.com/story";
+  const reprint = "https://paper.example.org/reprint";
+  const story = `${"The regulator published its final methodology on Tuesday, setting a 2024 baseline for every reporting entity. ".repeat(12)}\n\n${"Analysts said the baseline would raise reported totals by roughly a fifth for the largest emitters. ".repeat(12)}`;
+  const engine = createResearchEngine(
+    deps(store, {
+      async plan() {
+        return { queries: ["regulator methodology 2024 baseline"], costMicroUsd: 0 };
+      },
+      async search() {
+        return {
+          hits: [
+            { url: wire, title: "Regulator sets 2024 baseline", snippet: "…" },
+            { url: reprint, title: "Regulator sets 2024 baseline", snippet: "…" },
+          ],
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        // The reprint drops the last sentence, so the hashes differ and only
+        // the shingle test can tell it is the same story.
+        return { title: "Regulator sets 2024 baseline", text: url === wire ? story : story.slice(0, -120), costMicroUsd: 0 };
+      },
+    })
+  );
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const rows = await store.listSources(run.id, run.userId);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.filter((row) => row.independence === 0).length, 1, "one of the two is a copy, and scored as no witness at all");
+  const plan = parsePlan((await store.loadRun(run.id, run.userId))?.plan);
+  const duplicate = plan.conflicts?.find((conflict) => conflict.kind === "duplicate_source");
+  assert.ok(duplicate, "the group is on the plan for the evidence panel");
+  assert.deepEqual(new Set(duplicate.sourceIds), new Set(rows.map((row) => row.id)));
+  assert.ok(
+    events.some((event) => event.kind === "conflict_found" && (event.payload as { kind?: string }).kind === "duplicate_content"),
+    "and the timeline says so"
+  );
 });

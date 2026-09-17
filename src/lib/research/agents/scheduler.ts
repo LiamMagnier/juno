@@ -45,7 +45,14 @@ export class Semaphore {
     return new Promise<() => void>((resolve, reject) => {
       const wake = () => {
         signal?.removeEventListener("abort", onAbort);
-        this.available -= 1;
+        // The slot is handed straight from the releaser to this waiter, and
+        // the releaser skipped its own increment for exactly that case, so
+        // `available` must not move here. It used to be decremented as well,
+        // which drove the count one below zero per handover — and once it
+        // was negative every later `acquire` waited for a release that was
+        // never coming. Nothing noticed while every semaphore was created
+        // for one wave and thrown away; a limiter that lives for the whole
+        // run deadlocked on its second burst.
         resolve(this.releaser());
       };
       const onAbort = () => {

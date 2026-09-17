@@ -343,6 +343,12 @@ export interface WorkerBrief {
   constraints: string[];
   /** URLs already read by the run, so the worker is not sent to re-open them. */
   visited: string[];
+  /**
+   * The most recent searches the run has issued — the sweep's and other
+   * workers' — so a worker does not pay the search fee for a query the team
+   * has already run and been shown the same page of results for.
+   */
+  recentQueries?: string[];
 }
 
 export interface WorkerLimits {
@@ -352,6 +358,13 @@ export interface WorkerLimits {
 
 export type WorkerFinishReason =
   | "done"
+  /**
+   * The model never called a tool: it answered every turn in prose, was nudged
+   * the allowed number of times, and still did not search or open anything.
+   * Distinct from `done` because a round of these has produced nothing, and
+   * the engine has to be able to say so rather than review an empty round.
+   */
+  | "idle"
   | WorkerStopReason
   | "error"
   | "model_unavailable";

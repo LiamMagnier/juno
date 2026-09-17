@@ -11,7 +11,9 @@ import {
   type ResearchEventDTO,
 } from "@/lib/research/domain";
 import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
-import { buildResearchCorpus, corpusFindings, researchSearchConfigured } from "@/lib/research/tools";
+import { researchSearchConfigured } from "@/lib/research/tools";
+import { buildResearchCorpus, corpusFindings } from "@/lib/research/corpus";
+import { citableSources } from "@/lib/research/engine";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
 
@@ -70,9 +72,6 @@ export interface DeepResearchResult {
 }
 
 const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [] };
-
-/** Total numbered sources handed to the model. */
-const MAX_SOURCES = 250;
 
 /**
  * The per-run ceiling for research started from chat.
@@ -365,9 +364,9 @@ export async function runDeepResearch(opts: {
   }
 
   const finished = await store.loadRun(runId, opts.userId);
-  const sources = (await store.listSources(runId, opts.userId))
-    .filter((source) => source.snapshot)
-    .slice(0, MAX_SOURCES);
+  // The same function that numbers the standalone report's corpus and audit,
+  // so `[3]` means one row on every path.
+  const sources = citableSources(await store.listSources(runId, opts.userId));
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
 
   if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state };

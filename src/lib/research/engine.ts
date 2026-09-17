@@ -53,8 +53,17 @@ import {
   SYNTHESIS_OUTPUT_TOKENS,
   SYSTEM_PROMPT_CHARS,
   VENDOR_ESTIMATE_MARGIN,
+  MAX_CONFLICTS,
+  MAX_ROUND_OPEN_QUESTIONS,
+  MAX_UNREADABLE_SOURCES,
+  MAX_WORKER_QUERIES,
+  reviewEstimateMicroUsd,
+  workerEstimateMicroUsd,
   type ResearchClarification,
   type ResearchEventKind,
+  type ResearchModelRates,
+  type ResearchObjectiveStatus,
+  type ResearchRoundReview,
   type ResearchCoverageEntry,
   type ResearchConflict,
   type ResearchDelegation,
@@ -68,6 +77,7 @@ import {
 import {
   hostOfUrl,
   contentTokens,
+  detectSyndication,
   scoreSource,
   sourceTypeMatchesRequirement,
   sourceTypeOf,
@@ -92,7 +102,7 @@ import {
   type WorkerStopReason,
   type WorkerTools,
 } from "@/lib/research/agents/protocol";
-import { runAll } from "@/lib/research/agents/scheduler";
+import { HostLimiter, isAbortError, runAll } from "@/lib/research/agents/scheduler";
 
 /**
  * The durable research job.
@@ -265,6 +275,23 @@ export interface ResearchStore {
   }): Promise<number>;
   listSources(runId: string, userId: string): Promise<ResearchSourceRow[]>;
   /**
+   * One row by URL, or null.
+   *
+   * Optional, with `listSources` as the fallback, because the in-memory test
+   * stores predate it — but the production store must implement it. Every
+   * worker tool call used to look its URL up by loading the whole corpus,
+   * snapshots included: a few hundred rows of up to 12,000 characters, several
+   * megabytes, hundreds of times per round. The store already keys rows by
+   * `canonicalUrl`, so the narrow read is one indexed lookup.
+   */
+  findSourceByUrl?(runId: string, userId: string, url: string): Promise<ResearchSourceRow | null>;
+  /**
+   * Every row's URL and how much text it holds, and nothing else. What the
+   * worker's `search` tool needs to mark results the run has already read, for
+   * the same reason as above: it needs a URL and a length, not the corpus.
+   */
+  listSourceUrls?(runId: string, userId: string): Promise<Array<{ url: string; snapshotChars: number }>>;
+  /**
    * A worker's finding: a claim, the quote behind it, the page it came from.
    *
    * Optional because the in-memory test stores predate the agent round and a
@@ -345,10 +372,19 @@ export interface ResearchPageLink {
 export interface ResearchPageSkipped {
   skipped: string;
   detail?: string;
+  /** For `http_error`: the status, which is what decides whether a retry could ever help. */
+  httpStatus?: number;
 }
 
 export type ResearchPageResult =
-  | { title: string; text: string; costMicroUsd: number; links?: ResearchPageLink[] }
+  | {
+      title: string;
+      text: string;
+      costMicroUsd: number;
+      links?: ResearchPageLink[];
+      /** The date the page claims for itself, when the extractor found one. */
+      publishedAt?: Date | null;
+    }
   | ResearchPageSkipped;
 
 export function pageWasSkipped(page: ResearchPageResult | null): page is ResearchPageSkipped {
@@ -399,8 +435,44 @@ export function pageSkipMessage(page: ResearchPageSkipped): string {
         default:
           return "That PDF could not be read.";
       }
+    case "headless_render_failed":
+      return "The page needs a browser to render and this build has none.";
+    case "aborted":
+      return "The fetch was stopped before the page arrived.";
     default:
       return "Could not be read.";
+  }
+}
+
+/**
+ * Whether a skip is a fact about the URL rather than about the moment.
+ *
+ * A follow-up pass through READ recomputed "needs fetching" from the rows
+ * alone, so every URL that had failed was fetched again at the full timeout
+ * and produced the same error line a second time. These reasons cannot change
+ * between passes — a 404 stays a 404, a blocked host stays blocked, an
+ * encrypted PDF stays encrypted, a JavaScript shell stays empty to a build
+ * with no browser — so the run remembers them on the plan and reads the next
+ * ranked source instead. A rate limit, a network failure and a server error
+ * are left out: those are exactly the ones worth a second try.
+ */
+export function permanentSkip(page: ResearchPageSkipped): boolean {
+  switch (page.skipped) {
+    case "blocked_host":
+    case "redirect_limit":
+    case "unsupported_content_type":
+    case "response_too_large":
+    case "pdf_unreadable":
+    case "empty_document":
+      return true;
+    case "http_error": {
+      const status = page.httpStatus;
+      if (typeof status !== "number" || status < 400 || status >= 500) return false;
+      // 408, 425 and 429 are the client errors that mean "not now", not "not ever".
+      return status !== 408 && status !== 425 && status !== 429;
+    }
+    default:
+      return false;
   }
 }
 
@@ -505,6 +577,18 @@ export interface ResearchDeps {
     sources: ResearchSourceRow[];
     signal?: AbortSignal;
   }): Promise<ResearchValidationResult | null>;
+  /**
+   * What the worker and lead models charge, for the per-round reservation.
+   *
+   * Optional, and absent in the tests: without it a round reserves only its
+   * vendor fees, which is the floor the ledger can prove. The model half of a
+   * worker is billed when the worker RETURNS, so a run with a ceiling could
+   * overshoot it by a whole round of worker calls that nothing had reserved.
+   * run.ts reads these from the model catalogue, so a cheap worker is priced
+   * as the cheap model it is rather than at the reference ceiling — which
+   * would refuse whole rounds on an ordinary budget.
+   */
+  modelRates?: { worker?: ResearchModelRates; lead?: ResearchModelRates };
   /** Stable hash of fetched text, so a report stays auditable after the page changes. */
   hash(text: string): string;
   now(): Date;
@@ -683,9 +767,47 @@ export const synthesisEstimateMicroUsd = (
 };
 
 /** Sources carried into synthesis. Beyond this the corpus stops fitting. */
-const MAX_SOURCES = 250;
+export const MAX_SOURCES = 250;
 /** Sources whose full text is stored as a snapshot. */
 const MAX_READ_SOURCES = 250;
+
+/**
+ * The sources a report may cite, in the order it numbers them.
+ *
+ * ONE function owns the numbering, because two did and they disagreed. The
+ * writer numbered the rows that have a snapshot; the citation audit was handed
+ * every row, read or not, and numbered those. `listSources` orders by creation,
+ * and read and unread rows interleave from the first search wave, so the two
+ * numberings diverged at the first unread row — on essentially every run.
+ * Every citation was then judged against the wrong page: an unread row has no
+ * passages, a claim with no passages resolves `unsupported`, and the repair
+ * pass rewrote true sentences as "The cited evidence is insufficient" before
+ * sending the report round for a revision it did not need. Synthesis and
+ * validation both call this, on the same rows, and get the same list.
+ */
+export function citableSources<T extends Pick<ResearchSourceRow, "snapshot">>(sources: readonly T[]): T[] {
+  return sources.filter((source) => !!source.snapshot).slice(0, MAX_SOURCES);
+}
+
+/**
+ * How the tier's page ceiling is split between the seed sweep and the team.
+ *
+ * The sweep used to size its ranked reads at the whole ceiling, and the agent
+ * layer's first gate — "has the run read its pages yet?" — then broke out
+ * before a single worker was dispatched. On a plain-HTTP deployment the
+ * workers ran only because some fetches failed, and shared the leftovers; on
+ * a backend that returns page bodies with its results they never ran on any
+ * tier. The sweep is a seed: a quarter of the pages for its ranked reads, a
+ * tenth for the link hop that follows their citations, and the team keeps the
+ * rest — which is where the depth this whole module exists for comes from.
+ * Exported for the same reason SEARCH_CONCURRENCY is: the tests assert the
+ * split, and a test holding its own copy of 0.25 would keep passing with the
+ * wrong meaning the day the share changed.
+ */
+export const SEED_PAGE_SHARE = 0.25;
+export const HOP_PAGE_SHARE = 0.1;
+/** Fetches in flight against one host, across the sweep and every worker together. */
+const FETCH_PER_HOST = 2;
 /**
  * How much of a page is stored, and therefore how much reaches synthesis.
  *
@@ -844,12 +966,43 @@ function jurisdictionMatches(jurisdiction: string | undefined, source: ResearchS
 }
 
 /**
+ * How strongly a page answers a question, judged passage by passage.
+ *
+ * Token overlap over a whole 12,000-character snapshot is nearly always high
+ * for any page on the topic — a question's handful of content words all
+ * appear somewhere in it — so the gate said "satisfied" for every on-topic
+ * source and never scheduled a follow-up. Scored over the same chunks a
+ * worker cites from, the number means what it is used for: how much of the
+ * question the best single passage actually addresses.
+ */
+function passageStrength(question: string, snapshot: string): number {
+  let best = 0;
+  for (const chunk of chunkText(snapshot)) {
+    best = Math.max(best, tokenCoverage(question, chunk.text));
+    if (best >= 1) break;
+  }
+  return best;
+}
+
+/** The lead's 0..1 score as an objective status, the same rule `doWorkerRounds` applies. */
+function leadStatus(score: number): ResearchObjectiveStatus {
+  return score >= COVERAGE_TARGET ? "covered" : score > 0 ? "partially_covered" : "open";
+}
+
+/**
  * Cheap, deterministic coverage before synthesis. It is deliberately not a
  * claim judge: at this stage there is no report claim to judge. Its job is to
  * stop a plan that has only collected vaguely related pages from declaring
  * itself ready, and to leave a durable matrix the user can inspect.
+ *
+ * When the lead has reviewed a round, its scores decide the objective statuses
+ * and which gaps get a follow-up; the heuristic keeps computing the
+ * requirement-level matrix for the panel. The heuristic used to recompute the
+ * statuses on top of the lead's and overwrite them, so the lead's judgement
+ * never decided whether a follow-up ran and the panel could say "satisfied"
+ * beside a lead score of 0.2.
  */
-function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): CoverageComputation {
+function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[], review?: ResearchRoundReview): CoverageComputation {
   const objectives = plan.objectives.length
     ? plan.objectives
     : buildResearchObjectives("", plan.queries);
@@ -875,7 +1028,7 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
           if (!eligible) policyExcluded += 1;
           return {
             source,
-            strength: tokenCoverage(objective.question, source.snapshot ?? ""),
+            strength: passageStrength(objective.question, source.snapshot ?? ""),
             eligible,
           };
         })
@@ -915,7 +1068,7 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
       return { ...requirement, status };
     });
     const statuses = nextRequirements.map((requirement) => requirement.status);
-    const status: ResearchPlan["objectives"][number]["status"] =
+    const heuristic: ResearchObjectiveStatus =
       statuses.length > 0 && statuses.every((value) => value === "satisfied")
         ? "covered"
         : statuses.some((value) => (value as string) === "conflicted")
@@ -923,6 +1076,8 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
         : statuses.some((value) => value === "satisfied" || value === "weak")
         ? "partially_covered"
         : "open";
+    const score = review?.coverage[objective.id];
+    const status = typeof score === "number" ? leadStatus(score) : heuristic;
     return { ...objective, status, evidenceRequirements: nextRequirements };
   });
 
@@ -970,16 +1125,32 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
    * round itself costs nothing extra because the queries in it run together.
    */
   for (const objective of updatedObjectives) {
-    const entry = coverage.find(
-      (item) => item.objectiveId === objective.id && (item.status === "missing" || item.status === "weak")
-    );
-    if (!entry) continue;
-    gaps.push({
-      question: objective.question,
-      status: entry.status,
-      ...(entry.missingReason ? { missingReason: entry.missingReason } : {}),
-    });
-    const suffix = entry.status === "missing" ? "primary source evidence" : "independent source and counter evidence";
+    const score = review?.coverage[objective.id];
+    let gap: CoverageComputation["gaps"][number];
+    if (typeof score === "number") {
+      // The lead scored this one. Below the target it is a gap whatever the
+      // token heuristic thinks of the pages, and the lead's own reason travels
+      // to the expander when it gave one.
+      if (score >= COVERAGE_TARGET) continue;
+      const named = review?.gaps.find((item) => item.objectiveId === objective.id);
+      gap = {
+        question: objective.question,
+        status: score > 0 ? "weak" : "missing",
+        missingReason: named?.reason || `The lead scored this sub-question ${Math.round(score * 100)}% answered by sourced findings.`,
+      };
+    } else {
+      const entry = coverage.find(
+        (item) => item.objectiveId === objective.id && (item.status === "missing" || item.status === "weak")
+      );
+      if (!entry) continue;
+      gap = {
+        question: objective.question,
+        status: entry.status,
+        ...(entry.missingReason ? { missingReason: entry.missingReason } : {}),
+      };
+    }
+    gaps.push(gap);
+    const suffix = gap.status === "missing" ? "primary source evidence" : "independent source and counter evidence";
     const query = `${objective.question} ${suffix}`.replace(/\s+/g, " ").trim().slice(0, 400);
     if (alreadyPlanned.has(query.toLowerCase())) continue;
     alreadyPlanned.add(query.toLowerCase());
@@ -1095,6 +1266,107 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
 
   const append = (runId: string, userId: string, events: readonly ResearchEventInput[]) =>
     store.appendEvents({ runId, userId, events });
+
+  /**
+   * Every page fetch in the run goes through one per-host gate.
+   *
+   * The scheduler's `HostLimiter` was written for exactly this — "a dozen
+   * workers opening pages on the same site is a scraper as far as that site is
+   * concerned" — and was then used only by its own test: the sweep's eight-wide
+   * waves and the round's parallel workers hit whichever host held the answers
+   * as fast as they could. One limiter for the whole engine, because the sweep
+   * and the workers are the same run to the site being read. An abort while
+   * waiting for a slot is answered like a page that never arrived, since every
+   * caller already handles null.
+   */
+  const hosts = new HostLimiter(FETCH_PER_HOST);
+  const fetchPage = async (userId: string, url: string, signal?: AbortSignal): Promise<ResearchPageResult | null> => {
+    let release: () => void;
+    try {
+      release = await hosts.acquire(url, signal);
+    } catch (error) {
+      if (isAbortError(error)) return null;
+      throw error;
+    }
+    try {
+      return await deps.fetchPage({ userId, url, signal });
+    } finally {
+      release();
+    }
+  };
+
+  /**
+   * Marks syndicated copies while the run can still act on it.
+   *
+   * `detectSyndication` only ever ran inside the citation audit, after the
+   * report was written; during the run the only duplicate test was an exact
+   * hash match, which two 12,000-character reprints never satisfy. So every
+   * row carried `independence: 1`, the coverage gate's independence filter
+   * excluded nothing, and two reprints of one wire story satisfied "two
+   * independent sources". Run after the sweep and again after the workers, it
+   * zeroes the copies' independence so ranking, coverage and the writer all
+   * count a story once, and records the group on the plan so the evidence
+   * panel shows it. `duplicateOfId` is left to the audit, which owns it.
+   */
+  const markSyndicatedCopies = async (run: ResearchRunRow): Promise<ResearchRunRow> => {
+    const rows = citableSources(await store.listSources(run.id, run.userId));
+    if (rows.length < 2) return run;
+    const copies = detectSyndication(
+      rows.map((source) => ({
+        id: source.id,
+        url: source.url,
+        title: source.title,
+        text: source.snapshot ?? "",
+        publishedAt: source.publishedAt,
+      }))
+    );
+    if (copies.size === 0) return run;
+    const byId = new Map(rows.map((source) => [source.id, source]));
+    const groups = new Map<string, string[]>();
+    for (const [copyId, canonicalId] of copies) groups.set(canonicalId, [...(groups.get(canonicalId) ?? []), copyId]);
+    const latest = (await store.loadRun(run.id, run.userId)) ?? run;
+    const plan = parsePlan(latest.plan);
+    const known = new Set((plan.conflicts ?? []).map((conflict) => conflict.id));
+    const added: ResearchConflict[] = [];
+    for (const [canonicalId, copyIds] of groups) {
+      const canonical = byId.get(canonicalId);
+      if (!canonical) continue;
+      for (const copyId of copyIds) {
+        const copy = byId.get(copyId);
+        if (!copy || copy.independence === 0) continue;
+        await store.upsertSource({
+          runId: run.id,
+          userId: run.userId,
+          url: copy.url,
+          title: copy.title,
+          independence: 0,
+          composite: 0,
+        });
+      }
+      const id = `duplicate-${canonicalId}`;
+      if (known.has(id)) continue;
+      const sourceIds = [canonicalId, ...copyIds].slice(0, 8);
+      const urls = sourceIds.map((sourceId) => byId.get(sourceId)?.url).filter((url): url is string => !!url);
+      added.push({
+        id,
+        kind: "duplicate_source",
+        sourceIds,
+        description: `${copyIds.length} other ${copyIds.length === 1 ? "source repeats" : "sources repeat"} the text of ${hostOfUrl(canonical.url)}; together they count as one witness.`,
+        severity: "medium",
+        resolved: false,
+      });
+      await append(run.id, run.userId, [
+        { kind: "conflict_found", payload: { kind: "duplicate_content", sourceIds, urls, canonical: canonical.url } },
+      ]);
+    }
+    if (added.length === 0) return latest;
+    const saved = await store.savePlan({
+      runId: run.id,
+      userId: run.userId,
+      plan: { ...plan, conflicts: [...(plan.conflicts ?? []), ...added].slice(0, MAX_CONFLICTS) },
+    });
+    return saved ?? latest;
+  };
 
   /**
    * Moves the run and records the move in the same breath.
@@ -1593,7 +1865,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       current = fresh;
       await heartbeat?.();
 
-      const page = await deps.fetchPage({ userId: run.userId, url, signal });
+      const page = await fetchPage(run.userId, url, signal);
       if (!page || pageWasSkipped(page)) {
         // A pinned source that will not load is worth saying out loud: the user
         // chose it, and silently proceeding without it produces a report that
@@ -1615,12 +1887,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       }
       await bill(current, page.costMicroUsd, "fetch");
       const text = page.text.slice(0, SNAPSHOT_CHARS);
-      const score = scoreSource({ url, text });
+      const score = scoreSource({ url, text, publishedAt: page.publishedAt ?? null });
       const stored = await store.upsertSource({
         runId: run.id,
         userId: run.userId,
         url,
         title: page.title || url,
+        // Only when the page carries one: a null here would clear a date a
+        // search result had already supplied for the same row.
+        ...(page.publishedAt ? { publishedAt: page.publishedAt } : {}),
         contentHash: deps.hash(text),
         snapshot: text,
         // Pinned by the user, so it outranks anything the search backend
@@ -1667,10 +1942,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     run: ResearchRunRow,
     existing: ReadonlyArray<{ source: ResearchSourceRow }>,
     discovered: ReadonlyArray<{ from: string; link: ResearchPageLink }>,
+    hopPages: number,
     signal?: AbortSignal,
     heartbeat?: () => Promise<void>
   ): Promise<{ run: ResearchRunRow; outcome?: StepOutcome; added: number; fetched: number; passages: number }> => {
-    const room = Math.min(MAX_HOP_SOURCES, MAX_SOURCES - existing.length, Math.max(0, planBudget(parsePlan(run.plan)).pages - existing.length));
+    /*
+     * The hop's own allowance, handed in by READ out of the seed share. It
+     * used to be computed as the page budget minus the number of source ROWS,
+     * read or not — and every tier discovers more rows than it has pages, so
+     * the room was negative on every production run and this stage returned
+     * before ranking a single link. `MAX_SOURCES` no longer figures here
+     * either: it bounds the synthesis corpus, not fetches, and `known` below
+     * already dedupes against the rows the run holds.
+     */
+    const room = Math.min(MAX_HOP_SOURCES, Math.max(0, Math.floor(hopPages)));
     if (discovered.length === 0 || room <= 0) return { run, added: 0, fetched: 0, passages: 0 };
 
     const plan = parsePlan(run.plan);
@@ -1724,7 +2009,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const pages = await Promise.all(
         dispatched.map(async (target) => ({
           target,
-          page: await deps.fetchPage({ userId: run.userId, url: target.href, signal }),
+          page: await fetchPage(run.userId, target.href, signal),
         }))
       );
 
@@ -1736,12 +2021,13 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         await bill(current, page.costMicroUsd, "fetch");
         const text = page.text.slice(0, SNAPSHOT_CHARS);
         if (!text) continue;
-        const score = scoreSource({ url: target.href, text });
+        const score = scoreSource({ url: target.href, text, publishedAt: page.publishedAt ?? null });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
           url: target.href,
           title: page.title || target.text || target.href,
+          ...(page.publishedAt ? { publishedAt: page.publishedAt } : {}),
           contentHash: deps.hash(text),
           snapshot: text,
           ...score,
@@ -1827,7 +2113,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     /** Outbound links from pages this stage actually opened, for the hop below. */
     const discovered: Array<{ from: string; link: ResearchPageLink }> = [];
 
-    const targets = sources.slice(0, Math.min(MAX_READ_SOURCES, planBudget(parsePlan(run.plan)).pages));
+    const plan = parsePlan(run.plan);
+    const budget = planBudget(plan);
+    // A quarter of the tier's pages, not all of them — see SEED_PAGE_SHARE.
+    // URLs an earlier pass found dead for good are skipped, so a follow-up
+    // reads the next ranked source instead of paying their timeouts again.
+    const seedPages = Math.ceil(budget.pages * SEED_PAGE_SHARE);
+    const unreadable = new Set((plan.unreadable ?? []).map((url) => canonicalUrl(url)));
+    const targets = sources
+      .filter(({ source }) => !unreadable.has(canonicalUrl(source.url)))
+      .slice(0, Math.min(MAX_READ_SOURCES, seedPages));
+    /** URLs this pass found dead for good, appended to the plan below. */
+    const dead: string[] = [];
     for (const wave of waves(targets, READ_CONCURRENCY)) {
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
@@ -1890,7 +2187,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const pages = new Map<string, ResearchPageResult | null>();
       await Promise.all(
         dispatch.map(async (job) => {
-          pages.set(job.source.id, await deps.fetchPage({ userId: run.userId, url: job.source.url, signal }));
+          pages.set(job.source.id, await fetchPage(run.userId, job.source.url, signal));
         })
       );
 
@@ -1915,18 +2212,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
                   },
                 },
               ]);
+              if (permanentSkip(page)) dead.push(job.source.url);
             }
             continue;
           }
           await bill(current, page.costMicroUsd, "fetch");
           text = page.text.slice(0, SNAPSHOT_CHARS);
-          const score = scoreSource({ url: job.source.url, text, publishedAt: job.source.publishedAt });
+          const publishedAt = page.publishedAt ?? job.source.publishedAt;
+          const score = scoreSource({ url: job.source.url, text, publishedAt });
           await store.upsertSource({
             runId: run.id,
             userId: run.userId,
             url: job.source.url,
             title: page.title || job.source.title,
-            publishedAt: job.source.publishedAt,
+            publishedAt,
             contentHash: deps.hash(text),
             snapshot: text,
             ...score,
@@ -1943,13 +2242,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           // lose the only text this source ever had.
           await bill(current, page.costMicroUsd, "fetch");
           text = page.text.slice(0, SNAPSHOT_CHARS);
-          const score = scoreSource({ url: job.source.url, text, publishedAt: job.source.publishedAt });
+          const publishedAt = page.publishedAt ?? job.source.publishedAt;
+          const score = scoreSource({ url: job.source.url, text, publishedAt });
           await store.upsertSource({
             runId: run.id,
             userId: run.userId,
             url: job.source.url,
             title: page.title || job.source.title,
-            publishedAt: job.source.publishedAt,
+            publishedAt,
             contentHash: deps.hash(text),
             snapshot: text,
             ...score,
@@ -1975,11 +2275,27 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       if (budgetShort) return stopForBudget(current, READ_ESTIMATE_MICRO_USD);
     }
 
-    const hop = await doLinkHop(current, sources, discovered, signal, heartbeat);
+    const hop = await doLinkHop(current, sources, discovered, Math.ceil(budget.pages * HOP_PAGE_SHARE), signal, heartbeat);
     if (hop.outcome) return hop.outcome;
     current = hop.run;
     fetched += hop.fetched;
     passages += hop.passages;
+
+    // What this pass fetched goes on the plan — the rows cannot say which of
+    // them cost a fetch — and so do the URLs it found dead for good.
+    const latest = (await store.loadRun(current.id, current.userId)) ?? current;
+    const latestPlan = parsePlan(latest.plan);
+    const unreadableNow = [...(latestPlan.unreadable ?? []), ...dead];
+    const saved = await store.savePlan({
+      runId: current.id,
+      userId: current.userId,
+      plan: {
+        ...latestPlan,
+        seedPagesRead: (latestPlan.seedPagesRead ?? 0) + fetched,
+        ...(unreadableNow.length ? { unreadable: unreadableNow.slice(-MAX_UNREADABLE_SOURCES) } : {}),
+      },
+    });
+    current = saved ?? latest;
 
     await append(run.id, run.userId, [
       {
@@ -1992,6 +2308,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         },
       },
     ]);
+
+    // Two reprints of one story must not satisfy "two independent sources"
+    // before the team has even been briefed.
+    current = await markSyndicatedCopies(current);
 
     // The sweep seeded the corpus; now the team goes to work on it.
     const agents = await doWorkerRounds(current, signal, heartbeat);
@@ -2124,7 +2444,16 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     workerId: string,
     round: number,
     objectiveId: string,
-    shared: { pagesRead: number; toolCalls: number; pageCeiling: number; resultsPerQuery: number },
+    shared: {
+      pagesRead: number;
+      toolCalls: number;
+      pageCeiling: number;
+      resultsPerQuery: number;
+      /** Every query the round's workers issued, for the plan's ledger. */
+      queries: string[];
+      /** Canonical URLs an earlier pass found dead for good. */
+      unreadable: ReadonlySet<string>;
+    },
     perWorker: { maxToolCalls: number; deadline: number },
     signal?: AbortSignal
   ): WorkerTools => {
@@ -2149,7 +2478,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       if (budgetExhausted(fresh.costMicroUsd, fresh.budgetMicroUsd)) return "budget";
       return undefined;
     };
-    const sourceByUrl = async (url: string) => {
+    // One indexed row where the store offers it; the corpus scan is the
+    // fallback for the test stores only. See `ResearchStore.findSourceByUrl`.
+    const sourceByUrl = async (url: string): Promise<ResearchSourceRow | null> => {
+      if (store.findSourceByUrl) return store.findSourceByUrl(run.id, run.userId, url);
       const key = canonicalUrl(url);
       return (await store.listSources(run.id, run.userId)).find((source) => canonicalUrl(source.url) === key) ?? null;
     };
@@ -2177,14 +2509,26 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         }
         const result = await deps.search({ userId: run.userId, query, count: shared.resultsPerQuery, signal });
         await bill(run, result.costMicroUsd, "search");
+        // On the round's shared list, not written to the plan here: workers run
+        // in parallel and a read-modify-write of the plan JSON from each call
+        // would lose updates. `doWorkerRounds` persists the list once with the
+        // round, which is what lets the gap expander see what the team tried.
+        shared.queries.push(query);
         await append(run.id, run.userId, [
           { kind: "query_issued", payload: { query, results: result.hits.length, workerId, round, ...(result.engines?.length ? { engines: result.engines } : {}) } },
         ]);
-        const known = new Map((await store.listSources(run.id, run.userId)).map((source) => [canonicalUrl(source.url), source]));
+        // What the run already holds, by URL and text length only: this map
+        // marks results the run has read, and loading every snapshot to build
+        // it was the whole corpus per search.
+        const known = new Map<string, number>(
+          store.listSourceUrls
+            ? (await store.listSourceUrls(run.id, run.userId)).map((source) => [canonicalUrl(source.url), source.snapshotChars])
+            : (await store.listSources(run.id, run.userId)).map((source) => [canonicalUrl(source.url), source.snapshot?.length ?? 0])
+        );
         const hits = [];
         for (const hit of result.hits) {
-          const existing = known.get(canonicalUrl(hit.url));
-          if (!existing) {
+          const knownChars = known.get(canonicalUrl(hit.url));
+          if (knownChars === undefined) {
             const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
             const score = scoreSource({ url: hit.url, text: body ?? hit.snippet, publishedAt: hit.publishedAt });
             const stored = await store.upsertSource({
@@ -2200,8 +2544,9 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
             if (stored.created) {
               await append(run.id, run.userId, [{ kind: "source_found", payload: { url: hit.url, title: hit.title, query, workerId } }]);
             }
+            known.set(canonicalUrl(hit.url), body?.length ?? 0);
           }
-          hits.push({ url: hit.url, title: hit.title, snippet: hit.snippet.slice(0, 300), read: !!existing?.snapshot && existing.snapshot.length >= 2_000 });
+          hits.push({ url: hit.url, title: hit.title, snippet: hit.snippet.slice(0, 300), read: (knownChars ?? 0) >= 2_000 });
         }
         await tick("search", query, startedAt, true);
         return { result: { hits }, stop: await stopAfter() };
@@ -2214,6 +2559,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           await tick("open_page", url, startedAt, true);
           return { result: digestOf(existing, true), stop: await stopAfter() };
         }
+        if (shared.unreadable.has(canonicalUrl(url))) {
+          await tick("open_page", url, startedAt, false);
+          return { result: { ok: false, url, reason: "that page could not be read earlier in this run" }, stop: await stopAfter() };
+        }
         if (shared.pagesRead >= shared.pageCeiling) {
           await tick("open_page", url, startedAt, false);
           return { result: { ok: false, url, reason: "the run has read every page its tier allows" }, stop: "page_limit" };
@@ -2222,7 +2571,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           await tick("open_page", url, startedAt, false);
           return { result: { ok: false, url, reason: "the run's budget cannot pay for another page" }, stop: "budget" };
         }
-        const page = await deps.fetchPage({ userId: run.userId, url, signal });
+        const page = await fetchPage(run.userId, url, signal);
         if (!page || pageWasSkipped(page)) {
           await tick("open_page", url, startedAt, false);
           if (page) {
@@ -2234,13 +2583,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         }
         await bill(run, page.costMicroUsd, "fetch");
         const text = page.text.slice(0, SNAPSHOT_CHARS);
-        const score = scoreSource({ url, text, publishedAt: existing?.publishedAt ?? null });
+        const publishedAt = page.publishedAt ?? existing?.publishedAt ?? null;
+        const score = scoreSource({ url, text, publishedAt });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
           url,
           title: page.title || existing?.title || url,
-          publishedAt: existing?.publishedAt ?? null,
+          publishedAt,
           contentHash: deps.hash(text),
           snapshot: text,
           ...score,
@@ -2250,8 +2600,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         shared.pagesRead += 1;
         await append(run.id, run.userId, [{ kind: "source_read", payload: { url, title: page.title, workerId, round } }]);
         await tick("open_page", url, startedAt, true);
-        const row = (await sourceByUrl(url)) ?? { ...(existing ?? { id: stored.id, url, title: page.title, contentHash: null, publishedAt: null, authority: null, fetchedAt: deps.now() }), snapshot: text };
-        return { result: digestOf({ ...row, snapshot: text }, false), stop: await stopAfter() };
+        // Built from what was just stored, not read back: the text in hand is
+        // the text on the row, and a second corpus load per open was the
+        // dearest part of the tool.
+        const row: ResearchSourceRow = {
+          ...(existing ?? { contentHash: null, authority: null, fetchedAt: deps.now() }),
+          id: stored.id,
+          url,
+          title: page.title || existing?.title || url,
+          publishedAt,
+          snapshot: text,
+        };
+        return { result: digestOf(row, false), stop: await stopAfter() };
       },
 
       async findInPage(url, pattern) {
@@ -2281,9 +2641,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         // it a quote has produced a claim the citation audit will reject later;
         // catching it here costs one string search and teaches the worker.
         const haystack = (source.snapshot ?? "").replace(/\s+/g, " ").toLowerCase();
+        if (!haystack) {
+          // A row with no body is a search hit, not a page: every result the
+          // run has ever seen has one. Skipping the check for those — which
+          // this used to do — let a worker note any quote against any URL it
+          // had merely seen in a result list, and the check's whole purpose is
+          // that a finding is a quote from a page the worker read.
+          await tick("note_finding", finding.claim, startedAt, false);
+          return { result: { ok: false, reason: "open that page with open_page before citing it" }, stop: await stopAfter() };
+        }
         const needle = finding.quote.replace(/\s+/g, " ").toLowerCase();
         const probe = needle.length > 80 ? needle.slice(0, 80) : needle;
-        if (haystack && !haystack.includes(probe)) {
+        if (!haystack.includes(probe)) {
           await tick("note_finding", finding.claim, startedAt, false);
           return { result: { ok: false, reason: "the quote does not appear verbatim on that page — use find_in_page and quote exactly" }, stop: await stopAfter() };
         }
@@ -2344,6 +2713,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let round = (plan.rounds?.length ?? 0) + 1;
     if (round > totalRounds) return { run: current };
     const workerTokens = { used: plan.rounds?.reduce((n, r) => n + r.tokens, 0) ?? 0 };
+    /** Whether any workers went out, so the syndication pass below runs only over pages they could have added. */
+    let ranARound = false;
 
     while (round <= totalRounds) {
       const fresh = await store.loadRun(current.id, current.userId);
@@ -2355,8 +2726,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       if (investigationElapsedMs(plan, deps.now()) >= budget.wallClockMs) break;
       if (workerTokens.used >= budget.tokens) break;
 
-      const sourcesNow = await store.listSources(current.id, current.userId);
-      const readNow = sourcesNow.filter((source) => source.snapshot).length;
+      /*
+       * Pages READ means pages FETCHED: the sweep's, from the plan, plus what
+       * every recorded round's workers opened. It used to be the count of rows
+       * with a snapshot, which a search backend that returns page bodies fills
+       * to several hundred before anything has been fetched — so this gate
+       * broke out here on every tier and the team never ran. See
+       * `ResearchPlan.seedPagesRead`.
+       */
+      const readNow = (plan.seedPagesRead ?? 0) + (plan.rounds ?? []).reduce((n, item) => n + item.pagesRead, 0);
       const pageCeiling = Math.min(MAX_SOURCES, budget.pages);
       if (readNow >= pageCeiling) break;
 
@@ -2380,11 +2758,19 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       delegations = delegations.slice(0, Math.min(budget.workers, MAX_DELEGATIONS_PER_ROUND));
       if (delegations.length === 0) break;
 
-      // One budget decision for the whole round, taken BEFORE any worker
-      // starts. A worker costs roughly its tool budget in fees plus its own
-      // model calls; reserve the fees and let the per-call checks inside the
-      // tools hold the line from there.
-      const perWorkerEstimate = SEARCH_ESTIMATE_MICRO_USD * Math.ceil(budget.toolCallsPerWorker / 3);
+      /*
+       * One budget decision for the whole round, taken BEFORE any worker
+       * starts, at the worker's worst case: its whole tool loop at the worker
+       * model's own rates, plus a vendor fee per call. It was an ad-hoc
+       * formula — a search fee for every third tool call — that reserved about
+       * a third of the vendor fees alone and nothing for the model, whose
+       * spend only reaches the ledger when the worker returns; a budgeted run
+       * could overshoot its ceiling by a full round of worker calls. Without
+       * rates (the tests) the vendor fees are the floor.
+       */
+      const perWorkerEstimate = deps.modelRates?.worker
+        ? workerEstimateMicroUsd(budget, deps.modelRates.worker)
+        : budget.toolCallsPerWorker * Math.max(SEARCH_FEE_MICRO_USD, PAGE_FETCH_FEE_MICRO_USD) * VENDOR_ESTIMATE_MARGIN;
       const affordableWorkers = await affordableCount(current, perWorkerEstimate, delegations.length);
       if (affordableWorkers === 0) break;
       delegations = delegations.slice(0, affordableWorkers);
@@ -2392,8 +2778,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const roundStartedAt = deps.now().toISOString();
       const findingsBefore = store.listFindings ? await store.listFindings(current.id, current.userId) : [];
       const citedBefore = new Set(findingsBefore.map((finding) => canonicalUrl(finding.url)));
-      const shared = { pagesRead: readNow, toolCalls: 0, pageCeiling, resultsPerQuery: budget.resultsPerQuery };
-      const visited = sourcesNow.filter((source) => source.snapshot).map((source) => source.url);
+      const shared = {
+        pagesRead: readNow,
+        toolCalls: 0,
+        pageCeiling,
+        resultsPerQuery: budget.resultsPerQuery,
+        queries: [] as string[],
+        unreadable: new Set((plan.unreadable ?? []).map((url) => canonicalUrl(url))),
+      };
+      // URLs with text, for the brief; by URL and length only, since the
+      // snapshots themselves are not needed to tell a worker what to skip.
+      const visited = store.listSourceUrls
+        ? (await store.listSourceUrls(current.id, current.userId)).filter((source) => source.snapshotChars > 0).map((source) => source.url)
+        : (await store.listSources(current.id, current.userId)).filter((source) => source.snapshot).map((source) => source.url);
+      const recentQueries = [...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])].slice(-24);
       const roundDeadline = Date.now() + Math.min(budget.workerWallClockMs, Math.max(30_000, budget.wallClockMs - investigationElapsedMs(plan, deps.now())));
 
       await append(current.id, current.userId, [
@@ -2436,6 +2834,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
                 brief: researchBriefText(plan),
                 constraints: plan.constraints,
                 visited,
+                recentQueries,
               },
               tools,
               limits: { maxToolCalls: budget.toolCallsPerWorker, wallClockMs: Math.max(30_000, roundDeadline - Date.now()) },
@@ -2447,6 +2846,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       } finally {
         clearInterval(pulse);
       }
+      ranARound = true;
 
       const reports: ReviewRoundInput["workerReports"] = [];
       let roundTokens = 0;
@@ -2517,15 +2917,38 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         ]);
         break;
       }
+      /*
+       * EVERY WORKER STAYED IDLE — the same shape as above, one layer up. An
+       * `idle` worker had a model but never called a tool: it answered every
+       * turn in prose through every nudge. A whole round of that has produced
+       * nothing to review, and a model that ignores its tools once will do it
+       * again next round, so the ladder stops here and says so rather than
+       * paying to review empty rounds while the timeline shows each worker
+       * as "done".
+       */
+      if (roundResults.length > 0 && roundResults.every((reason) => reason === "idle")) {
+        await append(current.id, current.userId, [
+          {
+            kind: "error",
+            payload: {
+              stage: "investigating",
+              recoverable: true,
+              message:
+                "Every research worker in this round answered in prose without searching or opening a page, so the round produced no findings. The report is written from the sources gathered so far.",
+            },
+          },
+        ]);
+        break;
+      }
 
       const findings = store.listFindings ? await store.listFindings(current.id, current.userId) : [];
       const roundFindings = findings.filter((finding) => finding.round === round);
       const newClaims = roundFindings.filter((finding) => !citedBefore.has(canonicalUrl(finding.url))).length;
 
-      // The lead reviews the round.
+      // The lead reviews the round — on its model when the ceiling can cover
+      // the call, and deterministically when it cannot, rather than skipping
+      // the review or auditing on credit.
       const latestPlan = parsePlan(((await store.loadRun(current.id, current.userId)) ?? current).plan);
-      const sourcesAfter = await store.listSources(current.id, current.userId);
-      const readAfter = sourcesAfter.filter((source) => source.snapshot).length;
       const reviewInput: ReviewRoundInput = {
         userId: current.userId,
         goal: current.goal,
@@ -2536,13 +2959,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         workerReports: reports,
         round,
         roundsLeft: totalRounds - round,
-        pagesLeft: Math.max(0, pageCeiling - readAfter),
+        pagesLeft: Math.max(0, pageCeiling - shared.pagesRead),
         previous: latestPlan.rounds?.[latestPlan.rounds.length - 1]?.review,
         signal,
       };
+      const leadAffordable =
+        !deps.modelRates?.lead || (await affordable(current, reviewEstimateMicroUsd(deps.modelRates.lead)));
       let review: ReviewRoundOutput;
       try {
-        review = deps.reviewRound ? await deps.reviewRound(reviewInput) : fallbackReview(reviewInput);
+        review = deps.reviewRound && leadAffordable ? await deps.reviewRound(reviewInput) : fallbackReview(reviewInput);
       } catch (error) {
         console.error("[research] round review failed", { runId: current.id, error });
         review = fallbackReview(reviewInput);
@@ -2575,10 +3000,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           status: score >= COVERAGE_TARGET ? ("covered" as const) : score > 0 ? ("partially_covered" as const) : objective.status,
         };
       });
+      const openQuestions: string[] = [];
+      const seenQuestions = new Set<string>();
+      for (const report of reports) {
+        for (const question of report.openQuestions) {
+          const key = question.toLowerCase();
+          if (seenQuestions.has(key)) continue;
+          seenQuestions.add(key);
+          openQuestions.push(question);
+        }
+      }
       const recorded: ResearchRound = {
         round,
         delegations,
-        pagesRead: readAfter,
+        pagesRead: shared.pagesRead - readNow,
         toolCalls: roundCalls || shared.toolCalls,
         tokens: roundTokens,
         claims: roundFindings.length,
@@ -2592,12 +3027,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           decision: review.decision,
           reason: review.reason,
         },
+        ...(openQuestions.length ? { openQuestions: openQuestions.slice(0, MAX_ROUND_OPEN_QUESTIONS) } : {}),
       };
       const rounds = [...(latestPlan.rounds ?? []).filter((item) => item.round !== round), recorded];
+      const workerQueries = [...(latestPlan.workerQueries ?? []), ...shared.queries].slice(-MAX_WORKER_QUERIES);
       const saved = await store.savePlan({
         runId: current.id,
         userId: current.userId,
-        plan: { ...latestPlan, objectives, conflicts, rounds },
+        plan: { ...latestPlan, objectives, conflicts, rounds, ...(workerQueries.length ? { workerQueries } : {}) },
       });
       current = saved ?? current;
 
@@ -2619,7 +3056,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           kind: "budget_checkpoint",
           payload: {
             round,
-            pagesRead: readAfter,
+            pagesRead: shared.pagesRead,
             pageCeiling,
             toolCalls: roundCalls || shared.toolCalls,
             tokens: workerTokens.used,
@@ -2648,7 +3085,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       });
       round += 1;
     }
-    return { run: (await store.loadRun(current.id, current.userId)) ?? current };
+    const finished = (await store.loadRun(current.id, current.userId)) ?? current;
+    // The workers' pages can be reprints of each other just as the sweep's
+    // could; mark them before the corpus is judged and written.
+    return { run: ranARound ? await markSyndicatedCopies(finished) : finished };
   };
 
   /**
@@ -2679,12 +3119,26 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
     }
 
-    const computed = computeCoverage(plan, await store.listSources(run.id, run.userId));
+    // The lead's latest review, when there is one, decides the statuses and
+    // the gaps; the heuristic decides only when no worker round has run.
+    const computed = computeCoverage(
+      plan,
+      await store.listSources(run.id, run.userId),
+      plan.rounds?.[plan.rounds.length - 1]?.review
+    );
+    // Merged, not replaced: the conflicts already on the plan are the lead's
+    // contradictions and the syndication groups, and replacing them with the
+    // heuristic's exact-hash duplicates here used to erase them one stage
+    // before the writer would have seen them.
+    const knownConflicts = new Set((plan.conflicts ?? []).map((conflict) => conflict.id));
     const nextPlan: ResearchPlan = {
       ...plan,
       objectives: computed.objectives,
       coverage: computed.coverage,
-      conflicts: computed.conflicts,
+      conflicts: [
+        ...(plan.conflicts ?? []),
+        ...computed.conflicts.filter((conflict) => !knownConflicts.has(conflict.id)),
+      ].slice(0, MAX_CONFLICTS),
     };
     const round = plan.followUpRound ?? 0;
     const availableSlots = Math.max(0, MAX_PLAN_QUERIES - nextPlan.queries.length);
@@ -2713,7 +3167,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         userId: run.userId,
         goal: run.goal,
         gaps: computed.gaps,
-        alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? [])],
+        // The sweep's queries and then the workers', newest last, so the
+        // expander is told what the team actually tried and not only the
+        // seed list it was told about last round.
+        alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? []), ...(plan.workerQueries ?? [])],
         limit: availableSlots,
         signal,
       });
@@ -2756,7 +3213,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
             status: objective.status,
           })),
           coverage: computed.coverage,
-          conflicts: computed.conflicts,
+          conflicts: nextPlan.conflicts,
           policyExcluded: computed.policyExcluded,
         },
       },
@@ -2777,34 +3234,6 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     const moved = await advance(run, "synthesizing");
     return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
   };
-
-  /**
-   * CONFLICTS: flag sources that are copies of each other.
-   *
-   * §8.2's requirement, done at the only point it can be done cheaply. Two
-   * copies of one wire story must never read as independent corroboration, and
-   * the identical `contentHash` is the evidence. Anything subtler is the
-   * synthesis model's job, under the instruction to attribute disagreement.
-   */
-  const doConflicts = async (run: ResearchRunRow): Promise<StepOutcome> => {
-    const sources = await store.listSources(run.id, run.userId);
-    const byHash = new Map<string, string[]>();
-    for (const source of sources) {
-      if (!source.contentHash) continue;
-      byHash.set(source.contentHash, [...(byHash.get(source.contentHash) ?? []), source.url]);
-    }
-    for (const [hash, urls] of byHash) {
-      if (urls.length < 2) continue;
-      await append(run.id, run.userId, [
-        { kind: "conflict_found", payload: { kind: "duplicate_content", contentHash: hash, urls } },
-      ]);
-    }
-    const moved = await advance(run, "synthesizing");
-    return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
-  };
-  // Duplicate-content receipts remain useful for compatibility with existing
-  // transcripts; lead review owns the decision to continue or synthesize.
-  void doConflicts;
 
   /**
    * One durable investigation round.
@@ -2850,8 +3279,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     // price is set by how much this particular run gathered, and a flat
     // reservation is simultaneously far too much for a three-source run and not
     // half enough for a fifty-source one. `listSources` is a single indexed read
-    // and the run is about to make it anyway.
-    const sources = (await store.listSources(run.id, run.userId)).slice(0, MAX_SOURCES);
+    // and the run is about to make it anyway. Filtered to the citable rows
+    // BEFORE the cap, so a readable row past position 250 is not dropped by a
+    // slice that counted unread rows ahead of it.
+    const sources = citableSources(await store.listSources(run.id, run.userId));
     const estimate = synthesisEstimateMicroUsd(sources, !!revision);
     if (!(await affordable(run, estimate))) {
       return stopForBudget(run, estimate);
@@ -2892,7 +3323,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * replacement before the run becomes terminal.
    */
   const doValidation = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
-    const sources = await store.listSources(run.id, run.userId);
+    // The identical list the writer numbered — see `citableSources`. Handing
+    // the audit every row put an unread row at index 1 of most runs, and
+    // every citation was then judged against a page with no passages.
+    const sources = citableSources(await store.listSources(run.id, run.userId));
     let report = run.report ?? "";
     let auditDegraded = false;
     let validation: ResearchValidationResult | null = null;
@@ -2978,7 +3412,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       }
     }
     const cited = new Set<number>(citationMarkersOutsideCode(report));
-    const dangling = [...cited].filter((n) => n < 1 || n > Math.min(sources.length, MAX_SOURCES));
+    const dangling = [...cited].filter((n) => n < 1 || n > sources.length);
     if (dangling.length > 0) {
       await append(run.id, run.userId, [
         {

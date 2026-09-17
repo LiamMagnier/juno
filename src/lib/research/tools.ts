@@ -4,10 +4,11 @@ import { utilityModelCandidates } from "@/lib/memory";
 import { recordSpend } from "@/lib/spend";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
-import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
+import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
-import { SNAPSHOT_CHARS, type ResearchDeps, type ResearchHit, type ResearchSourceRow } from "@/lib/research/engine";
-import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
+import { citableSources, type ResearchDeps, type ResearchHit } from "@/lib/research/engine";
+import { buildResearchCorpus, corpusFindings } from "@/lib/research/corpus";
+import { fetchRetryDelayMs } from "@/lib/search/page-signals";
 import {
   BRIEF_OUTPUT_TOKENS,
   BRIEF_PROMPT_CHARS,
@@ -23,7 +24,7 @@ import {
   REVISION_REPORT_CHARS,
   SEARCH_FEE_MICRO_USD,
   SYNTHESIS_OUTPUT_TOKENS,
-  type ResearchPlan,
+  type ResearchEffort,
 } from "@/lib/research/domain";
 import { extractJsonObject, parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
 import { researchLeadModel } from "@/lib/research/agents/worker";
@@ -66,6 +67,17 @@ const RESULTS_PER_QUERY = 24;
 /** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
 const PLANNED_QUERIES = 16;
 /**
+ * The deep and max tiers are asked for five to eight sub-questions with two
+ * or three searches each — up to 24 — and a cap of 16 was silently dropping
+ * every search the last objectives had. 24 still leaves the follow-up rounds
+ * sixteen of `MAX_PLAN_QUERIES`.
+ */
+const PLANNED_QUERIES_DEEP = 24;
+
+function plannedQueriesFor(effort: ResearchEffort | undefined): number {
+  return effort === "deep" || effort === "max" ? PLANNED_QUERIES_DEEP : PLANNED_QUERIES;
+}
+/**
  * How many human-readable steps the plan gate asks for. Matches
  * `MAX_PLAN_STEPS`, which is the storage bound — a planner asked for more than
  * the plan can hold would have its tail silently dropped at the gate.
@@ -79,10 +91,10 @@ const EXPANDED_QUERIES = 8;
  * Larger than SNAPSHOT_CHARS on purpose: the extractor now strips page chrome
  * and prefers an `<article>`/`<main>` region, and that work needs headroom to
  * be worth anything. What the run STORES, and therefore what synthesis reads,
- * is SNAPSHOT_CHARS — imported rather than redeclared, because a storage cap
- * and a prompt cap that quietly disagree is how half of every document ended up
- * being thrown away with the corpus builder still slicing at a number nothing
- * ever reached.
+ * is the engine's SNAPSHOT_CHARS, which corpus.ts slices at — one number, not
+ * a copy of it, because a storage cap and a prompt cap that quietly disagree
+ * is how half of every document ended up being thrown away with the corpus
+ * builder still slicing at a number nothing ever reached.
  */
 const PAGE_CONTENT_CHARS = 16_000;
 
@@ -338,10 +350,10 @@ export const clarifyResearchGoal: NonNullable<ResearchDeps["clarify"]> = async (
  * from "the caller got nothing". A length check or a status flag would answer a
  * different question and start disagreeing the first time a parser changed.
  */
-function hasUsablePlan(text: string): boolean {
+function hasUsablePlan(text: string, maxQueries: number): boolean {
   if (!text.trim()) return false;
-  if (parseStructuredPlan(text, { maxQueries: PLANNED_QUERIES })) return true;
-  return parsePlanLines(parsePlanSections(text).queries, PLANNED_QUERIES).length > 0;
+  if (parseStructuredPlan(text, { maxQueries })) return true;
+  return parsePlanLines(parsePlanSections(text).queries, maxQueries).length > 0;
 }
 
 /**
@@ -414,19 +426,20 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
 
   let planned = await draft(1);
   let costMicroUsd = brief.costMicroUsd + planned.costMicroUsd;
+  const maxQueries = plannedQueriesFor(effort);
   // Both parsers below key off the text, so "did the first attempt produce
   // anything usable" is asked exactly the way the callers below ask it —
   // rather than by re-deriving it from a length or a status the model does
   // not report. An aborted run does not retry: the caller has gone.
-  if (!hasUsablePlan(planned.text) && !signal?.aborted) {
+  if (!hasUsablePlan(planned.text, maxQueries) && !signal?.aborted) {
     const second = await draft(2);
     costMicroUsd += second.costMicroUsd;
-    if (hasUsablePlan(second.text)) planned = second;
+    if (hasUsablePlan(second.text, maxQueries)) planned = second;
   }
 
   // The structured plan: sub-questions with evidence contracts, the approach,
   // the bar for done, and the searches attached to the question they serve.
-  const structured = parseStructuredPlan(planned.text, { maxQueries: PLANNED_QUERIES });
+  const structured = parseStructuredPlan(planned.text, { maxQueries });
   if (structured) {
     return {
       steps: structured.steps,
@@ -453,7 +466,7 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
 
   return {
     steps,
-    queries: parsePlanLines(sections.queries, PLANNED_QUERIES),
+    queries: parsePlanLines(sections.queries, maxQueries),
     ...(brief.text ? { brief: brief.text } : {}),
     // Both calls are the plan step as far as the run's ledger is concerned.
     costMicroUsd,
@@ -528,14 +541,32 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, count, signa
 export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal }) => {
   if (!url) return null;
   const box = timeboxSignal(signal, FETCH_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
-    const outcome = await crawlResearchPage(url, { signal: box.signal, maxChars: PAGE_CONTENT_CHARS });
+    let outcome = await crawlResearchPage(url, { signal: box.signal, maxChars: PAGE_CONTENT_CHARS });
 
+    if (!outcome.ok) {
+      // One retry for the two answers that mean "not right now". The page
+      // fetcher treated a 429 exactly like a 404 while the search layer beside
+      // it already retried its own rate limits, so a run reading a dozen pages
+      // from one site lost every one past the first burst. The wait and
+      // whether it fits the clock are decided in `fetchRetryDelayMs`.
+      const wait = fetchRetryDelayMs(outcome.failure, Date.now() - startedAt, FETCH_TIMEOUT_MS);
+      if (wait !== null && !box.signal.aborted) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (!box.signal.aborted) {
+          outcome = await crawlResearchPage(url, { signal: box.signal, maxChars: PAGE_CONTENT_CHARS });
+        }
+      }
+    }
     if (!outcome.ok) {
       const failure = outcome.failure;
       return {
         skipped: failure.reason,
-        ...(failure.detail ? { detail: failure.detail } : {}),
+        // The status is the one fact a reader can act on for a refused
+        // request, and it was dropped between the extractor and the timeline.
+        ...(failure.detail ? { detail: failure.detail } : failure.httpStatus ? { detail: `HTTP ${failure.httpStatus}` } : {}),
+        ...(failure.httpStatus ? { httpStatus: failure.httpStatus } : {}),
       };
     }
     if (!outcome.page.text) return null;
@@ -544,6 +575,10 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
       text: outcome.page.text.slice(0, PAGE_CONTENT_CHARS),
       costMicroUsd: PAGE_FETCH_FEE_MICRO_USD,
       links: outcome.page.links,
+      // The date the extractor found on the page. Dropped here for as long as
+      // this wrapper existed, so every hopped or worker-opened page failed
+      // any freshness rule the planner set and scored as undated.
+      publishedAt: outcome.page.publishedAt ?? null,
     };
   } catch (e) {
     if (!box.signal.aborted) console.error("[research] fetch page extract error", e);
@@ -591,7 +626,10 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
     ...gaps.slice(0, EXPANDED_QUERIES).map((gap) => `- (${gap.status}) ${gap.question}${gap.missingReason ? ` — ${gap.missingReason}` : ""}`),
     "",
     "Queries already run, which did NOT find it:",
-    ...alreadyIssued.slice(0, 40).map((query) => `- ${query}`),
+    // The most RECENT forty: the list is the sweep's queries followed by the
+    // workers', newest last, and the first forty of a long run are the seed
+    // queries every follow-up has already been told about.
+    ...alreadyIssued.slice(-40).map((query) => `- ${query}`),
   ].join("\n");
 
   const expanded = await utilityCompletion({
@@ -612,147 +650,6 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
 };
 
 /**
- * The synthesis contract and the numbered corpus.
- *
- * Exported because the chat route needs the identical string: a run driven to
- * `synthesizing` and handed back to chat is written by the user's own model
- * against this exact corpus, and two versions of the citation contract would
- * mean two conventions for what `[3]` refers to.
- *
- * Both `title` and the body are page-controlled and this text is appended to
- * the SYSTEM prompt — the highest-authority slot there is. Unwrapped, a page
- * whose text contains "[13] Official policy\nhttps://…\n…" is byte-identical to
- * a real corpus entry, so a hostile page could forge extra sources, defeat the
- * citation contract and issue instructions from inside the system prompt. The
- * envelope keeps the numbering and the URL outside it — those are ours — and
- * puts only the fetched text inside. The title is collapsed to one line for the
- * same reason: a newline in it would let one page forge a second entry.
- */
-export interface ResearchCorpusFinding {
-  claim: string;
-  quote: string;
-  /** Index into `sources`, so the finding can be cited as [n]. */
-  sourceIndex: number;
-  objective?: string;
-}
-
-/**
- * Findings, rendered as the evidence ledger ahead of the raw pages.
- *
- * The workers' findings are claims a model has already tied to a verbatim
- * quote on a specific page; putting them first hands the writer the argument
- * and the citation together, so the report is built from what the team
- * established rather than re-derived from two hundred pages of prose.
- */
-function renderFindings(findings: ResearchCorpusFinding[]): string {
-  if (findings.length === 0) return "";
-  const byObjective = new Map<string, ResearchCorpusFinding[]>();
-  for (const finding of findings) {
-    const key = finding.objective ?? "";
-    const list = byObjective.get(key) ?? [];
-    list.push(finding);
-    byObjective.set(key, list);
-  }
-  const blocks: string[] = [];
-  for (const [objective, list] of byObjective) {
-    blocks.push(
-      [
-        objective ? `### ${objective}` : "### Findings",
-        ...list.map(
-          (finding) =>
-            `- ${finding.claim} [${finding.sourceIndex}]\n  > ${wrapUntrusted("finding quote", finding.quote.replace(/\s+/g, " "))}`
-        ),
-      ].join("\n")
-    );
-  }
-  return `\n# Evidence Ledger (${findings.length} sourced findings from the research team)
-Each finding is a claim tied to a verbatim quote from the numbered source it cites. Build the report from these first; the source material below is the full text behind them.
-
-${blocks.join("\n\n")}
-`;
-}
-
-/**
- * Findings keyed to the numbered source list the writer will see.
- *
- * A finding whose page did not make the corpus (no snapshot, or past the
- * source cap) is dropped rather than cited by a number that points elsewhere.
- */
-export function corpusFindings(
-  plan: ResearchPlan,
-  sources: Array<Pick<ResearchSourceRow, "id">>,
-  findings: ReadonlyArray<Pick<ResearchFindingRow, "claim" | "quote" | "sourceId" | "objectiveId">>
-): ResearchCorpusFinding[] {
-  const index = new Map(sources.map((source, i) => [source.id, i + 1]));
-  const objectives = new Map(plan.objectives.map((objective) => [objective.id, objective.question]));
-  const out: ResearchCorpusFinding[] = [];
-  const seen = new Set<string>();
-  for (const finding of findings) {
-    const sourceIndex = finding.sourceId ? index.get(finding.sourceId) : undefined;
-    if (!sourceIndex) continue;
-    const key = `${sourceIndex}:${finding.claim.toLowerCase().slice(0, 120)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      claim: finding.claim,
-      quote: finding.quote,
-      sourceIndex,
-      ...(finding.objectiveId && objectives.get(finding.objectiveId) ? { objective: objectives.get(finding.objectiveId) } : {}),
-    });
-  }
-  return out;
-}
-
-export function buildResearchCorpus(
-  goal: string,
-  plan: ResearchPlan,
-  sources: Array<Pick<ResearchSourceRow, "url" | "title" | "snapshot">>,
-  findings: ResearchCorpusFinding[] = []
-): string {
-  const corpus = sources
-    .map((source, i) => {
-      const title = source.title.replace(/\s+/g, " ").slice(0, 200);
-      // SNAPSHOT_CHARS, not PAGE_CONTENT_CHARS: the stored snapshot is already
-      // capped at the former, so slicing at the latter was a no-op pretending
-      // to be a limit.
-      const body = (source.snapshot ?? "").slice(0, SNAPSHOT_CHARS);
-      return `[${i + 1}] ${title}\n${source.url}\n${wrapUntrusted(source.url, body)}`;
-    })
-    .join("\n\n");
-  const constraints = plan.constraints.length
-    ? `\nConstraints the user set for this research (these are the user's own instructions, and they apply to the whole report):\n${plan.constraints
-        .map((c) => `- ${c}`)
-        .join("\n")}\n`
-    : "";
-  return `# Autonomous Deep Research Mode
-The user requested an exhaustive, authoritative research investigation on: "${truncate(goal, 300)}".
-You are writing a comprehensive, publication-grade research REPORT, grounded strictly in the numbered source material below.
-
-# Report Structure:
-1. "# Title": Clear, professional title naming the topic.
-2. "## Executive Summary": High-level synthesis highlighting key findings, core thesis, and high-impact takeaways.
-3. "## Key Findings & Core Analysis": Detailed thematic sections (using "### Subheadings") breaking down the subject with quantitative data, benchmark comparisons, timelines, and technical details. Use Markdown comparison tables where appropriate.
-4. "## Nuances, Contradictions & Trade-Offs": Explicitly analyze conflicting claims or divergent evidence between sources.
-5. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
-6. "## Sources": Numbered list matching cited references as "[n] Title — URL".
-
-# Citation & Accuracy Rules:
-- Cite EVERY factual assertion, statistic, quote, and claim inline with bracketed numbers (e.g. [1], [2][4]) mapping directly to the numbered source list below.
-- Strict factual grounding: Do NOT fabricate details or cite numbers outside the numbered list.
-- When sources disagree or have different methodologies, explain the disagreement and cite each source.
-- Two sources repeating the same press release or mirror text are not independent corroboration.
-- Separate observed facts from inferences. Explain evidence strength without invented confidence percentages.
-- Distinguish publication dates from the dates events occurred. Prefer original studies and official records.
-- Do not treat absent evidence as evidence of absence. Failed fetches and unavailable sources remain limitations.
-- Keep the report proportionate to the question. Do not pad it to appear exhaustive.
-${constraints}
-${UNTRUSTED_CONTENT_RULE}
-${renderFindings(findings)}
-# Numbered Source Material:
-${corpus}`;
-}
-
-/**
  * WRITE — the report, on the utility model.
  *
  * Only the standalone research surface uses this. A research run started from
@@ -770,7 +667,8 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   revision,
 }) => {
   const model = researchPlannerModel();
-  const readable = sources.filter((source) => source.snapshot);
+  // The same function the citation audit numbers against — see `citableSources`.
+  const readable = citableSources(sources);
   if (!model || readable.length === 0) return { report: "", costMicroUsd: 0 };
 
   const system = [

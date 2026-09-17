@@ -10,6 +10,11 @@ import type { ExtractOutcome, ExtractResult } from "@/lib/search/search-engine";
 import { isDisallowedHost } from "@/lib/search/url-safety";
 import type { Browser, Route } from "@playwright/test";
 
+// The shell heuristic lives with the other page signals now, where the
+// extractor — the only code holding the raw HTML — can import it too; it is
+// re-exported here so the crawler's own tests and callers keep their import.
+export { isPotentialSpa } from "@/lib/search/page-signals";
+
 export interface CrawlerOptions {
   signal?: AbortSignal;
   maxChars?: number;
@@ -26,34 +31,67 @@ export interface CrawledPage extends ExtractResult {
 
 export type CrawlResult =
   | { ok: true; page: CrawledPage }
-  | { ok: false; failure: { reason: string; detail?: string } };
+  /** The extractor's failure, with the status and the server's `Retry-After` when it was an HTTP refusal. */
+  | { ok: false; failure: { reason: string; detail?: string; httpStatus?: number; retryAfterMs?: number } };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_CHARS = 16_000;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoResearch/2.0";
+/**
+ * Below this many characters a successful fast fetch is not trusted as the
+ * page. The extractor accepts anything over fifty, so a "please enable
+ * JavaScript" notice of sixty characters used to come back `ok` and be stored
+ * as the document; only a fetch that FAILED ever reached the headless path.
+ */
+const MIN_FAST_TEXT_CHARS = 250;
 
 /**
- * Heuristic check to detect whether a page's initial HTML is a client-side rendered SPA shell.
+ * Whether the fast fetch's outcome is worth a headless render.
+ *
+ * Three cases, and the second is the one that was missing: the fetch failed
+ * outright; the fetch succeeded but yielded a shell — too little text, or
+ * markup the extractor recognised as a client-rendered root; or the fetch
+ * succeeded with a real document, in which case a browser would only cost
+ * time. Pure, because it is the decision the whole fallback hinges on and the
+ * crawler itself needs the network to run.
  */
-export function isPotentialSpa(html: string, textLength: number): boolean {
-  if (textLength < 150) return true;
+export function shouldRenderHeadless(fast: ExtractOutcome): boolean {
+  if (!fast.ok) return true;
+  return fast.page.text.length < MIN_FAST_TEXT_CHARS || fast.page.shell === true;
+}
 
-  const spaPatterns = [
-    /<div[^>]+id=["'](?:root|app|__next)["'][^>]*>\s*<\/div>/i,
-    /<div[^>]+id=["'](?:root|app|__next)["'][^>]*\/>/i,
-    /<div[^>]+id=["'](?:root|app)["'][^>]*><\/div>/i,
-    /enable javascript/i,
-    /javascript is required/i,
-    /requires javascript/i,
-    /<noscript>[\s\S]*?javascript[\s\S]*?<\/noscript>/i,
-  ];
+/**
+ * The headless renderer is opt-in per deployment.
+ *
+ * `@playwright/test` is a development dependency and nothing installs a
+ * browser into the production image, so on an ordinary `next start` the
+ * dynamic import below throws and every attempt returns
+ * `headless_render_failed` — after paying an import and a launch attempt per
+ * page. A deployment that has installed a browser says so with
+ * `RESEARCH_HEADLESS=1`; everybody else keeps the fast path and a named skip.
+ */
+export function headlessRenderingEnabled(): boolean {
+  const raw = process.env.RESEARCH_HEADLESS?.trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
 
-  for (const pattern of spaPatterns) {
-    if (pattern.test(html)) return true;
-  }
+/**
+ * Why this process cannot render headlessly, once it has found out.
+ *
+ * A missing module or a missing browser binary is a fact about the deployment,
+ * not about the page, so it is learned once and every later call answers from
+ * memory rather than importing and launching again. A transient launch error
+ * is not cached: that one may well succeed for the next page.
+ */
+let headlessUnavailable: string | null = null;
 
-  return false;
+function browserIsMissing(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  // The wording is the launcher's own for a browser that was never
+  // installed. Deliberately not the generic launch prefix, which a transient
+  // failure carries too and which would switch the renderer off for good.
+  return /executable doesn't exist|Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND/i.test(message);
 }
 
 /**
@@ -67,23 +105,37 @@ export async function renderHeadlessPage(
   if (!url || (!url.startsWith("data:") && isDisallowedHost(url))) {
     return { ok: false, failure: { reason: "blocked_host" } };
   }
+  if (headlessUnavailable) {
+    return { ok: false, failure: { reason: "headless_render_failed", detail: headlessUnavailable } };
+  }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
   let browser: Browser | undefined;
 
   try {
-    const { chromium } = await import("@playwright/test");
+    let chromium: (typeof import("@playwright/test"))["chromium"];
+    try {
+      ({ chromium } = await import("@playwright/test"));
+    } catch (error) {
+      headlessUnavailable = "the headless browser package is not installed in this build";
+      throw error;
+    }
 
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        "--disable-dev-shm-usage",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-gpu",
-      ],
-    });
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          "--disable-dev-shm-usage",
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-gpu",
+        ],
+      });
+    } catch (error) {
+      if (browserIsMissing(error)) headlessUnavailable = "no headless browser binary is installed in this build";
+      throw error;
+    }
 
     // Keep a narrowed reference for the abort callback; `browser` is also
     // owned by the outer finally block and is intentionally optional there.
@@ -210,10 +262,29 @@ export async function renderHeadlessPage(
   }
 }
 
+function fastPage(page: ExtractResult): CrawlResult {
+  return {
+    ok: true,
+    page: {
+      title: page.title,
+      text: page.text,
+      links: page.links,
+      author: page.author,
+      publishedAt: page.publishedAt,
+      isSpa: false,
+      crawler: "http_fast",
+    },
+  };
+}
+
 /**
  * High-level Deep Research crawler:
  * 1. Executes fast HTTP extraction first.
- * 2. If the page is an SPA, empty, or blocked by JS requirement, falls back to headless Playwright Chromium.
+ * 2. When that failed or produced a client-rendered shell, and this
+ *    deployment has opted into a browser, renders the page headlessly.
+ * 3. Otherwise returns the fast result as it was — a shell included, because
+ *    a few sentences of navigation beats nothing and the run's ranking will
+ *    keep it near the bottom.
  */
 export async function crawlResearchPage(
   url: string,
@@ -233,56 +304,11 @@ export async function crawlResearchPage(
     maxChars: options.maxChars,
   });
 
-  if (fastOutcome.ok) {
-    const textLen = fastOutcome.page.text.length;
-    // If we extracted substantial text, return fast result immediately
-    if (textLen >= 250) {
-      return {
-        ok: true,
-        page: {
-          title: fastOutcome.page.title,
-          text: fastOutcome.page.text,
-          links: fastOutcome.page.links,
-          author: fastOutcome.page.author,
-          publishedAt: fastOutcome.page.publishedAt,
-          isSpa: false,
-          crawler: "http_fast",
-        },
-      };
-    }
-  }
-
-  // If fast extraction was empty or failed, attempt headless browser fallback
-  const isLikelySpa = !fastOutcome.ok && (
-    fastOutcome.failure.reason === "empty_document" ||
-    fastOutcome.failure.reason === "fetch_failed"
-  );
-
-  if (isLikelySpa || !fastOutcome.ok) {
+  if (shouldRenderHeadless(fastOutcome) && headlessRenderingEnabled()) {
     const headlessOutcome = await renderHeadlessPage(url, options);
-    if (headlessOutcome.ok) {
-      return headlessOutcome;
-    }
+    if (headlessOutcome.ok) return headlessOutcome;
   }
 
-  // Return original fast outcome or failure if headless also failed
-  if (fastOutcome.ok) {
-    return {
-      ok: true,
-      page: {
-        title: fastOutcome.page.title,
-        text: fastOutcome.page.text,
-        links: fastOutcome.page.links,
-        author: fastOutcome.page.author,
-        publishedAt: fastOutcome.page.publishedAt,
-        isSpa: false,
-        crawler: "http_fast",
-      },
-    };
-  }
-
-  return {
-    ok: false,
-    failure: fastOutcome.failure,
-  };
+  if (fastOutcome.ok) return fastPage(fastOutcome.page);
+  return { ok: false, failure: fastOutcome.failure };
 }
