@@ -215,7 +215,38 @@ export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] 
   };
 }
 
-export function serializeConversation(conv: Conversation): ClientConversation {
+/**
+ * Typed by WHAT IT READS, not by the whole row.
+ *
+ * `listConversations` names an explicit `select` so 200 rows of the sidebar's
+ * list do not carry four columns no client looks at into the RSC payload. A
+ * `Conversation` parameter would reject that narrower object, and widening the
+ * select back to satisfy the type is the tail wagging the dog. A full row still
+ * satisfies this, so every other caller is unchanged — and adding a field here
+ * without adding it to that select is now a type error rather than a silent
+ * `undefined`.
+ */
+type SerializableConversation = Pick<
+  Conversation,
+  | "id"
+  | "title"
+  | "titleSource"
+  | "model"
+  | "origin"
+  | "kind"
+  | "codeWorkspaceName"
+  | "codeWorkspacePath"
+  | "codeWorkspaceKey"
+  | "pinned"
+  | "folderId"
+  | "projectId"
+  | "activeConnectors"
+  | "archivedAt"
+  | "lastMessageAt"
+  | "createdAt"
+>;
+
+export function serializeConversation(conv: SerializableConversation): ClientConversation {
   return {
     id: conv.id,
     title: conv.title,

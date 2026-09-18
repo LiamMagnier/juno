@@ -369,7 +369,10 @@ const filterRows = (rows: SlashCommand[], query: string) =>
 // than the + menu's rows one trigger to the left, which are the same object.
 const paletteRowClass = (selected: boolean) =>
   cn(
-    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+    // `px-2.5` inside the list's `p-1.5` puts the glyph on 16 and `gap-2.5`
+    // carries the label to 46 — the shell's grid, shared with ⌘K and the
+    // sidebar behind it.
+    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-body transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
     selected
       ? "bg-accent ring-1 ring-inset ring-primary/20"
       : "hover:bg-accent/50",
@@ -445,9 +448,15 @@ function PaletteEyebrow({
   return (
     <div
       aria-hidden
-      className="flex items-baseline justify-between gap-2 px-2 pb-1 pt-1.5"
+      className="flex items-baseline justify-between gap-2 px-2.5 pb-1 pt-1.5"
     >
-      <span className="font-mono text-label text-muted-foreground">
+      {/* The command palette's group-heading voice, not a mono eyebrow. Both
+          are filtered, arrow-driven lists and the codebase calls them "one
+          vocabulary"; mono is the machine voice a settings page heads its
+          groups with, and these head a list of the reader's own skills and
+          connectors. The counter beside it stays mono, because a count IS
+          machine metadata and tabular figures are why. */}
+      <span className="text-ui font-medium text-muted-foreground">
         {label}
       </span>
       {counter && (
@@ -459,11 +468,22 @@ function PaletteEyebrow({
   );
 }
 
-/** Uniform icon slot: brand marks need a surface to read on, and a shared tile
- *  keeps lucide glyphs, provider logos and connector marks on one baseline. */
+/**
+ * Uniform icon slot — a SLOT, not a plate.
+ *
+ * It was a 24px bordered tile with its own fill, on the argument that brand
+ * marks need a surface to read on and a shared tile keeps lucide glyphs,
+ * provider logos and connector marks on one baseline. The second half is the
+ * real requirement and a fixed-size box delivers it on its own; the border and
+ * the fill were the part that made ten rows read as ten plates, which is
+ * exactly what the ⌘K palette dropped for the same reason.
+ *
+ * `size-5` with an 18px glyph, so this list lands on the same 16px-glyph /
+ * 46px-label grid as the palette, the sidebar and every dropdown.
+ */
 function PaletteIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-xs border border-border/50 bg-background/60">
+    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden [&_svg]:size-4.5 [&_img]:size-4.5">
       {children}
     </span>
   );

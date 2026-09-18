@@ -139,7 +139,10 @@ export function FilePreview({
         </pre>
       ) : (
         <div className="absolute inset-0 grid place-items-center">
-          <span className="font-mono text-[0.6875rem] font-medium tracking-[0.08em] text-muted-foreground/70">
+          {/* `text-caption` (the rung this 0.6875rem already was, spelled off-ladder so
+    the lint rule could not see it) and no 0.08em: that is CAPS tracking, and
+    rule 13 of PREMIUM_AUDIT keeps it for uppercase. The rung carries its own. */}
+          <span className="font-mono text-caption font-medium text-muted-foreground/70">
             {extensionOf(item)}
           </span>
         </div>

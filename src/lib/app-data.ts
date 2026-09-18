@@ -22,11 +22,18 @@ import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
 export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> {
-  let settings = await prisma.settings.findUnique({ where: { userId: user.id } });
-  if (!settings) {
-    await ensureUserDefaults(user.id);
-    settings = await prisma.settings.findUnique({ where: { userId: user.id } });
-  }
+  /*
+   * The settings row rides in the SAME WAVE as the account, not ahead of it.
+   *
+   * These are two independent single-row lookups and they were awaited one
+   * after the other, so the bootstrap was four serial waves deep (settings →
+   * account → list wave → spend wave) where three will do. At 20-40ms a round
+   * trip on a hosted database that is a whole wave of latency spent on
+   * ordering that nothing needed.
+   *
+   * The `ensureUserDefaults` re-read stays serial and stays rare: it only runs
+   * for an account that has no settings row yet, which is once in its life.
+   */
 
   /*
    * ONE READ OF THE ACCOUNT, not three.
@@ -49,7 +56,9 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
    * `getUserPlan` is `cache()`d as well (usage.ts), which covers the callers
    * further down that legitimately cannot be handed a plan.
    */
-  const account = await prisma.user.findUnique({
+  const [settings0, account] = await Promise.all([
+    prisma.settings.findUnique({ where: { userId: user.id } }),
+    prisma.user.findUnique({
     where: { id: user.id },
     select: {
       // From the DB, not the JWT, so a profile-picture change shows everywhere.
@@ -60,7 +69,15 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
         select: { plan: true, status: true, createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
       },
     },
-  });
+    }),
+  ]);
+
+  let settings = settings0;
+  if (!settings) {
+    await ensureUserDefaults(user.id);
+    settings = await prisma.settings.findUnique({ where: { userId: user.id } });
+  }
+
   const subscription = account?.subscription ?? null;
   const plan = planFromAccount(account?.email ?? null, subscription);
 

@@ -46,6 +46,37 @@ export async function listConversations(
       ...(q ? { title: { contains: q, mode: "insensitive" } } : {}),
     },
     orderBy: [{ pinned: "desc" }, { lastMessageAt: "desc" }],
+    /*
+     * AN EXPLICIT SELECT, naming exactly what `serializeConversation` reads.
+     *
+     * Without one Prisma returns all 20 scalar columns, and this list is
+     * serialised into the RSC payload of a `force-dynamic` layout — so
+     * `userId`, `clientRequestId`, `forkedFromId` and `updatedAt` were
+     * downloaded 200 times on every page load and every `router.refresh()`,
+     * for four values no client ever reads.
+     *
+     * It is also the guard: adding a column to the model no longer silently
+     * widens this payload, and dropping one from the serialiser without
+     * dropping it here is a type error rather than dead weight.
+     */
+    select: {
+      id: true,
+      title: true,
+      titleSource: true,
+      model: true,
+      origin: true,
+      kind: true,
+      codeWorkspaceName: true,
+      codeWorkspacePath: true,
+      codeWorkspaceKey: true,
+      pinned: true,
+      folderId: true,
+      projectId: true,
+      activeConnectors: true,
+      archivedAt: true,
+      lastMessageAt: true,
+      createdAt: true,
+    },
     take: 200,
   });
   return convos.map(serializeConversation);

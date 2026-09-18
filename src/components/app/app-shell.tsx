@@ -49,7 +49,17 @@ const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
 // "the page is loading".
-const PREFETCH_ROUTES = ["/chat", "/code", "/design", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
+/**
+ * The routes worth holding warm: the two the product switch reaches.
+ *
+ * It listed ten. Eight of them are destinations behind a nav row or a menu,
+ * reached once in a session if at all, and every one was a full prefetch of a
+ * `force-dynamic` route — uncacheable on the server, so ten RSC requests left
+ * the browser on every shell mount and competed with the page the reader was
+ * looking at. The switch's own two are the ones pressed constantly, and they
+ * are the ones this is for.
+ */
+const PREFETCH_ROUTES = ["/chat", "/code"];
 
 function clampWidth(w: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
@@ -251,11 +261,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("juno:collapse-sidebar", collapseSidebar);
   }, [setCollapsedPersist]);
 
+  /*
+   * WARM THE TWO ROUTES THE SWITCHER REACHES, when the browser is idle.
+   *
+   * This fired ten full prefetches of `force-dynamic` routes at once, on mount,
+   * and never again. Three things were wrong with that. They all left at the
+   * same moment as the page the reader was actually looking at, competing with
+   * it for connections; they were one-shot, so a `router.refresh()` — which the
+   * app provider and the settings modal both call — emptied the router cache
+   * and nothing ever rebuilt it; and eight of the ten were destinations nobody
+   * reaches in one click from here.
+   *
+   * Now: the two the product switch points at, re-armed whenever the route
+   * changes, behind `requestIdleCallback` so they wait for a gap rather than
+   * taking one. With `staleTimes.dynamic` back on (next.config.mjs) a warm
+   * entry makes the switch instant instead of merely quick.
+   */
   React.useEffect(() => {
-    for (const href of PREFETCH_ROUTES) {
-      router.prefetch(href);
+    const warm = () => {
+      for (const href of PREFETCH_ROUTES) router.prefetch(href);
+    };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle(warm, { timeout: 2000 });
+      return () => window.cancelIdleCallback?.(handle);
     }
-  }, [router]);
+    // Safari has no requestIdleCallback; a macrotask is close enough for a
+    // warm-up whose only requirement is "not during first paint".
+    const timer = setTimeout(warm, 600);
+    return () => clearTimeout(timer);
+  }, [router, pathname]);
 
   /**
    * Close the mobile drawer when the viewport crosses into desktop.

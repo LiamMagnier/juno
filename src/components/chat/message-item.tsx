@@ -603,7 +603,33 @@ interface MessageItemProps {
   currentModelId?: string;
 }
 
-export function MessageItem({
+/**
+ * ONE MESSAGE, AND IT DOES NOT RE-RENDER WHILE ITS NEIGHBOURS STREAM.
+ *
+ * `React.memo` here is worth more than anywhere else in the product. A reply
+ * arrives as 30-60 SSE chunks a second, each one a `setMessages`, and without
+ * a memo every chunk reconciled EVERY message in the transcript — forty turns
+ * of Markdown, code blocks, artifact cards and action clusters, sixty times a
+ * second. That is the jank in a long conversation, and it is also why the page
+ * gets less responsive the longer you talk to it.
+ *
+ * It bails out for real, which is not automatic — a memo whose props change
+ * identity every render costs a comparison and saves nothing. Three things
+ * make it bite here, and all three have to stay true:
+ *
+ *   1. `use-chat` updates with `prev.map((m) => m.id === id ? { ...m } : m)`,
+ *      so a chunk creates ONE new object and leaves the rest identical.
+ *   2. Every handler reaching this component is a `useCallback` in `use-chat`
+ *      or `ChatView`, and `artifactsByIdentifier` is a `useMemo`.
+ *   3. The per-row props that vary — `status`, `speaking`, `canFeedback`,
+ *      `isLast` — are booleans or undefined for all but the last row, so they
+ *      compare equal by value.
+ *
+ * Break any of those and this silently goes back to doing nothing. The default
+ * shallow comparison is deliberate: a custom comparator here would be a second
+ * place to keep that list correct.
+ */
+export const MessageItem = React.memo(function MessageItem({
   surface = "chat",
   message,
   isLast,
@@ -1325,4 +1351,4 @@ export function MessageItem({
       )}
     </div>
   );
-}
+});

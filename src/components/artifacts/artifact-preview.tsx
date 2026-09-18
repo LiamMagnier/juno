@@ -99,7 +99,11 @@ export function ArtifactPreview({
         <>
           <pre
             aria-hidden
-            className="pointer-events-none select-none overflow-hidden p-3 font-mono text-[0.5625rem] leading-[1.45] text-muted-foreground"
+            /* `text-micro`, not an arbitrary 9px. Written in rem it slipped past
+               `design-system/no-arbitrary-text`, which reads px — and 9px muted
+               mono is precisely the size the micro rung was RAISED to 10.5px to
+               get away from. `leading-[1.45]` goes with it: the rung sets it. */
+            className="pointer-events-none select-none overflow-hidden p-3 font-mono text-micro text-muted-foreground"
           >
             {lines.join("\n")}
           </pre>

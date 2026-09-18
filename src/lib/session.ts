@@ -12,6 +12,35 @@ export type SessionUser = {
   image?: string | null;
 };
 
+/**
+ * The session cookie, decoded ONCE per request.
+ *
+ * `auth()` verifies and decrypts a JWT. The app layout called `getSessionBan()`
+ * and then `requireUser()`, so it did that twice, in series, before the first
+ * bootstrap query was even issued.
+ */
+const sessionOnce = cache(async () => auth());
+
+/**
+ * The account row, read ONCE per request, carrying what both readers below
+ * want.
+ *
+ * `getCurrentUser` needs id/name/email/image and the ban flag; `getSessionBan`
+ * needs the ban flag and its reason. They were two `findUnique` calls on the
+ * same row, awaited one after the other — two round trips to a hosted database
+ * for one row, on every page render of a `force-dynamic` layout.
+ *
+ * `cache()` is per-REQUEST: two users never share an entry, and a ban applied
+ * mid-session still takes effect on the reader's next request, which is the
+ * guarantee the ban check is written around.
+ */
+const accountById = cache(async (id: string) =>
+  prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, email: true, image: true, bannedAt: true, banReason: true },
+  })
+);
+
 /** Returns the signed-in user or null (use in pages/route handlers). */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const authorization = (await headers()).get("authorization");
@@ -30,20 +59,17 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       return null;
     }
   }
-  const session = await auth();
+  const session = await sessionOnce();
   const sessionUser = (session?.user as SessionUser | undefined) ?? null;
   if (!sessionUser) return null;
 
   const account =
     sessionUser.id
-      ? await prisma.user.findUnique({
-          where: { id: sessionUser.id },
-          select: { id: true, name: true, email: true, image: true, bannedAt: true },
-        })
+      ? await accountById(sessionUser.id)
       : sessionUser.email
         ? await prisma.user.findUnique({
             where: { email: sessionUser.email },
-            select: { id: true, name: true, email: true, image: true, bannedAt: true },
+            select: { id: true, name: true, email: true, image: true, bannedAt: true, banReason: true },
           })
         : null;
 
@@ -71,13 +97,13 @@ export async function requireUser(): Promise<SessionUser> {
  * suspended user to a page that explains why, instead of a silent sign-in loop.
  */
 export async function getSessionBan(): Promise<{ reason: string | null } | null> {
-  const session = await auth();
+  // Both reads are the cached ones, so calling this immediately before
+  // `requireUser()` — which the app layout does — costs one session decode and
+  // one row, not two of each.
+  const session = await sessionOnce();
   const sessionUser = (session?.user as SessionUser | undefined) ?? null;
   if (!sessionUser?.id) return null;
-  const account = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: { bannedAt: true, banReason: true },
-  });
+  const account = await accountById(sessionUser.id);
   if (!account?.bannedAt) return null;
   return { reason: account.banReason };
 }
