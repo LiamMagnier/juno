@@ -191,6 +191,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
     base = origin?.baseRef ?? null;
   }
+  /*
+   * A BASE THAT IS NOT A BRANCH IS NOT A BASE. `baseRef` records what the run
+   * STARTED from, and since the branch picker offers a tag or a commit SHA that
+   * is no longer always a branch — the runner resolves either, by fetching the
+   * ref and checking it out detached. GitHub's create-PR API will not: `base`
+   * must name a branch of the repository, and a tag or a SHA comes back 422
+   * after the work has already been pushed, which is the one moment this
+   * control must not fail at. So the recorded base is checked against the
+   * repository's branches, and one that is not a branch falls through to the
+   * default-branch lookup below instead of being posted and refused.
+   */
+  if (base) {
+    // Branch names carry slashes and GitHub wants them as path separators, so
+    // each segment is escaped rather than the whole name.
+    const branchPath = base.split("/").map(encodeURIComponent).join("/");
+    const baseRes = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${branchPath}`,
+      { headers: githubHeaders(credential.token), cache: "no-store" },
+    ).catch(() => null);
+    // Only GitHub saying 404 is evidence the branch is absent. A network
+    // failure or a rate limit is not, and must not silently retarget the pull
+    // request at the default branch.
+    if (baseRes?.status === 404) base = null;
+  }
   if (!base) {
     const repoRes = await fetch(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,

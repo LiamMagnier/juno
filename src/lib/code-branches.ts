@@ -15,9 +15,14 @@
  * Pure on purpose — no React, no `server-only`, no environment reads — for the
  * reason src/lib/code-environments.ts gives: the rules below are the half of
  * the feature worth testing, and a module that imports a Prisma client cannot
- * be imported by tests/*.test.ts. The route (src/app/api/code/github/branches)
- * and the picker (src/components/code/code-target-picker.tsx) both read them,
- * so the client cannot offer a ref the server would refuse to look up.
+ * be imported by tests/*.test.ts. Three callers read them — the branches route
+ * (src/app/api/code/github/branches), the picker
+ * (src/components/code/code-target-picker.tsx) and the create route
+ * (src/app/api/code/tasks) — so the client cannot offer a ref the server would
+ * refuse. The third of those is the one that makes the sentence true rather
+ * than merely tidy: until it applied `isUsableGitRef`, the server refused
+ * nothing the picker refused and the shared module was a promise the client
+ * was keeping alone.
  */
 
 /** A repository named as two path segments, already checked for both. */
@@ -66,13 +71,15 @@ export const MAX_REF_LENGTH = 200;
  * Whether a string can be a git ref at all, by `git check-ref-format`'s rules
  * minus the ones only a server can answer.
  *
- * It exists because the branch list is not the whole answer. A repository can
- * have more branches than one request returns, and a base ref may legitimately
- * be a tag or a commit SHA, so the picker keeps a way to name a ref it did not
- * list — and that escape hatch is exactly where a paste of a URL, a quoted
- * branch name or a stray `--upload-pack` would otherwise arrive. What this
- * refuses is what git itself refuses, plus the leading dash that would make a
- * ref look like an argument to the clone that consumes it.
+ * It exists because the branch list is not the whole answer. A base ref may
+ * legitimately be a tag or a commit SHA — neither of which any branch list
+ * contains, and both of which the runner resolves (scripts/cloud-code-runner.mjs
+ * clones a branch or tag with `--branch` and fetches anything else by name to a
+ * detached HEAD) — so the picker keeps a way to name a ref it did not list, and
+ * that escape hatch is exactly where a paste of a URL, a quoted branch name or a
+ * stray `--upload-pack` would otherwise arrive. What this refuses is what git
+ * itself refuses, plus the leading dash that would make a ref look like an
+ * argument to the clone that consumes it.
  *
  * It does NOT promise the ref exists. Nothing on the client can: a ref that
  * resolves for the reader may have been deleted by the time the runner clones.

@@ -22,6 +22,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
 
 // Abuse controls for cloud task creation (the dispatch fans out to a fresh CI VM
 // that burns Actions minutes + plan budget, so it must not be floodable).
@@ -65,7 +66,23 @@ const postSchema = z.object({
       name: z.string().trim().min(1).max(200),
     })
     .optional(),
-  baseRef: z.string().trim().min(1).max(200).optional(),
+  /*
+   * The ref a cloud run starts from, by the same rules the picker offers it
+   * under (src/lib/code-branches.ts). This accepted any non-empty string of up
+   * to 200 characters, which meant the shared module was a promise the client
+   * kept alone: the package's own claim is that a client cannot offer a ref the
+   * server would refuse, and a server that refuses nothing cannot be the half
+   * that makes it true. Nothing here was exploitable — the runner passes the
+   * ref as the value of `--branch` through execFile with no shell — but a
+   * validation that exists in one place is one edit away from existing in none.
+   */
+  baseRef: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_REF_LENGTH)
+    .refine(isUsableGitRef, { message: "baseRef is not a usable git ref" })
+    .optional(),
   // What to run the task with. The composer has offered both of these since
   // Juno Code shipped — a model picker and a thinking slider, on the /code
   // landing and inside a live session — and this schema accepted neither, so

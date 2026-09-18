@@ -22,11 +22,12 @@ import {
  * put in a GitHub API path, what may be handed to git as a ref, and what the
  * list is allowed to leave out.
  *
- * The second half reads the route and the picker as text, the way
+ * The second half reads the route, the picker and the runner as text, the way
  * tests/code-landing.test.ts reads the landing: the properties below are ones a
  * later edit can quietly remove (the repository name stops being validated
- * before it is interpolated; the list stops saying it is truncated), and each
- * assertion names what would break.
+ * before it is interpolated; the branch list grows a page ceiling again; the
+ * runner stops resolving a ref `git clone --branch` cannot), and each assertion
+ * names what would break.
  */
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -171,19 +172,121 @@ test("the branches route validates the repository before it interpolates it", ()
   }
 });
 
-test("a partial branch list says it is partial", () => {
+test("the branch list has no page ceiling", () => {
   /*
-   * A repository can have more branches than three pages, and the failure this
-   * whole control was built to end is a reader not finding the branch they know
-   * exists. So the route reports truncation and the picker both says so and
-   * keeps the way past it — the typed ref, which is also how a tag or a commit
-   * is named.
+   * The failure this whole control was built to end is a reader not finding the
+   * branch they know exists. A three-page ceiling with a `truncated` flag did
+   * not end it — it renamed it, and told the owner of the four-hundredth branch
+   * that it was not a branch of their own repository. So the route pages until
+   * GitHub sends a short page, and nothing downstream describes the list as
+   * partial.
    */
   const route = read(ROUTE);
-  assert.match(route, /truncated/, "the route must report truncation");
+  assert.ok(!/MAX_BRANCH_PAGES/.test(route), "a page ceiling is back on the branch list");
+  // `truncated:` rather than the word: the paragraph above the loop records
+  // why the flag is gone, and a test that forbids the word forbids the record.
+  assert.ok(!/truncated:/.test(route), "the route answers a truncation flag again — there is nothing to truncate");
+  assert.match(
+    route,
+    /if \(raw\.length < BRANCH_PAGE_SIZE\) break;/,
+    "the loop must end on the short page GitHub sends at the end of the list, or it does not end",
+  );
+
   const picker = read(PICKER);
-  assert.match(picker, /load\.truncated/, "the picker must draw the truncation note");
-  assert.match(picker, /isUsableGitRef/, "the picker must keep a way to name a ref the list does not show");
+  assert.ok(!/load\.truncated/.test(picker), "the picker still draws a truncation note for a list that is whole");
+  assert.ok(!/truncated:/.test(picker), "the picker still carries a truncation flag through its load type");
+  assert.match(picker, /isUsableGitRef/, "the picker must keep a way to name a ref that is not a branch");
+});
+
+test("the branch list is fetched when it is opened, and remembered per repository", () => {
+  /*
+   * What paid for the ceiling above. Paging to the end of a repository's
+   * branches on every repository PICK would spend a request per hundred on a
+   * list nobody opened, and clicking down the repository list would multiply
+   * it. So the press that opens the list is what asks for it, and the answer is
+   * kept for the life of the composer so going back and returning is free.
+   */
+  const picker = read(PICKER);
+  assert.match(picker, /onNeedBranches\(\);/, "opening the branch list must be what asks for it");
+  assert.match(picker, /branchesWanted/, "the load must be gated on somebody having asked for it");
+  assert.match(picker, /branchCache\.current\.set\(/, "the answer must be remembered per repository");
+  assert.match(
+    picker,
+    /branchCache\.current\.delete\(/,
+    "Retry must drop the remembered answer, or it re-runs straight back into the cache",
+  );
+});
+
+test("focus survives both steps of the two-step panel", () => {
+  /*
+   * Each step replaces the whole body of an OPEN popover, so the control that
+   * had focus is unmounted by the press that swapped it — and a keyboard user
+   * lands on document.body inside a popover with nothing to arrow through.
+   */
+  const picker = read(PICKER);
+  assert.match(picker, /focusOnMount/, "entering the branch list must focus its search field");
+  assert.match(picker, /bandRef\.current\?\.focus\(\)/, "Back must return focus to the band that opened the list");
+});
+
+test("a base ref that is not a branch or a tag is still cloned", () => {
+  /*
+   * THE CONTROL'S OWN INSTRUCTION, HONOURED. The picker offers a commit SHA in
+   * as many words and a `/code?branch=` link can carry one, but `git clone
+   * --branch` resolves branch and tag names only — it answers `Remote branch
+   * <sha> not found in upstream origin`. Following the control used to dispatch
+   * a task, provision a CI machine and die at `git clone`, which is verbatim
+   * the failure this feature exists to end. The fallback fetches the ref by
+   * name and checks it out detached.
+   */
+  const runner = read("scripts/cloud-code-runner.mjs");
+  assert.match(runner, /"fetch", "--depth", "50", "origin", ref/, "a non-branch ref must be fetched by name");
+  assert.match(runner, /"checkout", "--detach", "FETCH_HEAD"/, "the fetched ref must be checked out");
+  assert.ok(
+    !/let cloned = await cloneAt\(/.test(runner),
+    "the clone must go through the path that can resolve a commit, not the bare `--branch` one",
+  );
+  assert.match(runner, /let cloned = await cloneRef\(baseRef\);/);
+  // The fast path stays: `--branch` is one round trip where the fallback is
+  // three, and a branch is what nearly every run starts from.
+  assert.match(runner, /args\.push\("--branch", ref\)/);
+});
+
+test("a pull request's base is a branch, whatever the run started from", () => {
+  /*
+   * GitHub's create-PR API takes a branch name for `base` and answers 422 for a
+   * tag or a commit — after the work has been pushed, which is the one moment
+   * this must not fail at. Both places that decide a base therefore check it
+   * rather than forwarding what was recorded.
+   */
+  const runner = read("scripts/cloud-code-runner.mjs");
+  assert.match(runner, /"ls-remote", "--heads", cloneUrl, `refs\/heads\/\$\{recordedBase\}`/);
+  assert.ok(
+    !/: baseRef \|\| \(head\.ok \? head\.stdout\.trim\(\)/.test(runner),
+    "the runner forwards the recorded base as a pull request base again, unchecked",
+  );
+
+  const pr = read("src/app/api/code/tasks/[id]/pull-request/route.ts");
+  assert.match(pr, /\/branches\/\$\{branchPath\}/, "the route must ask GitHub whether the recorded base is a branch");
+  assert.match(pr, /if \(baseRes\?\.status === 404\) base = null;/, "a base that is not a branch must fall through");
+  // Only a 404 is evidence of absence. A rate limit or a dead network must not
+  // silently retarget somebody's pull request at the default branch.
+  assert.ok(!/!baseRes\?\.ok/.test(pr), "any failure but 404 must leave the recorded base alone");
+});
+
+test("the create route refuses the refs the picker refuses", () => {
+  /*
+   * The package's claim is that the ref rules live in one pure module read by
+   * both sides "so the client cannot offer a ref the server would refuse". The
+   * server read none of it: `baseRef` was any non-empty string up to 200
+   * characters, so the shared module was a promise the client kept alone.
+   */
+  const createRoute = read("src/app/api/code/tasks/route.ts");
+  assert.match(createRoute, /isUsableGitRef/, "the create route must apply the shared ref rules");
+  assert.match(createRoute, /\.refine\(isUsableGitRef/, "the rule must be part of the schema, not advice beside it");
+  assert.ok(
+    !/baseRef: z\.string\(\)\.trim\(\)\.min\(1\)\.max\(200\)\.optional\(\)/.test(createRoute),
+    "baseRef accepts any string again",
+  );
 });
 
 test("the picker asks the branches route, and no longer offers a bare text field", () => {

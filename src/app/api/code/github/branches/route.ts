@@ -19,7 +19,7 @@ export const runtime = "nodejs";
  * them into a helper is a change to six routes this package does not own.)
  *
  *   GET ?owner=&name=  (or ?repo=owner/name)
- *     → 200 { repo: GitHubRepoItem, branches: string[], truncated: boolean }
+ *     → 200 { repo: GitHubRepoItem, branches: string[] }
  *       400 { error: "invalid_repo" }          not a repository name
  *       401 { error: "Unauthorized" }          no session
  *       400 { error: "github_not_connected" }  no GitHub connection / dead token
@@ -42,9 +42,8 @@ export const runtime = "nodejs";
  * route inherits that property by not trying to tell the two apart.
  */
 
-/** GitHub caps `per_page` at 100; three pages is the ceiling we ask for. */
+/** GitHub caps `per_page` at 100, which is the only number this route picks. */
 const BRANCH_PAGE_SIZE = 100;
-const MAX_BRANCH_PAGES = 3;
 
 type RepoNode = {
   name?: string;
@@ -116,18 +115,30 @@ export async function GET(req: Request) {
   };
 
   /*
-   * Up to three pages, and `truncated` when a fourth would exist.
+   * EVERY BRANCH, AND NO CEILING ON HOW MANY THAT IS.
    *
-   * A repository with four hundred branches is a real thing and paging all of
-   * them is a request per hundred on a popover open. Three is the compromise;
-   * what makes it honest is that the flag reaches the picker, which says the
-   * list is partial and keeps the field that names a ref it did not list — a
-   * list silently missing the branch someone is looking for is the failure
-   * this control was built to end, not one to re-create at a different size.
+   * This asked for three pages and answered `truncated` when a fourth would
+   * have existed, on the argument that paging a four-hundred-branch repository
+   * is a request per hundred on a popover open. The flag was not the honest
+   * compromise it was written as. A reader whose branch sat past the three
+   * hundredth was told it was not a branch of their own repository, in exactly
+   * the words this control exists to stop being said — and the flag was wrong
+   * at the boundary too, since a third page of exactly 100 sets it before a
+   * fourth has been asked for. A control that lists the branches lists the
+   * branches.
+   *
+   * The cost that paid for the ceiling is paid somewhere better instead: the
+   * picker asks for this list when somebody OPENS it rather than on every
+   * repository pick, and remembers the answer per repository for the life of
+   * the composer. What is left to bound the loop is GitHub's own rate limit
+   * and the account's usage window, which are the limits this product runs on.
+   *
+   * It terminates on the short page GitHub sends at the end of the list — the
+   * page past the last one is `[]`, which is shorter than `per_page` — so a
+   * full page is the only thing that asks for another.
    */
   const names: string[] = [];
-  let truncated = false;
-  for (let page = 1; page <= MAX_BRANCH_PAGES; page++) {
+  for (let page = 1; ; page++) {
     let res: Response;
     try {
       res = await call(`/branches?per_page=${BRANCH_PAGE_SIZE}&page=${page}`);
@@ -140,8 +151,7 @@ export async function GET(req: Request) {
     if (!Array.isArray(raw)) return NextResponse.json({ error: "github_unreachable" }, { status: 502 });
     for (const branch of raw) if (typeof branch?.name === "string") names.push(branch.name);
     if (raw.length < BRANCH_PAGE_SIZE) break;
-    if (page === MAX_BRANCH_PAGES) truncated = true;
   }
 
-  return NextResponse.json({ repo, branches: orderBranches(names, repo.defaultBranch), truncated });
+  return NextResponse.json({ repo, branches: orderBranches(names, repo.defaultBranch) });
 }

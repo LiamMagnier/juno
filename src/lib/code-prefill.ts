@@ -157,7 +157,17 @@ export function parseCodePrefill(params: PrefillParams): CodePrefill {
   return { prompt, repo, baseRef, notes };
 }
 
-/** True when the link asked for anything at all — the composer's "is there a prefill" test. */
+/**
+ * True when the link asked for anything at all.
+ *
+ * The composer does not call this, and the sentence here used to say it did:
+ * it reads the three fields it fills and the notes it prints each where it
+ * needs them, which is why nothing in it ever needed the question in one piece.
+ * What this is, honestly, is the whole predicate — the thing
+ * tests/code-prefill.test.ts asserts against a query string that asked for
+ * nothing, and what a future caller that must decide "was this link prepared?"
+ * should read instead of re-deriving it.
+ */
 export function hasCodePrefill(prefill: CodePrefill): boolean {
   return prefill.prompt.length > 0 || prefill.repo !== null || prefill.notes.length > 0;
 }

@@ -121,7 +121,8 @@ const PREFILL_NOTES: Record<CodePrefillNote, string> = {
   multiple_repositories:
     "That link named more than one repository, and a session runs in one — pick the one you meant.",
   invalid_repository: "That link’s repository wasn’t a readable owner/name, so none is picked.",
-  invalid_branch: "That link’s branch wasn’t a usable git ref, so this starts from the repository’s default.",
+  invalid_branch:
+    "That link’s branch wasn’t a usable git ref, so it was dropped — the run starts from the default branch of whichever repository is picked.",
   branch_without_repository: "That link named a branch but no repository, so pick the repository it belongs to.",
   prompt_truncated: "That link’s text was too long to carry whole — what fits is in the field.",
   environment_unsupported:
@@ -308,11 +309,15 @@ export function CodeComposer({
         // Applied either way — a base ref is legitimately a tag or a commit,
         // which no branch list contains — but a ref that is not a branch is
         // said out loud, because the alternative is a run that fails at `git
-        // clone` for a typo nobody was shown.
+        // clone` for a typo nobody was shown. The list this is checked against
+        // is every branch the repository has: it was three pages with a
+        // `truncated` flag, and reading "isn’t a branch" about a branch that
+        // sat past the three hundredth is the failure that flag described
+        // rather than prevented.
         setBaseRef(ref);
         if (!data.branches?.includes(ref)) {
           setPrefillProblem(
-            `${ref} isn’t a branch of ${data.repo.fullName}; it will be used as a tag or commit.`,
+            `${ref} isn’t a branch of ${data.repo.fullName}; the run starts from it as a tag or commit, and a pull request would target ${data.repo.defaultBranch}.`,
           );
         }
       } catch {

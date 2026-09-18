@@ -1017,14 +1017,23 @@ workspaces, the default permission mode — that Chat does not have an equivalen
 **Which checkout, in two steps.** The repository chip opens the user's real repositories
 (`GET /api/code/github/repos`) and, once one is picked, a band under the list names the
 branch the run will start from; pressing it swaps the panel for that repository's branches
-(`GET /api/code/github/branches?owner=&name=`, up to three pages of 100, default branch
-first, `truncated` when there are more). The branch was a free-text field until now —
-`CodeTask.baseRef` has reached the runner since Cloud Code shipped, so it decided
-something real, but the only check on a typo was a run failing at `git clone` after a CI
-machine had been spun up for it. The field's one genuine use survives as a row: a query
-that is a usable git ref and matches no branch is offered as itself, which is how a tag,
-a commit SHA or a branch past the page limit is named. `src/lib/code-branches.ts` holds
-the ref rules, shared by the route and the picker so the client cannot offer a ref the
+(`GET /api/code/github/branches?owner=&name=`, every page GitHub has, default branch
+first). There is no page ceiling and no "showing the first N" note: a list that stops at
+300 tells the reader whose branch is the 400th that it is not a branch of their own
+repository, which is the sentence this control exists to stop being said. The cost is paid
+by asking for the list when somebody opens it rather than on every repository pick, and
+remembering it per repository for the life of the composer. The branch was a free-text
+field until now — `CodeTask.baseRef` has reached the runner since Cloud Code shipped, so
+it decided something real, but the only check on a typo was a run failing at `git clone`
+after a CI machine had been spun up for it. The field's one genuine use survives as a row:
+a query that is a usable git ref and matches no branch is offered as itself, which is how
+a tag or a commit SHA is named. Those two reach a runtime that can honour them:
+`git clone --branch` takes branches and tags only, so the runner falls back to cloning the
+default branch and fetching the named ref to a detached HEAD, and because a pull request's
+`base` must be a branch, a run started from a tag or a commit opens its pull request
+against the repository's default branch instead of being refused by GitHub with a 422
+after the work is pushed. `src/lib/code-branches.ts` holds the ref rules, read by the
+branches route, the picker and the create route, so the client cannot offer a ref the
 server would refuse.
 
 **A link can open a prepared session.** `/code?prompt=…&repositories=owner/name&branch=…`

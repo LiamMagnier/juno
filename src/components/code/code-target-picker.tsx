@@ -135,9 +135,11 @@ type WorkspaceLoad =
 
 /**
  * The branches of the chosen repository, as `GET /api/code/github/branches`
- * answers. `truncated` is the flag that keeps a long list honest: the route
- * asks for three pages and a repository can have more, so the panel says the
- * list is partial rather than letting a reader conclude their branch is gone.
+ * answers — all of them. The route used to stop at three pages and report a
+ * `truncated` flag this type carried, and a list that silently stops is the
+ * failure this control was built to end: a reader whose branch sat past the
+ * 300th was told, in the same words, that it was not a branch. The route pages
+ * to the end now, so there is nothing partial left to say.
  *
  * There is no `not_connected` member, unlike `RepoLoad`: nothing can choose a
  * repository without a connector, so by the time this load exists the
@@ -146,7 +148,7 @@ type WorkspaceLoad =
 type BranchLoad =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "ready"; branches: string[]; truncated: boolean }
+  | { state: "ready"; branches: string[] }
   | { state: "error" };
 
 /*
@@ -373,26 +375,41 @@ export function CodeTargetPicker({
   /*
    * —— The branches of the chosen repository ——
    *
-   * Fetched when a repository is chosen rather than when the branch list is
-   * opened, for the reason the machine chip gives about the repo list: the
-   * request that a pick implies should be in flight while the reader is still
-   * reading, not started by the press that wants the answer. It is one request
-   * per repository and the base branch is the next thing a cloud run needs.
+   * Asked for when the branch list is OPENED, not when a repository is picked.
+   * This used to fire from the selection effect, on the argument that the
+   * request a pick implies should be in flight while the reader is still
+   * reading. That argument was written when the answer was at most three
+   * requests; the route pages to the end of the list now, so a repository with
+   * a thousand branches is ten, and clicking down a list of repositories to
+   * read their descriptions would spend all of them on lists nobody opened.
    *
-   * `nonce` is the retry: bumping it re-runs the effect for the same
-   * repository, which is what the error note's Retry does without needing a
-   * second code path that could fetch differently from this one. Every
-   * response is discarded if the repository changed while it was in flight —
-   * a list of the previous repository's branches is worse than no list,
-   * because it looks like an answer.
+   * What replaces the head start is memory: the answer for a repository is kept
+   * for the life of the composer, so going back to change the repository and
+   * returning is instant, and the cost is paid once per repository rather than
+   * once per press.
+   *
+   * `nonce` is the retry: dropping the remembered answer and bumping it re-runs
+   * the effect for the same repository, which is what the error note's Retry
+   * does without needing a second code path that could fetch differently from
+   * this one. Every response is discarded if the repository changed while it
+   * was in flight — a list of the previous repository's branches is worse than
+   * no list, because it looks like an answer.
    */
   const [branchLoad, setBranchLoad] = React.useState<BranchLoad>({ state: "idle" });
   const [branchNonce, setBranchNonce] = React.useState(0);
+  const [branchesWanted, setBranchesWanted] = React.useState(false);
+  const branchCache = React.useRef(new Map<string, string[]>());
   React.useEffect(() => {
-    if (target !== "cloud" || !selectedRepo) {
+    if (target !== "cloud" || !selectedRepo || !branchesWanted) {
       setBranchLoad({ state: "idle" });
       return;
     }
+    const remembered = branchCache.current.get(selectedRepo.fullName);
+    if (remembered) {
+      setBranchLoad({ state: "ready", branches: remembered });
+      return;
+    }
+    const fullName = selectedRepo.fullName;
     let cancelled = false;
     setBranchLoad({ state: "loading" });
     void (async () => {
@@ -404,13 +421,11 @@ export function CodeTargetPicker({
           setBranchLoad({ state: "error" });
           return;
         }
-        const data = (await res.json()) as { branches?: string[]; truncated?: boolean };
+        const data = (await res.json()) as { branches?: string[] };
         if (cancelled) return;
-        setBranchLoad({
-          state: "ready",
-          branches: Array.isArray(data.branches) ? data.branches : [],
-          truncated: data.truncated === true,
-        });
+        const branches = Array.isArray(data.branches) ? data.branches : [];
+        branchCache.current.set(fullName, branches);
+        setBranchLoad({ state: "ready", branches });
       } catch {
         if (!cancelled) setBranchLoad({ state: "error" });
       }
@@ -418,7 +433,7 @@ export function CodeTargetPicker({
     return () => {
       cancelled = true;
     };
-  }, [target, selectedRepo, branchNonce]);
+  }, [target, selectedRepo, branchesWanted, branchNonce]);
 
   // Each list keeps its own filter: switching machine to check something and
   // coming back should find the list exactly as it was left.
@@ -535,8 +550,20 @@ export function CodeTargetPicker({
             onBaseRefChange={onBaseRefChange}
             branches={branchLoad}
             onRetry={() => void fetchRepos()}
-            onRetryBranches={() => setBranchNonce((n) => n + 1)}
-            onPick={onSelectRepo}
+            onNeedBranches={() => setBranchesWanted(true)}
+            onRetryBranches={() => {
+              // Retry means "ask GitHub again", so the remembered answer for
+              // this repository goes first — otherwise the nonce would re-run
+              // the effect straight back into the cache it is trying to escape.
+              if (selectedRepo) branchCache.current.delete(selectedRepo.fullName);
+              setBranchNonce((n) => n + 1);
+            }}
+            onPick={(r) => {
+              // A different repository has different branches, and nobody has
+              // asked to see them yet.
+              setBranchesWanted(false);
+              onSelectRepo(r);
+            }}
             onDone={() => setOpen(false)}
           />
         )}
@@ -762,6 +789,7 @@ function CloudList({
   onBaseRefChange,
   branches,
   onRetry,
+  onNeedBranches,
   onRetryBranches,
   onPick,
   onDone,
@@ -775,6 +803,7 @@ function CloudList({
   onBaseRefChange: (v: string) => void;
   branches: BranchLoad;
   onRetry: () => void;
+  onNeedBranches: () => void;
   onRetryBranches: () => void;
   onPick: (r: CloudRepo) => void;
   onDone: () => void;
@@ -788,6 +817,23 @@ function CloudList({
    */
   const [pickingBranch, setPickingBranch] = React.useState(false);
   const [branchQuery, setBranchQuery] = React.useState("");
+
+  /*
+   * WHERE FOCUS GOES WHEN THE PANEL SWAPS. Both steps replace the whole body of
+   * an OPEN popover, so the control that had focus is unmounted by the press
+   * that swapped it and the browser drops focus to document.body — leaving a
+   * keyboard user inside an open popover with nothing focused and nothing to
+   * arrow through. Entering the branch list focuses its search field, which is
+   * the first thing a reader does there anyway; coming back focuses the band
+   * the list was opened from, so Back returns you to where you pressed.
+   */
+  const bandRef = React.useRef<HTMLButtonElement>(null);
+  const cameBack = React.useRef(false);
+  React.useEffect(() => {
+    if (pickingBranch || !cameBack.current) return;
+    cameBack.current = false;
+    bandRef.current?.focus();
+  }, [pickingBranch]);
 
   // Connector dead-ends: the same note every other short state uses, with a
   // link to /connections instead of a retry. Retrying cannot fix either of
@@ -836,7 +882,10 @@ function CloudList({
         query={branchQuery}
         onQuery={setBranchQuery}
         onRetry={onRetryBranches}
-        onBack={() => setPickingBranch(false)}
+        onBack={() => {
+          cameBack.current = true;
+          setPickingBranch(false);
+        }}
         onPick={(ref) => {
           /*
            * The default branch is stored as the empty override, which is what
@@ -937,8 +986,8 @@ function CloudList({
         cloud run failing at `git clone` a minute after a machine had been spun
         up for it. The branches exist and GitHub will list them, so the honest
         control is the list; `BranchList` keeps a way to name a ref it did not
-        show, which is what the field was genuinely good for (a tag, a commit, a
-        branch below the page limit).
+        show, which is what the field was genuinely good for (a tag, a commit,
+        or any ref at all on the day GitHub will not answer).
 
         This is also why picking a repository leaves the popover open where
         picking a project closes it: Device has nothing further to ask, Cloud
@@ -953,10 +1002,16 @@ function CloudList({
         <div className="shrink-0 border-t border-border/60 p-2">
           <Pressable
             kind="row"
-            onClick={() => setPickingBranch(true)}
+            onClick={() => {
+              // The list is fetched by the press that asks for it, not by the
+              // pick that led here — see the branch-load note in CodeTargetPicker.
+              onNeedBranches();
+              setPickingBranch(true);
+            }}
             // The visible words are in the accessible name (WCAG 2.5.3) and the
             // rest says what the press does, since this row states a fact and
             // opens a list rather than toggling anything.
+            ref={bandRef}
             aria-label={`Base branch: ${currentRef}. Choose a different branch of ${selected.fullName}`}
             className={ROW_HEIGHT}
           >
@@ -986,12 +1041,18 @@ function CloudList({
  *
  * THE TYPED REF IS NOT A FALLBACK, IT IS THE OTHER HALF OF THE ANSWER. A base
  * ref may legitimately be something this list cannot show — a tag, a commit
- * SHA, a branch past the page limit, or any ref at all when GitHub is
- * unreachable — and the free-text field this replaced could name all of them.
- * So a query that is a usable git ref and matches no row is offered as a row of
- * its own, in every state including the failed one. What it must NOT do is
- * promise the ref exists: nothing on this side can know that, so the row says
- * what it is doing and the run is what finds out.
+ * SHA, or any ref at all when GitHub is unreachable — and the free-text field
+ * this replaced could name all of them. So a query that is a usable git ref and
+ * matches no row is offered as a row of its own, in every state including the
+ * failed one. What it must NOT do is promise the ref exists: nothing on this
+ * side can know that, so the row says what it is doing and the run is what
+ * finds out.
+ *
+ * "A branch past the page limit" used to be on that list and is deliberately
+ * off it: the route pages to the end now, so every branch is a row and the
+ * typed ref answers for the refs that are not branches — which the runner
+ * resolves by fetching them to a detached HEAD, rather than handing them to
+ * `git clone --branch`, which takes branch and tag names only.
  */
 function BranchList({
   repo,
@@ -1015,9 +1076,9 @@ function BranchList({
 }) {
   const loading = load.state === "loading" || load.state === "idle";
   const all = load.state === "ready" ? load.branches : [];
-  // Filtered inline rather than memoised: this is a substring match over at
-  // most three pages of branch names, and a `useMemo` whose input is a
-  // conditional array is a dependency that changes every render anyway.
+  // Filtered inline rather than memoised: this is a substring match over a
+  // list of branch names, and a `useMemo` whose input is a conditional array is
+  // a dependency that changes every render anyway.
   const filtered = filterBranches(all, query);
   const typed = query.trim();
   // Offered only when it is not already a row: two rows for one branch would be
@@ -1035,6 +1096,9 @@ function BranchList({
         placeholder="Search branches, or type a tag or commit…"
         show
         disabled={false}
+        // The press that opened this panel unmounted itself; see the focus note
+        // in CloudList.
+        focusOnMount
       />
       <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
         <div
@@ -1090,16 +1154,6 @@ function BranchList({
             ))
           )}
         </div>
-        {load.state === "ready" && load.truncated && (
-          /* A list silently missing the branch somebody is looking for is the
-             failure this control was built to end, so a partial list says it is
-             partial and names the way past it. Outside the listbox above, not
-             inside it: a paragraph among the options is a child the role does
-             not describe, and a screen reader counts it as one. */
-          <p className="px-2.5 py-2 text-caption leading-snug text-muted-foreground">
-            Showing the first {all.length} branches. Type the name of another to use it.
-          </p>
-        )}
       </ScrollFade>
 
       {/* The band this list was opened from, in the same place, pointing back. */}
@@ -1247,13 +1301,20 @@ function PickerSearch({
   placeholder,
   show,
   disabled,
+  focusOnMount = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   show: boolean;
   disabled: boolean;
+  /** Take focus once, on mount — for a panel that replaced the control that had it. */
+  focusOnMount?: boolean;
 }) {
+  const field = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (focusOnMount) field.current?.focus();
+  }, [focusOnMount]);
   if (!show) return null;
   return (
     // Full-strength hairline — see the note on TargetRows' separator.
@@ -1263,6 +1324,7 @@ function PickerSearch({
         aria-hidden="true"
       />
       <Input
+        ref={field}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
