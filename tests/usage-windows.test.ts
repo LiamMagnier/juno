@@ -317,7 +317,11 @@ test("the windows are enforced and not merely metered", () => {
   for (const file of [
     "../src/app/api/chat/route.ts",
     "../src/app/api/work/sessions/[id]/runs/route.ts",
-    "../src/app/api/work/schedules/[id]/run-now/route.ts",
+    // The Run-now button and an `api` trigger's fire URL are ONE implementation
+    // (`fireScheduleNow`), so the window is read there rather than in either
+    // route. Asserting on the route instead would pass while the public,
+    // token-authenticated fire URL started runs with no window behind them.
+    "../src/lib/work/fire-now.ts",
     "../scripts/work-scheduler.ts",
     "../scripts/work-trigger-poller.ts",
     "../scripts/work-runner.ts",
