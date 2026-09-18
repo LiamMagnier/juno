@@ -302,7 +302,7 @@
       "area": "Automations",
       "priority": "P0",
       "state": "VERIFIED",
-      "implementationFiles": ["src/lib/work/schedule.ts", "scripts/scheduled-task-runner.ts", "scripts/work-trigger-poller.ts"],
+      "implementationFiles": ["src/lib/work/schedule.ts", "scripts/work-scheduler.ts", "scripts/work-trigger-poller.ts"],
       "runtimeEntryPoint": "runScheduledTasks",
       "tests": ["npm test"],
       "integrationTests": ["tests/work-schedule.test.ts", "tests/work-trigger-poller.test.ts"],

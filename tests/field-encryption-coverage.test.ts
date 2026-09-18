@@ -110,9 +110,12 @@ test("MemorySummary.content is sealed on write and unsealed on read", () => {
   assert.equal((source("src/app/api/import/route.ts").match(/content: encryptField\(summaryContent\)/g) ?? []).length, 2);
 });
 
-test("ScheduledTask.prompt is sealed at every write", () => {
-  assert.match(source("src/app/api/tasks/route.ts"), /prompt: encryptField\(input\.prompt\)/);
-  // PATCH spreads `input` wholesale, so the column must be re-stated after it.
+test("ScheduledTask.prompt is sealed at every write that is left", () => {
+  // The create route no longer writes one: scheduled tasks are retired and
+  // `POST /api/tasks` answers 410, so the only write left is the PATCH on a row
+  // that has not been adopted yet. It spreads `input` wholesale, so the column
+  // must be re-stated after it.
+  assert.doesNotMatch(source("src/app/api/tasks/route.ts"), /encryptField/);
   const patch = source("src/app/api/tasks/[id]/route.ts");
   assert.match(patch, /\.\.\.\(input\.prompt !== undefined \? \{ prompt: encryptField\(input\.prompt\) \} : \{\}\)/);
   assert.ok(
@@ -121,21 +124,19 @@ test("ScheduledTask.prompt is sealed at every write", () => {
   );
 });
 
-test("ScheduledTask.prompt is unsealed at every read, and the runner never uses the raw column", () => {
+test("ScheduledTask.prompt is unsealed at every read that is left", () => {
+  // The executor went with the feature — there is no runner to hand a prompt to
+  // any more — so what remains is the serialiser a list still goes through.
   const tasks = source("src/lib/scheduled-tasks.ts");
   assert.match(tasks, /prompt: decryptField\(task\.prompt\)/);
-  assert.match(tasks, /const prompt = decryptField\(task\.prompt\)/);
   // Every mention of the sealed column in CODE is a decrypt. Any other
   // `task.prompt` here would be ciphertext used as if it were text — the exact
   // regression this file exists to catch.
   const codeMentions = tasks
     .split("\n")
     .filter((line) => line.includes("task.prompt") && !/^\s*(\/\/|\*|\/\*)/.test(line));
-  assert.equal(codeMentions.length, 2, codeMentions.join("\n"));
+  assert.equal(codeMentions.length, 1, codeMentions.join("\n"));
   for (const line of codeMentions) assert.match(line, /decryptField\(task\.prompt\)/);
-  // An undecryptable prompt must refuse the run rather than bill a provider
-  // for an answer to the placeholder.
-  assert.match(tasks, /prompt === FIELD_DECRYPT_PLACEHOLDER/);
   // The native sync projection is the other reader.
   assert.match(source("src/lib/sync-entities.ts"), /prompt: decryptField\(row\.prompt\)/);
 });

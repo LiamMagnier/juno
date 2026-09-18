@@ -32,6 +32,35 @@ const patchSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+/**
+ * Whether this task has already become an Automation, and which one.
+ *
+ * Asked before every write, because once a task is adopted the routine is the
+ * thing that runs: `WorkSchedule` carries the fire, the legacy row is switched
+ * off, and editing it would change a shell nothing reads while looking exactly
+ * like an edit that worked. Refusing with the id of the routine is the one
+ * answer a client can act on.
+ */
+async function adoptedAs(taskId: string, userId: string): Promise<string | null> {
+  const schedule = await prisma.workSchedule.findFirst({
+    where: { userId, legacyScheduledTaskId: taskId },
+    select: { id: true },
+  });
+  return schedule?.id ?? null;
+}
+
+function movedResponse(scheduleId: string) {
+  return NextResponse.json(
+    {
+      error: "moved_to_automations",
+      scheduleId,
+      message:
+        "This task is now an Automation, and that is what runs it. Edit it there — changes here would not reach the run.",
+    },
+    { status: 409 }
+  );
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -39,6 +68,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const existing = await prisma.scheduledTask.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const moved = await adoptedAs(id, user.id);
+  if (moved) return movedResponse(moved);
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -123,6 +155,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const existing = await prisma.scheduledTask.findFirst({ where: { id, userId: user.id }, select: { id: true } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Refused for an adopted task, and this one matters more than the PATCH: the
+  // routine holds `legacyScheduledTaskId` as a unique key, so deleting the row
+  // underneath it would leave the automation running with nothing to say where
+  // it came from — and the person would believe they had switched it off.
+  const moved = await adoptedAs(id, user.id);
+  if (moved) return movedResponse(moved);
 
   // Runs cascade-delete; the results conversation is kept — it's a normal chat.
   await prisma.scheduledTask.delete({ where: { id, userId: user.id } });

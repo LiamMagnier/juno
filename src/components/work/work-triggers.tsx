@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 /*
  * What starts a schedule, in a form.
  *
- * There are fourteen trigger kinds and this covers all fourteen, because the
+ * There are fifteen trigger kinds and this covers all fifteen, because the
  * ones left out of an editor are the ones nobody can create — a schedule that
  * fires on an email arriving has been storable since the tables were written and
  * has never once been creatable from a browser.
@@ -49,9 +49,9 @@ import { cn } from "@/lib/utils";
  * never fires. Numbers are numbers here for exactly that reason: `{ hour: "9" }`
  * is refused by `parseTimeTrigger` with "this trigger needs an hour, 0 to 23".
  *
- * COVERING ALL FOURTEEN IS NOT THE SAME AS OFFERING ALL FOURTEEN
+ * COVERING ALL FIFTEEN IS NOT THE SAME AS OFFERING ALL FIFTEEN
  *
- * Three event kinds have no producer in this build and two more have options
+ * A kind with no producer in this build and any kind with options
  * their source cannot answer, and both facts are read from the server's own
  * tables — `TRIGGER_KIND_LIMITS` and `TRIGGER_OPTION_LIMITS` in triggers.ts —
  * rather than restated here. That import is the point of the arrangement: the
@@ -87,6 +87,10 @@ const TRIGGER_META: Record<WorkTriggerKind, TriggerMeta> = {
   connector_event: { label: "A connected app sends an event", hint: "Named connector, named events." },
   folder_change: { label: "A folder changes", hint: "Watches a folder you granted on one of your Macs." },
   manual: { label: "Only when you press Run", hint: "Nothing starts this on its own." },
+  api: {
+    label: "Something calls it",
+    hint: "A request to this automation's fire URL, carrying the token you issue for it.",
+  },
 };
 
 export function triggerLabel(kind: string): string {
@@ -207,6 +211,12 @@ export function defaultTriggerConfig(kind: WorkTriggerKind, now: Date): Config {
       return { grantId: "", suffixes: [], minChangedFiles: 1 };
     case "manual":
       return {};
+    case "api":
+      // False, deliberately, and it is the only default here that is about
+      // safety rather than about being usable straight away: anyone holding the
+      // token can send text, so a routine takes it only once somebody has said
+      // the prompt is written to use it.
+      return { acceptsText: false };
   }
 }
 
@@ -291,6 +301,10 @@ export function describeTrigger(trigger: { kind: string; config: unknown }): str
       return "When a granted folder changes";
     case "manual":
       return "Only when you press Run now";
+    case "api":
+      return boolAt(config, "acceptsText")
+        ? "When something calls the fire URL, with text for the run to read"
+        : "When something calls the fire URL";
     default:
       // A kind written by a newer deployment. Naming it is more useful than
       // pretending to read a config this build has no parser for.
@@ -307,11 +321,23 @@ export function TriggerListEditor({
   onChange,
   /** The Mac a folder trigger would watch, so its grants can be offered by name. */
   grants,
+  /**
+   * What the automation these triggers belong to actually runs.
+   *
+   * One trigger's form needs it. An API trigger can carry text for a Code run to
+   * read and cannot for a Work one — a task's goal is fixed at dispatch
+   * (docs/JUNO.md §9b.4), so there is nowhere for a caller's paragraph to go
+   * that the run would read. The switch is therefore absent rather than present
+   * and ignored, which is the rule the rest of this file already follows for
+   * every control the runtime does not read.
+   */
+  runKind,
   disabled,
 }: {
   triggers: readonly WorkTriggerDraft[];
   onChange: (triggers: WorkTriggerDraft[]) => void;
   grants: readonly ClientWorkGrant[] | null;
+  runKind: "work" | "code";
   disabled: boolean;
 }) {
   const replace = (index: number, next: WorkTriggerDraft) => {
@@ -384,6 +410,7 @@ export function TriggerListEditor({
             <TriggerConfigFields
               trigger={trigger}
               grants={grants}
+              runKind={runKind}
               disabled={disabled}
               onChange={(config) => replace(index, { ...trigger, config })}
             />
@@ -703,11 +730,13 @@ const MONTH_OPTIONS = MONTH_NAMES.map((label, index) => ({ value: index + 1, lab
 function TriggerConfigFields({
   trigger,
   grants,
+  runKind,
   disabled,
   onChange,
 }: {
   trigger: WorkTriggerDraft;
   grants: readonly ClientWorkGrant[] | null;
+  runKind: "work" | "code";
   disabled: boolean;
   onChange: (config: Config) => void;
 }) {
@@ -749,6 +778,40 @@ function TriggerConfigFields({
         <p className="text-ui leading-relaxed text-muted-foreground">
           Nothing to configure. This schedule sits still until you press Run now.
         </p>
+      );
+
+    case "api":
+      return (
+        <div className="space-y-2.5">
+          {runKind === "code" ? (
+            <>
+              <SwitchField
+                label="Let a caller send text with the fire"
+                checked={boolAt(config, "acceptsText")}
+                disabled={disabled}
+                onChange={(acceptsText) => set({ acceptsText })}
+              />
+              <p className="text-caption leading-relaxed text-muted-foreground">
+                {boolAt(config, "acceptsText")
+                  ? "The text reaches the run as data from an untrusted source, after your instructions and marked as something to read rather than obey. Anyone holding the token can send it, so write the instructions to say what it is for."
+                  : "A fire that carries text is refused. Turn this on once the instructions above say what the text is for."}
+              </p>
+            </>
+          ) : (
+            <p className="text-ui leading-relaxed text-muted-foreground">
+              A fire starts this automation and carries nothing with it. Its task is what you wrote,
+              and every run is validated against that — so there is nowhere a caller’s words could
+              go that the run would read.
+            </p>
+          )}
+          {/* The token itself is issued on the automation's own page, beside
+              the URL it belongs to — not here. A trigger card is re-created
+              from scratch whenever the set is saved, and a secret shown in one
+              would look like something this form owns and could roll. */}
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            The fire URL and its token live under “Firing this from elsewhere”, below.
+          </p>
+        </div>
       );
 
     case "once":

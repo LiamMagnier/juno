@@ -532,7 +532,15 @@ test("the create route attaches that thread to the session it mints", () => {
   assert.match(source, /scheduleConversationSeed\(/, "the route must build the thread from the seed");
   assert.match(
     source,
-    /conversationId:\s*conversation\.id/,
+    /conversationId:\s*conversation\?\.id/,
     "the session the route creates must carry the conversation it just made"
+  );
+  // And a Code routine deliberately gets none: its fires each open a Code
+  // session of their own, so a single accumulating transcript would be a thread
+  // nothing ever writes into. The null is the routine's, not an oversight.
+  assert.match(
+    source,
+    /body\.runKind === "code"\s*\?\s*null/,
+    "a Code routine's session must be minted without a conversation"
   );
 });

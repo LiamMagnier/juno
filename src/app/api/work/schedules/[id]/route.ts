@@ -16,7 +16,18 @@ import {
   scheduleTargetOf,
   serializeSchedule,
 } from "@/lib/work/schedule";
-import { normalizeTriggerDrafts, sameTriggerSet, type TriggerDraft } from "@/lib/work/triggers";
+import {
+  apiTriggerRefusal,
+  normalizeTriggerDrafts,
+  sameTriggerSet,
+  type TriggerDraft,
+} from "@/lib/work/triggers";
+import {
+  codeRoutineConfigJson,
+  codeRoutineFromInput,
+  codeRoutineRefusal,
+  scheduleRunKindOf,
+} from "@/lib/work/code-routine";
 import { admissionRefusal } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -183,6 +194,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // it" and `null` means "clear it"; collapsing the two with `??` would make
   // clearing the host impossible to express.
   const hostId = body.hostId !== undefined ? body.hostId : existing.hostId;
+
+  // The kind is the row's, never the body's — a routine cannot change kind
+  // (see `patchScheduleSchema`) — so the pairing is checked against what this
+  // routine already is. A `code` block on a Work routine and a Work target on a
+  // Code one are both refused here rather than stored and discovered at 04:00.
+  const runKind = scheduleRunKindOf(existing.runKind);
+  if (runKind === null) {
+    // Written by a newer deployment. Editing it here would write this build's
+    // idea of the routine over a shape it cannot read.
+    return NextResponse.json(
+      {
+        error: "unknown_run_kind",
+        message: "This automation was created by a newer version of Juno, so this one cannot edit it.",
+      },
+      { status: 409 }
+    );
+  }
+  // `patch`, so an absent `code` block means "leave the repository alone"
+  // rather than "this routine has no repository". The pause toggle sends
+  // `{ enabled: false }` and nothing else, and it has to keep working.
+  const codeRefusal = codeRoutineRefusal(runKind, body.code, target, hostId, "patch");
+  if (codeRefusal) return NextResponse.json(codeRefusal, { status: 400 });
+
   if (target === "local" && !hostId) {
     return NextResponse.json(
       { error: "host_required", message: "A local schedule has to say which Mac it runs on." },
@@ -194,9 +228,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // schedule created before a Mac was revoked become un-editable — the user
   // could no longer even rename it to say why it is broken.
   if (
-    body.target !== undefined ||
-    body.hostId !== undefined ||
-    body.requiredCapabilities !== undefined
+    runKind !== "code" &&
+    (body.target !== undefined ||
+      body.hostId !== undefined ||
+      body.requiredCapabilities !== undefined)
   ) {
     const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
     const named = hostId ? hosts.find((host) => host.id === hostId) : undefined;
@@ -236,6 +271,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       );
     }
     drafts = normalized.drafts;
+  }
+  if (drafts) {
+    const apiRefusal = apiTriggerRefusal(drafts);
+    if (apiRefusal) return NextResponse.json(apiRefusal, { status: 400 });
+  }
+
+  // Checked here rather than at the write below, so a routine whose environment
+  // has been deleted since it was created is refused with a sentence rather than
+  // failing on a foreign key at four in the morning.
+  if (body.code?.environmentId) {
+    const environment = await prisma.codeEnvironment.findFirst({
+      where: { id: body.code.environmentId, userId: user.id },
+      select: { id: true },
+    });
+    if (!environment) {
+      return NextResponse.json(
+        { error: "environment_not_found", message: "That environment no longer exists." },
+        { status: 404 }
+      );
+    }
   }
 
   const enabledAfter = body.enabled ?? existing.enabled;
@@ -319,6 +374,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         ...(body.notifyPolicy !== undefined ? { notifyPolicy: body.notifyPolicy } : {}),
         ...(body.maxConcurrentRuns !== undefined
           ? { maxConcurrentRuns: body.maxConcurrentRuns }
+          : {}),
+        // Replaced whole and versioned, not merged: the repository, the branch
+        // and the environment are one decision, and a merge that kept last
+        // week's branch under this week's repository is a routine pushing to a
+        // ref that does not exist there.
+        ...(body.code
+          ? {
+              codeConfig: codeRoutineConfigJson(codeRoutineFromInput(body.code)),
+              codeConfigVersion: { increment: 1 },
+            }
           : {}),
         ...(body.model !== undefined || body.requiredCapabilities !== undefined
           ? {

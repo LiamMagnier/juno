@@ -56,6 +56,7 @@ export const EVENT_TRIGGER_KINDS = [
   "connector_event",
   "folder_change",
   "manual",
+  "api",
 ] as const satisfies readonly WorkTriggerKind[];
 
 export type EventTriggerKind = (typeof EVENT_TRIGGER_KINDS)[number];
@@ -124,6 +125,20 @@ export interface FolderChangeConfig {
   minChangedFiles: number;
 }
 
+export interface ApiTriggerConfig {
+  /**
+   * Whether a fire may carry text for the run to read.
+   *
+   * False by default, and that default is the opt-in the fire route enforces.
+   * Anyone holding the token can send text, so a routine that has not been
+   * written to use it must refuse a fire that carries some rather than quietly
+   * appending a stranger's words to a prompt that cannot act on them — and a
+   * prompt that CAN act on them is a decision its author makes here, once,
+   * rather than one the caller makes on every request.
+   */
+  acceptsText: boolean;
+}
+
 export type TriggerConfig =
   | { kind: "email_filter"; config: EmailFilterConfig }
   | { kind: "calendar_window"; config: CalendarWindowConfig }
@@ -131,7 +146,8 @@ export type TriggerConfig =
   | { kind: "connector_event"; config: ConnectorEventConfig }
   | { kind: "folder_change"; config: FolderChangeConfig }
   /** Manual has nothing to configure: it fires when a person presses Run now. */
-  | { kind: "manual"; config: Record<string, never> };
+  | { kind: "manual"; config: Record<string, never> }
+  | { kind: "api"; config: ApiTriggerConfig };
 
 export type TriggerConfigParse =
   | { ok: true; parsed: TriggerConfig }
@@ -260,6 +276,8 @@ export function parseTriggerConfig(kind: string, config: unknown): TriggerConfig
     }
     case "manual":
       return { ok: true, parsed: { kind, config: {} } };
+    case "api":
+      return { ok: true, parsed: { kind, config: { acceptsText: flag(body.acceptsText) } } };
   }
 }
 
@@ -276,8 +294,9 @@ export function parseTriggerConfig(kind: string, config: unknown): TriggerConfig
  * what to read, `normalizeTriggerDrafts` decides what may be saved, and the UI
  * decides what to offer. A kind that gains a source gains it in one edit.
  *
- * `manual` is deliberately mapped to null and is still servable: it has no
- * source because a person is its source.
+ * `manual` and `api` are deliberately mapped to null and are still servable:
+ * neither has a source because neither is polled. A person is the first one's
+ * source, and an authenticated request is the second's.
  */
 export const TRIGGER_SOURCE_CONNECTORS = {
   email_filter: "apple-mail",
@@ -286,6 +305,7 @@ export const TRIGGER_SOURCE_CONNECTORS = {
   connector_event: "generic_connector",
   folder_change: "local_files",
   manual: null,
+  api: null,
 } as const satisfies Record<EventTriggerKind, string | null>;
 
 export function triggerSourceConnector(kind: EventTriggerKind): string | null {
@@ -495,6 +515,8 @@ export const TRIGGER_SKIP_REASONS = [
   "host_offline",
   /** Manual triggers only fire when a person asks. */
   "manual_only",
+  /** API triggers only fire when something calls their fire URL. */
+  "api_only",
 ] as const;
 
 export type TriggerSkipReason = (typeof TRIGGER_SKIP_REASONS)[number];
@@ -737,6 +759,17 @@ export function evaluateTrigger(input: TriggerEvaluationInput): TriggerVerdict {
       explanation: "A manual trigger only fires when someone runs the schedule.",
     };
   }
+  if (trigger.kind === "api") {
+    // Same shape as `manual`, same reason. The token IS this trigger's filter,
+    // so there is nothing here to match an arriving event against, and the fire
+    // route never asks: it verifies the token and goes straight to
+    // `fireScheduleNow`, which is the admission half it shares with the button.
+    return {
+      fire: false,
+      reason: "api_only",
+      explanation: "An API trigger only fires when something calls its fire URL with its token.",
+    };
+  }
   if (trigger.kind !== event.kind) {
     return {
       fire: false,
@@ -810,6 +843,7 @@ function matchFor(parsed: TriggerConfig, event: TriggerEvent, now: Date): Match 
     case "folder_change":
       return event.kind === "folder_change" ? matchFolder(parsed.config, event) : MISMATCH;
     case "manual":
+    case "api":
       return MISMATCH;
   }
 }
@@ -1203,6 +1237,8 @@ export function configForEventTrigger(parsed: TriggerConfig): JsonObject {
       };
     case "manual":
       return {};
+    case "api":
+      return { acceptsText: parsed.config.acceptsText };
   }
 }
 
@@ -1312,6 +1348,29 @@ export function normalizeTriggerDrafts(
   }
 
   return { ok: true, drafts };
+}
+
+/**
+ * Why a submitted trigger set cannot be stored as it stands, beyond what each
+ * trigger says about itself.
+ *
+ * One rule so far, and it is about the fire token rather than about triggers:
+ * the token lives on the routine, because a patch rewrites the trigger rows
+ * wholesale and a secret on one of them would be destroyed by an edit to
+ * another. One token means one URL means one `api` trigger — a second would be
+ * a second switch over the same credential, and "does this routine accept text"
+ * would have two answers with nothing to say which one the fire route read.
+ */
+export function apiTriggerRefusal(
+  drafts: readonly TriggerDraft[]
+): { error: string; message: string } | null {
+  return drafts.filter((draft) => draft.kind === "api").length > 1
+    ? {
+        error: "one_api_trigger",
+        message:
+          "An automation has one fire URL and one token, so it can have one API trigger. Use its text to tell the run which caller it was.",
+      }
+    : null;
 }
 
 /**

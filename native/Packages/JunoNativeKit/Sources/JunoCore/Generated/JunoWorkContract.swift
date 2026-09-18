@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "aafb373886edcb4596d60796fd3d0ff953a7a30d5e715b1347934c3ed79c9fca"
+    public static let digest = "e217178b6795ba2b963a78f4ddd16f82a270b480487aba74fea5f3418de6a5ad"
 }
 
 /// Every state a Work session or run can be in.
@@ -669,6 +669,8 @@ public enum JunoWorkTriggerKind: String, CaseIterable, Codable, Sendable {
     case folderChange = "folder_change"
     /// Only when the user runs it.
     case manual = "manual"
+    /// When something calls this automation's fire URL with the token issued for it.
+    case api = "api"
 
     /// Whether the trigger cannot fire without an online, opted-in Mac.
     public var requiresLocalHost: Bool {
@@ -687,6 +689,7 @@ public enum JunoWorkTriggerKind: String, CaseIterable, Codable, Sendable {
         case .connectorEvent: return false
         case .folderChange: return true
         case .manual: return false
+        case .api: return false
         }
     }
 }

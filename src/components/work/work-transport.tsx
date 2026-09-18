@@ -1235,12 +1235,35 @@ export interface WorkScheduleInput {
   budget?: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
   /** The model every fire runs on. Null clears the override; absent leaves it. */
   model?: string | null;
+  /**
+   * What one fire produces. Absent means `work`, which is what every schedule
+   * written before Code routines is.
+   *
+   * Sent only on a create: the route refuses to change a routine's kind,
+   * because its history is made of one kind of row and flipping it would leave
+   * every row already written pointing at a shape the editor no longer draws.
+   */
+  runKind?: "work" | "code";
+  /** Required when `runKind` is `code`, refused otherwise. */
+  code?: WorkCodeRoutineInput;
+}
+
+/** A Code routine's repository and the shape each run executes in. */
+export interface WorkCodeRoutineInput {
+  repo: { owner: string; name: string };
+  baseRef: string | null;
+  environmentId: string | null;
+  permissionMode: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
 }
 
 function scheduleBody(input: WorkScheduleInput): Record<string, unknown> {
   return {
     ...(input.budget === undefined ? {} : { budget: input.budget }),
     ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.runKind === undefined ? {} : { runKind: input.runKind }),
+    ...(input.code === undefined ? {} : { code: input.code }),
     name: input.name,
     instructions: input.instructions,
     timezone: input.timezone,
@@ -1344,16 +1367,74 @@ export function deleteWorkSchedule(id: string): Promise<WorkResult<string | null
  * starting a second run, which is what makes "press it again" safe on a
  * connection that dropped the first response.
  */
-export function runWorkScheduleNow(id: string): Promise<WorkResult<ClientWorkRun>> {
+export function runWorkScheduleNow(id: string): Promise<WorkResult<ClientWorkRun | null>> {
   return post(
     `/api/work/schedules/${id}/run-now`,
     { idempotencyKey: workIdempotencyKey() },
-    (data) => data.run as ClientWorkRun
+    // Null for a Code routine, whose run is a Code session rather than a
+    // `WorkRun`. Null rather than a cast, because a caller that treated the
+    // absent run as one would render a status pill for a row that does not
+    // exist; the caller reloads the history instead, where the new session is.
+    (data) => (data.run ? (data.run as ClientWorkRun) : null)
   );
 }
 
-export function fetchWorkScheduleRuns(id: string, limit = 10): Promise<WorkResult<ClientWorkRun[]>> {
-  return get(`/api/work/schedules/${id}/runs?limit=${limit}`, (data) => list<ClientWorkRun>(data.runs));
+/**
+ * What an automation has done: the scheduler's rows, and a Code routine's own.
+ *
+ * Two lists because the two are different shapes — see the runs route. They are
+ * kept separate all the way to the component that draws them, which interleaves
+ * by `createdAt` rather than inventing a third shape neither side speaks.
+ */
+export interface WorkScheduleHistory {
+  runs: ClientWorkRun[];
+  codeRuns: ClientCodeRoutineRun[];
+}
+
+/** One Code run of a routine, as `serializeTask` sends it. */
+export interface ClientCodeRoutineRun {
+  id: string;
+  title: string;
+  status: string;
+  conversationId: string | null;
+  prUrl: string | null;
+  branch: string | null;
+  createdAt: string;
+}
+
+export function fetchWorkScheduleRuns(
+  id: string,
+  limit = 10
+): Promise<WorkResult<WorkScheduleHistory>> {
+  return get(`/api/work/schedules/${id}/runs?limit=${limit}`, (data) => ({
+    runs: list<ClientWorkRun>(data.runs),
+    codeRuns: list<ClientCodeRoutineRun>(data.codeRuns),
+  }));
+}
+
+/**
+ * The token something outside Juno fires this automation with.
+ *
+ * Returned once, by the call that mints it. There is no read: only a hash is
+ * stored, so "show it to me again" cannot be answered and issuing a new one is
+ * the honest alternative — which is also what rolling a leaked token means.
+ */
+export interface WorkFireToken {
+  token: string;
+  issuedAt: string;
+  url: string;
+}
+
+export function issueWorkFireToken(id: string): Promise<WorkResult<WorkFireToken>> {
+  return post(`/api/work/schedules/${id}/token`, {}, (data) => ({
+    token: String(data.token ?? ""),
+    issuedAt: String(data.issuedAt ?? ""),
+    url: String(data.url ?? ""),
+  }));
+}
+
+export function revokeWorkFireToken(id: string): Promise<WorkResult<null>> {
+  return remove(`/api/work/schedules/${id}/token`, () => null);
 }
 
 // ---------------------------------------------------------------------------

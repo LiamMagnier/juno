@@ -233,7 +233,11 @@ reload_release() {
 
 verify_pm2_ecosystem() {
   local config_file="${1:-}"
-  local expected='["juno-backend","juno-scheduler","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
+  # "juno-scheduler" is deliberately absent: the ScheduledTask worker is
+  # retired (see deploy/ecosystem.config.js). A host that still has the process
+  # is not failed by this check — the app is simply no longer expected, and
+  # `pm2 delete juno-scheduler` clears it once.
+  local expected='["juno-backend","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
   PM2_CONFIG="$config_file" EXPECTED_PM2="$expected" PM2_SERVICE_STARTER="$PM2_SERVICE_STARTER" node -e '
     const { execFileSync, execSync } = require("child_process");
     const expected = JSON.parse(process.env.EXPECTED_PM2);

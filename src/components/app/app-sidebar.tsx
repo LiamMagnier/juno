@@ -1500,7 +1500,10 @@ function MoreFlyout({
         { href: "/skills", kind: "skills" as const, label: "Skills", active: !!pathname?.startsWith("/skills") },
         { href: "/automations", kind: "automations" as const, label: "Automations", active: !!pathname?.startsWith("/automations") },
         { href: "/permissions", kind: "permissions" as const, label: "Permissions", active: !!pathname?.startsWith("/permissions") },
-        { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
+        // "Tasks" is gone from this list, not renamed: scheduled tasks and
+        // Automations were two entries for one question, and Automations is
+        // the one that survived. `/tasks` still answers — it redirects here —
+        // so nothing that links to it breaks.
       ];
   const anyActive = items.some((item) => item.active);
   const rowClass =

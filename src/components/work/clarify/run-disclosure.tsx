@@ -150,9 +150,9 @@ export function WorkRunDisclosure({
   const [open, setOpen] = React.useState(false);
   /*
    * The reader's own plan, not a constant. `useApp` is where every other leaf
-   * in this app reads it (see `task-dialog.tsx`), and reading it here rather
-   * than taking it as a prop means the composer cannot forget to pass it and
-   * quietly fall back to somebody else's figures.
+   * in this app reads it, and reading it here rather than taking it as a prop
+   * means the composer cannot forget to pass it and quietly fall back to
+   * somebody else's figures.
    */
   const { quota } = useApp();
   const ceilings = runCeilingsFor(quota.plan);

@@ -534,7 +534,7 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "src/lib/work/schedule.ts",
-        "scripts/scheduled-task-runner.ts",
+        "scripts/work-scheduler.ts",
         "scripts/work-trigger-poller.ts"
       ],
       "runtimeEntryPoint": "runScheduledTasks",

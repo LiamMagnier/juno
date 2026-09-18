@@ -996,7 +996,11 @@ function CommandMenu() {
          redirect onto it, so routing through it would spend a round trip to
          arrive at the row's own destination. */
       { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac task agent", run: () => go("/code") },
-      { id: "new-task", group: "Actions", label: "New scheduled task", icon: AppIcons.tasks, keywords: "schedule recurring automation cron reminder", run: () => go("/tasks") },
+      /* "New scheduled task" is now "New automation" and lands on the editor
+         rather than on a list: scheduled tasks are retired into Automations,
+         and its old keywords ride along so the words people type for it still
+         find something. */
+      { id: "new-automation", group: "Actions", label: "New automation", icon: AppIcons.automations, keywords: "schedule scheduled task recurring automation cron reminder trigger", run: () => go("/automations/new") },
       { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
       {
         id: "search-everything",
@@ -1023,9 +1027,8 @@ function CommandMenu() {
          to see it. Left out of the shell's own commit because the routes did
          not exist yet; they do. */
       { id: "skills", group: "Actions", label: "Open Skills", icon: AppIcons.skills, keywords: "instructions reusable slash capability library", run: () => go("/skills") },
-      { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule recurring trigger cron email calendar monitor", run: () => go("/automations") },
+      { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule scheduled tasks recurring trigger cron email calendar monitor", run: () => go("/automations") },
       { id: "permissions", group: "Actions", label: "Open Permissions", icon: AppIcons.permissions, keywords: "approvals allow ask macs hosts security", run: () => go("/permissions") },
-      { id: "tasks", group: "Actions", label: "Open Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: "Open Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },

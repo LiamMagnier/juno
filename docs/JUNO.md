@@ -71,8 +71,11 @@ Two long-running side services accompany it, both managed by PM2 in production:
 - **Voice relay** (`relay/`) — a standalone WebSocket server on `:8787` that holds
   the realtime speech-to-speech provider sessions. It cannot run on serverless
   (long-lived sockets), so it lives beside the app.
-- **Scheduled-task runner** (`scripts/scheduled-task-runner.ts`) — a worker that
-  claims due `ScheduledTask` rows every 60 s and runs them through the model.
+- **Routine scheduler** (`scripts/work-scheduler.ts`) — the one worker that
+  answers "run this for me later": it leases due `WorkSchedule` rows every 15 s
+  and turns each fire into a queued Work run or a cloud Code run. It replaced
+  the scheduled-task runner, which was a second dispatcher over the same
+  question (§14).
 
 ```
                          ┌─────────────────────────────────────────────┐
@@ -83,7 +86,7 @@ Two long-running side services accompany it, both managed by PM2 in production:
   (optional UI front) ── │  PM2:                                        │
    /api/* rewrite ─────► │   • juno-backend   (Next.js, :3000)          │
                          │   • juno-voice-relay (relay/, :8787)         │
-                         │   • juno-scheduler (tasks:runner)            │
+                         │   • juno-work-scheduler (work:scheduler)     │
                          └───────────────┬──────────────────────────────┘
                                          │
              ┌───────────────────────────┼─────────────────────────────┐
@@ -1582,25 +1585,71 @@ is 24 random bytes (base64url), the only capability; revocation is a tombstone t
 the page from the next request; creating a share reuses the newest active link for a
 target rather than orphaning snapshots.
 
-**Scheduled tasks — the older of the two schedulers.** `/api/tasks` create a
-`ScheduledTask` (cadence DAILY / WEEKDAYS / WEEKLY / MONTHLY, timezone-aware,
-plan-limited: PRO 3, MAX/OWNER 10, FREE 0). The `juno-scheduler` PM2 worker
-(`scripts/scheduled-task-runner.ts`) claims due tasks every 60 s with an atomic
-`updateMany` (double-run-safe), runs them through `streamChat` with a 10-min ceiling and
-budget enforcement, and writes an encrypted USER+ASSISTANT pair into a lazily-created
-results conversation.
+**Scheduled tasks, retired.** Juno had two answers to "run this for me later" and
+now has one. A `ScheduledTask` was a recurring **prompt** answered by `streamChat`,
+plan-limited (PRO 3, MAX/OWNER 10, FREE 0) and dispatched by its own `juno-scheduler`
+PM2 worker; a `WorkSchedule` points at a durable task, fires on clocks *and* on events,
+resolves daylight saving against a real zone, has a missed-run policy, a budget and a
+run history that records the fires that did **not** happen. The second does everything
+the first did and does it better, so the first is gone: **Automations (`/automations`) is
+the one surface.**
 
-`WorkSchedule` + `WorkTrigger` supersede it and have not replaced it. A `ScheduledTask` is
-a recurring **prompt** answered by `streamChat`; a `WorkSchedule` points at one durable
-`WorkSession`, so every fire adds to one transcript and one deliverable history instead of
-spawning an orphan, and its triggers are not only clocks — email filters, calendar
-windows, topic monitors, connector events, folder changes and one-click manual runs all
-start one. That is why the surface is called **Automations** (`/automations`) rather than
-Schedules. The migration path exists in code (`planTaskMigration` in
-`src/lib/work/schedule.ts`, which carries the results conversation across so a migrated
-schedule's history stays continuous) but has not been run: both live, `/tasks` keeps its
-own page and its own sidebar row under More, and nothing has been taken away from an
-account that already had scheduled prompts.
+What that meant in practice:
+
+- `scripts/work-scheduler.ts` adopts every remaining `ScheduledTask` into a
+  `WorkSchedule` that fires at the same wall-clock time in the same zone, with the fire
+  it was owed **copied rather than recomputed** — and switches the legacy row off in the
+  same transaction. That second half was missing before, so an adopted task had two
+  dispatchers holding one fire and ran twice a day.
+- Every cadence the column can hold maps, including `ONCE`, which is what made the
+  retirement safe rather than hopeful; `tests/work-schedule.test.ts` reads
+  `enum TaskCadence` out of `prisma/schema.prisma` and walks it. A row that still cannot
+  be adopted — a one-off whose date column is not a date — is left **enabled and
+  untouched** and named in the adopter's log, because a schedule that silently stops
+  running is the worst outcome a migration can have.
+- `POST /api/tasks` answers 410 and points at `/automations`; `GET` still lists, with
+  `movedToScheduleId` per row; `PATCH`/`DELETE` refuse for an adopted task with the id of
+  the routine that now runs it. `/tasks` is a 307 to `/automations`, and the sidebar row
+  went with it.
+- `taskLimitForPlan` went too. It was the only cap on how many things could be running
+  for an account on a clock, and `WorkSchedule` has never had one: what an account may
+  spend is its usage window, not a count of automations.
+
+**Routines for Code.** A `WorkSchedule` dispatches either kind of run, decided by
+`runKind` (`work | code`). A Code routine carries a `codeConfig` — repository, base
+branch, `CodeEnvironment`, permission mode, model — and one fire creates a fresh
+`kind: "code"` conversation, a cloud `CodeTask` pointed at it (`CodeTask.scheduleId`), and
+a `workflow_dispatch` to the runner: each run is a session you can open, review and turn
+into a pull request. Every fire branches from the base and opens its own PR — a routine's
+run is never a follow-up to last night's, so a Tuesday cannot build on an unreviewed
+Monday.
+
+The column is not a `kind` flag bolted onto a Work scheduler. Everything a routine knows
+before it fires — its triggers, its zone, its catch-up policy, its lease, its pause, its
+concurrency caps, its budget admission — is the same question for both kinds and is
+answered once in `src/lib/work/schedule.ts`; what differs is one branch in `dispatchOne`
+and which table the in-flight count reads. A `runKind` this build cannot read is **not**
+resolved to a default: the fire is left owed for the deployment that understands it,
+because both guesses start something nobody asked for.
+
+Controls that a Code run does not read are absent from its editor rather than present and
+inert: the per-run cost/token/runtime ceilings (stamped onto a `WorkRun`, enforced by the
+Work executor), the unattended policy (the cloud runner enforces the permission mode
+instead), the Mac target and the host-offline policy, and the email notify policy. The
+`WorkSchedule.sessionId` a Code routine carries is the saved task — name, prompt, model —
+and deliberately has no conversation of its own, because its fires each open one.
+
+**The API trigger.** `api` is a trigger kind: a per-routine bearer token minted once by
+`POST /api/work/schedules/[id]/token` (only the SHA-256 is stored — `fireSecretHash` on
+the routine, not on a trigger row, because a PATCH rewrites trigger rows wholesale), and
+`POST /api/work/schedules/[id]/fire` starts one run without moving the clock. The optional
+`text` a caller sends arrives **wrapped in the untrusted envelope and after the routine's
+own prompt**, labelled as data from whoever holds the token — anyone holding it can send
+it — and only when the trigger's `acceptsText` has been switched on. A fire carrying text
+at a routine that has not opted in is refused rather than stripped, because stripping
+would leave the caller believing the run read something it never saw. The fire route and
+the Run-now button share one implementation (`src/lib/work/fire-now.ts`), so they cannot
+disagree about the policy a run is stamped with or the concurrency cap it honours.
 
 **Roadmap.** `/api/roadmap` (public feature requests: create, vote-toggle — one per user
 via a DB unique — comment; owner-only status moderation writing an append-only
@@ -1922,7 +1971,8 @@ runbooks). **nginx** (443, TLS via Certbot) reverse-proxies:
 
 **PM2** (`deploy/ecosystem.config.js`) runs three processes: `juno-backend`
 (`npm start`, `:3000`, ~1.4 GB restart ceiling, raised HTTP header size),
-`juno-voice-relay` (`relay/`, `:8787`), and `juno-scheduler` (`tasks:runner`).
+`juno-voice-relay` (`relay/`, `:8787`), and the workers listed in
+`deploy/ecosystem.config.js`.
 
 ### 20.2 Database (Supabase / Postgres)
 
@@ -2226,7 +2276,7 @@ npm run validate:models
 npm run sync:models    # dry-run provider discovery (sync:models:write to apply)
 npm run sync:benchmarks
 npm run sync:prune     # prune the sync change log
-npm run tasks:runner   # the scheduled-task worker (juno-scheduler)
+npm run work:scheduler # the routine dispatcher (juno-work-scheduler)
 ```
 
 Tests (`tests/*.test.ts` + `scripts/test-*.ts`, run via `tsx`) cover auth token/locale

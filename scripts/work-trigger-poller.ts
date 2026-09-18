@@ -165,13 +165,17 @@ const MAIL_PAGE = 25;
 /**
  * The kinds the sweep looks at.
  *
- * Every event kind, not just the two with a source: a `folder_change` row
- * written by a client that did not ask `triggerSupport` has to be picked up once
- * to be told, in `lastPollError`, that nothing watches folders. It is then given
- * an hour, so the cost of carrying it is one query an hour rather than a control
- * that lies. The clock kinds are absent because they are the scheduler's, and
- * sweeping them here would be a second worker reading rows it can do nothing
- * with.
+ * Every event kind with a producer, not just the ones with a live source: a
+ * `folder_change` row written by a client that did not ask `triggerSupport` has
+ * to be picked up once to be told, in `lastPollError`, that nothing watches
+ * folders. It is then given an hour, so the cost of carrying it is one query an
+ * hour rather than a control that lies.
+ *
+ * Three kinds are absent, for two different reasons. The clock kinds are the
+ * scheduler's, and sweeping them here would be a second worker reading rows it
+ * can do nothing with. `manual` and `api` have no source to read at all — a
+ * person and an authenticated request are what start them — so a poll of one
+ * would be a query that can only ever answer "nothing happened".
  */
 const POLLED_KINDS: string[] = [
   "email_filter",

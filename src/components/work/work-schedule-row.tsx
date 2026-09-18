@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ChevronRight, Loader2, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
+import { parseCodeRoutineConfig } from "@/lib/work/code-routine";
 import {
   WORK_SYNC_EVENT,
   patchWorkSchedule,
@@ -100,7 +101,13 @@ export function WorkScheduleRow({
   onChanged: (schedule: ClientWorkSchedule) => void;
 }) {
   const [busy, setBusy] = React.useState<"toggle" | "run" | null>(null);
-  const notify = notifySentence(schedule.notifyPolicy);
+  const isCode = schedule.runKind === "code";
+  // Nothing emails about a Code run — the notify policy is read by the Work run
+  // notifier, which watches `WorkRun` events a Code routine never produces — so
+  // the row does not claim it will. What a Code run does instead is appear in
+  // the sidebar as its own session, which needs no line here.
+  const notify = isCode ? null : notifySentence(schedule.notifyPolicy);
+  const parsedCode = isCode ? parseCodeRoutineConfig(schedule.codeConfig) : null;
 
   const toggle = async () => {
     setBusy("toggle");
@@ -178,6 +185,12 @@ export function WorkScheduleRow({
               {schedule.name}
             </span>
             {!schedule.enabled && <WorkTag>Paused</WorkTag>}
+            {/* The repository, because it is the one fact that distinguishes
+                two Code routines with similar names and the one a person
+                checks before pausing something at eight in the morning. */}
+            {parsedCode?.ok && (
+              <WorkTag>{`${parsedCode.config.repo.owner}/${parsedCode.config.repo.name}`}</WorkTag>
+            )}
           </span>
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
@@ -220,14 +233,22 @@ export function WorkScheduleRow({
           resolver reads the column every time rather than caching an answer, so
           those rows start working the moment a conversation is attached.
         */}
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
-        >
-          <Link href={`/work/${schedule.sessionId}`}>Its task</Link>
-        </Button>
+        {/* Absent for a Code routine, and that absence is the honest answer
+            rather than a missing feature: a Code routine has no ONE task to
+            open. Every fire is a session of its own with its own branch, so
+            there is nothing for `/work/<sessionId>` to resolve to — it would
+            land on the chat index — and the list of those sessions is on the
+            automation's own page, one press away through the row itself. */}
+        {!isCode && (
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
+          >
+            <Link href={`/work/${schedule.sessionId}`}>Its task</Link>
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

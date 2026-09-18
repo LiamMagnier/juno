@@ -150,7 +150,10 @@ test("every dispatcher merges the plan's budget in", () => {
   // until a run has spent an unbounded amount or stopped far too early.
   for (const file of [
     "../src/app/api/work/sessions/[id]/runs/route.ts",
-    "../src/app/api/work/schedules/[id]/run-now/route.ts",
+    // The Run-now button and an `api` trigger's fire URL are one
+    // implementation (see its own docblock), so the file that builds the run
+    // for both is where the merge has to happen.
+    "../src/lib/work/fire-now.ts",
     "../scripts/work-scheduler.ts",
     "../scripts/work-trigger-poller.ts",
   ]) {
@@ -159,7 +162,10 @@ test("every dispatcher merges the plan's budget in", () => {
     assert.doesNotMatch(source, /DEFAULT_RUN_BUDGET/, file);
   }
   for (const file of [
-    "../src/app/api/work/schedules/[id]/run-now/route.ts",
+    // The Run-now button and an `api` trigger's fire URL are one
+    // implementation (see its own docblock), so the file that builds the run
+    // for both is where the merge has to happen.
+    "../src/lib/work/fire-now.ts",
     "../scripts/work-scheduler.ts",
     "../scripts/work-trigger-poller.ts",
   ]) {
@@ -239,7 +245,10 @@ test("every dispatcher hands the plan it resolved to spend admission", () => {
   let checked = 0;
   for (const file of [
     "../src/app/api/work/sessions/[id]/runs/route.ts",
-    "../src/app/api/work/schedules/[id]/run-now/route.ts",
+    // The Run-now button and an `api` trigger's fire URL are one
+    // implementation (see its own docblock), so the file that builds the run
+    // for both is where the merge has to happen.
+    "../src/lib/work/fire-now.ts",
     "../scripts/work-scheduler.ts",
     "../scripts/work-trigger-poller.ts",
   ]) {
