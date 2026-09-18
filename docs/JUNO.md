@@ -1014,6 +1014,34 @@ rather than only on one. `/code/new` is a redirect onto `/code`
 `/code/customize` holds the page-sized configuration — environments, repositories, Mac
 workspaces, the default permission mode — that Chat does not have an equivalent of.
 
+**Which checkout, in two steps.** The repository chip opens the user's real repositories
+(`GET /api/code/github/repos`) and, once one is picked, a band under the list names the
+branch the run will start from; pressing it swaps the panel for that repository's branches
+(`GET /api/code/github/branches?owner=&name=`, up to three pages of 100, default branch
+first, `truncated` when there are more). The branch was a free-text field until now —
+`CodeTask.baseRef` has reached the runner since Cloud Code shipped, so it decided
+something real, but the only check on a typo was a run failing at `git clone` after a CI
+machine had been spun up for it. The field's one genuine use survives as a row: a query
+that is a usable git ref and matches no branch is offered as itself, which is how a tag,
+a commit SHA or a branch past the page limit is named. `src/lib/code-branches.ts` holds
+the ref rules, shared by the route and the picker so the client cannot offer a ref the
+server would refuse.
+
+**A link can open a prepared session.** `/code?prompt=…&repositories=owner/name&branch=…`
+prefills the composer (`src/lib/code-prefill.ts`, parsed in the server component;
+`prompt`/`q`, `repositories`/`repository`/`repo`, `branch`/`baseRef`/`base`). **It never
+submits.** `/chat?q=` auto-sends because what it spends is a reply; a Code send clones a
+repository onto a fresh machine and spends the account's usage window, and a link that
+starts that when it is opened spends somebody else's window on a click. Anything the link
+asks for and does not get is said in one muted line under the field rather than dropped:
+two repositories (a session runs one — `repoOwner`/`repoName` are scalar columns and the
+runner clones once, so naming two picks neither), a branch that is not a usable ref, a
+branch with no repository, a repository this account's GitHub connection cannot see, and
+`environment`, which is ignored because the composer has no control that shows which
+environment a run would use — setting a run's egress and variables from a URL with
+nothing on screen saying so is a control that decides something, drawn from the other
+side.
+
 ### 9.1 Device task queue
 
 A Mac/Windows host running the agent registers/heartbeats via `POST /api/code/devices`

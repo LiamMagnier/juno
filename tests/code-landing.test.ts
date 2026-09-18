@@ -127,7 +127,14 @@ test("the review pane kept an entry point when the list that opened it went", ()
 
 test("/code/new is a redirect rather than a second composer", () => {
   const route = read("src/app/(app)/code/new/page.tsx");
-  assert.match(route, /redirect\("\/code"\)/, "/code/new must send its visitors to the landing");
+  /*
+   * The destination, not the exact call: this route forwards the query
+   * parameters `/code` prefills its composer from (tests/code-prefill.test.ts
+   * pins which, and that the list has a reader), so the redirect is written
+   * with or without a search string. What must not change is where it goes.
+   */
+  assert.match(route, /redirect\(/, "/code/new must redirect");
+  assert.match(route, /"\/code"/, "/code/new must send its visitors to the landing");
   assert.ok(!/ComposerShell/.test(route), "the composer lives in one component, not in a route");
   // A redirect draws nothing and fails at nothing, so a skeleton or an error
   // boundary beside it would describe a page that does not exist.

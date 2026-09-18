@@ -38,12 +38,13 @@ import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefi
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { CodeIcons } from "@/lib/app-icons";
+import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { CODE_PERMISSIONS } from "@/lib/code-environment";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
+import type { CodePrefill, CodePrefillNote } from "@/lib/code-prefill";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
@@ -107,6 +108,26 @@ function PermissionChip({ target }: { target: Target }) {
   );
 }
 
+/**
+ * WHAT A LINK ASKED FOR AND THIS COMPOSER DID NOT DO.
+ *
+ * `src/lib/code-prefill.ts` decides; this writes the sentence, because the
+ * sentences are user-facing copy and the parser is a pure module the tests
+ * read. Every one of them says what happened AND what the composer is doing
+ * instead, since the person reading arrived from somewhere else and did not
+ * write the link: "it was ignored" tells them nothing they can act on.
+ */
+const PREFILL_NOTES: Record<CodePrefillNote, string> = {
+  multiple_repositories:
+    "That link named more than one repository, and a session runs in one — pick the one you meant.",
+  invalid_repository: "That link’s repository wasn’t a readable owner/name, so none is picked.",
+  invalid_branch: "That link’s branch wasn’t a usable git ref, so this starts from the repository’s default.",
+  branch_without_repository: "That link named a branch but no repository, so pick the repository it belongs to.",
+  prompt_truncated: "That link’s text was too long to carry whole — what fits is in the field.",
+  environment_unsupported:
+    "That link named an environment. Nothing here chooses one yet, so this run gets the default.",
+};
+
 /*
  * THE CODE COMPOSER — the whole of what `/code` is, under the greeting.
  *
@@ -138,22 +159,41 @@ function PermissionChip({ target }: { target: Target }) {
  * room under the field for a second set of things to press, and the greeting
  * above it is the invitation. The footer caption that spelled out where a run
  * happens is gone too: the chips say it, and the permission chip says what it
- * means. One line survives under the field, and only when there is something
- * true to say — a cloud runner this server does not have, or the pick that is
- * still missing.
+ * means. ONE line survives under the field, and only when there is something
+ * true to say: a cloud runner this server does not have, or — since a link can
+ * open this composer with the task already written — a part of that link that
+ * did not apply. Never both at once, and never a third.
  */
-export function CodeComposer({ className }: { className?: string }) {
+export function CodeComposer({
+  className,
+  prefill,
+}: {
+  className?: string;
+  /**
+   * What the query string asked for, parsed on the server (`/code` reads it;
+   * src/lib/code-prefill.ts carries the rules). It fills this composer and
+   * never submits it — see the landing's docblock for why a Code link may not
+   * do what `/chat?q=` does.
+   */
+  prefill?: CodePrefill;
+}) {
   const router = useRouter();
   const { settings, upsertConversation, removeConversation, features } = useApp();
 
   // —— Target (Device ⇄ Cloud) ——
-  const [target, setTarget] = React.useState<Target>("device");
+  // A link naming a repository lands on Cloud whatever the saved preference is:
+  // a GitHub repository is not something a Mac session can be pointed at, so
+  // restoring "Device" here would leave the picked repository visible on a
+  // machine that cannot run it.
+  const [target, setTarget] = React.useState<Target>(prefill?.repo ? "cloud" : "device");
+  const prefilledCloud = !!prefill?.repo;
   React.useEffect(() => {
+    if (prefilledCloud) return;
     try {
       const saved = localStorage.getItem(TARGET_KEY);
       if (saved === "cloud" || saved === "device") setTarget(saved);
     } catch {}
-  }, []);
+  }, [prefilledCloud]);
 
   const cloudConversationId = React.useRef<string | null>(null);
 
@@ -215,6 +255,75 @@ export function CodeComposer({ className }: { className?: string }) {
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
 
+  /*
+   * —— Turning `?repositories=owner/name` into a picked repository ——
+   *
+   * The chip needs a whole `CloudRepo` — the default branch above all, because
+   * it is what the chip shows and what the run uses when no base is chosen —
+   * and a link carries two path segments. So the composer asks the one route
+   * that answers "tell me about this repository"
+   * (`/api/code/github/branches`), which is the same probe the branch list
+   * makes, rather than waiting for the hundred-repository list inside the
+   * picker and hoping the named one is on it.
+   *
+   * A failure is a sentence, not a silence. The reader did not write this link:
+   * if the repository cannot be opened they need to know that is why the chip
+   * still says "Pick a repository", and each refusal below names the thing they
+   * could do about it.
+   *
+   * It runs once. `appliedPrefill` is a ref rather than a dependency list
+   * because re-running would overwrite a repository the reader has since
+   * changed with the one the link named — the link is an opening position, not
+   * a setting.
+   */
+  const [prefillProblem, setPrefillProblem] = React.useState<string | null>(null);
+  const appliedPrefill = React.useRef(false);
+  React.useEffect(() => {
+    const wanted = prefill?.repo;
+    if (!wanted || appliedPrefill.current) return;
+    appliedPrefill.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/code/github/branches?repo=${encodeURIComponent(wanted.fullName)}`, {
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          const err = ((await res.json().catch(() => ({}))) as { error?: string }).error;
+          setPrefillProblem(
+            err === "github_not_connected" || err === "github_unauthorized"
+              ? `Connect GitHub in Connections to open ${wanted.fullName}.`
+              : err === "repo_not_found"
+                ? `Your GitHub connection can’t see ${wanted.fullName}, so no repository is picked.`
+                : `Couldn’t reach GitHub to open ${wanted.fullName}. Pick a repository to start.`,
+          );
+          return;
+        }
+        const data = (await res.json()) as { repo?: CloudRepo; branches?: string[] };
+        if (cancelled || !data.repo) return;
+        setSelectedRepo(data.repo);
+        const ref = prefill?.baseRef;
+        if (!ref || ref === data.repo.defaultBranch) return;
+        // Applied either way — a base ref is legitimately a tag or a commit,
+        // which no branch list contains — but a ref that is not a branch is
+        // said out loud, because the alternative is a run that fails at `git
+        // clone` for a typo nobody was shown.
+        setBaseRef(ref);
+        if (!data.branches?.includes(ref)) {
+          setPrefillProblem(
+            `${ref} isn’t a branch of ${data.repo.fullName}; it will be used as a tag or commit.`,
+          );
+        }
+      } catch {
+        if (!cancelled) setPrefillProblem(`Couldn’t reach GitHub to open ${wanted.fullName}.`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [prefill]);
+
   // —— Model ——
   const [model, setModel] = React.useState<string>(() => {
     try {
@@ -251,7 +360,10 @@ export function CodeComposer({ className }: { className?: string }) {
   }, []);
 
   // —— Prompt & Uploads ——
-  const [prompt, setPrompt] = React.useState("");
+  // Filled from the first render rather than in an effect, so a prefilled link
+  // paints with its text in the field instead of painting empty and then
+  // filling — and so the autosize below measures the real content once.
+  const [prompt, setPrompt] = React.useState(prefill?.prompt ?? "");
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
@@ -487,6 +599,19 @@ export function CodeComposer({ className }: { className?: string }) {
       : "Pick a repository to start"
     : null;
 
+  /*
+   * One line for everything the link asked for and did not get — the parser's
+   * refusals first, then whatever GitHub said about the repository it named.
+   * Joined into a single sentence stack rather than a list: two is already the
+   * unusual case, and a bulleted apology under a composer would be the prose
+   * that was taken out of this surface on purpose.
+   */
+  const prefillMessage = React.useMemo(() => {
+    const parts = (prefill?.notes ?? []).map((note) => PREFILL_NOTES[note]);
+    if (prefillProblem) parts.push(prefillProblem);
+    return parts.join(" ") || null;
+  }, [prefill, prefillProblem]);
+
   const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
     () => ({
       stage: "new",
@@ -712,9 +837,11 @@ export function CodeComposer({ className }: { className?: string }) {
         one, which is a layout shift charged to the reader for reading a
         sentence they had already read.
 
-        What is left is the one thing no chip can say: this server has no cloud
-        runner. Said quietly, in muted ink, rather than as an alert — the reader
-        can still run on their Mac, and the sentence names the way there.
+        What is left is what no chip can say. One: this server has no cloud
+        runner — said quietly, in muted ink, rather than as an alert, because
+        the reader can still run on their Mac and the sentence names the way
+        there. Two, below it: this composer was opened from a link and part of
+        what the link asked for did not happen.
       */}
       {cloudBlocked && (
         <p role="status" className="mt-2.5 flex items-start justify-center gap-2 px-1 text-caption text-muted-foreground">
@@ -730,6 +857,25 @@ export function CodeComposer({ className }: { className?: string }) {
             </button>
             .
           </span>
+        </p>
+      )}
+      {/*
+        THE SECOND THING THAT CAN BE TRUE UNDER THE FIELD: this session was
+        opened from a link and part of what the link asked for did not happen.
+        Same quiet treatment as the note above — muted, centred, `role="status"`
+        — because it is news about the state of the composer rather than an
+        error in anything the reader did; `StatusIcons.info` rather than a
+        warning triangle for the same reason.
+
+        Only one of the two is ever drawn, and the cloud-runner note wins: a
+        server that cannot run this at all is the bigger fact, and two stacked
+        captions under a composer pinned to the bottom of the page is the prose
+        stack that was deliberately taken out of this surface.
+      */}
+      {!cloudBlocked && prefillMessage && (
+        <p role="status" className="mt-2.5 flex items-start justify-center gap-2 px-1 text-caption text-muted-foreground">
+          <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>{prefillMessage}</span>
         </p>
       )}
     </div>
