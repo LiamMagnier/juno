@@ -291,10 +291,17 @@ function Segment({
           and it replaces the product glyph rather than joining it, so a gated
           segment is exactly as wide as an open one — a width change here would
           move the thumb for a reason that has nothing to do with the reader. */}
+      {/* `size-3.5` (14px), not `size-4`. Measured in the reference, the glyphs
+          inside this control draw ~12.8px of ink; a 16px lucide box draws ~14.4,
+          which is the size of a NAV row's mark — and a switch cell is 24px tall
+          against a nav row's 32, so the same mark inside it reads as crowding
+          the cell rather than sitting in it. The optical stroke ladder in
+          globals.css thins the stroke to match, so this gets lighter as well as
+          smaller, which is what keeps it from looking like a shrunken nav icon. */}
       {locked ? (
-        <Sparkles className="relative size-4 shrink-0" aria-hidden="true" />
+        <Sparkles className="relative size-3.5 shrink-0" aria-hidden="true" />
       ) : (
-        <SidebarMotionIcon kind={product.kind} className="relative size-4 shrink-0" />
+        <SidebarMotionIcon kind={product.kind} className="relative size-3.5 shrink-0" />
       )}
       {/* THE ONLY TRAILING MARK THIS SEGMENT EVER HAD IS GONE. It was a dot
           counting the Work items blocked on the reader, and it was the one

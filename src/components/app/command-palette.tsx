@@ -255,7 +255,7 @@ function PaletteShell({
             only field on a 560px overlay. It was `body` (15px), the same rung
             as the results under it, so the field read as the first row of the
             list rather than as the control that drives it. */}
-        <div className="flex items-center gap-3 border-b border-border px-4">
+        <div className="flex items-center gap-2.5 border-b border-border px-4">
           <AppIcons.search className="size-5 shrink-0 text-muted-foreground" />
           <input
             value={query}
@@ -315,12 +315,12 @@ function PaletteShell({
            * still while you type, which is the difference between a palette
            * and a tooltip that grew.
            *
-           * 14rem is the height the SEARCHING state already holds — five
-           * skeleton rows at `h-12` plus their gaps — so results landing under
-           * a query never resize the overlay at all, and a short resting list
-           * does not sit in a void.
+           * 13rem is the height the SEARCHING state already holds — five
+           * skeleton rows at `h-9` plus their gaps and the list's own padding —
+           * so results landing under a query never resize the overlay at all,
+           * and a short resting list does not sit in a void.
            */
-          className="relative min-h-[14rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
+          className="relative min-h-[13rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-2"
         >
           {/* One highlight that glides between rows. `transform` is animated
               (not top), so it stays on the compositor. */}
@@ -336,13 +336,13 @@ function PaletteShell({
             // already runs on.
             //
             // rounded-menu, not rounded-field: the shell is rounded-panel (20px)
-            // and the list insets it by p-1.5 (6px), so 14px — `rounded-menu` —
+            // and the list insets it by p-2 (8px), so 12px — `rounded-field` —
             // is the concentric radius. (The arithmetic in this comment used to
             // read 18 − 6 = 12 and call that `rounded-menu`; the ladder in
             // tailwind.config.ts says panel is 20 and menu is 14. The class was
             // always right, the sum behind it was not — which is exactly how a
             // later reader "corrects" a correct class.)
-            className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-menu bg-foreground/10 opacity-0 transition-[transform,height,opacity] duration-base ease-out-strong motion-reduce:transition-none"
+            className="pointer-events-none absolute left-2 right-2 top-0 rounded-field bg-foreground/10 opacity-0 transition-[transform,height,opacity] duration-base ease-out-strong motion-reduce:transition-none"
           />
           {items.length === 0
             ? emptyState
@@ -366,8 +366,13 @@ function PaletteShell({
                         // over "Chats" and "Projects" is what made a list of
                         // the reader's own things read as a console.
                         className={cn(
-                          "px-2.5 pb-1 text-ui font-medium text-muted-foreground",
-                          i === 0 ? "pt-2" : "pt-4"
+                          "px-2 pb-1 text-ui font-medium text-muted-foreground",
+                          // 24px before a later group, matching the break the
+                          // sidebar leaves above a section heading. It was 16,
+                          // which is the same gap the rows inside a group use
+                          // between themselves — so a new group started with no
+                          // more ceremony than the next line of the old one.
+                          i === 0 ? "pt-1" : "pt-6"
                         )}
                       >
                         {c.group}
@@ -383,14 +388,21 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        // `text-body` (15px) on a 40px row, matching the
-                        // sidebar this list is the search over. A result is the
-                        // reader's own chat or file, and it was being set two
+                        // ONE GRID WITH THE SIDEBAR. `px-2` inside the list's
+                        // `p-2` puts the glyph on 16 and `gap-2.5` carries the
+                        // text to 46 — the same two numbers every destination
+                        // row in the panel behind this overlay is built on.
+                        // `text-body` (15px) for the same reason: a result is
+                        // the reader's own chat or file, and it was set two
                         // rungs under the field that found it.
-                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2.5 text-left text-body transition-colors duration-fast ease-out-soft coarse:py-3",
-                        // A two-line result row hangs its icon and trailing meta
-                        // off the title, not off the centre of the pair.
-                        c.snippet ? "items-start" : "items-center",
+                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-field px-2 text-left text-body transition-colors duration-fast ease-out-soft",
+                        // A fixed 36px when the row is one line — a hair above
+                        // the sidebar's 32, because this list is driven by the
+                        // arrow keys and its rows are targets as well as text.
+                        // A snippet makes it two lines, so it grows instead,
+                        // and hangs its glyph and meta off the TITLE rather
+                        // than off the centre of the pair.
+                        c.snippet ? "items-start py-2 coarse:py-2.5" : "h-9 items-center coarse:h-11",
                         isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >
@@ -762,7 +774,7 @@ function SearchPalette() {
    * deliberately NOT used here, so the strip shows it continues.
    */
   const filters = trimmed ? (
-    <div className="border-b border-border/60 px-3 py-2">
+    <div className="border-b border-border/60 px-4 py-2">
       <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
         <div role="group" aria-label="Filter by type" className="flex shrink-0 gap-1">
           <FilterChip active={type === "all"} onClick={() => setType("all")}>
@@ -845,9 +857,9 @@ function SearchPalette() {
   // — a skeleton drawn at a different radius from the thing that replaces it is
   // a visible re-shape at the moment the results land.
   const emptyState = searching ? (
-    <div className="space-y-1 p-1.5" aria-hidden="true">
+    <div className="space-y-1 p-2" aria-hidden="true">
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="skeleton h-12 rounded-menu" style={staggerDelay(i, "tight")} />
+        <div key={i} className="skeleton h-9 rounded-field" style={staggerDelay(i, "tight")} />
       ))}
     </div>
   ) : (

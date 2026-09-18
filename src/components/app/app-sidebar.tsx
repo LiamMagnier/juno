@@ -763,13 +763,16 @@ export function AppSidebar({
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        {/* `space-y-1.5` = the 6.4px the reference leaves between the field and
-            the first row of the list. It is the only gap in this whole column:
-            the field is a different KIND of object from the rows below it, and
-            six pixels is what says so without a rule. Everything under it
-            abuts. (It was `mb-1.5` on this block, which put the six pixels
-            below New rather than above it — the one place they do nothing.) */}
-        <div className={cn("pt-2", collapsed ? "space-y-1 px-2.5" : "space-y-1.5 px-2")}>
+        {/* TWO SPACINGS, both measured off the reference.
+            `pt-4`: the wordmark's centre sits 46.5px above the search field's
+            in the reference and 37.3 here — the brand row and the field were
+            nearly touching, so the panel opened with two objects stacked
+            rather than a header and then a column.
+            `space-y-1.5`: the 6.4px between the field and the first row. It is
+            the only gap in the whole column — the field is a different KIND of
+            object from the rows below it, and six pixels says so without a
+            rule. Everything under it abuts. */}
+        <div className={cn("pt-4", collapsed ? "space-y-1 px-2.5 pt-2" : "space-y-1.5 px-2")}>
           {/* SEARCH IS A FIELD AGAIN, and it is the first thing in the column.
               It spent a release as a magnifier in the panel header, on the
               argument that a nav list is a list of PLACES and search is a
