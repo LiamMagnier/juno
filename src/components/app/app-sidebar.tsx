@@ -82,37 +82,44 @@ import type { ClientConversation } from "@/types/chat";
  * A fetch per row would be forty requests every few seconds for the quietest
  * column in the product.
  *
- * SEARCH IS IN THE HEADER, not in the navigation, and that is the one thing
- * about this layout worth arguing over. It is the eight-source search palette
- * — ⌘K is the command menu, a different thing — and it used to be the first
- * full-width row of the nav list. Measured, this column spent 330px before
- * the first conversation title, and a nav list is a list of PLACES: Library,
- * Projects, Artifacts, More. Search is a command that opens a palette over
- * the window and returns you where you were, which is why Linear, Raycast and
- * Arc all keep it in the chrome. It kept its tooltip; the mobile magnifier is
- * unchanged. 330px → 296px.
+ * SEARCH IS A FIELD AT THE TOP OF THE COLUMN, which is where it started and
+ * where it has come back to. It spent a release as a magnifier in the panel
+ * header on a measurement — the column spent 330px before the first
+ * conversation title — and on a real distinction: a nav list is a list of
+ * PLACES, and search is a command that opens a palette over the window and
+ * returns you where you were, which is why Linear, Raycast and Arc keep it in
+ * the chrome.
  *
- * The remaining 296px is seven rows that each earn their place, which is how
- * a sidebar gets heavy with nothing identifiably wrong in it. The next real
- * cut is folding Library/Projects/Artifacts into More (−102px), and that
- * trades three primary destinations for space — a product call, not a
- * styling one.
+ * The distinction holds and the conclusion did not. Claude's sidebar, the
+ * reference for this pass, spends MORE of this column than Juno's did — a
+ * field, seven destinations, a More — and reads calmer, because a sidebar
+ * feels heavy per ROW, not per column; 34px of reclaimed height never
+ * addressed what the panel was actually being judged on. And a field and a
+ * glyph are not the same control: a field says what it searches by holding a
+ * placeholder, while a 16px mark in a corner it shares with the collapse
+ * toggle says nothing, and this is the control people arrive looking for.
+ * It is a BUTTON wearing a field — one search surface, one caret.
  *
- * THE DENSITY LADDER, and nothing off it. Rows are `h-9` (36px) carrying
- * `text-ui` (13px) and a `size-4` box holding a `size-3.5` glyph at `gap-2`,
- * so every label in the panel starts 32px from its edge.
+ * THE DENSITY LADDER, and nothing off it. Rows are `h-10` (40px) carrying
+ * `text-body` (15px) and a `size-5` box holding a `size-4.5` glyph at
+ * `gap-3`, so every label in the panel starts 44px from its edge.
  *
- * 36, up from 32, and `space-y-1` between them rather than `space-y-0.5`. At
- * 32/2 the rows were touching: five destinations in a 170px block with two
- * pixels between them, which is a list you have to parse rather than scan.
- * The extra four pixels of row and two of gap cost 30px across the whole nav
- * and buy the thing the column was missing — you can see where one row ends. Section headings and date folds are
- * both `h-6` sentence-case mono at the `label` rung — one voice. Glyphs may only be
- * `size-3`, `size-3.5` or `size-4` — every one of which has a rung on the
- * optical stroke ladder in globals.css. The rows were 36px with 14px labels
- * and UNSIZED glyphs that fell back to Lucide's intrinsic 24px; that, plus
- * 332px of fixed chrome above the list and 121px of footer below it, is what
- * "the elements are too big" was pointing at.
+ * Those numbers ARE the rework. The panel was `h-9`/`text-ui`/`size-3.5` at
+ * `gap-2` on a 32px edge, and every step to it is defensible on its own —
+ * chrome quieter than content, a glyph no larger than its label, rows tight
+ * enough that the list starts high. Together they made a column you read at
+ * arm's length rather than glanced at, which is what "it looks horrible" was
+ * pointing at. 15px is `body`, the rung the product reads PROSE at, so the
+ * panel shares a size with the page instead of inventing a chrome-only one;
+ * 18px under it holds the same glyph-to-label ratio 14-under-13 did.
+ *
+ * Section headings, date folds and the Needs-you toggle are `h-7` sentence-case
+ * SANS at the `ui` rung on the same 44px edge — one voice, one step below its
+ * rows. They were mono at `label`, which is the eyebrow a settings page heads
+ * its groups with: mono is a machine voice, and these name piles of the
+ * reader's own chats. Glyphs may only be `size-3`, `size-3.5`, `size-4`,
+ * `size-4.5` or `size-5` — every one of which has a rung on the optical stroke
+ * ladder in globals.css, so a bigger mark thins rather than fattening.
  *
  * HOVER IS WEAKER THAN ACTIVE. `bg-sidebar-accent/60` on hover, the full fill
  * when selected. They used to be the same fill, so pointing anywhere in the
@@ -671,22 +678,6 @@ export function AppSidebar({
             </Link>
           </motion.div>
           <motion.div layout="position" transition={layoutTransition} className="flex items-center gap-0.5">
-            {!collapsed && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="group hidden size-7 md:inline-flex coarse:size-9"
-                    onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-                    aria-label="Search"
-                  >
-                    <SidebarMotionIcon kind="search" className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Search</TooltipContent>
-              </Tooltip>
-            )}
             {onToggleCollapse && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -749,29 +740,31 @@ export function AppSidebar({
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        <div className={cn("space-y-1.5", collapsed ? "px-2.5 pt-2" : "px-3")}>
-          {/* SEARCH IS NOT HERE ANY MORE — it is in the panel header, beside
-              the collapse control. Measured, this column spent 330px before
-              the first conversation title: a wordmark row, a product switch,
-              six full-width nav rows and a section eyebrow. Every one of those
-              is defensible on its own, which is exactly how a sidebar reaches
-              330px with nothing identifiably wrong in it.
+        <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-3")}>
+          {/* SEARCH IS A FIELD AGAIN, and it is the first thing in the column.
+              It spent a release as a magnifier in the panel header, on the
+              argument that a nav list is a list of PLACES and search is a
+              command — true — and that the row it cost was worth more than the
+              label (the column spent ~330px before the first conversation
+              title). The second half is what did not hold up. Claude spends MORE
+              of this column than Juno did — a field, seven destinations and a
+              More — and reads calmer, because what makes a sidebar feel heavy
+              is row DENSITY, not row count. Fixing the density (below) buys the
+              row back with change to spare.
 
-              Search is the row that was least at home. The others are PLACES —
-              Library, Projects, Artifacts, More — and a nav list is a list of
-              places. Search is a command that opens a palette over the whole
-              window and returns you to where you were, which is why Linear,
-              Raycast and Arc all put it in the chrome rather than the
-              navigation. Moving it there costs its visible label and buys back
-              a row at the top of the list of things you actually navigate to.
-              (It keeps a tooltip, and the mobile magnifier is unchanged.) */}
-          {/* The same recipe in both products, because it is the same row: the
-              one you press to start. Code's says "New session" rather than
-              "New" alone so the rail's tooltip and a screen reader both get the
-              noun the list under it is made of; the plus is the mark either
-              way. It is a LINK in Code — /code is the composer — where Chat's
-              is a button, because Chat has to clear the open conversation as
-              well as route. */}
+              And the header icon was never really the same control. A field
+              says what it searches by having a placeholder; a 16px glyph in a
+              corner shared with the collapse toggle says nothing, and it is the
+              one control in this panel people arrive looking for.
+
+              A BUTTON that looks like a field, not an input. Typing here would
+              have to either filter in place — which is the browser-side title
+              filter /api/search replaced, and it cannot see message text, files
+              or memories — or forward every keystroke into the palette, which
+              is two inputs fighting over one caret. One search surface, one
+              caret, and this opens it. */}
+          <SidebarSearchField collapsed={collapsed} />
+
           <NavRow
             collapsed={collapsed}
             href={isCode ? "/code" : undefined}
@@ -799,7 +792,7 @@ export function AppSidebar({
           className={cn(
             // `pt-0.5`, matching the row gap above it: see the note on the
             // Search block — this is the same navigation block continuing.
-            "space-y-1.5 pt-1.5",
+            "space-y-0.5 pt-0.5",
             collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-3"
           )}
           aria-label="Primary"
@@ -1003,14 +996,15 @@ export function AppSidebar({
                     {needsYouOnly ? null : recents.length > 0 ? (
                       <div className="mt-6 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
-                          <div key={group} className="space-y-1.5 pt-6 first:pt-0">
+                          <div key={group} className="space-y-0.5 pt-6 first:pt-0">
                             {/* Same heading as Projects and Pinned above — see the note in
-                                `Section` — and now the same INSET too. This is a second
-                                implementation of that eyebrow, so it kept `px-2` when the
-                                other moved to the column's text edge, and "Today" sat 24px
-                                left of every title under it. One voice needs one inset as
-                                much as it needs one rung. */}
-                            <p className="flex h-6 items-center pl-8 pr-2 font-mono text-label text-muted-foreground/70">
+                                `Section` — and the same INSET. This is a second
+                                implementation of that heading, so it has to be moved by
+                                hand every time the other one moves; it has now been left
+                                behind twice (once at `px-2` against a 40px edge, once at
+                                `pl-8` against 44), which is the argument for the two
+                                becoming one the next time either is touched. */}
+                            <p className="flex h-7 items-center pl-11 pr-2 text-ui font-medium text-muted-foreground">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -1084,22 +1078,23 @@ export function AppSidebar({
                     type="button"
                     aria-haspopup="menu"
                     aria-label={accountLabel}
-                    /* No horizontal padding, so the 24px avatar starts where a
-                       nav row's fill starts and the name lands on the panel's
-                       one text edge at 40px. It was `px-1.5`, which put the
-                       name at 46 — the last row your eye rests on, six pixels
-                       off every label above it. */
-                    className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
+                    /* No horizontal padding, so the avatar starts where a nav
+                       row's fill starts and the name lands on the panel's one
+                       text edge. The avatar is `size-5` and the gap `gap-3`,
+                       the same pair every nav row uses, which is what puts the
+                       last row your eye rests on at the same 44px as the rest
+                       rather than a few pixels off it. */
+                    className="group flex h-9 min-w-0 flex-1 items-center gap-3 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
                   >
                     {/* The SAME avatar helper the menu this opens draws with.
                         The footer used to render mono initials in a bordered
                         disc while the menu four pixels away rendered a
                         DotIdenticon — one person, two faces, one click apart. */}
-                    <UserAvatar className="size-6" />
+                    <UserAvatar className="size-5" />
                     {/* The NAME truncates, the plan segment never does: it is
                         the tonal state, and "Limit reached" is precisely the
                         word a 256px column must not eat. */}
-                    <span className="flex min-w-0 flex-1 items-baseline text-ui">
+                    <span className="flex min-w-0 flex-1 items-baseline text-body">
                       <span className="min-w-0 truncate font-medium text-foreground">{user.name ?? user.email}</span>
                       <span className={cn("shrink-0 whitespace-pre", planSegment.tone)}>{` · ${planSegment.label}`}</span>
                     </span>
@@ -1240,7 +1235,7 @@ function NeedsYouFold({
     // No bottom margin: whatever follows — Pinned projects, Pinned chats, the
     // date folds — opens with its own `mt-6`, and two margins meeting would put
     // 48px between this fold and the list it heads.
-    <div className="space-y-1.5">
+    <div className="space-y-0.5">
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable
@@ -1256,14 +1251,14 @@ function NeedsYouFold({
               // would be the one control in the drawer at half the 44px every
               // row, flyout entry and section heading beside it guarantees. On
               // a fine pointer the resting geometry is untouched.
-              "h-6 select-none gap-1.5 border-0 py-0 pl-8 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
+              "h-7 select-none gap-1.5 border-0 py-0 pl-11 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
               only && "bg-sidebar-accent"
             )}
           >
             <span
               className={cn(
-                "min-w-0 truncate font-mono text-label",
-                only ? "text-foreground" : "text-muted-foreground/70"
+                "min-w-0 truncate text-ui font-medium",
+                only ? "text-foreground" : "text-muted-foreground"
               )}
             >
               {`Needs you · ${rows.length}`}
@@ -1288,6 +1283,49 @@ function NeedsYouFold({
 /* ────────────────────────────────────────────────────────────────────────────
  * Rows
  * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The search field — a button wearing a field, at the top of the column.
+ *
+ * At the rail it is the 44px icon row every other destination is, with the
+ * tooltip they all carry; the field shape only exists where there is a
+ * placeholder to hold. The reasoning for its return is at the call site.
+ */
+function SidebarSearchField({ collapsed }: { collapsed: boolean }) {
+  const el = (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+      className={cn(
+        // `rounded-field` (12px), not `rounded-control` (10px): this is the one
+        // thing in the column shaped like an input, and the ladder in
+        // tailwind.config.ts gives fields their own rung precisely so a field
+        // and a list row are not the same object at a glance.
+        //
+        // The fill is the panel's own hover ink at 70%, so it reads as a well
+        // in the sidebar rather than a card floating on it — and it deepens
+        // under the pointer instead of lighting up, which is what a field does.
+        "group flex w-full items-center rounded-field border border-transparent bg-sidebar-accent/70 text-left text-body text-muted-foreground transition-[background-color,border-color,color] duration-fast ease-out-soft hover:border-sidebar-border hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+        collapsed ? "size-11 justify-center rounded-control px-0" : "h-9 gap-3 px-3 coarse:h-11"
+      )}
+      aria-label="Search"
+    >
+      <span className="flex size-5 shrink-0 items-center justify-center [&_svg]:size-4.5">
+        <SidebarMotionIcon kind="search" />
+      </span>
+      {!collapsed && <span className="min-w-0 flex-1 truncate">Search</span>}
+    </button>
+  );
+  if (!collapsed) return el;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex justify-center">{el}</div>
+      </TooltipTrigger>
+      <TooltipContent side="right">Search</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function NavRow({
   href,
@@ -1341,23 +1379,21 @@ function NavRow({
           className="absolute inset-0 -z-10 rounded-control bg-sidebar-accent"
         />
       )}
-      {/* A `size-4` BOX holding a `size-3.5` GLYPH, and the two numbers are
+      {/* A `size-5` BOX holding a `size-4.5` GLYPH, and the two numbers are
           doing different jobs.
 
-          The box is layout: 16px at `gap-2` is what puts every label in this
-          panel on one text edge, 32px from its row's edge, which the chat
-          bullets and the project tree's guide line also land on. Change it and
-          the column loses its alignment.
+          The box is layout: 20px at `gap-3` is what puts every label in this
+          panel on one text edge, 44px from the panel's edge, which the section
+          headings, the chat bullets and the project tree's guide line also land
+          on. Change it and the column loses its alignment.
 
-          The glyph is weight. It used to fill the box, which made it 16px
-          against a 13px label — a mark 23% larger than the word it labels, on
-          every row, so the column read as icon-led and the rows read as
-          chunky. That is what "the size looks bad" was pointing at. 14px sits
-          right against 13px type and is the size the product switch above
-          already uses, so the panel now has ONE glyph size instead of a switch
-          at 14 and a nav at 16. `size-3.5` has its own rung on the optical
-          stroke ladder in globals.css, so the stroke thins with it. */}
-      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-3.5">
+          The glyph is weight, and it is set BY the label rather than against
+          it. 18px under a 15px label is the same ratio 14px held under 13px —
+          the mark reads as the label's companion, not as its heading. Both
+          rungs exist: `4.5` is 18px in the spacing scale and has its own step
+          on the optical stroke ladder in globals.css, so the stroke thins to
+          match instead of a 24-viewBox weight being scaled down whole. */}
+      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
         {icon}
       </span>
       {!collapsed && (
@@ -1431,10 +1467,36 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // were set one weight HEAVIER than the chat titles they sit above, so the
     // furniture out-shouted the documents (docs/design/PREMIUM_AUDIT.md §2).
     // Selection is the tonal fill and the ink, as it already was.
-    "group relative flex h-9 w-full items-center rounded-control text-ui font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
-    // The rail: a 44px target around the same 16px glyph, so every icon is
-    // one tap and the row's tooltip names it.
-    collapsed ? "size-11 justify-center px-0" : "gap-2 px-2 coarse:h-11",
+    /*
+     * 36px tall at the `body` rung (15px). It was 36px at `ui` (13px) with
+     * 6px between rows, and the SIZE is what changed — not the room.
+     *
+     * This was measured against the reference rather than argued from it.
+     * Rendered at the same scale, Claude's sidebar runs a ~32px row pitch and
+     * Juno's ran 42 — so the panel that reads calmer is the TIGHTER one, and
+     * the intuition that produced 40px rows with 6px gaps (an early pass at
+     * this rework) took the column to 46 and made it worse. What Claude
+     * actually does is big type on close rows; Juno had it exactly backwards,
+     * small type on loose ones, and that inversion is what "it looks
+     * horrible" was pointing at. Type up two rungs, room down to none: 36px
+     * pitch, against the reference's 32 and the old 42.
+     *
+     * `body` and not an arbitrary 15px — it is the rung the product already
+     * reads prose at, so the panel now shares a size with the page instead
+     * of inventing a chrome-only one. A 36px row leaves 6px above and below
+     * a 24px line box, which is what keeps the selected row's fill off the
+     * word inside it; at 32 it hugs, which is the one thing the reference
+     * does that is worth not copying.
+     *
+     * `gap-3` with the 20px icon box below puts every label on a 44px text
+     * edge (12 padding + 20 + 12). That number is load-bearing: the section
+     * headings, the date folds, the chat bullets and the project tree's
+     * guide line all key to it, and they move with it in this same pass.
+     */
+    "group relative flex h-9 w-full items-center rounded-control text-body font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    // The rail: a 44px target around the glyph, so every icon is one tap and
+    // the row's tooltip names it.
+    collapsed ? "size-11 justify-center px-0" : "gap-3 px-3 coarse:h-11",
     // NO `bg-` on the active row: its fill is the travelling `motion.span`
     // inside it (see NavRow). Painting it here too would leave a hard-edged
     // copy of the fill sitting under the one that slides, so the old row's ink
@@ -1507,7 +1569,7 @@ function MoreFlyout({
       ];
   const anyActive = items.some((item) => item.active);
   const rowClass =
-    "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-ui font-medium text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+    "flex h-9 w-full items-center gap-3 rounded-control px-2.5 text-body font-normal text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
   // An open flyout takes the ACTIVE recipe, not a fill bolted on beside the
   // inactive one — otherwise `hover:bg-sidebar-accent/60` would win over it and
   // the trigger would go pale the moment the pointer reached the menu it opened.
@@ -1520,7 +1582,7 @@ function MoreFlyout({
       data-active={open ? "" : undefined}
       className={cn(navRowClass(collapsed, open), anyActive && !open && "text-foreground")}
     >
-      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
+      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
         <SidebarMotionIcon kind="more" />
       </span>
       {!collapsed && <span className="min-w-0 flex-1 truncate text-left">More</span>}
@@ -1561,7 +1623,7 @@ function MoreFlyout({
             }}
             className={cn(rowClass, item.active && "bg-accent font-semibold")}
           >
-            <SidebarMotionIcon kind={item.kind} className="size-4 text-muted-foreground" />
+            <SidebarMotionIcon kind={item.kind} className="size-4.5 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </Link>
         ))}
@@ -1575,7 +1637,7 @@ function MoreFlyout({
           }}
           className={rowClass}
         >
-          <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
+          <Archive className="size-4.5 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{isCode ? "Archived sessions" : "Archived chats"}</span>
         </button>
       </PopoverContent>
@@ -1658,29 +1720,29 @@ function Section({
           kind="row"
           onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
-          /* `pl-8`, not `px-2`: this heads a list, so its word belongs on the
-             same text edge as the rows under it. It sat at 16px while every
-             label in the panel sat at 40 — two section headings hanging out
-             into the gutter, which is the kind of misalignment you see
-             immediately and cannot name. 8px panel padding + 32px = 40. */
-          className="h-6 min-w-0 flex-1 select-none gap-1.5 border-0 pl-8 pr-2 py-0 hover:bg-sidebar-accent/60"
+          /* `pl-11`, not `px-2`: this heads a list, so its word belongs on the
+             same text edge as the rows under it. 12px panel padding + a 20px
+             icon box + a 12px gap = 44, which is where every label in the
+             column now sits. It tracked the old 32px edge and moves with it. */
+          className="h-7 min-w-0 flex-1 select-none gap-1.5 border-0 pl-11 pr-2 py-0 hover:bg-sidebar-accent/60"
         >
           {/*
-           * ONE SECTION VOICE, and this is it: sentence-case mono at the
-           * `label` rung. The panel used to speak two — 12px mono caps at
-           * 0.10em for Projects and Pinned, 11px sans for the Today /
-           * Yesterday folds — which is two headings of different sizes and
-           * different FAMILIES marking the same level of the same list. Both
-           * are this now, and it is the rung SettingsGroup and CardEyebrow
-           * head their sections with, so the product has one way of naming a
-           * group of rows rather than three.
+           * ONE SECTION VOICE, and it is SANS now: sentence-case at the `ui`
+           * rung, muted. It was mono at `label`, which is the eyebrow
+           * SettingsGroup and CardEyebrow head their sections with — right for
+           * a page, wrong for this column. Mono is a machine voice, and it is
+           * doing a machine's job everywhere else it appears in the product:
+           * naming a field, a digest, a state. Here it names a pile of the
+           * reader's own chats, six or more times down one panel, in a
+           * typeface different from every word under it.
            *
-           * `label` and not `micro`: PREMIUM_AUDIT reserves `micro` for
-           * machine metadata, at most once per surface, and this heading is
-           * painted six or more times down one panel. Chrome gets `ui` for
-           * rows and `label` for sections — that is the whole rule.
+           * The reference (Claude) sets these as quiet sans, one rung under the
+           * rows, and that is what they are: a label ON the list rather than an
+           * object beside it. `ui` rather than `label`, because the rows moved
+           * up to `body` — a heading has to stay a step below its rows, and
+           * `label` two steps down would have gone from quiet to squinting.
            */}
-          <span className="min-w-0 truncate font-mono text-label text-muted-foreground/70">{label}</span>
+          <span className="min-w-0 truncate text-ui font-medium text-muted-foreground">{label}</span>
           {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
               turn are on screen, so this is an A-to-B move. */}
           <ChevronDown
@@ -1694,7 +1756,7 @@ function Section({
         {action != null && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       <Disclosure open={!isCollapsed}>
-        <div className="space-y-1.5 pt-1.5">{children}</div>
+        <div className="space-y-0.5 pt-1">{children}</div>
       </Disclosure>
     </div>
   );
@@ -1874,18 +1936,19 @@ function ConversationRow({
   return (
     /*
      * One marker language down the whole list. The 22px icon well and its 15px
-     * chat bubble are gone; every chat is a 6px hollow bullet in a `size-4`
+     * chat bubble are gone; every chat is a 6px hollow bullet in a `size-5`
      * slot — the same mark the project tree already drew under a pinned
-     * project — so titles land on the panel's single 32px left inset and the
-     * bullet, not the type, carries selection: hollow at 50% at rest, solid
-     * `bg-current` when active. The title does NOT change weight on select;
+     * project — so titles land on the panel's single 44px left inset. The slot
+     * is what holds that edge; the bullet inside it is invisible at rest and
+     * solid `bg-current` when active, so a resting list is titles and nothing
+     * else. The title does NOT change weight on select;
      * `font-semibold` re-measured it and visibly re-truncated the row you had
      * just clicked.
      */
     <div
       data-active={active ? "" : undefined}
       className={cn(
-        "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+        "group relative flex h-8 items-center rounded-control pl-3 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
         nested && "ml-4",
         active
           ? "bg-sidebar-accent text-foreground"
@@ -1896,7 +1959,12 @@ function ConversationRow({
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        className="flex min-w-0 flex-1 items-center gap-2 text-ui font-normal"
+        /* `gap-3` against the `size-5` slot below: 12 + 20 + 12 puts the title
+           on the column's one 44px text edge, with the nav labels and the
+           section headings. A title is CONTENT in a column of chrome, so it
+           takes the same `body` rung the rows above it now read at — the panel
+           no longer has documents set smaller than its own furniture. */
+        className="flex min-w-0 flex-1 items-center gap-3 text-body font-normal"
         /* The run's sentence joins the title rather than replacing it: this
            attribute is also how a truncated title gets read, and a row that
            answered "what is this" with "Juno has asked you something" would
@@ -1910,14 +1978,24 @@ function ConversationRow({
             carrying selection — is not lost, because an active row is already
             a filled `bg-sidebar-accent` row; the bullet was the second way of
             saying that, and only for rows with nothing else to say. */}
-        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden={signal ? undefined : true}>
+        <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden={signal ? undefined : true}>
           {signal ? (
             <StatusDot tone={signal.tone} label={signal.label} />
           ) : (
             <span
               className={cn(
                 "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                active ? "bg-current opacity-100" : "opacity-50 group-hover:opacity-100"
+                // INVISIBLE AT REST. The bullet's job is to carry selection and
+                // to hold the slot a status dot drops into; at 50% on every
+                // resting row it was also drawing forty hollow rings down a
+                // column whose rows are otherwise just titles, which is the
+                // loudest thing in the panel once the type got big enough to
+                // read. The reference draws no mark at all on a recent chat.
+                //
+                // The SLOT stays, which is the whole trick: titles keep the
+                // column's one 44px text edge, and a run that needs you still
+                // arrives in place rather than shunting its row sideways.
+                active ? "bg-current opacity-100" : "opacity-0 group-hover:opacity-60"
               )}
             />
           )}
@@ -2059,13 +2137,13 @@ function ProjectRow({
           href={`/projects/${project.id}`}
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2 text-ui font-normal"
+          className="flex min-w-0 flex-1 items-center gap-3 text-body font-normal"
           title={project.name}
         >
           {/* The one glyph that survives in a list row, because its closed →
               open folder crossfade is the single glyph morph in this panel
               that carries meaning. */}
-          <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
+          <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
             <SidebarMotionIcon kind="projects" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
@@ -2126,10 +2204,13 @@ function ProjectRow({
       </div>
       {hasChats && (
         <Disclosure open={expanded}>
-          {/* The guide drops from the folder's REAL centre — `px-2` (8) plus
-              half of `size-4` (8) = 16px — instead of the arbitrary 21px it
-              used to be measured at, so `ml-4` is the whole geometry. */}
-          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
+          {/* The guide drops from the folder's REAL centre — the row's `pl-3`
+              (12) plus half of `size-5` (10) = 22px — so it stays under the
+              glyph it descends from rather than under an arbitrary inset.
+              `ml-[22px]` is off the spacing ladder on purpose: this is not a
+              spacing decision, it is an alignment to a computed centre, and
+              rounding it to `ml-5` or `ml-6` would visibly miss the folder. */}
+          <div className="ml-[22px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2.5">
             {visibleChats.map((c) => {
               const signal = signals.get(c.id);
               const label = c.title || "New chat";
@@ -2141,7 +2222,7 @@ function ProjectRow({
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
                 title={signal ? `${label} — ${signal.meaning}` : label}
                 className={cn(
-                  "group group/pc flex h-7 items-center gap-2 rounded-control px-2 text-ui font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+                  "group group/pc flex h-8 items-center gap-2.5 rounded-control px-2 text-body font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
                   activePath === `/chat/${c.id}`
                     ? "bg-sidebar-accent text-foreground"
                     : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
@@ -2151,7 +2232,7 @@ function ProjectRow({
                     folds: same slot, same 6px, never a second mark beside the
                     bullet (docs/design/PREMIUM_AUDIT.md rule 6). */}
                 <span
-                  className="flex size-4 shrink-0 items-center justify-center"
+                  className="flex size-4.5 shrink-0 items-center justify-center"
                   aria-hidden={signal ? undefined : true}
                 >
                   {signal ? (
@@ -2160,7 +2241,10 @@ function ProjectRow({
                     <span
                       className={cn(
                         "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                        activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
+                        // At rest, nothing — see the note on the same bullet in
+                        // ConversationRow. The guide line already says these
+                        // rows belong to the project above them.
+                        activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-0 group-hover/pc:opacity-60"
                       )}
                     />
                   )}
@@ -2175,11 +2259,12 @@ function ProjectRow({
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="flex h-7 w-full items-center gap-2 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent/60 hover:text-foreground motion-reduce:transition-none coarse:h-11"
+                className="flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent/60 hover:text-foreground motion-reduce:transition-none coarse:h-11"
               >
-                {/* An empty `size-4` slot, not an arbitrary 1.375rem inset, so
-                    this lands on the same left edge as the titles above it. */}
-                <span className="size-4 shrink-0" aria-hidden />
+                {/* An empty slot the width of the bullet's, not an arbitrary
+                    inset, so this lands on the same left edge as the titles
+                    above it. */}
+                <span className="size-4.5 shrink-0" aria-hidden />
                 {showAll ? "Show less" : `View all ${chats.length}`}
               </button>
             )}

@@ -246,7 +246,12 @@ function Segment({
         // `.pressable` carries the press dip AND the colour transitions (see
         // globals.css) — a `transition-colors` utility after it would override
         // the shorthand and un-animate the press.
-        "pressable group relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-control px-1.5",
+        // 36px, between the 40px destination rows below and the 32px this was.
+        // A control is allowed to sit a step under the places it switches
+        // between — that is what tells them apart — but two steps under reads
+        // as a leftover from a denser panel, which is what it became when the
+        // column moved to `h-10`.
+        "pressable group relative flex h-9 min-w-0 items-center justify-center gap-2 rounded-control px-2",
         "text-ui font-normal focus-visible:outline-offset-0 motion-reduce:active:scale-100",
         // 44px targets in the drawer, which is the only place this is touched.
         "coarse:h-11",
@@ -277,9 +282,9 @@ function Segment({
           segment is exactly as wide as an open one — a width change here would
           move the thumb for a reason that has nothing to do with the reader. */}
       {locked ? (
-        <Sparkles className="relative size-3.5 shrink-0" aria-hidden="true" />
+        <Sparkles className="relative size-4 shrink-0" aria-hidden="true" />
       ) : (
-        <SidebarMotionIcon kind={product.kind} className="relative size-3.5 shrink-0" />
+        <SidebarMotionIcon kind={product.kind} className="relative size-4 shrink-0" />
       )}
       {/* THE ONLY TRAILING MARK THIS SEGMENT EVER HAD IS GONE. It was a dot
           counting the Work items blocked on the reader, and it was the one

@@ -251,16 +251,20 @@ function PaletteShell({
       >
         <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
 
-        {/* Search — the palette's one input, given real presence (52px) rather
-            than the density of a list row. */}
+        {/* Search — the palette's one input, given real presence rather than
+            the density of a list row: `body-lg` (17px) on a 60px band, which
+            is the size the thing you are typing into should be when it is the
+            only field on a 560px overlay. It was `body` (15px), the same rung
+            as the results under it, so the field read as the first row of the
+            list rather than as the control that drives it. */}
         <div className="flex items-center gap-3 border-b border-border px-4">
-          <AppIcons.search className="size-4.5 shrink-0 text-muted-foreground" />
+          <AppIcons.search className="size-5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="w-full bg-transparent py-4 text-body outline-none placeholder:text-muted-foreground"
+            className="w-full bg-transparent py-4 text-body-lg outline-none placeholder:text-muted-foreground"
             aria-label={placeholder}
             role="combobox"
             aria-expanded="true"
@@ -339,14 +343,16 @@ function PaletteShell({
                       // padding off the index instead.
                       <div
                         aria-hidden="true"
-                        // The shell's eyebrow, not a fourth treatment for it.
-                        // Floating surfaces (onboarding, the announcement, this)
-                        // all set a group header as a mono uppercase label; this
-                        // one was 11px sans at /70, which is both off the scale and
-                        // under 4.5:1 on the black ground.
+                        // The SIDEBAR's section voice, which this list's rows
+                        // are a flat copy of: sentence-case sans at `ui`,
+                        // muted, one rung under the rows it heads. It was a
+                        // mono uppercase eyebrow — the treatment a settings
+                        // page heads its groups with — and a machine voice
+                        // over "Chats" and "Projects" is what made a list of
+                        // the reader's own things read as a console.
                         className={cn(
-                          "px-2.5 pb-1 font-mono text-label text-muted-foreground",
-                          i === 0 ? "pt-1.5" : "pt-3"
+                          "px-2.5 pb-1 text-ui font-medium text-muted-foreground",
+                          i === 0 ? "pt-2" : "pt-4"
                         )}
                       >
                         {c.group}
@@ -362,50 +368,49 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2 text-left text-ui transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        // `text-body` (15px) on a 40px row, matching the
+                        // sidebar this list is the search over. A result is the
+                        // reader's own chat or file, and it was being set two
+                        // rungs under the field that found it.
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2.5 text-left text-body transition-colors duration-fast ease-out-soft coarse:py-3",
                         // A two-line result row hangs its icon and trailing meta
                         // off the title, not off the centre of the pair.
                         c.snippet ? "items-start" : "items-center",
                         isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >
-                      {/* Icon tile — gives every row a consistent optical anchor
-                          and lets the active state read without moving anything.
-                          rounded-xs (6px): the row is rounded-menu (14px) and the
-                          tile sits 8px inside it, so the concentric answer is 14
-                          MINUS the inset — 6px, which is the `xs` rung exactly.
-                          (This sum previously ran off a 12px reading of
-                          `rounded-menu`; the ladder says 14.) */}
+                      {/* A PLAIN GLYPH, not a plated one. Every row used to
+                          carry a 28px bordered tile with its own fill, on the
+                          argument that it gave the row a consistent optical
+                          anchor and let the active state read without moving
+                          anything — both true, and both bought at the price of
+                          a list of the reader's own chats looking like a
+                          console. Ten rows meant ten bordered plates stacked
+                          down a 560px overlay, which is the single thing that
+                          made this surface read as heavy.
+                          The anchor survives: the glyph still sits in a fixed
+                          `size-5` slot, so every title lands on one text edge
+                          whether its row has a snippet or not. The active state
+                          survives too — the sliding highlight bar behind the
+                          row already carries it, and the ink goes to full
+                          strength on top. `mt-px` on a two-line row drops the
+                          glyph onto the title's optical centre rather than its
+                          box's. */}
                       <span
                         className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-xs border transition-colors duration-fast ease-out-soft",
-                          // `bg-foreground/10`, not a surface token: the tile has
-                          // to LIFT above the sliding highlight bar it sits on, and
-                          // no surface does that in both themes (--card is 99% on
-                          // light and 6.5% on dark, --background is now pure black,
-                          // i.e. 13 points BELOW the bar). An ink tint lifts off
-                          // whatever is underneath it either way. shadow-soft is
-                          // gone with it — black ink on black renders nothing, so
-                          // the border is what draws the edge here.
-                          //
-                          // At rest the tile takes the popover's recessed rung
-                          // whole. `bg-muted/50` composited to ~11.3% against a 13%
-                          // panel — under two points, which is the threshold below
-                          // which a fill is simply not there; the plate that gives
-                          // every row its optical anchor was missing on dark.
-                          isActive
-                            ? "border-border/70 bg-foreground/10 text-foreground"
-                            : "border-transparent bg-secondary text-muted-foreground"
+                          "flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft [&_svg]:size-4.5",
+                          c.snippet && "mt-px",
+                          isActive ? "text-foreground" : "text-muted-foreground"
                         )}
                       >
-                        <Icon className="size-4" />
+                        <Icon />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate">
                           <Marked text={c.label} marks={c.labelMarks ?? []} />
                         </span>
                         {c.snippet && (
-                          <span className="block truncate text-label leading-[1.45] text-muted-foreground">
+                          <span className="mt-0.5 block truncate text-ui leading-[1.45] text-muted-foreground">
                             <Marked text={c.snippet.text} marks={c.snippet.marks} />
                           </span>
                         )}
@@ -431,8 +436,15 @@ function PaletteShell({
 
         {/* `bg-secondary`, the popover's recessed rung, not `bg-muted/25`: that
             resolved to ~12.1% against a 13% panel, so the footer strip that is
-            supposed to sit BEHIND the list was the same colour as it. */}
-        <div className="flex items-center justify-between border-t border-border bg-secondary px-3.5 py-2.5 font-mono text-caption text-muted-foreground">
+            supposed to sit BEHIND the list was the same colour as it.
+
+            SANS, not mono. The keycaps are already mono — that is `Kbd`'s job
+            and it is the right one, since a key is a machine thing — but
+            "navigate", "open" and "close" are words, and setting them in the
+            keycap's typeface made a legend read as a terminal prompt. It is
+            the same mistake the group headers above were making, one strip
+            lower. */}
+        <div className="flex items-center justify-between border-t border-border bg-secondary px-3.5 py-2.5 text-caption text-muted-foreground">
           {footer}
         </div>
       </DialogContent>
@@ -505,7 +517,10 @@ function FilterChip({
       // chip now takes the popover's recessed rung whole and the pressed one an
       // ink tint, which is the only thing that lifts off a floating layer.
       className={cn(
-        "pressable shrink-0 rounded-full border px-2.5 py-1 text-caption coarse:min-h-11 coarse:px-3",
+        // `text-label` (12px) on a 28px pill, up from `caption` (11px) on 22.
+        // Eleven pixels is the rung PREMIUM_AUDIT keeps for machine metadata,
+        // and these are the controls that decide what the list contains.
+        "pressable inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-label coarse:min-h-11 coarse:px-3",
         active
           ? "border-border bg-foreground/10 text-foreground"
           : "border-transparent bg-secondary text-muted-foreground hover:text-foreground"
@@ -714,26 +729,48 @@ function SearchPalette() {
     );
   }, [result, trimmed]);
 
+  /*
+   * ONE STRIP, ONE LINE, and it scrolls.
+   *
+   * This was two stacked rows — eight type chips above, four date chips and a
+   * project Select below — which is thirteen controls in 64px directly under
+   * the field and directly above the results. Every one of them is a filter on
+   * a search you have not read yet, and together they were the reason this
+   * surface read as a console: you typed a word and were handed a control
+   * panel.
+   *
+   * They are one horizontally-scrolling row now, in the order you would reach
+   * for them — what kind of thing, then when, then which project. Nothing is
+   * removed and nothing is hidden behind a disclosure: a filter you cannot see
+   * is a filter you will not remember is on, and a stuck filter silently
+   * returning nothing is the worst failure this surface has. `no-scrollbar` is
+   * deliberately NOT used here, so the strip shows it continues.
+   */
   const filters = trimmed ? (
     <div className="border-b border-border/60 px-3 py-2">
-      <div role="group" aria-label="Filter by type" className="flex gap-1 overflow-x-auto pb-0.5">
-        <FilterChip active={type === "all"} onClick={() => setType("all")}>
-          Everything
-        </FilterChip>
-        {(Object.keys(SEARCH_TYPE_LABELS) as SearchType[]).map((t) => (
-          <FilterChip key={t} active={type === t} onClick={() => setType(t)}>
-            {SEARCH_TYPE_LABELS[t]}
+      <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+        <div role="group" aria-label="Filter by type" className="flex shrink-0 gap-1">
+          <FilterChip active={type === "all"} onClick={() => setType("all")}>
+            Everything
           </FilterChip>
-        ))}
-      </div>
-      <div className="mt-1.5 flex items-center gap-1">
-        <div role="group" aria-label="Filter by date" className="flex gap-1 overflow-x-auto">
+          {(Object.keys(SEARCH_TYPE_LABELS) as SearchType[]).map((t) => (
+            <FilterChip key={t} active={type === t} onClick={() => setType(t)}>
+              {SEARCH_TYPE_LABELS[t]}
+            </FilterChip>
+          ))}
+        </div>
+        {/* A hairline between the two groups, because "Everything · Chats · …"
+            and "Any time · Today · …" are two questions and a gap alone does
+            not say so at this chip spacing. */}
+        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+        <div role="group" aria-label="Filter by date" className="flex shrink-0 gap-1">
           {SEARCH_WINDOWS.map((w) => (
             <FilterChip key={w} active={dateWindow === w} onClick={() => setDateWindow(w)}>
               {SEARCH_WINDOW_LABELS[w]}
             </FilterChip>
           ))}
         </div>
+        {projects.length > 0 && <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />}
         {projects.length > 0 && (
           // The Radix Select, not a native <select>. This was the only OS popup
           // list in the app shell: its menu ignored --popover, the border tokens
@@ -748,15 +785,18 @@ function SearchPalette() {
             <SelectTrigger
               aria-label="Filter by project"
               // Deliberately overrides `.field-well` (select.tsx), which paints a
-              // fill and an inset shadow: this trigger is the sixth chip in a row
-              // of FilterChips, not a form field, so it takes their pill shape and
-              // their recessed-on-popover fill instead. `shadow-none` is what
+              // fill and an inset shadow: this trigger is the last chip in the
+              // strip, not a form field, so it takes the FilterChip pill shape,
+              // height and recessed-on-popover fill instead. It used to carry
+              // `ml-auto` to pin itself right in a two-row layout; in one
+              // scrolling row that would have pushed it past the chips it
+              // belongs beside. `shadow-none` is what
               // cancels the well's inset — a groove under a 24px pill reads as
               // damage — and it has to be a utility, because utilities are emitted
               // after the components layer and nothing else can beat that class
               // from a call site. The fill was `bg-muted/50`, which resolved to
               // ~11.3% on a 13% panel and so left the chip with no fill at all.
-              className="ml-auto size-auto max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-1 text-caption text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
+              className="h-7 max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-0 text-label text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
             >
               <SelectValue />
             </SelectTrigger>
@@ -808,29 +848,34 @@ function SearchPalette() {
   const emptyState = searching ? (
     <div className="space-y-1 p-1.5" aria-hidden="true">
       {[...Array(5)].map((_, i) => (
-        <div key={i} className="skeleton h-11 rounded-menu" style={staggerDelay(i, "tight")} />
+        <div key={i} className="skeleton h-12 rounded-menu" style={staggerDelay(i, "tight")} />
       ))}
     </div>
   ) : (
     <div className="px-3 py-10 text-center">
       {failed ? (
         <>
-          <p className="text-body text-muted-foreground">Search is unavailable right now.</p>
-          <p className="mt-1 text-caption text-muted-foreground">
+          <p className="text-body-lg text-foreground">Search is unavailable right now.</p>
+          <p className="mt-1.5 text-ui text-muted-foreground">
             Check your connection and try the search again.
           </p>
         </>
       ) : trimmed ? (
         <>
-          <p className="text-body text-muted-foreground">Nothing matches “{query}”.</p>
-          <p className="mt-1 text-caption text-muted-foreground">
+          <p className="text-body-lg text-foreground">Nothing matches “{query}”.</p>
+          <p className="mt-1.5 text-ui text-muted-foreground">
             Try fewer words, or widen the filters above.
           </p>
         </>
       ) : (
         <>
-          <p className="text-body text-muted-foreground">Search everything in Juno</p>
-          <p className="mt-1 text-caption text-muted-foreground">
+          {/* The one sentence on an otherwise empty 560px overlay, so it is
+              foreground ink at the reading rung rather than a muted line: at
+              `text-body text-muted-foreground` the prompt that tells you what
+              this surface can find was quieter than the placeholder in the
+              field above it. */}
+          <p className="text-body-lg text-foreground">Search everything in Juno</p>
+          <p className="mt-1.5 text-ui text-muted-foreground">
             Chats and their messages, projects, files, artifacts, memories and tasks.
           </p>
         </>
