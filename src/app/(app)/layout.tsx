@@ -3,7 +3,7 @@ import { requireUser, getSessionBan } from "@/lib/session";
 import { getAppBootstrap } from "@/lib/app-data";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
-import { SettingsModal } from "@/components/settings/settings-modal";
+import { SettingsModalLazy } from "@/components/settings/settings-modal-lazy";
 import { KatexStyles } from "@/components/ui/katex-styles";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           the content column voice runs in, so it is mounted inside <main> by
           `AppShell`. */}
       <AppShell>{children}</AppShell>
-      <SettingsModal />
+      <SettingsModalLazy />
     </AppProvider>
   );
 }

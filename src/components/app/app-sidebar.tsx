@@ -100,9 +100,13 @@ import type { ClientConversation } from "@/types/chat";
  * toggle says nothing, and this is the control people arrive looking for.
  * It is a BUTTON wearing a field — one search surface, one caret.
  *
- * THE DENSITY LADDER, and nothing off it. Rows are `h-10` (40px) carrying
+ * THE DENSITY LADDER, and nothing off it. Rows are `h-8` (32px) carrying
  * `text-body` (15px) and a `size-5` box holding a `size-4.5` glyph at
- * `gap-3`, so every label in the panel starts 44px from its edge.
+ * `gap-2.5`, so every label in the panel starts 46px from its edge and its
+ * glyph 16px. Section headings, date folds and conversation titles sit on the
+ * OTHER edge, 16px, because none of them has a glyph in front of it — see the
+ * note on `Section`. Every one of these numbers was measured off the reference
+ * rather than chosen; the table is in the row recipe's own comment.
  *
  * Those numbers ARE the rework. The panel was `h-9`/`text-ui`/`size-3.5` at
  * `gap-2` on a 32px edge, and every step to it is defensible on its own —
@@ -690,29 +694,45 @@ export function AppSidebar({
           )}
           <motion.div layout="position" transition={layoutTransition} className="min-w-0 flex-1">
             <Link
-              href="/chat"
+              href={isCode ? "/code" : "/chat"}
               onClick={() => setSidebarOpen(false)}
-              aria-label="Juno home"
+              aria-label={isCode ? "Juno Code home" : "Juno home"}
               className={cn(
-                "group/brand flex items-center gap-2 rounded-control",
+                "group/brand flex items-center rounded-control",
                 collapsed ? "size-11 justify-center" : "h-9"
               )}
             >
-              <JunoMark className="size-5 shrink-0" />
-              <AnimatePresence initial={false}>
-                {!collapsed && (
-                  <motion.span
-                    key="wordmark"
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: "auto" }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={reduceMotion ? { duration: 0 } : transition.fast}
-                    className="overflow-hidden whitespace-nowrap font-sans text-body-lg font-semibold tracking-[-0.02em] text-foreground"
-                  >
-                    Juno
-                  </motion.span>
-                )}
-              </AnimatePresence>
+              {/*
+               * THE WORDMARK IS TYPE, not a mark plus a word.
+               *
+               * The drawn glyph is gone from the expanded panel. A logo beside
+               * the name says the same thing twice in a column whose whole job
+               * is to be quiet, and it was the only drawn object above a list
+               * of text. Set instead — serif, 600 — the name is the one place
+               * in the interface that is allowed a voice, which is what the
+               * greeting's Newsreader is already doing forty pixels to the
+               * right of it.
+               *
+               * It names the PRODUCT you are in: "Juno" in Chat, "Juno Code" in
+               * Code. The switcher beside it says which one is selected; the
+               * wordmark says which one you are reading, and between them there
+               * is no moment where the column is ambiguous about it. "Code" is
+               * not dimmed — it is part of a name, not a qualifier on one.
+               *
+               * The mark survives at the RAIL, where 64px has no room for a
+               * word and the panel would otherwise lose its way home entirely.
+               */}
+              {collapsed ? (
+                <JunoMark className="size-5 shrink-0" />
+              ) : (
+                <motion.span
+                  layout="position"
+                  transition={layoutTransition}
+                  className="overflow-hidden whitespace-nowrap font-serif text-body-lg font-semibold tracking-[-0.01em] text-foreground"
+                >
+                  Juno{isCode ? " Code" : ""}
+                </motion.span>
+              )}
             </Link>
           </motion.div>
           {/* The ONE product switch in the shell. Expanded it is this 28px

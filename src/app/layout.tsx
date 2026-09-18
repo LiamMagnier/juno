@@ -15,14 +15,22 @@ import { getRequestLocale } from "@/lib/i18n-server";
 // comes from weight, measure and spacing rather than switching to an
 // editorial font.
 // JetBrains Mono stays for labels/metadata + the dot/ASCII signature layer.
-// Newsreader is the one human moment — the empty-chat greeting — and is loaded
-// in roman and italic so the name can be set in true italics, not a slant.
+// Newsreader carries the two human moments — the empty-chat greeting and the
+// wordmark — and is loaded in roman and italic so the name can be set in true
+// italics, not a slant.
 //
 // `weight` is stated on each: without it next/font ships the whole variable
 // axis, and the three faces together were the largest thing a signed-out
 // visitor downloaded. The interface uses exactly regular, medium and semibold
-// (bold appears at four sites and is a rendering of 600 here); the serif is
-// set at 400 and 500 only; the mono at 400/500 plus the odd 600 badge.
+// (bold appears at four sites and is a rendering of 600 here); the mono at
+// 400/500 plus the odd 600 badge.
+//
+// The serif gained 600 when the wordmark became type rather than a mark. It is
+// one more file on first paint, and it buys the only place in the product
+// where the name is SET rather than drawn — so it is the one weight that has
+// to be right. 600 and not 700 because 600 is what "bold" already resolves to
+// everywhere else here; a 700 wordmark over a 600 interface would be the
+// heaviest thing on the page by a step nothing else uses.
 const sans = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
@@ -31,7 +39,7 @@ const sans = Inter({
 });
 const serif = Newsreader({
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   variable: "--font-serif",
   display: "swap",

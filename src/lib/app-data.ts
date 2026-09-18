@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
-import { getQuota } from "@/lib/usage";
+import { getQuota, planFromAccount } from "@/lib/usage";
 import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { effectiveBudget } from "@/lib/spend-ceiling";
 import { env, isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
@@ -28,18 +28,50 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     settings = await prisma.settings.findUnique({ where: { userId: user.id } });
   }
 
-  const [quota, conversations, folders, account] = await Promise.all([
-    getQuota(user.id),
+  /*
+   * ONE READ OF THE ACCOUNT, not three.
+   *
+   * This block used to issue three separate queries for one user: `getQuota`
+   * called `getUserPlan`, which reads User joined to Subscription; then a
+   * second `user.findUnique` for name/image; then a third round trip for the
+   * Subscription row again, SEQUENTIALLY, after the Promise.all had already
+   * settled. Measured on a warm local build, a single navigation to /chat
+   * issued 20 SQL round trips, and these were three of them.
+   *
+   * On a database in the same process that is free, which is why it survived.
+   * On a hosted one at 20-40ms per round trip it is most of the answer to
+   * "switching modes is slow" — and the sequential subscription read was the
+   * worst of the three, because a serial query costs its latency in full while
+   * parallel ones overlap.
+   *
+   * So: one query that carries name, image, email and the subscription, and
+   * the plan derived from what is already in hand rather than re-read.
+   * `getUserPlan` is `cache()`d as well (usage.ts), which covers the callers
+   * further down that legitimately cannot be handed a plan.
+   */
+  const account = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: {
+      // From the DB, not the JWT, so a profile-picture change shows everywhere.
+      name: true,
+      image: true,
+      email: true,
+      subscription: {
+        select: { plan: true, status: true, createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
+      },
+    },
+  });
+  const subscription = account?.subscription ?? null;
+  const plan = planFromAccount(account?.email ?? null, subscription);
+
+  const [quota, conversations, folders] = await Promise.all([
+    // The plan is passed, so `getQuota` does not re-derive it — that is the
+    // User+Subscription join above, a second time.
+    getQuota(user.id, plan),
     listConversations(user.id),
     prisma.folder.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } }),
-    // Read name/image from the DB (not the JWT) so profile-picture changes show everywhere.
-    prisma.user.findUnique({ where: { id: user.id }, select: { name: true, image: true } }),
   ]);
 
-  const subscription = await prisma.subscription.findUnique({
-    where: { userId: user.id },
-    select: { createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
-  });
   const period = billingPeriodFor(subscription);
   // The settings row is already in hand, so the effective ceiling costs nothing
   // extra here — and passing it to both calls keeps the gate and the meters
@@ -51,7 +83,11 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     eurPerUsd: eurPerUsd(),
   });
   const [budget, windows] = await Promise.all([
-    checkBudget(user.id, quota.plan, period, effective),
+    // `reap: false` — the bootstrap is a READ that paints two meters, and the
+    // reservation sweep it used to trigger is a findMany plus a serial loop of
+    // write transactions on every single page render. The sweep stays on the
+    // paths that are about to spend; the argument is on the option itself.
+    checkBudget(user.id, quota.plan, period, effective, { reap: false }),
     getUsageWindows(user.id, effective.budgetMicroUsd, period),
   ]);
 

@@ -46,7 +46,11 @@ const pressableVariants = cva(
       kind: {
         // Every kind carries a 1px border (transparent where flat) so a
         // surface arriving on hover or selection never changes the box size.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-2 text-left text-ui text-foreground/90 hover:bg-accent hover:text-accent-foreground",
+        // On the shell's grid: `text-body` at `gap-2.5`, like every other list
+        // row in the product. It was `text-ui` on `py-2` with no fixed height,
+        // which is what left the settings rail and every other caller of this
+        // primitive a rung of type below the sidebar that opens them.
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.

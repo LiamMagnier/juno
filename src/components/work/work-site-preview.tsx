@@ -22,7 +22,7 @@ import {
 import {
   describePreviewOmissions,
   type SpreadsheetPreview,
-} from "@/lib/work/deliverables/spreadsheet-preview";
+} from "@/lib/work/deliverables/spreadsheet-preview-shape";
 
 /*
  * LOOKING AT WHAT A RUN PRODUCED, WITHOUT DOWNLOADING IT.

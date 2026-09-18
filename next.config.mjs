@@ -53,6 +53,30 @@ function storageImagePatterns() {
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  /*
+   * THE CLIENT ROUTER CACHE, turned back on.
+   *
+   * Next 15 changed the default for dynamic routes to `staleTimes.dynamic: 0`,
+   * which means a client-side navigation to a route it rendered three seconds
+   * ago is re-fetched from the server in full. Every route in this app is under
+   * a `force-dynamic` layout, so that default applies to all of them — and the
+   * one navigation people make constantly is Chat → Code → Chat.
+   *
+   * Measured on a warm local build with the database in the same process, a
+   * mode switch took 110-210ms and issued 16-20 SQL round trips. On a hosted
+   * Postgres at 20-40ms per round trip, that is most of a second of nothing,
+   * every time, for a screen the browser was showing a moment earlier.
+   *
+   * 30 seconds, not longer: this is the window in which a bounce back to the
+   * mode you just left is free. Past it the data is re-fetched, so a routine
+   * that fired or a session that finished still appears on the next visit
+   * rather than being hidden behind a stale shell. Anything that must be live
+   * NOW — a streaming reply, the sidebar's run signals — already arrives over
+   * its own channel and does not go through this cache.
+   */
+  experimental: {
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   // bcryptjs is pure JS but we keep it external to the server bundle to avoid
   // any bundler edge cases with its dynamic requires.
   serverExternalPackages: ["bcryptjs"],

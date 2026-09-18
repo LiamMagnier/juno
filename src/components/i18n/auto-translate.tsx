@@ -1,13 +1,37 @@
 "use client";
 
 import * as React from "react";
-import { UI_TRANSLATION_CATALOG } from "@/lib/i18n-catalog.generated";
 import { directionOf, languageOf, localeFromAcceptLanguage } from "@/lib/i18n";
 
-type CatalogItem = (typeof UI_TRANSLATION_CATALOG)[number];
+type CatalogItem = { id: string; source: string };
 
-const sourceCatalog = new Map<string, CatalogItem>(UI_TRANSLATION_CATALOG.map((item) => [item.source, item]));
-const knownIds = new Set<string>(UI_TRANSLATION_CATALOG.map((item) => item.id));
+/**
+ * THE CATALOG IS NOT IN THIS BUNDLE ANY MORE.
+ *
+ * `UI_TRANSLATION_CATALOG` is 4,644 generated entries — ~326 KB raw, ~131 KB
+ * gzipped — and it was imported at module scope here, in a `"use client"`
+ * component mounted by the ROOT layout. So every visitor to every page
+ * downloaded it, parsed it, and built two hash tables from it (~9,300 inserts)
+ * before anything could hydrate.
+ *
+ * The effect below already bails out four lines in for an English locale,
+ * which is most sessions. It just bailed out AFTER the cost had been paid,
+ * because a module-scope `new Map(...)` runs on import and an import runs
+ * whatever the component decides afterwards.
+ *
+ * Now it is fetched with `await import()` on the far side of that bail-out.
+ * A reader who needs translation waits one extra chunk — on a path that is
+ * already about to make network calls for the translations themselves — and
+ * everyone else never sees it at all.
+ */
+let catalogPromise: Promise<{ sourceCatalog: Map<string, CatalogItem>; knownIds: Set<string> }> | null = null;
+function loadCatalog() {
+  catalogPromise ??= import("@/lib/i18n-catalog.generated").then((m) => ({
+    sourceCatalog: new Map<string, CatalogItem>(m.UI_TRANSLATION_CATALOG.map((item) => [item.source, item])),
+    knownIds: new Set<string>(m.UI_TRANSLATION_CATALOG.map((item) => item.id)),
+  }));
+  return catalogPromise;
+}
 const TRANSLATABLE_ATTRIBUTES = ["aria-label", "alt", "placeholder", "title"] as const;
 const EXCLUDED_SELECTOR = [
   "[data-no-auto-translate]",
@@ -80,6 +104,21 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
     document.documentElement.dir = directionOf(activeLocale);
     if (languageOf(activeLocale) === "en") return;
 
+    // Everything from here on needs the catalog, so it is fetched once and the
+    // rest of the effect runs inside. `stopped` is checked on the far side of
+    // the await: an unmount during the fetch must not start a scanner.
+    let cancelled = false;
+    let teardown: (() => void) | null = null;
+    void loadCatalog().then(({ sourceCatalog, knownIds }) => {
+      if (cancelled) return;
+      teardown = start(sourceCatalog, knownIds);
+    });
+    return () => {
+      cancelled = true;
+      teardown?.();
+    };
+
+    function start(sourceCatalog: Map<string, CatalogItem>, knownIds: Set<string>) {
     const storageKey = `juno:ui-translations:${activeLocale}:v1`;
     const translations = new Map<string, string>();
     const pending = new Set<string>();
@@ -226,11 +265,13 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
       attributeFilter: [...TRANSLATABLE_ATTRIBUTES],
     });
 
+    // `start`'s own teardown, handed back to the effect's cleanup above.
     return () => {
       stopped = true;
       observer.disconnect();
       if (scanTimer) clearTimeout(scanTimer);
     };
+    }
   }, [locale, autoDetect]);
 
   return null;

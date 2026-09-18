@@ -38,37 +38,33 @@
  */
 
 import { Workbook } from "exceljs";
+import {
+  PREVIEW_MAX_SHEETS,
+  PREVIEW_MAX_ROWS,
+  PREVIEW_MAX_COLUMNS,
+  PREVIEW_MAX_CELL_CHARS,
+  type SpreadsheetPreview,
+  type SpreadsheetPreviewSheet,
+} from "./spreadsheet-preview-shape";
 
-/** How many sheets a preview carries. Beyond this it names the rest. */
-export const PREVIEW_MAX_SHEETS = 8;
-/** Rows per sheet, header included. */
-export const PREVIEW_MAX_ROWS = 200;
-/** Columns per sheet. */
-export const PREVIEW_MAX_COLUMNS = 40;
-/**
- * Characters per cell in the preview.
- *
- * Far below Excel's own 32,767. A cell holding a page of text is legitimate in
- * the file and unreadable in a table row, and sending a hundred of them is how
- * a "preview" becomes a larger download than the document.
+/*
+ * The contract moved to `./spreadsheet-preview-shape`, and the reason is on
+ * that file: a `"use client"` component wanted the TYPE from here, the bundler
+ * followed the module edge, and exceljs — a Node workbook writer — landed in
+ * the browser bundle of /chat at 911 KB. Re-exported so every existing import
+ * of this module still resolves; anything that only needs the shape should
+ * import the shape module directly, and a client component MUST.
  */
-export const PREVIEW_MAX_CELL_CHARS = 200;
+export {
+  PREVIEW_MAX_SHEETS,
+  PREVIEW_MAX_ROWS,
+  PREVIEW_MAX_COLUMNS,
+  PREVIEW_MAX_CELL_CHARS,
+  describePreviewOmissions,
+  type SpreadsheetPreviewSheet,
+  type SpreadsheetPreview,
+} from "./spreadsheet-preview-shape";
 
-export interface SpreadsheetPreviewSheet {
-  name: string;
-  /** Cells as text, already truncated. Ragged rows are padded by the renderer. */
-  rows: string[][];
-  /** Rows in the sheet beyond the ones carried here. */
-  omittedRows: number;
-  /** Columns in the sheet beyond the ones carried here. */
-  omittedColumns: number;
-}
-
-export interface SpreadsheetPreview {
-  sheets: SpreadsheetPreviewSheet[];
-  /** Sheets in the workbook beyond the ones carried here. */
-  omittedSheets: number;
-}
 
 /**
  * One cell as the reader would see it, not as it is stored.
@@ -161,22 +157,3 @@ export async function buildSpreadsheetPreview(bytes: Uint8Array): Promise<Spread
   return { sheets, omittedSheets: Math.max(0, worksheets.length - sheets.length) };
 }
 
-/**
- * What a reader is told about what the preview left out.
- *
- * One sentence or none — never a row of counters. Pure and exported so the
- * wording is pinned by a test rather than by whoever last edited the component.
- */
-export function describePreviewOmissions(sheet: SpreadsheetPreviewSheet): string | null {
-  const parts: string[] = [];
-  if (sheet.omittedRows > 0) {
-    parts.push(sheet.omittedRows === 1 ? "1 more row" : `${sheet.omittedRows} more rows`);
-  }
-  if (sheet.omittedColumns > 0) {
-    parts.push(
-      sheet.omittedColumns === 1 ? "1 more column" : `${sheet.omittedColumns} more columns`
-    );
-  }
-  if (parts.length === 0) return null;
-  return `${parts.join(" and ")} in the file. Download it to see everything.`;
-}

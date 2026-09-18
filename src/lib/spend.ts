@@ -567,7 +567,25 @@ export async function checkBudget(
   userId: string,
   plan: Plan,
   period?: BillingPeriod | null,
-  budget?: EffectiveBudget
+  budget?: EffectiveBudget,
+  options: {
+    /**
+     * Sweep expired reservations before summing the holds. Default true.
+     *
+     * A reservation is a hold placed while work runs and released when it
+     * settles; the sweep exists so a crashed run's hold does not count against
+     * the account for ever. It is a `findMany` plus, for anything it finds, a
+     * SERIAL loop of write transactions — and it was running on every render of
+     * the `force-dynamic` app layout, i.e. on every page load and every
+     * `router.refresh()`, for a READ that only wants to display a meter.
+     *
+     * The sweep belongs on the paths that are about to SPEND, where a stale
+     * hold would wrongly refuse real work: `reserveSpend`, `checkUsageWindows`
+     * and the runner's own checks all keep it. A gauge in the sidebar reading
+     * a hold that is thirty seconds stale is not a problem anyone can see.
+     */
+    reap?: boolean;
+  } = {}
 ): Promise<BudgetStatus> {
   const eff = budget ?? (await resolveEffectiveBudget(userId, plan));
   if (eff.budgetMicroUsd == null) {
@@ -585,7 +603,7 @@ export async function checkBudget(
   const budgetMicroUsd = eff.budgetMicroUsd;
   const p = period ?? (await resolveBillingPeriod(userId));
   const since = p ? new Date(p.startMs) : new Date(Date.now() - REFERENCE_MONTH_MS);
-  if (p) await expireStaleSpendReservations(userId);
+  if (p && options.reap !== false) await expireStaleSpendReservations(userId);
   const [spentMicroUsd, reservedMicroUsd] = await Promise.all([
     spendSinceMicroUsd(userId, since),
     p ? openReservedMicroUsd(userId, p) : Promise.resolve(0),

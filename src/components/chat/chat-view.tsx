@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { GitFork, GripVertical, Loader2 } from "lucide-react";
@@ -19,7 +20,24 @@ import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { StarterChips } from "@/components/chat/starter-chips";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
-import { CanvasPanel } from "@/components/canvas/canvas-panel";
+/*
+ * THE CANVAS AND THE VOICE PANEL ARE LOADED WHEN THEY OPEN, not before.
+ *
+ * Both are conditionally RENDERED already — the canvas only exists when an
+ * artifact is open, the voice panel only when a call is running — but a static
+ * import is not a conditional, so both were downloaded and compiled on every
+ * /chat load. The canvas pulls the whole design editor (~234 KB raw); between
+ * them they are most of what the Code → Chat switch had to fetch before it
+ * could paint.
+ *
+ * `ssr: false` on both: neither renders on the server (the canvas reads the
+ * window, the voice panel holds a live connection), so there is no HTML to
+ * match and nothing is lost by deferring them to the click that opens them.
+ */
+const CanvasPanel = nextDynamic(
+  () => import("@/components/canvas/canvas-panel").then((m) => m.CanvasPanel),
+  { ssr: false },
+);
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
@@ -38,7 +56,10 @@ import { describeFailure } from "@/components/work/composer-home/start-attempt";
 import type { DelegateInput } from "@/components/chat/composer";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
-import { RealtimeVoice } from "@/components/voice/realtime-voice";
+const RealtimeVoice = nextDynamic(
+  () => import("@/components/voice/realtime-voice").then((m) => m.RealtimeVoice),
+  { ssr: false },
+);
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";

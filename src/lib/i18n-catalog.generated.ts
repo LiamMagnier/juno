@@ -6174,10 +6174,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "1. Objet"
   },
   {
-    "id": "5807ac61a8785b9a",
-    "source": "Juno home"
-  },
-  {
     "id": "580f9427c0745711",
     "source": "counter-evidence"
   },

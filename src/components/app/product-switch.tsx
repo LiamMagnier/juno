@@ -354,10 +354,13 @@ function RailItem({
           )}
         >
           {/* Byte-identical to NavRow's glyph box, so the rail is one optical
-              rhythm from the products down to the footer. */}
-          <span className="flex size-[22px] items-center justify-center">
+              rhythm from the products down to the footer — which the comment
+              claimed while the box passed no size, letting SidebarMotionIcon
+              fall back to its own `size-4` (16px) directly above nav glyphs at
+              18. `[&_svg]:size-4.5` is what makes the sentence true. */}
+          <span className="flex size-5 items-center justify-center [&_svg]:size-4.5">
             {locked ? (
-              <Sparkles className="size-4" aria-hidden="true" />
+              <Sparkles aria-hidden="true" />
             ) : (
               <SidebarMotionIcon kind={product.kind} />
             )}

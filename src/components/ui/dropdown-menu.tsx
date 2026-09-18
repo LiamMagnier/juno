@@ -27,8 +27,20 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 const menuShell =
   "surface-float overlay-glass z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain";
 
+/*
+ * ON THE SHELL'S GRID, which is the whole point of there being one.
+ *
+ * The sidebar and the command palette were rebuilt on measured numbers — a
+ * glyph 16px from the surface's edge, its label at 46, rows at `text-body`.
+ * This recipe did not move, so every dropdown in the product — including the
+ * kebab on a sidebar row, which opens two pixels from the column it disagrees
+ * with — put its glyph at 14 and its label at 38, one rung of type smaller.
+ *
+ * `p-1.5` (6) on the content + `px-2.5` (10) here = 16 to the glyph; a `size-5`
+ * slot + `gap-2.5` = 46 to the label. Same two numbers, same arithmetic.
+ */
 const menuItem =
-  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-control px-2 py-1.5 text-ui outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
+  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-body outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4.5 [&_svg]:shrink-0";
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
