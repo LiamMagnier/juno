@@ -382,6 +382,15 @@ export interface ActivityEntry {
   batch: ActivityClass | null;
   /** The plan step this fell under, when the executor named one. */
   step: string | null;
+  /**
+   * The delegated child that did this, in the words its parent briefed it with.
+   *
+   * Null for everything the run did itself, which is most rows. A run that
+   * delegates interleaves its own calls with a child's, and a feed that shows
+   * them as one voice is a record of a task nobody can reconstruct afterwards —
+   * which is exactly why the executor attributes each event to an agent.
+   */
+  agent: string | null;
   title: string;
   detail: string | null;
   tone: EntryTone;
@@ -415,6 +424,27 @@ const RENDERED_ELSEWHERE = new Set<WorkEventKind>(["plan_created", "plan_updated
 export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntry[] {
   const entries: ActivityEntry[] = [];
   const open: ActivityEntry[] = [];
+
+  /*
+   * What to call each child, read off the `subagent_update` rows first.
+   *
+   * A whole pass before the loop because a child's tool calls carry its
+   * `agentId` and nothing else, and the name its parent gave it is on the row
+   * announcing it started — which is earlier in the stream, but only because
+   * the executor emits it that way, and a feed that renders correctly only
+   * while that holds is a feed that breaks on the first reordering.
+   */
+  const agentNames = new Map<string, string>();
+  for (const event of events) {
+    if (event.kind !== "subagent_update") continue;
+    const title = str(readEvent(event), "title");
+    const id = event.agentId ?? str(readEvent(event), "agentId");
+    if (id !== null && title !== null) agentNames.set(id, title);
+  }
+  const agentOf = (event: ClientWorkEvent): string | null =>
+    event.agentId === null || event.agentId === undefined
+      ? null
+      : (agentNames.get(event.agentId) ?? "A sub-agent");
 
   /**
    * The start this ending belongs to.
@@ -467,6 +497,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         tool: str(payload, "tool", "name"),
         batch: classifyCall(payload),
         step,
+        agent: agentOf(event),
         title: str(payload, "summary", "title") ?? toolPresentLabel(str(payload, "tool", "name")),
         detail: toolPurpose(payload),
         tone: "normal",
@@ -517,6 +548,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         tool: str(payload, "tool", "name"),
         batch: classifyCall(payload),
         step,
+        agent: agentOf(event),
         title: described.title,
         detail: toolOutcome(payload, event.kind) ?? described.detail,
         tone,
@@ -561,6 +593,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         tool: null,
         batch: null,
         step: closing,
+        agent: agentOf(event),
         title: `${status === "skipped" ? "Skipped" : "Couldn’t finish"}: ${described.title}`,
         detail: described.detail,
         tone: status === "failed" ? "bad" : "warning",
@@ -582,6 +615,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
       tool: null,
       batch: null,
       step,
+      agent: agentOf(event),
       title: described.title,
       detail: described.detail,
       // What is left of `step_started` here is a Mac progress line — a note
@@ -1084,6 +1118,17 @@ function ActivityRow({
         </span>
       </div>
 
+      {/* Who did it, when it was not the run itself. Under the title rather
+          than in it, because the title is the thing that happened and this is a
+          note about whose hands it happened in — and suppressed where the two
+          are the same string, which is the child's own start and end rows. */}
+      {entry.agent !== null && entry.agent !== entry.title && (
+        <p className="mt-0.5 flex items-center gap-1 font-mono text-micro text-muted-foreground">
+          <Bot className="size-3 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">{entry.agent}</span>
+        </p>
+      )}
+
       {entry.detail !== null && (
         <p className="mt-0.5 break-words font-mono text-micro leading-relaxed text-muted-foreground">
           {entry.detail}
@@ -1485,7 +1530,11 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
     }
     case "subagent_update":
       return {
-        title: str(payload, "title", "agentId") ?? "A sub-agent reported in",
+        // Deliberately not falling back to `agentId`: it is a random
+        // identifier, and a timeline row headed `a1b2c3d4` is a row nobody can
+        // read. The two Swift views refuse it for the same reason, and the
+        // event's docblock says all three do.
+        title: str(payload, "title") ?? "A sub-agent reported in",
         detail: str(payload, "status", "summary"),
         tone: "quiet",
         icon: Bot,

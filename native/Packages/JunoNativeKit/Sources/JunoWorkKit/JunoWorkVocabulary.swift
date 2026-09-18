@@ -39,6 +39,10 @@ public enum JunoWorkVocabulary {
         case "file_details": return "Checking a file"
         case "apply_changes": return "Making changes to your files"
         case "permanently_delete": return "Deleting files for good"
+        // `browser` is the cloud's own headless page; `browser_control` is the
+        // Mac driving the browser you are signed into. Two capabilities, two
+        // sentences.
+        case "browser": return "Using a web page"
         case "browser_control": return "Using your browser"
         case "app_control": return "Using an app on your Mac"
         case "screen_control": return "Working on your screen"
@@ -58,6 +62,7 @@ public enum JunoWorkVocabulary {
         case "file_details": return "Checked a file"
         case "apply_changes": return "Changed your files"
         case "permanently_delete": return "Deleted files for good"
+        case "browser": return "Used a web page"
         case "browser_control": return "Used your browser"
         case "app_control": return "Used an app on your Mac"
         case "screen_control": return "Worked on your screen"
@@ -73,6 +78,7 @@ public enum JunoWorkVocabulary {
         switch name {
         case "apply_changes": return "Change files"
         case "permanently_delete": return "Delete permanently"
+        case "browser": return "Use a web page"
         case "browser_control": return "Use your browser"
         case "app_control": return "Use an app"
         case "screen_control": return "Control your screen"

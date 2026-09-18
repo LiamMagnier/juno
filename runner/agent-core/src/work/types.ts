@@ -652,6 +652,30 @@ export interface WorkReport {
 }
 
 // ---------------------------------------------------------------------------
+// Delegation
+// ---------------------------------------------------------------------------
+
+/**
+ * What a `subagent_update` says about the child it names.
+ *
+ * Not in the mirrored block above and deliberately not added to it. The kind
+ * `subagent_update` is already in `WORK_EVENT_KINDS` and already in the
+ * generated contract, and every client reads the payload's `status` as a plain
+ * string it shows beside the title — the web timeline and both native Work
+ * views do exactly that. So these four values are a runtime vocabulary, not a
+ * contract one: a client that has never heard of `cancelled` renders the word
+ * rather than failing to decode the event, which is the property that makes
+ * adding one safe and would not be true of a new event KIND.
+ *
+ * They are the four the Code path's `SubagentStatus` uses for the same states,
+ * minus the ones that cannot happen here: a Work child has no worktree to
+ * prepare, never queues behind another child, and does not outlive the process.
+ */
+export const WORK_SUBAGENT_STATUSES = ['running', 'completed', 'failed', 'cancelled'] as const;
+
+export type WorkSubagentStatus = (typeof WORK_SUBAGENT_STATUSES)[number];
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
@@ -703,6 +727,23 @@ export type WorkEvent =
   | { kind: 'artifact_created'; artifact: WorkArtifactRef }
   | { kind: 'artifact_updated'; artifact: WorkArtifactRef }
   | { kind: 'source_cited'; citation: WorkCitation }
+  /*
+   * A delegated child, as it starts and as it ends.
+   *
+   * The field names are not free: `title` and `status` are what the three Work
+   * surfaces already read out of this payload (`work-timeline.tsx`,
+   * `DesktopWorkWorkspace.swift`, `JunoMobileWorkView.swift`), each of them
+   * falling back to `summary` for the detail line and refusing to put the bare
+   * `agentId` in the title slot. Emitting anything else would produce a row
+   * that says "A sub-agent reported in" and nothing more.
+   */
+  | {
+      kind: 'subagent_update';
+      agentId: string;
+      title: string;
+      status: WorkSubagentStatus;
+      summary?: string;
+    }
   | { kind: 'budget_warning'; limit: 'cost' | 'tokens' | 'runtime'; detail: string }
   | { kind: 'paused'; reason: string }
   | { kind: 'resumed' }
@@ -717,13 +758,23 @@ export type WorkEvent =
   | { kind: 'error'; message: string };
 
 /**
- * An event as it leaves the runtime: ordered and timestamped.
+ * An event as it leaves the runtime: ordered, timestamped and attributed.
  *
  * `seq` is assigned by the session and is the cursor clients resume from, so
  * it is stamped here rather than by whoever persists the event — two writers
  * numbering the same stream is how a client silently skips an approval.
+ *
+ * `agentId` names the delegated child whose work produced the event, and is
+ * absent for everything the run did itself. It is a column on `WorkEvent`
+ * already, serialised to every client on every event since Work shipped and
+ * null on all of them, because nothing in the cloud runtime could delegate.
+ * Something can now, and an event log where a child's tool calls are
+ * indistinguishable from the coordinator's is one nobody can read afterwards.
+ * `deriveActivity` in src/components/work/work-timeline.tsx is what reads it:
+ * it resolves the id to the title the parent briefed the child with, so the
+ * feed attributes each row without ever printing the identifier.
  */
-export type WorkEmittedEvent = WorkEvent & { seq: number; at: string };
+export type WorkEmittedEvent = WorkEvent & { seq: number; at: string; agentId?: string };
 
 /**
  * An audit record the runtime wants written.

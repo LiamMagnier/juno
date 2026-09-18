@@ -398,6 +398,9 @@ const TOOL_PRESENT: Record<string, string> = {
   file_details: "Checking a file",
   apply_changes: "Making changes to your files",
   permanently_delete: "Deleting files for good",
+  // `browser` is the cloud's own headless page; `browser_control` is the Mac
+  // driving the browser you are signed into. Two capabilities, two sentences.
+  browser: "Using a web page",
   browser_control: "Using your browser",
   app_control: "Using an app on your Mac",
   screen_control: "Working on your screen",
@@ -414,6 +417,7 @@ const TOOL_PAST: Record<string, string> = {
   file_details: "Checked a file",
   apply_changes: "Changed your files",
   permanently_delete: "Deleted files for good",
+  browser: "Used a web page",
   browser_control: "Used your browser",
   app_control: "Used an app on your Mac",
   screen_control: "Worked on your screen",
@@ -427,6 +431,7 @@ const TOOL_PAST: Record<string, string> = {
 const ACTION_LABEL: Record<string, string> = {
   apply_changes: "Change files",
   permanently_delete: "Delete permanently",
+  browser: "Use a web page",
   browser_control: "Use your browser",
   app_control: "Use an app",
   screen_control: "Control your screen",

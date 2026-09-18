@@ -26,12 +26,21 @@
  *
  * WHAT IS NOT HERE
  *
- * No browser, accessibility or screen-control tool. Those are the Mac's rungs
- * and a cloud run has none of them, which is why every tier refusal a cloud
- * run can produce today is a refusal against `shell`. The rungs are still
+ * No accessibility or screen-control tool. Those are the Mac's rungs — they
+ * need a logged-in desktop, a window server and permissions a person grants on
+ * a machine they own — and a cloud run has none of them. The rungs are still
  * declared truthfully rather than flattened, because the moment a local host
- * joins a run the lattice has to already be right — a tier assigned when the
+ * joins a run the lattice has to already be right: a tier assigned when the
  * competitor appears is a tier assigned after the mistake.
+ *
+ * The browser used to be in that list, on the same reasoning, and it does not
+ * belong there. A headless browser is not a screen: it is a network client with
+ * a DOM, it needs no desktop, and it is the difference between a run that can
+ * use a site with a search box and one that can only read the pages it can
+ * guess the URLs of. `browserTool` is that, and it is shaped like everything
+ * else here — the effect is injected, so the runtime owns the tier, the risk
+ * and the provenance while the executor owns the process. What the executor has
+ * to guarantee about that process is written on `BrowserToolDeps`.
  */
 
 import { evaluateEgress } from "../tools/egress-policy.js";
@@ -562,6 +571,363 @@ export function webFetchTool(deps: WebFetchDeps): WorkToolDefinition {
         };
       }
       return { output: text.length > 0 ? text : 'The page was fetched but had no readable text in it.' };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The browser
+// ---------------------------------------------------------------------------
+
+/**
+ * How much of a page's text one browser call may return.
+ *
+ * Half what `web_fetch` returns, because a browsing sequence returns a page per
+ * call and a run that clicks six times has paid this six times. A page whose
+ * answer is past 20,000 characters is one to fetch rather than to browse.
+ */
+export const MAX_BROWSER_TEXT_CHARS = 20_000;
+
+/** How many interactive elements one snapshot may name. */
+export const MAX_BROWSER_ELEMENTS = 60;
+
+/**
+ * One thing on the page a call can address.
+ *
+ * `ref` is the number in the snapshot the model has just read, and it is the
+ * addressing scheme this tool is built around: a model that has to invent CSS
+ * selectors for a page it has only seen as text will address the wrong element
+ * confidently, and there is no way to tell from the outside that it did.
+ *
+ * `submits` is the field the approval ladder rests on. An element that would
+ * send a form is refused by `click` and only reachable through `submit` — so
+ * the gate does not depend on the model correctly describing what it is about
+ * to press. `method` is what decides which rung that submit lands on.
+ */
+export interface BrowserElement {
+  ref: number;
+  /** "link", "button", "textbox", … — what a person would call it. */
+  role: string;
+  /** The visible words, an aria-label, a placeholder or a field name. */
+  label: string;
+  /** Where a link goes, as written in the document. */
+  href?: string;
+  /** True when pressing it submits the form it is in. */
+  submits?: boolean;
+  /** How the form it is in is sent. Absent outside a form. */
+  method?: 'get' | 'post';
+}
+
+export interface BrowserPageState {
+  url: string;
+  title: string;
+  /** The document as the browser has it now, after its scripts have run. */
+  html: string;
+  elements: BrowserElement[];
+}
+
+export type BrowserOutcome =
+  | { ok: true; page: BrowserPageState }
+  | { ok: false; message: string };
+
+/**
+ * The browser process, as the runtime needs to see it.
+ *
+ * Injected for the reason everything else here is injected — this package is
+ * built with the repository absent and cannot import a browser driver — but
+ * also because of what the executor has to promise about it, which no type can
+ * express and which is therefore written down:
+ *
+ *   1. The browser must reach the network ONLY through the same pinned,
+ *      address-checked path `web_fetch` uses. A browser that opens its own
+ *      sockets re-opens every case `blockedFetchAddress` exists to close, and
+ *      re-opens them for a page's own scripts rather than for the model — which
+ *      is worse, because nothing in the transcript would show it happening.
+ *   2. It must hold no Juno credential. The run's provider keys and database
+ *      handle live in the executor; a page that can read them is a page that
+ *      has read them. A browser process inherits its parent's environment
+ *      unless it is told not to, so "hold" here means the process environment
+ *      as much as it means anything the page is handed.
+ *   3. It must be closed when the run ends. A leaked browser is a leaked
+ *      several hundred megabytes on a worker that runs three of these at once.
+ *
+ * `available` is consulted per call rather than once, because the first call is
+ * what starts the process: a deployment with no browser installed answers true
+ * until it has tried, and false — with `isHealthy` refusing the tool and the
+ * tier layer naming a working alternative — from then on.
+ */
+export interface BrowserToolDeps {
+  available(): boolean;
+  open(url: string): Promise<BrowserOutcome>;
+  read(): Promise<BrowserOutcome>;
+  click(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
+  typeText(target: { ref?: number; selector?: string }, text: string): Promise<BrowserOutcome>;
+  submit(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
+  /** Where the page is now; empty before anything has been opened. */
+  currentUrl(): string;
+  /**
+   * How the form this target would send is sent, from the page as last read.
+   *
+   * The risk of a submit is graded on it, so an executor that cannot answer —
+   * or a target the snapshot never named — must answer null and be graded as
+   * the worse case. A GET form is a query; everything else changes somebody
+   * else's system.
+   */
+  submitMethod?(target: { ref?: number; selector?: string }): 'get' | 'post' | null;
+  /** Whether the page in front asks for a card, which makes a submit a purchase. */
+  pageTakesPayment?(): boolean;
+  /** Late-bound skill egress grant; an empty list denies every navigation. */
+  allowedDomains?(): readonly string[] | null;
+  onCitation?(citation: WorkCitation): void;
+  now?(): Date;
+}
+
+export type BrowserAction = 'open' | 'read' | 'click' | 'type' | 'submit';
+
+/** The action a call is making, defaulting to the one that changes nothing. */
+export function browserAction(input: Record<string, unknown>): BrowserAction {
+  const raw = String(input.action ?? 'read');
+  return raw === 'open' || raw === 'click' || raw === 'type' || raw === 'submit' ? raw : 'read';
+}
+
+/**
+ * A page, as the model reads it.
+ *
+ * The element list is the half that makes the rest usable. Text alone tells a
+ * model what a page says and nothing about what it can do with it, so a run
+ * that needed to press "Next" would either guess a selector or give up — and
+ * the guess is the failure that looks like success.
+ */
+export function formatBrowserPage(page: BrowserPageState, text: string): string {
+  const body =
+    text.length > MAX_BROWSER_TEXT_CHARS
+      ? `${text.slice(0, MAX_BROWSER_TEXT_CHARS)}\n\n[Cut off here. This page is ${text.length} characters long and only the first ${MAX_BROWSER_TEXT_CHARS} are above. Do not describe the rest as though you have read it.]`
+      : text || 'The page loaded but had no readable text in it.';
+
+  const lines = [`URL: ${page.url}`, `Title: ${page.title || '(untitled)'}`, '', body];
+  // Capped here as well as in the driver that collects them. The cap is about
+  // what a turn can afford to read, which is this side's business: a page with
+  // four hundred links would otherwise cost more context than the text did.
+  const elements = page.elements.slice(0, MAX_BROWSER_ELEMENTS);
+  if (elements.length > 0) {
+    lines.push(
+      '',
+      'On this page (use the number as "ref"):',
+      ...elements.map((element) => {
+        const parts = [`[${element.ref}] ${element.role} "${element.label}"`];
+        if (element.href) parts.push(`→ ${element.href}`);
+        if (element.submits) parts.push('(sends the form — use action "submit")');
+        return parts.join(' ');
+      }),
+    );
+  }
+  return lines.join('\n');
+}
+
+const BROWSER_ACTIONS: Record<BrowserAction, { intent: string; action: string }> = {
+  open: { intent: 'browser.read', action: 'work.browser.open' },
+  read: { intent: 'browser.read', action: 'work.browser.read' },
+  click: { intent: 'browser.click', action: 'work.browser.click' },
+  type: { intent: 'browser.type', action: 'work.browser.type' },
+  submit: { intent: 'browser.submit', action: 'work.browser.submit' },
+};
+
+/**
+ * A page a connector does not cover, opened and used.
+ *
+ * The risks are a ladder rather than one value, and the rungs are chosen
+ * against what each one does to somebody else's system:
+ *
+ *   - `open` and `read` are `safe`. They are a GET of a page, which is what
+ *     `web_fetch` already does under the same risk.
+ *   - `click` and `type` are `edit`. Pressing a control or filling a field
+ *     changes the state of a page Juno does not own, and Manual mode — "ask
+ *     before every change" — is exactly the mode whose user means that.
+ *   - `submit` of a GET form is `command`. A GET form is a query — a search
+ *     box, a filter — and every mode but Skip stops for it.
+ *   - `submit` of anything else is `irreversible`, and that is the floor: it
+ *     asks under every mode including Skip, and `allowed_always` cannot cover
+ *     it. A POST form is how a website is told to do something, and the thing
+ *     it is told to do can be buy. There is no rung between "a search box" and
+ *     "a checkout" that the DOM lets this tool tell apart, so the one that
+ *     cannot be taken back is the one it assumes.
+ *
+ * A submit on a page that asks for a card is `work.browser.purchase` rather
+ * than `work.browser.submit`. That name is on the always-confirm list the
+ * permissions page renders, so it has to be a name something can emit: a floor
+ * entry no code produces is a promise the product makes and the runtime cannot
+ * keep.
+ *
+ * What stops the ladder being advisory is that `click` REFUSES an element that
+ * would submit a form: the executor knows from the DOM which controls those
+ * are, so reaching the rung that asks is structural rather than a matter of the
+ * model labelling its own action honestly. It is not total — a button that
+ * posts from a script with no form around it is indistinguishable from one that
+ * scrolls, and is named as a limit rather than papered over.
+ */
+export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
+  const now = deps.now ?? (() => new Date());
+  /** The target a call names, in the shape the executor answers questions about. */
+  const targetOf = (input: Record<string, unknown>) => ({
+    ...(typeof input.ref === 'number' ? { ref: input.ref } : {}),
+    ...(typeof input.selector === 'string' ? { selector: input.selector } : {}),
+  });
+  const actionName = (input: Record<string, unknown>): string => {
+    if (browserAction(input) === 'submit' && deps.pageTakesPayment?.() === true) {
+      return 'work.browser.purchase';
+    }
+    return BROWSER_ACTIONS[browserAction(input)].action;
+  };
+  return {
+    kind: 'edit',
+    tier: 'browser_dom',
+    intents: ['browser.read', 'browser.click', 'browser.type', 'browser.submit'],
+    intentFor: (input) => BROWSER_ACTIONS[browserAction(input)].intent,
+    actionFor: actionName,
+    riskFor: (input) => {
+      const action = browserAction(input);
+      if (action === 'submit') {
+        return deps.submitMethod?.(targetOf(input)) === 'get' ? 'command' : 'irreversible';
+      }
+      return action === 'click' || action === 'type' ? 'edit' : 'safe';
+    },
+    provenanceFor: (input) => ({
+      source:
+        browserAction(input) === 'open'
+          ? String(input.url ?? 'a web page')
+          : deps.currentUrl() || 'a web page',
+      sourceKind: 'web',
+      action: actionName(input),
+      // Everything this returns is the page's own words, including the status
+      // line after a click: the page decided what the next page says.
+      trust: 'untrusted',
+    }),
+    isHealthy: () => deps.available(),
+    spec: {
+      name: 'browser',
+      description:
+        'Open a web page in a real browser and use it: read it after its scripts have run, follow a link, fill a field, submit a form. ' +
+        'Every call returns the page as text plus a numbered list of the things on it you can act on; address them with "ref". ' +
+        'Prefer web_fetch when you only need to read a page — it is faster and cheaper. Use this when the page needs scripts to render, when what you want is behind a search box or a login you already have a session for, or when you must follow a form. ' +
+        'Submitting a form is a separate action because it sends something, and the user is asked before it happens.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['open', 'read', 'click', 'type', 'submit'],
+            description:
+              'open a URL, read the page again, click something, type into a field, or submit the form a field or button belongs to. Defaults to read.',
+          },
+          url: { type: 'string', description: 'The http or https URL, for open.' },
+          ref: {
+            type: 'number',
+            description: 'The number of the element, from the list in the last page you read.',
+          },
+          selector: {
+            type: 'string',
+            description:
+              'A CSS selector, when you have a reason to prefer one to a ref. Use ref where you can.',
+          },
+          text: { type: 'string', description: 'What to type, for type.' },
+        },
+        required: ['action'],
+      },
+    },
+    summarize: (input) => {
+      const action = browserAction(input);
+      const target =
+        input.ref !== undefined ? `element ${String(input.ref)}` : String(input.selector ?? 'the page');
+      switch (action) {
+        case 'open':
+          return `Open ${String(input.url ?? '').slice(0, 200)} in a browser`;
+        case 'read':
+          return `Read the page at ${deps.currentUrl() || 'the browser'}`;
+        case 'click':
+          return `Click ${target} on ${deps.currentUrl() || 'the page'}`;
+        case 'type':
+          return `Type into ${target} on ${deps.currentUrl() || 'the page'}`;
+        case 'submit':
+          return deps.pageTakesPayment?.() === true
+            ? `Buy something at ${deps.currentUrl() || 'the page'}`
+            : `Submit the form at ${deps.currentUrl() || 'the page'}`;
+      }
+    },
+    async execute(input): Promise<ToolResult> {
+      const action = browserAction(input);
+      if (!deps.available()) {
+        return {
+          output:
+            'No browser is available on this Juno deployment, so nothing was opened. Use web_search and web_fetch, and say in your answer that you could not use a browser.',
+          isError: true,
+        };
+      }
+
+      const target = {
+        ...(typeof input.ref === 'number' ? { ref: input.ref } : {}),
+        ...(typeof input.selector === 'string' && input.selector.trim()
+          ? { selector: input.selector.trim() }
+          : {}),
+      };
+      if (action !== 'open' && action !== 'read' && target.ref === undefined && !target.selector) {
+        return {
+          output: 'A ref (from the list in the last page you read) or a selector is required.',
+          isError: true,
+        };
+      }
+
+      let outcome: BrowserOutcome;
+      switch (action) {
+        case 'open': {
+          const url = String(input.url ?? '').trim();
+          if (!url) return { output: 'A URL is required.', isError: true };
+          const blocked = blockedFetchTarget(url);
+          if (blocked) return { output: `Juno will not open that: ${blocked}`, isError: true };
+          const allowedDomains = deps.allowedDomains?.();
+          if (allowedDomains !== undefined && allowedDomains !== null) {
+            const egress = evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+            if (!egress.allowed) {
+              return {
+                output: `Juno will not open that for this skill: ${egress.reason}.`,
+                isError: true,
+              };
+            }
+          }
+          outcome = await deps.open(url);
+          break;
+        }
+        case 'read':
+          outcome = await deps.read();
+          break;
+        case 'click':
+          outcome = await deps.click(target);
+          break;
+        case 'type': {
+          const text = input.text;
+          if (typeof text !== 'string') {
+            return { output: 'Text is required when typing.', isError: true };
+          }
+          outcome = await deps.typeText(target, text);
+          break;
+        }
+        case 'submit':
+          outcome = await deps.submit(target);
+          break;
+      }
+
+      if (!outcome.ok) return { output: outcome.message, isError: true };
+
+      // Cited on every call rather than only on `open`: a run that opened a
+      // search page and clicked through to an article took the fact from the
+      // article, and a citation pointing at the search would send a reader to
+      // the wrong page to check it.
+      deps.onCitation?.({
+        title: outcome.page.title || outcome.page.url,
+        source: outcome.page.url,
+        retrievedAt: now().toISOString(),
+      });
+
+      return { output: formatBrowserPage(outcome.page, htmlToText(outcome.page.html)) };
     },
   };
 }

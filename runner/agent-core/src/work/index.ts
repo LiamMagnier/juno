@@ -23,6 +23,7 @@ export {
   WORK_AUDIT_KINDS,
   WORK_AUDIT_SEVERITIES,
   WORK_PLAN_STEP_STATUSES,
+  WORK_SUBAGENT_STATUSES,
   ALWAYS_CONFIRM_ACTIONS,
   APPROVAL_TTL_MS,
   NO_BUDGET,
@@ -64,6 +65,7 @@ export {
   type WorkReport,
   type WorkRiskLevel,
   type WorkStepUsage,
+  type WorkSubagentStatus,
   type WorkTerminalReason,
   type WorkToolCandidate,
   type WorkToolDefinition,
@@ -124,6 +126,20 @@ export {
 } from './injection.js';
 
 export {
+  MAX_DELEGATIONS_PER_RUN,
+  MAX_DELEGATION_REPORT_CHARS,
+  MAX_STEPS_PER_DELEGATION,
+  WORK_DELEGATE_TOOL_NAME,
+  delegateToolSpec,
+  delegationSystemPrompt,
+  parseDelegation,
+  runDelegation,
+  type DelegationDeps,
+  type DelegationOutcome,
+  type DelegationTask,
+} from './delegate.js';
+
+export {
   BUDGET_CHECK_INTERVAL_MS,
   MAX_STEPS_PER_RUN,
   WORK_ASK_TOOL_NAME,
@@ -142,6 +158,19 @@ export {
 } from './session.js';
 
 export { goalValidator } from './judge.js';
+
+/*
+ * The egress policy, re-exported for the one caller that is not a tool.
+ *
+ * `webFetchTool` and `browserTool` apply it to the URL the model asked for, and
+ * that is the whole of it for a fetch — one request, one decision. A browser is
+ * not one request: the page it opens makes its own, and a skill whose grant
+ * narrows a run to one domain would otherwise be narrowing only the address bar
+ * while the page fetched whatever it liked. The executor applies this to every
+ * request the browser makes, so there is one allowlist and one implementation
+ * of what "on it" means.
+ */
+export { evaluateEgress, hostMatches, normalizeHost, type EgressPolicy } from '../tools/egress-policy.js';
 
 /*
  * The provider surface, re-exported through the Work entry point.
@@ -193,14 +222,19 @@ export {
 export { DEFAULT_REQUEST_TIMEOUT_MS } from '../providers/timeouts.js';
 
 export {
+  MAX_BROWSER_ELEMENTS,
+  MAX_BROWSER_TEXT_CHARS,
   asWorkTool,
   blockedFetchAddress,
   blockedFetchTarget,
+  browserAction,
+  browserTool,
   cloudFilesTool,
   connectorActionFor,
   connectorTool,
   deliverableTool,
   displayPath,
+  formatBrowserPage,
   htmlToText,
   htmlTitle,
   narrowToPermittedTools,
@@ -210,6 +244,11 @@ export {
   webFetchTool,
   webSearchTool,
   workspaceTools,
+  type BrowserAction,
+  type BrowserElement,
+  type BrowserOutcome,
+  type BrowserPageState,
+  type BrowserToolDeps,
   type CloudFileOperation,
   type CloudFileToolDeps,
   type ConnectorAccess,
