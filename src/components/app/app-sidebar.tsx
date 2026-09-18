@@ -667,11 +667,19 @@ export function AppSidebar({
          * halves do unrelated things — one hides this column, the other
          * changes which product it lists. Split, each sits on the side of the
          * thing it acts on.
+         *
+         * `gap-2.5`, NOT `gap-1`, and the number is the column's, not this
+         * row's: `px-2` (8) + the collapse button (28) + 10 puts the wordmark
+         * at 46px, which is where every label, section heading, date fold and
+         * chat title in this panel starts (see `navRowClass`). At `gap-1` it
+         * sat at 40 — six pixels inside the one vertical the whole column is
+         * built on, which is exactly the kind of near-miss that reads as
+         * "off" without being nameable.
          */}
         <motion.div
           layout
           transition={layoutTransition}
-          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 gap-1 px-2")}
+          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 gap-2.5 px-2")}
         >
           {onToggleCollapse && (
             <Tooltip>
@@ -721,17 +729,39 @@ export function AppSidebar({
                *
                * The mark survives at the RAIL, where 64px has no room for a
                * word and the panel would otherwise lose its way home entirely.
+               *
+               * `text-title` (22px), and the rung was MEASURED off the
+               * reference rather than picked: Claude's wordmark sets a 14.86px
+               * cap beside a 16px collapse glyph, and Newsreader at 22/600
+               * gives 15.0. At `text-body-lg` the cap was 11.4 — a word
+               * visibly smaller than the icon next to it, which is what the
+               * panel looked like and what was reported. The rung carries its
+               * own 600 and -0.012em, so neither is written here.
+               *
+               * `translate-y-[3px]` is the one number in this block that is
+               * not on a ladder, and it is a TYPE correction, not a layout
+               * one. `items-center` centres the line box; Newsreader's
+               * ascender (0.735em) overshoots its cap (0.67em), so centring
+               * the box leaves the ink 3.4px high — the word floats above the
+               * glyph it sits beside. Three pixels puts the two ink boxes on
+               * one centre and keeps the text on whole pixels.
+               *
+               * A plain `<span>`: the `layout="position"` it used to carry
+               * animated nothing (the expanded wordmark and the rail's mark
+               * are different elements that mount and unmount), and a
+               * framer-owned `transform` would have overwritten the nudge.
+               *
+               * `truncate` rather than a hard clip: at SIDEBAR_MIN (224px)
+               * "Juno Code" wants 5px more than the row can give it, and an
+               * ellipsis is a legible short name where a slice through the
+               * last glyph is a rendering bug.
                */}
               {collapsed ? (
                 <JunoMark className="size-5 shrink-0" />
               ) : (
-                <motion.span
-                  layout="position"
-                  transition={layoutTransition}
-                  className="overflow-hidden whitespace-nowrap font-serif text-body-lg font-semibold tracking-[-0.01em] text-foreground"
-                >
+                <span className="truncate font-serif text-title text-foreground translate-y-[3px]">
                   Juno{isCode ? " Code" : ""}
-                </motion.span>
+                </span>
               )}
             </Link>
           </motion.div>

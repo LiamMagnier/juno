@@ -44,6 +44,7 @@ import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/
 import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
+import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
 import { delegatedComposerPlaceholder, delegationAttemptKey } from "@/lib/work/delegation";
 import {
@@ -2009,6 +2010,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         (openArtifact || thoughtOpenId) && "hidden"
       )}
     >
+      {/* What this chat made, and what it used — see session-outputs.tsx. It
+          leads the cluster because it is about the conversation itself, while
+          Share and incognito are about who else can see it. Hidden in private
+          mode with the rest of the cluster: an incognito turn writes no
+          artifact and leaves no receipt, so the panel would be an index of
+          nothing. */}
+      {!privateMode && (
+        <SessionOutputs
+          artifacts={chat.artifacts}
+          messages={chat.messages}
+          onOpenArtifact={(identifier) => openArtifactByIdentifier(identifier)}
+        />
+      )}
+
       {/* Share — saved, non-private chats with at least one message. */}
       {!privateMode && currentConversationId && hasMessages && (
         <Tooltip>
