@@ -92,6 +92,7 @@ import {
   type JsonObject,
   type WorkTriggerRow,
 } from "@/lib/work/schedule";
+import { decryptField } from "@/lib/field-crypto";
 import { LIVE_CODE_TASK_STATUSES, scheduleRunKindOf } from "@/lib/work/code-routine";
 import { startCodeRoutineRun } from "@/lib/work/code-dispatch";
 import { effectiveHostState } from "@/app/api/work/protocol";
@@ -241,7 +242,29 @@ async function sweepMigrations(): Promise<void> {
     where: { legacyScheduledTaskId: { in: tasks.map((task) => task.id) } },
     select: { legacyScheduledTaskId: true },
   });
-  const already = new Set(adopted.map((row) => row.legacyScheduledTaskId));
+  // The column is nullable in the schema but cannot be null here — the query
+  // above filters on it — so the narrowing is a type formality, not a filter.
+  const already = new Set(
+    adopted.map((row) => row.legacyScheduledTaskId).filter((id): id is string => id !== null)
+  );
+
+  // The adopted rows this deployment did not adopt. Switching the legacy row
+  // off used to be missing entirely, so every task a PREVIOUS deployment
+  // adopted still reads `enabled: true` — and the loop below can never reach
+  // them, because it skips anything in `already` before it gets to the
+  // transaction. No double dispatch results (the legacy worker is deleted), but
+  // `GET /api/tasks` reports those rows to the native clients as running, which
+  // is the opposite of true. One statement, and it is a no-op from the sweep
+  // after the first.
+  if (already.size > 0) {
+    const closed = await prismaUnguarded.scheduledTask.updateMany({
+      where: { id: { in: [...already] }, enabled: true },
+      data: { enabled: false },
+    });
+    if (closed.count > 0) {
+      log("switched off legacy tasks a previous deployment adopted", { count: closed.count });
+    }
+  }
 
   let migrated = 0;
   let unmappable = 0;
@@ -249,7 +272,13 @@ async function sweepMigrations(): Promise<void> {
     if (stopping) break;
     if (already.has(task.id)) continue;
 
-    const planned = planTaskMigration(task);
+    // `prompt` is sealed at rest, and `planTaskMigration` plans a routine
+    // whose goal and instructions ARE whatever string it is handed. Passing the
+    // row straight through produced routines whose entire instruction was
+    // `enc:v2:<base64>`: they fired every morning, spent real money and
+    // returned nothing. `tests/field-encryption-coverage.test.ts` asserts this
+    // call site by name.
+    const planned = planTaskMigration({ ...task, prompt: decryptField(task.prompt) });
     if (!planned.ok) {
       // A task this build cannot express as a routine. Left alone deliberately
       // — enabled, untouched, and named in the log on every sweep — because

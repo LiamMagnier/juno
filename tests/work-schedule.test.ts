@@ -35,6 +35,7 @@ import {
   planMissedRuns,
   planScheduleDispatch,
   planScheduleEdit,
+  planAdoptedPromptRepair,
   planTaskMigration,
   resolveWallTime,
   scheduleRunIdempotencyKey,
@@ -1377,6 +1378,67 @@ test("a migrated task gains no permission it did not have", () => {
 
 test("a disabled task migrates as a disabled schedule", () => {
   assert.equal(migrated(legacyTask({ enabled: false })).schedule.enabled, false);
+});
+
+test("the prompt the routine is given is the plaintext it was handed", () => {
+  // `ScheduledTask.prompt` is sealed at rest and the caller decrypts before
+  // calling — the fixture above is plaintext for exactly that reason. This
+  // pins the two places the prompt lands, because a routine whose goal and
+  // instructions disagree is a run validated against something it was never
+  // asked to do.
+  const plan = migrated(legacyTask({ prompt: "  Summarise overnight email.  " }));
+  assert.equal(plan.session.goal, "Summarise overnight email.");
+  assert.equal(plan.schedule.instructions, "Summarise overnight email.");
+});
+
+test("a task whose prompt could not be decrypted is refused, not adopted", () => {
+  // The policy the retired `executeTask` had, carried over to the thing that
+  // replaced it. Adopting it would mint a routine that fires every morning,
+  // spends real money and instructs the run with the placeholder — which is a
+  // schedule that has stopped running while looking like one that has not.
+  for (const prompt of ["[encrypted field could not be decrypted]", "", "   "]) {
+    const result = planTaskMigration(legacyTask({ prompt }));
+    assert.equal(result.ok, false, JSON.stringify(prompt));
+    if (result.ok) throw new Error("unreachable");
+    assert.equal(result.blocker, "unreadable_prompt");
+  }
+});
+
+test("an unreadable prompt is refused before the cadence is even looked at", () => {
+  // Order matters: an unreadable prompt on a perfectly ordinary DAILY row is
+  // the expensive failure, and nothing further down the function would ever
+  // notice it. A row that is wrong in both ways must name this one.
+  const result = planTaskMigration(
+    legacyTask({ prompt: "[encrypted field could not be decrypted]", cadence: "FORTNIGHTLY" })
+  );
+  assert.equal(result.ok, false);
+  if (result.ok) throw new Error("unreachable");
+  assert.equal(result.blocker, "unreadable_prompt");
+});
+
+test("the repair leaves a routine that was never sealed alone", () => {
+  // `decryptField` returns a value it does not recognise untouched, so equal
+  // arguments mean the row is already plaintext. Rewriting it would cost a
+  // write per routine on every run of a script that is meant to be idempotent.
+  assert.deepEqual(planAdoptedPromptRepair("Summarise email.", "Summarise email."), {
+    action: "leave",
+  });
+});
+
+test("the repair puts the recovered plaintext back", () => {
+  assert.deepEqual(planAdoptedPromptRepair("enc:v2:abc", "Summarise email."), {
+    action: "rewrite",
+    prompt: "Summarise email.",
+  });
+});
+
+test("the repair pauses a routine whose prompt cannot be recovered", () => {
+  // No plaintext exists to put back, and a routine left running would bill
+  // somebody every morning to act on the sentinel. Same call the migration
+  // makes when it refuses such a task outright.
+  for (const recovered of ["[encrypted field could not be decrypted]", "  "]) {
+    assert.deepEqual(planAdoptedPromptRepair("enc:v2:abc", recovered), { action: "pause" });
+  }
 });
 
 // ---------------------------------------------------------------------------

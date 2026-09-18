@@ -5880,35 +5880,34 @@
         }
       }
     },
-    "tasks.locked.detail" : {
+    "tasks.moved.detail" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upgrade on the Juno website to schedule your first one."
+            "value" : "They run as Automations now — same time, same zone, plus event triggers and a proper catch-up policy. Anything you had has already moved."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Passez à une offre supérieure sur le site Juno pour planifier votre première tâche."
+            "value" : "Elles fonctionnent désormais comme des automatisations — même heure, même fuseau, avec en plus des déclencheurs d’événements et une vraie politique de rattrapage. Tout ce que vous aviez a déjà été transféré."
           }
         }
       }
     },
-    "tasks.locked.title" : {
-      "extractionState" : "stale",
+    "tasks.moved.title" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scheduled tasks are part of Pro"
+            "value" : "These moved to Automations"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les tâches planifiées font partie de Pro"
+            "value" : "Elles sont passées dans les automatisations"
           }
         }
       }
@@ -6093,6 +6092,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Première exécution %@"
+          }
+        }
+      }
+    },
+    "tasks.status.moved" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runs as an Automation"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fonctionne comme une automatisation"
           }
         }
       }

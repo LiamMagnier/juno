@@ -31,6 +31,28 @@ export const runtime = "nodejs";
  * once a task has been adopted — the routine is the live thing by then, and
  * editing the shell would change nothing while looking like it had.
  *
+ * HOW THE NATIVE CLIENTS ARE TOLD. The web surface is gone (`/tasks` redirects)
+ * but the macOS and iOS Tasks screens still call this route, so the retirement
+ * has to be something they can READ rather than something they infer. Two keys
+ * carry it, and both of them are flags rather than counts:
+ *
+ *   `creatable: false` disables the "new task" control. It replaced an earlier
+ *   attempt to say the same thing with `limit: 0`, which did not work:
+ *   `NativeScheduledTaskStore.isPlanLocked` was `limit == 0 && tasks.isEmpty`,
+ *   and every account this retirement is about has at least one task — so the
+ *   flag was false exactly where it mattered, the button stayed enabled, and
+ *   pressing it POSTed to a route that answers 410.
+ *
+ *   `movedToScheduleId`, per row, disables that row's pause toggle, Edit and
+ *   Delete. Those all go to `/api/tasks/[id]`, which answers 409 for an adopted
+ *   task — and the sweep adopts every task and switches it off, so without this
+ *   the list would show every task paused with no working control to unpause
+ *   it. A card whose switch cannot switch is worse than no card.
+ *
+ * `limit` is still emitted, still zero, and now means nothing but "no plan cap
+ * applies". It stays only so an OLD client — one that has not learned the two
+ * keys above — keeps decoding the payload at all.
+ *
  * WHAT WENT WITH IT. `taskLimitForPlan` — FREE 0, PRO 3, MAX 10 — was the only
  * cap on how many things an account could have running for it on a clock, and
  * `WorkSchedule` has never had one. Retiring the route retires the cap: what a
@@ -61,15 +83,18 @@ export async function GET() {
   return NextResponse.json({
     tasks: tasks.map((task) => ({
       ...serializeTask(task),
-      // Null until the sweep has been round. A client that does not know this
-      // key is unaffected, which is the whole reason it is an addition.
+      // Null until the sweep has been round. Once it is set, this row's
+      // toggle, Edit and Delete are refused with 409 — so the clients disable
+      // them on this key rather than letting a person press a control that
+      // cannot work.
       movedToScheduleId: byTask.get(task.id) ?? null,
     })),
-    // Zero, and it no longer means a plan. It means this surface creates
-    // nothing — which is what the native clients render it as, a disabled
-    // "new task" button, and that is the correct control for a retired
-    // creation surface. The sentence they show beside it is dated; a number
-    // that re-enabled a button whose POST answers 410 would be worse.
+    // The retirement, stated rather than inferred. See the note above for why
+    // `limit: 0` could not carry it.
+    creatable: false,
+    readOnly: true,
+    // Zero, and it no longer means a plan. Kept only so a client that predates
+    // the two flags above still decodes this payload.
     limit: 0,
   });
 }

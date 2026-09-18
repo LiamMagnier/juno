@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
-import { rateLimit } from "@/lib/rate-limit";
+import { ipFromHeaders, rateLimit } from "@/lib/rate-limit";
 import { serializeRun } from "@/lib/work/serializers";
 import { fireTokenFromHeader, fireTokenMatches } from "@/lib/work/fire-token";
 import { fireScheduleNow } from "@/lib/work/fire-now";
@@ -53,6 +53,22 @@ export const runtime = "nodejs";
 /** Max fires per automation per minute. A fire starts a cloud run or claims an
  *  executor, so an unbounded caller is not a wasted request. */
 const FIRE_RATE_LIMIT = 30;
+/**
+ * Max ATTEMPTS per caller per minute, counted before the token is checked.
+ *
+ * The limit below it only ever ran on requests that had already authenticated,
+ * so a caller presenting a wrong token — or no token for this routine — was
+ * never throttled at all, and every attempt still cost a `workSchedule`
+ * lookup with two relations included, on a URL that is public by design. That
+ * is not a credential risk (32 random bytes, a constant-time compare and one
+ * uniform 401), but it is an unmetered database query per unauthenticated
+ * request.
+ *
+ * Keyed by caller rather than by routine, because the routine id is the part an
+ * attacker varies freely. Set well above `FIRE_RATE_LIMIT` so a legitimate CI
+ * job firing several routines from one host never meets this one first.
+ */
+const FIRE_ATTEMPT_LIMIT = 120;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -64,7 +80,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
     { status: 401 }
   );
+  const tooMany = NextResponse.json(
+    { error: "rate_limited", message: "Too many fires for this automation. Try again shortly." },
+    { status: 429 }
+  );
   if (!presented) return unauthorized;
+
+  // Before the lookup, and that ordering is the whole point of this call.
+  const attempts = await rateLimit({
+    key: `work-fire-attempt:${ipFromHeaders(req.headers)}`,
+    limit: FIRE_ATTEMPT_LIMIT,
+    windowSec: 60,
+  });
+  if (!attempts.success) return tooMany;
 
   const body = (await req.json().catch(() => null)) as {
     text?: unknown;
@@ -97,12 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Per automation rather than per account: one noisy CI job must not spend
   // another automation's share of the limit, and the token names exactly one.
   const limited = await rateLimit({ key: `work-fire:${id}`, limit: FIRE_RATE_LIMIT, windowSec: 60 });
-  if (!limited.success) {
-    return NextResponse.json(
-      { error: "rate_limited", message: "Too many fires for this automation. Try again shortly." },
-      { status: 429 }
-    );
-  }
+  if (!limited.success) return tooMany;
 
   // A token outlives the trigger it was issued for — revoking one and removing
   // the other are separate actions — so the trigger is what decides whether a

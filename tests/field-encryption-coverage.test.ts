@@ -141,6 +141,54 @@ test("ScheduledTask.prompt is unsealed at every read that is left", () => {
   assert.match(source("src/lib/sync-entities.ts"), /prompt: decryptField\(row\.prompt\)/);
 });
 
+test("the migration sweep decrypts the prompt before it plans a routine", () => {
+  // The third reader, and the one whose failure is invisible: `planTaskMigration`
+  // copies whatever prompt it is handed into `WorkSchedule.instructions` and
+  // `WorkSession.goal`, so handing it the raw Prisma row produces a routine
+  // whose entire instruction is `enc:v2:<base64>`. It fires on the right
+  // morning, spends real money, and returns nothing — a schedule that has
+  // silently stopped running while every dashboard says it is fine.
+  //
+  // `schedule.ts` cannot do the decrypt itself: the automations editor bundles
+  // it for the browser, which cannot resolve `node:crypto`. So the rule is that
+  // this call site does it, and this is the assertion that says so.
+  const sweep = source("scripts/work-scheduler.ts");
+  assert.match(sweep, /planTaskMigration\(\{ \.\.\.task, prompt: decryptField\(task\.prompt\) \}\)/);
+  assert.match(sweep, /import \{ decryptField \} from "@\/lib\/field-crypto"/);
+  // No OTHER use of the sealed column here. A second one would be ciphertext
+  // used as if it were text, which is the regression this file exists to catch.
+  const mentions = sweep
+    .split("\n")
+    .filter((line) => line.includes("task.prompt") && !/^\s*(\/\/|\*|\/\*)/.test(line));
+  assert.deepEqual(mentions.length, 1, mentions.join("\n"));
+});
+
+test("the sentinel is defined once, in a module a client bundle can import", () => {
+  // field-crypto reaches `node:crypto` and the server env schema through
+  // message-crypto, so a pure module that only needs to RECOGNISE the
+  // placeholder — `src/lib/work/schedule.ts`, which ships to the browser —
+  // imports it from here instead. Two copies of the literal is how the check
+  // and the value drift apart.
+  const placeholder = source("src/lib/field-crypto-placeholder.ts");
+  assert.match(placeholder, /export const FIELD_DECRYPT_PLACEHOLDER = "\[encrypted field could not be decrypted\]"/);
+  assert.doesNotMatch(placeholder, /\bimport\b/);
+  assert.match(source("src/lib/field-crypto.ts"), /export \{ FIELD_DECRYPT_PLACEHOLDER \}/);
+  const schedule = source("src/lib/work/schedule.ts");
+  assert.match(schedule, /import \{ FIELD_DECRYPT_PLACEHOLDER \} from "@\/lib\/field-crypto-placeholder"/);
+  assert.doesNotMatch(schedule, /from "@\/lib\/field-crypto"/);
+  // The literal itself belongs to that one module. The i18n catalog is
+  // excluded because it is generated FROM the sources by
+  // `npm run i18n:extract`: it is a copy by construction, and one that cannot
+  // drift on its own.
+  const copies = walk("src").filter(
+    (file) =>
+      file !== join("src", "lib", "field-crypto-placeholder.ts") &&
+      !file.endsWith(".generated.ts") &&
+      source(file).includes('"[encrypted field could not be decrypted]"')
+  );
+  assert.deepEqual(copies, []);
+});
+
 // ---------------------------------------------------------------------------
 // The scope decision: what stays plaintext, and why
 // ---------------------------------------------------------------------------

@@ -809,7 +809,15 @@ export function WorkScheduleEditor({
                 Where the answer is STORED differs: a Work routine's model lives
                 in `runConfig` and a Code routine's in its `codeConfig`, because
                 two dispatchers read two columns. The save routes it; the reader
-                answers one question once. */}
+                answers one question once.
+
+                The value is `model.id`, the canonical `provider:providerModel`.
+                The runner's catalog carries the BARE provider id, so the route
+                that orders it (`.../runner-context`) compares the two through
+                `catalogEntryMatchesModel` rather than with `===`. A direct
+                comparison is always false, and the failure it produces is the
+                quiet one: the choice made here is dropped and the runner takes
+                whatever is first available, with nothing logged. */}
             <select
               id="schedule-model"
               value={draft.model}

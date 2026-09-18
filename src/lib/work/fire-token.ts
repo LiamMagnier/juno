@@ -2,10 +2,21 @@
  * The token an `api` trigger fires with.
  *
  * One routine, one trigger, one token, and the server never holds the token —
- * only a SHA-256 of it, in `WorkTrigger.secretHash`. That is the same trade the
- * rest of this codebase makes for a bearer credential it issues rather than
- * receives: the value is shown once, at the moment it is minted, and a database
- * dump yields nothing that can start a run.
+ * only a SHA-256 of it, in `WorkSchedule.fireSecretHash`. That is the same
+ * trade the rest of this codebase makes for a bearer credential it issues
+ * rather than receives: the value is shown once, at the moment it is minted,
+ * and a database dump yields nothing that can start a run.
+ *
+ * ON THE ROUTINE, NOT ON THE TRIGGER
+ *
+ * The obvious home is the `api` trigger row that the token fires, and it is the
+ * wrong one: `PATCH /api/work/schedules/<id>` rewrites a routine's trigger set
+ * wholesale, so editing an unrelated email filter would destroy the token row
+ * and the CI job holding it would start failing with no edit anybody could
+ * connect to it. The column's own docblock in prisma/schema.prisma argues the
+ * same case at length. This comment used to name `WorkTrigger.secretHash` — a
+ * column that has never existed — which is worse than saying nothing, because
+ * this is the one file a reader opens to find out where the secret lives.
  *
  * WHY A HASH AND NOT THE CONNECTOR KEYRING
  *

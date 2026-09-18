@@ -52,6 +52,27 @@ import { effectiveHostState } from "@/app/api/work/protocol";
  * answer; here there is an HTTP response to write, and a caller told "not now,
  * this is why" can decide for itself whether to retry — where a silent hold
  * would leave a CI job believing it had started a run it had not.
+ *
+ * WHAT ADMITS THE SPEND, AND WHAT DOES NOT
+ *
+ * Stated here rather than left to be inferred from the absence of a call. A
+ * Code fire starts a cloud run with no spend admission on this path at all:
+ * `startCodeRoutineRun` is called directly, with no `createRun`, no
+ * `reserveSpend` and no remaining-budget gate. Enforcement is `/api/agent`'s
+ * `checkBudget`, which runs once the runner is already burning Actions minutes.
+ *
+ * That is deliberate and it is not this function's invention: `POST
+ * /api/code/tasks` behaves identically, so a routine's Code run is admitted
+ * exactly as a composer's is, and a gate here would make the two disagree about
+ * what an account may start. It is also the shape the product wants — what
+ * bounds an account is its usage window, not a per-run ceiling stamped on the
+ * way in.
+ *
+ * What is new is the door: the fire URL is unattended and public, at
+ * `FIRE_RATE_LIMIT` per routine per minute, where the composer needs a person
+ * in a session. So the sentence a reader needs is that the RATE limit is the
+ * only thing standing between a token and a queue of runs, and it is standing
+ * there on purpose.
  */
 
 export const FIRE_REFUSALS = [

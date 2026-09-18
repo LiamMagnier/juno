@@ -49,6 +49,7 @@ import {
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
 import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
+import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 
 // ---------------------------------------------------------------------------
 // Wall clock in a zone
@@ -1687,6 +1688,23 @@ export interface LegacyScheduledTaskRow {
   id: string;
   userId: string;
   name: string;
+  /**
+   * THE PLAINTEXT, NOT THE COLUMN.
+   *
+   * `ScheduledTask.prompt` is sealed at rest — `scripts/encrypt-columns.ts`
+   * backfills it and every legitimate reader unseals it — so the raw Prisma row
+   * carries `enc:v2:<base64>` here. Handing that string to this function does
+   * not fail: it produces a routine whose goal and instructions ARE the
+   * ciphertext, which then fires every morning, spends real money and returns
+   * nothing anybody asked for. That is exactly the "schedule that silently
+   * stops running" this retirement exists to avoid, wearing a green tick.
+   *
+   * So the caller decrypts first (`decryptField(task.prompt)` in
+   * `scripts/work-scheduler.ts`, asserted by
+   * `tests/field-encryption-coverage.test.ts`) and this module stays free of
+   * the cipher, which it has to: the automations editor bundles it for the
+   * browser.
+   */
   prompt: string;
   model: string;
   /** DAILY | WEEKDAYS | WEEKLY | MONTHLY | ONCE. */
@@ -1752,12 +1770,23 @@ const LEGACY_CADENCE_KINDS: Record<string, TimeTriggerKind> = {
  * Named rather than returned as a bare null, because the caller's response to
  * each is different and "left it alone" is not a thing a sweep may decide
  * quietly: `unknown_cadence` means a deployment newer than this one wrote a
- * value this build has never heard of, and `malformed_once` means the row's own
- * date column does not hold a date. Both leave the task exactly as it is; only
- * the sentence in the log differs, and that sentence is the only way anybody
- * finds out.
+ * value this build has never heard of, `malformed_once` means the row's own
+ * date column does not hold a date, and `unreadable_prompt` means the sealed
+ * prompt could not be decrypted. All three leave the task exactly as it is;
+ * only the sentence in the log differs, and that sentence is the only way
+ * anybody finds out.
+ *
+ * `unreadable_prompt` is the policy the retired `executeTask` already had — it
+ * compared the decrypted prompt against `FIELD_DECRYPT_PLACEHOLDER` and refused
+ * the run — carried over to the thing that replaced it. Adopting such a task
+ * would mint a routine whose whole instruction is the words "[encrypted field
+ * could not be decrypted]", and it would bill somebody every morning for it.
  */
-export const TASK_MIGRATION_BLOCKERS = ["unknown_cadence", "malformed_once"] as const;
+export const TASK_MIGRATION_BLOCKERS = [
+  "unknown_cadence",
+  "malformed_once",
+  "unreadable_prompt",
+] as const;
 export type TaskMigrationBlocker = (typeof TASK_MIGRATION_BLOCKERS)[number];
 
 export type TaskMigrationResult =
@@ -1783,8 +1812,26 @@ const LEGACY_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
  * `tests/work-schedule.test.ts` walks the whole of `TaskCadence` to prove that
  * the set needing that treatment is empty, because A SCHEDULE THAT SILENTLY
  * STOPS RUNNING is the one outcome this retirement must not produce.
+ *
+ * `task.prompt` is the DECRYPTED prompt — see the field's own note — and a
+ * prompt that could not be decrypted is refused rather than adopted, because a
+ * routine is not better than a stopped schedule when what it runs every morning
+ * is a placeholder.
  */
 export function planTaskMigration(task: LegacyScheduledTaskRow): TaskMigrationResult {
+  // Checked before the cadence, because this is the failure that costs money.
+  // An unreadable prompt is still a perfectly well-formed DAILY row, so nothing
+  // further down would ever notice it.
+  const prompt = task.prompt.trim();
+  if (prompt === "" || prompt === FIELD_DECRYPT_PLACEHOLDER) {
+    return {
+      ok: false,
+      blocker: "unreadable_prompt",
+      message:
+        "This task's prompt could not be read, so the routine it became would run an empty instruction every time it fired. It was left exactly as it is.",
+    };
+  }
+
   const kind = LEGACY_CADENCE_KINDS[task.cadence];
   if (!kind) {
     return {
@@ -1837,13 +1884,13 @@ export function planTaskMigration(task: LegacyScheduledTaskRow): TaskMigrationRe
   const plan: ScheduleMigrationPlan = {
     session: {
       title: task.name,
-      goal: task.prompt,
+      goal: prompt,
       conversationId: task.conversationId,
     },
     schedule: {
       name: task.name,
       enabled: task.enabled,
-      instructions: task.prompt,
+      instructions: prompt,
       timezone,
       // Legacy tasks are a prompt and a model. Nothing about them touches a
       // Mac, so migrating them to `automatic` would offer the planner a local
@@ -1874,6 +1921,47 @@ export function planTaskMigration(task: LegacyScheduledTaskRow): TaskMigrationRe
     trigger: { kind, config },
   };
   return { ok: true, plan };
+}
+
+/**
+ * What to do with a routine an EARLIER sweep adopted before the decrypt was
+ * there.
+ *
+ * Those deployments copied the sealed column straight into
+ * `WorkSchedule.instructions` and `WorkSession.goal`, so the rows exist and
+ * they are firing. Fixing `planTaskMigration` does nothing for them: the sweep
+ * skips a task that already has a routine, and always will. They need one pass
+ * of their own — `scripts/repair-adopted-prompts.ts` — and the decision it
+ * makes per row is here so it can be exercised without a database.
+ *
+ * `stored` is what the routine holds now; `recovered` is `decryptField(stored)`.
+ * Comparing the two is what distinguishes the three cases, and it is reliable
+ * precisely because `decryptField` returns a value it does not recognise
+ * untouched (the READ-BOTH property in field-crypto.ts):
+ *
+ *   - they are equal          → the row was never sealed. Correct already, and
+ *                               a rewrite would burn a write per routine per
+ *                               run of the repair.
+ *   - the recovery is the
+ *     placeholder             → the key that sealed it is gone. There is no
+ *                               plaintext to put back, so the routine is paused
+ *                               rather than left firing a sentence that means
+ *                               nothing — the same call `planTaskMigration`
+ *                               makes when it refuses the adoption outright.
+ *   - otherwise               → the plaintext, which is what the row should
+ *                               have held all along.
+ */
+export type AdoptedPromptRepair =
+  | { action: "leave" }
+  | { action: "rewrite"; prompt: string }
+  | { action: "pause" };
+
+export function planAdoptedPromptRepair(stored: string, recovered: string): AdoptedPromptRepair {
+  if (stored === recovered) return { action: "leave" };
+  if (recovered.trim() === "" || recovered === FIELD_DECRYPT_PLACEHOLDER) {
+    return { action: "pause" };
+  }
+  return { action: "rewrite", prompt: recovered };
 }
 
 // ---------------------------------------------------------------------------
