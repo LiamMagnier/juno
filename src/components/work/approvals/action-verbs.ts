@@ -110,6 +110,22 @@ const VERBS: Record<string, ActionVerb> = {
     targetKeys: ["site", "vendor", "url"],
     bodyAs: "prose",
   },
+
+  // ---- Above the floor, and the one gate the cloud browser raises. ----
+  //
+  // Without an entry the button reads "Go ahead", which is the generic verb this
+  // file exists to refuse: a person asked to authorise a form send on a site
+  // they cannot see should be reading the word "Send", not agreeing to a
+  // sentence that would fit a search and a checkout equally well. The keys are
+  // the ones an executor puts on a browser approval when it has them — the page
+  // and what is about to be sent — and where it has none the card falls back to
+  // the parameters, with the right verb on the button either way.
+  "work.browser.submit": {
+    verb: "Send the form",
+    bodyKeys: ["fields", "summary", "description"],
+    targetKeys: ["url", "site", "page"],
+    bodyAs: "prose",
+  },
   "work.system.change_security_setting": {
     verb: "Change the setting",
     bodyKeys: ["setting", "description", "summary"],

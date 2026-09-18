@@ -1250,14 +1250,22 @@ user / operator / internal), `WorkApproval`, `WorkRunIO` (an attempt's input man
 **What a cloud run can do.** Connectors, `web_search`, `web_fetch`, `create_deliverable`,
 `cloud_files` — and two more that are worth naming because both look like they should need
 a Mac and do not. **`browser`** opens a real headless page and reads, clicks, types and
-submits it: the page's requests are intercepted and served by the executor's own
-DNS-pinned fetcher (`src/lib/work/browser.ts`), so Chromium never opens a socket and a
-hostile page cannot rebind a name onto the worker's metadata endpoint. Its risks are a
-ladder — read is `safe`, click and type are `edit`, **submit is `command`** — and a click
-on a control that would send a form is *refused* with "use submit", so reaching the rung
-that asks the user is structural rather than a matter of the model labelling its own
-action. It serves `web_research`; `local_browser` still means the signed-in profile on
-your Mac, which this is not. **`delegate`** hands one self-contained piece of work to a
+submits it: the page's HTTP(S) requests are intercepted and served by the executor's own
+DNS-pinned fetcher (`src/lib/work/browser.ts`), so Chromium opens no socket of its own for
+them and a hostile page cannot rebind a name onto the worker's metadata endpoint. The
+channels that hook cannot cover are refused rather than allowed — every WebSocket is
+closed on the handshake, WebRTC is off at the launch line — and the fulfilled response
+keeps the browser's own same-origin rule, which Playwright otherwise waives by inventing a
+permissive `access-control-allow-origin`. Chromium is launched with an allowlisted
+environment, so the run's provider keys and database URL are not in the process a page's
+scripts run in. Its risks are a ladder — read is `safe`, click and type are `edit`,
+**submit of a GET form is `command` and submit of anything else is `irreversible`**, which
+means it asks under every mode and no "stop asking" can cover it — and a click on a
+control that would send a form is *refused* with "use submit", so reaching the rung that
+asks the user is structural rather than a matter of the model labelling its own action. A
+submit on a page that asks for a card is raised as `work.browser.purchase`, the
+always-confirm name the permissions page renders. It serves `web_research`;
+`local_browser` still means the signed-in profile on your Mac, which this is not. **`delegate`** hands one self-contained piece of work to a
 child agent with a fresh context window and waits for its report. The child is not a second
 session: its tool calls run through `WorkAgentSession.executeToolCall` — the same tier
 lattice, approval ladder, provenance record and untrusted envelope — and its provider

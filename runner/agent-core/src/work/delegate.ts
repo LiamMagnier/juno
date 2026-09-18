@@ -64,6 +64,14 @@ export const MAX_DELEGATIONS_PER_RUN = 6;
  * with a fresh context; a child on its fortieth step has either been given the
  * whole task or has lost the thread, and both are better handled by the parent
  * reading a short report than by the child carrying on alone.
+ *
+ * It is worth being explicit that these steps are the child's own: the child
+ * runs its own loop, so they do not count against `MAX_STEPS_PER_RUN`, and a
+ * run that delegates to its limit can take 200 + 6 * 30 = 380 steps in total
+ * rather than 200. Every one of them is metered by the same budget guard, so
+ * this is not a spending hole; it is the shape of the step backstop, and the
+ * step backstop is the last one standing wherever the time and token ceilings
+ * are gone.
  */
 export const MAX_STEPS_PER_DELEGATION = 30;
 

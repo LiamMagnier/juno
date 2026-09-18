@@ -55,6 +55,7 @@ import {
   APPROVAL_TTL_MS,
   canonicalJson,
   approvalAsksUnder,
+  requiresExplicitApproval,
   type WorkPermissionPolicy,
   type BudgetUsage,
   type WorkActionRecord,
@@ -857,9 +858,20 @@ export class WorkAgentSession {
     // The mode decides, above the floor. `approvalAsksUnder` checks the floor
     // first and separately, so Skip cannot reach past it — the four things Juno
     // cannot take back still ask under every mode.
+    //
+    // Neither can a standing grant, and that needs saying twice. The grant is
+    // keyed on the action NAME, while the floor is a question about the name
+    // and the risk together, so one action can be below the floor on one call
+    // and above it on the next: `work.browser.submit` is `command` for a search
+    // box and `irreversible` for a form that posts. Recording the grant is
+    // already refused for the second kind; without re-checking the floor here,
+    // a grant recorded on the first would still cover it, and one "and stop
+    // asking" on a search would authorise every checkout for the rest of the
+    // run.
+    const floored = requiresExplicitApproval(action, risk);
     if (
       approvalAsksUnder(action, risk, this.options.approvalMode ?? 'conservative') &&
-      !this.grantedAlways.has(action)
+      (floored || !this.grantedAlways.has(action))
     ) {
       const answer = await this.gateApproval(call, tool, action, risk);
       if (answer !== 'allowed' && answer !== 'allowed_always') {

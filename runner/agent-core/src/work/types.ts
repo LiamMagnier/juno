@@ -770,6 +770,9 @@ export type WorkEvent =
  * null on all of them, because nothing in the cloud runtime could delegate.
  * Something can now, and an event log where a child's tool calls are
  * indistinguishable from the coordinator's is one nobody can read afterwards.
+ * `deriveActivity` in src/components/work/work-timeline.tsx is what reads it:
+ * it resolves the id to the title the parent briefed the child with, so the
+ * feed attributes each row without ever printing the identifier.
  */
 export type WorkEmittedEvent = WorkEvent & { seq: number; at: string; agentId?: string };
 

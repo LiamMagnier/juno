@@ -61,7 +61,7 @@ import {
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import { maxStepsForBudget } from "@/lib/work/budget";
-import { createWorkBrowser } from "@/lib/work/browser";
+import { createWorkBrowser, sealedResponseHeaders } from "@/lib/work/browser";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
@@ -1586,15 +1586,16 @@ function buildTools(input: {
   /*
    * The browser, on exactly the leash `web_fetch` is on.
    *
-   * Every request the page makes comes back here and goes out through
+   * Every HTTP(S) request the page makes comes back here and goes out through
    * `fetchPinnedWebPage` — the same DNS resolution, the same
    * `blockedFetchAddress` on every answer, the same address pinned into the
-   * socket. Chromium is handed the response and never opens a connection of its
-   * own. The argument for doing it this way rather than checking the URL and
-   * letting the browser connect is in src/lib/work/browser.ts: a lexical check
-   * is not a DNS boundary, and a browser is the one client where the gap
-   * between those two is reachable by a page's own scripts rather than only by
-   * the model.
+   * socket. Chromium is handed the response and opens no connection of its own
+   * for any of them; the channels this hook cannot cover — WebSocket, WebRTC —
+   * are refused in the driver rather than left open. The argument for doing it
+   * this way rather than checking the URL and letting the browser connect is in
+   * src/lib/work/browser.ts: a lexical check is not a DNS boundary, and a
+   * browser is the one client where the gap between those two is reachable by a
+   * page's own scripts rather than only by the model.
    *
    * The skill grant applies to every one of those requests and not only to the
    * navigation. A grant that narrowed the run to one domain and then let the
@@ -1625,13 +1626,12 @@ function buildTools(input: {
           headers: request.headers,
           body: request.body,
         });
-        // The body handed over is already decoded and its length is whatever
-        // arrived, so the two headers describing the encoding of what came off
-        // the wire would now be describing something else.
-        const headers = { ...response.headers };
-        delete headers["content-encoding"];
-        delete headers["content-length"];
-        return { ok: true, status: response.status, headers, body: response.body };
+        return {
+          ok: true,
+          status: response.status,
+          headers: sealedResponseHeaders(response.headers),
+          body: response.body,
+        };
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         return {
@@ -1655,6 +1655,8 @@ function buildTools(input: {
     typeText: (target, text) => browser.typeText(target, text),
     submit: (target) => browser.submit(target),
     currentUrl: () => browser.currentUrl(),
+    submitMethod: (target) => browser.submitMethod(target),
+    pageTakesPayment: () => browser.pageTakesPayment(),
     allowedDomains: () => input.egressDomains.current,
     onCitation: (citation) => input.sink.session?.recordCitation(citation),
   });

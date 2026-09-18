@@ -600,9 +600,9 @@ export const MAX_BROWSER_ELEMENTS = 60;
  * confidently, and there is no way to tell from the outside that it did.
  *
  * `submits` is the field the approval ladder rests on. An element that would
- * send a form is refused by `click` and only reachable through `submit`, whose
- * risk is `command` — so the gate does not depend on the model correctly
- * describing what it is about to press.
+ * send a form is refused by `click` and only reachable through `submit` — so
+ * the gate does not depend on the model correctly describing what it is about
+ * to press. `method` is what decides which rung that submit lands on.
  */
 export interface BrowserElement {
   ref: number;
@@ -614,6 +614,8 @@ export interface BrowserElement {
   href?: string;
   /** True when pressing it submits the form it is in. */
   submits?: boolean;
+  /** How the form it is in is sent. Absent outside a form. */
+  method?: 'get' | 'post';
 }
 
 export interface BrowserPageState {
@@ -643,7 +645,9 @@ export type BrowserOutcome =
  *      is worse, because nothing in the transcript would show it happening.
  *   2. It must hold no Juno credential. The run's provider keys and database
  *      handle live in the executor; a page that can read them is a page that
- *      has read them.
+ *      has read them. A browser process inherits its parent's environment
+ *      unless it is told not to, so "hold" here means the process environment
+ *      as much as it means anything the page is handed.
  *   3. It must be closed when the run ends. A leaked browser is a leaked
  *      several hundred megabytes on a worker that runs three of these at once.
  *
@@ -661,6 +665,17 @@ export interface BrowserToolDeps {
   submit(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
   /** Where the page is now; empty before anything has been opened. */
   currentUrl(): string;
+  /**
+   * How the form this target would send is sent, from the page as last read.
+   *
+   * The risk of a submit is graded on it, so an executor that cannot answer —
+   * or a target the snapshot never named — must answer null and be graded as
+   * the worse case. A GET form is a query; everything else changes somebody
+   * else's system.
+   */
+  submitMethod?(target: { ref?: number; selector?: string }): 'get' | 'post' | null;
+  /** Whether the page in front asks for a card, which makes a submit a purchase. */
+  pageTakesPayment?(): boolean;
   /** Late-bound skill egress grant; an empty list denies every navigation. */
   allowedDomains?(): readonly string[] | null;
   onCitation?(citation: WorkCitation): void;
@@ -728,27 +743,52 @@ const BROWSER_ACTIONS: Record<BrowserAction, { intent: string; action: string }>
  *   - `click` and `type` are `edit`. Pressing a control or filling a field
  *     changes the state of a page Juno does not own, and Manual mode — "ask
  *     before every change" — is exactly the mode whose user means that.
- *   - `submit` is `command`. It is the one that sends something, and under
- *     every mode but Skip it stops and asks.
+ *   - `submit` of a GET form is `command`. A GET form is a query — a search
+ *     box, a filter — and every mode but Skip stops for it.
+ *   - `submit` of anything else is `irreversible`, and that is the floor: it
+ *     asks under every mode including Skip, and `allowed_always` cannot cover
+ *     it. A POST form is how a website is told to do something, and the thing
+ *     it is told to do can be buy. There is no rung between "a search box" and
+ *     "a checkout" that the DOM lets this tool tell apart, so the one that
+ *     cannot be taken back is the one it assumes.
+ *
+ * A submit on a page that asks for a card is `work.browser.purchase` rather
+ * than `work.browser.submit`. That name is on the always-confirm list the
+ * permissions page renders, so it has to be a name something can emit: a floor
+ * entry no code produces is a promise the product makes and the runtime cannot
+ * keep.
  *
  * What stops the ladder being advisory is that `click` REFUSES an element that
  * would submit a form: the executor knows from the DOM which controls those
- * are, so reaching the `command` rung is not a matter of the model labelling
- * its own action honestly. It is not total — a button that posts from a script
- * with no form around it is indistinguishable from one that scrolls, and is
- * named as a limit rather than papered over.
+ * are, so reaching the rung that asks is structural rather than a matter of the
+ * model labelling its own action honestly. It is not total — a button that
+ * posts from a script with no form around it is indistinguishable from one that
+ * scrolls, and is named as a limit rather than papered over.
  */
 export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
   const now = deps.now ?? (() => new Date());
+  /** The target a call names, in the shape the executor answers questions about. */
+  const targetOf = (input: Record<string, unknown>) => ({
+    ...(typeof input.ref === 'number' ? { ref: input.ref } : {}),
+    ...(typeof input.selector === 'string' ? { selector: input.selector } : {}),
+  });
+  const actionName = (input: Record<string, unknown>): string => {
+    if (browserAction(input) === 'submit' && deps.pageTakesPayment?.() === true) {
+      return 'work.browser.purchase';
+    }
+    return BROWSER_ACTIONS[browserAction(input)].action;
+  };
   return {
     kind: 'edit',
     tier: 'browser_dom',
     intents: ['browser.read', 'browser.click', 'browser.type', 'browser.submit'],
     intentFor: (input) => BROWSER_ACTIONS[browserAction(input)].intent,
-    actionFor: (input) => BROWSER_ACTIONS[browserAction(input)].action,
+    actionFor: actionName,
     riskFor: (input) => {
       const action = browserAction(input);
-      if (action === 'submit') return 'command';
+      if (action === 'submit') {
+        return deps.submitMethod?.(targetOf(input)) === 'get' ? 'command' : 'irreversible';
+      }
       return action === 'click' || action === 'type' ? 'edit' : 'safe';
     },
     provenanceFor: (input) => ({
@@ -757,7 +797,7 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
           ? String(input.url ?? 'a web page')
           : deps.currentUrl() || 'a web page',
       sourceKind: 'web',
-      action: BROWSER_ACTIONS[browserAction(input)].action,
+      action: actionName(input),
       // Everything this returns is the page's own words, including the status
       // line after a click: the page decided what the next page says.
       trust: 'untrusted',
@@ -808,7 +848,9 @@ export function browserTool(deps: BrowserToolDeps): WorkToolDefinition {
         case 'type':
           return `Type into ${target} on ${deps.currentUrl() || 'the page'}`;
         case 'submit':
-          return `Submit the form at ${deps.currentUrl() || 'the page'}`;
+          return deps.pageTakesPayment?.() === true
+            ? `Buy something at ${deps.currentUrl() || 'the page'}`
+            : `Submit the form at ${deps.currentUrl() || 'the page'}`;
       }
     },
     async execute(input): Promise<ToolResult> {

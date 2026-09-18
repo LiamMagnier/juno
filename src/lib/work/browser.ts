@@ -9,12 +9,11 @@
  *
  * THE LEASH
  *
- * Chromium makes no network requests of its own. Every request the page makes —
- * the document, its scripts, its XHRs, the POST a form submits — is intercepted
- * and handed to `fetchResource`, which the executor implements with the same
- * DNS-pinned, address-checked fetch `web_fetch` uses, and the response is
- * fulfilled back into the page. The browser's own network stack is never
- * reached.
+ * Every HTTP(S) request the page makes — the document, its scripts, its XHRs,
+ * the POST a form submits — is intercepted and handed to `fetchResource`, which
+ * the executor implements with the same DNS-pinned, address-checked fetch
+ * `web_fetch` uses, and the response is fulfilled back into the page. For those
+ * requests Chromium's own network stack is never reached.
  *
  * That is not belt-and-braces, it is the only version of this that is safe. The
  * lexical URL check `blockedFetchTarget` performs is explicitly "not a DNS
@@ -26,14 +25,34 @@
  * Intercept-and-fulfil closes that by construction, because there is no socket
  * for a second resolution to affect, and it costs one function seam.
  *
+ * `context.route` covers HTTP(S) and nothing else, so the channels it does not
+ * cover are REFUSED rather than left to Chromium. A WebSocket handshake never
+ * passes through a request route — Playwright has a separate `routeWebSocket`
+ * for exactly that — so `new WebSocket("ws://127.0.0.1:…")` from a page's own
+ * script would have opened a direct socket to a loopback address, which is
+ * precisely what `blockedFetchAddress` exists to refuse and what a skill's
+ * egress grant would never have seen. Every socket a page opens is therefore
+ * closed on the handshake, and WebRTC — which cannot be routed at all — is
+ * disabled on the launch line. What the page is left with is the one path that
+ * goes through the executor's fetcher.
+ *
  * WHAT IS STILL TRUE
  *
  * The page's scripts run, and they run against whatever the run has in this
  * browser: cookies set by pages this run visited. That is the capability, not a
  * defect — a site with a search box is the case the tool exists for — and the
- * containment around it is that the browser holds no Juno credential, that
- * everything it returns is marked untrusted and enveloped before the model
- * reads it, and that nothing it reaches is a Juno host.
+ * containment around it is that the browser holds no Juno credential (the
+ * launch environment is an allowlist, not the runner's), that everything it
+ * returns is marked untrusted and enveloped before the model reads it, and that
+ * nothing it reaches is a Juno host.
+ *
+ * That argument only holds while one page cannot read another origin's
+ * authenticated response, so the same-origin policy has to survive the
+ * interception, and by default it does not: Playwright adds a permissive
+ * `access-control-allow-origin` to any fulfilled response whose origin server
+ * sent none. `sealedResponseHeaders` below is what puts the browser's own rule
+ * back, and the executor runs every response through it. Cross-origin reads are
+ * refused; a genuine CORS API, which sent its own header, still works.
  *
  * Those cookies live exactly as long as the process. The executor closes the
  * browser when the run ends OR pauses, because a paused run resumes on
@@ -68,6 +87,8 @@ export interface BrowserElement {
   label: string;
   href?: string;
   submits?: boolean;
+  /** How the form this element is in is sent. Absent outside a form. */
+  method?: "get" | "post";
 }
 
 export interface BrowserPageState {
@@ -130,6 +151,17 @@ export interface WorkBrowser {
   typeText(target: { ref?: number; selector?: string }, text: string): Promise<BrowserOutcome>;
   submit(target: { ref?: number; selector?: string }): Promise<BrowserOutcome>;
   currentUrl(): string;
+  /**
+   * How the form this target would send is sent, from the last snapshot.
+   *
+   * The runtime grades a submit on it, so an unknown target answers null and
+   * is graded as the worse case rather than the cheaper one: a selector the
+   * snapshot never named is exactly the call whose consequences nobody has
+   * looked at.
+   */
+  submitMethod(target: { ref?: number; selector?: string }): "get" | "post" | null;
+  /** Whether the page in front asks for a card. See `PAYMENT_FIELD`. */
+  pageTakesPayment(): boolean;
   close(): Promise<void>;
 }
 
@@ -184,6 +216,97 @@ const IGNORED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
  */
 const MAX_REQUESTS_PER_ACTION = 150;
 
+/**
+ * What a page looks like when it is asking for a card.
+ *
+ * Used to grade a submit as a purchase rather than as a send, so a wrong
+ * answer is only ever a card that says "Buy" over a form that was not one —
+ * both readings stop and ask, because a submit that is not plainly a query
+ * already floors. It is deliberately narrow: the field that names a card
+ * number or its security code, by the autocomplete token the spec defines or
+ * by the names every checkout has used since long before that token existed.
+ */
+const PAYMENT_FIELD =
+  /card[-_ ]?number|credit[-_ ]?card|(^|[^a-z])(cvv|cvc|csc)([^a-z]|$)|security[-_ ]?code/i;
+
+/**
+ * The environment Chromium is launched with.
+ *
+ * An allowlist, and that is the whole point. Playwright's default is
+ * `process.env` — the runner's entire environment, which holds `DATABASE_URL`,
+ * every provider key and the column-encryption key — and it would hand all of
+ * them to a process started with `--no-sandbox` whose job is to run scripts
+ * written by strangers. A renderer compromise from a page the model was told to
+ * open would then be a read of /proc/<pid>/environ away from the account's
+ * secrets. A denylist would have the property that the secret added to the
+ * runner next month joins it silently; this has the property that it does not.
+ */
+export function browserLaunchEnvironment(
+  source: Record<string, string | undefined> = process.env
+): Record<string, string> {
+  const environment: Record<string, string> = {
+    PATH: source.PATH ?? "",
+    HOME: source.HOME ?? "",
+    LANG: source.LANG ?? "C",
+  };
+  // The one Juno-side variable Chromium genuinely needs: it is where the
+  // browser binaries are, not a credential.
+  if (source.PLAYWRIGHT_BROWSERS_PATH) {
+    environment.PLAYWRIGHT_BROWSERS_PATH = source.PLAYWRIGHT_BROWSERS_PATH;
+  }
+  return environment;
+}
+
+/**
+ * The flags Chromium is started with.
+ *
+ * `--no-sandbox` because the worker is already the isolation boundary and a
+ * container without user namespaces cannot start the sandbox at all;
+ * `--disable-dev-shm-usage` because the default /dev/shm in a container is 64MB
+ * and Chromium crashes on a large page without it. The WebRTC pair is
+ * containment: a peer connection is a UDP socket a page opens itself, and
+ * unlike a WebSocket there is no route hook that could refuse one — so the
+ * capability is turned off rather than left as the one path out of the leash.
+ */
+export const BROWSER_LAUNCH_ARGS: readonly string[] = [
+  "--no-sandbox",
+  "--disable-dev-shm-usage",
+  "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+  "--disable-features=WebRtcHideLocalIpsWithMdns,RTCPeerConnection,WebRTC",
+];
+
+/**
+ * The response headers Chromium is handed, with the browser's own rule intact.
+ *
+ * Two jobs, both about a response that has been carried across a process
+ * boundary and is no longer describing what came off the wire:
+ *
+ *  - Content-Encoding and Content-Length go, because the body handed over is
+ *    already decoded and its length is whatever arrived.
+ *  - `access-control-allow-origin` is set to "null" when the origin server sent
+ *    none. Playwright's `Route.fulfill` calls `_maybeAddCorsHeaders`, which sees
+ *    a request that carried an `Origin`, sees no allow-origin on the response,
+ *    and INVENTS one naming the requesting origin — plus
+ *    `access-control-allow-credentials: true`. The same-origin policy is then
+ *    void inside this browser: a hostile page can `fetch(…, {credentials:
+ *    "include"})` another origin the run is signed into and read the body. A
+ *    header that is present is left alone, so a genuine CORS API still works;
+ *    "null" matches no origin, so everything else is back to the rule the
+ *    browser would have applied if it had made the request itself.
+ */
+export function sealedResponseHeaders(upstream: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  let allowsOrigin = false;
+  for (const [name, value] of Object.entries(upstream)) {
+    const lower = name.toLowerCase();
+    if (lower === "content-encoding" || lower === "content-length") continue;
+    if (lower === "access-control-allow-origin") allowsOrigin = true;
+    headers[name] = value;
+  }
+  if (!allowsOrigin) headers["access-control-allow-origin"] = "null";
+  return headers;
+}
+
 export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
   const navigationTimeout = options.navigationTimeoutMs ?? DEFAULT_NAVIGATION_TIMEOUT_MS;
   const actionTimeout = options.actionTimeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS;
@@ -195,6 +318,8 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
   let unavailable: string | null = null;
   /** The last snapshot's elements, which is what a `ref` addresses. */
   let elements: BrowserElement[] = [];
+  /** Whether the last snapshot found a card field. See `PAYMENT_FIELD`. */
+  let takesPayment = false;
   /** Why the last document request did not arrive, when it did not. */
   let navigationFailure: string | null = null;
   /** Requests caused by the action in flight. See `MAX_REQUESTS_PER_ACTION`. */
@@ -270,11 +395,8 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       const { chromium } = await import("playwright");
       browser = await chromium.launch({
         headless: true,
-        // `--no-sandbox` because the worker is already the isolation boundary
-        // and a container without user namespaces cannot start the sandbox at
-        // all; `--disable-dev-shm-usage` because the default /dev/shm in a
-        // container is 64MB and Chromium crashes on a large page without it.
-        args: ["--no-sandbox", "--disable-dev-shm-usage"],
+        args: [...BROWSER_LAUNCH_ARGS],
+        env: browserLaunchEnvironment(),
         ...(options.executablePath ? { executablePath: options.executablePath } : {}),
       });
       context = await browser.newContext({
@@ -286,6 +408,17 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       context.setDefaultNavigationTimeout(navigationTimeout);
       context.setDefaultTimeout(actionTimeout);
       await context.route("**/*", handleRoute);
+      // A WebSocket handshake is not an HTTP request as far as `route` is
+      // concerned — it has its own hook — so without this a page's own script
+      // could open a socket straight out of Chromium, to a loopback or
+      // link-local address the fetcher would have refused and to a host no
+      // skill grant covers. There is nothing useful a Work run does over a
+      // WebSocket that it cannot do over the leashed path, so every one is
+      // closed on the handshake rather than proxied.
+      await context.routeWebSocket("**/*", (ws) => {
+        options.log?.("work browser refused a websocket", { url: ws.url() });
+        ws.close();
+      });
       // A link with target="_blank" opens a page this driver did not create,
       // and without this the next snapshot would be of the page the model has
       // just navigated away from — it would read the same document twice and
@@ -297,9 +430,14 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       page = await context.newPage();
       return page;
     } catch (error) {
+      // The alternative is named here and not only by the tier layer, because
+      // the tier layer's refusal is reached from the SECOND call onwards: the
+      // first call is the one that discovers the deployment has no browser, and
+      // a first call that says only "could not start" is a model told a thing
+      // failed and not told what to do instead.
       unavailable = `Juno could not start a browser on this deployment: ${
         error instanceof Error ? error.message : String(error)
-      }`;
+      }. Use web_search and web_fetch, and say in your answer that you could not use a browser.`;
       options.log?.("work browser unavailable", { error: unavailable });
       await close();
       return unavailable;
@@ -315,7 +453,9 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
    */
   async function snapshot(current: Page): Promise<BrowserPageState> {
     await current.waitForLoadState("domcontentloaded", { timeout: navigationTimeout }).catch(() => {});
-    const collected = (await current.evaluate((max: number) => {
+    const collected = (await current.evaluate((options: { max: number; payment: string }) => {
+      const { max } = options;
+      const paymentField = new RegExp(options.payment, "i");
       const selector =
         'a[href], button, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"]';
       const found: Array<{
@@ -324,6 +464,7 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
         label: string;
         href?: string;
         submits?: boolean;
+        method?: "get" | "post";
       }> = [];
       let ref = 0;
       for (const node of Array.from(document.querySelectorAll(selector))) {
@@ -360,6 +501,13 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
           ((tag === "button" && (type === "" || type === "submit")) ||
             (tag === "input" && (type === "submit" || type === "image")));
 
+        // Recorded for every element in a form, not only for the ones that
+        // press it: a form is also sent by pressing Enter in one of its
+        // fields, and that field is a legitimate target for `submit`.
+        const form = element.closest("form");
+        const method =
+          form === null ? undefined : (form.method || "get").toLowerCase() === "get" ? "get" : "post";
+
         ref += 1;
         element.setAttribute("data-juno-ref", String(ref));
         found.push({
@@ -368,17 +516,30 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
           label: label.replace(/\s+/g, " ").slice(0, 80),
           ...(tag === "a" ? { href: element.getAttribute("href") ?? "" } : {}),
           ...(submits ? { submits: true } : {}),
+          ...(method ? { method } : {}),
         });
       }
-      return found;
-    }, MAX_ELEMENTS)) as BrowserElement[];
 
-    elements = collected;
+      const takesPayment = Array.from(document.querySelectorAll("input")).some((input) => {
+        const autocomplete = (input.getAttribute("autocomplete") ?? "").toLowerCase();
+        if (autocomplete.includes("cc-number") || autocomplete.includes("cc-csc")) return true;
+        return paymentField.test(
+          `${input.getAttribute("name") ?? ""} ${input.getAttribute("id") ?? ""} ${input.getAttribute("placeholder") ?? ""}`
+        );
+      });
+      return { found, takesPayment };
+    }, { max: MAX_ELEMENTS, payment: PAYMENT_FIELD.source })) as {
+      found: BrowserElement[];
+      takesPayment: boolean;
+    };
+
+    elements = collected.found;
+    takesPayment = collected.takesPayment;
     return {
       url: current.url(),
       title: await current.title().catch(() => ""),
       html: await current.content(),
-      elements: collected,
+      elements: collected.found,
     };
   }
 
@@ -454,6 +615,7 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
     context = null;
     browser = null;
     elements = [];
+    takesPayment = false;
     for (const handle of closing) {
       await handle?.close().catch(() => {});
     }
@@ -465,6 +627,13 @@ export function createWorkBrowser(options: WorkBrowserOptions): WorkBrowser {
       const url = page?.url() ?? "";
       return url === "about:blank" ? "" : url;
     },
+
+    submitMethod: (target) =>
+      (typeof target.ref === "number"
+        ? elements.find((element) => element.ref === target.ref)?.method
+        : undefined) ?? null,
+
+    pageTakesPayment: () => takesPayment,
 
     async open(url) {
       const current = await ensurePage();
