@@ -1458,8 +1458,12 @@ a detail naming the window and when it frees up. A skill, schedule, project or h
 still ask for LESS (`narrowestBudget`); nothing may ask for more. No dispatcher adds a
 per-run backstop of its own — a scheduled or trigger-fired run gets the window exactly as a
 hand-pressed one does, and `runBudgetForWindow` supplies `unattendedRunCeiling` only for the
-cap-disabled account that has no window. The monthly `checkBudget` remains the outer bound,
-because a window is a slice of it. The argument for removing the
+cap-disabled account that has no window. A **Juno Code** turn answers to the same windows,
+at both doors into one: the `/api/agent/[...path]` proxy (web and cloud runner) and
+`/api/agent/usage` `phase: "start"` (the desktop and native engines, which call their own
+provider and settle here). Both refuse with the existing `402 QUOTA_EXCEEDED` every client
+already treats as the wall, carrying `window` and `resetsAtMs` so it can say which.
+The monthly `checkBudget` remains the outer bound, because a window is a slice of it. The argument for removing the
 plan-shaped table that used to be here is `docs/design/TWO_PRODUCTS.md` §4. Abuse controls:
 10 dispatches/min/user and at most 3 live runs per user across all sessions.
 

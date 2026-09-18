@@ -8,7 +8,8 @@ import {
   reserveCodeMessage,
   resolveCodeUsageReservation,
 } from "@/lib/usage";
-import { checkBudget, budgetExceededMessage, recordSpend } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 
 export const runtime = "nodejs";
 
@@ -27,8 +28,9 @@ const usageSchema = z.object({
  *   { phase: "start" }
  *     → consumes one message from the plan AND checks the € budget — the
  *       message counter only blocks FREE (paid plans are budget-limited), so
- *       checkBudget is the gate that actually enforces paid-plan limits.
- *       402 QUOTA_EXCEEDED blocks the turn.
+ *       checkBudget is the gate that actually enforces paid-plan limits,
+ *       and `checkUsageWindows` beside it is the 5-hour/weekly one that is
+ *       the real ceiling on a run. 402 QUOTA_EXCEEDED blocks the turn.
  *
  *   { phase: "record", promptTokens, completionTokens, model }
  *     → adds the turn's real token counts to the period aggregate AND writes
@@ -59,6 +61,23 @@ export async function POST(req: NextRequest) {
     if (!budget.allowed) {
       return NextResponse.json(
         { error: budgetExceededMessage(plan, budget.resetsAtMs), code: "QUOTA_EXCEEDED" },
+        { status: 402 },
+      );
+    }
+    // The rolling windows, for the same reason the proxy checks them: this is
+    // the OTHER door into a Code turn — the desktop and native engines call
+    // their own provider and settle here — so gating one and not the other
+    // would leave the window enforced only for whoever happened to be on the
+    // web. Same 402 and same code, argued at the proxy.
+    const windows = await checkUsageWindows(user.id, plan);
+    if (!windows.allowed && windows.bound !== null) {
+      return NextResponse.json(
+        {
+          error: windowLimitMessage(windows.bound, windows.resetsAtMs),
+          code: "QUOTA_EXCEEDED",
+          window: windows.bound,
+          resetsAtMs: windows.resetsAtMs,
+        },
         { status: 402 },
       );
     }

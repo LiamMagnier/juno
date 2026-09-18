@@ -4,7 +4,8 @@ import { isTerminalTaskStatus, taskTokenAuth } from "@/lib/code-remote";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
-import { checkBudget, budgetExceededMessage } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
   createUpstreamAbort,
   isUpstreamTimeout,
@@ -75,6 +76,31 @@ export async function POST(
     if (!budget.allowed) {
       return NextResponse.json(
         { error: budgetExceededMessage(plan, budget.resetsAtMs), code: "QUOTA_EXCEEDED" },
+        { status: 402 },
+      );
+    }
+    // And the rolling windows, which are the real limit now that the per-run
+    // ceiling is gone (src/lib/work/budget.ts). Every Juno Code agent turn
+    // comes through this proxy, so without it a Code run was the one surface
+    // with nothing but the MONTH above it: chat stops at the five-hour window,
+    // a Work run stops at it and is re-checked mid-flight, and a Code loop went
+    // on spending. That is not a stricter or looser policy than the others —
+    // it is the same account's limit not being applied to one of its surfaces.
+    //
+    // Same 402 and same `QUOTA_EXCEEDED` as the budget wall above, deliberately:
+    // every client already treats that pair as "stop the turn and say why"
+    // rather than as something to retry, and a new code would be a refusal they
+    // do not recognise. `window` rides along for a client that wants to say
+    // which one.
+    const windows = await checkUsageWindows(user.id, plan);
+    if (!windows.allowed && windows.bound !== null) {
+      return NextResponse.json(
+        {
+          error: windowLimitMessage(windows.bound, windows.resetsAtMs),
+          code: "QUOTA_EXCEEDED",
+          window: windows.bound,
+          resetsAtMs: windows.resetsAtMs,
+        },
         { status: 402 },
       );
     }

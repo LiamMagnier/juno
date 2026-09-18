@@ -325,6 +325,15 @@ test("the windows are enforced and not merely metered", () => {
     "../scripts/work-scheduler.ts",
     "../scripts/work-trigger-poller.ts",
     "../scripts/work-runner.ts",
+    // BOTH doors into a Juno Code turn. The proxy is the web and cloud-runner
+    // path; `/api/agent/usage` is the one the desktop and native engines use,
+    // calling their own provider and settling here. Code was the last surface
+    // with only the MONTH above it — chat stopped at the five-hour window and a
+    // Work run stopped at it and was re-checked mid-flight, while a Code loop
+    // went on spending — and gating one door without the other would leave the
+    // window enforced only for whoever happened to be on the web.
+    "../src/app/api/agent/[...path]/route.ts",
+    "../src/app/api/agent/usage/route.ts",
   ]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.match(source, /checkUsageWindows\(/, file);
