@@ -4,13 +4,17 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  GITHUB_APP_INSTALL_MISS_TTL_MS,
+  GITHUB_APP_INSTALL_TTL_MS,
   GITHUB_APP_JWT_SKEW_S,
   GITHUB_APP_JWT_TTL_S,
   chooseCloneCredential,
   getRepoInstallationToken,
   githubAppConfigFromEnv,
+  isGithubAppInstalled,
   mintAppJwt,
   normalisePem,
+  resetGithubAppInstallCache,
   resetGithubAppTokenCache,
   userCanPushToRepo,
   type GithubAppConfig,
@@ -109,6 +113,65 @@ test("no installation on the repository means no app token, not an error", async
   ]);
   const config: GithubAppConfig = { appId: "1", privateKey, fetch };
   assert.equal(await getRepoInstallationToken(config, { owner: "acme", repo: "private" }), null);
+});
+
+test("'is the app installed here' is answered once and then cached", async () => {
+  /*
+   * Asked by the auto-fix toggle, which re-reads its route on mount and on
+   * every code-sync event. It is a question about the user interface, so it
+   * mints no token and it must not become a GitHub round trip per sync.
+   */
+  resetGithubAppInstallCache();
+  const now = 1_757_500_000_000;
+  const { fetch, calls } = scriptedFetch([
+    { match: (url) => url.endsWith("/repos/acme/widgets/installation"), status: 200, body: { id: 77 } },
+  ]);
+  const config: GithubAppConfig = { appId: "1", privateKey, fetch, now: () => now };
+
+  assert.equal(await isGithubAppInstalled(config, "acme", "widgets"), true);
+  assert.equal(calls.length, 1);
+  // GitHub spells repository names in whatever case the delivery carried.
+  assert.equal(await isGithubAppInstalled(config, "ACME", "Widgets"), true);
+  assert.equal(calls.length, 1, "cached, and case-insensitively");
+
+  const later: GithubAppConfig = { ...config, now: () => now + GITHUB_APP_INSTALL_TTL_MS + 1 };
+  assert.equal(await isGithubAppInstalled(later, "acme", "widgets"), true);
+  assert.equal(calls.length, 2, "and asked again once the TTL is past");
+});
+
+test("a repository the app does not cover — and one GitHub could not be asked about — are both 'no'", async () => {
+  const now = 1_757_500_000_000;
+  resetGithubAppInstallCache();
+  const missing = scriptedFetch([{ match: (url) => url.endsWith("/installation"), status: 404, body: {} }]);
+  const config: GithubAppConfig = { appId: "1", privateKey, fetch: missing.fetch, now: () => now };
+  assert.equal(await isGithubAppInstalled(config, "acme", "private"), false);
+
+  /*
+   * The negative is held for a minute, not ten. "No" is the answer a person
+   * acts on: they read "install the app on this repository", do exactly that,
+   * and come straight back to the same panel. A long negative would leave them
+   * staring at a refusal that stopped being true while they were reading it.
+   */
+  assert.ok(GITHUB_APP_INSTALL_MISS_TTL_MS < GITHUB_APP_INSTALL_TTL_MS);
+  await isGithubAppInstalled({ ...config, now: () => now + 1_000 }, "acme", "private");
+  assert.equal(missing.calls.length, 1, "held briefly");
+  await isGithubAppInstalled({ ...config, now: () => now + GITHUB_APP_INSTALL_MISS_TTL_MS + 1 }, "acme", "private");
+  assert.equal(missing.calls.length, 2, "and re-asked soon after");
+
+  /*
+   * And a lookup that throws answers "no" rather than propagating. The two
+   * mistakes are not symmetric: claiming "installed" over a failed lookup draws
+   * a switch whose events will never be delivered, which is the whole defect
+   * the caller is trying to avoid.
+   */
+  resetGithubAppInstallCache();
+  const broken = scriptedFetch([{ match: () => true, status: 500, body: {} }]);
+  assert.equal(
+    await isGithubAppInstalled({ appId: "1", privateKey, fetch: broken.fetch }, "acme", "widgets"),
+    false,
+  );
+  // No app configured at all is no installation, without asking anyone.
+  assert.equal(await isGithubAppInstalled(null, "acme", "widgets"), false);
 });
 
 test("the fallback decision prefers the app, then OAuth, and says why", () => {

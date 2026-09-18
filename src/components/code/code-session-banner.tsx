@@ -5,12 +5,15 @@ import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { AppIcons, CodeIcons } from "@/lib/app-icons";
 import { checksLabel, type ChecksReport } from "@/lib/code-checks";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { CodeSessionStatus } from "@/hooks/use-code-session";
 import { PRESENCE_META, type Presence } from "@/components/code/code-session-meta";
+import type { AutoFixHandle } from "@/components/code/use-code-auto-fix";
 
 /*
  * THE SESSION HEADER — the one place that answers "what is this, and what is it
@@ -94,6 +97,32 @@ const CHECKS_DOT: Record<ChecksReport["state"], string> = {
   none: "bg-muted-foreground",
 };
 
+/*
+ * WHAT GITHUB SAYS ABOUT THE BRANCH, AND WHETHER JUNO ANSWERS IT.
+ *
+ * These two facts were one chip and half a control. The rollup was a `<span>`
+ * whose only detail lived in a `title` attribute — invisible on a phone, which
+ * is where a reader is most likely to be when CI mails them — and the product
+ * had nothing at all to say about acting on a failure. Both belong to the same
+ * question, "is this branch mergeable and who is working on that", so they get
+ * one object: a chip that opens a panel with the checks by name and the per-pull-
+ * request auto-fix switch under them.
+ *
+ * ONE OBJECT, NOT TWO. Five things already sit on the right of this row. The
+ * auto-fix switch is the kind of control that would have been a sixth chip and
+ * then a badge on it; putting it inside the panel the failure already opens
+ * keeps the resting row exactly as long as it was.
+ */
+const PANEL_ROW = "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left";
+
+/** The outcome ink for one check, matching the rollup's own vocabulary. */
+const CHECK_INK: Record<string, string> = {
+  failing: "bg-destructive",
+  running: "bg-muted-foreground motion-safe:animate-pulse",
+  passing: "bg-success",
+  neutral: "bg-muted-foreground",
+};
+
 export interface CodeSessionBannerProps {
   /** True until the session's own kind (device or cloud) is known. */
   resolving: boolean;
@@ -122,6 +151,16 @@ export interface CodeSessionBannerProps {
   onToggleReview: (() => void) | null;
   /** What CI says about the branch, or null when we have not been told. */
   checks: ChecksReport | null;
+  /**
+   * The per-pull-request auto-fix switch, or null where the session has none.
+   *
+   * The handle's `state.available` is the server's answer to "can this
+   * deployment actually do this for this session" — no webhook secret, a device
+   * run, or no pull request each make it false, and the switch is not drawn for
+   * any of them. A control that implied a behaviour the runtime does not have
+   * would be the defect this row was built to remove.
+   */
+  autoFix: AutoFixHandle | null;
   /** Rename / Share / Archive / Delete, rendered by the view that owns the row. */
   menu?: React.ReactNode;
 }
@@ -139,10 +178,21 @@ export function CodeSessionBanner({
   reviewOpen,
   onToggleReview,
   checks,
+  autoFix,
   menu,
 }: CodeSessionBannerProps) {
   const presenceMeta = PRESENCE_META[presence.state];
   const taskChip = TASK_CHIP[status];
+
+  /*
+   * `state: "none"` covers both "this repository has no checks" and "the checks
+   * have not been created yet", and the two are indistinguishable over the API
+   * — so neither is reported. A green tick for a branch nobody tested is the
+   * one thing a CI indicator must never do, and that rule survives the chip
+   * becoming a control.
+   */
+  const report = checks && checks.state !== "none" ? checks : null;
+  const autoFixState = autoFix?.state?.available ? autoFix.state : null;
 
   /*
    * Hold the last activity line through the collapse.
@@ -237,25 +287,55 @@ export function CodeSessionBanner({
             )}
 
             {/*
-              CI, AND ONLY WHEN GITHUB HAS SAID SOMETHING.
-              `state: "none"` covers both "this repository has no checks" and
-              "the checks have not been created yet", and the two are
-              indistinguishable over the API — so neither draws a chip. A green
-              tick for a branch nobody tested is the one thing a CI indicator
-              must never do.
+              CI AND AUTO-FIX, AND ONLY WHEN THERE IS SOMETHING TO SAY.
+              Nothing is drawn when GitHub has reported no checks AND auto-fix
+              is impossible here — a chip whose panel would be empty is chrome
+              about an absence. What the chip SAYS is the CI rollup whenever
+              there is one, because a failing check is the louder fact; the
+              switch's own state is only the label when CI has said nothing.
             */}
-            {checks && checks.state !== "none" && (
-              <span
-                role="status"
-                title={checks.checks
-                  .slice(0, 6)
-                  .map((check) => `${check.name}: ${check.outcome}`)
-                  .join("\n")}
-                className={BANNER_CHIP}
-              >
-                <span className={cn(BANNER_DOT, CHECKS_DOT[checks.state])} aria-hidden="true" />
-                <ChipLabel>{checksLabel(checks)}</ChipLabel>
-              </span>
+            {(report || autoFixState) && (
+              <Popover onOpenChange={(open) => open && autoFix?.refresh()}>
+                {/*
+                  The chip became a button when it became a door, and a button
+                  is not a live region: a screen-reader user who was told "2
+                  checks failing" the moment the branch went red would now only
+                  find out by opening the panel. The sentence is announced from
+                  a visually-hidden status beside the trigger, which is the one
+                  arrangement that keeps both — the control is a control, and
+                  the fact still arrives unprompted.
+                */}
+                <span role="status" className="sr-only">
+                  {report ? checksLabel(report) : ""}
+                </span>
+                <PopoverTrigger
+                  className={cn(BANNER_CHIP, "pressable hover:bg-accent data-[state=open]:bg-secondary")}
+                  aria-label={
+                    report
+                      ? `${checksLabel(report)}. Open checks and auto-fix.`
+                      : "Open checks and auto-fix."
+                  }
+                >
+                  <span
+                    className={cn(
+                      BANNER_DOT,
+                      report
+                        ? CHECKS_DOT[report.state]
+                        : autoFixState?.enabled
+                          ? "bg-primary"
+                          : "bg-muted-foreground",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <ChipLabel>
+                    {report ? checksLabel(report) : autoFixState?.enabled ? "Auto-fix on" : "Auto-fix off"}
+                  </ChipLabel>
+                </PopoverTrigger>
+                {/* 16px shell − p-1.5 (6) = the 10px rung every row inside uses. */}
+                <PopoverContent align="end" className="w-80 p-1.5">
+                  <ChecksAndAutoFix report={report} autoFix={autoFix} />
+                </PopoverContent>
+              </Popover>
             )}
 
             {/*
@@ -374,5 +454,162 @@ export function CodeSessionBanner({
         </div>
       </header>
     </MotionConfig>
+  );
+}
+
+/**
+ * The panel behind the chip: what CI said, and whether Juno answers it.
+ *
+ * TWO SECTIONS, AND EITHER MAY BE ABSENT. The checks are listed by name with a
+ * link each — the rollup sentence says how many failed, and this says which,
+ * which is the question a reader actually has and the one the old `title`
+ * tooltip could only answer with a mouse. The switch appears only when the
+ * server has said auto-fix is possible for this session, so it is never a
+ * control over a behaviour that is not there.
+ *
+ * The delivery notes under the switch are the reference's third outcome made
+ * visible: a no-op is noted and skipped, and a note nobody can read is not a
+ * note. They are Juno's own sentences about what it did — never
+ * the comment's or the check's own words, which belong only inside the fenced
+ * prompt the run is given (src/lib/code-autofix.ts).
+ */
+function ChecksAndAutoFix({
+  report,
+  autoFix,
+}: {
+  report: ChecksReport | null;
+  autoFix: AutoFixHandle | null;
+}) {
+  const switchId = React.useId();
+  const state = autoFix?.state?.available ? autoFix.state : null;
+  /*
+   * THE ONE REFUSAL WORTH A SENTENCE. Three of the four reasons the server can
+   * give are facts the reader cannot act on from here — this run is on a Mac,
+   * this deployment has no webhook secret, no pull request exists yet — and a
+   * panel that explained them would be chrome about an absence. `app_not_
+   * installed` is different: it is about THIS repository, the remedy is one
+   * action, and without it the most likely reading of a missing switch is that
+   * the feature is broken.
+   */
+  const notInstalled = autoFix?.state && !autoFix.state.available && autoFix.state.reason === "app_not_installed";
+  /*
+   * PLAN MODE MEANS ONE OF THE THREE PROMISED OUTCOMES CANNOT HAPPEN. The
+   * answering run inherits its mode from the anchor task — correctly, a webhook
+   * decides no permissions — and in Plan the runner denies every edit. So the
+   * copy says what the run will do instead of promising a push it cannot make.
+   */
+  const planMode = state?.permissionMode === "plan";
+
+  return (
+    <div className="flex flex-col">
+      {report && (
+        <>
+          <p className="px-2 py-1.5 text-caption text-muted-foreground">{checksLabel(report)}</p>
+          {/* Capped and scrollable rather than truncated: a repository with
+              thirty checks has thirty facts, and the triage order in
+              `summariseChecks` already puts the failures at the top, so the
+              first screenful is always the part that matters. */}
+          <ul className="max-h-48 overflow-y-auto overscroll-contain">
+            {report.checks.map((check) => {
+              const body = (
+                <>
+                  <span
+                    className={cn(BANNER_DOT, CHECK_INK[check.outcome] ?? "bg-muted-foreground")}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-ui text-foreground">{check.name}</span>
+                  <span className="shrink-0 text-caption text-muted-foreground">{check.outcome}</span>
+                </>
+              );
+              return (
+                <li key={check.name}>
+                  {check.url ? (
+                    <a
+                      href={check.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        PANEL_ROW,
+                        "pressable transition-colors duration-fast ease-out-soft hover:bg-accent",
+                      )}
+                    >
+                      {body}
+                    </a>
+                  ) : (
+                    <span className={PANEL_ROW}>{body}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      {report && (state || notInstalled) && (
+        <div role="separator" aria-hidden="true" className="my-1 h-px bg-border/70" />
+      )}
+
+      {/* Only ever seen beside a CI report, because that is the only time this
+          panel opens without a switch in it — and a reader looking at a failing
+          check is exactly the reader whose next question is why Juno is not
+          offering to answer it. The remedy is named, because "unavailable" with
+          no next step reads as broken. */}
+      {notInstalled && (
+        <p className="px-2 py-1.5 text-caption text-muted-foreground">
+          Auto-fix needs the Juno GitHub App installed on this repository — GitHub sends a check
+          result or a review only to the repositories the app is installed on. Install it there and
+          the switch appears here.
+        </p>
+      )}
+
+      {state && autoFix && (
+        <div className="px-2 py-1.5">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <label htmlFor={switchId} className="block text-ui font-medium text-foreground">
+                Auto-fix
+              </label>
+              {/* What it will and will not do, in the order a reader worries
+                  about them. The second sentence is the one that makes the
+                  switch safe to press: the run stops and asks rather than
+                  guessing, and it never leaves this branch. In Plan mode the
+                  first sentence would be a promise the permission forbids, so
+                  it is the sentence that changes — never the permission. */}
+              <p className="mt-0.5 text-caption text-muted-foreground">
+                {planMode
+                  ? "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
+                  : "Juno answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead."}
+              </p>
+            </div>
+            <Switch
+              id={switchId}
+              checked={state.enabled}
+              disabled={autoFix.pending}
+              onCheckedChange={(next) => autoFix.setEnabled(next)}
+            />
+          </div>
+
+          {state.recent.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {state.recent.map((entry) => (
+                <li key={`${entry.at}-${entry.note}`} className="flex items-start gap-2">
+                  <span
+                    className={cn(
+                      BANNER_DOT,
+                      "mt-1.5",
+                      // Coral for the two outcomes that put the event in front
+                      // of a run — started one, or handed it to the one going.
+                      entry.outcome === "skipped" ? "bg-muted-foreground" : "bg-primary",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 text-caption text-muted-foreground">{entry.note}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

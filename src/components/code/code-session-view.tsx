@@ -20,6 +20,7 @@ import { CodeSessionMenu } from "@/components/code/code-session-menu";
 import { RunReviewPane } from "@/components/code/run-review";
 import { useRunDetail } from "@/components/code/use-code-runs";
 import { useCodeChecks } from "@/components/code/use-code-checks";
+import { useCodeAutoFix } from "@/components/code/use-code-auto-fix";
 import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-session-meta";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
@@ -736,6 +737,15 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    * an opinion about, and the route refuses it for the same reason.
    */
   const checks = useCodeChecks(reviewTaskId, !!meta.latestTask?.branch);
+  /*
+   * And whether Juno answers what CI reports. Asked of the same task the checks
+   * are asked about, because the pull request belongs to the session rather
+   * than to one run — the route widens to the conversation to find it. The hook
+   * answers `available: false` for a device session, for a deployment with no
+   * webhook secret and for a session with no pull request yet, and the banner
+   * draws no switch for any of them.
+   */
+  const autoFix = useCodeAutoFix(reviewTaskId);
 
   /*
    * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
@@ -951,6 +961,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           // product asking a question it has no answer to.
           onToggleReview={churn && reviewTaskId ? toggleReview : null}
           checks={checks}
+          autoFix={autoFix}
           menu={<CodeSessionMenu conversation={conversation} />}
         />
 

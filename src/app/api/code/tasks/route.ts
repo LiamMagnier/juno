@@ -18,18 +18,11 @@ import {
 } from "@/lib/code-remote";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
 import { CODE_PERMISSION_MODES, isCodePermissionMode, type CodePermissionMode } from "@/lib/code-environments";
-import { rateLimit } from "@/lib/rate-limit";
+import { codeRunLockKey } from "@/lib/code-run-lock";
 import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
-
-// Abuse controls for cloud task creation (the dispatch fans out to a fresh CI VM
-// that burns Actions minutes + plan budget, so it must not be floodable).
-/** Max cloud dispatches per user per minute. */
-const CLOUD_TASK_RATE_LIMIT = 10;
-/** Max simultaneously-active (queued/running) cloud tasks per user. */
-const CLOUD_TASK_CONCURRENCY_CAP = 3;
 
 export const runtime = "nodejs";
 
@@ -402,27 +395,37 @@ export async function POST(req: Request) {
       );
     }
 
-    // Abuse control 1 — burst rate limit (mirrors /api/agent). A cloud dispatch
-    // spins up a whole CI VM + agent loop, so cap how fast one user can fire them.
-    const rl = await rateLimit({ key: `code-cloud:${user.id}`, limit: CLOUD_TASK_RATE_LIMIT, windowSec: 60 });
-    if (!rl.success) {
-      return NextResponse.json({ error: "Too many cloud runs started. Try again shortly." }, { status: 429 });
-    }
-    // Abuse control 2 — concurrent-run cap. Refuse a new run when the user
-    // already has CLOUD_TASK_CONCURRENCY_CAP cloud tasks in flight, so a runaway
-    // client can't hold open an unbounded fleet of runners. The count and the
-    // create run under a per-user advisory lock so the cap can't be raced: a
-    // plain count()+create() is a TOCTOU (N parallel requests each read < cap
-    // and all create). The xact lock serializes creation per user and releases
-    // on commit; a hash collision only briefly serializes two unrelated users.
+    /*
+     * THE ONLY CEILING IS THE ACCOUNT'S OWN USAGE WINDOW.
+     *
+     * This route used to carry two of its own — ten dispatches a minute, and at
+     * most three cloud runs in flight — and both have been removed, deliberately.
+     *
+     * A count of runs is not the resource. What a cloud run actually spends is
+     * the account's plan budget and its rolling 5-hour and weekly windows, and
+     * those are metered for real (src/lib/spend.ts), shown in settings, and
+     * count the work rather than the clicks. A second, invisible ceiling on top
+     * of them could only ever do two things: refuse work the person's plan
+     * already allows, and refuse it in a sentence — "you already have 3 cloud
+     * runs in progress" — that names no window and no reset time, so there is
+     * nothing to wait for and nothing to buy.
+     *
+     * It also failed in a direction nobody chose. Auto-fix runs are cloud runs,
+     * so a person with three pull requests answering their own reviewers was
+     * locked out of their own composer by their own tooling.
+     *
+     * THE LOCK STAYS, for a different job. The look and the write must still be
+     * one atomic step, because two runs of one conversation push to one branch
+     * and the second would work from a tree the first is about to rewrite. The
+     * key is `codeRunLockKey` — the SAME key the auto-fix dispatcher takes — so
+     * a composer send racing a webhook delivery contends rather than passing
+     * two separate guards. Runs outside a conversation share no branch, so
+     * there is nothing for them to serialise against.
+     */
     try {
       task = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cloud-cap:${user.id}`}))`;
-        const active = await tx.codeTask.count({
-          where: { userId: user.id, target: "cloud", status: { in: ["queued", "running", "awaiting_approval"] } },
-        });
-        if (active >= CLOUD_TASK_CONCURRENCY_CAP) {
-          throw Object.assign(new Error("cloud_cap_exceeded"), { activeCount: active });
+        if (conversationId) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${codeRunLockKey(conversationId)}))`;
         }
         /*
          * CONTINUITY. A follow-up in a conversation whose latest cloud run
@@ -526,13 +529,6 @@ export async function POST(req: Request) {
         });
       });
     } catch (err) {
-      if (err instanceof Error && err.message === "cloud_cap_exceeded") {
-        const n = (err as Error & { activeCount?: number }).activeCount ?? CLOUD_TASK_CONCURRENCY_CAP;
-        return NextResponse.json(
-          { error: `You already have ${n} cloud runs in progress. Let one finish first.` },
-          { status: 429 },
-        );
-      }
       // The environment was deleted between the ownership check above and this
       // insert. Rare, and the foreign key is what notices; answering with the
       // same 404 the check would have given keeps one outcome for one cause

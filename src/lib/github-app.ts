@@ -1,4 +1,4 @@
-import { createSign } from "node:crypto";
+import { createHmac, createSign, timingSafeEqual } from "node:crypto";
 
 /*
  * A per-repository GitHub App credential for the cloud runner.
@@ -18,6 +18,13 @@ import { createSign } from "node:crypto";
  * needs — contents and pull_requests — for about an hour. The runner never
  * sees the app key or the JWT; it sees a token that cannot reach a second
  * repository and dies on its own.
+ *
+ * THE SAME APP ALSO SPEAKS. Once an App exists it can send webhooks, and the
+ * secret those deliveries are signed with is a property of that App rather than
+ * of any one feature — so it is read and verified here too, beside the id and
+ * the key. Auto-fix is the one consumer today (src/lib/code-autofix.ts); what
+ * matters is that there is one place to answer "what GitHub credentials does
+ * this server hold", and one gate that decides whether a delivery is genuine.
  *
  * DELIBERATELY PURE. No `server-only`, no `@/lib/env`: the config is passed in
  * and `fetch`/`now` are injectable, so the JWT claims and the fallback
@@ -145,6 +152,64 @@ export async function resolveInstallationId(config: GithubAppConfig, owner: stri
   return body && typeof body.id === "number" ? body.id : null;
 }
 
+/** How long "the app is installed here" is trusted before GitHub is asked again. */
+export const GITHUB_APP_INSTALL_TTL_MS = 10 * 60_000;
+/**
+ * And how long the opposite is. Much shorter, because the answer "no" is the
+ * one a person acts on: they read "install the app on this repository", do it,
+ * and come straight back to the same panel. A ten-minute negative would have
+ * them pressing a switch that is still not there for a reason that is no longer
+ * true. The same asymmetry `getCloudRunnerReadiness` uses, for the same reason.
+ */
+export const GITHUB_APP_INSTALL_MISS_TTL_MS = 60_000;
+
+const installCache = new Map<string, { installed: boolean; expiresAt: number }>();
+
+/** Test seam. */
+export function resetGithubAppInstallCache(): void {
+  installCache.clear();
+}
+
+/**
+ * Whether the app is installed on `owner/repo` at all — cached, because this is
+ * asked on a read path.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `getRepoInstallationToken`. That one is asked
+ * by a run that is about to clone, and it mints a credential. This is asked by
+ * a panel deciding whether to draw a switch, several times a session, and the
+ * answer it needs is a boolean. Minting a token to find out would be a real
+ * credential issued for a question about the user interface.
+ *
+ * A LOOKUP THAT THROWS ANSWERS "NOT INSTALLED". GitHub being unreachable and
+ * the app being absent are indistinguishable from here, and the two possible
+ * mistakes are not symmetric: claiming "installed" over a failed lookup draws a
+ * control whose events will never be delivered, which is the exact defect the
+ * caller is trying to avoid. The wrong answer is cached for a minute, not ten.
+ */
+export async function isGithubAppInstalled(
+  config: GithubAppConfig | null,
+  owner: string,
+  repo: string,
+): Promise<boolean> {
+  if (!config) return false;
+  const key = `${owner}/${repo}`.toLowerCase();
+  const now = config.now?.() ?? Date.now();
+  const hit = installCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.installed;
+
+  let installed: boolean;
+  try {
+    installed = (await resolveInstallationId(config, owner, repo)) !== null;
+  } catch {
+    installed = false;
+  }
+  installCache.set(key, {
+    installed,
+    expiresAt: now + (installed ? GITHUB_APP_INSTALL_TTL_MS : GITHUB_APP_INSTALL_MISS_TTL_MS),
+  });
+  return installed;
+}
+
 /**
  * An installation token scoped to ONE repository with the runner's two
  * permissions. GitHub narrows the token to the intersection of what the
@@ -261,6 +326,74 @@ export async function userCanPushToRepo(
   if (!res.ok) return false;
   const body = (await res.json().catch(() => null)) as { permissions?: { push?: unknown } } | null;
   return body?.permissions?.push === true;
+}
+
+/* ── The App's webhook secret ─────────────────────────────────────────────── */
+
+/** The header GitHub signs a delivery with. */
+export const GITHUB_SIGNATURE_HEADER = "x-hub-signature-256";
+/** The header naming which event a delivery is. */
+export const GITHUB_EVENT_HEADER = "x-github-event";
+/** The header carrying GitHub's own id for a delivery, for logs and redeliveries. */
+export const GITHUB_DELIVERY_HEADER = "x-github-delivery";
+
+/**
+ * The webhook secret, or null when the App has no webhook configured here.
+ *
+ * It lives beside the App id and key because it IS a property of the same App:
+ * one place to look for "what GitHub credentials does this server hold", and
+ * one place that reads `process.env` directly so the module stays importable
+ * from a test process. Absent is a legitimate configuration — a deployment that
+ * mints installation tokens but receives no events — and the receiving route
+ * refuses every delivery in that case rather than accepting unverified ones.
+ */
+export function githubWebhookSecretFromEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  return env.GITHUB_APP_WEBHOOK_SECRET?.trim() || null;
+}
+
+/**
+ * Whether a delivery really came from GitHub.
+ *
+ * THE ONLY GATE THERE IS. Everything downstream of this function dispatches a
+ * cloud run that clones a repository, edits it and pushes. The body is a plain
+ * HTTP POST to a public URL, so without this check anyone on the internet could
+ * name a pull request and make Juno work on it with the submitter's credential.
+ * There is no second line of defence and there is not meant to be one.
+ *
+ * Three details, each of which has been a real vulnerability in someone else's
+ * webhook receiver:
+ *
+ *   THE RAW BYTES, NEVER THE REPARSED JSON. GitHub signs the body it sent.
+ *   `JSON.parse` followed by `JSON.stringify` produces a different byte string
+ *   for the same document — key order, unicode escapes, float formatting — so a
+ *   signature checked against a round-tripped body fails on honest traffic and
+ *   invites someone to "fix" it by removing the check.
+ *
+ *   A TIMING-SAFE COMPARISON. `===` on a hex digest leaks the position of the
+ *   first differing character, and an attacker who can send unlimited deliveries
+ *   can walk a forgery out of that. `timingSafeEqual` throws on a length
+ *   mismatch, so the length is checked first and answered the same way as a
+ *   wrong digest: false.
+ *
+ *   NO SECRET, NO TRUST. An empty or missing secret returns false rather than
+ *   skipping the check. A deployment that forgot to configure one must receive
+ *   nothing, not everything.
+ */
+export function verifyGithubWebhookSignature(input: {
+  secret: string | null;
+  /** Exactly the bytes GitHub POSTed. */
+  payload: string | Buffer;
+  /** The `X-Hub-Signature-256` header, e.g. "sha256=…". */
+  signature: string | null;
+}): boolean {
+  if (!input.secret || !input.signature) return false;
+  const expected = `sha256=${createHmac("sha256", input.secret).update(input.payload).digest("hex")}`;
+  const provided = Buffer.from(input.signature.trim(), "utf8");
+  const digest = Buffer.from(expected, "utf8");
+  if (provided.length !== digest.length) return false;
+  return timingSafeEqual(provided, digest);
 }
 
 export type CloneCredentialSource = "github_app" | "oauth";

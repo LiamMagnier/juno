@@ -166,6 +166,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "JWT attacks · Web Security Academy"
   },
   {
+    "id": "01792a33c228a70e",
+    "source": "Add files"
+  },
+  {
     "id": "01bed311e7d0c963",
     "source": "All apps"
   },
@@ -324,6 +328,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0389b81a8c747995",
     "source": "Working out what to look up"
+  },
+  {
+    "id": "03919aa9a531d7d5",
+    "source": "usage_window_exceeded"
   },
   {
     "id": "03975c0e7193dc84",
@@ -1118,6 +1126,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No citable text here"
   },
   {
+    "id": "0f31d5a74bd5f7fe",
+    "source": "Nothing but the work being done. Spending limits are switched off on this account, so there is no window to run out of — a task Juno starts on its own still stops at a small backstop ceiling so an unattended loop cannot run all night."
+  },
+  {
     "id": "0f3729b341767214",
     "source": "Remote Session"
   },
@@ -1554,6 +1566,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The selected model is temporarily unavailable because Juno reached its daily provider budget. Choose Auto or try again later."
   },
   {
+    "id": "14a8ccc17a4b901b",
+    "source": "Tasks filed here choose their own apps, from everything you have connected —"
+  },
+  {
     "id": "14b4c3fc4466715b",
     "source": "A fire that carries text is refused. Turn this on once the instructions above say what the text is for."
   },
@@ -1762,6 +1778,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No instructions yet."
   },
   {
+    "id": "185272f57aec473b",
+    "source": "Empty means no ceiling of this schedule’s own. Spending limits are switched off on this account, so a run fired while nobody is watching stops at a small backstop ceiling unless you set a figure here."
+  },
+  {
     "id": "185e6157305cbf11",
     "source": "Lead review: another round"
   },
@@ -1910,6 +1930,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stopped"
   },
   {
+    "id": "1a52097ff1ae8c48",
+    "source": "A task filed here can pick among these and cannot add to them. Your connections are unchanged —"
+  },
+  {
     "id": "1a5c7852b5d0c9ee",
     "source": "Researching your request"
   },
@@ -1932,6 +1956,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1a9d11a2d2757318",
     "source": "Folders it can reach"
+  },
+  {
+    "id": "1aa47f4285de3946",
+    "source": "Task defaults"
   },
   {
     "id": "1aa4cb0bcca76e92",
@@ -2274,6 +2302,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Faster, cheaper Seedance 1.0 Pro tier — silent video."
   },
   {
+    "id": "1f5c23e3a577420d",
+    "source": "Juno offers this only for tasks filed in that project. Typing its slash name still reaches it from anywhere."
+  },
+  {
     "id": "1f63bf47bd52c80a",
     "source": "People with the link see the conversation up to now — new messages stay private."
   },
@@ -2528,6 +2560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "22ca9cf39e446698",
     "source": "TR"
+  },
+  {
+    "id": "22cd1e7d5bccebad",
+    "source": "Change the repository"
   },
   {
     "id": "22e77de72b898d0e",
@@ -3750,10 +3786,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No replacement file provided."
   },
   {
-    "id": "33f6420641aae066",
-    "source": "minutes of working time, whichever comes first. A number here lowers one of them for this schedule; nothing raises them. A run fired while nobody is watching is capped at $"
-  },
-  {
     "id": "340ac4c3fd1f0123",
     "source": "Continue with Apple"
   },
@@ -3820,10 +3852,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "356b897bc8575a5e",
     "source": "Send confirmation link"
-  },
-  {
-    "id": "3579d1de91e7e03c",
-    "source": "minutes."
   },
   {
     "id": "357f9729ca190712",
@@ -4050,10 +4078,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fast agentic coding — successor to Grok Code Fast."
   },
   {
-    "id": "383aba5d0052620a",
-    "source": "It also writes its plan before it starts and waits for you to read it; the clock does not run while it waits."
-  },
-  {
     "id": "3840d9d29421c46c",
     "source": "Default model"
   },
@@ -4148,6 +4172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3966c0ea8ff1b474",
     "source": "follow-ups"
+  },
+  {
+    "id": "39878696a79ac0e2",
+    "source": "Juno answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead."
   },
   {
     "id": "399d0f64b21089fb",
@@ -4502,6 +4530,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Premium image generation — complex composition, text rendering, 4K."
   },
   {
+    "id": "3f3af1ecebbd1410",
+    "source": "session"
+  },
+  {
     "id": "3f47e769ddc94935",
     "source": "Into a new saved chat"
   },
@@ -4574,6 +4606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "and v"
   },
   {
+    "id": "402231bfee376d84",
+    "source": "GitHub didn’t answer, so this list is empty rather than wrong. The run still starts from the branch on the chip — or type the ref you want above."
+  },
+  {
     "id": "4027e5b24418520f",
     "source": "Connect GitHub"
   },
@@ -4594,6 +4630,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This Mac is no longer registered with Juno Work. Signing out of Juno on a Mac, or removing the app, takes it off this list."
   },
   {
+    "id": "4097889236a2af26",
+    "source": "placeholder"
+  },
+  {
     "id": "40aa85ea6d8f86cd",
     "source": "Connect an app to let Juno work inside it."
   },
@@ -4612,6 +4652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "40f479d5bd3bde76",
     "source": "This automation no longer exists. It may have been deleted from another device."
+  },
+  {
+    "id": "411aa61aea55ac65",
+    "source": "Default branch"
   },
   {
     "id": "412192974716608f",
@@ -4764,6 +4808,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4337404944f8d2f4",
     "source": "Or write your own"
+  },
+  {
+    "id": "433db5dc50496b8d",
+    "source": "resource_not_found"
   },
   {
     "id": "435760070a20227c",
@@ -4998,6 +5046,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "inherited"
   },
   {
+    "id": "46b9317dc1de3a15",
+    "source": "Tasks filed here reach no connected app at all. Switch one on, or switch this off to leave the choice to the task."
+  },
+  {
     "id": "46c541363b0253b1",
     "source": "Running…"
   },
@@ -5058,6 +5110,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently shipped"
   },
   {
+    "id": "4780fb159ed89293",
+    "source": "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
+  },
+  {
     "id": "4787eaf7c938045f",
     "source": "Legal"
   },
@@ -5068,6 +5124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "47f3fe5373204acc",
     "source": "Write one"
+  },
+  {
+    "id": "480b0692e3cd7b39",
+    "source": "baseRef is not a usable git ref"
   },
   {
     "id": "482e67a979c12cf6",
@@ -5102,8 +5162,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Opening design…"
   },
   {
-    "id": "48ab706d095a749d",
-    "source": "This attempt ran with no ceiling of its own — only the account’s monthly budget bounded it."
+    "id": "48845bff334a50a5",
+    "source": "Dismiss"
   },
   {
     "id": "48cb27476ebe51b9",
@@ -5208,6 +5268,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4a416eb66ed60cd5",
     "source": "This document was deleted from the library; its indexed content is no longer available."
+  },
+  {
+    "id": "4a42939e3b74461f",
+    "source": "Restrict which connected apps tasks in this project may reach"
   },
   {
     "id": "4a42c5b542df0e4d",
@@ -5450,6 +5514,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Preparing image…"
   },
   {
+    "id": "4d27d5a9fb005a9f",
+    "source": "Auto-fix could not start a cloud run. The branch was not changed."
+  },
+  {
     "id": "4d280a451d04b7a5",
     "source": "Difference"
   },
@@ -5644,10 +5712,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "502b43713922cae3",
     "source": "Gradient centre"
-  },
-  {
-    "id": "5030ea40c1bebd56",
-    "source": "Base branch — optional"
   },
   {
     "id": "5034a86845e5e659",
@@ -5878,6 +5942,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Columns"
   },
   {
+    "id": "53b61c1a0a2158b4",
+    "source": "Task defaults saved."
+  },
+  {
     "id": "53c8b7fae38edc13",
     "source": "Design canvas"
   },
@@ -6002,6 +6070,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "limit"
   },
   {
+    "id": "55ee6bbe7af9c78f",
+    "source": "A project can only ask Juno to be more careful than the default, never less — a task that wants to be left alone has to say so itself."
+  },
+  {
     "id": "55f2cafe112b7bac",
     "source": "Full trace"
   },
@@ -6040,6 +6112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "56ac628a2f10b3b0",
     "source": "Coral"
+  },
+  {
+    "id": "56cb26eb53f29410",
+    "source": "Whatever the task picks"
   },
   {
     "id": "56ce55050e7ddc1c",
@@ -6256,6 +6332,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5a3686b7f4ac1c81",
     "source": "Every research worker in this round answered in prose without searching or opening a page, so the round produced no findings. The report is written from the sources gathered so far."
+  },
+  {
+    "id": "5a41328d7bdf05b0",
+    "source": "What a task filed in this project starts with. Each of these is a starting point, not a permission — a task can still be told something different, and nothing here gives Juno anything your account has not already allowed."
   },
   {
     "id": "5a415ca1d46cddf4",
@@ -6502,10 +6582,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Loading designs"
   },
   {
-    "id": "5e0d0f92b2d4b6f9",
-    "source": "tokens,"
-  },
-  {
     "id": "5e135cd8ecf865b5",
     "source": "Send it to the finance alias instead, and drop the last paragraph."
   },
@@ -6568,6 +6644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ea44c3961f16643",
     "source": "lines"
+  },
+  {
+    "id": "5ecbacc53bb1cc2c",
+    "source": "Base branch — this repository’s default"
   },
   {
     "id": "5ed3c87ec6c0883a",
@@ -6684,6 +6764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6044aaad224c6ef3",
     "source": "Cheapest Seedance tier with draft modes."
+  },
+  {
+    "id": "605077cadd8207ce",
+    "source": "Tasks already created keep what they were created with."
   },
   {
     "id": "6062652e10dd84c6",
@@ -7176,6 +7260,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "66ad01fcd3f759fd",
     "source": "GPT Sol"
+  },
+  {
+    "id": "66ba2129a90d4a58",
+    "source": "aria-label"
   },
   {
     "id": "66cdfdc6a6b7716d",
@@ -8278,6 +8366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Indexing…"
   },
   {
+    "id": "741047705fc3428b",
+    "source": "It also writes its plan before it starts and waits for you to read it; waiting costs nothing."
+  },
+  {
     "id": "741d2d54005d8a4b",
     "source": "Stopped after an error"
   },
@@ -8308,6 +8400,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "746e50ede463b5d9",
     "source": "authored"
+  },
+  {
+    "id": "746eb8f8fc6c47f9",
+    "source": "This attempt recorded no ceiling of its own on any axis, so nothing here bounded it."
   },
   {
     "id": "74794b4d682f72bc",
@@ -8828,6 +8924,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7c45bc627e9a7d07",
     "source": "not_connected"
+  },
+  {
+    "id": "7c61d1ce02f55bc4",
+    "source": "Each ceiling has to be left empty, or a number of zero or more."
   },
   {
     "id": "7c86a0b2f9420e5d",
@@ -10450,6 +10550,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "File is too large (max 100 MB)."
   },
   {
+    "id": "94ba122360a3aa85",
+    "source": "Save task defaults"
+  },
+  {
     "id": "94c116ee118a7299",
     "source": "Analytics"
   },
@@ -10742,10 +10846,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "EU infrastructure, GDPR by default, messages encrypted at rest — and your conversations are never used to train models."
   },
   {
-    "id": "98b4f3e4289b5e28",
-    "source": "Empty means your plan’s ceiling — $"
-  },
-  {
     "id": "98d0e677fd5c939d",
     "source": "Older small Codex model."
   },
@@ -10890,6 +10990,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Artifacts & canvas"
   },
   {
+    "id": "9a70eac289947b89",
+    "source": "Nothing is metering this account right now. A task Juno starts on its own still stops at a small backstop ceiling, so an unattended loop cannot run all night."
+  },
+  {
     "id": "9a71d40796c4b68a",
     "source": "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks."
   },
@@ -11020,6 +11124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9bba835ef9ce8a36",
     "source": "Do the cloud part"
+  },
+  {
+    "id": "9bc0cdc2fe513faf",
+    "source": "Auto-fix needs the Juno GitHub App installed on this repository — GitHub sends a check result or a review only to the repositories the app is installed on. Install it there and the switch appears here."
   },
   {
     "id": "9bc6a53f7ec49024",
@@ -11590,16 +11698,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "3. Hébergement"
   },
   {
+    "id": "a2ce380e2ed08896",
+    "source": "Auto-fix on"
+  },
+  {
     "id": "a2d86b47b6976600",
     "source": "How can I help"
   },
   {
     "id": "a2e20a33570001ae",
     "source": "Delete account"
-  },
-  {
-    "id": "a2e227c038aa9aae",
-    "source": "Starting this task would exceed your current spending ceiling, so nothing was started. Finish or stop another run, or lower the account cap."
   },
   {
     "id": "a2fb7ff049b95b0c",
@@ -11984,6 +12092,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7baf1fef520c39c",
     "source": "Identity and model"
+  },
+  {
+    "id": "a7c8c465166a6e5e",
+    "source": "Filed in"
   },
   {
     "id": "a7e0b520f0b3bf78",
@@ -12438,10 +12550,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Lower-cost OpenAI image generation and editing."
   },
   {
-    "id": "adf94bff587bee7d",
-    "source": "Nothing is metering this account right now."
-  },
-  {
     "id": "adfc2938bb4bd50b",
     "source": "Blocked apps"
   },
@@ -12566,6 +12674,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Forgot your password?"
   },
   {
+    "id": "afdca3037cce5353",
+    "source": "Only the models the task runner can drive. One your plan does not include is dropped when the task is created rather than refusing it, so the task still runs."
+  },
+  {
     "id": "aff0766a5290e117",
     "source": "Review"
   },
@@ -12588,6 +12700,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b027702d7227e0ca",
     "source": "Juno hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens."
+  },
+  {
+    "id": "b02d1740aadf7643",
+    "source": "webhook_not_configured"
   },
   {
     "id": "b049c05cacb9016e",
@@ -12850,6 +12966,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Export failed. Please try again."
   },
   {
+    "id": "b3ffbbff2d64d47b",
+    "source": "(default)"
+  },
+  {
     "id": "b40b3713b43dc702",
     "source": "Open menu"
   },
@@ -12920,6 +13040,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b496bc82fbd885c5",
     "source": "border-destructive/40 bg-destructive/15 text-destructive"
+  },
+  {
+    "id": "b49bf8f8de41526f",
+    "source": "This skill brings no files of its own."
   },
   {
     "id": "b49ebfcca73d56f9",
@@ -13150,10 +13274,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Authority"
   },
   {
-    "id": "b812e1ce4b4d28e3",
-    "source": "Hit its limit"
-  },
-  {
     "id": "b8237189cafca54e",
     "source": "The cloud runner workflow is missing from the runner repository, so cloud runs can’t start."
   },
@@ -13324,6 +13444,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ba829a98b7994088",
     "source": "Included"
+  },
+  {
+    "id": "ba91151b02108278",
+    "source": "Couldn’t list the branches"
   },
   {
     "id": "baaddf70fb5d432b",
@@ -13546,10 +13670,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Redo · ⇧⌘Z"
   },
   {
-    "id": "be1af3a58b890f5e",
-    "source": "tokens or"
-  },
-  {
     "id": "be23e2ba9692c9d6",
     "source": "5-hour window"
   },
@@ -13626,6 +13746,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This skill no longer exists. It may have been deleted from another device."
   },
   {
+    "id": "bf6787c3b6aeacd6",
+    "source": "bad_signature"
+  },
+  {
     "id": "bf6c07f870758424",
     "source": "Connect an app"
   },
@@ -13644,6 +13768,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bfa4c0f795f8538f",
     "source": "Qualified"
+  },
+  {
+    "id": "bfa9104d3b562e74",
+    "source": "The cloud runner is not available, so nothing was attempted."
   },
   {
     "id": "bfd3d7bf58e83578",
@@ -13678,6 +13806,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reply in the message box below"
   },
   {
+    "id": "c02c0af8d2062121",
+    "source": "No cloud run in this session to continue from, so there was no branch to fix."
+  },
+  {
     "id": "c02ee9c49cf6bd4c",
     "source": "Hide the searches"
   },
@@ -13704,6 +13836,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c071cf5f5ed6f884",
     "source": "running"
+  },
+  {
+    "id": "c077ff8b5cc92101",
+    "source": "This version names a file that is no longer in your library, so it brings one fewer than it says. Saving again records the list as it is now."
   },
   {
     "id": "c07d11416f08a62e",
@@ -13816,6 +13952,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c1ea3f5e7aa47303",
     "source": "Between"
+  },
+  {
+    "id": "c1eb9ebc0029342e",
+    "source": "Use a web page"
   },
   {
     "id": "c1f62a712b9da463",
@@ -13980,6 +14120,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c409c66f71f2750e",
     "source": "Official"
+  },
+  {
+    "id": "c41740b280faadd5",
+    "source": "Search branches, or type a tag or commit…"
   },
   {
     "id": "c4198b07ffb07b2e",
@@ -14310,6 +14454,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete this account?"
   },
   {
+    "id": "c909e3f6ed11c375",
+    "source": "Nothing is open yet. Open a URL first."
+  },
+  {
     "id": "c90dcaa2fdc30be0",
     "source": "Rendered through the real parser + renderer path at chat width (720px). Resize for mobile; toggle dark mode from the OS."
   },
@@ -14360,6 +14508,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c9a8dc336964db7f",
     "source": "them"
+  },
+  {
+    "id": "c9b8312041d57bac",
+    "source": "One of the files this skill brings is not in your library, so nothing was saved. A skill can only carry files from the account it is saved in."
   },
   {
     "id": "c9bbbe8347222271",
@@ -14554,6 +14706,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Model stopped responding"
   },
   {
+    "id": "cc1844313b96ad0a",
+    "source": "Juno may offer this for any task. File it in a project to keep it out of the way of work it has nothing to do with."
+  },
+  {
     "id": "cc31b47c7e352b64",
     "source": "Europe/Paris"
   },
@@ -14632,6 +14788,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cd14e155c4ab71a2",
     "source": "Nothing has been changed by the attempt. The skill, its instructions and whether Juno may reach for it are all as they were."
+  },
+  {
+    "id": "cd42404d52ad55cc",
+    "source": "value"
   },
   {
     "id": "cd5f943d586317a0",
@@ -14764,6 +14924,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ceaa9d23938e5c9c",
     "source": "What you could not answer."
+  },
+  {
+    "id": "ceb259fef27327ab",
+    "source": "Juno could not start a run for this. Nothing was changed on the branch."
   },
   {
     "id": "cececbebedaa860d",
@@ -15078,6 +15242,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not save the voice transcript."
   },
   {
+    "id": "d2cf3dbc2fc91fcf",
+    "source": "Auto-fix"
+  },
+  {
     "id": "d2d934ca8cc5642c",
     "source": "This request violates our Acceptable Use policy."
   },
@@ -15180,6 +15348,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d406ade2958cb5b6",
     "source": "Attach"
+  },
+  {
+    "id": "d4178ea67fa102ad",
+    "source": "Starting this task would exceed your monthly spending ceiling, so nothing was started. Finish or stop another run, or raise the account cap."
   },
   {
     "id": "d4537752282341cc",
@@ -15312,6 +15484,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d62e935dc545f6d8",
     "source": "12. Droit applicable et litiges"
+  },
+  {
+    "id": "d63e7ac95673808a",
+    "source": "Its project"
   },
   {
     "id": "d64924849eb38d05",
@@ -15516,6 +15692,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d8e4dcef4f3d2039",
     "source": "Conversation not found"
+  },
+  {
+    "id": "d8f4289d4ed08c88",
+    "source": "Auto-fix off"
   },
   {
     "id": "d8f65e96e482a37e",
@@ -15746,6 +15926,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Lock"
   },
   {
+    "id": "db547a48d8c30876",
+    "source": "A skill filed in a project is offered to tasks in that project and to no others. Filed in Everything, it is on offer wherever Juno looks. Typing /"
+  },
+  {
     "id": "db77be4d900afff4",
     "source": "News label"
   },
@@ -15944,6 +16128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd167905de0defca",
     "source": "Version"
+  },
+  {
+    "id": "dd1dafd9ff38684b",
+    "source": "invalid_repo"
   },
   {
     "id": "dd24906cc36e5519",
@@ -16546,10 +16734,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno builds this from your chats and projects as you go. You can also just tell it something with the pencil below — “remember that I prefer short answers”, for instance."
   },
   {
-    "id": "e54998431448eca9",
-    "source": "Each ceiling has to be left empty, or a number between zero and your plan’s own — $"
-  },
-  {
     "id": "e562e1d6f362b5fd",
     "source": "The board is open."
   },
@@ -16682,6 +16866,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Keep editing"
   },
   {
+    "id": "e77f804efe453619",
+    "source": "One of the files this version brings is not in your library, so nothing was saved. The version that was current still is."
+  },
+  {
     "id": "e77fea936d3e0118",
     "source": "Already have an account?"
   },
@@ -16716,6 +16904,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e825fb5113d3717e",
     "source": "The claim asserts a cause the passage does not draw."
+  },
+  {
+    "id": "e835b78d7ee27203",
+    "source": "Out of budget"
   },
   {
     "id": "e83dfa18ddbba942",
@@ -16786,6 +16978,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Use an app"
   },
   {
+    "id": "e918d8c45449e525",
+    "source": "repo_not_found"
+  },
+  {
     "id": "e9467bb04f2b75df",
     "source": "https://www.anthropic.com/news/..."
   },
@@ -16820,6 +17016,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e9cbb0224c4a3d23",
     "source": ".env"
+  },
+  {
+    "id": "e9cf5bb9d0f9bb21",
+    "source": "The project this skill is filed in"
   },
   {
     "id": "e9d83f01c9aff03a",
@@ -17178,6 +17378,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your data"
   },
   {
+    "id": "ee62646da7ac46ff",
+    "source": "Only these connected apps"
+  },
+  {
     "id": "ee64b6dda9349d43",
     "source": "des activités illégales, frauduleuses ou portant atteinte aux droits de tiers ;"
   },
@@ -17220,6 +17424,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ef1099976e8775a2",
     "source": "Start as a task"
+  },
+  {
+    "id": "ef380d44c20e8e50",
+    "source": "Couldn’t save these task defaults. Nothing has changed."
   },
   {
     "id": "ef3b56293fdf1b8f",
@@ -17422,10 +17630,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "General web"
   },
   {
-    "id": "f2028e4c36f6bf2f",
-    "source": "unless you set a lower figure."
-  },
-  {
     "id": "f20c879465551f0d",
     "source": "Pinned"
   },
@@ -17558,10 +17762,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "session.closed"
   },
   {
-    "id": "f3ec00fe297844cc",
-    "source": "Too many cloud runs started. Try again shortly."
-  },
-  {
     "id": "f3f32cc3f49b447f",
     "source": "Answer options"
   },
@@ -17656,6 +17856,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f528212a496dc7a0",
     "source": "parameters"
+  },
+  {
+    "id": "f53243a4d8f69e33",
+    "source": "Saving mints a version. Tasks already running keep the one they started with."
   },
   {
     "id": "f54ad4f29baf0a52",
@@ -17840,6 +18044,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f7f2c291bd05f662",
     "source": "Couldn’t copy to the clipboard."
+  },
+  {
+    "id": "f7fcff0d8feaf039",
+    "source": "No limit"
   },
   {
     "id": "f8064d7d1a71c5cd",
@@ -18122,6 +18330,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "between"
   },
   {
+    "id": "fbc3cc3e6674fb21",
+    "source": "reaches it either way."
+  },
+  {
+    "id": "fbd334cd96423523",
+    "source": "Start from this ref — Juno hasn’t checked that it exists"
+  },
+  {
     "id": "fbdfd981851d1dc3",
     "source": "Sign in with Apple to let Juno work with your Apple Music library. Apple hands back a music user token — Juno stores it encrypted and never sees your password."
   },
@@ -18146,6 +18362,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Send what you dictated"
   },
   {
+    "id": "fc5a8c827b48370c",
+    "source": "Files it brings"
+  },
+  {
     "id": "fc6b64ae77241917",
     "source": "Where no exit status was reported, the log records only that the command ran."
   },
@@ -18156,6 +18376,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fca27d14a66c3b27",
     "source": "Google's flagship multimodal Flash model with hybrid reasoning."
+  },
+  {
+    "id": "fcab0b37c6c0b998",
+    "source": "Couldn’t read your connected apps, so there is nothing to choose from here."
   },
   {
     "id": "fcc41bccbdb8b793",
@@ -18292,6 +18516,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fecdf1d4d01c7ebd",
     "source": "Prepended to every chat, work run, and code session in this project."
+  },
+  {
+    "id": "fed17cd5f6e0771e",
+    "source": "A run is going in this session that cannot be sent a new instruction, so this was not answered."
   },
   {
     "id": "fee7326ce5659a6c",
