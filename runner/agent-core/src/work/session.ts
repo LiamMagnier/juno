@@ -520,6 +520,28 @@ export class WorkAgentSession {
   }
 
   /**
+   * Stop the run because the ACCOUNT is out of budget, not this run.
+   *
+   * A run is bounded by the account's rolling usage window, and the window is
+   * not a number this process can read: agent-core has no database by design.
+   * The executor re-reads it and calls this when it is spent, with the sentence
+   * that says which window and when it frees up.
+   *
+   * Not `cancel`, and the difference is the whole point of it being a separate
+   * method. `terminalOutcome` puts a cancellation above a budget outcome on
+   * purpose — a user's decision is the cause, and reporting it as
+   * `budget_exceeded` would send them to raise a limit that had nothing to do
+   * with it. Here the opposite is true: nobody decided this, a ceiling did, and
+   * a run reported as "stopped by the user" would leave the reader looking for
+   * whoever pressed it. Routed through the budget guard so the run ends the way
+   * every other ceiling ends it, carrying the window's own words.
+   */
+  stopForAccountBudget(detail: string): void {
+    this.budget.exhausted('cost', detail);
+    this.aborter?.abort();
+  }
+
+  /**
    * Record a decision the run made that a user might have made differently.
    * Part of the report; never inferred from the transcript afterwards.
    */

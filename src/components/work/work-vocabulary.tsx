@@ -131,10 +131,16 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
     tone: "attention",
     sentence: "This had to run on a Mac and none was reachable, so it did not start. Wake the Mac and run it again.",
   },
+  // "the ceiling set for it" was true while a run carried a per-run ceiling of
+  // its own. It does not any more: what stops a run is the account's rolling
+  // usage window, which is a wait rather than a setting to go and change. The
+  // run's own `terminalDetail` names which window and when it frees up; this
+  // sentence is what a reader gets before they open it, so it has to point in
+  // the right direction rather than at a ceiling nobody can find.
   budget_exceeded: {
-    label: "Hit its limit",
+    label: "Out of budget",
     tone: "attention",
-    sentence: "This stopped because it reached the ceiling set for it.",
+    sentence: "This stopped because the account ran out of budget. It can be run again once the usage limit frees up.",
   },
   timed_out: {
     label: "Timed out",

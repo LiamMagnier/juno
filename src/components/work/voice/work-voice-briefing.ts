@@ -40,8 +40,7 @@
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
-import type { Plan } from "@prisma/client";
-import { RUN_CEILINGS, runCeilingsFor } from "@/components/work/clarify/run-disclosure";
+import type { RunLimit } from "@/components/work/clarify/run-disclosure";
 import { readEvent, str } from "@/components/work/work-payload";
 import { deriveApprovals, deriveOpenQuestions } from "@/components/work/work-decisions";
 import { deriveCurrentAction, derivePlan, type PlanStep } from "@/components/work/work-timeline";
@@ -292,15 +291,19 @@ export interface WorkComposerVoiceBriefingInput {
   /** Where it would run, in the reader's words. Null while that is unknown. */
   where: string | null;
   /**
-   * The reader's plan, because the ceilings the briefing reads out loud are
-   * shaped by it.
+   * What will stop a run on this account, from `runLimitFrom`.
    *
-   * Optional, and absent falls back to PRO's figures — the same fallback
-   * `RUN_CEILINGS` is. The point of section 2 is that the voice does not agree
-   * to an errand the run cannot finish, and on a trial account the run it
-   * cannot finish is a much smaller one.
+   * It used to be the reader's `Plan`, because the ceilings the briefing read
+   * out loud were shaped by it. There are no per-run ceilings to read out any
+   * more: a run goes until the work is done or until the account's rolling
+   * window is used up. The point of section 2 is unchanged — the voice must not
+   * agree to an errand the run cannot finish — but the honest version of that
+   * warning is now about the window rather than about twenty minutes.
+   *
+   * Optional, because a panel that has not been handed the account's spend yet
+   * should say the true general thing rather than invent a figure.
    */
-  plan?: Plan;
+  limit?: RunLimit;
 }
 
 /**
@@ -310,11 +313,11 @@ export interface WorkComposerVoiceBriefingInput {
  * the difference is the job rather than the data. That briefing catches somebody
  * up on work already under way; this one helps them decide what to ask for, and
  * the failure it is written against is the opposite: a warm voice that agrees
- * enthusiastically to an errand no twenty-minute run could finish, and a reader
- * who finds out at the ceiling.
+ * enthusiastically to an errand the account cannot afford to finish, and a
+ * reader who finds out when the run stops.
  *
- * So the ceilings are in the briefing, out loud, in the same numbers the
- * disclosure under the composer shows — and the last section states the one
+ * So what stops a run is in the briefing, out loud, in the same words the
+ * disclosure under the composer uses — and the last section states the one
  * mechanical fact that governs the whole conversation: nothing here starts
  * anything. The reader presses a button, and ONE sentence they said lands in the
  * task box for them to edit. Told any less, the model says "I've set that up for
@@ -327,7 +330,21 @@ export function buildWorkComposerVoiceBriefing(
   input: WorkComposerVoiceBriefingInput
 ): WorkVoiceBriefing {
   const goal = input.goal.trim();
-  const ceilings = input.plan ? runCeilingsFor(input.plan) : RUN_CEILINGS;
+  /*
+   * What stops a run, as one spoken sentence.
+   *
+   * No number when there is nothing true to say: a panel that has not been
+   * handed the account's spend knows a run is bounded by a rolling window and
+   * does not know which, and reading out a figure it guessed would be exactly
+   * the thing this section exists to prevent.
+   */
+  const stops = input.limit
+    ? input.limit.unmetered
+      ? "- It runs until the work is done. Spending limits are switched off on this account."
+      : input.limit.window === "session"
+        ? "- It runs until the work is done or my 5-hour usage limit is used up, whichever comes first. There is no separate limit on how long it runs."
+        : "- It runs until the work is done or my weekly usage limit is used up, whichever comes first. There is no separate limit on how long it runs."
+    : "- It runs until the work is done or my account's rolling usage limit is used up, whichever comes first. There is no separate limit on how long it runs.";
 
   const ordered: (string | null)[] = [
     // 1 — the job, and the rules of this conversation. Never dropped.
@@ -348,7 +365,7 @@ export function buildWorkComposerVoiceBriefing(
     // 2 — what a run can actually finish, so nothing agreed here is impossible.
     [
       "What a Juno Work run can do, so we do not agree on something it cannot finish:",
-      `- It stops at $${ceilings.costUsd}, ${ceilings.tokens.toLocaleString("en-US")} tokens, or ${ceilings.minutes} minutes of working time, whichever comes first.`,
+      stops,
       "- It runs unattended and reports back. It can stop to ask me something, but it cannot " +
         "wait around for hours.",
       "- It works from what I hand it: the task, the project, any files I attach and the apps I " +

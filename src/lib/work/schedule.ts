@@ -913,7 +913,15 @@ export interface ScheduleDispatchInput {
   hosts: readonly HostCapabilityView[];
   requiredCapabilities: readonly WorkCapability[];
   cloudAvailable: boolean;
-  /** Micro-USD the account may still spend, or null when it is not metered. */
+  /**
+   * Micro-USD the account may still spend right now, or null when it is not
+   * metered.
+   *
+   * The TIGHTER of the month's remainder and the binding rolling window's,
+   * because both refuse a fire the same way and the planner asks one question.
+   * It is very nearly always the window: that is what bounds a run now that
+   * there is no per-run ceiling.
+   */
   remainingBudgetMicroUsd: number | null;
 }
 
@@ -1018,7 +1026,11 @@ export function planScheduleDispatch(input: ScheduleDispatchInput): ScheduleDisp
     return {
       outcome: "budget_blocked",
       nextRunAt: nextFireAfter(input.spec, now),
-      explanation: "This run was skipped because the account has used its budget for the period.",
+      // "the budget available to it" rather than "the period budget": what
+      // usually stops a fire now is the rolling 5-hour window, and a reader
+      // told their month is gone would wait weeks for something that frees up
+      // this afternoon.
+      explanation: "This run was skipped because the account has used up the budget available to it.",
     };
   }
 

@@ -63,9 +63,9 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
-import { checkBudget } from "@/lib/spend";
+import { checkBudget, checkUsageWindows } from "@/lib/spend";
 import { unattendedRunCeiling } from "@/lib/spend-ceiling";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import {
@@ -195,10 +195,18 @@ function log(message: string, extra?: Record<string, unknown>): void {
 // Budgets
 // ---------------------------------------------------------------------------
 
-/** One account's two dispatch-time facts, read together. */
+/** One account's dispatch-time facts, read together. */
 interface AccountLimits {
   plan: Plan;
+  /**
+   * The tighter of what the month has left and what the binding window has.
+   *
+   * One number because the planner asks one question — may this fire? — and
+   * both ceilings answer it the same way.
+   */
   remainingMicroUsd: number | null;
+  /** The window's own remainder, which sizes the run's ceiling at dispatch. */
+  windowRemainingMicroUsd: number | null;
 }
 
 /**
@@ -206,14 +214,14 @@ interface AccountLimits {
  * length of one tick.
  *
  * The same cache the scheduler keeps, for the same reason: ten triggers
- * belonging to one user become one read rather than ten. Nothing here enforces
- * the budget — the executor does, per token — so a figure a few seconds old
- * can only affect whether a run is started, never whether it overspends.
+ * belonging to one user become one read rather than ten. A figure a few seconds
+ * old can only affect whether a run is STARTED: once it is running the executor
+ * holds the ceiling per token, and re-reads the window while it works.
  *
  * The plan is kept as well as the remaining budget, and for the same reason it
- * is in the scheduler: `runBudgetForPlan` needs it at dispatch, and reading it
- * a second time there would be a second read of the same row that could give a
- * different answer from the one admission was decided on.
+ * is in the scheduler: spend admission measures the run against it, and reading
+ * it a second time at dispatch would be a second read of the same row that
+ * could give a different answer from the one admission was decided on.
  */
 async function accountLimits(
   userId: string,
@@ -222,8 +230,19 @@ async function accountLimits(
   const cached = cache.get(userId);
   if (cached !== undefined) return cached;
   const plan = await getUserPlan(userId);
-  const status = await checkBudget(userId, plan);
-  const limits: AccountLimits = { plan, remainingMicroUsd: status.remainingMicroUsd };
+  const [status, windows] = await Promise.all([
+    checkBudget(userId, plan),
+    checkUsageWindows(userId, plan),
+  ]);
+  const both = [status.remainingMicroUsd, windows.remainingMicroUsd].filter(
+    (value): value is number => value !== null
+  );
+  const limits: AccountLimits = {
+    plan,
+    // Null only when NEITHER is metered, which is the cap-disabled account.
+    remainingMicroUsd: both.length === 0 ? null : Math.min(...both),
+    windowRemainingMicroUsd: windows.remainingMicroUsd,
+  };
   cache.set(userId, limits);
   return limits;
 }
@@ -994,19 +1013,21 @@ async function offer(
     degradation: decision.degradation,
     permissionPolicy,
     // Same reason as the scheduler: a trigger-fired run has no human in the
-    // loop, and 0 on this column means unlimited. The unattended cost default
-    // first (`unattendedRunCeiling`), then every axis narrowed against the
-    // standard run budget so a schedule with no figures of its own still has a
-    // token and a runtime ceiling.
+    // loop, and 0 on this column means unlimited. The no-window backstop first
+    // (`unattendedRunCeiling`), then narrowed against what this account's
+    // binding window has left, so a schedule with no figures of its own still
+    // has a real cost ceiling. Tokens and runtime carry none: there is no
+    // per-run ceiling on those axes any more, only what a schedule imposes on
+    // itself.
     budget: narrowestBudget(
       {
         maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      runBudgetForPlan(limits.plan)
+      runBudgetForWindow(limits.windowRemainingMicroUsd)
     ),
-    // The same plan the ceiling above was built from, so spend admission
+    // The same plan the admission check was made against, so spend admission
     // measures the run against it rather than reading the row a second time
     // and possibly getting a different answer.
     plan: limits.plan,

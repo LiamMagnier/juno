@@ -48,7 +48,9 @@ import {
   setSessionAttention,
   type WorkRunUsage,
 } from "@/lib/work/store";
-import { recordWorkRunSpend } from "@/lib/spend";
+import { billedWorkRunMicroUsd, checkUsageWindows, recordWorkRunSpend } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
+import { getUserPlan } from "@/lib/usage";
 import { actionDigest, policyDigest, verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
 import {
@@ -60,7 +62,7 @@ import {
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
-import { maxStepsForBudget } from "@/lib/work/budget";
+import { WORK_MAX_STEPS_PER_RUN } from "@/lib/work/budget";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
@@ -141,6 +143,25 @@ const ANSWER_POLL_MS = 1_000;
  * stops things.
  */
 const CONTROL_POLL_MS = 1_000;
+
+/**
+ * How often a driving executor re-reads the account's usage window.
+ *
+ * The window is what bounds a run now that the per-run ceiling is gone, and the
+ * executor's in-process guard cannot see it move: it is handed the remainder
+ * once, at dispatch, and a chat turn or a second run in another process spends
+ * from the same window while this one works. So the number has to be re-read,
+ * and this is how often.
+ *
+ * Much slower than the status poll above, and the asymmetry is the right one. A
+ * stop has to land while the user is still looking at the screen; a window
+ * cannot go from "room to spare" to "overspent by something that matters" in
+ * half a minute, because the only things that spend from it are this run, whose
+ * own cost the guard is already tracking step by step, and turns that cost
+ * cents. Two aggregate reads every thirty seconds per in-flight run is the
+ * price; every second would be forty times that for a number that barely moves.
+ */
+const WINDOW_POLL_MS = 30_000;
 
 /** A stable identity for this worker, recorded on every lease it takes. */
 const EXECUTOR_ID = `work-runner:${process.pid}:${process.env.HOSTNAME ?? "local"}`;
@@ -2980,17 +3001,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     tools: effectiveTools,
     plan,
     budget,
-    // The step cap, scaled to the runtime this run was actually given.
+    // The step cap, as one honest figure.
     //
-    // The runtime's own MAX_STEPS_PER_RUN is 200, a figure sized for the twenty
-    // minutes every run used to get. Now that the ceiling is shaped by the plan
-    // a longer run would still stop at two hundred model turns, which makes the
-    // clock it was sold decorative: the budget bar would read a quarter full
-    // and the run would end anyway, for a reason no surface names. Scaled by
-    // the runtime ratio the two ceilings agree again, and the step cap goes
-    // back to being what it was written as - a backstop against a run going in
-    // a circle, not the thing that ends long work.
-    maxSteps: maxStepsForBudget(budget, runtime.MAX_STEPS_PER_RUN),
+    // The runtime's own MAX_STEPS_PER_RUN is 200, sized for the twenty minutes
+    // every run used to get, and this used to scale it by the ratio of the
+    // run's runtime ceiling to PRO's so that the two ceilings agreed. There is
+    // no runtime ceiling left to take a ratio of — a run stops when the account
+    // runs out of window, not when a clock does — so the ratio would collapse
+    // to 1 and two hundred steps would quietly become the thing that ends long
+    // work, for a reason no surface names. `WORK_MAX_STEPS_PER_RUN` is sized
+    // for the longest run the product means to support and is a backstop
+    // against a circle, nothing more; the stall and repetition detectors in the
+    // loop are what actually catch a circle, in seconds rather than at step
+    // twelve hundred.
+    maxSteps: WORK_MAX_STEPS_PER_RUN,
     // What a token costs, so the run's spend is a number and its ceiling is a
     // ceiling.
     //
@@ -3287,6 +3311,67 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     if (worthReporting(entry)) session.recordUncertainty(entry.explanation);
   }
 
+  /*
+   * The half of window enforcement the executor's own guard cannot do.
+   *
+   * `WorkBudgetGuard` was handed the window's remainder at dispatch and counts
+   * this run's spend against it in memory. That stops a runaway loop, which is
+   * most of the job — but it is a photograph of the window taken at 09:00, and
+   * the window moves: a chat turn, a second run, anything else on the account
+   * spends from the same five hours. agent-core has no database by design, so
+   * the number has to be re-read here, where there is one.
+   *
+   * Three things have to be netted or the answer is wrong in one direction or
+   * the other. The ledger holds settled spend, which for a live run is only
+   * what was billed at an earlier pause — so the guard's cumulative figure less
+   * what has already been billed is the part the window cannot see yet, and it
+   * has to be added. This run's own admission hold has to be excluded, or it is
+   * charged once as an estimate and again as the real spend that replaced it.
+   * Everyone else's holds stay in, because a run admitted beside this one is
+   * about to spend them.
+   *
+   * Never throws and never ends a run on a failed read: a database hiccup must
+   * not look like an exhausted window, and the next poll is thirty seconds
+   * away. Overlapping calls are skipped rather than queued — the poll that
+   * drives this fires every second, and two of these in flight would read the
+   * same ledger twice and stop the run twice for one reason.
+   *
+   * The first check fires on the first tick rather than thirty seconds in, and
+   * that is worth the one extra read: a run is admitted when it is QUEUED and
+   * claimed when a worker is free, and a queue deep enough to put minutes
+   * between the two is a run whose admission answer is already stale.
+   */
+  let windowCheckedAtMs = 0;
+  let windowCheckInFlight = false;
+  const watchUsageWindow = async (): Promise<void> => {
+    const nowMs = Date.now();
+    if (windowCheckInFlight || nowMs - windowCheckedAtMs < WINDOW_POLL_MS) return;
+    windowCheckInFlight = true;
+    windowCheckedAtMs = nowMs;
+    try {
+      const usage = session.usage;
+      const [plan, billed] = await Promise.all([
+        getUserPlan(input.userId),
+        billedWorkRunMicroUsd(input.userId, input.runId),
+      ]);
+      const status = await checkUsageWindows(input.userId, plan, null, undefined, {
+        pendingMicroUsd: Math.max(0, usage.costMicroUsd - billed),
+        ignoreReservationRef: run.spendReservationRef,
+      });
+      if (status.allowed || status.bound === null) return;
+      log("the account's usage window is spent", {
+        runId: input.runId,
+        window: status.bound,
+        resetsAtMs: status.resetsAtMs,
+      });
+      session.stopForAccountBudget(windowLimitMessage(status.bound, status.resetsAtMs));
+    } catch (error) {
+      log("could not re-read the usage window", { runId: input.runId, error: String(error) });
+    } finally {
+      windowCheckInFlight = false;
+    }
+  };
+
   // A Stop button that does not stop anything.
   //
   // POST /api/work/runs/{id}/control writes a terminal row and appends an
@@ -3318,6 +3403,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         // second away, and the lease sweep is the backstop if the database is
         // genuinely gone.
       });
+    void watchUsageWindow();
   }, CONTROL_POLL_MS);
 
   try {

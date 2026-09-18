@@ -7,8 +7,7 @@ import {
   type WorkEffectiveTarget,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
-import type { Plan } from "@prisma/client";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import type { ClientSpend } from "@/types/app";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
@@ -25,58 +24,88 @@ import { cn } from "@/lib/utils";
  * sheet. Cowork is a prompt, a folder, connectors, go.
  *
  * So: ONE line that carries all three facts — "Runs in the cloud · asks before
- * risky steps · stops at $2 / 20 min" — and a single disclosure under it for
- * the reader who wants the detail, where what Juno read into the goal and what
- * it will do about it now live as well. Collapsed by default, and that is not
- * timidity: the summary already carries the whole of it in one sentence, and a
- * permanently expanded block of metadata over a composer is the sort of thing
- * readers learn to look past.
+ * risky steps · runs until your 5-hour limit is used up" — and a single
+ * disclosure under it for the reader who wants the detail, where what Juno read
+ * into the goal and what it will do about it now live as well. Collapsed by
+ * default, and that is not timidity: the summary already carries the whole of
+ * it in one sentence, and a permanently expanded block of metadata over a
+ * composer is the sort of thing readers learn to look past.
  *
  * Nothing here is computed. `selectForInferred` in the composer already decided
  * the target, the [+] already holds the connector selection, the chip holds the
- * mode, and the ceilings are `runBudgetForPlan`. Recomputing any of them would
- * produce a second answer that could disagree with the one the dispatch acts
- * on.
+ * mode, and the limit is the account's own rolling window, read from the same
+ * bootstrap the settings gauge draws. Recomputing any of them would produce a
+ * second answer that could disagree with the one the dispatch acts on.
  */
 
-export interface RunCeilings {
-  costUsd: number;
-  tokens: number;
-  minutes: number;
+/** Which window will stop a run first, and when it frees up. */
+export interface RunLimit {
+  window: "session" | "weekly";
+  /** Epoch ms when that window frees up; null when there is no window. */
+  resetsAtMs: number | null;
+  /** Spend enforcement is switched off, so no window applies to this account. */
+  unmetered: boolean;
 }
 
 /**
- * The run budget, restated for the reader in the units a person thinks in.
+ * What will stop this run, read from the account's own windows.
  *
- * Derived from `runBudgetForPlan` rather than mirrored: this used to be a
- * hand-copied constant with a comment asking whoever moved the original to
- * come and move this too, and no test guarding it. Read from the source, the
- * sentence cannot be wrong about the number.
+ * There is no per-run ceiling any more. This used to be `runCeilingsFor`, which
+ * restated `runBudgetForPlan` in the units a person thinks in — "$2, 600,000
+ * tokens or 20 minutes" — and the composer printed it under the field. Every
+ * one of those numbers is gone: a run goes until the work is done or until the
+ * account's rolling window is used up, and that is the sentence the reader now
+ * needs. A line promising a ceiling the runtime no longer applies is the same
+ * defect as a control that implies something the runtime cannot do; it is just
+ * quieter.
  *
- * It takes the plan because the ceiling does. A flat sentence was honest while
- * every account got the same $2; now that a trial account's run stops at
- * fifteen cents and ten minutes, a composer telling every reader "$2 / 20 min"
- * would be describing a run only some of them will get — and the reader most
- * misled by it is the one whose run stops soonest.
+ * The binding window is whichever is further through, because that is the one
+ * that will stop the run first. `pct` and `resetsAtMs` are already on the
+ * bootstrap for the settings gauge, so this costs no new plumbing and reads the
+ * same numbers the gauge does — the composer and the usage page cannot disagree
+ * about how much of the day is left.
+ *
+ * `unmetered` is the account with `Settings.spendCapDisabled`. It has no window
+ * at all, and "0% of your 5-hour limit" would be a meter describing something
+ * nothing is measuring. What such a run actually gets is the finite backstop in
+ * `spend-ceiling.ts`; what the reader is told is that their limits are off.
  */
-export function runCeilingsFor(plan: Plan): RunCeilings {
-  const budget = runBudgetForPlan(plan);
+export function runLimitFrom(spend: ClientSpend): RunLimit {
+  if (spend.capDisabled) {
+    return { window: "session", resetsAtMs: null, unmetered: true };
+  }
+  const weeklyBinds = spend.windows.weekly.pct > spend.windows.session.pct;
   return {
-    costUsd: budget.maxCostMicroUsd / 1_000_000,
-    tokens: budget.maxTokens,
-    minutes: Math.round(budget.maxRuntimeMs / 60_000),
+    window: weeklyBinds ? "weekly" : "session",
+    resetsAtMs: weeklyBinds ? spend.windows.weekly.resetsAtMs : spend.windows.session.resetsAtMs,
+    unmetered: false,
   };
 }
 
+/** The limit as the tail of the one-line summary. */
+export function runStopsPhrase(limit: RunLimit): string {
+  if (limit.unmetered) return "runs until it is done";
+  return limit.window === "session"
+    ? "runs until your 5-hour limit is used up"
+    : "runs until your weekly limit is used up";
+}
+
 /**
- * The figures a surface states when it has not been told whose account it is.
+ * When the binding window frees up, in the reader's own time zone.
  *
- * PRO's, matching `DEFAULT_RUN_BUDGET` for the reason that constant still
- * exists: every surface written before ceilings were plan-shaped was written
- * against these numbers, and a fallback that guessed lower would understate a
- * paying reader's run. Anything with the plan in hand calls `runCeilingsFor`.
+ * A moment and not a countdown: this sentence sits under a composer and is read
+ * once, and a countdown painted into a static line is a number that is wrong
+ * the instant it is drawn. The settings gauge, which a reader watches rather
+ * than glances at, counts down.
  */
-export const RUN_CEILINGS: RunCeilings = runCeilingsFor("PRO");
+export function runLimitResetLabel(limit: RunLimit): string | null {
+  if (limit.resetsAtMs == null) return null;
+  return new Date(limit.resetsAtMs).toLocaleString(undefined, {
+    ...(limit.window === "weekly" ? { weekday: "long" as const } : {}),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 /**
  * The approval mode as the tail of a sentence.
@@ -149,13 +178,14 @@ export function WorkRunDisclosure({
 }: RunDisclosureProps) {
   const [open, setOpen] = React.useState(false);
   /*
-   * The reader's own plan, not a constant. `useApp` is where every other leaf
-   * in this app reads it (see `task-dialog.tsx`), and reading it here rather
-   * than taking it as a prop means the composer cannot forget to pass it and
-   * quietly fall back to somebody else's figures.
+   * The reader's own windows, not a constant. `useApp` is where every other
+   * leaf in this app reads the account's spend (see `task-dialog.tsx`), and
+   * reading it here rather than taking it as a prop means the composer cannot
+   * forget to pass it and quietly fall back to somebody else's figures.
    */
-  const { quota } = useApp();
-  const ceilings = runCeilingsFor(quota.plan);
+  const { spend } = useApp();
+  const limit = runLimitFrom(spend);
+  const resetsAt = runLimitResetLabel(limit);
   /*
    * Stated because the runtime does it, and read from the same rule the
    * dispatcher passes to the executor. A sentence here that the run did not
@@ -173,7 +203,7 @@ export function WorkRunDisclosure({
   const confirmsPlan =
     target === "cloud" && confirmPlanBeforeActing({ policy: approvalMode, attended: true });
 
-  const stops = `stops at $${ceilings.costUsd} / ${ceilings.minutes} min`;
+  const stops = runStopsPhrase(limit);
   const asks = APPROVAL_PHRASE[approvalMode];
   /*
    * Every state of the summary is a real sentence. "Checking…" while the host
@@ -256,11 +286,15 @@ export function WorkRunDisclosure({
               {WORK_APPROVAL_MODE_SUMMARY[approvalMode]} Anything it cannot take back — a permanent
               delete, a message sent, a purchase — is asked about under every mode.
               {confirmsPlan
-                ? " It also writes its plan before it starts and waits for you to read it; the clock does not run while it waits."
+                ? " It also writes its plan before it starts and waits for you to read it; waiting costs nothing."
                 : ""}
             </Row>
             <Row label="Stops at">
-              {`$${ceilings.costUsd}, ${ceilings.tokens.toLocaleString("en-US")} tokens, or ${ceilings.minutes} minutes of working time — whichever comes first. If one is reached the task stops and tells you where it got to; waiting for you does not count against the clock. These are your plan’s ceilings; a project, a skill or a schedule can lower them and nothing raises them.`}
+              {limit.unmetered
+                ? "Nothing but the work being done. Spending limits are switched off on this account, so there is no window to run out of — a task Juno starts on its own still stops at a small backstop ceiling so an unattended loop cannot run all night."
+                : limit.window === "session"
+                  ? `Nothing, until the work is done or your 5-hour usage limit is used up${resetsAt ? ` — it frees up at ${resetsAt}` : ""}. If the limit is reached the task stops and tells you where it got to. There is no separate ceiling on how long it runs or how many tokens it uses, and waiting for you costs nothing. A project, a skill or a schedule can still set this task a smaller limit of its own; nothing can raise it.`
+                  : `Nothing, until the work is done or your weekly usage limit is used up${resetsAt ? ` — it frees up ${resetsAt}` : ""}. If the limit is reached the task stops and tells you where it got to. There is no separate ceiling on how long it runs or how many tokens it uses, and waiting for you costs nothing. A project, a skill or a schedule can still set this task a smaller limit of its own; nothing can raise it.`}
             </Row>
           </dl>
         </div>

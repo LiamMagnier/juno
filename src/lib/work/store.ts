@@ -38,7 +38,7 @@ import {
   reserveSpend,
   type SpendReservationResult,
 } from "@/lib/spend";
-import { unattendedRunCeiling } from "@/lib/spend-ceiling";
+import { DEFAULT_ESTIMATE_MICRO_USD, unattendedRunCeiling } from "@/lib/spend-ceiling";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -335,6 +335,12 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   // safe default for a scheduled or resumed executor, so every new run gets a
   // finite ceiling. Callers that need a narrower limit still win through the
   // ordinary minimum semantics of the stored budget.
+  //
+  // Every dispatcher now writes the binding window's remainder here, so a zero
+  // arrives only from an account with no window to enforce — one with the spend
+  // cap switched off. `unattendedRunCeiling` is that account's backstop and its
+  // docblock is where the decision is argued. Tokens and runtime stay at
+  // whatever was asked for, which is zero for an ordinary run: no ceiling.
   const requestedBudget = input.budget ?? NO_BUDGET;
   const budget: WorkBudget = {
     ...requestedBudget,
@@ -350,7 +356,19 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
       userId: input.userId,
       kind: "work",
       ref: spendReservationRef,
-      estimateMicroUsd: budget.maxCostMicroUsd,
+      // An estimate of what this run will cost, NOT its ceiling.
+      //
+      // The two used to be one number, because the ceiling was a small fixed
+      // one — $2 for a PRO run — and holding the whole of it was a reasonable
+      // guess. The ceiling is now whatever the account's binding window has
+      // left, and holding THAT would take the account's entire remaining
+      // window the moment a run started: a second run refused, and the reader
+      // unable to send a chat message while their task worked. The hold exists
+      // to close the read-then-act window between admission and the first
+      // billed token, and `DEFAULT_ESTIMATE_MICRO_USD.work` is the figure
+      // written for exactly that; what stops a run that spends more than it is
+      // worth is the window, re-read while the run works.
+      estimateMicroUsd: DEFAULT_ESTIMATE_MICRO_USD.work,
       plan: input.plan,
     });
     if (!reservation.allowed) throw new WorkSpendAdmissionError(reservation);

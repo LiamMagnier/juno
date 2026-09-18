@@ -910,7 +910,13 @@ export interface TriggerDispatchInput {
   hosts: readonly HostCapabilityView[];
   requiredCapabilities: readonly WorkCapability[];
   cloudAvailable: boolean;
-  /** Micro-USD the account may still spend, or null when it is not metered. */
+  /**
+   * Micro-USD the account may still spend right now, or null when it is not
+   * metered.
+   *
+   * The TIGHTER of the month's remainder and the binding rolling window's — the
+   * same figure the scheduler's planner takes, and for the same reason.
+   */
   remainingBudgetMicroUsd: number | null;
 }
 
@@ -971,7 +977,10 @@ export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatc
       outcome: "skip",
       cause: "budget_exhausted",
       reason: "budget_exceeded",
-      explanation: "This run was not started because the account has used its budget for the period.",
+      // See the scheduler's twin of this sentence: what usually stops a fire
+      // now is the rolling window rather than the month, and naming the month
+      // would send the reader away for weeks.
+      explanation: "This run was not started because the account has used up the budget available to it.",
     };
   }
 

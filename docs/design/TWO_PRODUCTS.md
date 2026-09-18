@@ -62,7 +62,8 @@ way the research pill does. A second, quieter trigger reads the sentence —
 offers *one caption with one chip*: "Looks like this needs a spreadsheet and
 Gmail. Run it as a task?" It never arms itself. The file's own asymmetry
 argument is why: a wrong guess about a local capability blocks a person, and a
-wrong guess here would spend a run ceiling on a question that wanted a reply.
+wrong guess here would spend an afternoon of the account's window on a question
+that wanted a reply.
 Suggesting is Claude's behaviour; deciding for the reader is not.
 
 **"Needs you" is a fold, not a destination.** The rejected alternative was a
@@ -92,8 +93,9 @@ asks, what stops it — computed by the same function the dispatch route runs, s
 the sentence read is the sentence acted on.
 
 **A run in the transcript.** Live: what it is doing now, the plan with its
-tally, one line of facts (spend against the ceiling, time working — numbers,
-never meters), the run's own words, and the block that needs a person —
+tally, one line of facts (spend against what the window had left when the run
+started, time working — numbers, never meters), the run's own words, and the
+block that needs a person —
 questions with one-press options, approvals with Deny first. Terminal: the
 outcome, the deliverables, the receipt. Every piece already exists under
 `src/components/work/`; this is a new arrangement of shipped components, not new
@@ -108,13 +110,45 @@ composer hides the run that stopped to ask you a question; the sidebar answers
 that better than a list did — that run is the first row, in every view, on every
 page.
 
-## 4. What is deliberately not done
+## 4. The run ceiling, reversed
+
+This document said, above, that a raised run ceiling was a pricing decision and
+that ceilings should become plan-shaped. The owner's call overrode it: **there
+is no per-run ceiling.** A run goes until the work is done or until the
+account's rolling 5-hour window or weekly window is used up — the model Claude
+and ChatGPT use.
+
+The argument the plan-shaped table made for itself was that a per-run ceiling
+and a monthly one answer different questions: the monthly figure is what an
+account may spend, and the per-run figure is how much of it one unattended loop
+may take before somebody is asked. The question is real. The windows answer it
+better, and for two reasons.
+
+**A window bounds the thing the table was afraid of, without bounding the thing
+it was not.** Five hours of spend is a hard stop on a loop that goes in circles.
+It is not a stop on a task that genuinely needs thirty minutes — which is what
+PRO's twenty-minute clock was, every day, while the month sat barely touched.
+The table's common failure was the opposite of the one it was written against.
+
+**It is the account's number, not the task's.** A run is never cut short while
+the account still has room, and when it is cut short the honest sentence is a
+wait rather than a purchase: *your 5-hour limit frees up at 14:00*, not *you are
+over a ceiling*.
+
+What this cost is the half that was not deletion, and it was the load-bearing
+half. The windows were meters — `getUsageWindows` derived them and only the
+usage page and the settings gauge read them. They enforce now: at admission,
+beside the monthly gate that remains the outer bound, and again while a run
+works, because the window moves under a run that started at 09:00. The cost axis
+of the executor's guard stays wired, to the window's remainder rather than to a
+constant, since a guard with every axis at zero cannot stop a runaway loop at
+all. Tokens and running time carry no ceiling at all any more.
+
+`docs/JUNO.md` §9b.1 is what this means in the code.
+
+## 5. What is deliberately not done
 
 - **No new `Conversation.kind`.** A Work conversation is `kind: "chat"`. The
   phone drops kinds it does not know, and a run is not a different kind of
   conversation — it is a conversation with a run in it.
 - **No `/tasks` page.** See §2.2.
-- **No raised run ceiling by fiat.** "Runs for hours" is a pricing decision.
-  Ceilings become plan-shaped, PRO keeps exactly what it has today, and the
-  clock already suspends while a run waits on a person — so the hours a run can
-  span are a person's hours, not a meter's.

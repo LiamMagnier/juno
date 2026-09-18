@@ -10,11 +10,13 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { decryptField, FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto";
 import {
   checkBudget,
+  checkUsageWindows,
   recordSpend,
   budgetExceededMessage,
   modelRequestCost,
   modelRatesMicroUsdPerToken,
 } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import type { ClientSource } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
@@ -198,6 +200,18 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
   const budget = await checkBudget(task.userId, plan);
   if (!budget.allowed) {
     await failRun(null, budgetExceededMessage(plan, budget.resetsAtMs), "budget");
+    await advance();
+    return { status: "budget" };
+  }
+
+  // And under the same rolling windows, for the same reason. A window that
+  // stops a chat turn and a delegated run but lets a 07:00 task through is not
+  // the account's limit — it is a limit on the surfaces somebody happened to
+  // wire. The same "budget" run kind records it, because from the card's side
+  // the fact is identical: this fire did not happen, and here is why.
+  const windows = await checkUsageWindows(task.userId, plan);
+  if (!windows.allowed && windows.bound !== null) {
+    await failRun(null, windowLimitMessage(windows.bound, windows.resetsAtMs), "budget");
     await advance();
     return { status: "budget" };
   }
