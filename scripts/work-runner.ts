@@ -61,6 +61,7 @@ import {
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import { maxStepsForBudget } from "@/lib/work/budget";
+import { createWorkBrowser } from "@/lib/work/browser";
 import { answerTextFromPayload, answeredQuestionWhere } from "@/lib/work/answer-lookup";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
@@ -1337,7 +1338,24 @@ interface PinnedWebResponse {
   statusText: string;
   contentType: string;
   location: string | null;
+  /**
+   * Every response header, one string per name.
+   *
+   * Repeats — `set-cookie` above all — are joined with a newline, which is the
+   * shape Playwright's request interception takes multiples in. `web_fetch`
+   * reads none of this; the browser needs all of it, because a page whose
+   * cookies were dropped is a page that cannot hold a session.
+   */
+  headers: Record<string, string>;
   body: Buffer;
+}
+
+/** A request other than the plain GET `web_fetch` makes. */
+interface PinnedWebRequest {
+  method?: string;
+  /** Sent as given, after the transport's own headers are stripped. */
+  headers?: Record<string, string>;
+  body?: Buffer | null;
 }
 
 /**
@@ -1349,11 +1367,18 @@ interface PinnedWebResponse {
  * private answer, and supplying that approved address through Node's lookup
  * hook makes the check and connection one decision. The original hostname is
  * still used for HTTP Host and TLS SNI, so virtual-hosted HTTPS keeps working.
+ *
+ * It takes a method, headers and a body because the browser tool's requests go
+ * through this same function rather than through a second, laxer path of their
+ * own. That is the whole containment story for the browser: Chromium never
+ * opens a socket, so the rebinding window this function closes stays closed for
+ * a page's scripts as well as for the model. See src/lib/work/browser.ts.
  */
 async function fetchPinnedWebPage(
   target: string,
   signal: AbortSignal,
-  runtime: Pick<WorkRuntime, "blockedFetchTarget" | "blockedFetchAddress">
+  runtime: Pick<WorkRuntime, "blockedFetchTarget" | "blockedFetchAddress">,
+  init?: PinnedWebRequest
 ): Promise<PinnedWebResponse> {
   const parsed = new URL(target);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
@@ -1383,15 +1408,21 @@ async function fetchPinnedWebPage(
       finish(new Error("the web request was aborted"));
     };
 
+    const body = init?.body ?? null;
     const options: http.RequestOptions = {
       hostname,
       port: parsed.port || undefined,
       path: `${parsed.pathname || "/"}${parsed.search}`,
-      method: "GET",
+      method: init?.method ?? "GET",
       headers: {
         "User-Agent": "Juno Work (+https://chat.liams.dev)",
         Accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.1",
+        ...init?.headers,
+        // Last, and not overridable: the body is read as bytes and never
+        // decompressed, so a caller that asked for gzip would be handed a
+        // buffer nothing in this process can read.
         "Accept-Encoding": "identity",
+        ...(body ? { "Content-Length": String(body.byteLength) } : {}),
       },
       // The callback returns the already-approved answer instead of allowing
       // the client to perform a second DNS lookup at connection time.
@@ -1424,6 +1455,11 @@ async function fetchPinnedWebPage(
         chunks.push(buffer);
       });
       response.on("end", () => {
+        const headers: Record<string, string> = {};
+        for (const [name, value] of Object.entries(response.headers)) {
+          if (value === undefined) continue;
+          headers[name] = Array.isArray(value) ? value.join("\n") : value;
+        }
         finish(null, {
           status: response.statusCode ?? 0,
           statusText: response.statusMessage ?? "",
@@ -1433,6 +1469,7 @@ async function fetchPinnedWebPage(
               : "",
           location:
             typeof response.headers.location === "string" ? response.headers.location : null,
+          headers,
           body: Buffer.concat(chunks),
         });
       });
@@ -1445,6 +1482,7 @@ async function fetchPinnedWebPage(
     request.on("error", (error) => finish(error instanceof Error ? error : new Error(String(error))));
     signal.addEventListener("abort", onAbort, { once: true });
     if (signal.aborted) onAbort();
+    else if (body) request.end(body);
     else request.end();
   });
 }
@@ -1471,6 +1509,11 @@ function buildTools(input: {
   sink: SessionSink;
   connectors: ConnectorSurface;
   egressDomains: { current: readonly string[] | null };
+  /**
+   * Teardown the run owes whatever it started. A browser left open is several
+   * hundred megabytes of Chromium on a worker that runs three runs at once.
+   */
+  disposers: Array<() => Promise<void>>;
 }): WorkToolDefinition[] {
   const { runtime } = input;
 
@@ -1539,6 +1582,82 @@ function buildTools(input: {
       },
     }),
   ];
+
+  /*
+   * The browser, on exactly the leash `web_fetch` is on.
+   *
+   * Every request the page makes comes back here and goes out through
+   * `fetchPinnedWebPage` — the same DNS resolution, the same
+   * `blockedFetchAddress` on every answer, the same address pinned into the
+   * socket. Chromium is handed the response and never opens a connection of its
+   * own. The argument for doing it this way rather than checking the URL and
+   * letting the browser connect is in src/lib/work/browser.ts: a lexical check
+   * is not a DNS boundary, and a browser is the one client where the gap
+   * between those two is reachable by a page's own scripts rather than only by
+   * the model.
+   *
+   * The skill grant applies to every one of those requests and not only to the
+   * navigation. A grant that narrowed the run to one domain and then let the
+   * page fetch whatever it liked would be a grant over the address bar.
+   */
+  const browser = createWorkBrowser({
+    ...(process.env.WORK_BROWSER_EXECUTABLE
+      ? { executablePath: process.env.WORK_BROWSER_EXECUTABLE }
+      : {}),
+    log: (message, extra) => log(message, { runId: input.runId, ...extra }),
+    async fetchResource(request) {
+      const blocked = runtime.blockedFetchTarget(request.url);
+      if (blocked) return { ok: false, message: `Juno will not open that: ${blocked}` };
+
+      const allowedDomains = input.egressDomains.current;
+      if (allowedDomains !== null) {
+        const egress = runtime.evaluateEgress(request.url, { allowedDomains, allowedPorts: [443] });
+        if (!egress.allowed) {
+          return { ok: false, message: `Juno will not open that for this skill: ${egress.reason}.` };
+        }
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS);
+      try {
+        const response = await fetchPinnedWebPage(request.url, controller.signal, runtime, {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+        });
+        // The body handed over is already decoded and its length is whatever
+        // arrived, so the two headers describing the encoding of what came off
+        // the wire would now be describing something else.
+        const headers = { ...response.headers };
+        delete headers["content-encoding"];
+        delete headers["content-length"];
+        return { ok: true, status: response.status, headers, body: response.body };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          message: controller.signal.aborted
+            ? `${request.url} did not answer within ${Math.round(WEB_FETCH_TIMEOUT_MS / 1000)}s.`
+            : `${request.url} could not be fetched: ${detail}`,
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  });
+  input.disposers.push(() => browser.close());
+
+  const browserTool = runtime.browserTool({
+    available: () => browser.available(),
+    open: (url) => browser.open(url),
+    read: () => browser.read(),
+    click: (target) => browser.click(target),
+    typeText: (target, text) => browser.typeText(target, text),
+    submit: (target) => browser.submit(target),
+    currentUrl: () => browser.currentUrl(),
+    allowedDomains: () => input.egressDomains.current,
+    onCitation: (citation) => input.sink.session?.recordCitation(citation),
+  });
 
   const deliverables = runtime.deliverableTool({
     async create(request) {
@@ -1659,6 +1778,10 @@ function buildTools(input: {
   return runtime.withoutHostWorkspaceTools([
     ...connectorTools,
     ...research,
+    // After search and fetch, before the things that produce something: a
+    // browser is how a page is reached when reading it was not enough, and a
+    // model that meets it first will drive a browser to read a static page.
+    browserTool,
     deliverables,
     cloudFiles,
     ...runtime.workspaceTools(),
@@ -2481,7 +2604,11 @@ async function drive(runId: string, userId: string): Promise<void> {
    * loop keeps running, and the appends queue behind one another in call order.
    */
   let appendTail: Promise<void> = Promise.resolve();
-  const emit = (kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void> => {
+  const emit = (
+    kind: WorkEventKind,
+    payload: Prisma.InputJsonValue,
+    agentId?: string | null
+  ): Promise<void> => {
     if (kind === "run_finished") emittedRunFinished = true;
     seq += 1;
     const key = `${runId}:${EXECUTOR_ID}:${seq}`;
@@ -2495,6 +2622,11 @@ async function drive(runId: string, userId: string): Promise<void> {
             payload,
             visibility: defaultVisibilityFor(kind),
             key,
+            // The column has been on `WorkEvent` and in every serialised event
+            // since Work shipped, and null on all of them because nothing in
+            // the cloud runtime could delegate. A run's own work stays null;
+            // a delegated child's carries its id.
+            agentId: agentId ?? null,
           },
         ],
       }).then(
@@ -2651,7 +2783,12 @@ async function billRunUsage(
 interface ExecuteInput {
   runId: string;
   userId: string;
-  emit(kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void>;
+  emit(
+    kind: WorkEventKind,
+    payload: Prisma.InputJsonValue,
+    /** The delegated child this event belongs to, when it belongs to one. */
+    agentId?: string | null
+  ): Promise<void>;
 }
 
 interface ExecuteOutcome {
@@ -2810,6 +2947,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   });
 
   const egressDomains = { current: null as readonly string[] | null };
+  /**
+   * Whatever the toolset started and this run has to stop.
+   *
+   * A list rather than a named handle because the thing being disposed is a
+   * property of the toolset, not of the executor: `buildTools` is where a tool
+   * that owns a process is created, and a second variable here for each one is
+   * a second place to forget it. Emptied in the same `finally` that revokes the
+   * connectors, so it runs on the pause path as well as the terminal ones.
+   */
+  const disposers: Array<() => Promise<void>> = [];
   const tools = buildTools({
     runtime,
     runId: input.runId,
@@ -2818,6 +2965,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     sink,
     connectors,
     egressDomains,
+    disposers,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown; attended?: unknown };
@@ -3077,7 +3225,15 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           });
           return;
         }
-        void input.emit(event.kind, event as unknown as Prisma.InputJsonValue);
+        // `agentId` rides on the emitted event rather than inside its payload
+        // — it is a column every client is already served — so it is lifted
+        // out here and the payload goes on carrying it too, harmlessly.
+        const agentId = (event as { agentId?: unknown }).agentId;
+        void input.emit(
+          event.kind,
+          event as unknown as Prisma.InputJsonValue,
+          typeof agentId === "string" ? agentId : null
+        );
       },
       onAudit: (intent) => {
         void recordWorkAudit({
@@ -3361,6 +3517,14 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // its own handles. A handle outliving the process that holds it is a
     // credential nobody is watching.
     await connectors.close();
+    // Same argument for anything else the toolset started — a browser, today.
+    // Each one is awaited on its own so a disposer that throws cannot leave the
+    // ones after it unrun.
+    for (const dispose of disposers) {
+      await dispose().catch((error: unknown) => {
+        log("a tool did not shut down cleanly", { runId: input.runId, error: String(error) });
+      });
+    }
   }
 }
 

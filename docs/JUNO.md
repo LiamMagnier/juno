@@ -1247,6 +1247,25 @@ user / operator / internal), `WorkApproval`, `WorkRunIO` (an attempt's input man
 `WorkCommand` (a paired Mac and the commands sent to it), `WorkSkill*`, `WorkSchedule` /
 `WorkTrigger`, `WorkArtifact*`, `WorkAuditEvent`.
 
+**What a cloud run can do.** Connectors, `web_search`, `web_fetch`, `create_deliverable`,
+`cloud_files` — and two more that are worth naming because both look like they should need
+a Mac and do not. **`browser`** opens a real headless page and reads, clicks, types and
+submits it: the page's requests are intercepted and served by the executor's own
+DNS-pinned fetcher (`src/lib/work/browser.ts`), so Chromium never opens a socket and a
+hostile page cannot rebind a name onto the worker's metadata endpoint. Its risks are a
+ladder — read is `safe`, click and type are `edit`, **submit is `command`** — and a click
+on a control that would send a form is *refused* with "use submit", so reaching the rung
+that asks the user is structural rather than a matter of the model labelling its own
+action. It serves `web_research`; `local_browser` still means the signed-in profile on
+your Mac, which this is not. **`delegate`** hands one self-contained piece of work to a
+child agent with a fresh context window and waits for its report. The child is not a second
+session: its tool calls run through `WorkAgentSession.executeToolCall` — the same tier
+lattice, approval ladder, provenance record and untrusted envelope — and its provider
+requests are metered by `withBudget(guard)` on the *same* `WorkBudgetGuard`, so a
+delegation cannot spend outside the account's window. One child at a time (a run has one
+`waiting_approval` state), at most `MAX_DELEGATIONS_PER_RUN`, and each one is two
+`subagent_update` rows in the transcript.
+
 ### 9b.1 A task, and its attempts
 
 `POST /api/work/sessions` creates a session in `draft`. `POST /api/work/sessions/[id]/runs`
@@ -1901,6 +1920,7 @@ gracefully when absent.
 | Voice (read-aloud/dictation) | `STT_PROVIDER`, `TTS_PROVIDER`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`/`_VOICE_ID`, `STT_MODEL`/`TTS_MODEL`/`TTS_VOICE` |
 | Voice relay | `NEXT_PUBLIC_VOICE_RELAY_URL` (build-time gate), `VOICE_RELAY_URL`, `GEMINI_LIVE_API_KEY`, `ALLOWED_ORIGINS`, `RELAY_*` overrides |
 | Cloud Code | `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, `CLOUD_CODE_REPO` |
+| Work browser | `WORK_BROWSER_EXECUTABLE` (a Chromium the worker already has; without a browser on the worker the `browser` tool reports itself unavailable on its first call and the run carries on with `web_fetch`) |
 | Cross-subdomain cookies | `COOKIE_DOMAIN` |
 | API rewrite target (UI-on-Vercel setup) | `RENDER_BACKEND_URL` |
 | Benchmarks | `AA_API_KEY` |

@@ -310,6 +310,15 @@ async function gitBuffer(cwd: string, args: string[]): Promise<Buffer> {
  * fresh in-memory transcript and a filtered tool set. Depth is one by
  * construction: children execute through this manager's own executor, which
  * hard-rejects orchestration tools.
+ *
+ * This is the CODE answer, and Work deliberately does not use it — see
+ * work/delegate.ts, which has the argument in full. The short version: almost
+ * everything below is about a repository (worktrees, conflict import, an undo
+ * snapshot) and the parts that are not — `PermissionEngine`, `classifyRisk`,
+ * `ApprovalRequest` — are Code's gate, while a Work run's gate is the tier
+ * lattice, the action/risk ladder and the approval digest inside
+ * `WorkAgentSession`. A Work child wired through here would be a second answer
+ * to "may this run send that email", which is the kind of hole nobody notices.
  */
 export class SubagentManager {
   private host: SubagentHost;
