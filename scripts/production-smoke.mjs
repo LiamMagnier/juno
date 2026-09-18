@@ -68,6 +68,39 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/**
+ * The error frame in an SSE body, as a sentence — or null if the stream carried
+ * none.
+ *
+ * QUOTE THE ERROR, DO NOT MERELY NAME IT. The caller used to assert "chat smoke
+ * returned an error event" and stop there. When that fired on a real deploy the
+ * release rolled back correctly and left nobody a way to find out WHY: the SSE
+ * body was in this process's memory and nowhere else, the server-side log was
+ * on the VM, and the run log said only that an error had occurred. Diagnosing
+ * it meant re-deploying with better logging. The sentence it prints instead —
+ * naming the provider and the reason — is what told us, on the very next run,
+ * that the failure was one dead credential rather than anything in the release.
+ *
+ * The `message` field of a Juno error frame is already reader-facing copy
+ * (providerErrorMessage), so it carries no secret the smoke account could not
+ * see on screen; the raw fallback is trimmed so a stack trace or an echoed
+ * prompt cannot reach a public build log.
+ */
+function quoteErrorFrame(text) {
+  const frame = text.match(/\{[^\n]*"type"\s*:\s*"error"[^\n]*\}/i);
+  if (!frame) return null;
+  try {
+    const parsed = JSON.parse(frame[0]);
+    if (parsed && typeof parsed.message === "string") {
+      return `${parsed.message}${parsed.finishReason ? ` (finishReason: ${parsed.finishReason})` : ""}`;
+    }
+  } catch {
+    // Not a whole frame on one line — the trimmed raw match is still better
+    // than the sentence this replaced.
+  }
+  return frame[0].slice(0, 400);
+}
+
 async function main() {
   if (requireAuth && !token && !cookie) {
     throw new Error("authenticated production smoke requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE");
@@ -92,60 +125,116 @@ async function main() {
   const models = await json(modelsResponse);
   assert(modelsResponse.ok && Array.isArray(models.value?.models), `models failed: ${models.text.slice(0, 500)}`);
   assert(modelsResponse.headers.get("x-juno-contract-version") === "1.3.0", "native contract header drifted");
-  const selected = process.env.JUNO_SMOKE_MODEL || models.value.models.find((model) => model.modality === "chat" && model.availability === "available")?.id;
-  assert(selected, "no available chat model was returned for the smoke account");
-  console.log(`PASS catalog ${selected}`);
+  /*
+   * ONE MODEL IS A HOSTAGE, A LIST IS A GATE.
+   *
+   * `JUNO_SMOKE_MODEL` takes an ordered, comma-separated list of candidates and
+   * the chat stage below uses the first that actually streams. A single value
+   * behaves exactly as it always did.
+   *
+   * The reason is a real deploy. The gate was pinned to one provider —
+   * deliberately, so that a stale VM-only setting could not roll back a good
+   * release by calling something unfunded — and then THAT provider's key went
+   * dead. The pin written to stop an unfunded provider from rolling back good
+   * code became a hardcoded pin TO an unfunded one, and every release after it
+   * rolled back on a sentence about somebody's billing:
+   *
+   *   Alibaba · Qwen cannot be used right now because its API connection is
+   *   not configured correctly. Choose another model.
+   *
+   * The release was fine. The catalog check passed on the same model one line
+   * earlier, because a catalog entry is configuration and this is a credential.
+   *
+   * A smoke's job is to prove THE RELEASE's chat path works end to end, and for
+   * that it needs a working model, not one particular one. A dead key is an ops
+   * problem: it deserves a warning on every deploy until somebody fixes it, and
+   * it must not revert code that has nothing to do with it. So a credential
+   * failure moves to the next candidate and shouts; ANY OTHER error frame fails
+   * at once, because that is the release; and all candidates failing on
+   * credentials fails too, because an account that cannot reach a single
+   * provider cannot serve anyone.
+   */
+  const requested = (process.env.JUNO_SMOKE_MODEL || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const candidates = requested.length
+    ? requested
+    : [models.value.models.find((model) => model.modality === "chat" && model.availability === "available")?.id].filter(Boolean);
+  assert(candidates.length, "no available chat model was returned for the smoke account");
+  console.log(`PASS catalog ${candidates.join(", ")}`);
 
   assert(process.env.JUNO_SMOKE_RUN_CHAT === "1", "authenticated smoke must run the provider/replay path");
 
-  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const clientRequestId = `smoke-request-${suffix}`;
-  const clientMessageId = `smoke-message-${suffix}`;
-  const body = JSON.stringify({
-    message: process.env.JUNO_SMOKE_PROMPT || "Reply with exactly: Juno smoke pass.",
-    model: selected,
-    clientRequestId,
-    clientMessageId,
-    client: "web",
-  });
-  const firstResponse = await request("/api/chat", {
-    method: "POST",
-    headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
-    body,
-  });
-  const first = await json(firstResponse);
-  assert(firstResponse.ok, `chat submit failed (${firstResponse.status}): ${first.text.slice(0, 500)}`);
-  assert(/(?:done|finishReason|receiptState)/i.test(first.text), "chat response never reached a terminal SSE/recovery marker");
-  /*
-   * QUOTE THE ERROR, do not merely name it.
+  /**
+   * The exact sentence `provider-error.ts` emits for class `auth`, and for no
+   * other class. Matching the copy rather than a code is not ideal; the frame
+   * carries no machine-readable class, and adding one would change an SSE
+   * contract that native clients read and that this same script pins at
+   * 1.3.0 two checks above — too much blast radius for a smoke discriminator.
    *
-   * This assertion used to read "chat smoke returned an error event" and stop
-   * there. When it fired on a real deploy, the release rolled back correctly
-   * and left nobody a way to find out WHY: the SSE body was in this process's
-   * memory and nowhere else, the server-side log was on the VM, and the run
-   * log said only that an error had occurred. Diagnosing it meant re-deploying
-   * with better logging — which is this change, made once.
-   *
-   * The `message` field of a Juno error frame is already reader-facing copy
-   * (providerErrorMessage), so it carries no secret the smoke account could not
-   * see; the surrounding frame is trimmed to keep a stack trace or a prompt
-   * echo out of a public build log.
+   * It fails SAFE: if the copy is ever reworded, nothing matches, every failure
+   * is treated as the release's, and the deploy rolls back. That is the same
+   * behaviour this gate had before the list existed.
    */
-  const errorFrame = first.text.match(/\{[^\n]*"type"\s*:\s*"error"[^\n]*\}/i);
-  if (errorFrame) {
-    let quoted = errorFrame[0].slice(0, 400);
-    try {
-      const parsed = JSON.parse(errorFrame[0]);
-      if (parsed && typeof parsed.message === "string") {
-        quoted = `${parsed.message}${parsed.finishReason ? ` (finishReason: ${parsed.finishReason})` : ""}`;
-      }
-    } catch {
-      // Not a whole frame on one line — the trimmed raw match is still better
-      // than the sentence this replaced.
+  const CREDENTIAL_FAILURE = /API connection is not configured correctly/i;
+
+  let selected = null;
+  let clientRequestId = null;
+  let body = null;
+  const credentialFailures = [];
+
+  for (const candidate of candidates) {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    // A fresh pair per attempt. Reusing one across candidates would make the
+    // second submission a replay of the first, and the replay check below would
+    // then be verifying the failed attempt's receipt.
+    const attemptRequestId = `smoke-request-${suffix}`;
+    const attemptBody = JSON.stringify({
+      message: process.env.JUNO_SMOKE_PROMPT || "Reply with exactly: Juno smoke pass.",
+      model: candidate,
+      clientRequestId: attemptRequestId,
+      clientMessageId: `smoke-message-${suffix}`,
+      client: "web",
+    });
+    const attemptResponse = await request("/api/chat", {
+      method: "POST",
+      headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
+      body: attemptBody,
+    });
+    const attempt = await json(attemptResponse);
+    assert(attemptResponse.ok, `chat submit failed (${attemptResponse.status}) on ${candidate}: ${attempt.text.slice(0, 500)}`);
+    assert(
+      /(?:done|finishReason|receiptState)/i.test(attempt.text),
+      `chat response never reached a terminal SSE/recovery marker on ${candidate}`,
+    );
+
+    const quoted = quoteErrorFrame(attempt.text);
+    if (quoted && CREDENTIAL_FAILURE.test(quoted)) {
+      // Not this release's fault, and loud about it: a GitHub Actions warning
+      // annotation survives in the run summary where a plain line scrolls away.
+      console.log(`::warning::${candidate} is unusable in production — ${quoted}`);
+      console.log(`SKIP ${candidate} (provider credential); trying the next candidate`);
+      credentialFailures.push(`${candidate}: ${quoted}`);
+      continue;
     }
-    assert(false, `chat smoke returned an error event: ${quoted}`);
+    assert(!quoted, `chat smoke returned an error event on ${candidate}: ${quoted}`);
+
+    selected = candidate;
+    clientRequestId = attemptRequestId;
+    body = attemptBody;
+    break;
   }
-  console.log("PASS chat submission reached a terminal response");
+
+  assert(
+    selected,
+    "every candidate model failed on its provider credential, so this account cannot reach any provider — " +
+      credentialFailures.join(" | "),
+  );
+  console.log(
+    `PASS chat submission reached a terminal response on ${selected}` +
+      (credentialFailures.length ? ` (after ${credentialFailures.length} unusable provider(s))` : ""),
+  );
 
   let receipt = null;
   for (let attempt = 0; attempt < 30; attempt += 1) {

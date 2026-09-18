@@ -1006,10 +1006,24 @@ jobs:
             echo "::warning::Could not mint a smoke token; using the stored credential."
             sed 's/^/  mint: /' "$MINT_LOG" | head -20 || true
           fi
-          # Qwen is the funded production provider. Keep the deploy gate pinned
-          # to it so an obsolete VM-only smoke setting cannot roll back a good
-          # release by calling an unfunded provider.
-          SMOKE_MODEL="qwen:qwen3.6-flash"
+          # An ORDERED list, not a pin, and set here rather than read from the
+          # VM — the reason for not reading it is unchanged: an obsolete VM-only
+          # smoke setting must not be able to roll back a good release by
+          # naming something unfunded.
+          #
+          # What changed is that one id had the same failure mode as that stale
+          # setting. Pinned to Qwen alone, the gate reverted three good releases
+          # on "Alibaba · Qwen cannot be used right now because its API
+          # connection is not configured correctly" — a dead key on the VM,
+          # nothing to do with the code being deployed. The smoke takes the
+          # first candidate that streams, warns loudly about each one it had to
+          # skip, and still fails the deploy if none of them work; the argument
+          # is on CREDENTIAL_FAILURE in scripts/production-smoke.mjs.
+          #
+          # Qwen stays first because it is the account default (app-data.ts), so
+          # the gate keeps testing what most users actually get. All three are
+          # minPlan FREE, so none of them depends on the smoke account's plan.
+          SMOKE_MODEL="qwen:qwen3.6-flash,google:gemini-3.5-flash-lite,openai:gpt-5.4-mini"
           # Run the smoke implementation from the exact immutable release that
           # was just activated. ~/juno is the long-lived checkout and can still
           # contain an older smoke contract after a deploy.
