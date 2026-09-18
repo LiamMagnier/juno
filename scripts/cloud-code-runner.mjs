@@ -764,9 +764,37 @@ async function main() {
     args.push(cloneUrl, workdir);
     return git(args, { env: cloneGitEnv });
   };
+  /*
+   * A BASE THAT IS NOT A BRANCH OR A TAG. `git clone --branch` resolves branch
+   * and tag names only — it answers `Remote branch <sha> not found in upstream
+   * origin` for a commit — and the composer's branch picker offers a commit SHA
+   * in as many words, as does a `/code?branch=` link. Following that
+   * instruction used to dispatch a task, provision a CI machine and die at
+   * `git clone`, which is verbatim the failure the picker was built to end.
+   *
+   * So a ref `--branch` cannot resolve is fetched instead: clone the
+   * repository's default branch shallow, ask origin for that one ref, and check
+   * out what came back, detached. It stays a FALLBACK rather than the only path
+   * because `--branch` is one round trip where this is three, and a branch is
+   * what nearly every run starts from.
+   */
+  const cloneDetachedAt = async (ref) => {
+    fs.rmSync(workdir, { recursive: true, force: true });
+    const base = await git(["clone", "--depth", "50", cloneUrl, workdir], { env: cloneGitEnv });
+    if (!base.ok) return base;
+    const fetched = await git(["fetch", "--depth", "50", "origin", ref], { cwd: workdir, env: cloneGitEnv });
+    if (!fetched.ok) return fetched;
+    return git(["checkout", "--detach", "FETCH_HEAD"], { cwd: workdir, env: cloneGitEnv });
+  };
+  const cloneRef = async (ref) => {
+    const direct = await cloneAt(ref);
+    if (direct.ok || !ref) return direct;
+    log(`${ref} is not a branch or tag on origin; fetching it as a commit`);
+    return cloneDetachedAt(ref);
+  };
   // A continuation clones the branch it continues (runner-context sets
   // baseRef to it); a first run clones the base.
-  let cloned = await cloneAt(baseRef);
+  let cloned = await cloneRef(baseRef);
   /*
    * THE BRANCH IS GONE. The commonest way: the pull request was merged with
    * "delete branch". The record says to continue it, so it is recreated
@@ -780,23 +808,51 @@ async function main() {
     log("the branch this run continues is not on origin; starting from the base instead");
     branchMissing = true;
     fs.rmSync(workdir, { recursive: true, force: true });
-    cloned = await cloneAt(continuation.baseRef);
+    cloned = await cloneRef(continuation.baseRef);
   }
   if (!cloned.ok) throw new Error(`git clone failed: ${redact(cloned.stderr || cloned.message)}`);
 
   await git(["config", "user.name", "Juno Code"], { cwd: workdir, env: cloneGitEnv });
   await git(["config", "user.email", "noreply@chat.liams.dev"], { cwd: workdir, env: cloneGitEnv });
 
-  // Resolve the branch a NEW pull request would target. First run: what was
-  // cloned (the base, or the default branch when none was named). A
+  // Resolve the branch a NEW pull request would target. First run: the base it
+  // was dispatched onto, or what was cloned when none was named. A
   // continuation: the base the first run targeted, else origin's default —
-  // never the branch itself, which is what was cloned.
+  // never the branch itself, which is what was cloned. Either way it has to be
+  // a BRANCH, which is what the check below is for.
   const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workdir, env: cloneGitEnv });
+  const headBranch = head.ok && head.stdout.trim() !== "HEAD" ? head.stdout.trim() : "";
   const originHead = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { cwd: workdir, env: cloneGitEnv });
-  const originDefault = originHead.ok ? originHead.stdout.trim().replace(/^origin\//, "") : "";
-  const baseBranch = continuation
-    ? continuation.baseRef || originDefault || "main"
-    : baseRef || (head.ok ? head.stdout.trim() : originDefault || "main");
+  let originDefault = originHead.ok ? originHead.stdout.trim().replace(/^origin\//, "") : "";
+  if (!originDefault) {
+    // A `--depth` clone implies `--single-branch`, so `refs/remotes/origin/HEAD`
+    // is often absent — and it is always absent on the detached path above,
+    // which is exactly when the default branch is the answer we need. origin
+    // still knows which branch its own HEAD points at.
+    const symref = await git(["ls-remote", "--symref", cloneUrl, "HEAD"], { env: cloneGitEnv });
+    const named = symref.ok ? /^ref:\s+refs\/heads\/(\S+)\s+HEAD$/m.exec(symref.stdout) : null;
+    originDefault = named ? named[1] : "";
+  }
+  /*
+   * A PULL REQUEST'S BASE IS A BRANCH, WHATEVER THE RUN STARTED FROM. The two
+   * are the same thing for almost every run, but a base ref may now be a tag or
+   * a commit — the clone above resolves both — and GitHub's create-PR API
+   * answers 422 for a `base` that is not a branch of the repository. So what
+   * was recorded is checked against origin's heads rather than assumed, and a
+   * run started from a commit targets the default branch instead: the work is
+   * still on the branch this run pushes, and the alternative is a run that
+   * finishes and then cannot deliver.
+   */
+  const recordedBase = continuation ? continuation.baseRef : baseRef;
+  let baseBranch = "";
+  if (recordedBase) {
+    const heads = await git(["ls-remote", "--heads", cloneUrl, `refs/heads/${recordedBase}`], { env: cloneGitEnv });
+    if (heads.ok && heads.stdout.trim()) baseBranch = recordedBase;
+    else log(`${recordedBase} is not a branch on origin; a pull request from this run will target the default branch`);
+  } else if (!continuation) {
+    baseBranch = headBranch;
+  }
+  if (!baseBranch) baseBranch = originDefault || "main";
 
   // TEAR DOWN git credential material before running any agent bash: delete the
   // askpass helper and drop our reference to the clone-bearing env. From here

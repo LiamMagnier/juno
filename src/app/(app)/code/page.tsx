@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/session";
 import { CodeComposer } from "@/components/code/code-composer";
+import { parseCodePrefill, type PrefillParams } from "@/lib/code-prefill";
 
 export const dynamic = "force-dynamic";
 
@@ -60,10 +61,25 @@ export const dynamic = "force-dynamic";
  * first thing painted rather than something that pops in once a client island
  * hydrates. Everything below it is `CodeComposer`, which is a client island
  * because it holds a draft, uploads, two pickers and both submit paths.
+ *
+ * THE QUERY STRING IS READ HERE, AND IT ONLY EVER FILLS THE FIELD.
+ * `/code?prompt=…&repositories=owner/name&branch=…` is how another tool — an
+ * issue tracker, a failing build, a script — hands a person a prepared session
+ * instead of instructions to retype. Parsing it on the server means the
+ * composer paints with the text already in it rather than empty-then-filled,
+ * and it means the rules live in a pure module the tests can exercise
+ * (src/lib/code-prefill.ts, which carries the argument for every refusal).
+ *
+ * It does NOT submit, and the sibling that does is the reason to say so twice:
+ * `/chat?q=` sends on arrival, because what it spends is a reply. A Code send
+ * clones a repository onto a fresh machine and spends the account's usage
+ * window, and a link that starts that when it is opened spends somebody else's
+ * window on a click. Prefill, focus, wait.
  */
-export default async function CodePage() {
+export default async function CodePage({ searchParams }: { searchParams: Promise<PrefillParams> }) {
   const user = await requireUser();
   const firstName = user.name?.trim().split(/\s+/)[0];
+  const prefill = parseCodePrefill(await searchParams);
 
   return (
     // `overflow-x-clip` for the same reason the chat greeting has it: nothing
@@ -92,7 +108,7 @@ export default async function CodePage() {
           </h1>
         </div>
         <div aria-hidden className="min-h-0 flex-[2_2_0]" />
-        <CodeComposer />
+        <CodeComposer prefill={prefill} />
       </div>
     </div>
   );

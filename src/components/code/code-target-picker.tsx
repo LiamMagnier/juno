@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -13,6 +13,7 @@ import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
 import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
+import { filterBranches, isUsableGitRef } from "@/lib/code-branches";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -24,8 +25,9 @@ import { cn } from "@/lib/utils";
  * project, or a GitHub repository and the branch to cut from).
  *
  * Device lists the real synced workspaces (GET /api/code/workspaces); Cloud
- * lists the user's real GitHub repos (GET /api/code/github/repos). Every
- * non-happy state is honest — no fake rows, no fake success:
+ * lists the user's real GitHub repos (GET /api/code/github/repos) and then, for
+ * the one that was picked, its real branches (GET /api/code/github/branches).
+ * Every non-happy state is honest — no fake rows, no fake success:
  *   loading              → skeleton rows at the row's own height
  *   github_not_connected → a calm "Connect GitHub" prompt → /connections
  *   github_unauthorized  → "Reconnect GitHub" → /connections
@@ -90,11 +92,12 @@ import { cn } from "@/lib/utils";
  * together at all.
  *
  * What still holds, and is the part worth keeping: ONE rung carries every
- * seated thing — target row, list row, loading skeleton, search field,
- * base-branch field, error note — so nothing in the panel corners differently
- * from the row above it. 9px is the nearest rung on the ladder a 46px row can
- * carry under a 12px shell; going to the strict concentric answer (12 − 8 = 4)
- * would square the rows off against a panel that is still visibly round.
+ * seated thing — target row, list row, branch row, loading skeleton, search
+ * field, the band that names the base branch, error note — so nothing in the
+ * panel corners differently from the row above it. 9px is the nearest rung on
+ * the ladder a 46px row can carry under a 12px shell; going to the strict
+ * concentric answer (12 − 8 = 4) would square the rows off against a panel that
+ * is still visibly round.
  */
 
 export type Target = "device" | "cloud";
@@ -128,6 +131,24 @@ type RepoLoad =
 type WorkspaceLoad =
   | { state: "loading" }
   | { state: "ready"; workspaces: Workspace[] }
+  | { state: "error" };
+
+/**
+ * The branches of the chosen repository, as `GET /api/code/github/branches`
+ * answers — all of them. The route used to stop at three pages and report a
+ * `truncated` flag this type carried, and a list that silently stops is the
+ * failure this control was built to end: a reader whose branch sat past the
+ * 300th was told, in the same words, that it was not a branch. The route pages
+ * to the end now, so there is nothing partial left to say.
+ *
+ * There is no `not_connected` member, unlike `RepoLoad`: nothing can choose a
+ * repository without a connector, so by the time this load exists the
+ * connector states have already been drawn by the list one step back.
+ */
+type BranchLoad =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ready"; branches: string[] }
   | { state: "error" };
 
 /*
@@ -248,9 +269,9 @@ export function CodeEnvironmentChip({
  * that owns every fetch on it.
  *
  * It follows the machine rather than choosing it: Device lists synced
- * workspaces, Cloud lists GitHub repositories and offers the base branch to cut
- * from. Each target keeps its own selection, so switching machine to check
- * something and switching back finds the pick exactly as it was left.
+ * workspaces, Cloud lists GitHub repositories and then the branches of the one
+ * that was picked. Each target keeps its own selection, so switching machine to
+ * check something and switching back finds the pick exactly as it was left.
  */
 export function CodeTargetPicker({
   target,
@@ -350,6 +371,69 @@ export function CodeTargetPicker({
   React.useEffect(() => {
     if (target === "cloud" && repoLoad.state === "idle") void fetchRepos();
   }, [target, repoLoad.state, fetchRepos]);
+
+  /*
+   * —— The branches of the chosen repository ——
+   *
+   * Asked for when the branch list is OPENED, not when a repository is picked.
+   * This used to fire from the selection effect, on the argument that the
+   * request a pick implies should be in flight while the reader is still
+   * reading. That argument was written when the answer was at most three
+   * requests; the route pages to the end of the list now, so a repository with
+   * a thousand branches is ten, and clicking down a list of repositories to
+   * read their descriptions would spend all of them on lists nobody opened.
+   *
+   * What replaces the head start is memory: the answer for a repository is kept
+   * for the life of the composer, so going back to change the repository and
+   * returning is instant, and the cost is paid once per repository rather than
+   * once per press.
+   *
+   * `nonce` is the retry: dropping the remembered answer and bumping it re-runs
+   * the effect for the same repository, which is what the error note's Retry
+   * does without needing a second code path that could fetch differently from
+   * this one. Every response is discarded if the repository changed while it
+   * was in flight — a list of the previous repository's branches is worse than
+   * no list, because it looks like an answer.
+   */
+  const [branchLoad, setBranchLoad] = React.useState<BranchLoad>({ state: "idle" });
+  const [branchNonce, setBranchNonce] = React.useState(0);
+  const [branchesWanted, setBranchesWanted] = React.useState(false);
+  const branchCache = React.useRef(new Map<string, string[]>());
+  React.useEffect(() => {
+    if (target !== "cloud" || !selectedRepo || !branchesWanted) {
+      setBranchLoad({ state: "idle" });
+      return;
+    }
+    const remembered = branchCache.current.get(selectedRepo.fullName);
+    if (remembered) {
+      setBranchLoad({ state: "ready", branches: remembered });
+      return;
+    }
+    const fullName = selectedRepo.fullName;
+    let cancelled = false;
+    setBranchLoad({ state: "loading" });
+    void (async () => {
+      const query = `owner=${encodeURIComponent(selectedRepo.owner)}&name=${encodeURIComponent(selectedRepo.name)}`;
+      try {
+        const res = await fetch(`/api/code/github/branches?${query}`, { cache: "no-store" });
+        if (cancelled) return;
+        if (!res.ok) {
+          setBranchLoad({ state: "error" });
+          return;
+        }
+        const data = (await res.json()) as { branches?: string[] };
+        if (cancelled) return;
+        const branches = Array.isArray(data.branches) ? data.branches : [];
+        branchCache.current.set(fullName, branches);
+        setBranchLoad({ state: "ready", branches });
+      } catch {
+        if (!cancelled) setBranchLoad({ state: "error" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [target, selectedRepo, branchesWanted, branchNonce]);
 
   // Each list keeps its own filter: switching machine to check something and
   // coming back should find the list exactly as it was left.
@@ -464,8 +548,22 @@ export function CodeTargetPicker({
             selected={selectedRepo}
             baseRef={baseRef}
             onBaseRefChange={onBaseRefChange}
+            branches={branchLoad}
             onRetry={() => void fetchRepos()}
-            onPick={onSelectRepo}
+            onNeedBranches={() => setBranchesWanted(true)}
+            onRetryBranches={() => {
+              // Retry means "ask GitHub again", so the remembered answer for
+              // this repository goes first — otherwise the nonce would re-run
+              // the effect straight back into the cache it is trying to escape.
+              if (selectedRepo) branchCache.current.delete(selectedRepo.fullName);
+              setBranchNonce((n) => n + 1);
+            }}
+            onPick={(r) => {
+              // A different repository has different branches, and nobody has
+              // asked to see them yet.
+              setBranchesWanted(false);
+              onSelectRepo(r);
+            }}
             onDone={() => setOpen(false)}
           />
         )}
@@ -689,7 +787,10 @@ function CloudList({
   selected,
   baseRef,
   onBaseRefChange,
+  branches,
   onRetry,
+  onNeedBranches,
+  onRetryBranches,
   onPick,
   onDone,
 }: {
@@ -700,10 +801,40 @@ function CloudList({
   selected: CloudRepo | null;
   baseRef: string;
   onBaseRefChange: (v: string) => void;
+  branches: BranchLoad;
   onRetry: () => void;
+  onNeedBranches: () => void;
+  onRetryBranches: () => void;
   onPick: (r: CloudRepo) => void;
   onDone: () => void;
 }) {
+  /*
+   * Which of the two questions the panel is showing. It is state rather than a
+   * second popover because both halves answer ONE question — which checkout —
+   * and the chip that opens this says so as two facts separated by a hairline.
+   * Declared above the connector dead-ends below, which return early: a hook
+   * after a conditional return is a hook that sometimes does not run.
+   */
+  const [pickingBranch, setPickingBranch] = React.useState(false);
+  const [branchQuery, setBranchQuery] = React.useState("");
+
+  /*
+   * WHERE FOCUS GOES WHEN THE PANEL SWAPS. Both steps replace the whole body of
+   * an OPEN popover, so the control that had focus is unmounted by the press
+   * that swapped it and the browser drops focus to document.body — leaving a
+   * keyboard user inside an open popover with nothing focused and nothing to
+   * arrow through. Entering the branch list focuses its search field, which is
+   * the first thing a reader does there anyway; coming back focuses the band
+   * the list was opened from, so Back returns you to where you pressed.
+   */
+  const bandRef = React.useRef<HTMLButtonElement>(null);
+  const cameBack = React.useRef(false);
+  React.useEffect(() => {
+    if (pickingBranch || !cameBack.current) return;
+    cameBack.current = false;
+    bandRef.current?.focus();
+  }, [pickingBranch]);
+
   // Connector dead-ends: the same note every other short state uses, with a
   // link to /connections instead of a retry. Retrying cannot fix either of
   // these, so neither offers it.
@@ -733,6 +864,44 @@ function CloudList({
   const loading = load.state === "loading" || load.state === "idle";
   const all = load.state === "ready" ? load.repos : [];
   const showRows = load.state === "ready" && filtered.length > 0;
+  /*
+   * What the run will actually start from: the override when there is one, and
+   * the repository's own default otherwise — which is what the runner clones
+   * when `baseRef` is null. The panel never shows a branch the run would not
+   * use, because the whole point of putting this on the chip was that a run
+   * started from the wrong base opens a pull request against the wrong thing.
+   */
+  const currentRef = selected ? baseRef.trim() || selected.defaultBranch : null;
+
+  if (pickingBranch && selected && currentRef) {
+    return (
+      <BranchList
+        repo={selected}
+        load={branches}
+        currentRef={currentRef}
+        query={branchQuery}
+        onQuery={setBranchQuery}
+        onRetry={onRetryBranches}
+        onBack={() => {
+          cameBack.current = true;
+          setPickingBranch(false);
+        }}
+        onPick={(ref) => {
+          /*
+           * The default branch is stored as the empty override, which is what
+           * "no opinion" has always meant on this prop and what the create
+           * route writes as a null `baseRef`. Storing the name instead would
+           * pin the run to a branch that may be renamed between choosing it
+           * and starting it, for a choice that was "whatever this repository
+           * calls its trunk".
+           */
+          onBaseRefChange(ref === selected.defaultBranch ? "" : ref);
+          setPickingBranch(false);
+          onDone();
+        }}
+      />
+    );
+  }
 
   return (
     <>
@@ -808,47 +977,205 @@ function CloudList({
       </ScrollFade>
 
       {/*
-        Base branch override — only once a repo is chosen, so the popover never
-        presents an input for a repo that doesn't exist yet.
+        WHERE THE RUN STARTS FROM — a band under the list once a repository is
+        chosen, and the door onto that repository's branches.
 
-        This is also why picking a repo leaves the popover open where picking a
-        project closes it: Device has nothing further to ask, Cloud has exactly
-        one optional follow-up, and closing on pick would hide the only place it
-        is ever offered. What used to sit here was a coral "Done" button, which
-        is furniture (docs/JUNO.md §3.6, "Coral is for state, not for
-        furniture") and the only one in any composer popover
-        — the model selector and the thinking slider both dismiss on Escape or a
-        click away. So do we, plus Enter in the field, which is the gesture a
-        one-field form already implies.
+        It used to be a text field. `CodeTask.baseRef` has reached the runner
+        since Cloud Code shipped, so the field did decide something real — which
+        is why it was here — but the only check on what was typed into it was a
+        cloud run failing at `git clone` a minute after a machine had been spun
+        up for it. The branches exist and GitHub will list them, so the honest
+        control is the list; `BranchList` keeps a way to name a ref it did not
+        show, which is what the field was genuinely good for (a tag, a commit,
+        or any ref at all on the day GitHub will not answer).
 
-        The visible <label> is the field's accessible name. It used to carry an
-        `aria-label="Base branch to run against"` as well, which won — leaving a
-        control whose visible label ("Base branch — optional") appeared nowhere
-        in its accessible name, i.e. a WCAG 2.5.3 label-in-name failure and a
-        control no voice user could address by the words next to it.
+        This is also why picking a repository leaves the popover open where
+        picking a project closes it: Device has nothing further to ask, Cloud
+        has exactly one follow-up, and closing on pick would hide the only place
+        it is ever offered. What used to sit here was a coral “Done” button,
+        which is furniture (docs/JUNO.md §3.6, “Coral is for state, not for
+        furniture”); picking a branch is the press that closes this panel now,
+        because it is the last thing the panel had to ask.
       */}
-      {selected && (
+      {selected && currentRef && (
         // Full-strength hairline — see the note on TargetRows' separator.
-        <div className="shrink-0 space-y-1.5 border-t border-border/60 p-2">
-          <label htmlFor="cloud-base-ref" className="flex items-center gap-1.5 px-0.5 text-caption text-muted-foreground">
-            <CodeIcons.branch className="size-3" aria-hidden="true" />
-            Base branch — optional
-          </label>
-          <Input
-            id="cloud-base-ref"
-            value={baseRef}
-            onChange={(e) => onBaseRefChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onDone();
-              }
+        <div className="shrink-0 border-t border-border/60 p-2">
+          <Pressable
+            kind="row"
+            onClick={() => {
+              // The list is fetched by the press that asks for it, not by the
+              // pick that led here — see the branch-load note in CodeTargetPicker.
+              onNeedBranches();
+              setPickingBranch(true);
             }}
-            placeholder={`${selected.defaultBranch} (default)`}
-            className="h-8 rounded-control font-mono text-ui coarse:h-11"
-          />
+            // The visible words are in the accessible name (WCAG 2.5.3) and the
+            // rest says what the press does, since this row states a fact and
+            // opens a list rather than toggling anything.
+            ref={bandRef}
+            aria-label={`Base branch: ${currentRef}. Choose a different branch of ${selected.fullName}`}
+            className={ROW_HEIGHT}
+          >
+            <CodeIcons.branch className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-mono text-ui font-medium text-foreground">{currentRef}</span>
+              <span className="mt-0.5 block truncate text-caption leading-snug text-muted-foreground">
+                {baseRef.trim() ? "Base branch" : "Base branch — this repository’s default"}
+              </span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </Pressable>
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * THE BRANCHES OF ONE REPOSITORY — the second half of “which checkout”.
+ *
+ * The same shell as every other list in this popover (a search band, rows, and
+ * a short state that says why the list is short), so that changing the branch
+ * is the gesture that chose the repository rather than a different widget. The
+ * back row at the foot sits exactly where the band that opened it did, so the
+ * panel's furniture does not move between the two steps.
+ *
+ * THE TYPED REF IS NOT A FALLBACK, IT IS THE OTHER HALF OF THE ANSWER. A base
+ * ref may legitimately be something this list cannot show — a tag, a commit
+ * SHA, or any ref at all when GitHub is unreachable — and the free-text field
+ * this replaced could name all of them. So a query that is a usable git ref and
+ * matches no row is offered as a row of its own, in every state including the
+ * failed one. What it must NOT do is promise the ref exists: nothing on this
+ * side can know that, so the row says what it is doing and the run is what
+ * finds out.
+ *
+ * "A branch past the page limit" used to be on that list and is deliberately
+ * off it: the route pages to the end now, so every branch is a row and the
+ * typed ref answers for the refs that are not branches — which the runner
+ * resolves by fetching them to a detached HEAD, rather than handing them to
+ * `git clone --branch`, which takes branch and tag names only.
+ */
+function BranchList({
+  repo,
+  load,
+  currentRef,
+  query,
+  onQuery,
+  onRetry,
+  onBack,
+  onPick,
+}: {
+  repo: CloudRepo;
+  load: BranchLoad;
+  /** What the run starts from today — the override, or the repository default. */
+  currentRef: string;
+  query: string;
+  onQuery: (v: string) => void;
+  onRetry: () => void;
+  onBack: () => void;
+  onPick: (ref: string) => void;
+}) {
+  const loading = load.state === "loading" || load.state === "idle";
+  const all = load.state === "ready" ? load.branches : [];
+  // Filtered inline rather than memoised: this is a substring match over a
+  // list of branch names, and a `useMemo` whose input is a conditional array is
+  // a dependency that changes every render anyway.
+  const filtered = filterBranches(all, query);
+  const typed = query.trim();
+  // Offered only when it is not already a row: two rows for one branch would be
+  // two answers to one press.
+  const offerTyped = typed.length > 0 && !all.includes(typed) && isUsableGitRef(typed);
+  const showRows = filtered.length > 0 || offerTyped;
+
+  return (
+    <>
+      <PickerSearch
+        value={query}
+        onChange={onQuery}
+        // The placeholder is the accessible name, so it has to say both things
+        // this field does — filter the list, and name a ref that is not in it.
+        placeholder="Search branches, or type a tag or commit…"
+        show
+        disabled={false}
+        // The press that opened this panel unmounted itself; see the focus note
+        // in CloudList.
+        focusOnMount
+      />
+      <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
+        <div
+          {...(showRows ? { role: "listbox" as const, "aria-label": `Branch of ${repo.fullName} to start from` } : {})}
+          className="space-y-0.5"
+        >
+          {offerTyped && (
+            <PickerRow
+              itemRole="option"
+              active={typed === currentRef}
+              onClick={() => onPick(typed)}
+              icon={<CodeIcons.branch className="size-4" aria-hidden="true" />}
+              title={<span className="font-mono">{typed}</span>}
+              meta={<span className="truncate">Start from this ref — Juno hasn’t checked that it exists</span>}
+            />
+          )}
+          {loading ? (
+            <RowSkeletons />
+          ) : load.state === "error" ? (
+            <PickerNote
+              tone="error"
+              icon={<StatusIcons.error className="size-5" aria-hidden="true" />}
+              title="Couldn’t list the branches"
+              body="GitHub didn’t answer, so this list is empty rather than wrong. The run still starts from the branch on the chip — or type the ref you want above."
+              action={
+                <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 coarse:h-11">
+                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
+                </Button>
+              }
+            />
+          ) : filtered.length === 0 && !offerTyped ? (
+            <PickerNote
+              icon={<AppIcons.search className="size-5" aria-hidden="true" />}
+              title={typed ? `No branches match “${typed}”` : "No branches found"}
+              body={
+                typed
+                  ? "Clear the search to see them all. A tag or a commit SHA can be named here too, and that is not one either."
+                  : "GitHub returned no branches for this repository, which usually means it has no commits yet."
+              }
+            />
+          ) : (
+            filtered.map((branch, i) => (
+              <PickerRow
+                key={branch}
+                index={i}
+                itemRole="option"
+                active={branch === currentRef}
+                onClick={() => onPick(branch)}
+                icon={<CodeIcons.branch className="size-4" aria-hidden="true" />}
+                title={<span className="font-mono">{branch}</span>}
+                meta={branch === repo.defaultBranch ? <span className="truncate">Default branch</span> : null}
+              />
+            ))
+          )}
+        </div>
+      </ScrollFade>
+
+      {/* The band this list was opened from, in the same place, pointing back. */}
+      <div className="shrink-0 border-t border-border/60 p-2">
+        <Pressable
+          kind="row"
+          onClick={onBack}
+          aria-label={`Back to the repository list. Showing the branches of ${repo.fullName}`}
+          className={ROW_HEIGHT}
+        >
+          <ChevronLeft className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-ui font-medium text-foreground">
+              <span className="text-muted-foreground">{repo.owner}/</span>
+              {repo.name}
+            </span>
+            <span className="mt-0.5 block truncate text-caption leading-snug text-muted-foreground">
+              Change the repository
+            </span>
+          </span>
+        </Pressable>
+      </div>
     </>
   );
 }
@@ -974,13 +1301,20 @@ function PickerSearch({
   placeholder,
   show,
   disabled,
+  focusOnMount = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   show: boolean;
   disabled: boolean;
+  /** Take focus once, on mount — for a panel that replaced the control that had it. */
+  focusOnMount?: boolean;
 }) {
+  const field = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (focusOnMount) field.current?.focus();
+  }, [focusOnMount]);
   if (!show) return null;
   return (
     // Full-strength hairline — see the note on TargetRows' separator.
@@ -990,6 +1324,7 @@ function PickerSearch({
         aria-hidden="true"
       />
       <Input
+        ref={field}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
