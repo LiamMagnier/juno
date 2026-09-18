@@ -106,6 +106,7 @@ model User {
   mutationReceipts            MutationReceipt[]
   codeWorkspaces              CodeWorkspace[]
   codeEnvironments            CodeEnvironment[]
+  codeAutoFixWatches          CodeAutoFixWatch[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations             ToolInvocation[]
   actionApprovalReceipts      ActionApprovalReceipt[]
@@ -1906,6 +1907,95 @@ model CodeEnvironment {
 
   @@unique([userId, name])
   @@index([userId, updatedAt])
+}
+
+// ----------------------------------------------------------------------------
+// Auto-fix — Juno answering what GitHub says about a pull request it opened.
+//
+// A GitHub App webhook, verified against the App's secret, turns a failing
+// check or a review comment into a follow-up cloud run on the same branch, in
+// the same conversation. The reading of a delivery is pure and lives in
+// src/lib/code-autofix.ts; these two tables are the state it needs: WHO asked
+// for it, and WHAT HAS ALREADY BEEN ANSWERED.
+// ----------------------------------------------------------------------------
+
+/// One pull request a person has switched auto-fix on for.
+///
+/// Per pull request rather than per session, because that is the unit a person
+/// reasons about: "Juno, keep this one green". A conversation may outlive its
+/// pull request (the branch merges, a new run opens another), and a pull
+/// request may be reached from more than one run in the same session.
+///
+/// `enabled` defaults to FALSE and there is no route that creates a row already
+/// true: a machine that edits your branch because it read a comment is not a
+/// thing anyone should discover, so it is a decision taken once, by hand, on the
+/// session that owns the branch.
+model CodeAutoFixWatch {
+  id        String @id @default(cuid())
+  userId    String
+  repoOwner String
+  repoName  String
+  prNumber  Int
+  /// The head branch at the time the toggle was set. A check run that names no
+  /// pull request (GitHub omits `pull_requests` for a fork's head) still names a
+  /// branch, and this is what lets such a delivery find its session.
+  branch    String?
+  /// The Code conversation the answering run is dispatched into. Plain pointer,
+  /// not a relation, for the same reason CodeTask.conversationId is one: the
+  /// authoritative Conversation may live only on a Mac.
+  conversationId String?
+  enabled   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries CodeAutoFixDelivery[]
+
+  @@unique([userId, repoOwner, repoName, prNumber])
+  /// The webhook's only lookup: it holds a repository and a number, and has no
+  /// user until this row answers with one.
+  @@index([repoOwner, repoName, prNumber])
+  @@index([repoOwner, repoName, branch])
+}
+
+/// One delivery that reached a watched pull request, and what came of it.
+///
+/// TWO JOBS, AND THE SECOND IS WHY IT IS A TABLE. The unique (watchId, digest)
+/// is the duplicate guard — `digest` names the CHECK RUN or the COMMENT, not
+/// the delivery, so GitHub redelivering a webhook under a new delivery id is
+/// caught as well as a retry. And the row is the note: the reference's third
+/// outcome is "a duplicate or no-op is noted and skipped", and a note nobody
+/// can read is not a note, so the toggle's own panel shows the last few.
+///
+/// There is deliberately NO attempt counter here. Every reason a delivery can
+/// be skipped is a fact about that delivery; none of them is a quota. See
+/// AutoFixSkipReason in src/lib/code-autofix.ts for the argument.
+model CodeAutoFixDelivery {
+  id      String @id @default(cuid())
+  watchId String
+  /// Identity of the evidence: "check_run:<id>:<conclusion>", "review:<id>",
+  /// "review_comment:<id>".
+  digest  String
+  /// check_failed | review_comment | review.
+  trigger String
+  /// dispatched | skipped.
+  outcome String
+  /// The AutoFixSkipReason when nothing ran. Null on a dispatch.
+  reason  String?
+  /// The sentence a person reads. Juno's own words about an event, never the
+  /// event's own — see autoFixTaskTitle for why untrusted text is kept out of
+  /// every surface but the fenced prompt.
+  note    String  @db.Text
+  /// The run this started, when it started one.
+  taskId  String?
+
+  createdAt DateTime @default(now())
+
+  watch CodeAutoFixWatch @relation(fields: [watchId], references: [id], onDelete: Cascade)
+
+  @@unique([watchId, digest])
+  @@index([watchId, createdAt])
 }
 
 // ----------------------------------------------------------------------------

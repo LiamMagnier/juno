@@ -170,6 +170,17 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // Every call site already carries userId, so guarding costs nothing and the
   // tripwire is worth having on a table like this one.
   ["CodeEnvironment", "userId"],
+  // Auto-fix. The row is a standing permission — "answer GitHub on this pull
+  // request by editing my branch" — so an unscoped update is one account
+  // switching on a machine that pushes to another account's repository. The
+  // webhook legitimately looks it up across accounts (it holds a repository and
+  // a number and no user at all) and says so with prismaUnguarded; every other
+  // call site has the userId in the compound unique already.
+  //
+  // CodeAutoFixDelivery is deliberately absent: it carries no ownership column
+  // and is reachable only through a watch that does, which is the same reason
+  // ResearchClaimLink is not here.
+  ["CodeAutoFixWatch", "userId"],
 ]);
 
 /**
