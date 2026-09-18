@@ -113,10 +113,34 @@ test("deploy smoke passes authentication and public UI checks without an optiona
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_TOKEN\s*=\s*"\$SMOKE_TOKEN"/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_COOKIE\s*=\s*"\$SMOKE_COOKIE"/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_MODEL\s*=\s*"\$SMOKE_MODEL"/);
-  assert.match(SMOKE_REMOTE_BLOCK, /SMOKE_MODEL="qwen:qwen3\.6-flash"/);
+  /*
+   * The candidate list, and the two things about it that must not drift.
+   *
+   * It used to assert one exact id, because the gate was pinned to one model so
+   * that a stale VM-only setting could not roll back a good release by naming
+   * something unfunded. Then that model's key died, and the pin written to stop
+   * an unfunded provider from reverting good code became a hardcoded name FOR
+   * one: three healthy releases were reverted on somebody's billing. It is an
+   * ordered list now (see the comment above the assignment, and
+   * CREDENTIAL_FAILURE in production-smoke.mjs).
+   *
+   * What survives of the original intent, asserted rather than assumed:
+   *   - a LITERAL, so the list still cannot come from the VM;
+   *   - Qwen still first, because it is the account default, and a gate that
+   *     stops exercising what most users get is not testing production.
+   */
+  assert.match(SMOKE_REMOTE_BLOCK, /^\s*SMOKE_MODEL="[^"$`]+"\s*$/m, "SMOKE_MODEL must be a literal set here, never read from the VM");
+  assert.match(SMOKE_REMOTE_BLOCK, /^\s*SMOKE_MODEL="qwen:qwen3\.6-flash(?:,|")/m, "the account default must stay the first candidate");
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_RUN_CHAT\s*=\s*1\b/);
+  // Against the CODE, as the preflight check above already does. Only a shell
+  // construct can skip a smoke; prose about one cannot. Run over the raw block
+  // this pattern is loose enough (`[\s\S]*` between every clause, case
+  // insensitive) that a comment merely CONTAINING the word "skip" completed a
+  // match whose other halves came from the unrelated token-mint `if`/`else`
+  // above it — so documenting why a provider is skipped failed the assertion
+  // that no provider may be skipped.
   assert.doesNotMatch(
-    SMOKE_REMOTE_BLOCK,
+    withoutCommentLines(SMOKE_REMOTE_BLOCK),
     /if[\s\S]*(?:TOKEN|COOKIE)[\s\S]*else[\s\S]*(?:skip|skipped|not configured)[\s\S]*fi/i,
     "authenticated production smoke must fail closed instead of skipping",
   );
@@ -150,7 +174,13 @@ test("no line continuation in the deploy workflow is severed by a comment", () =
 test("the production smoke command receives its environment prefix", () => {
   const lines = SMOKE_REMOTE_BLOCK.split(/\r?\n/);
   for (const script of ["production-smoke.mjs", "public-ui-smoke.mjs"]) {
-    const index = lines.findIndex((line) => line.includes(script));
+    // The line that RUNS it, not any line that mentions it. This matched on
+    // `includes` until a comment in the block cited production-smoke.mjs by
+    // name to explain the candidate list — whereupon the check read the prose
+    // above that comment, found no backslash, and failed a workflow that was
+    // perfectly correct. A guard a comment can break is a guard people learn
+    // to route around, which is the opposite of what this one is for.
+    const index = lines.findIndex((line) => new RegExp(`^\\s*node\\b.*${script.replace(".", "\\.")}`).test(line));
     assert.notEqual(index, -1, `smoke block no longer runs ${script}`);
     assert.match(
       lines[index - 1] ?? "",
