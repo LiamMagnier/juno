@@ -23,12 +23,14 @@
  * never wider than the account's.
  */
 
+import { z } from "zod";
 import {
   narrowestBudget,
   narrowestPolicy,
   type WorkBudget,
   type WorkPermissionPolicy,
   type WorkTarget,
+  DEFAULT_WORK_PERMISSION_POLICY,
   WORK_PERMISSION_POLICIES,
   WORK_TARGETS,
 } from "@/lib/work/domain";
@@ -112,11 +114,17 @@ export function parseWorkDefaults(raw: unknown): WorkProjectDefaults {
     }
     if (Object.keys(picked).length > 0) out.budget = picked;
   }
+  // ABSENT IS NOT EMPTY, and the empty one survives. A missing key means "this
+  // project has no opinion about apps, take the account's"; `[]` means "tasks
+  // filed here reach nothing", which is a real instruction a reader can give by
+  // switching every app off. Collapsing the second into the first — which this
+  // did, by dropping any list that came back empty — turns a deliberately
+  // locked-down project back into one that inherits everything the account has
+  // linked, and nothing in a UI shows that it happened.
   for (const key of ["connectorIds", "grantIds", "skillIds"] as const) {
     const value = source[key];
     if (Array.isArray(value)) {
-      const ids = value.filter((id): id is string => typeof id === "string" && id.length > 0);
-      if (ids.length > 0) out[key] = ids;
+      out[key] = value.filter((id): id is string => typeof id === "string" && id.length > 0);
     }
   }
   if (typeof source.allowKnowledgeWrites === "boolean") {
@@ -257,4 +265,246 @@ export function serializeWorkDefaults(defaults: WorkProjectDefaults): Record<str
   // reader will ignore, which is how a setting comes to look saved and have no
   // effect.
   return parseWorkDefaults(defaults) as Record<string, unknown>;
+}
+
+/** Ids are cuids or provider names; the cap is a sanity bound, not a product one. */
+export const MAX_WORK_DEFAULT_ID_CHARS = 200;
+/** As many connectors, grants or skills as a project can plausibly name. */
+export const MAX_WORK_DEFAULT_IDS = 200;
+
+/**
+ * The write shape, validated wherever a client hands these over.
+ *
+ * `.strict()` for the reason the native mutation union is strict: a field name
+ * the server does not know is a client bug or a version skew, and accepting it
+ * silently stores something no reader will ever look at while the user believes
+ * it took effect.
+ *
+ * NOTHING HERE HAS A `.default()`. A Zod default would manufacture the
+ * "configured" state out of silence — a project that has never been asked about
+ * approvals would start declaring one — and the whole of `resolveWorkDefaults`
+ * turns on the difference between a field a project stated and a field it left
+ * alone.
+ *
+ * Note what this schema does NOT do: decide whether the account may have any of
+ * it. A model named here still goes through the plan gate, a Mac is still
+ * matched against a row carrying this user, and connectors are still
+ * intersected with what the account has linked. This is a shape check; the
+ * ceiling is `resolveWorkDefaults`.
+ */
+export const workDefaultsSchema = z
+  .object({
+    target: z.enum(WORK_TARGETS).optional(),
+    preferredHostId: z.string().trim().min(1).max(MAX_WORK_DEFAULT_ID_CHARS).optional(),
+    model: z.string().trim().min(1).max(MAX_WORK_DEFAULT_ID_CHARS).optional(),
+    reasoningEffort: z.string().trim().min(1).max(40).optional(),
+    budget: z
+      .object({
+        maxCostMicroUsd: z.number().int().min(0).optional(),
+        maxTokens: z.number().int().min(0).optional(),
+        maxRuntimeMs: z.number().int().min(0).optional(),
+      })
+      .strict()
+      .optional(),
+    permissionPolicy: z.enum(WORK_PERMISSION_POLICIES).optional(),
+    connectorIds: z
+      .array(z.string().min(1).max(MAX_WORK_DEFAULT_ID_CHARS))
+      .max(MAX_WORK_DEFAULT_IDS)
+      .optional(),
+    grantIds: z
+      .array(z.string().min(1).max(MAX_WORK_DEFAULT_ID_CHARS))
+      .max(MAX_WORK_DEFAULT_IDS)
+      .optional(),
+    skillIds: z
+      .array(z.string().min(1).max(MAX_WORK_DEFAULT_ID_CHARS))
+      .max(MAX_WORK_DEFAULT_IDS)
+      .optional(),
+    allowKnowledgeWrites: z.boolean().optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// What one session takes from the project it was filed in
+// ---------------------------------------------------------------------------
+
+/**
+ * The project's answer to each field a session-creation request may leave open.
+ *
+ * `null` means "the project said nothing", which is NOT the same as an empty
+ * list — see `connectorIds` below.
+ */
+export interface InheritedFromProject {
+  model: string | null;
+  reasoningEffort: string | null;
+  permissionPolicy: WorkPermissionPolicy | null;
+  /**
+   * Null when the project has no opinion about apps; `[]` when it has one and
+   * the answer is "none". The two are different instructions, and the layer
+   * below reads them differently.
+   */
+  connectorIds: string[] | null;
+  preferredHostId: string | null;
+}
+
+/**
+ * What a task takes from the project it was filed in, when it said nothing
+ * itself.
+ *
+ * This is what makes a project a *role* rather than a label. File a task in
+ * Bookkeeping and it arrives with Bookkeeping's connected apps, its approval
+ * mode and its model already chosen — the bundle a plugin carries elsewhere,
+ * expressed on the noun Juno already has for "this body of work".
+ *
+ * Pure, and deliberately so: it does no ownership checking and reaches no
+ * database, so the caller still has to put the model through the plan gate and
+ * match the Mac against a row carrying this user. Keeping it pure is the only
+ * way the two properties below get exercised — that a project can never widen
+ * the approval mode, and that a project which said nothing about apps does not
+ * thereby switch them all on.
+ *
+ * ABSENT IS NOT EMPTY, and it is the reason for the two `undefined` checks at
+ * the end. `resolveWorkDefaults` answers with the account's own value when the
+ * project declares nothing, which is right for the question it was written for
+ * and wrong here twice over: a project with no connector list would hand the
+ * task every app the account has linked, turning "this client said nothing
+ * about apps" into "the reader switched them all on"; and a project with no
+ * approval mode would resolve to the account layer, which is a value nobody
+ * chose for this task. So a value is read back only where the project actually
+ * stated one.
+ */
+export function inheritFromProjectDefaults(input: {
+  /**
+   * The body's own target, passed through. It is required in the session
+   * schema precisely so that every task states one, so there is no such thing
+   * here as a task with no opinion about where it runs, and the resolved
+   * target is deliberately not read back.
+   *
+   * THE PROJECT'S `target` AND ITS `preferredHostId` ARE NOT TWO HALVES OF ONE
+   * SETTING, which is what makes it consistent to read the second back and not
+   * the first. A task always states a target, so there is no silence for the
+   * project to fill; it states a Mac only sometimes, and that silence the
+   * project can fill. The preference is passed on even for a `cloud` request —
+   * `selectTarget` ignores it there — because dropping it would also drop it
+   * from the retry that comes back as `automatic`, which is the attempt the
+   * preference was written for.
+   */
+  requestedTarget: WorkTarget;
+  /** The providers this account has actually linked, as the ceiling. */
+  linkedConnectorIds: readonly string[];
+  defaults: WorkProjectDefaults;
+}): InheritedFromProject {
+  const { defaults } = input;
+  const resolved = resolveWorkDefaults(
+    {
+      target: input.requestedTarget,
+      // Not read back either. Whatever limits a run is held to are decided when
+      // an attempt is dispatched, not when the task is composed. Zero on every
+      // axis means "no ceiling at this layer", so passing it narrows nothing.
+      budget: { maxCostMicroUsd: 0, maxTokens: 0, maxRuntimeMs: 0 },
+      // The PRODUCT DEFAULT, and not the widest value in the vocabulary.
+      //
+      // This layer used to be `"permissive"`, on the argument that the account
+      // holds no stored Work approval mode of its own so the widest value is
+      // the honest one for it. The consequence was the opposite of what this
+      // module exists for: `narrowestPolicy` then returns the project's value
+      // verbatim, so a project set to "Just do it" made every task filed in it
+      // run wider than the default every task in the product has had, with
+      // nothing anywhere saying so. A project is a place to put defaults, not a
+      // place to acquire permissions; giving it `DEFAULT_WORK_PERMISSION_POLICY`
+      // to narrow from is what makes that sentence true of the code and not
+      // only of the comment at the top of this file.
+      permissionPolicy: DEFAULT_WORK_PERMISSION_POLICY,
+      connectorIds: input.linkedConnectorIds,
+      // Folder grants are not decided here — the dispatch reads the session's
+      // own grants — so the project's list is passed through as its own ceiling
+      // and the resolved value is not read. Passing an empty account layer
+      // instead would report every grant the project names as refused, which is
+      // a complaint about a question this layer did not ask.
+      grantIds: defaults.grantIds ?? [],
+    },
+    defaults
+  );
+
+  return {
+    model: resolved.model,
+    reasoningEffort: resolved.reasoningEffort,
+    permissionPolicy: defaults.permissionPolicy === undefined ? null : resolved.permissionPolicy,
+    connectorIds: defaults.connectorIds === undefined ? null : resolved.connectorIds,
+    preferredHostId: resolved.preferredHostId,
+  };
+}
+
+/** What a session-creation request stated for itself. Absent means "no opinion". */
+export interface WorkSessionChoices {
+  model?: string | null;
+  reasoningEffort?: string | null;
+  permissionPolicy?: WorkPermissionPolicy;
+  /**
+   * Absent means the client has no control for apps at all. `[]` is an answer
+   * — this task reaches nothing — and the browser composer sends it, which is
+   * why this is tested against `undefined` and never for emptiness.
+   */
+  connectorIds?: readonly string[];
+  preferredHostId?: string | null;
+}
+
+export interface ResolvedSessionFields {
+  model: string | null;
+  reasoningEffort: string | null;
+  permissionPolicy: WorkPermissionPolicy;
+  /** Null when neither layer had an opinion, so no connector rows are written. */
+  connectorIds: string[] | null;
+  preferredHostId: string | null;
+}
+
+/**
+ * Folds the project's answers into the ones the request stated.
+ *
+ * Two different rules here, and the difference between them is the difference
+ * between a preference and a permission.
+ *
+ * The scalars — model, effort, Mac — fall through with `??`: a field the client
+ * sent is a decision somebody made about this one task and it stands, and a
+ * field it omitted has no per-task opinion, so the project's is the next-best
+ * answer.
+ *
+ * The approval mode does NOT fall through, it MEETS. Falling through would mean
+ * a project set to "Ask before every change" is ignored by every client that
+ * states a mode — which is every browser build since the segmented control
+ * shipped, because the composer always sends the value it is showing. The
+ * project would be a setting that visibly does nothing on the surface most
+ * people reach it from. Taking the narrower of the two instead makes it bind,
+ * and it can only ever bind downwards: acting stricter than the composer
+ * disclosed is the safe direction of that disagreement, and it is the same meet
+ * `resolveApprovalMode` already performs against the Mac's own floor at
+ * dispatch.
+ *
+ * Connectors intersect for the same reason, and the empty cases are why this is
+ * written out rather than expressed with `??`. A project that names three apps
+ * is saying which apps tasks filed here may reach; a task inside it may pick
+ * among those and may not add a fourth. A project that named none has no
+ * opinion, and the task's own list is then the whole answer.
+ */
+export function resolveSessionFields(
+  chosen: WorkSessionChoices,
+  inherited: InheritedFromProject
+): ResolvedSessionFields {
+  const offered = inherited.connectorIds;
+  const connectorIds =
+    chosen.connectorIds === undefined
+      ? offered
+      : offered === null
+        ? [...chosen.connectorIds]
+        : chosen.connectorIds.filter((id) => offered.includes(id));
+
+  return {
+    model: chosen.model ?? inherited.model,
+    reasoningEffort: chosen.reasoningEffort ?? inherited.reasoningEffort,
+    permissionPolicy: narrowestPolicy(
+      chosen.permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
+      inherited.permissionPolicy
+    ),
+    connectorIds,
+    preferredHostId: chosen.preferredHostId ?? inherited.preferredHostId,
+  };
 }

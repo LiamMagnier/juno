@@ -175,6 +175,14 @@ export async function POST(req: Request) {
  * what is left is an empty chat and a draft session the user can delete —
  * whereas a transaction spanning both would have to hold one open across the
  * trigger fan-out, and the failure it would protect against is cosmetic.
+ *
+ * NO PROJECT INHERITANCE HERE, and it is an absence rather than an omission: a
+ * schedule carries no project — `createScheduleSchema` has no such field and
+ * the adopter in scripts/work-scheduler.ts passes none either — so there is
+ * nothing for a session minted from one to inherit. The moment a schedule grows
+ * a project, `inheritFromProjectDefaults` and `resolveSessionFields` in
+ * src/lib/work/projects.ts are what this should call; they are pure and take no
+ * request, which is why they live there rather than inside the sessions route.
  */
 async function createScheduleSession(
   userId: string,

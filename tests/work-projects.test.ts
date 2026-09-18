@@ -1,13 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  inheritFromProjectDefaults,
   parseWorkDefaults,
+  resolveSessionFields,
   resolveWorkDefaults,
   serializeWorkDefaults,
+  workDefaultsSchema,
   type WorkAccountDefaults,
   type WorkProjectDefaults,
 } from "@/lib/work/projects";
-import { WORK_PERMISSION_POLICIES } from "@/lib/work/domain";
+import {
+  DEFAULT_WORK_PERMISSION_POLICY,
+  WORK_PERMISSION_POLICIES,
+} from "@/lib/work/domain";
 
 /*
  * A project is a folder, not a consent surface.
@@ -175,4 +181,189 @@ test("target is a preference and is taken from the project as written", () => {
   // selectTarget still decides whether it can be served.
   assert.equal(resolveWorkDefaults(ACCOUNT, { target: "local" }).target, "local");
   assert.equal(resolveWorkDefaults(ACCOUNT, {}).target, "automatic");
+});
+
+// ---------------------------------------------------------------------------
+// Absent is not empty
+// ---------------------------------------------------------------------------
+
+test("a project that names no app is not the same as one that names none", () => {
+  assert.equal(
+    parseWorkDefaults({}).connectorIds,
+    undefined,
+    "a missing key is 'no opinion', and the task's own answer stands"
+  );
+  assert.deepEqual(
+    parseWorkDefaults({ connectorIds: [] }).connectorIds,
+    [],
+    "a reader who switched every app off said 'reaches nothing'; collapsing that to " +
+      "'no opinion' hands the project back every app the account has linked"
+  );
+  assert.deepEqual(
+    resolveWorkDefaults(ACCOUNT, parseWorkDefaults({ connectorIds: [] })).connectorIds,
+    []
+  );
+  assert.deepEqual(serializeWorkDefaults({ connectorIds: [] }).connectorIds, []);
+});
+
+// ---------------------------------------------------------------------------
+// The write shape
+// ---------------------------------------------------------------------------
+
+test("the write schema takes the whole bundle and refuses a field nobody reads", () => {
+  const full = workDefaultsSchema.safeParse({
+    target: "local",
+    preferredHostId: "host_1",
+    model: ACCOUNT.model,
+    reasoningEffort: "high",
+    budget: { maxCostMicroUsd: 500_000 },
+    permissionPolicy: "conservative",
+    connectorIds: ["gmail"],
+    grantIds: ["grant_downloads"],
+    skillIds: ["skill_1"],
+    allowKnowledgeWrites: true,
+  });
+  assert.ok(full.success);
+  assert.ok(workDefaultsSchema.safeParse({}).success, "an empty bundle means 'inherit everything'");
+  // Strict, for the reason the mutation union is: a field name the server does
+  // not know is a client bug, and accepting it stores a setting that looks
+  // saved and has no effect.
+  assert.ok(!workDefaultsSchema.safeParse({ permissionPolicy: "godmode" }).success);
+  assert.ok(!workDefaultsSchema.safeParse({ somethingNewer: true }).success);
+  assert.ok(!workDefaultsSchema.safeParse({ budget: { maxCostMicroUsd: -1 } }).success);
+});
+
+// ---------------------------------------------------------------------------
+// What one session inherits
+// ---------------------------------------------------------------------------
+
+const LINKED = ["gmail", "drive"];
+
+test("a project can never make a task ask LESS than the product default", () => {
+  for (const projectPolicy of WORK_PERMISSION_POLICIES) {
+    const inherited = inheritFromProjectDefaults({
+      requestedTarget: "automatic",
+      linkedConnectorIds: LINKED,
+      defaults: { permissionPolicy: projectPolicy },
+    });
+    const rank = (policy: string) => WORK_PERMISSION_POLICIES.indexOf(policy as never);
+    assert.ok(
+      rank(inherited.permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY) <=
+        rank(DEFAULT_WORK_PERMISSION_POLICY),
+      `a project set to ${projectPolicy} resolved to ${inherited.permissionPolicy}, which is ` +
+        "wider than every task in the product has ever been composed with"
+    );
+  }
+});
+
+test("a project that says nothing about approvals contributes nothing", () => {
+  const inherited = inheritFromProjectDefaults({
+    requestedTarget: "automatic",
+    linkedConnectorIds: LINKED,
+    defaults: {},
+  });
+  assert.equal(
+    inherited.permissionPolicy,
+    null,
+    "reading the account layer back here would hand every task a mode nobody chose for it"
+  );
+  assert.equal(
+    inherited.connectorIds,
+    null,
+    "a project with no connector opinion must not switch every linked app on"
+  );
+});
+
+test("a project's app list is intersected with what the account has linked", () => {
+  const inherited = inheritFromProjectDefaults({
+    requestedTarget: "automatic",
+    linkedConnectorIds: LINKED,
+    defaults: { connectorIds: ["gmail", "slack"] },
+  });
+  assert.deepEqual(inherited.connectorIds, ["gmail"], "naming Slack does not thereby link Slack");
+});
+
+// ---------------------------------------------------------------------------
+// Folding the project's answers into the request's
+// ---------------------------------------------------------------------------
+
+const NOTHING_INHERITED = {
+  model: null,
+  reasoningEffort: null,
+  permissionPolicy: null,
+  connectorIds: null,
+  preferredHostId: null,
+};
+
+test("a task filed nowhere is composed exactly as it always was", () => {
+  const resolved = resolveSessionFields({}, NOTHING_INHERITED);
+  assert.equal(resolved.permissionPolicy, DEFAULT_WORK_PERMISSION_POLICY);
+  assert.equal(resolved.model, null);
+  assert.equal(resolved.connectorIds, null, "no list means no connector rows are written");
+});
+
+test("the project's approval mode binds a client that states its own", () => {
+  // The browser composer always sends the mode it is showing, so a fall-through
+  // would make a project's approval setting a control that visibly does
+  // nothing on the surface most people reach it from.
+  const resolved = resolveSessionFields(
+    { permissionPolicy: "balanced" },
+    { ...NOTHING_INHERITED, permissionPolicy: "conservative" }
+  );
+  assert.equal(resolved.permissionPolicy, "conservative");
+});
+
+test("a task may still ask to be interrupted more often than its project", () => {
+  const resolved = resolveSessionFields(
+    { permissionPolicy: "conservative" },
+    { ...NOTHING_INHERITED, permissionPolicy: "balanced" }
+  );
+  assert.equal(resolved.permissionPolicy, "conservative", "the meet goes both ways");
+});
+
+test("a task cannot reach an app its project did not offer", () => {
+  const resolved = resolveSessionFields(
+    { connectorIds: ["gmail", "drive"] },
+    { ...NOTHING_INHERITED, connectorIds: ["gmail"] }
+  );
+  assert.deepEqual(resolved.connectorIds, ["gmail"]);
+});
+
+test("a client with no app control gets the project's list, and one with none keeps its own", () => {
+  assert.deepEqual(
+    resolveSessionFields({}, { ...NOTHING_INHERITED, connectorIds: ["gmail"] }).connectorIds,
+    ["gmail"],
+    "the native composer sends no list at all, and the project's is the next-best answer"
+  );
+  assert.deepEqual(
+    resolveSessionFields({ connectorIds: [] }, { ...NOTHING_INHERITED, connectorIds: ["gmail"] })
+      .connectorIds,
+    [],
+    "an empty list is a reader who switched every app off, not a silence"
+  );
+  assert.deepEqual(
+    resolveSessionFields({ connectorIds: ["gmail"] }, NOTHING_INHERITED).connectorIds,
+    ["gmail"],
+    "a project with no opinion leaves the task's own answer whole"
+  );
+});
+
+test("the scalars fall through only where the task was silent", () => {
+  const inherited = {
+    ...NOTHING_INHERITED,
+    model: ACCOUNT.model ?? null,
+    reasoningEffort: "low",
+    preferredHostId: "host_project",
+  };
+  assert.equal(resolveSessionFields({}, inherited).model, ACCOUNT.model);
+  assert.equal(
+    resolveSessionFields({ model: "provider:chosen-for-this-task" }, inherited).model,
+    "provider:chosen-for-this-task",
+    "a model somebody chose for this one task stands"
+  );
+  assert.equal(resolveSessionFields({}, inherited).reasoningEffort, "low");
+  assert.equal(
+    resolveSessionFields({ preferredHostId: "host_task" }, inherited).preferredHostId,
+    "host_task"
+  );
 });

@@ -68,6 +68,39 @@ test("project.update accepts a typed favorite and rejects malformed values", () 
   }).success);
 });
 
+test("project.update carries the Work bundle a task filed in the project inherits", () => {
+  // Here as well as on the browser's PATCH because a project is a role, and a
+  // role only configurable from one of the three clients is a role most of the
+  // product cannot see.
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    workDefaults: {
+      permissionPolicy: "conservative",
+      model: "provider:some-model",
+      connectorIds: ["gmail"],
+    },
+  }).success);
+  // An empty bundle is a legitimate reset: it says "inherit everything".
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    workDefaults: {},
+  }).success);
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    workDefaults: { permissionPolicy: "godmode" },
+  }).success);
+  // Strict all the way down: a field name the server does not know stores a
+  // setting that looks saved and has no effect.
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    workDefaults: { somethingNewer: true },
+  }).success);
+});
+
 test("project_workspace.upsert is keyed by project and carries a whole config", () => {
   assert.ok(mutationOperationSchema.safeParse({
     type: "project_workspace.upsert",

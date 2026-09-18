@@ -20,6 +20,7 @@ import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type {
   ClientWorkSkill,
   ClientWorkSkillVersion,
+  SkillResource,
   WorkSkillContract,
 } from "@/lib/work/skills";
 
@@ -90,7 +91,7 @@ import type {
  *   GET  /api/work/schedules/[id]/runs     → { runs: ClientWorkRun[], nextBefore? }
  *   GET  /api/work/skills?limit=N          → { skills: ClientWorkSkill[] }
  *   POST /api/work/skills                  → 201 { skill, version }
- *   GET|PATCH|DELETE /api/work/skills/[id] → { skill, version }
+ *   GET|PATCH|DELETE /api/work/skills/[id] → { skill, version, resources? }
  *   GET|POST /api/work/skills/[id]/versions → { versions } | 201 { skill, version }
  *   GET  /api/work/artifacts?sessionId=…   → { artifacts: ClientWorkArtifact[] }
  *   GET  /api/work/artifacts/[id]          → { artifact, versions, warning?, truncated }
@@ -1371,12 +1372,29 @@ export interface WorkSkillDetail {
   skill: ClientWorkSkill;
   /** Null when `currentVersion` names a row that is not there. Never a substitute. */
   version: ClientWorkSkillVersion | null;
+  /**
+   * The files the current version brings, resolved to their names.
+   *
+   * The contract stores ids, so this is the only thing a page can put in front
+   * of a reader. Shorter than `version.contract.resourceAttachmentIds` when one
+   * of the files has been deleted from the library since the version was
+   * minted — which the page reads as exactly that and says so.
+   */
+  resources: SkillResource[];
+  /**
+   * The project this skill is filed in, by name, or null when it is the
+   * account's. What it changes on the page is one caption: automatic selection
+   * offers a filed skill to tasks in its own project and to no others.
+   */
+  projectName: string | null;
 }
 
 export function fetchWorkSkill(id: string): Promise<WorkResult<WorkSkillDetail>> {
   return get(`/api/work/skills/${id}`, (data) => ({
     skill: data.skill as ClientWorkSkill,
     version: (data.version as ClientWorkSkillVersion | null) ?? null,
+    resources: list<SkillResource>(data.resources),
+    projectName: typeof data.projectName === "string" ? data.projectName : null,
   }));
 }
 
@@ -1390,6 +1408,15 @@ export interface CreateWorkSkillInput {
    * so the planner cannot reach for instructions the user has not read.
    */
   origin: "authored" | "imported";
+  /**
+   * The project this skill is filed in, or null for the whole account.
+   *
+   * What it changes is which tasks the planner may offer it to:
+   * `skillIsOfferedTo` offers a filed skill to tasks in its own project and to
+   * no others, which is what makes a project a bundle rather than a label.
+   * Typing the slash name still reaches it from anywhere.
+   */
+  projectId?: string | null;
 }
 
 export function createWorkSkill(input: CreateWorkSkillInput): Promise<WorkResult<ClientWorkSkill>> {
@@ -1400,6 +1427,10 @@ export function createWorkSkill(input: CreateWorkSkillInput): Promise<WorkResult
       description: input.description,
       instructions: input.instructions,
       origin: input.origin,
+      // Omitted rather than sent as null when the skill belongs to the account:
+      // the create schema takes an id or nothing, and a null there would be a
+      // client asserting a value the route has no vocabulary for.
+      ...(input.projectId ? { projectId: input.projectId } : {}),
       // Never on by default. Automatic selection is the planner reaching for a
       // set of instructions unprompted, and that is a decision the author makes
       // afterwards, deliberately, once the skill exists and can be read back.
@@ -1416,6 +1447,12 @@ export interface PatchWorkSkillInput {
   autoSelect?: boolean;
   /** `verified` is absent from the vocabulary a client may set, on purpose. */
   trust?: "untrusted" | "user_authored";
+  /**
+   * Re-files the skill. `null` moves it back to the account level, which is why
+   * this is nullable where the create field is not — absent still means "leave
+   * it where it is".
+   */
+  projectId?: string | null;
 }
 
 export function patchWorkSkill(
@@ -1443,9 +1480,15 @@ export function fetchWorkSkillVersions(
  * The route refuses a body carrying both and refuses one carrying neither, so
  * the union is expressed here rather than as two optional fields a caller could
  * fill in together.
+ *
+ * A version is a complete snapshot and the route fills anything omitted with
+ * the EMPTY value, never with the previous version's — so a caller editing one
+ * field has to send the rest of the declaration back, or it publishes a version
+ * that asks for nothing. `requestedTools` is here for that reason and not
+ * because any caller edits it.
  */
 export type MintWorkSkillVersionInput =
-  | { instructions: string; contract?: WorkSkillContract }
+  | { instructions: string; contract?: WorkSkillContract; requestedTools?: string[] }
   | { restoreVersion: number };
 
 export function mintWorkSkillVersion(

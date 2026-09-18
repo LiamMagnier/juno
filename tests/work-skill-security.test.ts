@@ -129,3 +129,32 @@ test("the runner and routes enforce the persisted gate rather than only displayi
   assert.match(versionRoute, /permissionExpansion/);
   assert.match(consentRoute, /skill_permission_consent/);
 });
+
+test("swapping the file a skill brings is not a permission change", () => {
+  // A resource is the author's own upload, read inside the untrusted envelope,
+  // and it can ask for nothing — so it is deliberately outside the fingerprint.
+  // If it were inside, replacing last month's template with this month's would
+  // park the skill behind an "approve these permissions" press about a change
+  // that grants nothing, and a product that asks for those teaches people to
+  // click through the ones that matter.
+  // Built as values rather than as literals at the call site, which is how the
+  // routes reach this function: they hand over the whole parsed contract,
+  // resource ids and all, and the scanner reads the permission fields out of
+  // it. A literal here would be refused for carrying a field `SkillSecurityInput`
+  // does not declare — which is the omission this test is about.
+  const bringing = (resourceAttachmentIds: string[]) => {
+    const base = input();
+    const contract = { ...base.contract, resourceAttachmentIds };
+    return scanSkillVersion({ ...base, contract });
+  };
+
+  const january = bringing(["att_january"]);
+  const february = bringing(["att_february", "att_style"]);
+
+  assert.equal(january.permissionFingerprint, february.permissionFingerprint);
+  assert.deepEqual(
+    permissionExpansion(january.permissions, february.permissions),
+    [],
+    "bringing a different file was read as asking for more"
+  );
+});

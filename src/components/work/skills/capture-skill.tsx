@@ -196,6 +196,11 @@ function CaptureSkillDialog({
       // See the note at the top of the file: these are the reader's own
       // instructions, from their own run, reviewed by them in this dialog.
       origin: "authored",
+      // Filed where the run was. A skill captured out of a Bookkeeping task is
+      // about bookkeeping, and filing it at the account level instead would put
+      // it on offer to every task in the product — the exact noise the project
+      // scoping exists to prevent. The skill page can move it afterwards.
+      projectId: session.projectId,
     });
     setSaving(false);
     if (result.kind === "ok") {

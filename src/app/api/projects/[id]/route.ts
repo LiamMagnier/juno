@@ -10,6 +10,12 @@ import {
   writeWorkspaceConfig,
   WORKSPACE_CONFIG_VERSION,
 } from "@/lib/projects/workspace-config";
+import {
+  parseWorkDefaults,
+  serializeWorkDefaults,
+  workDefaultsSchema,
+  WORK_DEFAULTS_VERSION,
+} from "@/lib/work/projects";
 
 export const runtime = "nodejs";
 
@@ -66,6 +72,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       instructions: project.instructions,
       starred: project.starred,
       updatedAt: project.updatedAt.toISOString(),
+      // Read back through the parser rather than handed over raw, so what a
+      // control draws is exactly what a session will inherit. A field this
+      // build does not recognise is dropped on the way out as it is on the way
+      // in, which is what stops a page showing a setting nothing acts on.
+      workDefaults: parseWorkDefaults(project.workDefaults),
     },
     conversations: project.conversations.map((c) => ({
       id: c.id,
@@ -101,6 +112,25 @@ const patchSchema = z.object({
   instructions: z.string().optional(),
   starred: z.boolean().optional(),
   workspace: workspaceConfigSchema.nullable().optional(),
+  /**
+   * What a task filed in this project inherits: its approval mode, its model,
+   * its connected apps, its Mac.
+   *
+   * Editable by an EDITOR like everything else in this patch, and safe to be:
+   * every field here is resolved against the ACTING account's own ceilings when
+   * a session is created — the model through the plan gate, the Mac against a
+   * row carrying that user, the connectors intersected with what that user has
+   * linked, and the approval mode narrowed from the product default and never
+   * widened past it. So a collaborator can express a preference and cannot
+   * hand anybody a permission.
+   *
+   * REPLACES the stored object wholesale rather than patching it, for the
+   * reason `project_workspace.upsert` does: a patch needs a spelling for
+   * "remove this key", JSON's only one is null, and null is already taken by a
+   * different meaning in half the fields. Whole-object replacement is what
+   * keeps "absent" expressible, and absent is what "inherit" means here.
+   */
+  workDefaults: workDefaultsSchema.optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -114,11 +144,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { workspace, ...projectPatch } = parsed.data;
-  if (Object.keys(projectPatch).length > 0) {
+  const { workspace, workDefaults, ...projectPatch } = parsed.data;
+  if (Object.keys(projectPatch).length > 0 || workDefaults !== undefined) {
     const data = {
       ...projectPatch,
       ...(projectPatch.name != null ? { nameSource: "manual" } : {}),
+      // Round-tripped through the codec before storage, which
+      // `serializeWorkDefaults` exists to force: what is written is then
+      // byte-identical to what a read of it produces, so a caller cannot store
+      // a field the reader will ignore — which is how a setting comes to look
+      // saved and have no effect.
+      ...(workDefaults !== undefined
+        ? {
+            workDefaults: serializeWorkDefaults(workDefaults),
+            workDefaultsVersion: WORK_DEFAULTS_VERSION,
+          }
+        : {}),
     };
     await prisma.project.update({ where: { id }, data });
   }

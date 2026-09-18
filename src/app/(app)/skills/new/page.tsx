@@ -28,6 +28,15 @@ import { WorkStateNote } from "@/components/work/work-vocabulary";
  * once — and `skillSlugFromName` is the same function the route uses, imported
  * so the preview under the name field cannot disagree with what gets stored.
  */
+/**
+ * The picker's value for "not filed in any project".
+ *
+ * A sentinel rather than an empty string, because an `<option value="">` reads
+ * back as the falsy value for both "the account" and "nothing chosen" while
+ * only one of those is something the reader can have meant here.
+ */
+const ACCOUNT_LEVEL = "__account__";
+
 export default function NewSkillPage() {
   const router = useRouter();
   const [name, setName] = React.useState("");
@@ -36,6 +45,32 @@ export default function NewSkillPage() {
   const [origin, setOrigin] = React.useState<"authored" | "imported">("authored");
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
+  /**
+   * Where the skill is filed, chosen here rather than only afterwards.
+   *
+   * `null` is the account level, and it is the default: a skill nobody has
+   * placed belongs to the whole account, which is what filing it nowhere has
+   * always meant. The alternative — defaulting to whichever project the reader
+   * last looked at — would narrow the planner's offer without anybody saying
+   * so, and the symptom is a skill that never gets picked.
+   */
+  const [projectId, setProjectId] = React.useState<string | null>(null);
+  const [projects, setProjects] = React.useState<{ id: string; name: string }[] | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    fetch("/api/projects")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { projects?: { id: string; name: string }[] } | null) => {
+        if (live && data && Array.isArray(data.projects)) {
+          setProjects(data.projects.map((project) => ({ id: project.id, name: project.name })));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const slug = skillSlugFromName(name);
   const canSave = name.trim().length > 0 && instructions.trim().length > 0 && slug !== null && !saving;
@@ -49,6 +84,7 @@ export default function NewSkillPage() {
       description: description.trim(),
       instructions: instructions.trim(),
       origin,
+      projectId,
     });
     setSaving(false);
     if (result.kind === "ok") {
@@ -128,6 +164,32 @@ export default function NewSkillPage() {
             disabled={saving}
             className="mt-1 font-mono text-ui"
           />
+        </div>
+
+        <div>
+          <Label htmlFor="skill-project">Filed in</Label>
+          {/* The same `field-well` recipe the other Work selects carry. */}
+          <select
+            id="skill-project"
+            value={projectId ?? ACCOUNT_LEVEL}
+            disabled={saving || projects === null}
+            onChange={(event) =>
+              setProjectId(event.target.value === ACCOUNT_LEVEL ? null : event.target.value)
+            }
+            className="field-well mt-1 h-9 w-full max-w-sm rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value={ACCOUNT_LEVEL}>Everything</option>
+            {(projects ?? []).map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
+            {projectId === null
+              ? "Juno may offer this for any task. File it in a project to keep it out of the way of work it has nothing to do with."
+              : "Juno offers this only for tasks filed in that project. Typing its slash name still reaches it from anywhere."}
+          </p>
         </div>
 
         <div>

@@ -20,6 +20,7 @@ import {
   parseSkillListQuery,
   patchSkillSchema,
   resolveSkillPermissions,
+  resolveSkillResources,
   scoreSkillForGoal,
   scoreSkillsForGoal,
   selectSkillAutomatically,
@@ -29,7 +30,10 @@ import {
   serializeSkillVersion,
   skillContractToJson,
   skillContractTerms,
+  skillIsOfferedTo,
+  skillRequestFrom,
   skillRequestFromRow,
+  skillResourceRunReference,
   skillSlugFromName,
   skillVersionRunReference,
   skillWasFullyGranted,
@@ -37,6 +41,7 @@ import {
   trustPermitsAutoSelection,
   type SkillCandidate,
   type SkillProfile,
+  type WorkSkillContract,
   type WorkSkillExample,
   type WorkSkillGrantLayer,
   type WorkSkillRequest,
@@ -506,6 +511,9 @@ function candidate(overrides: Partial<SkillCandidate> = {}): SkillCandidate {
     trust: "user_authored",
     autoSelect: true,
     currentVersion: 1,
+    // Filed nowhere, which is what makes a skill the account's rather than one
+    // project's. The project tests below override it on both sides.
+    projectId: null,
     ...overrides,
   };
 }
@@ -534,6 +542,7 @@ test("automatic selection refuses an untrusted skill however confident it is", (
     assert.deepEqual(
       selectSkillAutomatically({
         scored: [{ candidate: candidate({ trust: "untrusted" }), confidence }],
+        taskProjectId: null,
       }),
       { selected: false, reason: "untrusted" }
     );
@@ -542,33 +551,44 @@ test("automatic selection refuses an untrusted skill however confident it is", (
 
 test("automatic selection is opt-in and confidence-gated", () => {
   assert.deepEqual(
-    selectSkillAutomatically({ scored: [{ candidate: candidate({ autoSelect: false }), confidence: 1 }] }),
+    selectSkillAutomatically({
+      scored: [{ candidate: candidate({ autoSelect: false }), confidence: 1 }],
+      taskProjectId: null,
+    }),
     { selected: false, reason: "auto_select_disabled" }
   );
   assert.deepEqual(
-    selectSkillAutomatically({ scored: [{ candidate: candidate({ enabled: false }), confidence: 1 }] }),
+    selectSkillAutomatically({
+      scored: [{ candidate: candidate({ enabled: false }), confidence: 1 }],
+      taskProjectId: null,
+    }),
     { selected: false, reason: "disabled" }
   );
   assert.deepEqual(
     selectSkillAutomatically({
       scored: [{ candidate: candidate(), confidence: SKILL_AUTO_SELECT_MIN_CONFIDENCE - 0.01 }],
+      taskProjectId: null,
     }),
     { selected: false, reason: "low_confidence" }
   );
-  assert.deepEqual(selectSkillAutomatically({ scored: [] }), {
+  assert.deepEqual(selectSkillAutomatically({ scored: [], taskProjectId: null }), {
     selected: false,
     reason: "no_candidate",
   });
 
   const ok = selectSkillAutomatically({
     scored: [{ candidate: candidate(), confidence: SKILL_AUTO_SELECT_MIN_CONFIDENCE }],
+    taskProjectId: null,
   });
   assert.equal(ok.selected, true);
   assert.equal(ok.selected && ok.via, "automatic");
 
   // A confidence that is not a number never clears the threshold.
   assert.deepEqual(
-    selectSkillAutomatically({ scored: [{ candidate: candidate(), confidence: Number.NaN }] }),
+    selectSkillAutomatically({
+      scored: [{ candidate: candidate(), confidence: Number.NaN }],
+      taskProjectId: null,
+    }),
     { selected: false, reason: "low_confidence" }
   );
 });
@@ -582,6 +602,7 @@ test("an untrusted skill cannot block a trusted one from being selected", () => 
       { candidate: candidate({ id: "skl_bad", slug: "imported", trust: "untrusted" }), confidence: 0.99 },
       { candidate: candidate({ id: "skl_good", slug: "authored" }), confidence: 0.9 },
     ],
+    taskProjectId: null,
   });
   assert.equal(chosen.selected, true);
   assert.equal(chosen.selected && chosen.candidate.id, "skl_good");
@@ -594,6 +615,7 @@ test("two equally confident skills are a refusal, not a coin toss", () => {
         { candidate: candidate({ id: "skl_a", slug: "alpha" }), confidence: 0.9 },
         { candidate: candidate({ id: "skl_b", slug: "beta" }), confidence: 0.9 },
       ],
+      taskProjectId: null,
     }),
     { selected: false, reason: "ambiguous" }
   );
@@ -645,7 +667,7 @@ test("a real goal reaches the selecting branch through the scorer", () => {
     ],
   });
 
-  const selection = selectSkillAutomatically({ scored });
+  const selection = selectSkillAutomatically({ scored, taskProjectId: null });
   assert.equal(selection.selected, true);
   assert.equal(selection.selected && selection.candidate.id, "skl_tidy");
   assert.equal(selection.selected && selection.via, "automatic");
@@ -668,7 +690,7 @@ test("a goal about nothing in particular selects nothing", () => {
     profiles: [TIDY_DOWNLOADS],
   });
   assert.equal(scored[0].confidence, 0);
-  assert.deepEqual(selectSkillAutomatically({ scored }), {
+  assert.deepEqual(selectSkillAutomatically({ scored, taskProjectId: null }), {
     selected: false,
     reason: "low_confidence",
   });
@@ -691,7 +713,7 @@ test("a goal on the skill's topic that does not name it is refused", () => {
 
   assert.ok(scored[0].confidence > 0, "the topical overlap is visible");
   assert.ok(scored[0].confidence < SKILL_AUTO_SELECT_MIN_CONFIDENCE);
-  assert.deepEqual(selectSkillAutomatically({ scored }), {
+  assert.deepEqual(selectSkillAutomatically({ scored, taskProjectId: null }), {
     selected: false,
     reason: "low_confidence",
   });
@@ -832,7 +854,7 @@ test("a strong match still cannot get an untrusted skill selected", () => {
     ],
   });
   assert.ok(scored[0].confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
-  assert.deepEqual(selectSkillAutomatically({ scored }), {
+  assert.deepEqual(selectSkillAutomatically({ scored, taskProjectId: null }), {
     selected: false,
     reason: "untrusted",
   });
@@ -849,6 +871,7 @@ test("a strong match still cannot get an untrusted skill selected", () => {
           },
         ],
       }),
+      taskProjectId: null,
     }),
     { selected: false, reason: "auto_select_disabled" }
   );
@@ -875,7 +898,7 @@ test("two skills matched equally compare exactly equal, so the tie is seen", () 
 
   assert.equal(scored[0].confidence, scored[1].confidence);
   assert.ok(scored[0].confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
-  assert.deepEqual(selectSkillAutomatically({ scored }), {
+  assert.deepEqual(selectSkillAutomatically({ scored, taskProjectId: null }), {
     selected: false,
     reason: "ambiguous",
   });
@@ -916,7 +939,7 @@ test("a skill whose name yields no terms is never selected automatically", () =>
   });
   assert.equal(scored.confidence, 0);
   assert.deepEqual(
-    selectSkillAutomatically({ scored: [scored] }),
+    selectSkillAutomatically({ scored: [scored], taskProjectId: null }),
     { selected: false, reason: "low_confidence" }
   );
 });
@@ -1054,6 +1077,23 @@ test("a patch that changes nothing is refused", () => {
   assert.equal(patchSkillSchema.safeParse({ enabled: false }).success, true);
 });
 
+test("a skill can be re-filed, and unfiled, after it exists", () => {
+  // `projectId` is what `skillIsOfferedTo` reads, so a skill filed in the wrong
+  // project is offered to the wrong tasks and never to the right ones. Without
+  // a patch path the only remedy is deleting the skill and writing it again
+  // under a new slug, losing every version of it.
+  const filed = patchSkillSchema.safeParse({ projectId: "project-1" });
+  assert.equal(filed.success, true);
+  const unfiled = patchSkillSchema.safeParse({ projectId: null });
+  assert.equal(unfiled.success, true);
+  assert.equal(
+    unfiled.success && unfiled.data.projectId,
+    null,
+    "null is the reader moving the skill back to the account level, and must survive parsing"
+  );
+  assert.equal(patchSkillSchema.safeParse({ projectId: "" }).success, false);
+});
+
 test("minting a version is either new content or a restore, never both", () => {
   assert.equal(mintSkillVersionSchema.safeParse({ instructions: "Do it better." }).success, true);
   assert.equal(mintSkillVersionSchema.safeParse({ restoreVersion: 3 }).success, true);
@@ -1170,4 +1210,180 @@ test("the contract survives a round trip through the JSON column", () => {
     examples: [{ name: "one", input: "tidy", expectTools: ["work.file.move"] }],
   });
   assert.deepEqual(parseSkillContract(skillContractToJson(original)), original);
+});
+
+// ---------------------------------------------------------------------------
+// The files a skill brings
+// ---------------------------------------------------------------------------
+
+/*
+ * A skill that formats a monthly report needs the template it formats into, and
+ * the whole risk of letting it carry one is that a file looks like a permission
+ * if you squint. It is not one, and these tests are written to keep it that
+ * way: the ids go nowhere near `resolveSkillPermissions`, and an id the caller
+ * could not resolve against the user's own library produces no file rather than
+ * an error, a guess, or a read of somebody else's upload.
+ */
+
+test("a version's files survive the JSON column, in the order it listed them", () => {
+  const original = parseSkillContract({
+    resourceAttachmentIds: ["att_template", "att_style_guide"],
+  });
+  assert.deepEqual(original.resourceAttachmentIds, ["att_template", "att_style_guide"]);
+  assert.deepEqual(parseSkillContract(skillContractToJson(original)), original);
+});
+
+test("a version that names no files brings none, rather than everything", () => {
+  // The same reading the empty tool list gets: an omitted field is a version
+  // that asks for nothing, never one that asks for whatever is around.
+  assert.deepEqual(emptySkillContract().resourceAttachmentIds, []);
+  assert.deepEqual(parseSkillContract({ requestedApps: ["Finder"] }).resourceAttachmentIds, []);
+});
+
+test("a file resolves only when the caller found it in the user's own library", () => {
+  const resolved = resolveSkillResources({
+    requested: ["att_template", "att_gone", "att_style"],
+    available: [
+      // Deliberately in a different order from the request: the contract's
+      // order is the order the run reads them, and a database's is not.
+      { attachmentId: "att_style", fileName: "house-style.md" },
+      { attachmentId: "att_template", fileName: "report-template.docx" },
+    ],
+  });
+  assert.deepEqual(resolved.attached, [
+    { attachmentId: "att_template", fileName: "report-template.docx" },
+    { attachmentId: "att_style", fileName: "house-style.md" },
+  ]);
+  // An id the lookup did not return is a deleted file, another account's file,
+  // or a string somebody typed into an imported contract. All three are the
+  // same answer, which is the point.
+  assert.deepEqual(resolved.missing, ["att_gone"]);
+});
+
+test("the same file named twice is one file", () => {
+  const resolved = resolveSkillResources({
+    requested: ["att_a", "att_a", "att_b"],
+    available: [
+      { attachmentId: "att_a", fileName: "a.md" },
+      { attachmentId: "att_b", fileName: "b.md" },
+    ],
+  });
+  assert.deepEqual(
+    resolved.attached.map((resource) => resource.attachmentId),
+    ["att_a", "att_b"]
+  );
+  // Nor is a duplicate reported missing the second time round.
+  assert.deepEqual(resolved.missing, []);
+});
+
+test("a missing id is reported once, however many times it was named", () => {
+  const resolved = resolveSkillResources({ requested: ["att_gone", "att_gone"], available: [] });
+  assert.deepEqual(resolved.attached, []);
+  assert.deepEqual(resolved.missing, ["att_gone"]);
+});
+
+test("bringing a file cannot widen what a skill may use", () => {
+  // The property the whole feature had to keep. A contract carrying resources
+  // resolves to exactly the permissions the same contract without them does —
+  // there is no path from `resourceAttachmentIds` into the intersection, and a
+  // test that pins the two results equal fails the day somebody adds one.
+  const granted: WorkSkillGrantLayer[] = [
+    {
+      tools: ["work.file.read"],
+      connectors: ["gmail"],
+      apps: [],
+      domains: [],
+      policy: "balanced",
+    },
+  ];
+  const bare = parseSkillContract({ requestedConnectors: ["gmail"] });
+  const carrying = parseSkillContract({
+    requestedConnectors: ["gmail"],
+    resourceAttachmentIds: ["att_template", "att_somebody_elses"],
+  });
+
+  const request = (contract: WorkSkillContract): WorkSkillRequest =>
+    skillRequestFrom({ requestedTools: ["work.file.read"], contract });
+
+  assert.deepEqual(
+    resolveSkillPermissions({ request: request(carrying), granted }),
+    resolveSkillPermissions({ request: request(bare), granted })
+  );
+  // And the request shape itself carries no file, so nothing downstream of it
+  // can start reading one by accident.
+  assert.equal("resources" in request(carrying), false);
+});
+
+test("a brought file is recorded as the skill's, not as something you attached", () => {
+  const reference = skillResourceRunReference({
+    resource: { attachmentId: "att_template", fileName: "report-template.docx" },
+    skillId: "skl_1",
+    slug: "monthly-report",
+    version: 4,
+  });
+  // `refId` is the attachment, so the executor's existing join finds the text.
+  assert.equal(reference.refId, "att_template");
+  // `skill_resource`, because "you attached this" and "the skill carries this"
+  // are different answers to "what went in".
+  assert.equal(reference.refKind, "skill_resource");
+  assert.equal(reference.direction, "input");
+  assert.equal(reference.label, "report-template.docx");
+  assert.deepEqual(reference.detail, { skillId: "skl_1", slug: "monthly-report", version: 4 });
+});
+
+// ---------------------------------------------------------------------------
+// A project as a bundle
+// ---------------------------------------------------------------------------
+
+test("a skill filed nowhere is offered to every task", () => {
+  assert.equal(skillIsOfferedTo(null, null), true);
+  assert.equal(skillIsOfferedTo(null, "prj_books"), true);
+});
+
+test("a skill filed in a project is offered to that project's tasks and no others", () => {
+  assert.equal(skillIsOfferedTo("prj_books", "prj_books"), true);
+  assert.equal(skillIsOfferedTo("prj_books", "prj_talks"), false);
+  // A task filed nowhere is not inside the project, so the project's skills are
+  // not on offer to it either.
+  assert.equal(skillIsOfferedTo("prj_books", null), false);
+});
+
+test("automatic selection reaches the project's bundle and the account's", () => {
+  const scored = [
+    { candidate: candidate({ id: "skl_acct", slug: "expense-report" }), confidence: 0.9 },
+    {
+      candidate: candidate({ id: "skl_books", slug: "invoice-filing", projectId: "prj_books" }),
+      confidence: 0.95,
+    },
+  ];
+
+  const inside = selectSkillAutomatically({ scored, taskProjectId: "prj_books" });
+  assert.equal(inside.selected && inside.candidate.id, "skl_books");
+
+  // The same library, a task filed elsewhere: the project's skill is not on
+  // offer, and the account's one wins rather than the ranking being blocked by
+  // the higher-scoring row it may not use.
+  const outside = selectSkillAutomatically({ scored, taskProjectId: "prj_talks" });
+  assert.equal(outside.selected && outside.candidate.id, "skl_acct");
+});
+
+test("a skill from another project is refused for that reason, not for confidence", () => {
+  // Telling the reader to be clearer would send them to rewrite a goal that was
+  // never the problem; the answer is where the skill is filed.
+  assert.deepEqual(
+    selectSkillAutomatically({
+      scored: [{ candidate: candidate({ projectId: "prj_books" }), confidence: 1 }],
+      taskProjectId: "prj_talks",
+    }),
+    { selected: false, reason: "other_project" }
+  );
+});
+
+test("typing a skill's name reaches it wherever it is filed", () => {
+  // Trust is not consulted here and neither is the project, for the same
+  // reason: the user typed the name. Refusing would teach them to keep every
+  // skill at the account level, which empties the bundle out.
+  const chosen = selectSkillBySlug("tidy-downloads", [candidate({ projectId: "prj_books" })]);
+  assert.equal(chosen.selected, true);
+  assert.equal(chosen.selected && chosen.via, "slash");
 });

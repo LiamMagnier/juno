@@ -10,7 +10,14 @@ import {
   type SessionAttachmentGrant,
 } from "@/lib/work/store";
 import { isWorkModelAllowed } from "@/lib/work/models";
-import { DEFAULT_WORK_PERMISSION_POLICY } from "@/lib/work/domain";
+import { type WorkTarget } from "@/lib/work/domain";
+import {
+  inheritFromProjectDefaults,
+  parseWorkDefaults,
+  resolveSessionFields,
+  type InheritedFromProject,
+  type WorkProjectDefaults,
+} from "@/lib/work/projects";
 import { getUserPlan } from "@/lib/usage";
 import {
   createSessionSchema,
@@ -161,6 +168,72 @@ async function replaySession(
   return NextResponse.json({ session: serializeSession(session), replay: true }, { status: 200 });
 }
 
+/**
+ * The project's half of the bundle, with the two claims in it checked.
+ *
+ * The narrowing itself is `inheritFromProjectDefaults`, which is pure and
+ * tested as such — including the property that decides whether a project is a
+ * folder or a consent surface: it may only ever narrow from
+ * `DEFAULT_WORK_PERMISSION_POLICY`, never widen past it. The skills half of the
+ * bundle is not here either: a skill filed in a project is already a
+ * `WorkSkill` carrying its `projectId`, and `skillIsOfferedTo` is what the
+ * executor reads.
+ *
+ * What is left for this function is the two fields that name a row. A Mac and a
+ * model in a stored JSON blob are claims like any other id, and the only things
+ * that make them true are a row carrying this user and a plan that includes the
+ * model.
+ *
+ * Both are DROPPED rather than refused when they do not resolve. A project
+ * naming a Mac that has since been unpaired, or a model this plan does not
+ * include, must not make every task filed there impossible to create — the run
+ * picks a model and a target on its own and records what it chose, which is a
+ * working task with a degradation rather than a 403 on a setting the reader may
+ * not even know is there.
+ */
+async function inheritFromProject(
+  user: { id: string },
+  requestedTarget: WorkTarget,
+  defaults: WorkProjectDefaults
+): Promise<InheritedFromProject> {
+  // The account's linked apps, which are the ceiling the project's list is
+  // intersected against: a project naming Gmail does not thereby link Gmail.
+  // Read only when there is a list to intersect, so a project with no connector
+  // opinion costs no query.
+  const linkedConnectorIds =
+    defaults.connectorIds === undefined
+      ? []
+      : (
+          await prisma.connection.findMany({
+            where: { userId: user.id },
+            select: { provider: true },
+          })
+        ).map((row) => row.provider);
+
+  const inherited = inheritFromProjectDefaults({
+    requestedTarget,
+    linkedConnectorIds,
+    defaults,
+  });
+
+  const host = inherited.preferredHostId
+    ? await prisma.workHost.findFirst({
+        where: { id: inherited.preferredHostId, userId: user.id },
+        select: { id: true },
+      })
+    : null;
+
+  // The same plan gate the body's model goes through, on the project's. The two
+  // are mutually exclusive — this branch is only reached when the client named
+  // no model — so the plan is read at most once per request.
+  const model =
+    inherited.model && isWorkModelAllowed(inherited.model, await getUserPlan(user.id))
+      ? inherited.model
+      : null;
+
+  return { ...inherited, model, preferredHostId: host?.id ?? null };
+}
+
 export async function GET(req: Request) {
   const { user, error } = await requireUser();
   if (!user) return error;
@@ -305,12 +378,14 @@ export async function POST(req: Request) {
     });
     if (!host) return NextResponse.json({ error: "Host not found" }, { status: 404 });
   }
+  let projectDefaults: WorkProjectDefaults = {};
   if (projectId) {
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: user.id },
-      select: { id: true },
+      select: { id: true, workDefaults: true },
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    projectDefaults = parseWorkDefaults(project.workDefaults);
   }
   // The chat this task was delegated from, checked the same way and for a
   // sharper reason than the project: this pointer is what makes the run render
@@ -398,13 +473,53 @@ export async function POST(req: Request) {
     }
   }
 
+  // What the project it was filed in supplies.
+  //
+  // The fold is pure and lives beside the resolver, because the rule it encodes
+  // is not the same for every field: the scalars fall through to the project
+  // only when the client was silent, while the approval mode and the connector
+  // list MEET with the project's. See `resolveSessionFields` for why — in one
+  // sentence, a client that always states a mode, which is every browser build
+  // since the segmented control shipped, would otherwise make a project's
+  // approval setting a control that visibly does nothing.
+  const inherited = await inheritFromProject(user, requestedTarget, projectDefaults);
+  const resolvedFields = resolveSessionFields(
+    {
+      model,
+      reasoningEffort,
+      permissionPolicy,
+      // `null` here is this route's spelling of "the client said nothing",
+      // which `resolveSessionFields` spells `undefined` because that is what an
+      // absent optional field is everywhere else.
+      connectorIds: connectors ?? undefined,
+      preferredHostId,
+    },
+    inherited
+  );
+  // Tested against null rather than against emptiness, which is the same
+  // distinction the block above draws: a present `[]` is a reader who switched
+  // every app off, and reading it as "nothing said" would hand the task back the
+  // apps they had just removed.
+  const chosenConnectors = resolvedFields.connectorIds;
+
   const sessionId = idempotencyKey ? idempotentSessionId(user.id, idempotencyKey) : undefined;
   if (sessionId) {
     // Turns the common sequential retry into a clean replay instead of a 500
     // from the unique violation. The catch below is what handles the two
     // requests that raced past this read.
     const existing = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-    if (existing) return replaySession(existing, user, attachments, connectors);
+    // A replay reconciles what THIS request carried, and a request that said
+    // nothing about apps must leave whatever the task already holds alone —
+    // otherwise a second press of the composer would overwrite a change the
+    // reader made to the task in between. So the DEFAULT half of the fold is
+    // deliberately skipped here and only the CEILING half is applied: a client
+    // that sent a list gets it intersected with the project's, and a client
+    // that sent none gets nothing written. Without that intersection the
+    // project's connector ceiling would be escapable by pressing send twice,
+    // which is the whole invariant undone by a retry.
+    if (existing) {
+      return replaySession(existing, user, attachments, connectors === null ? null : chosenConnectors);
+    }
   }
 
   try {
@@ -420,21 +535,23 @@ export async function POST(req: Request) {
       // Absent stays null, which is what a standalone task has always been.
       conversationId: conversationId ?? null,
       requestedTarget,
-      preferredHostId: preferredHostId ?? null,
-      requestedModel: model ?? null,
-      reasoningEffort: reasoningEffort ?? null,
-      // The approval mode this task was composed with. Absent means the client
-      // has no control for it — the native composer, and every browser build
-      // before the segmented control shipped — and those tasks get
-      // `DEFAULT_WORK_PERMISSION_POLICY`, which is the value the column already
-      // defaulted to. Nothing about an existing client's behaviour changes.
+      // The three scalars fall through to the project's answer only when the
+      // client gave none, which is `resolveSessionFields`' `??` rule: absent
+      // means "no opinion", unlike the connector list above.
+      preferredHostId: resolvedFields.preferredHostId,
+      requestedModel: resolvedFields.model,
+      reasoningEffort: resolvedFields.reasoningEffort,
+      // The approval mode this task was composed with, after meeting the
+      // project's. A client that sends none — the native composer, and every
+      // browser build before the segmented control shipped — gets
+      // `DEFAULT_WORK_PERMISSION_POLICY` or whatever narrower mode the project
+      // states, which is at most the value the column already defaulted to.
       //
-      // Not checked against anything here, and it does not need to be: the
-      // session's mode is a request, and `resolveApprovalMode` intersects it
-      // with the Mac's advertised policy at dispatch. A session composed as Skip
-      // that only ever lands on a Mac pinned to Manual runs Manual every time,
-      // and the run says so.
-      permissionPolicy: permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
+      // This is a request rather than a verdict, and it does not need checking
+      // here: `resolveApprovalMode` intersects it with the Mac's advertised
+      // policy at dispatch. A session composed as Skip that only ever lands on
+      // a Mac pinned to Manual runs Manual every time, and the run says so.
+      permissionPolicy: resolvedFields.permissionPolicy,
       // Written in the same transaction as the session rather than by a second
       // call after it, so a session never comes back as created while the files
       // the reader attached to it are missing. See `createWorkSession`.
@@ -449,9 +566,9 @@ export async function POST(req: Request) {
     // 503 says so rather than reporting a task that was created with permissions
     // it does not hold. The idempotency key makes the next press land on this
     // same session and finish the job.
-    if (connectors) {
+    if (chosenConnectors) {
       try {
-        await writeSessionConnectors(user, session.id, connectors);
+        await writeSessionConnectors(user, session.id, chosenConnectors);
       } catch (err) {
         console.error("[work] could not save the session's connectors", {
           sessionId: session.id,
@@ -483,7 +600,12 @@ export async function POST(req: Request) {
       err.code === "P2002"
     ) {
       const winner = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-      if (winner) return replaySession(winner, user, attachments, connectors);
+      // The same narrowed list the pre-check replay uses, and for the same
+      // reason: the project's connector ceiling has to hold on every path that
+      // writes grants, not only on the one that creates the session.
+      if (winner) {
+        return replaySession(winner, user, attachments, connectors === null ? null : chosenConnectors);
+      }
     }
     throw err;
   }
