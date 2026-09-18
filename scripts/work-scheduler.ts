@@ -43,9 +43,8 @@ import "server-only";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
-import { checkBudget } from "@/lib/spend";
-import { unattendedRunCeiling } from "@/lib/spend-ceiling";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import { checkBudget, checkUsageWindows } from "@/lib/spend";
+import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   createRun,
   createWorkSession,
@@ -121,10 +120,19 @@ function log(message: string, extra?: Record<string, unknown>): void {
 // Budgets
 // ---------------------------------------------------------------------------
 
-/** One account's two dispatch-time facts, read together. */
+/** One account's dispatch-time facts, read together. */
 interface AccountLimits {
   plan: Plan;
+  /**
+   * The tighter of what the month has left and what the binding window has.
+   *
+   * One number because the planner asks one question — may this fire? — and
+   * both ceilings answer it the same way. The window is very nearly always the
+   * tighter of the two, which is the point of it.
+   */
   remainingMicroUsd: number | null;
+  /** The window's own remainder, which sizes the run's ceiling at dispatch. */
+  windowRemainingMicroUsd: number | null;
 }
 
 /**
@@ -132,15 +140,15 @@ interface AccountLimits {
  * tick.
  *
  * Ten schedules belonging to one user become one read rather than ten, and the
- * staleness that buys is bounded by the tick. Nothing here enforces the budget
- * — the executor does, per token — so a figure a few seconds old can only
- * affect whether a run is started, never whether it overspends.
+ * staleness that buys is bounded by the tick. A figure a few seconds old can
+ * only affect whether a run is STARTED: once it is running the executor holds
+ * the ceiling per token, and re-reads the window while it works.
  *
  * The plan is kept rather than discarded, and that is why this cache holds a
- * record instead of a number. `runBudgetForPlan` needs it at dispatch, and a
- * second `getUserPlan` there would be a second read of the same row — worse, a
- * read that could disagree with the one the admission check was made against if
- * the subscription lapsed between them.
+ * record instead of a number: spend admission measures the run against it, and
+ * a second `getUserPlan` at dispatch would be a second read of the same row —
+ * worse, a read that could disagree with the one the admission check was made
+ * against if the subscription lapsed between them.
  */
 async function accountLimits(
   userId: string,
@@ -149,8 +157,19 @@ async function accountLimits(
   const cached = cache.get(userId);
   if (cached !== undefined) return cached;
   const plan = await getUserPlan(userId);
-  const status = await checkBudget(userId, plan);
-  const limits: AccountLimits = { plan, remainingMicroUsd: status.remainingMicroUsd };
+  const [status, windows] = await Promise.all([
+    checkBudget(userId, plan),
+    checkUsageWindows(userId, plan),
+  ]);
+  const both = [status.remainingMicroUsd, windows.remainingMicroUsd].filter(
+    (value): value is number => value !== null
+  );
+  const limits: AccountLimits = {
+    plan,
+    // Null only when NEITHER is metered, which is the cap-disabled account.
+    remainingMicroUsd: both.length === 0 ? null : Math.min(...both),
+    windowRemainingMicroUsd: windows.remainingMicroUsd,
+  };
   cache.set(userId, limits);
   return limits;
 }
@@ -563,25 +582,33 @@ async function dispatchOne(
           degradation: decision.degradation,
           permissionPolicy: policy,
           // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
-          // set a figure defaulted to 0 — so the runs firing at 03:00 with
-          // nobody watching were the only ones with no ceiling at all, while a
-          // manually started run got a real one. The cost axis takes the
-          // unattended default ($1) first; then every axis is narrowed against
-          // this account's plan ceiling, which is what fills the token and
-          // runtime ceilings a schedule left at zero. Substituted here rather
-          // than in `budgetExceeded` because 0-means-unlimited is the persisted
-          // contract the column and every client already speak.
+          // set a figure stores 0 on every axis. What fills that zero is the
+          // window: `runBudgetForWindow` writes the binding window's remainder
+          // onto the cost axis, and `narrowestBudget` keeps the schedule's own
+          // figure only where it asked for LESS.
           //
-          // The plan is read through the same cache the admission check used,
-          // so a schedule cannot be admitted against one plan and dispatched
-          // under another's ceiling.
+          // The no-window backstop is NOT applied to the schedule's own figure
+          // here, and that is the whole point: wrapping it in
+          // `unattendedRunCeiling` made every metered scheduled fire run at
+          // min($1, window) — a per-run ceiling, on every plan, contradicting
+          // the docs and this commit, and differing from the same schedule
+          // pressed by hand, which got the window. `runBudgetForWindow` already
+          // carries the backstop for the one account that has no window at all.
+          //
+          // Tokens and runtime stay at whatever the schedule asked for, and
+          // that is usually zero: there is no per-run token or time ceiling any
+          // more, only what a schedule chooses to impose on itself.
+          //
+          // The window is read through the same cache the admission check used,
+          // so a schedule cannot be admitted against one number and dispatched
+          // under another.
           budget: narrowestBudget(
             {
-              maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
+              maxCostMicroUsd: schedule.maxCostMicroUsd,
               maxTokens: schedule.maxTokens,
               maxRuntimeMs: schedule.maxRuntimeMs,
             },
-            runBudgetForPlan(limits.plan)
+            runBudgetForWindow(limits.windowRemainingMicroUsd)
           ),
           // The same plan the ceiling above was built from, so spend admission
           // measures the run against it rather than reading the row a second

@@ -482,15 +482,26 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
           warningThreshold={0.8}
         />
       </div>
-      {/* No sentence for a run with every ceiling at zero. There is no "plan
-          default" behind a zero — `budgetExceeded` reads it as no ceiling — and
-          every dispatcher now merges the account's plan ceiling in
-          (`runBudgetForPlan`), so a zero here is a run written before that
-          landed. The bars already show "no ceiling"
-          by having no total. */}
+      {/* The tokens and time bars carry no total on an ordinary run now, and
+          that is not a gap: a run is bounded by the account's rolling usage
+          window and by nothing else, so its cost bar is the window's remainder
+          at dispatch and the other two have no ceiling to draw. A bar with no
+          total already says so by having none.
+
+          Every axis at zero is the one case that still needs a sentence: no
+          window either, which is the account with spending limits switched off.
+          `budgetExceeded` reads a zero as no ceiling, so nothing about the run
+          itself would tell the reader why three bars are open-ended. */}
+      {/* Worded about the RUN and not about the account, because the run is the
+          only thing this panel can actually see. Three zeros are written by a
+          run dispatched with no window — the cap-disabled account — but they
+          were also written by every ordinary metered run before the windows
+          started sizing a dispatch, and those rows are still in the history.
+          Naming a cause the reader can check against their own settings would
+          be wrong for all of them. */}
       {unlimited && (
         <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-          This attempt ran with no ceiling of its own — only the account’s monthly budget bounded it.
+          This attempt recorded no ceiling of its own on any axis, so nothing here bounded it.
         </p>
       )}
       {ceiling.exceeded && (

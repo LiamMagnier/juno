@@ -1,7 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { admitChatRequest } from "@/lib/chat-admission";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
-import { Prisma } from "@prisma/client";
+import { Prisma, type Plan } from "@prisma/client";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
@@ -60,6 +61,7 @@ import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField } from "@/lib/field-crypto";
 import {
   checkBudget,
+  checkUsageWindows,
   recordSpend,
   reserveSpend,
   budgetExceededMessage,
@@ -441,6 +443,39 @@ function firstSubmissionRecoveryPort(userId: string): FirstSubmissionRecoveryPor
   };
 }
 
+/**
+ * The rolling-window gate, or null when there is room.
+ *
+ * The account's 5-hour and weekly windows used to be meters: `getUsageWindows`
+ * derived them, the usage page and the settings gauge drew them, and the only
+ * figure that could refuse a turn was the MONTHLY one in `checkBudget`. They
+ * enforce now, because they are what bounds a delegated run since the per-run
+ * ceiling was removed — and a window that stops a task but not the chat beside
+ * it is not the account's limit, it is a limit on one surface.
+ *
+ * 429 rather than the monthly gate's 402, and the difference is the reader's
+ * next move. A month that is spent is a purchase; a window that is spent is a
+ * wait, and `windowLimitMessage` says how long. Every caller of this route
+ * surfaces `message` verbatim for a non-ok response, so the sentence is what a
+ * person sees.
+ *
+ * Beside `checkBudget`, never instead of it: a window is a slice of the month,
+ * so the month remains the outer bound and can still refuse on its own.
+ */
+async function usageWindowRefusal(userId: string, plan: Plan): Promise<NextResponse | null> {
+  const windows = await checkUsageWindows(userId, plan);
+  if (windows.allowed || windows.bound === null) return null;
+  return NextResponse.json(
+    {
+      error: "usage_window_exceeded",
+      message: windowLimitMessage(windows.bound, windows.resetsAtMs),
+      window: windows.bound,
+      resetsAtMs: windows.resetsAtMs,
+    },
+    { status: 429 }
+  );
+}
+
 async function handleChat(req: Request) {
   // A process that has been told to stop takes no new generations: whatever
   // it started now it would have to abort in a few seconds anyway. Answered
@@ -799,6 +834,8 @@ async function handleChat(req: Request) {
     if (!budget.allowed) {
       return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
     }
+    const windowed = await usageWindowRefusal(user.id, plan);
+    if (windowed) return windowed;
 
     const consumed = await consumeMessage(user.id, plan);
     if (!consumed.allowed) {
@@ -1220,6 +1257,8 @@ async function handleChat(req: Request) {
   if (!budget.allowed) {
     return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
   }
+  const windowed = await usageWindowRefusal(user.id, plan);
+  if (windowed) return windowed;
 
   const durableFirstSubmission = !!(
     input.clientRequestId &&

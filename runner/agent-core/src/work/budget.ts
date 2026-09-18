@@ -197,6 +197,28 @@ export class WorkBudgetGuard {
   }
 
   /**
+   * Record a ceiling this process cannot see for itself.
+   *
+   * The guard is handed its numbers once, at construction, and has no database
+   * by design — agent-core is vendored and runs inside the cloud runner. So it
+   * knows what THIS run has spent and nothing about the account around it. The
+   * ceiling that now bounds a run is the account's rolling usage window, and a
+   * window moves while a run works: another chat turn, a second run, and the
+   * remainder the run was dispatched with is no longer the remainder.
+   *
+   * The executor that does have the database re-reads the window and calls
+   * this. It lands in the same sticky `hit` that `check` writes, so the run
+   * ends through the path every other ceiling already ends through and reports
+   * the reason the window gives rather than a per-run figure that was never
+   * what stopped it. First writer wins: a guard that has already hit a ceiling
+   * has already decided why the run is ending.
+   */
+  exhausted(limit: 'cost' | 'tokens' | 'runtime', detail: string): void {
+    if (this.hit) return;
+    this.hit = { limit, detail, terminalReason: terminalReasonFor(limit) };
+  }
+
+  /**
    * Whether a ceiling has been reached, warning first if one is close.
    *
    * Safe to call at any point, not only after a provider request: a run that

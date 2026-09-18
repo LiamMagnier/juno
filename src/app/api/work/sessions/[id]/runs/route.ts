@@ -20,7 +20,9 @@ import {
   type WorkPermissionPolicy,
   type WorkTarget,
 } from "@/lib/work/domain";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import { runBudgetForWindow } from "@/lib/work/budget";
+import { checkUsageWindows } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import {
   defaultWorkModelId,
@@ -79,13 +81,12 @@ const MAX_FAILOVER_HISTORY = 4;
 const CLOUD_WORK_AVAILABLE = true;
 
 /*
- * The ceilings a run is dispatched with come from `runBudgetForPlan` in
- * src/lib/work/budget.ts — hoisted out of this file so the scheduler, the
- * run-now route and the composer's own "Stops at …" sentence read the one
- * table rather than each keeping a copy. Nothing wrote a budget before it
- * existed, and a zero budget is what `MAX_STEPS_PER_RUN = 200` alone bounds:
- * two hundred model turns on a frontier model for a task that went in a circle
- * at step eleven.
+ * What bounds a run is `runBudgetForWindow` in src/lib/work/budget.ts, fed by
+ * `checkUsageWindows` — the account's rolling 5-hour and weekly windows and
+ * nothing else. There is no per-run ceiling any more; the argument for removing
+ * the plan-shaped table that used to live behind this comment is on that
+ * module, and the composer's disclosure reads its sentence from the same place
+ * rather than keeping a copy of any number.
  */
 
 /**
@@ -435,6 +436,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
+  /*
+   * What this account has left in the window that binds it.
+   *
+   * This is the ceiling now. There is no per-run figure any more — a run goes
+   * until the work is done or until the account's rolling 5-hour or weekly
+   * window is used up — so this one read does two jobs: it refuses the dispatch
+   * when the window is already spent, and its remainder becomes the run's cost
+   * ceiling, which is what the executor's own guard stops a runaway loop at.
+   *
+   * Refused here rather than inside `createRun`, because the sentence a reader
+   * gets has to name the window and when it frees up. "Over the ceiling" sends
+   * somebody to the pricing page; "out of budget until 14:00" sends them to
+   * lunch, and only one of those is true.
+   */
+  const windows = await checkUsageWindows(user.id, plan);
+  if (!windows.allowed && windows.bound !== null) {
+    return NextResponse.json(
+      {
+        error: "usage_window_exceeded",
+        message: `${windowLimitMessage(windows.bound, windows.resetsAtMs)} Nothing was started.`,
+        window: windows.bound,
+        resetsAtMs: windows.resetsAtMs,
+      },
+      { status: 429 }
+    );
+  }
+
   const now = new Date();
   const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
   // Preferred host first: `selectTarget` picks the first fully capable host in
@@ -742,16 +770,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // because an approval digest and a budget bar both have to describe
         // the run as it was started, not as the defaults happen to be today.
         //
-        // Shaped by the plan, through the same `plan` the model gate above was
-        // decided on. A trial account and a Max account do not get the same
-        // ceiling, and reading it twice would let a subscription that lapsed
-        // between the two reads gate on one plan and spend on another.
-        budget: runBudgetForPlan(plan),
-        // The same plan value, handed on to spend admission rather than left
-        // for it to read again. Admission's per-unit ceiling is now this run
-        // ceiling, so a second read is a second chance for the two to disagree
-        // — a lapse between them would refuse the run against one plan while
-        // the guard measured it against the other.
+        // Shaped by the window, from the same read the gate above was made on.
+        // The remainder becomes the run's cost ceiling, so the executor's guard
+        // stops a runaway loop at exactly the point the account runs out of
+        // window; tokens and runtime carry no ceiling at all. Reading the
+        // window twice would let a chat turn land between the two reads and
+        // refuse a run against one number while the guard measured it against
+        // another.
+        budget: runBudgetForWindow(windows.remainingMicroUsd),
+        // The plan, handed on to spend admission rather than left for it to
+        // read again — a lapse between two reads would measure the run against
+        // a plan it was not admitted under.
         plan,
         idempotencyKey: body.idempotencyKey ?? null,
         // Written in the run's own transaction, so this attempt cannot exist
@@ -762,10 +791,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   } catch (err) {
     if (err instanceof WorkSpendAdmissionError) {
+      // The monthly ceiling, which sits outside the windows the gate above
+      // reads. `refusedBy: "unit"` no longer reaches here for Work — there is
+      // no per-run ceiling to be above — but the branch stays because the
+      // sentence has to be right if a per-unit ceiling is ever filed for this
+      // kind again, and a refusal with the wrong explanation is worse than a
+      // dead branch.
       const message =
         err.result.refusedBy === "unit"
           ? "This task is above Juno’s per-run spending ceiling, so nothing was started. Lower its scope or choose a less expensive model."
-          : "Starting this task would exceed your current spending ceiling, so nothing was started. Finish or stop another run, or lower the account cap.";
+          : "Starting this task would exceed your monthly spending ceiling, so nothing was started. Finish or stop another run, or raise the account cap.";
       return NextResponse.json(
         {
           error: "spend_cap_exceeded",

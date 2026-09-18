@@ -1,6 +1,11 @@
 /**
  * The spend ceiling: which number binds, and what a reservation does to it.
  *
+ * Three ceilings live here now — the monthly one, the per-unit one, and the
+ * rolling 5-hour and weekly windows at the foot of the file. The windows are
+ * the one that bounds a delegated run; see the section header down there for
+ * why they stopped being meters.
+ *
  * Split out of `spend.ts` and free of `server-only` and of any I/O for the same
  * reason `chat-budget-guard.ts` is: this is money arithmetic, it decides whether
  * a generation is allowed to start, and until now none of it was covered by a
@@ -15,7 +20,6 @@
  */
 
 import type { Plan } from "@prisma/client";
-import { runBudgetForPlan } from "@/lib/work/budget";
 
 /**
  * The personal account's monthly ceiling in EUR when nothing else says
@@ -161,41 +165,38 @@ export const DEFAULT_ESTIMATE_MICRO_USD: Record<SpendKind, number> = {
  * how much room is left in the month.
  *
  * The monthly ceiling alone cannot stop one runaway run from consuming the
- * whole month in an afternoon, and the two surfaces where that is a realistic
- * shape — a research run that fans out into searches, and a Work run that loops
- * — are exactly the two with no per-request human in the loop.
+ * whole month in an afternoon, and a deep-research run that fans out into
+ * searches is a realistic shape for exactly that, with no per-request human in
+ * the loop.
  *
- * `work` is the PRO figure here and the plan's own figure through
- * `unitCeilingMicroUsd` below. It stays in the table because the two numbers
- * are one number: this ceiling is what admission refuses a run by, and the run
- * budget is what the executor's guard stops it at, so a build where they
- * disagree either refuses runs it would have allowed to finish or allows runs
- * it will kill halfway. Reading the plan is what keeps them the same figure.
+ * `work` used to be here too, at the figure a PRO run was dispatched under, so
+ * that admission refused a run by the same number the executor's guard would
+ * have stopped it at. Both numbers are gone: a Work run has no per-run ceiling
+ * any more, only the account's rolling windows, and those are enforced at
+ * dispatch and again while the run is going (`windowVerdict` above,
+ * `checkUsageWindows` in spend.ts). Leaving a $2 entry here would refuse at the
+ * door every run the windows had room for — which is the per-run ceiling back
+ * again under a quieter name.
  */
 export const UNIT_CEILING_MICRO_USD: Partial<Record<SpendKind, number>> = {
   research: 1_000_000, // $1 per deep-research run
-  work: 2_000_000, // $2, the figure a PRO run is dispatched under
 };
 
 /**
  * The per-unit ceiling that binds for this account, on this kind of work.
  *
- * Only `work` varies by plan, and it varies because the run ceiling it has to
- * agree with does. The alternative — leaving this flat at $2 while
- * `runBudgetForPlan` hands a MAX run $6 — is worse than either number alone:
- * admission would refuse every MAX run at the door, with a message about a
- * per-run spending ceiling the account had in fact paid past.
- *
- * Everything else reads straight from the table, so a kind that has no entry
- * still has no per-unit ceiling and the monthly one remains its only bound.
+ * A kind with no entry has no per-unit ceiling, and `work` is now one of them:
+ * what bounds a run is the window, not a figure filed per plan. `plan` is kept
+ * on the signature because a per-unit ceiling is a pricing decision and the
+ * next kind to need one will need it plan-shaped; dropping the parameter would
+ * make that a change at every call site rather than a change here.
  */
-export function unitCeilingMicroUsd(kind: SpendKind, plan: Plan): number | undefined {
-  if (kind === "work") return runBudgetForPlan(plan).maxCostMicroUsd;
+export function unitCeilingMicroUsd(kind: SpendKind, _plan: Plan): number | undefined {
   return UNIT_CEILING_MICRO_USD[kind];
 }
 
 /**
- * The ceiling for a Work run nobody is watching.
+ * The ceiling for a run with no window behind it.
  *
  * `maxCostMicroUsd` of 0 means UNLIMITED to `budgetExceeded`, and scheduled and
  * trigger-fired runs defaulted to 0 while a manually started run defaulted to
@@ -203,10 +204,28 @@ export function unitCeilingMicroUsd(kind: SpendKind, plan: Plan): number | undef
  * 03:00 were not. Substituted at run creation rather than changed in
  * `budgetExceeded`, because 0-means-unlimited is the persisted contract that
  * `WorkRun.maxCostMicroUsd` and the client both already speak.
+ *
+ * ── What it means now that the per-run ceiling is gone ──────────────────────
+ *
+ * Every dispatcher writes the binding window's remainder into
+ * `maxCostMicroUsd`, so a zero no longer reaches here from an ordinary run. The
+ * one account that can still produce one is the account with
+ * `Settings.spendCapDisabled`: no monthly ceiling means no period to slice, so
+ * `getUsageWindows` returns a null budget and there is no window to enforce.
+ *
+ * That account gets this figure rather than nothing, and the decision is
+ * explicit because the alternative is the hole `spend-ceiling.ts` was written
+ * to close. `BUDGET_EUR.OWNER` being null once switched off both the pre-flight
+ * gate and the mid-stream abort on the one account no billing system watches;
+ * removing the per-run ceiling would reopen it from the other side — no per-run
+ * cap AND no window — and a loop on that account would be billable without
+ * limit for as long as it ran. Switching enforcement off is a decision to stop
+ * METERING, not a decision to let one unattended process spend without bound,
+ * and the surfaces say so rather than drawing a meter at 0%.
  */
 export const UNATTENDED_RUN_DEFAULT_MICRO_USD = 1_000_000;
 
-/** Applies the unattended default to a requested run ceiling of 0. */
+/** Applies the no-window backstop to a requested run ceiling of 0. */
 export function unattendedRunCeiling(requestedMicroUsd: number): number {
   if (!Number.isFinite(requestedMicroUsd) || requestedMicroUsd <= 0) {
     return UNATTENDED_RUN_DEFAULT_MICRO_USD;
@@ -302,4 +321,321 @@ export function describeCapSource(source: BudgetCapSource): string {
     case "disabled":
       return "Enforcement is switched off";
   }
+}
+
+// ---------------------------------------------------------------------------
+// The rolling windows
+// ---------------------------------------------------------------------------
+
+/**
+ * The two windows that now bound a run, and the arithmetic that decides which
+ * one binds.
+ *
+ * Until this section existed the windows were meters. `getUsageWindows` derived
+ * them, the usage page and the settings gauge drew them, and the only thing
+ * that could actually refuse work was the MONTHLY figure in `checkBudget` — so
+ * a single run was free to spend a whole month in an afternoon and the windows
+ * would describe it afterwards. A limit the product states and the runtime does
+ * not apply is the defect this codebase is written against, and it was sitting
+ * in the one place a reader was most likely to trust.
+ *
+ * They are enforcing now because they are the ONLY thing bounding a run. The
+ * per-run ceiling is gone (see `src/lib/work/budget.ts`); what is left is the
+ * model the references use — you work until you are finished or until the
+ * account's five-hour window is used up, and then you wait for it to free up.
+ * That is a kinder limit than a per-run one, and a truer one: it is the
+ * account's number rather than the task's, so a run is never cut short while
+ * the account still has room to spend.
+ *
+ * The arithmetic is here rather than in `spend.ts` for the reason the rest of
+ * this module is: every path to it went through Prisma, so none of it could be
+ * tested. `spend.ts` reads the ledger and calls these.
+ */
+
+/** The rolling "current session" window — five hours, as the references use. */
+export const SESSION_WINDOW_MS = 5 * 60 * 60 * 1000;
+
+/** The rolling weekly window. */
+export const WEEKLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * A reference month, used when a billing period is shorter than one.
+ *
+ * The PACE figure each window draws is a TIME-PROPORTIONAL slice of the period
+ * budget, so the pace figures tile it exactly: the weekly slices and the
+ * session slices each sum to the whole period cap. Dividing by a whole four
+ * weeks — a month is 4.29 of them — would hand out more than the month holds,
+ * and a meter at 100% would then mean something other than "on pace to spend
+ * precisely the period budget".
+ */
+export const REFERENCE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How much of the weekly allowance one five-hour sitting may burn through.
+ *
+ * A pace slice is not a gate. month ÷ 144 is the right denominator for a meter
+ * that answers "am I on pace to spend the month?", and it is the wrong number
+ * to refuse work by: enforcing it would mean an account could never burst,
+ * which is the opposite of the model this section cites — the references give a
+ * five-hour window that is a large fraction of the allowance, so somebody can
+ * do a day's work in a sitting and then wait. Enforcing the pace slice would
+ * have dispatched a PRO Work run under a $0.076 ceiling where the per-run table
+ * it replaced gave it $2, and the composer would have said "runs until the work
+ * is done" over a runtime that stopped it at seven cents.
+ *
+ * So the session cell is sized as a BURST allowance against the weekly cell,
+ * which is the real rolling cap. Half of it, because a weekly window one
+ * sitting can empty is a weekly window in name only, and because half a week's
+ * allowance is already far more than any single run realistically spends.
+ */
+export const SESSION_BURST_SHARE_OF_WEEK = 0.5;
+
+/**
+ * The smallest a window may be before it is allowed to refuse anything.
+ *
+ * Expressed as a multiple of a Work run's admission hold, because that is the
+ * failure it exists to prevent rather than a round number somebody liked.
+ * `checkUsageWindows` subtracts open reservations, and `createRun` holds
+ * `DEFAULT_ESTIMATE_MICRO_USD.work` for the whole life of a run — so a window
+ * smaller than that hold is a window one admitted run consumes entirely, and
+ * for as long as that run is in flight every chat turn on the account is
+ * refused with "you've used up your 5-hour usage limit" and no further run can
+ * be dispatched. An order of magnitude of headroom is what keeps one run's hold
+ * a fraction of the window rather than the whole of it.
+ *
+ * Clamped to the period budget at the point of use: an account whose whole
+ * month is smaller than this floor has no burst to allow, and the month is its
+ * real limit. Handing it a window LARGER than its month would be a window that
+ * can never bind while the surfaces went on naming it as the thing that stops a
+ * run.
+ */
+export const WINDOW_GATE_FLOOR_MICRO_USD = 10 * DEFAULT_ESTIMATE_MICRO_USD.work;
+
+export type UsageWindowName = "session" | "weekly";
+
+/** Which grid cell a window is in right now, and what that cell is worth. */
+export interface UsageWindowCell {
+  /** Start of the cell that contains `now`; spend is counted from here. */
+  startMs: number;
+  /** When this cell rolls over and the window frees up. */
+  resetsAtMs: number;
+  /**
+   * What this cell REFUSES at — the burst allowance, not the pace slice.
+   *
+   * This is the number a run is dispatched under and the number a chat turn is
+   * admitted against, so it has to be a figure a real sitting can spend.
+   */
+  budgetMicroUsd: number;
+  /**
+   * The cell's time-proportional share of the period budget, for the METER
+   * alone: spend ÷ this is "am I on pace to spend the month in this window?".
+   *
+   * Separate from `budgetMicroUsd` because the two answer different questions
+   * and one number cannot answer both. Drawing the gate as the meter would tell
+   * a PRO account it had used 3% of its five hours while it was on pace to
+   * spend the month thirty times over; enforcing the meter would refuse a run
+   * the account could comfortably afford.
+   */
+  paceBudgetMicroUsd: number;
+}
+
+export interface UsageWindowGrid {
+  session: UsageWindowCell;
+  weekly: UsageWindowCell;
+}
+
+/**
+ * Where the two rolling grids stand, from the billing period alone.
+ *
+ * Anchored to the subscription rather than to the clock, so a window resets on
+ * the subscriber's own schedule and not at whatever hour they happened to open
+ * the page. Pure, so the boundary arithmetic that decides when somebody is told
+ * to come back is covered by a test rather than by a screenshot.
+ */
+export function usageWindowGrid(input: {
+  anchorMs: number;
+  periodStartMs: number;
+  periodEndMs: number;
+  monthBudgetMicroUsd: number;
+  nowMs: number;
+}): UsageWindowGrid {
+  const periodMs = Math.max(input.periodEndMs - input.periodStartMs, REFERENCE_MONTH_MS);
+  const elapsed = Math.max(0, input.nowMs - input.anchorMs);
+  const pace = (span: number) => Math.round(input.monthBudgetMicroUsd * (span / periodMs));
+  // The floor cannot exceed the month it is carved out of, or an account with a
+  // tiny period budget would be handed a window it can never reach while every
+  // surface went on naming that window as the thing that stops a run.
+  const floor = Math.min(input.monthBudgetMicroUsd, WINDOW_GATE_FLOOR_MICRO_USD);
+  // The weekly cell stays a true seven-day share of the month: it is the real
+  // rolling cap, and the figure the rest of this package is written around.
+  const weeklyGate = Math.max(pace(WEEKLY_WINDOW_MS), floor);
+  // The session cell is a share of THAT, and never more than it: a five-hour
+  // window looser than the weekly one could not bind either.
+  const sessionGate = Math.min(
+    weeklyGate,
+    Math.max(Math.round(weeklyGate * SESSION_BURST_SHARE_OF_WEEK), floor)
+  );
+  const cell = (span: number, budgetMicroUsd: number): UsageWindowCell => {
+    const startMs = input.anchorMs + Math.floor(elapsed / span) * span;
+    return {
+      startMs,
+      resetsAtMs: startMs + span,
+      budgetMicroUsd,
+      paceBudgetMicroUsd: pace(span),
+    };
+  };
+  return {
+    session: cell(SESSION_WINDOW_MS, sessionGate),
+    weekly: cell(WEEKLY_WINDOW_MS, weeklyGate),
+  };
+}
+
+/** One window as the ledger reports it. A null budget means nothing is metered. */
+export interface WindowSpend {
+  spentMicroUsd: number;
+  budgetMicroUsd: number | null;
+  resetsAtMs: number;
+  /**
+   * Open holds opened INSIDE this cell, when the caller can scope them.
+   *
+   * Window-scoped rather than period-scoped because a hold taken by a run that
+   * started six hours ago belongs to a five-hour cell that has already rolled
+   * over — charging it to the current cell would refuse work against money the
+   * window never saw. The caller that cannot scope them passes none and uses
+   * `heldMicroUsd` below, which is the safe direction.
+   */
+  heldMicroUsd?: number;
+}
+
+/** The window with the least room, and what it has left. */
+export interface BindingWindow {
+  name: UsageWindowName;
+  /**
+   * Room left, which may be NEGATIVE when the holds exceed the cell.
+   *
+   * Left unclamped so the caller can tell "exactly spent" from "overdrawn";
+   * `windowVerdict` is where it becomes a number safe to hand to a guard.
+   */
+  remainingMicroUsd: number;
+  resetsAtMs: number;
+}
+
+/**
+ * Which of the two windows has the least room — the one derivation.
+ *
+ * Exported because the gate is not the only surface that has to name a binding
+ * window: the composer's disclosure, the voice briefing and the schedule editor
+ * all tell the reader which limit will stop their run, and they used to pick it
+ * by PERCENTAGE used while this picked it by absolute remainder. The weekly
+ * budget is many times the session budget, so the two disagreed routinely — a
+ * composer saying "runs until your weekly limit is used up" and naming a reset
+ * a day away, over a run the five-hour cell was about to stop. Two derivations
+ * of one fact is the defect this package exists to remove, so there is one.
+ *
+ * Null only when neither window has a budget, which is the account that has
+ * switched enforcement off.
+ */
+export function bindingWindow(input: {
+  session: WindowSpend;
+  weekly: WindowSpend;
+  heldMicroUsd?: number;
+}): BindingWindow | null {
+  const held = Math.max(0, Math.round(input.heldMicroUsd ?? 0));
+  const candidates: BindingWindow[] = [];
+  for (const [name, window] of [
+    ["session", input.session],
+    ["weekly", input.weekly],
+  ] as const) {
+    if (window.budgetMicroUsd == null) continue;
+    candidates.push({
+      name,
+      remainingMicroUsd:
+        window.budgetMicroUsd -
+        window.spentMicroUsd -
+        Math.max(0, Math.round(window.heldMicroUsd ?? 0)) -
+        held,
+      resetsAtMs: window.resetsAtMs,
+    });
+  }
+  if (candidates.length === 0) return null;
+  // Strictly less, so an equal pair leaves the session window in front.
+  return candidates.reduce((tightest, next) =>
+    next.remainingMicroUsd < tightest.remainingMicroUsd ? next : tightest
+  );
+}
+
+export interface WindowVerdict {
+  /** False when either window is spent. */
+  allowed: boolean;
+  /**
+   * Which window binds — the one with the least room, spent or not.
+   *
+   * Named rather than flattened into a boolean because a reader told the wrong
+   * one waits five hours for a weekly limit, or gives up on a task that would
+   * have been startable after lunch. Null only when there is no window at all.
+   */
+  bound: UsageWindowName | null;
+  /** Room left in the binding window; null when there is no window. */
+  remainingMicroUsd: number | null;
+  /** When the binding window frees up; null when there is no window. */
+  resetsAtMs: number | null;
+}
+
+/**
+ * Which window binds, given what each has spent and what is held against them.
+ *
+ * `heldMicroUsd` is open reservations plus any spend the caller knows about
+ * that has not reached the ledger yet. It must be subtracted, or two runs
+ * admitted together would each be told they had the whole remainder — the same
+ * read-then-act window `reserveSpend` closes for the month, and it is wider
+ * here because a window is a smaller number than a month.
+ *
+ * The tie-break is the session window, and it is the kind answer rather than an
+ * arbitrary one: when both windows have the same room left, the session window
+ * is the one that frees up first, so naming it tells the reader the shorter
+ * wait, which is also the true one.
+ */
+export function windowVerdict(input: {
+  session: WindowSpend;
+  weekly: WindowSpend;
+  heldMicroUsd?: number;
+}): WindowVerdict {
+  const binding = bindingWindow(input);
+  if (binding == null) {
+    return { allowed: true, bound: null, remainingMicroUsd: null, resetsAtMs: null };
+  }
+  return {
+    allowed: binding.remainingMicroUsd > 0,
+    bound: binding.name,
+    // Clamped here and not in `bindingWindow`: this number is handed to a
+    // guard as a ceiling, and a negative one would be read as no ceiling.
+    remainingMicroUsd: Math.max(0, binding.remainingMicroUsd),
+    resetsAtMs: binding.resetsAtMs,
+  };
+}
+
+/** The binding window in the reader's words, as the tail of a sentence. */
+export function describeWindow(bound: UsageWindowName): string {
+  return bound === "session" ? "5-hour limit" : "weekly limit";
+}
+
+/**
+ * The sentence a refusal carries.
+ *
+ * It names the window and when it frees up, because "you are out of budget" and
+ * "you are out of budget until 14:00" send a reader to two different places —
+ * the first to the pricing page, the second to lunch. A window is a wait rather
+ * than a purchase, and saying so is the whole difference between this limit and
+ * the monthly one it sits inside.
+ */
+export function windowLimitMessage(bound: UsageWindowName, resetsAtMs: number | null): string {
+  const window = bound === "session" ? "5-hour usage limit" : "weekly usage limit";
+  if (resetsAtMs == null) return `You've used up your ${window}.`;
+  const when = new Date(resetsAtMs).toLocaleString("en-US", {
+    ...(bound === "weekly" ? { weekday: "long" as const } : {}),
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+  return `You've used up your ${window}. It frees up at ${when} UTC.`;
 }

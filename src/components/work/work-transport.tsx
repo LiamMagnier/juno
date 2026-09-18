@@ -51,7 +51,9 @@ import type {
  *          409 → { error: "no_executor_available" | "session_already_running" |
  *                  "expensive_confirmation_required", message, missing?,
  *                  degradation?, confirmation? }
- *          429 → { error: "run_cap_exceeded" | "dispatch_in_flight", message }
+ *          429 → { error: "run_cap_exceeded" | "dispatch_in_flight" |
+ *                  "spend_cap_exceeded" | "usage_window_exceeded", message,
+ *                  window?, resetsAtMs? }
  *   GET  /api/work/sessions/[id]/events?runId=<id>&after=<seq>   (SSE)
  *          data: { type: "snapshot" | "events" | "done", session, run, events,
  *                  approvals }
@@ -1228,9 +1230,10 @@ export interface WorkScheduleInput {
   notifyPolicy: string;
   maxConcurrentRuns: number;
   /**
-   * Per-run ceilings. Zero on any axis means "no ceiling of the schedule's
-   * own" — the account's plan ceiling then applies, because the dispatchers
-   * merge this with `runBudgetForPlan` through `narrowestBudget`.
+   * This schedule's own ceilings. Zero on any axis means "no ceiling of the
+   * schedule's own", which is the ordinary case: the dispatchers merge this
+   * with `runBudgetForWindow` through `narrowestBudget`, so what bounds the run
+   * is what the account's rolling usage window has left.
    */
   budget?: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
   /** The model every fire runs on. Null clears the override; absent leaves it. */

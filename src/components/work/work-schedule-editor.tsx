@@ -18,8 +18,8 @@ import {
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
 import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
-import type { Plan } from "@prisma/client";
-import { ceilingFieldValue, runBudgetForPlan } from "@/lib/work/budget";
+import { ceilingFieldValue } from "@/lib/work/budget";
+import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
 import { useApp } from "@/components/app/app-provider";
 import { MODEL_LIST } from "@/lib/models";
 import { isWorkCapableModel } from "@/lib/work/models";
@@ -158,10 +158,10 @@ interface ScheduleDraft {
   notifyPolicy: WorkNotifyPolicy;
   maxConcurrentRuns: number;
   /**
-   * Per-run ceilings, as the reader types them: dollars, tokens and minutes.
-   * Empty means "whatever my plan allows" — the dispatchers merge zeros with
-   * `runBudgetForPlan`, so an empty field is the honest default, not
-   * "unlimited".
+   * This schedule's own ceilings, as the reader types them: dollars, tokens and
+   * minutes. Empty means "no ceiling of its own" — the dispatchers merge zeros
+   * with what the account's rolling window has left, so an empty field is the
+   * honest default rather than "unlimited".
    */
   budget: { costUsd: string; tokens: string; minutes: string };
   /** The model every fire runs on. Empty means the task's own. */
@@ -172,25 +172,24 @@ function oneOf<T extends string>(options: readonly T[], value: string, fallback:
   return (options as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
-/**
- * This account's ceilings in the units the fields take, for placeholders and
- * caps.
+/*
+ * There is no account ceiling for these fields to be checked against any more.
  *
- * Read from the plan, because a schedule may only ever LOWER a ceiling: a
- * placeholder or a cap showing PRO's twenty minutes to a trial account would
- * invite a number the dispatcher then silently narrows to ten, and the reader
- * would have no way to tell that from a bug.
+ * `standardCeiling` used to read `runBudgetForPlan` and feed the three `max`
+ * attributes and the three placeholders, because a schedule could only LOWER a
+ * plan's ceiling and a placeholder showing PRO's twenty minutes to a trial
+ * account invited a number the dispatcher then silently narrowed to ten. The
+ * plan table is gone: what bounds a run is the account's rolling 5-hour window,
+ * and what that window has left at 07:00 tomorrow is not a number this form can
+ * know today.
+ *
+ * So the fields lose their caps rather than keeping a cap that is a guess. What
+ * a reader types is a ceiling this schedule imposes on ITSELF, and the helper
+ * text under the fields says the whole truth: whichever is smaller, this or
+ * what the window has left when it fires.
  */
-function standardCeiling(plan: Plan) {
-  const budget = runBudgetForPlan(plan);
-  return {
-    costUsd: budget.maxCostMicroUsd / 1_000_000,
-    tokens: budget.maxTokens,
-    minutes: Math.round(budget.maxRuntimeMs / 60_000),
-  };
-}
 
-/** A stored ceiling as a field value: zero is "standard", and shows as empty. */
+/** A stored ceiling as a field value: zero is "no ceiling", and shows as empty. */
 function ceilingField(value: number): string {
   return value > 0 ? String(value) : "";
 }
@@ -273,9 +272,10 @@ export function WorkScheduleEditor({
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
   const [grants, setGrants] = React.useState<ClientWorkGrant[] | null>(null);
-  // The account's own ceilings, which the fields below can only lower.
-  const { quota } = useApp();
-  const ceiling = standardCeiling(quota.plan);
+  // What will stop a run on this account, so the fields below can say what
+  // happens when they are left empty without naming a figure that is not one.
+  const { spend } = useApp();
+  const limit = runLimitFrom(spend);
 
   React.useEffect(() => {
     if (draft.timezone.length > 0) return;
@@ -323,15 +323,16 @@ export function WorkScheduleEditor({
   // a local schedule has to name its Mac, or a 07:00 fire lands on whichever
   // laptop happens to be awake.
   const missingHost = draft.target === "local" && draft.hostId === null;
-  // Checked against this account's own ceilings, not merely against zero. The
-  // `max` attributes below are advisory — a browser flags the overflow and
-  // still reports the value — so without this the form saved a figure the
-  // dispatcher then narrowed, which is the outcome the placeholders exist to
-  // prevent.
+  // A number or nothing. There is no account ceiling left to check these
+  // against — see the note above `ceilingField` — so what is refused is what
+  // cannot be a ceiling at all: a negative figure, or something that is not a
+  // number. `ceilingFieldValue` still parses them, so a browser that reports a
+  // typed value the `step` did not produce cannot get a fraction of a cent
+  // saved as a run's whole budget.
   const budget = {
-    costUsd: ceilingFieldValue(draft.budget.costUsd, ceiling.costUsd),
-    tokens: ceilingFieldValue(draft.budget.tokens, ceiling.tokens),
-    minutes: ceilingFieldValue(draft.budget.minutes, ceiling.minutes),
+    costUsd: ceilingFieldValue(draft.budget.costUsd),
+    tokens: ceilingFieldValue(draft.budget.tokens),
+    minutes: ceilingFieldValue(draft.budget.minutes),
   };
   const budgetValid = budget.costUsd !== null && budget.tokens !== null && budget.minutes !== null;
   const canSave =
@@ -365,7 +366,8 @@ export function WorkScheduleEditor({
       notifyPolicy: draft.notifyPolicy,
       maxConcurrentRuns: draft.maxConcurrentRuns,
       // Whole units on the wire, in the units the columns hold. An empty field
-      // is zero, which every dispatcher reads as "the standard ceiling".
+      // is zero, which every dispatcher reads as "no ceiling of this
+      // schedule's own" — so the account's window is what bounds the run.
       budget: {
         maxCostMicroUsd: Math.round((budget.costUsd ?? 0) * 1_000_000),
         maxTokens: Math.round(budget.tokens ?? 0),
@@ -534,10 +536,11 @@ export function WorkScheduleEditor({
         `maxConcurrentRuns` on both schedule routes — and the editor sent
         defaults for all of them: zeros for the budget, nothing for the model,
         one for concurrency. Zero on a budget column means "no ceiling of the
-        schedule's own"; the dispatchers now merge it with the account's plan
-        ceiling, so an empty field here is that ceiling, and a number is a
-        LOWER one. The placeholders say what the plan allows so the reader is
-        never asked to lower a ceiling they were not told.
+        schedule's own", and that is now the ordinary case: what bounds a run is
+        the account's rolling window, and a number here is a SMALLER ceiling
+        this schedule chooses for itself. The placeholders used to state the
+        plan's own figures; there is no plan figure any more, so they say what
+        an empty field means instead of a number that would be a guess.
       */}
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">
@@ -546,19 +549,18 @@ export function WorkScheduleEditor({
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="schedule-budget-cost">Cost, in US dollars</Label>
-            {/* A cent, not a quarter. FREE's whole run ceiling is $0.15, so
-                every quarter-step above zero was above the max as well, and a
-                trial account's cost field could hold nothing but empty. */}
+            {/* A cent, not a quarter: a schedule set to spend a few cents a
+                morning is a real thing somebody writes, and a quarter-step
+                cannot express it. */}
             <Input
               id="schedule-budget-cost"
               type="number"
               inputMode="decimal"
               min={0}
-              max={ceiling.costUsd}
               step="0.01"
               value={draft.budget.costUsd}
               onChange={(event) => set("budget", { ...draft.budget, costUsd: event.target.value })}
-              placeholder={String(ceiling.costUsd)}
+              placeholder="No limit"
               disabled={saving}
               className="mt-1"
             />
@@ -570,11 +572,10 @@ export function WorkScheduleEditor({
               type="number"
               inputMode="numeric"
               min={0}
-              max={ceiling.tokens}
               step={10_000}
               value={draft.budget.tokens}
               onChange={(event) => set("budget", { ...draft.budget, tokens: event.target.value })}
-              placeholder={String(ceiling.tokens)}
+              placeholder="No limit"
               disabled={saving}
               className="mt-1"
             />
@@ -586,28 +587,25 @@ export function WorkScheduleEditor({
               type="number"
               inputMode="numeric"
               min={0}
-              max={ceiling.minutes}
               step={1}
               value={draft.budget.minutes}
               onChange={(event) => set("budget", { ...draft.budget, minutes: event.target.value })}
-              placeholder={String(ceiling.minutes)}
+              placeholder="No limit"
               disabled={saving}
               className="mt-1"
             />
           </div>
         </div>
         <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-          Empty means your plan’s ceiling — ${ceiling.costUsd},{" "}
-          {ceiling.tokens.toLocaleString("en-US")} tokens or {ceiling.minutes}{" "}
-          minutes of working time, whichever comes first. A number here lowers one of them for this
-          schedule; nothing raises them. A run fired while nobody is watching is capped at $
-          {Math.min(ceiling.costUsd, 1)} unless you set a lower figure.
+          {limit.unmetered
+            ? "Empty means no ceiling of this schedule’s own. Spending limits are switched off on this account, so a run fired while nobody is watching stops at a small backstop ceiling unless you set a figure here."
+            : `Empty means no ceiling of this schedule’s own: a run goes until the work is done or until your ${
+                limit.window === "session" ? "5-hour" : "weekly"
+              } usage limit is used up. A number here is a smaller ceiling for this schedule, and whichever is smaller wins — this, or what the window has left when it fires.`}
         </p>
         {!budgetValid && (
           <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
-            Each ceiling has to be left empty, or a number between zero and your plan’s own —
-            ${ceiling.costUsd}, {ceiling.tokens.toLocaleString("en-US")} tokens, {ceiling.minutes}{" "}
-            minutes.
+            Each ceiling has to be left empty, or a number of zero or more.
           </p>
         )}
 

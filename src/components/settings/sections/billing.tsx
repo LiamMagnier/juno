@@ -285,8 +285,14 @@ export function BillingSection() {
                   />
                 ))}
               </div>
+              {/* No meter at 0%, and now a second sentence, because the
+                  windows became the thing that bounds a delegated run. With
+                  metering off there is no window to run out of — so the reader
+                  who switched it off is told what is still in front of an
+                  unattended loop rather than left to assume it is nothing. */}
               <p className="mt-2 text-ui text-muted-foreground">
-                Nothing is metering this account right now.
+                Nothing is metering this account right now. A task Juno starts on its own still stops
+                at a small backstop ceiling, so an unattended loop cannot run all night.
               </p>
             </div>
           ) : quota.plan === "FREE" ? (

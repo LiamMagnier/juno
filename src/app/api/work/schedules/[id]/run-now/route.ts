@@ -10,7 +10,9 @@ import {
   narrowestPolicy,
   selectTarget,
 } from "@/lib/work/domain";
-import { runBudgetForPlan } from "@/lib/work/budget";
+import { runBudgetForWindow } from "@/lib/work/budget";
+import { checkUsageWindows } from "@/lib/spend";
+import { windowLimitMessage } from "@/lib/spend-ceiling";
 import { createRun } from "@/lib/work/store";
 import { serializeRun } from "@/lib/work/serializers";
 import {
@@ -152,6 +154,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // against one plan and dispatched under another's ceiling.
   const plan = await getUserPlan(user.id);
 
+  // What the account has left in the window that binds it — the only ceiling a
+  // run has now. The same read refuses the press and sizes the run's cost
+  // ceiling; the reasoning is in `src/lib/work/budget.ts`.
+  const windows = await checkUsageWindows(user.id, plan);
+  if (!windows.allowed && windows.bound !== null) {
+    return NextResponse.json(
+      {
+        error: "usage_window_exceeded",
+        message: `${windowLimitMessage(windows.bound, windows.resetsAtMs)} Nothing was started.`,
+        window: windows.bound,
+        resetsAtMs: windows.resetsAtMs,
+      },
+      { status: 429 }
+    );
+  }
+
   const created = await createRun({
     sessionId: schedule.sessionId,
     userId: user.id,
@@ -170,19 +188,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     availableCapabilities: selection.available,
     degradation: selection.degradation,
     permissionPolicy,
-    // The schedule's own figures, narrowed against this account's plan ceiling.
-    // A schedule with no budget of its own stores zeros, and zero means "no
-    // ceiling" to `budgetExceeded` — so before this merge a run pressed from
-    // the schedule page was the only kind with nothing but the 200-turn cap
-    // bounding it, while the same task started from the composer got a real
-    // one. `narrowestBudget` skips the zeros rather than clamping to them.
+    // The schedule's own figures, narrowed against what the account's binding
+    // window has left. A schedule with no budget of its own stores zeros, and
+    // zero means "no ceiling" to `budgetExceeded` — so before this merge a run
+    // pressed from the schedule page was the only kind with nothing but the
+    // step cap bounding it, while the same task started from the composer got a
+    // real one. `narrowestBudget` skips the zeros rather than clamping to them,
+    // which is what lets a schedule ask for LESS than the window and never for
+    // more.
     budget: narrowestBudget(
       {
         maxCostMicroUsd: schedule.maxCostMicroUsd,
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },
-      runBudgetForPlan(plan)
+      runBudgetForWindow(windows.remainingMicroUsd)
     ),
     plan,
     idempotencyKey,

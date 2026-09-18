@@ -9,11 +9,16 @@ import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
+  REFERENCE_MONTH_MS,
   unitCeilingMicroUsd,
   effectiveBudget,
+  usageWindowGrid,
+  windowVerdict,
   type BudgetCapSource,
   type EffectiveBudget,
   type SpendKind,
+  type UsageWindowCell,
+  type UsageWindowName,
 } from "@/lib/spend-ceiling";
 
 /**
@@ -386,18 +391,21 @@ export async function recordWorkRunSpend(input: {
   }
 }
 
-// Usage windows for the settings gauge (DISPLAY ONLY — the billing-period gate
-// in checkBudget is the sole hard limit; windows never block on their own).
-// Each window's budget is its exact TIME-PROPORTIONAL share of the period, so
-// the windows TILE the period budget perfectly: the weekly budgets and the
-// session budgets each sum to exactly the €15 cap across a month (a window at
-// 100% = on pace to spend precisely the period budget). This is the only split
-// that stays honest to the €15 ceiling — dividing by a whole 4 weeks (a month
-// is really 4.29 weeks) would over-allocate. Session/week grids are anchored to
-// the subscription so they reset on the subscriber's own schedule.
-const SESSION_MS = 5 * 60 * 60 * 1000; // 5-hour "current session" window
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // weekly window
-const MONTH_MS = 30 * 24 * 60 * 60 * 1000; // reference month (checkBudget fallback)
+// The rolling windows are SESSION_WINDOW_MS and WEEKLY_WINDOW_MS, and their
+// grid arithmetic is `usageWindowGrid` — both in spend-ceiling.ts, so the
+// numbers that decide when somebody is told to come back are covered by a test
+// rather than reachable only through Prisma. Each window carries TWO figures
+// and the difference is the whole point: the METER's denominator is the exact
+// time-proportional share of the period, so the pace slices tile the €15 cap
+// perfectly (a window at 100% = on pace to spend precisely the period budget),
+// while what the window REFUSES at is a burst allowance sized so a sitting can
+// actually be spent in one. Enforcing the pace slice would be a far tighter
+// ceiling than the per-run table this replaced — see `SESSION_BURST_SHARE_OF_WEEK`.
+//
+// They are no longer display-only. `checkUsageWindows` below is the gate, and
+// it is what bounds a delegated run now that the per-run ceiling is gone; the
+// billing-period figure in `checkBudget` remains the outer bound, because a
+// window is a slice of it and the month can still refuse.
 
 /** Sum of a user's spend since a given instant, in micro-USD. */
 async function spendSinceMicroUsd(userId: string, since: Date): Promise<number> {
@@ -576,7 +584,7 @@ export async function checkBudget(
   }
   const budgetMicroUsd = eff.budgetMicroUsd;
   const p = period ?? (await resolveBillingPeriod(userId));
-  const since = p ? new Date(p.startMs) : new Date(Date.now() - MONTH_MS);
+  const since = p ? new Date(p.startMs) : new Date(Date.now() - REFERENCE_MONTH_MS);
   if (p) await expireStaleSpendReservations(userId);
   const [spentMicroUsd, reservedMicroUsd] = await Promise.all([
     spendSinceMicroUsd(userId, since),
@@ -609,13 +617,33 @@ export async function checkBudget(
  * important: the admission UPDATE and the display value must describe the same
  * ledger. Previously the read ignored old rows while the conditional UPDATE
  * still counted them, so the UI promised room that every new run was refused.
+ *
+ * `ignoreRef` exists for a caller that is measuring ITS OWN unit of work: a run
+ * asking mid-flight whether its window is spent knows what it has spent so far
+ * and would otherwise be charged twice for it — once as its open estimate here,
+ * and again as the live figure it hands in.
+ *
+ * `sinceMs` is for a caller measuring a WINDOW rather than the period. A hold
+ * opened six hours ago belongs to a five-hour cell that has already rolled
+ * over, and charging it to the current cell refuses work against money this
+ * window never saw — with a Work run's hold larger than a small window, one
+ * long-running run would otherwise close the account's chat for its whole
+ * duration. The monthly gate passes nothing and keeps the period scope, which
+ * is the right scope for the month.
  */
-async function openReservedMicroUsd(userId: string, period: BillingPeriod): Promise<number> {
+async function openReservedMicroUsd(
+  userId: string,
+  period: BillingPeriod,
+  ignoreRef: string | null = null,
+  sinceMs: number | null = null
+): Promise<number> {
   const agg = await prisma.spendReservation.aggregate({
     where: {
       userId,
       state: "open",
       spendPeriod: { userId, period: spendPeriodKey(period) },
+      ...(ignoreRef ? { ref: { not: ignoreRef } } : {}),
+      ...(sinceMs != null ? { createdAt: { gte: new Date(sinceMs) } } : {}),
     },
     _sum: { estimateMicroUsd: true },
   });
@@ -980,10 +1008,18 @@ async function commitToSpendPeriod(userId: string, costMicroUsd: number): Promis
 
 export interface UsageWindow {
   spentMicroUsd: number;
-  /** This window's proportional slice of the period budget; null = unlimited. */
+  /**
+   * What this window refuses at — the burst allowance; null = unlimited.
+   *
+   * NOT the denominator of `pct`. This is the figure a run is dispatched under
+   * and a chat turn is admitted against; the meter below answers a different
+   * question and has a different denominator.
+   */
   budgetMicroUsd: number | null;
-  /** spend ÷ budget (0..∞; 1 = on pace for the full period budget). */
+  /** spend ÷ the window's PACE slice (0..∞; 1 = on pace for the full period budget). */
   pct: number;
+  /** Epoch ms when this window's grid cell began; spend is counted from here. */
+  startMs: number;
   /** Epoch ms when this window's grid cell rolls over. */
   resetsAtMs: number;
 }
@@ -1000,6 +1036,11 @@ export interface UsageWindows {
  * lowering the cap in settings has to move the meters with it, or the gauge
  * says "12% used" for an account that is out of budget.
  * A null ceiling (the cap disabled) means no metering.
+ *
+ * The grid arithmetic is `usageWindowGrid` in spend-ceiling.ts; this reads the
+ * ledger over the cells it returns. Two callers use this for the meters, and
+ * `checkUsageWindows` below uses it for the gate — one derivation, so what a
+ * reader is shown and what refuses them cannot be two different numbers.
  */
 export async function getUsageWindows(
   userId: string,
@@ -1009,29 +1050,169 @@ export async function getUsageWindows(
 ): Promise<UsageWindows> {
   const nowMs = now.getTime();
   if (monthBudget == null || period == null) {
-    const w: UsageWindow = { spentMicroUsd: 0, budgetMicroUsd: null, pct: 0, resetsAtMs: nowMs };
+    const w: UsageWindow = {
+      spentMicroUsd: 0,
+      budgetMicroUsd: null,
+      pct: 0,
+      startMs: nowMs,
+      resetsAtMs: nowMs,
+    };
     return { session: w, weekly: w };
   }
-  // Time-proportional budgets: each window gets its exact fraction of the
-  // period budget, so weekly (× ~4.29/mo) and session (× 144/mo) each sum to €15.
-  const periodMs = Math.max(period.endMs - period.startMs, MONTH_MS);
-  const elapsed = Math.max(0, nowMs - period.anchorMs);
-  const sessionStart = period.anchorMs + Math.floor(elapsed / SESSION_MS) * SESSION_MS;
-  const weekStart = period.anchorMs + Math.floor(elapsed / WEEK_MS) * WEEK_MS;
+  const grid = usageWindowGrid({
+    anchorMs: period.anchorMs,
+    periodStartMs: period.startMs,
+    periodEndMs: period.endMs,
+    monthBudgetMicroUsd: monthBudget,
+    nowMs,
+  });
   const [sessionSpent, weekSpent] = await Promise.all([
-    spendSinceMicroUsd(userId, new Date(sessionStart)),
-    spendSinceMicroUsd(userId, new Date(weekStart)),
+    spendSinceMicroUsd(userId, new Date(grid.session.startMs)),
+    spendSinceMicroUsd(userId, new Date(grid.weekly.startMs)),
   ]);
-  const mk = (spent: number, budget: number, resetsAtMs: number): UsageWindow => ({
+  // `pct` reads the PACE slice and `budgetMicroUsd` the burst allowance, and
+  // the two are deliberately different numbers: the meter says whether this
+  // window is on pace to spend the month, and the gate says what one sitting
+  // may cost. One figure cannot answer both without lying about one of them.
+  const mk = (spent: number, cell: UsageWindowCell): UsageWindow => ({
     spentMicroUsd: spent,
-    budgetMicroUsd: budget,
-    pct: budget > 0 ? spent / budget : 0,
-    resetsAtMs,
+    budgetMicroUsd: cell.budgetMicroUsd,
+    pct: cell.paceBudgetMicroUsd > 0 ? spent / cell.paceBudgetMicroUsd : 0,
+    startMs: cell.startMs,
+    resetsAtMs: cell.resetsAtMs,
   });
   return {
-    session: mk(sessionSpent, Math.round(monthBudget * (SESSION_MS / periodMs)), sessionStart + SESSION_MS),
-    weekly: mk(weekSpent, Math.round(monthBudget * (WEEK_MS / periodMs)), weekStart + WEEK_MS),
+    session: mk(sessionSpent, grid.session),
+    weekly: mk(weekSpent, grid.weekly),
   };
+}
+
+export interface UsageWindowStatus {
+  /** False when either window is spent. */
+  allowed: boolean;
+  /** Which window binds. Null only when there is no window to enforce. */
+  bound: UsageWindowName | null;
+  /**
+   * Room left in the binding window, after settled spend AND open holds.
+   *
+   * This is the number a run is dispatched with: it becomes the run's cost
+   * ceiling, so the executor's own guard stops a runaway loop at exactly the
+   * point the account runs out of window. Null when there is no window.
+   */
+  remainingMicroUsd: number | null;
+  /** When the binding window frees up. Null when there is no window. */
+  resetsAtMs: number | null;
+  /** The meters themselves, unadjusted — holds are netted into `remaining` only. */
+  session: UsageWindow;
+  weekly: UsageWindow;
+  /** Micro-USD held by work still running, scoped to the weekly cell. */
+  reservedMicroUsd: number;
+  /** `Settings.spendCapDisabled` is on, so there is no window. Say so. */
+  capDisabled: boolean;
+}
+
+/**
+ * The window gate — the counterpart to `getUsageWindows`, which only meters.
+ *
+ * This is what refuses a run now that the per-run ceiling is gone. A run goes
+ * until it is finished or until the account's five-hour window is used up, and
+ * this is the function that knows which. Keep `checkBudget` beside it: a window
+ * is a slice of the month, so the month can still refuse, and it is the outer
+ * bound rather than a duplicate of this one.
+ *
+ * It subtracts open reservations exactly as `checkBudget` does, and it reaps
+ * stale ones first for the same reason that function does — the mid-run caller
+ * is not standing beside a monthly gate that would have reaped them, and a hold
+ * left over from a crashed worker would make the window read full and stop a
+ * run that had room. Each window's holds are scoped to ITS OWN cell rather
+ * than to the billing period: a Work run's hold outlives a five-hour cell
+ * easily — the reaper leaves it alone precisely because the run genuinely is
+ * still spending — and a period-scoped sum would charge that one hold to every
+ * cell it lived through, closing the account's chat for the whole run.
+ *
+ * `pendingMicroUsd` is spend the caller has made that has not reached the
+ * ledger yet — a running Work run bills at its pause and terminal boundaries,
+ * so between them its own cost is invisible here and the window would say there
+ * was room it had already spent. Pass `ignoreReservationRef` with it, or the
+ * caller's own hold is counted twice.
+ */
+export async function checkUsageWindows(
+  userId: string,
+  plan: Plan,
+  period?: BillingPeriod | null,
+  budget?: EffectiveBudget,
+  options: {
+    now?: Date;
+    pendingMicroUsd?: number;
+    ignoreReservationRef?: string | null;
+  } = {}
+): Promise<UsageWindowStatus> {
+  const now = options.now ?? new Date();
+  const eff = budget ?? (await resolveEffectiveBudget(userId, plan));
+  if (eff.budgetMicroUsd == null) {
+    // Enforcement is switched off, so there is no period to slice and no window
+    // to be out of. Answered before the period is even resolved: this is the
+    // one account that reaches here on every chat turn, and reading a billing
+    // period to derive two windows that cannot exist is a query bought for
+    // nothing. The backstop for a run dispatched under this is
+    // `unattendedRunCeiling`; the reasoning is on that constant.
+    const unmetered = await getUsageWindows(userId, null, null, now);
+    return {
+      allowed: true,
+      bound: null,
+      remainingMicroUsd: null,
+      resetsAtMs: null,
+      session: unmetered.session,
+      weekly: unmetered.weekly,
+      reservedMicroUsd: 0,
+      capDisabled: true,
+    };
+  }
+  const p = period ?? (await resolveBillingPeriod(userId, now));
+  // The reap has to finish before the holds are summed, but it has nothing to
+  // do with the ledger read beside it — and this runs on every chat turn, so a
+  // round trip spent waiting for nothing is one worth not spending.
+  const [windows] = await Promise.all([
+    getUsageWindows(userId, eff.budgetMicroUsd, p, now),
+    expireStaleSpendReservations(userId, { now }),
+  ]);
+  // One sum per cell, not one for the period. A hold is charged to the window
+  // it was opened in: the run that started six hours ago spent its money into
+  // the ledger, where the current cell already counts whatever fell inside it,
+  // and counting the hold again would refuse work twice for one run.
+  const [sessionHeld, weeklyHeld] = await Promise.all([
+    openReservedMicroUsd(userId, p, options.ignoreReservationRef ?? null, windows.session.startMs),
+    openReservedMicroUsd(userId, p, options.ignoreReservationRef ?? null, windows.weekly.startMs),
+  ]);
+  const verdict = windowVerdict({
+    session: { ...windows.session, heldMicroUsd: sessionHeld },
+    weekly: { ...windows.weekly, heldMicroUsd: weeklyHeld },
+    heldMicroUsd: Math.max(0, Math.round(options.pendingMicroUsd ?? 0)),
+  });
+  return {
+    ...verdict,
+    session: windows.session,
+    weekly: windows.weekly,
+    reservedMicroUsd: weeklyHeld,
+    capDisabled: false,
+  };
+}
+
+/**
+ * What a Work run has already been billed for, in micro-USD.
+ *
+ * The runner needs it to ask the window an honest question mid-flight: the
+ * guard's figure is cumulative for the whole run, part of it may already be on
+ * the ledger from an earlier stretch, and adding the whole of it to what the
+ * ledger holds would bill that stretch to the window twice. Derived from the
+ * same key prefix `recordWorkRunSpend` writes, so the two cannot drift.
+ */
+export async function billedWorkRunMicroUsd(userId: string, runId: string): Promise<number> {
+  const billed = await prisma.apiSpend.aggregate({
+    where: { userId, idempotencyKey: { startsWith: `work:${runId}:` } },
+    _sum: { costMicroUsd: true },
+  });
+  return Math.max(0, billed._sum.costMicroUsd ?? 0);
 }
 
 /** "August 1" — the first day of next month (UTC); fallback reset label. */
