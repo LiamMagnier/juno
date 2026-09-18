@@ -123,8 +123,8 @@ function relativeTime(iso: string): string {
  * aria-activedescendant), the role=listbox/option rows, the single sliding
  * highlight bar (measured translateY geometry), arrow-key nav + scrollIntoView,
  * Enter-to-run, Escape (via Radix Dialog), and the pop-in/out keyframes. Each
- * surface just hands it an ordered `items` list, a `placeholder`, a `footer`,
- * and an `emptyState`.
+ * surface just hands it an ordered `items` list, a `placeholder` and an
+ * `emptyState`.
  */
 function PaletteShell({
   open,
@@ -134,7 +134,6 @@ function PaletteShell({
   query,
   onQueryChange,
   items,
-  footer,
   emptyState,
   filters,
   notices,
@@ -148,7 +147,6 @@ function PaletteShell({
   query: string;
   onQueryChange: (v: string) => void;
   items: PaletteItem[];
-  footer: React.ReactNode;
   emptyState: React.ReactNode;
   /** Optional controls between the input and the listbox (search filters). */
   filters?: React.ReactNode;
@@ -243,7 +241,7 @@ function PaletteShell({
         // times a day, so it is rightly the fastest overlay in the product. Only the
         // `!` goes, now that DialogContent no longer ships a competing
         // tailwindcss-animate chain for it to beat.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out"
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[640px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -265,7 +263,11 @@ function PaletteShell({
             onKeyDown={onKeyDown}
             placeholder={placeholder}
             className="w-full bg-transparent py-4 text-body-lg outline-none placeholder:text-muted-foreground"
-            aria-label={placeholder}
+            // `ariaLabel`, not the placeholder. The placeholder is one word
+            // now ("Search"), and a one-word accessible name on the only input
+            // of an overlay is thinner than what a screen reader had before —
+            // this is the fuller sentence the dialog is titled with.
+            aria-label={ariaLabel}
             role="combobox"
             aria-expanded="true"
             aria-haspopup="listbox"
@@ -305,7 +307,20 @@ function PaletteShell({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className="relative max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
+          /*
+           * `min-h` as well as `max-h`. With one result the dialog measured
+           * 550×233 — a squat box whose footer was a seventh of it — and with
+           * none it was shorter still, so the surface CHANGED SHAPE between
+           * keystrokes as results arrived and left. A floor holds the overlay
+           * still while you type, which is the difference between a palette
+           * and a tooltip that grew.
+           *
+           * 14rem is the height the SEARCHING state already holds — five
+           * skeleton rows at `h-12` plus their gaps — so results landing under
+           * a query never resize the overlay at all, and a short resting list
+           * does not sit in a void.
+           */
+          className="relative min-h-[14rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
         >
           {/* One highlight that glides between rows. `transform` is animated
               (not top), so it stays on the compositor. */}
@@ -434,19 +449,19 @@ function PaletteShell({
               })}
         </div>
 
-        {/* `bg-secondary`, the popover's recessed rung, not `bg-muted/25`: that
-            resolved to ~12.1% against a 13% panel, so the footer strip that is
-            supposed to sit BEHIND the list was the same colour as it.
-
-            SANS, not mono. The keycaps are already mono — that is `Kbd`'s job
-            and it is the right one, since a key is a machine thing — but
-            "navigate", "open" and "close" are words, and setting them in the
-            keycap's typeface made a legend read as a terminal prompt. It is
-            the same mistake the group headers above were making, one strip
-            lower. */}
-        <div className="flex items-center justify-between border-t border-border bg-secondary px-3.5 py-2.5 text-caption text-muted-foreground">
-          {footer}
-        </div>
+        {/*
+         * NO KEYCAP STRIP. It was a bordered, filled band carrying
+         * "↑ ↓ navigate  ↵ open · esc close" — 34px of a 233px dialog, about
+         * one seventh of the whole surface, spent restating the three
+         * conventions every search overlay on every platform already obeys.
+         * With one result in the list it was as tall as the result.
+         *
+         * It is not an accessibility loss: the listbox is a real combobox
+         * popup with `aria-activedescendant`, the row count is announced
+         * through the live region above, and arrow/enter/escape are what a
+         * screen reader's own docs say a combobox does. What went is a
+         * picture of a keyboard.
+         */}
       </DialogContent>
     </Dialog>
   );
@@ -814,22 +829,6 @@ function SearchPalette() {
     </div>
   ) : null;
 
-  const footer = (
-    <>
-      <span className="flex items-center gap-1.5">
-        <Kbd>↑</Kbd>
-        <Kbd>↓</Kbd>
-        <span className="ml-0.5">navigate</span>
-      </span>
-      <span className="flex items-center gap-1.5">
-        <Kbd>↵</Kbd>
-        <span className="ml-0.5">open</span>
-        <span className="mx-1 text-border">·</span>
-        <Kbd>esc</Kbd>
-        <span className="ml-0.5">close</span>
-      </span>
-    </>
-  );
 
   // Five states, each with its own words. "Searching" is not "nothing found",
   // and a request that failed is not an empty account — telling someone their
@@ -898,7 +897,13 @@ function SearchPalette() {
       open={open}
       onOpenChange={setOpen}
       ariaLabel="Search everything"
-      placeholder="Search chats, files, artifacts, memory and tasks"
+      // A word, not an inventory. At 17px the old placeholder —
+      // "Search chats, files, artifacts, memory and tasks" — ran the full
+      // width of the field and read as a sentence you had to finish
+      // rather than a box you type into. What it listed is still listed,
+      // in the empty state directly below, which is the one moment that
+      // list is useful and the one place there is room for it.
+      placeholder="Search"
       query={query}
       onQueryChange={setQuery}
       items={items}
@@ -906,7 +911,6 @@ function SearchPalette() {
       notices={notices}
       status={status}
       resetKey={`${trimmed}|${type}|${dateWindow}|${projectId}`}
-      footer={footer}
       emptyState={emptyState}
     />
   );
@@ -1175,22 +1179,6 @@ function CommandMenu() {
     return [...actions, ...chats, ...codeSessions, ...projectRows, ...settings];
   }, [conversations, projects, q, go, resolvedTheme, toggleTheme, mod]);
 
-  const footer = (
-    <>
-      <span className="flex items-center gap-1.5">
-        <Kbd>↑</Kbd>
-        <Kbd>↓</Kbd>
-        <span className="ml-0.5">select</span>
-      </span>
-      <span className="flex items-center gap-1.5">
-        <Kbd>↵</Kbd>
-        <span className="ml-0.5">open</span>
-        <span className="mx-1 text-border">·</span>
-        <Kbd>⌘</Kbd>
-        <Kbd>K</Kbd>
-      </span>
-    </>
-  );
 
   const emptyState = (
     <div className="px-3 py-10 text-center">
@@ -1209,7 +1197,6 @@ function CommandMenu() {
         query={query}
         onQueryChange={setQuery}
         items={items}
-        footer={footer}
         emptyState={emptyState}
       />
       <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

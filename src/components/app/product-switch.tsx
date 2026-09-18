@@ -188,35 +188,39 @@ export function ProductSwitch({
   }
 
   return (
-    // 8px is the one vertical edge every interactive box in this column already
-    // shares (Search, New chat, the Primary nav, More, the footer are all
-    // `px-2`); the brand row keeps `px-3` because it is type, not a box.
-    <nav aria-label="Juno products" className="px-3 pb-6 pt-3">
-      {/*
-       * NO TRACK. It used to be a hairline-bordered `rounded-field` box, and
-       * that box was the only framed object in the sidebar — which made the
-       * loudest thing in the quietest column a control you press perhaps twice
-       * a session (docs/design/PREMIUM_AUDIT.md §2). The thumb already says
-       * which product you are in; a frame around the segments says only that
-       * they are segments, which their own spacing says for free.
-       *
-       * `gap-0`: the segments still abut, so the thumb travels edge to edge
-       * with no dead 4px between cells. Without the border there is no
-       * concentric radius to honour and no `p-0.5` to hold it off one.
-       */}
-      <div className="relative grid grid-cols-2 gap-0">
-        {PRODUCTS.map((product) => (
-          <Segment
-            key={product.id}
-            product={product}
-            active={product.id === active}
-            locked={isLocked(product, plan)}
-            thumbId={thumbId}
-            thumbTransition={thumbTransition}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </div>
+    /*
+     * A 28px ICON PAIR IN THE BRAND ROW, not a full-width labelled pill.
+     *
+     * The pill was two 36px rows' worth of column — a `pb-6 pt-3` block with
+     * two labelled segments — spent on a control you press perhaps twice a
+     * session, directly above the field and the list you use constantly. It
+     * was also, at 100% of the panel's width, the widest object in it. The
+     * reference puts the same choice in the header beside the wordmark at
+     * ~64×28: the two glyphs ARE the labels, because there are exactly two
+     * and one of them is a speech bubble.
+     *
+     * That buys back ~72px at the top of the column — more than the search
+     * field costs — which is the room the field was argued out of the panel
+     * to save in the first place.
+     *
+     * The thumb still travels (same `layoutId`, same spring), so the control
+     * that was the panel's one moving selection keeps moving. What it loses
+     * is the words, and only because at two segments they are redundant with
+     * the marks; the accessible name still carries them, and so does the
+     * tooltip, which is the one place a label is worth its pixels.
+     */
+    <nav aria-label="Juno products" className="flex shrink-0 items-center rounded-control bg-sidebar-accent/70 p-0.5">
+      {PRODUCTS.map((product) => (
+        <Segment
+          key={product.id}
+          product={product}
+          active={product.id === active}
+          locked={isLocked(product, plan)}
+          thumbId={thumbId}
+          thumbTransition={thumbTransition}
+          onNavigate={onNavigate}
+        />
+      ))}
     </nav>
   );
 }
@@ -237,24 +241,27 @@ function Segment({
   onNavigate?: () => void;
 }) {
   return (
+    <Tooltip>
+      <TooltipTrigger asChild>
     <Link
       href={locked ? "/upgrade" : product.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      aria-label={accessibleName(product, locked)}
+      // ALWAYS named, because the box no longer carries the word. It was
+      // `accessibleName()`, which returns undefined for an open segment on the
+      // reasoning that the visible label already named it — true then, and it
+      // would have left both segments unnamed now.
+      aria-label={accessibleName(product, locked) ?? product.label}
       className={cn(
         // `.pressable` carries the press dip AND the colour transitions (see
         // globals.css) — a `transition-colors` utility after it would override
         // the shorthand and un-animate the press.
-        // 36px, between the 40px destination rows below and the 32px this was.
-        // A control is allowed to sit a step under the places it switches
-        // between — that is what tells them apart — but two steps under reads
-        // as a leftover from a denser panel, which is what it became when the
-        // column moved to `h-10`.
-        "pressable group relative flex h-9 min-w-0 items-center justify-center gap-2 rounded-control px-2",
-        "text-ui font-normal focus-visible:outline-offset-0 motion-reduce:active:scale-100",
+        // A 28px square. The label is gone from the box and lives in the
+        // accessible name and the tooltip; see the note on the nav above.
+        "pressable group relative flex size-7 shrink-0 items-center justify-center rounded-md",
+        "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
         // 44px targets in the drawer, which is the only place this is touched.
-        "coarse:h-11",
+        "coarse:size-11",
         locked
           ? "text-muted-foreground/55 hover:text-muted-foreground"
           : active
@@ -272,9 +279,9 @@ function Segment({
           layoutId={thumbId}
           aria-hidden="true"
           transition={thumbTransition}
-          className="absolute inset-0 rounded-control bg-sidebar-accent"
+          className="absolute inset-0 rounded-md bg-sidebar shadow-soft"
           // framer has to keep the corners true while it scales the box.
-          style={{ borderRadius: 10 }}
+          style={{ borderRadius: 8 }}
         />
       )}
       {/* Reduced ink plus a sparkle is ChatGPT's own "not on your plan" mark,
@@ -293,8 +300,13 @@ function Segment({
           "Needs you" fold, which is where the rows it counts actually are, so
           pressing it triages them instead of moving you to a page that then
           has to tell you the same number again. */}
-      <span className="relative truncate">{product.label}</span>
     </Link>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {product.label}
+        <Kbd className="ml-1.5">{product.chord}</Kbd>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

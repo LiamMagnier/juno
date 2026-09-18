@@ -644,20 +644,58 @@ export function AppSidebar({
           collapsed ? "w-16" : "w-full md:w-[var(--juno-sidebar-width,256px)]"
         )}
       >
-        {/* ── Brand + collapse ─────────────────────────────────────────── */}
+        {/* ── Collapse · Brand · Chat|Code ─────────────────────────────── */}
+        {/*
+         * THE REFERENCE'S HEADER, and it is three things on one 36px line:
+         * the collapse control, the wordmark, and the product switch.
+         *
+         * The switch used to be a full-width labelled pill on its own block
+         * below this row — `pb-6 pt-3` around two 36px segments, so roughly
+         * 72px of the column spent on a control pressed twice a session, and
+         * at 100% width the widest object in the panel. Here it is 64×28 in
+         * space the header was already holding open, and the 72px goes to the
+         * list. That is more than the search field costs, which is the whole
+         * answer to the argument search was moved out of this column on.
+         *
+         * Collapse moves to the LEFT of the wordmark, which is the one part
+         * of this that is arrangement rather than economy: with the switch on
+         * the right, two controls on the right would be a cluster whose two
+         * halves do unrelated things — one hides this column, the other
+         * changes which product it lists. Split, each sits on the side of the
+         * thing it acts on.
+         */}
         <motion.div
           layout
           transition={layoutTransition}
-          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-10 justify-between px-3")}
+          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 gap-1 px-2")}
         >
-          <motion.div layout="position" transition={layoutTransition}>
+          {onToggleCollapse && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn("group hidden shrink-0 md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
+                  onClick={onToggleCollapse}
+                  aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-keyshortcuts="Meta+Shift+S"
+                >
+                  <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side={collapsed ? "right" : "bottom"}>
+                {collapsed ? "Expand sidebar" : "Collapse sidebar"} <Kbd className="ml-1">⌘⇧S</Kbd>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <motion.div layout="position" transition={layoutTransition} className="min-w-0 flex-1">
             <Link
               href="/chat"
               onClick={() => setSidebarOpen(false)}
               aria-label="Juno home"
               className={cn(
                 "group/brand flex items-center gap-2 rounded-control",
-                collapsed ? "size-11 justify-center" : "h-9 pl-1"
+                collapsed ? "size-11 justify-center" : "h-9"
               )}
             >
               <JunoMark className="size-5 shrink-0" />
@@ -677,70 +715,55 @@ export function AppSidebar({
               </AnimatePresence>
             </Link>
           </motion.div>
-          <motion.div layout="position" transition={layoutTransition} className="flex items-center gap-0.5">
-            {onToggleCollapse && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className={cn("group hidden md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
-                    onClick={onToggleCollapse}
-                    aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                    aria-keyshortcuts="Meta+Shift+S"
-                  >
-                    <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side={collapsed ? "right" : "bottom"}>
-                  {collapsed ? "Expand sidebar" : "Collapse sidebar"} <Kbd className="ml-1">⌘⇧S</Kbd>
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {!collapsed && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="group size-7 md:hidden coarse:size-9"
-                    onClick={() => setSidebarOpen(false)}
-                    aria-label="Close menu"
-                  >
-                    <SidebarMotionIcon kind="close" className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Close</TooltipContent>
-              </Tooltip>
-            )}
-          </motion.div>
+          {/* The ONE product switch in the shell. Expanded it is this 28px
+              icon pair; at the rail it stays the 44px icon column below,
+              because 64px has no room for a header row at all. */}
+          {!collapsed && (
+            <ProductSwitch
+              active={product}
+              plan={quota.plan}
+              onNavigate={() => setSidebarOpen(false)}
+            />
+          )}
+          {!collapsed && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="group size-7 shrink-0 md:hidden coarse:size-9"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Close menu"
+                >
+                  <SidebarMotionIcon kind="close" className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Close</TooltipContent>
+            </Tooltip>
+          )}
         </motion.div>
 
-        {/* ── Chat · Code ──────────────────────────────────────────────── */}
-        {/* The ONE product switch in the shell, at both widths: a hairline
-            pill with a tonal thumb when expanded, a 44px icon column at the
-            rail (which never had a Chat row at all — the wordmark was the only
-            way back, and it never looked selected). Page tabs are underlines
-            and never wells, so nothing else in the product wears a track.
-            No AnimatePresence around it any more: it renders in both states
-            and FOLDS, like every other row in this column. */}
-        <ProductSwitch
-          collapsed={collapsed}
-          active={product}
-          plan={quota.plan}
-          onNavigate={() => setSidebarOpen(false)}
-        />
+        {/* The rail keeps the stacked icon column: see the note above. */}
+        {collapsed && (
+          <ProductSwitch
+            collapsed
+            active={product}
+            plan={quota.plan}
+            onNavigate={() => setSidebarOpen(false)}
+          />
+        )}
 
         {/* ── Search + New chat ────────────────────────────────────────── */}
-        {/* No `pt-*` when expanded: ProductSwitch already closes with `pb-2`,
-            which IS the 8px this column puts between sibling groups. */}
+        {/* `pt-2` when expanded: the product switch no longer sits between this
+            and the header, so the 8px this column puts between sibling groups
+            has to be spent here instead of inherited from that block. */}
         {/* These two and the three destinations below are ONE navigation
             block, not two. They used to be separated by 16px (this block's
             own bottom plus the nav's `pt-2`), which is the same gap the panel
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-3")}>
+        <div className={cn("pt-2", collapsed ? "space-y-1 px-2.5" : "px-2")}>
           {/* SEARCH IS A FIELD AGAIN, and it is the first thing in the column.
               It spent a release as a magnifier in the panel header, on the
               argument that a nav list is a list of PLACES and search is a
@@ -792,8 +815,7 @@ export function AppSidebar({
           className={cn(
             // `pt-0.5`, matching the row gap above it: see the note on the
             // Search block — this is the same navigation block continuing.
-            "space-y-0.5 pt-0.5",
-            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5 pt-2" : "px-3"
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1 px-2.5 pt-2" : "px-2"
           )}
           aria-label="Primary"
         >
@@ -855,7 +877,7 @@ export function AppSidebar({
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2 pt-3",
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3",
             // The rail has no lists to scroll; its own scroll region is the
             // <nav> above, so this must not also claim the slack.
             collapsed && "hidden"
@@ -996,7 +1018,7 @@ export function AppSidebar({
                     {needsYouOnly ? null : recents.length > 0 ? (
                       <div className="mt-6 first:mt-0">
                         {groupedRecents.map(({ group, rows }) => (
-                          <div key={group} className="space-y-0.5 pt-6 first:pt-0">
+                          <div key={group} className="pt-6 first:pt-0">
                             {/* Same heading as Projects and Pinned above — see the note in
                                 `Section` — and the same INSET. This is a second
                                 implementation of that heading, so it has to be moved by
@@ -1004,7 +1026,7 @@ export function AppSidebar({
                                 behind twice (once at `px-2` against a 40px edge, once at
                                 `pl-8` against 44), which is the argument for the two
                                 becoming one the next time either is touched. */}
-                            <p className="flex h-7 items-center pl-11 pr-2 text-ui font-medium text-muted-foreground">
+                            <p className="flex h-7 items-center pl-[46px] pr-2 text-ui font-medium text-muted-foreground">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -1071,7 +1093,7 @@ export function AppSidebar({
               </div>
             </>
           ) : (
-            <div className="mt-2 flex items-center gap-1 border-t border-sidebar-border px-3 pb-2.5 pt-2">
+            <div className="mt-2 flex items-center gap-1 border-t border-sidebar-border px-2 pb-2.5 pt-2">
               <UserMenu
                 trigger={
                   <button
@@ -1084,7 +1106,7 @@ export function AppSidebar({
                        the same pair every nav row uses, which is what puts the
                        last row your eye rests on at the same 44px as the rest
                        rather than a few pixels off it. */
-                    className="group flex h-9 min-w-0 flex-1 items-center gap-3 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
+                    className="group flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
                   >
                     {/* The SAME avatar helper the menu this opens draws with.
                         The footer used to render mono initials in a bordered
@@ -1235,7 +1257,7 @@ function NeedsYouFold({
     // No bottom margin: whatever follows — Pinned projects, Pinned chats, the
     // date folds — opens with its own `mt-6`, and two margins meeting would put
     // 48px between this fold and the list it heads.
-    <div className="space-y-0.5">
+    <div>
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable
@@ -1251,7 +1273,7 @@ function NeedsYouFold({
               // would be the one control in the drawer at half the 44px every
               // row, flyout entry and section heading beside it guarantees. On
               // a fine pointer the resting geometry is untouched.
-              "h-7 select-none gap-1.5 border-0 py-0 pl-11 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
+              "h-7 select-none gap-1.5 border-0 py-0 pl-[46px] pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
               only && "bg-sidebar-accent"
             )}
           >
@@ -1306,7 +1328,7 @@ function SidebarSearchField({ collapsed }: { collapsed: boolean }) {
         // in the sidebar rather than a card floating on it — and it deepens
         // under the pointer instead of lighting up, which is what a field does.
         "group flex w-full items-center rounded-field border border-transparent bg-sidebar-accent/70 text-left text-body text-muted-foreground transition-[background-color,border-color,color] duration-fast ease-out-soft hover:border-sidebar-border hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-        collapsed ? "size-11 justify-center rounded-control px-0" : "h-9 gap-3 px-3 coarse:h-11"
+        collapsed ? "size-11 justify-center rounded-control px-0" : "h-8 gap-2.5 px-2 coarse:h-11"
       )}
       aria-label="Search"
     >
@@ -1468,35 +1490,39 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // furniture out-shouted the documents (docs/design/PREMIUM_AUDIT.md §2).
     // Selection is the tonal fill and the ink, as it already was.
     /*
-     * 36px tall at the `body` rung (15px). It was 36px at `ui` (13px) with
-     * 6px between rows, and the SIZE is what changed — not the room.
+     * 32px tall at the `body` rung (15px), abutting. Every number here was
+     * MEASURED off the reference at the same window size rather than argued
+     * from it, because two passes of arguing produced 42px and then 38px of
+     * pitch against a reference that runs 32.2, and each time the column read
+     * as "still too big" with nothing identifiably wrong in it.
      *
-     * This was measured against the reference rather than argued from it.
-     * Rendered at the same scale, Claude's sidebar runs a ~32px row pitch and
-     * Juno's ran 42 — so the panel that reads calmer is the TIGHTER one, and
-     * the intuition that produced 40px rows with 6px gaps (an early pass at
-     * this rework) took the column to 46 and made it worse. What Claude
-     * actually does is big type on close rows; Juno had it exactly backwards,
-     * small type on loose ones, and that inversion is what "it looks
-     * horrible" was pointing at. Type up two rungs, room down to none: 36px
-     * pitch, against the reference's 32 and the old 42.
+     *                        reference   before      now
+     *   row pitch              32.2px    37.6px     32px
+     *   label inset            46.5px    57.0px     46px
+     *   icon inset             16.9px    26.5px     17px
+     *   icon glyph              14.4px    14.4px    14.4px   (already right)
      *
-     * `body` and not an arbitrary 15px — it is the rung the product already
-     * reads prose at, so the panel now shares a size with the page instead
-     * of inventing a chrome-only one. A 36px row leaves 6px above and below
-     * a 24px line box, which is what keeps the selected row's fill off the
-     * word inside it; at 32 it hugs, which is the one thing the reference
-     * does that is worth not copying.
+     * The glyph line is why the earlier passes kept missing: the mark was
+     * never the thing that was too big. It was the ROOM — 5px of extra pitch
+     * per row and 10px of extra inset on every label, which across a column
+     * of thirteen rows is a panel that looks inflated while every element in
+     * it is the right size.
      *
-     * `gap-3` with the 20px icon box below puts every label on a 44px text
-     * edge (12 padding + 20 + 12). That number is load-bearing: the section
-     * headings, the date folds, the chat bullets and the project tree's
-     * guide line all key to it, and they move with it in this same pass.
+     * `px-2` on the row, against the panel's own `px-2`, is where the inset
+     * comes from: 8 + 8 = 16 to the glyph, + a 20px box + `gap-2.5` = 46 to
+     * the label. Juno was spending `px-3` twice. That 46 is load-bearing: the
+     * section headings, the date folds, the chat bullets and the project
+     * tree's guide line all key to it.
+     *
+     * `body` (15px) stays. Measured against the reference, "Projects" and
+     * "Design" set identically in both — the type was never the problem
+     * either, which is worth writing down since it is the first thing anyone
+     * reaches for when a panel looks heavy.
      */
-    "group relative flex h-9 w-full items-center rounded-control text-body font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    "group relative flex h-8 w-full items-center rounded-control text-body font-normal transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
     // The rail: a 44px target around the glyph, so every icon is one tap and
     // the row's tooltip names it.
-    collapsed ? "size-11 justify-center px-0" : "gap-3 px-3 coarse:h-11",
+    collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2 coarse:h-11",
     // NO `bg-` on the active row: its fill is the travelling `motion.span`
     // inside it (see NavRow). Painting it here too would leave a hard-edged
     // copy of the fill sitting under the one that slides, so the old row's ink
@@ -1569,7 +1595,7 @@ function MoreFlyout({
       ];
   const anyActive = items.some((item) => item.active);
   const rowClass =
-    "flex h-9 w-full items-center gap-3 rounded-control px-2.5 text-body font-normal text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+    "flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-body font-normal text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
   // An open flyout takes the ACTIVE recipe, not a fill bolted on beside the
   // inactive one — otherwise `hover:bg-sidebar-accent/60` would win over it and
   // the trigger would go pale the moment the pointer reached the menu it opened.
@@ -1724,7 +1750,7 @@ function Section({
              same text edge as the rows under it. 12px panel padding + a 20px
              icon box + a 12px gap = 44, which is where every label in the
              column now sits. It tracked the old 32px edge and moves with it. */
-          className="h-7 min-w-0 flex-1 select-none gap-1.5 border-0 pl-11 pr-2 py-0 hover:bg-sidebar-accent/60"
+          className="h-7 min-w-0 flex-1 select-none gap-1.5 border-0 pl-[46px] pr-2 py-0 hover:bg-sidebar-accent/60"
         >
           {/*
            * ONE SECTION VOICE, and it is SANS now: sentence-case at the `ui`
@@ -1756,7 +1782,7 @@ function Section({
         {action != null && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       <Disclosure open={!isCollapsed}>
-        <div className="space-y-0.5 pt-1">{children}</div>
+        <div className="pt-1">{children}</div>
       </Disclosure>
     </div>
   );
@@ -1948,7 +1974,7 @@ function ConversationRow({
     <div
       data-active={active ? "" : undefined}
       className={cn(
-        "group relative flex h-8 items-center rounded-control pl-3 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+        "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
         nested && "ml-4",
         active
           ? "bg-sidebar-accent text-foreground"
@@ -1964,7 +1990,7 @@ function ConversationRow({
            section headings. A title is CONTENT in a column of chrome, so it
            takes the same `body` rung the rows above it now read at — the panel
            no longer has documents set smaller than its own furniture. */
-        className="flex min-w-0 flex-1 items-center gap-3 text-body font-normal"
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-body font-normal"
         /* The run's sentence joins the title rather than replacing it: this
            attribute is also how a truncated title gets read, and a row that
            answered "what is this" with "Juno has asked you something" would
@@ -2137,7 +2163,7 @@ function ProjectRow({
           href={`/projects/${project.id}`}
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
-          className="flex min-w-0 flex-1 items-center gap-3 text-body font-normal"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-body font-normal"
           title={project.name}
         >
           {/* The one glyph that survives in a list row, because its closed →
@@ -2205,12 +2231,12 @@ function ProjectRow({
       {hasChats && (
         <Disclosure open={expanded}>
           {/* The guide drops from the folder's REAL centre — the row's `pl-3`
-              (12) plus half of `size-5` (10) = 22px — so it stays under the
+              (8) plus half of `size-5` (10) = 18px — so it stays under the
               glyph it descends from rather than under an arbitrary inset.
               `ml-[22px]` is off the spacing ladder on purpose: this is not a
               spacing decision, it is an alignment to a computed centre, and
               rounding it to `ml-5` or `ml-6` would visibly miss the folder. */}
-          <div className="ml-[22px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2.5">
+          <div className="ml-[18px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2.5">
             {visibleChats.map((c) => {
               const signal = signals.get(c.id);
               const label = c.title || "New chat";

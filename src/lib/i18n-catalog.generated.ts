@@ -1074,10 +1074,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Send it once it is ready"
   },
   {
-    "id": "0e6f18e50e91455f",
-    "source": "Search chats, files, artifacts, memory and tasks"
-  },
-  {
     "id": "0e76960093379060",
     "source": "History"
   },
@@ -1732,10 +1728,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1744469d556ee8b9",
     "source": "Stopped by user"
-  },
-  {
-    "id": "177b7cb0686749af",
-    "source": "esc"
   },
   {
     "id": "17847bdd39dcc84c",
@@ -2596,10 +2588,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2346f214ad56b180",
     "source": "Muted"
-  },
-  {
-    "id": "2348f99874421257",
-    "source": "open"
   },
   {
     "id": "234fd759308cf10e",
@@ -3588,10 +3576,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "310ca503ef36f177",
     "source": "Month"
-  },
-  {
-    "id": "310ff200149b44a3",
-    "source": "close"
   },
   {
     "id": "31207a2065f46a5b",
@@ -12798,10 +12782,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "and copy its API key (free, no card)."
   },
   {
-    "id": "b1a36d25d9633ed2",
-    "source": "select"
-  },
-  {
     "id": "b1b129fd43984ada",
     "source": "Subject contains"
   },
@@ -15132,10 +15112,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d0b50e064a4f8d94",
     "source": "Frame"
-  },
-  {
-    "id": "d0cda6559bb347db",
-    "source": "navigate"
   },
   {
     "id": "d0da1e5e8dcc7458",
