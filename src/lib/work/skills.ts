@@ -626,6 +626,12 @@ export interface WorkSkillVersionContent {
  * removed every file — `parseSkillContract` cannot tell those apart, and the
  * question is asked exactly when somebody is working out why a version stopped
  * producing the document it used to.
+ *
+ * "This build writes" and not "every row carries": a RESTORE copies an older
+ * version's content verbatim and keeps that version's own stamp, because the
+ * content it minted is that older shape and re-stamping it would record a v1
+ * contract as a v2 one with an empty file list — which is the inference above,
+ * drawn wrong.
  */
 export const SKILL_CONTRACT_VERSION = 2;
 
@@ -1608,6 +1614,18 @@ export const patchSkillSchema = z
     enabled: z.boolean().optional(),
     autoSelect: z.boolean().optional(),
     trust: z.enum(CLIENT_SKILL_TRUST_LEVELS).optional(),
+    /**
+     * Where the skill is filed, or `null` to file it at the account level.
+     *
+     * NULLABLE, unlike on create, and that is the whole reason a re-filing path
+     * has to exist rather than the create field being enough. `projectId` is
+     * what `skillIsOfferedTo` reads, so a skill filed in the wrong project is
+     * offered to the wrong tasks and never to the right ones — and with no way
+     * to unfile it, the only remedy would be to delete the skill and write it
+     * again under a new slug, losing every version of it. Absent means "leave
+     * it where it is"; `null` is a decision and is written as one.
+     */
+    projectId: idSchema.nullable().optional(),
     // The slug is absent on purpose: it is what a user types after a slash and
     // what an older message in their history already says, so it is chosen once.
   })

@@ -115,7 +115,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     content = {
       instructions: source.instructions,
       contract: parseSkillContract(source.contract),
-      contractVersion: SKILL_CONTRACT_VERSION,
+      // THE SOURCE'S STAMP, not this build's. The stamp exists so a reader can
+      // tell "a shape that had no resource field" from "an author who removed
+      // every file" — `parseSkillContract` cannot tell those apart, and the
+      // question gets asked exactly when somebody is working out why a version
+      // stopped producing the document it used to. A restore copies a v1 row's
+      // content verbatim and adds nothing to it, so stamping it 2 would record
+      // a v1 contract as a v2 one with an empty file list, which is the second
+      // answer to a question whose true answer is the first.
+      contractVersion: source.contractVersion,
       requestedTools: parseRequestedTools(source.requestedTools),
     };
   } else {

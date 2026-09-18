@@ -1531,7 +1531,14 @@ components:
           type: object
           description: >-
             Strict operation union implemented by the server. project.update accepts
-            entityId plus optional name, instructions, and starred fields.
+            entityId plus optional name, instructions, starred and workDefaults
+            fields. workDefaults is the Work bundle a task filed in the project
+            inherits (target, preferredHostId, model, reasoningEffort, budget,
+            permissionPolicy, connectorIds, grantIds, skillIds,
+            allowKnowledgeWrites); like `config` below it REPLACES the stored
+            object rather than patching it, an omitted key means "inherit", and
+            every field is resolved against the acting account's own ceilings
+            when a session is created — a project can narrow and never widen.
             project_workspace.upsert accepts projectId plus a whole `config` object
             (custom-assistant settings: personaName, instructionsOverride,
             allowedTools, allowedConnectorIds, knowledgeFileIds, preferredModelId).

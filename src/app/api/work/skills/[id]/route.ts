@@ -83,7 +83,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { name, description, enabled, trust } = parsed.data;
+  const { name, description, enabled, trust, projectId } = parsed.data;
+  // A project id in a request is a claim; the row carrying this user's id is
+  // what makes it true. Checked here and not only on create because re-filing
+  // is the same write with the same consequence — `skillIsOfferedTo` reads this
+  // column to decide which tasks the planner may offer the skill to, and an id
+  // accepted on trust would file somebody's skill against another account's
+  // project. Refused rather than dropped: a "Filed in" control that reports
+  // success and leaves the skill where it was is worse than one that fails.
+  if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, userId: user.id },
+      select: { id: true },
+    });
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
   if (enabled === true && existing.securityStatus === "blocked") {
     return NextResponse.json(
       { error: "security_blocked", message: "A skill blocked by its security scan cannot be enabled." },
@@ -107,6 +121,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...(description !== undefined ? { description } : {}),
       ...(enabled !== undefined ? { enabled } : {}),
       ...(trust !== undefined ? { trust } : {}),
+      // Tested against `undefined` rather than for truthiness: `null` is the
+      // reader moving the skill back to the account level, and reading it as
+      // "nothing said" would make that the one move the control cannot make.
+      ...(projectId !== undefined ? { projectId } : {}),
       autoSelect: effectiveAutoSelect,
     },
   });

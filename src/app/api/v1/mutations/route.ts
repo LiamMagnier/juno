@@ -6,6 +6,7 @@ import { prismaUnguarded } from "@/lib/prisma";
 import { isModelId } from "@/lib/models";
 import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutations";
 import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
+import { serializeWorkDefaults, WORK_DEFAULTS_VERSION } from "@/lib/work/projects";
 import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
 
 export const runtime = "nodejs";
@@ -166,6 +167,17 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
           ...(op.name !== undefined ? { name: op.name, nameSource: "user" } : {}),
           ...(op.instructions !== undefined ? { instructions: op.instructions } : {}),
           ...(op.starred !== undefined ? { starred: op.starred } : {}),
+          // Normalised through the codec before storage, like the workspace
+          // config below: what is written is then byte-identical to what a read
+          // produces, so an unchanged save does not write different bytes, bump
+          // the revision and hand every other device a change to fetch for
+          // nothing.
+          ...(op.workDefaults !== undefined
+            ? {
+                workDefaults: serializeWorkDefaults(op.workDefaults) as Prisma.InputJsonObject,
+                workDefaultsVersion: WORK_DEFAULTS_VERSION,
+              }
+            : {}),
         },
       });
       if (!updated.count) throw new ApiV1Error("not_found", 404, "The project was not found.");

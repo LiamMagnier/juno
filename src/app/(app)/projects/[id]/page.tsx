@@ -49,6 +49,12 @@ import {
   type WorkspaceConfig,
   type WorkspaceTool,
 } from "@/lib/projects/workspace-config";
+import {
+  parseWorkDefaults,
+  serializeWorkDefaults,
+  type WorkProjectDefaults,
+} from "@/lib/work/projects";
+import { ProjectWorkDefaults } from "@/components/projects/project-work-defaults";
 import { ProjectWorkspaceHeader } from "@/components/projects/project-workspace-header";
 import { ProjectChatList } from "@/components/projects/project-chat-list";
 import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
@@ -59,7 +65,15 @@ import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/proje
 const INSTRUCTIONS_SOFT_WARN = 50_000;
 
 interface Detail {
-  project: { id: string; name: string; instructions: string; starred: boolean; updatedAt: string };
+  project: {
+    id: string;
+    name: string;
+    instructions: string;
+    starred: boolean;
+    updatedAt: string;
+    /** What a Work task filed here inherits. `{}` for a project never asked. */
+    workDefaults: WorkProjectDefaults;
+  };
   conversations: { id: string; title: string; lastMessageAt: string; pinned: boolean }[];
   files: {
     id: string;
@@ -111,6 +125,21 @@ export default function ProjectDetailPage() {
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
   const [workspace, setWorkspace] = React.useState<WorkspaceConfig>({});
   const [savingWorkspace, setSavingWorkspace] = React.useState(false);
+  /**
+   * The Work bundle as the reader is editing it, beside what the server last
+   * said.
+   *
+   * Two copies rather than one, for the same reason the instructions box keeps
+   * a draft: the save button is enabled by the difference, and comparing the
+   * draft against the loaded value is the only way to tell an unchanged form
+   * from an edited one. Both sides go through `serializeWorkDefaults` before
+   * they are compared, because that is what fixes the key order — a form that
+   * set a field and unset it again would otherwise serialise the same settings
+   * in a different order and read as edited for the rest of the session.
+   */
+  const [workDefaults, setWorkDefaults] = React.useState<WorkProjectDefaults>({});
+  const [savedWorkDefaults, setSavedWorkDefaults] = React.useState<WorkProjectDefaults>({});
+  const [savingWorkDefaults, setSavingWorkDefaults] = React.useState(false);
   const [workRuns, setWorkRuns] = React.useState<ProjectWorkItem[]>([]);
   const [projectArtifacts, setProjectArtifacts] = React.useState<ProjectArtifactItem[]>([]);
 
@@ -143,6 +172,12 @@ export default function ProjectDetailPage() {
       setData(d);
       setInstructions(d.project.instructions);
       setWorkspace(d.workspace ?? {});
+      // Through the parser on the way in as well as on the way out: a build
+      // older than the one that wrote the column must draw the parts it
+      // understands rather than a field it would ignore on save.
+      const defaults = parseWorkDefaults(d.project.workDefaults);
+      setWorkDefaults(defaults);
+      setSavedWorkDefaults(defaults);
     } catch {
       setError("error");
     }
@@ -265,6 +300,24 @@ export default function ProjectDetailPage() {
       return;
     }
     toast.success("Assistant settings synced.");
+    await load();
+  };
+
+  const saveWorkDefaults = async () => {
+    setSavingWorkDefaults(true);
+    const response = await fetch(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workDefaults }),
+    }).catch(() => null);
+    setSavingWorkDefaults(false);
+    if (!response?.ok) {
+      // Nothing local is touched on a failure, so the draft the reader
+      // assembled is still in front of them and the button is still enabled.
+      toast.error("Couldn’t save these task defaults. Nothing has changed.");
+      return;
+    }
+    toast.success("Task defaults saved.");
     await load();
   };
 
@@ -1075,6 +1128,21 @@ export default function ProjectDetailPage() {
                   </p>
                 </Card>
               </div>
+
+              {/* Full width rather than a third cell in the grid above: this is
+                  the only card here whose rows are a list that grows with the
+                  account's connected apps, and a two-column cell would set it
+                  in a column half the width of the list it has to show. */}
+              <ProjectWorkDefaults
+                value={workDefaults}
+                onChange={setWorkDefaults}
+                onSave={() => void saveWorkDefaults()}
+                saving={savingWorkDefaults}
+                dirty={
+                  JSON.stringify(serializeWorkDefaults(workDefaults)) !==
+                  JSON.stringify(serializeWorkDefaults(savedWorkDefaults))
+                }
+              />
             </div>
           </TabsContent>
         </Tabs>

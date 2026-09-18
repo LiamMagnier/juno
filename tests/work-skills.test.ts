@@ -1077,6 +1077,23 @@ test("a patch that changes nothing is refused", () => {
   assert.equal(patchSkillSchema.safeParse({ enabled: false }).success, true);
 });
 
+test("a skill can be re-filed, and unfiled, after it exists", () => {
+  // `projectId` is what `skillIsOfferedTo` reads, so a skill filed in the wrong
+  // project is offered to the wrong tasks and never to the right ones. Without
+  // a patch path the only remedy is deleting the skill and writing it again
+  // under a new slug, losing every version of it.
+  const filed = patchSkillSchema.safeParse({ projectId: "project-1" });
+  assert.equal(filed.success, true);
+  const unfiled = patchSkillSchema.safeParse({ projectId: null });
+  assert.equal(unfiled.success, true);
+  assert.equal(
+    unfiled.success && unfiled.data.projectId,
+    null,
+    "null is the reader moving the skill back to the account level, and must survive parsing"
+  );
+  assert.equal(patchSkillSchema.safeParse({ projectId: "" }).success, false);
+});
+
 test("minting a version is either new content or a restore, never both", () => {
   assert.equal(mintSkillVersionSchema.safeParse({ instructions: "Do it better." }).success, true);
   assert.equal(mintSkillVersionSchema.safeParse({ restoreVersion: 3 }).success, true);

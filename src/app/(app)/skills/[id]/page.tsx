@@ -91,6 +91,17 @@ const SKILL_RESOURCE_ACCEPT = [
   ".py",
 ].join(",");
 
+/**
+ * The picker's value for "not filed in any project".
+ *
+ * A sentinel rather than an empty string: an `<option value="">` inside a
+ * select whose state is driven by a nullable id reads back as the falsy value
+ * for both "the account" and "nothing chosen", and the two want different
+ * writes — one is `projectId: null`, which is a decision, and the other is no
+ * request at all.
+ */
+const ACCOUNT_LEVEL = "__account__";
+
 function securityLabel(status: string): string {
   if (status === "clear") return "Clear";
   if (status === "warning") return "Review recommended";
@@ -156,6 +167,15 @@ export default function SkillPage() {
   const [saved, setSaved] = React.useState<SkillResource[]>([]);
   const [resources, setResources] = React.useState<SkillResource[]>([]);
   const [projectName, setProjectName] = React.useState<string | null>(null);
+  /**
+   * The projects this skill could be filed in.
+   *
+   * `null` while the list is in flight, and the control below is disabled until
+   * it arrives rather than drawn empty: a picker showing only "Everything" for
+   * a moment is a picker that says this account has no projects, and a reader
+   * who looks at the wrong moment concludes filing is not available.
+   */
+  const [projects, setProjects] = React.useState<{ id: string; name: string }[] | null>(null);
   // `null`: these files belong to a skill, not to a chat.
   const { uploads, addFiles, remove: dropUpload, isUploading } = useUploads(null);
   const resourceInput = React.useRef<HTMLInputElement>(null);
@@ -194,6 +214,24 @@ export default function SkillPage() {
     void load();
     void loadVersions();
   }, [load, loadVersions]);
+
+  React.useEffect(() => {
+    let live = true;
+    // The projects surface's own endpoint rather than a skills-shaped copy of
+    // it: a second list of projects is a second answer to "which projects do I
+    // have", and the two disagree the first time one is renamed elsewhere.
+    fetch("/api/projects")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { projects?: { id: string; name: string }[] } | null) => {
+        if (live && data && Array.isArray(data.projects)) {
+          setProjects(data.projects.map((project) => ({ id: project.id, name: project.name })));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   /*
    * A finished upload becomes a pending file on the version, and leaves the
@@ -247,6 +285,31 @@ export default function SkillPage() {
     toast.error(result.kind === "blocked" ? result.explanation : failure);
   };
 
+  /**
+   * Moves the skill into a project, or back to the account.
+   *
+   * Its own function rather than another `applyPatch` call because the page
+   * holds the project's NAME, which the patch does not return — the skill row
+   * carries an id and the name lives on the project. Re-reading is the honest
+   * way to keep the caption underneath the automatic-selection switch saying
+   * which project it means.
+   */
+  const refile = async (projectId: string | null) => {
+    setBusy(true);
+    const result = await patchWorkSkill(id, { projectId });
+    setBusy(false);
+    if (result.kind === "ok") {
+      setSkill(result.value);
+      void load();
+      return;
+    }
+    toast.error(
+      result.kind === "blocked"
+        ? result.explanation
+        : "Couldn’t move this skill. It is filed exactly where it was."
+    );
+  };
+
   /*
    * Saves the instructions AND the rest of the version's declaration.
    *
@@ -286,10 +349,17 @@ export default function SkillPage() {
       toast.success(`Saved as v${result.value.version}. The previous version is still readable.`);
       return;
     }
+    // The route's own sentence when it wrote one, because the case that
+    // produces it is reachable from this very form: delete one of the skill's
+    // files from the Library in another tab, press Save here, and the route
+    // answers 404 with "One of the files this version brings is not in your
+    // library". The generic line would send the reader looking for a fault in
+    // their instructions instead of at the file they just deleted.
     toast.error(
       result.kind === "blocked"
         ? "Someone else saved this skill at the same moment. Reload and try again."
-        : "Couldn’t save this version. The version that was current still is."
+        : (result.message ??
+          "Couldn’t save this version. The version that was current still is.")
     );
   };
 
@@ -519,6 +589,43 @@ export default function SkillPage() {
               aria-label="Juno may choose this skill"
             />
           </label>
+
+          <div className="px-4 py-3">
+            <p className="text-ui font-medium text-foreground">Filed in</p>
+            <p className="mt-0.5 text-caption leading-relaxed text-muted-foreground">
+              A skill filed in a project is offered to tasks in that project and to no others.
+              Filed in Everything, it is on offer wherever Juno looks. Typing /{skill.slug} reaches
+              it either way.
+            </p>
+            {/* The same `field-well` recipe the schedule editor's selects carry,
+                rather than a second select idiom on a page that already draws
+                one control per row. */}
+            <select
+              value={skill.projectId ?? ACCOUNT_LEVEL}
+              disabled={busy || projects === null}
+              onChange={(event) =>
+                void refile(event.target.value === ACCOUNT_LEVEL ? null : event.target.value)
+              }
+              aria-label="The project this skill is filed in"
+              className="field-well mt-2 h-9 w-full max-w-sm rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value={ACCOUNT_LEVEL}>Everything</option>
+              {/* The skill's own project is listed even when the projects
+                  request has not landed, failed, or came back without it — a
+                  project the account can no longer see still holds the skill,
+                  and a select whose value matches no option renders blank,
+                  which reads as a skill filed nowhere. */}
+              {skill.projectId !== null &&
+              !(projects ?? []).some((project) => project.id === skill.projectId) ? (
+                <option value={skill.projectId}>{projectName ?? "Its project"}</option>
+              ) : null}
+              {(projects ?? []).map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="px-4 py-3">
             <p className="text-ui font-medium text-foreground">Trust</p>

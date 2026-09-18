@@ -1384,15 +1384,27 @@ skill brings is therefore not a permission expansion and does not demand a conse
 `SkillSecurityInput` says why. A file deleted since the version was minted is reported as
 withheld, by count rather than by id, and the run does less rather than pretending.
 
-**A project is the bundle.** `WorkProjectDefaults` (`src/lib/work/projects.ts`) has always
-described what a project lends a task — target, model, effort, connectors, approval mode —
-and `resolveWorkDefaults` has always narrowed it against the account. `POST /api/work/sessions`
-now reads it: a task filed in a project inherits each of those for every field the client left
-unsaid, and a field the client sent stands, because the project is a default and not a policy.
-The layer that may not be overridden is still the Mac's, at dispatch. The skills half of the
-bundle needs no new field — a `WorkSkill` already carries a `projectId`, and `skillIsOfferedTo`
-scopes **automatic** selection to the account's skills plus the task's project's. A slash
-invocation still reaches the whole library: the user typed the name.
+**A project is the bundle.** `WorkProjectDefaults` (`src/lib/work/projects.ts`) describes what
+a project lends a task — target, model, effort, connectors, approval mode — and
+`resolveWorkDefaults` narrows it against the account. `POST /api/work/sessions` reads it
+through `inheritFromProjectDefaults`, and `resolveSessionFields` folds it into what the request
+stated. Two rules there, not one: the scalars fall through only where the client was silent,
+because a model chosen for one task is a decision somebody made; the **approval mode and the
+connector list meet**, because the browser composer always sends the mode it is showing and a
+fall-through would make a project's approval setting a control that visibly does nothing. A
+project therefore narrows from `DEFAULT_WORK_PERMISSION_POLICY` and can never widen past it —
+the account layer it is given is that default, not the widest value in the vocabulary. The
+layer that may not be overridden is still the Mac's, at dispatch.
+
+The column is written by `PATCH /api/projects/{id}` (`workDefaults`, round-tripped through
+`serializeWorkDefaults`) and by `project.update` on `/api/v1/mutations`, so the Mac and the
+phone can set it too; the control is **Task defaults** on the project's Settings tab. The
+skills half of the bundle needs no new field — a `WorkSkill` already carries a `projectId`, and
+`skillIsOfferedTo` scopes **automatic** selection to the account's skills plus the task's
+project's. A slash invocation still reaches the whole library: the user typed the name. That id
+is written on create (`/skills/new`, and the capture dialog files a captured skill where the
+run was) and re-written by `PATCH /api/work/skills/{id}`, where `projectId: null` unfiles it —
+without that, a skill filed in the wrong project could only be fixed by deleting it.
 
 ---
 

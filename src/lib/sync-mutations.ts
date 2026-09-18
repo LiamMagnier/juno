@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { workspaceConfigSchema } from "@/lib/projects/workspace-config";
+import { workDefaultsSchema } from "@/lib/work/projects";
 
 /*
  * The native mutation union — request shapes only, no server imports, so the
@@ -37,6 +38,16 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
     name: z.string().trim().min(1).max(160).optional(),
     instructions: z.string().optional(),
     starred: z.boolean().optional(),
+    // What a Work task filed in this project inherits — its approval mode, its
+    // model, its connected apps, its Mac. Here and not only on the browser's
+    // PATCH because a project is a role, and a role that can only be configured
+    // from one of the three clients is a role most of the product cannot see.
+    //
+    // REPLACES the stored object wholesale, exactly like
+    // `project_workspace.upsert`'s `config` and for the same reason: a patch
+    // needs a spelling for "remove this key", JSON's only one is null, and an
+    // absent key is what "inherit" means here.
+    workDefaults: workDefaultsSchema.optional(),
   }).strict(),
   z.object({ type: z.literal("project.delete"), entityId: z.string().min(1).max(200) }).strict(),
   // Custom-assistant config for one project. UPSERT rather than create/update,

@@ -625,10 +625,10 @@ interface SkillRunResource extends SkillResource {
  *
  * `skillResources` are the files the skill in force brought with it, and they
  * are passed in rather than read out of the manifest beside the attachments.
- * The manifest rows for them are written a few lines earlier in `drive` and
- * that write is best-effort — a database hiccup there must cost the run its
- * receipt, not its template — so what the model is shown is derived from the
- * resolved list itself. They come last because the task's own files are the
+ * The manifest rows for them are written by `execute`, in the same block that
+ * resolves the skill, and that write is best-effort — a database hiccup there
+ * must cost the run its receipt, not its template — so what the model is shown
+ * is derived from the resolved list itself. They come last because the task's own files are the
  * more specific material: a template is what to pour this month's figures into,
  * and the figures are what the reader attached today.
  */
@@ -2115,7 +2115,22 @@ async function applySkill(input: {
   const selection = invocation
     ? await skillFromInvocation(input.userId, invocation.slug)
     : await skillForGoal(input.userId, input.goal, input.projectId);
-  if (!selection.selected) return null;
+  if (!selection.selected) {
+    // The reason is logged rather than discarded, and `no_candidate` is the one
+    // that is not: it is what every ordinary task without a skill produces, so
+    // logging it would bury the others under itself. What is left is the set a
+    // reader actually asks about — a slug that did not resolve, a skill held
+    // back for trust, and `other_project`, which is the only place outside the
+    // skill page where "it was filed somewhere else" is said at all.
+    if (selection.reason !== "no_candidate") {
+      console.info("[work] no skill applied", {
+        userId: input.userId,
+        reason: selection.reason,
+        ...(invocation ? { slug: invocation.slug } : {}),
+      });
+    }
+    return null;
+  }
   const chosen = selection.candidate;
 
   const versions = await prisma.workSkillVersion.findMany({
