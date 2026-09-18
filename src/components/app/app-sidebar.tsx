@@ -763,7 +763,13 @@ export function AppSidebar({
             spends between the product switch and the whole navigation — so
             the column read as four stacked groups rather than a header and a
             list, and the first chat title started ~300px down. */}
-        <div className={cn("pt-2", collapsed ? "space-y-1 px-2.5" : "px-2")}>
+        {/* `space-y-1.5` = the 6.4px the reference leaves between the field and
+            the first row of the list. It is the only gap in this whole column:
+            the field is a different KIND of object from the rows below it, and
+            six pixels is what says so without a rule. Everything under it
+            abuts. (It was `mb-1.5` on this block, which put the six pixels
+            below New rather than above it — the one place they do nothing.) */}
+        <div className={cn("pt-2", collapsed ? "space-y-1 px-2.5" : "space-y-1.5 px-2")}>
           {/* SEARCH IS A FIELD AGAIN, and it is the first thing in the column.
               It spent a release as a magnifier in the panel header, on the
               argument that a nav list is a list of PLACES and search is a
@@ -877,7 +883,16 @@ export function AppSidebar({
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-3",
+            // `pt-6` (24px), not `pt-3`. Measured, the reference leaves 55.8px
+            // between the last destination's label and the first section
+            // heading's; at `pt-3` this column left 42.9, so the list began
+            // while the navigation was still finishing. Every LATER heading
+            // gets the same break from `Section`'s own `mt-6` plus the row it
+            // follows — this is only the first one, which `first:mt-0`
+            // deliberately exempts from that margin and which therefore has to
+            // get its air from the scroller. (28px overshot it by three; this
+            // is the rung that lands on it.)
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-6",
             // The rail has no lists to scroll; its own scroll region is the
             // <nav> above, so this must not also claim the slack.
             collapsed && "hidden"
@@ -1026,7 +1041,7 @@ export function AppSidebar({
                                 behind twice (once at `px-2` against a 40px edge, once at
                                 `pl-8` against 44), which is the argument for the two
                                 becoming one the next time either is touched. */}
-                            <p className="flex h-7 items-center pl-[46px] pr-2 text-ui font-medium text-muted-foreground">
+                            <p className="flex h-7 items-center pl-2 pr-2 text-ui font-medium text-muted-foreground">
                               {group}
                             </p>
                             {rows.map((c) => (
@@ -1273,7 +1288,7 @@ function NeedsYouFold({
               // would be the one control in the drawer at half the 44px every
               // row, flyout entry and section heading beside it guarantees. On
               // a fine pointer the resting geometry is untouched.
-              "h-7 select-none gap-1.5 border-0 py-0 pl-[46px] pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
+              "h-7 select-none gap-1.5 border-0 py-0 pl-2 pr-2 hover:bg-sidebar-accent/60 coarse:h-11",
               only && "bg-sidebar-accent"
             )}
           >
@@ -1746,11 +1761,17 @@ function Section({
           kind="row"
           onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
-          /* `pl-11`, not `px-2`: this heads a list, so its word belongs on the
-             same text edge as the rows under it. 12px panel padding + a 20px
-             icon box + a 12px gap = 44, which is where every label in the
-             column now sits. It tracked the old 32px edge and moves with it. */
-          className="h-7 min-w-0 flex-1 select-none gap-1.5 border-0 pl-[46px] pr-2 py-0 hover:bg-sidebar-accent/60"
+          /* `pl-2` — 16px from the panel edge, measured at 15.2 in the
+             reference — and NOT the 46px the nav labels sit at.
+             THE COLUMN HAS TWO TEXT EDGES ON PURPOSE. 46px is where a label
+             lands when an icon precedes it, and every destination has one.
+             A section heading has no icon and neither do the conversation
+             rows under it, so both sit at 16 — the heading on the same edge
+             as the list it heads, which is the alignment that actually
+             matters. Putting the heading out at 46 lined it up with the
+             navigation it is not part of, and left it hanging 30px inside
+             its own rows. */
+          className="h-7 min-w-0 flex-1 select-none gap-1.5 border-0 pl-2 pr-2 py-0 hover:bg-sidebar-accent/60"
         >
           {/*
            * ONE SECTION VOICE, and it is SANS now: sentence-case at the `ui`
@@ -1985,53 +2006,37 @@ function ConversationRow({
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        /* `gap-3` against the `size-5` slot below: 12 + 20 + 12 puts the title
-           on the column's one 44px text edge, with the nav labels and the
-           section headings. A title is CONTENT in a column of chrome, so it
-           takes the same `body` rung the rows above it now read at — the panel
-           no longer has documents set smaller than its own furniture. */
-        className="flex min-w-0 flex-1 items-center gap-2.5 text-body font-normal"
+        /* No leading slot, so the title IS the row's left edge — 16px from the
+           panel, on the same line as the section heading above it and 30px in
+           from where the nav's labels sit. See the note on the row. `gap-2`
+           is only ever spent on a trailing mark. A title is CONTENT in a
+           column of chrome, so it takes the same `body` rung the destinations
+           read at — the panel no longer sets documents smaller than furniture. */
+        className="flex min-w-0 flex-1 items-center gap-2 text-body font-normal"
         /* The run's sentence joins the title rather than replacing it: this
            attribute is also how a truncated title gets read, and a row that
            answered "what is this" with "Juno has asked you something" would
            have traded one fact for another. */
         title={signal ? `${rowLabel} — ${signal.meaning}` : rowLabel}
       >
-        {/* THE MARK IS THE STATE, when there is one. Same slot, same 6px, same
-            place in the row: a conversation carrying a run swaps its hollow
-            bullet for that run's toned dot rather than gaining a second mark
-            beside it (docs/design/PREMIUM_AUDIT.md rule 6). The bullet's job —
-            carrying selection — is not lost, because an active row is already
-            a filled `bg-sidebar-accent` row; the bullet was the second way of
-            saying that, and only for rows with nothing else to say. */}
-        <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden={signal ? undefined : true}>
-          {signal ? (
-            <StatusDot tone={signal.tone} label={signal.label} />
-          ) : (
-            <span
-              className={cn(
-                "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                // INVISIBLE AT REST. The bullet's job is to carry selection and
-                // to hold the slot a status dot drops into; at 50% on every
-                // resting row it was also drawing forty hollow rings down a
-                // column whose rows are otherwise just titles, which is the
-                // loudest thing in the panel once the type got big enough to
-                // read. The reference draws no mark at all on a recent chat.
-                //
-                // The SLOT stays, which is the whole trick: titles keep the
-                // column's one 44px text edge, and a run that needs you still
-                // arrives in place rather than shunting its row sideways.
-                active ? "bg-current opacity-100" : "opacity-0 group-hover:opacity-60"
-              )}
-            />
-          )}
-        </span>
         <AnimatedTitle
           title={rowLabel}
           animate={conversation.titleSource === "ai"}
           className="min-w-0 flex-1"
         />
-        {conversation.pinned && !nested && <Pin className="size-3 shrink-0 fill-current text-muted-foreground/60" aria-hidden />}
+        {/* One trailing mark, in this order: a run that needs you outranks the
+            fact that the row is pinned, because the pin is something you set
+            and the dot is something that happened. Rule 6 still holds — a row
+            shows one mark, in one place — and trailing is where it stops
+            costing every OTHER row 30px of indent to hold a slot that only a
+            handful of rows ever fill. */}
+        {signal ? (
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            <StatusDot tone={signal.tone} label={signal.label} />
+          </span>
+        ) : (
+          conversation.pinned && !nested && <Pin className="size-3 shrink-0 fill-current text-muted-foreground/60" aria-hidden />
+        )}
       </Link>
       <DropdownMenu>
         <Tooltip>
@@ -2254,30 +2259,18 @@ function ProjectRow({
                     : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
                 )}
               >
-                {/* The mark is the state when there is one, exactly as in the
-                    folds: same slot, same 6px, never a second mark beside the
-                    bullet (docs/design/PREMIUM_AUDIT.md rule 6). */}
-                <span
-                  className="flex size-4.5 shrink-0 items-center justify-center"
-                  aria-hidden={signal ? undefined : true}
-                >
-                  {signal ? (
-                    <StatusDot tone={signal.tone} label={signal.label} />
-                  ) : (
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
-                        // At rest, nothing — see the note on the same bullet in
-                        // ConversationRow. The guide line already says these
-                        // rows belong to the project above them.
-                        activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-0 group-hover/pc:opacity-60"
-                      )}
-                    />
-                  )}
-                </span>
+                {/* No leading slot here either — the guide line to the left
+                    already says these rows belong to the project above them,
+                    which is the job a bullet was doing twice. The signal is
+                    trailing, as it is on every other conversation row. */}
                 <span dir="auto" className="min-w-0 flex-1 truncate">
                   {label}
                 </span>
+                {signal && (
+                  <span className="flex size-4 shrink-0 items-center justify-center">
+                    <StatusDot tone={signal.tone} label={signal.label} />
+                  </span>
+                )}
               </Link>
               );
             })}
@@ -2287,10 +2280,6 @@ function ProjectRow({
                 onClick={() => setShowAll((v) => !v)}
                 className="flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent/60 hover:text-foreground motion-reduce:transition-none coarse:h-11"
               >
-                {/* An empty slot the width of the bullet's, not an arbitrary
-                    inset, so this lands on the same left edge as the titles
-                    above it. */}
-                <span className="size-4.5 shrink-0" aria-hidden />
                 {showAll ? "Show less" : `View all ${chats.length}`}
               </button>
             )}

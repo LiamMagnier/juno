@@ -256,12 +256,15 @@ function Segment({
         // `.pressable` carries the press dip AND the colour transitions (see
         // globals.css) — a `transition-colors` utility after it would override
         // the shorthand and un-animate the press.
-        // A 28px square. The label is gone from the box and lives in the
-        // accessible name and the tooltip; see the note on the nav above.
-        "pressable group relative flex size-7 shrink-0 items-center justify-center rounded-md",
+        // 32×24, NOT a square — measured off the reference, whose control is
+        // 68.2 × 28.1 overall: 2px of padding around two 32.1 × 24.1 cells.
+        // A square reads as a button; a wide cell reads as one half of a
+        // track, which is what a two-position switch is. The label is gone
+        // from the box and lives in the accessible name and the tooltip.
+        "pressable group relative flex h-6 w-8 shrink-0 items-center justify-center rounded-md",
         "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
         // 44px targets in the drawer, which is the only place this is touched.
-        "coarse:size-11",
+        "coarse:h-11 coarse:w-12",
         locked
           ? "text-muted-foreground/55 hover:text-muted-foreground"
           : active
