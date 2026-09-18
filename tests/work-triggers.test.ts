@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LOCAL_ONLY_TRIGGER_KINDS, type HostCapabilityView } from "@/lib/work/domain";
+import {
+  LOCAL_ONLY_TRIGGER_KINDS,
+  WORK_TRIGGER_KINDS,
+  type HostCapabilityView,
+} from "@/lib/work/domain";
+import { TIME_TRIGGER_KINDS } from "@/lib/work/schedule";
 import {
   DEFAULT_DEDUPE_WINDOW_SEC,
   EVENT_TRIGGER_KINDS,
@@ -130,8 +135,18 @@ function verdict(state: TriggerState, event: TriggerEvent, extra: Partial<Parame
 // ---------------------------------------------------------------------------
 
 test("the event kinds are a subset of the trigger vocabulary and do not overlap the clock ones", () => {
-  assert.equal(EVENT_TRIGGER_KINDS.length, 6);
+  // The two halves partition `WORK_TRIGGER_KINDS`, which is the property worth
+  // pinning: a kind in neither is stored with its configuration never
+  // validated, and a kind in both is validated by whichever parser a route
+  // reached for first. Counted against the vocabulary rather than against a
+  // number written here, so adding a kind does not mean editing an arithmetic
+  // fact that says nothing.
+  assert.equal(
+    EVENT_TRIGGER_KINDS.length + TIME_TRIGGER_KINDS.length,
+    WORK_TRIGGER_KINDS.length
+  );
   assert.equal(isEventTriggerKind("email_filter"), true);
+  assert.equal(isEventTriggerKind("api"), true, "an API call is something happening, not a clock");
   assert.equal(isEventTriggerKind("daily"), false, "daily fires on a clock, and lives in schedule.ts");
 });
 

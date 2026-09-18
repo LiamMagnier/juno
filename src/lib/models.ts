@@ -851,5 +851,38 @@ export function isModelId(value: string): boolean {
   return parseModelRef(value) !== null;
 }
 
+/**
+ * Whether a runner-catalog entry is the model somebody chose.
+ *
+ * A model has two spellings in this codebase and they are not interchangeable.
+ * `ModelInfo.id` is canonical — `"provider:providerModel"`, built by `def()` —
+ * and it is what every picker stores: the Code composer, the automations
+ * editor, `CodeTask.model`. `BackendAgentModel.model`
+ * (`src/lib/model-catalog-api.ts`) is the BARE provider id, because that is
+ * what the runner passes to the provider's own API.
+ *
+ * Comparing the two directly is always false, which is not a crash and not a
+ * log line — it is the chosen model being silently dropped and the runner
+ * taking whatever was first available. That is what the runner-context route
+ * did to every task with a model on it, for both the composer and the routine
+ * editor. Written once, here beside the canonicaliser, so the next consumer of
+ * that catalog cannot repeat it.
+ *
+ * `resolveModel` is the last resort rather than the first, so a catalog entry
+ * discovered at runtime — one this file has never heard of — still matches on
+ * its own spelling.
+ */
+export function catalogEntryMatchesModel(
+  entry: { provider: string; model: string },
+  chosen: string | null | undefined
+): boolean {
+  if (!chosen) return false;
+  const canonical = `${entry.provider}:${entry.model}`;
+  if (chosen === canonical || chosen === entry.model) return true;
+  // A stored id that has since been renamed or retired resolves to the id it
+  // was migrated to, which is the one the catalog carries.
+  return resolveModel(chosen)?.id === canonical;
+}
+
 /** Max tokens to generate per response (bigger so artifacts don't truncate). */
 export const MAX_OUTPUT_TOKENS = 8192;

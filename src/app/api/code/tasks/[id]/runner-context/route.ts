@@ -22,6 +22,7 @@ import {
   readStoredEnvVars,
 } from "@/lib/code-environments";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
+import { catalogEntryMatchesModel } from "@/lib/models";
 import { loadModelCapabilityMap } from "@/lib/model-capability";
 
 export const runtime = "nodejs";
@@ -389,13 +390,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
    * on the next best one instead of failing at the runner with nothing to say
    * — the same outcome as before this column existed, which is the behaviour
    * every task created before it still gets.
+   *
+   * The comparison goes through `catalogEntryMatchesModel` because the two
+   * sides spell a model differently: `CodeTask.model` holds the canonical
+   * `"provider:providerModel"` that every picker stores, and a catalog entry
+   * holds the bare provider id. Comparing them directly is always false, so the
+   * chosen model was silently dropped and the runner took first-available —
+   * for the /code composer and the automations editor alike, with nothing
+   * logged and nothing to notice.
    */
-  const models =
-    task.model && catalog.some((entry) => entry.model === task.model)
-      ? [...catalog].sort((a, b) =>
-          a.model === task.model ? -1 : b.model === task.model ? 1 : 0,
-        )
-      : catalog;
+  const chosen = (entry: { provider: string; model: string }) =>
+    catalogEntryMatchesModel(entry, task.model);
+  const models = catalog.some(chosen)
+    ? [...catalog].sort((a, b) => (chosen(a) ? -1 : chosen(b) ? 1 : 0))
+    : catalog;
 
   return NextResponse.json(
     {

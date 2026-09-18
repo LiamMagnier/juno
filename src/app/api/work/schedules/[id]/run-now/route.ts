@@ -3,28 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
-import { getUserPlan } from "@/lib/usage";
-import {
-  WORK_LIVE_STATUSES,
-  narrowestBudget,
-  narrowestPolicy,
-  selectTarget,
-} from "@/lib/work/domain";
-import { runBudgetForWindow } from "@/lib/work/budget";
-import { checkUsageWindows } from "@/lib/spend";
-import { windowLimitMessage } from "@/lib/spend-ceiling";
-import { createRun } from "@/lib/work/store";
 import { serializeRun } from "@/lib/work/serializers";
-import {
-  hostCapabilityView,
-  parseScheduleRunConfig,
-  permissionPolicyOf,
-  runNowSchema,
-  scheduleTargetOf,
-  unattendedPolicyOf,
-  type JsonObject,
-} from "@/lib/work/schedule";
-import { effectiveHostState, refusalForSelection } from "@/app/api/work/protocol";
+import { runNowSchema } from "@/lib/work/schedule";
+import { fireRefusalStatus, fireScheduleNow } from "@/lib/work/fire-now";
+import { refusalForSelection } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
 
@@ -33,27 +15,16 @@ export const runtime = "nodejs";
  *  is not a wasted request. */
 const RUN_NOW_RATE_LIMIT = 10;
 
-/** Matches the constant the run-dispatch route holds, and for the same reason:
- *  turning cloud off should produce an honest refusal here rather than a queue
- *  of runs nothing will ever claim. */
-const CLOUD_WORK_AVAILABLE = true;
-
 /**
- * Runs a schedule once, now, without moving it.
+ * Runs a routine once, now, without moving it.
  *
- * The absence of any write to `nextRunAt`, `lastRunAt` or `lockedUntil` is the
- * entire point of this route rather than an omission. The legacy `executeTask`
- * calls `advance()` on every exit path, so wiring a Run-now button to it would
- * mean pressing "run it now" quietly cancels this evening's scheduled run —
- * a button that appears to do one thing and also does the opposite of another.
- * Here the schedule is read and never written: whatever it was going to do
- * next, it still does.
- *
- * The run is `manual` in origin, because a person asked for it, but it still
- * carries the schedule's unattended policy. Pressing a button is not agreeing
- * in advance to whatever the run decides to delete; the person who pressed it
- * has very likely closed the tab, and the policy they set for this schedule is
- * the last thing they actually said about that.
+ * The decisions — no write to `nextRunAt`, the routine's unattended policy
+ * carried onto a run a person started, the concurrency cap honoured rather than
+ * bypassed — live in `src/lib/work/fire-now.ts`, because an `api` trigger's
+ * fire URL asks this same question and two implementations of it would disagree
+ * about exactly those three things. This route is the half that is only about
+ * the browser: who is asking, how often they may ask, and what the answer looks
+ * like on the wire.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -82,45 +53,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  const live = await prisma.workRun.count({
-    where: { userId: user.id, scheduleId: id, status: { in: [...WORK_LIVE_STATUSES] } },
-  });
-  if (live >= Math.max(1, schedule.maxConcurrentRuns)) {
-    // The same cap the scheduler honours. Bypassing it here would let a person
-    // start by hand exactly the pile-up the schedule's own setting exists to
-    // prevent, against the same granted folders.
-    return NextResponse.json(
-      {
-        error: "schedule_already_running",
-        message: "This schedule is already running. Let it finish before starting another.",
-      },
-      { status: 409 }
-    );
-  }
-
-  const now = new Date();
-  const runConfig = parseScheduleRunConfig(schedule.runConfig);
-  const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
-  const ordered = schedule.hostId
-    ? [...hosts].sort((left, right) =>
-        left.id === schedule.hostId ? -1 : right.id === schedule.hostId ? 1 : 0
-      )
-    : hosts;
-
-  const selection = selectTarget({
-    requested: scheduleTargetOf(schedule.target),
-    required: runConfig.requiredCapabilities,
-    hosts: ordered.map((host) => hostCapabilityView(host, effectiveHostState(host, now))),
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
-  });
-
-  // A manual fire refuses rather than falling back on `hostOfflinePolicy`. That
-  // policy answers "what should happen at 07:00 while I am asleep"; somebody
-  // who has just pressed a button is here to be told the Mac is off, and to
-  // decide for themselves.
-  const refusal = refusalForSelection(selection);
-  if (refusal) return NextResponse.json(refusal, { status: 409 });
-
   if (!isOwnerEmail(user.email)) {
     const limited = await rateLimit({
       key: `work-schedule-run-now:${user.id}`,
@@ -132,97 +64,70 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  const host = selection.hostId ? ordered.find((candidate) => candidate.id === selection.hostId) : undefined;
-  const sessionPolicy = permissionPolicyOf(schedule.session.permissionPolicy);
-  const hostPolicy = host ? permissionPolicyOf(host.approvalPolicy) : null;
-  const permissionPolicy: JsonObject = {
-    // `narrowestPolicy` is a `min`, so no layer can widen another: a Mac pinned
-    // to `conservative` stays conservative under a `permissive` session.
-    policy: narrowestPolicy(sessionPolicy, hostPolicy),
-    session: sessionPolicy,
-    host: hostPolicy,
-    unattended: unattendedPolicyOf(schedule.unattendedPolicy),
-    // True: a person is here, so the executor may ask them a question rather
-    // than checkpointing on the first one. It does NOT relax the unattended
-    // policy above, which is about what may be done without being asked.
-    attended: true,
-  };
-
-  // Read once and used twice: it shapes the ceiling below and it is what spend
-  // admission measures the run against. Reading it separately in each place is
-  // two chances for a subscription that lapsed mid-request to be refused
-  // against one plan and dispatched under another's ceiling.
-  const plan = await getUserPlan(user.id);
-
-  // What the account has left in the window that binds it — the only ceiling a
-  // run has now. The same read refuses the press and sizes the run's cost
-  // ceiling; the reasoning is in `src/lib/work/budget.ts`.
-  const windows = await checkUsageWindows(user.id, plan);
-  if (!windows.allowed && windows.bound !== null) {
-    return NextResponse.json(
-      {
-        error: "usage_window_exceeded",
-        message: `${windowLimitMessage(windows.bound, windows.resetsAtMs)} Nothing was started.`,
-        window: windows.bound,
-        resetsAtMs: windows.resetsAtMs,
-      },
-      { status: 429 }
-    );
-  }
-
-  const created = await createRun({
-    sessionId: schedule.sessionId,
+  const fired = await fireScheduleNow({
+    schedule,
     userId: user.id,
     // `manual`, not `schedule`. A person asked for this one, and labelling it
-    // otherwise would put it in the schedule's fired-on-time history and make
-    // the schedule look like it ran when it did not.
+    // otherwise would put it in the routine's fired-on-time history and make
+    // the routine look like it ran when it did not.
     origin: "manual",
-    // Still attributed to the schedule, so it appears in this schedule's run
-    // history — which is where somebody who pressed the button will look.
-    scheduleId: schedule.id,
-    requestedTarget: scheduleTargetOf(schedule.target),
-    effectiveTarget: selection.target,
-    hostId: selection.hostId,
-    requestedModel: runConfig.model ?? schedule.session.requestedModel,
-    requiredCapabilities: runConfig.requiredCapabilities,
-    availableCapabilities: selection.available,
-    degradation: selection.degradation,
-    permissionPolicy,
-    // The schedule's own figures, narrowed against what the account's binding
-    // window has left. A schedule with no budget of its own stores zeros, and
-    // zero means "no ceiling" to `budgetExceeded` — so before this merge a run
-    // pressed from the schedule page was the only kind with nothing but the
-    // step cap bounding it, while the same task started from the composer got a
-    // real one. `narrowestBudget` skips the zeros rather than clamping to them,
-    // which is what lets a schedule ask for LESS than the window and never for
-    // more.
-    budget: narrowestBudget(
-      {
-        maxCostMicroUsd: schedule.maxCostMicroUsd,
-        maxTokens: schedule.maxTokens,
-        maxRuntimeMs: schedule.maxRuntimeMs,
-      },
-      runBudgetForWindow(windows.remainingMicroUsd)
-    ),
-    plan,
+    // True: a person is here, so the executor may ask them a question rather
+    // than checkpointing on the first one. It does NOT relax the unattended
+    // policy, which is about what may be done without being asked.
+    attended: true,
+    // A person pressing a button sends no text. Only a token fire does.
+    fireText: null,
+    now: new Date(),
     idempotencyKey,
   });
 
+  if (fired.outcome === "refused") {
+    // `refusalForSelection` writes the sentence the rest of Work shows for an
+    // absent Mac, including which capabilities were missing, so a refusal about
+    // a target keeps its detail rather than being flattened to one string.
+    const refusal = fired.selection ? refusalForSelection(fired.selection) : null;
+    return NextResponse.json(
+      refusal ?? {
+        error: fired.reason,
+        message: fired.message,
+        // Present only on the window refusal, and worth carrying: it is what
+        // lets the button say WHICH limit and when it frees up rather than a
+        // bare "could not start".
+        ...(fired.window ? { window: fired.window, resetsAtMs: fired.resetsAtMs ?? null } : {}),
+      },
+      { status: fireRefusalStatus(fired.reason) }
+    );
+  }
+
+  if (fired.outcome === "code_run") {
+    return NextResponse.json(
+      {
+        // A Code routine's run is a Code session, not a `WorkRun`, so it is
+        // named as one: the client opens the conversation rather than looking
+        // for a run row that does not exist.
+        codeRun: { taskId: fired.taskId, conversationId: fired.conversationId },
+        nextRunAt: schedule.nextRunAt?.toISOString() ?? null,
+        ...(fired.replay ? { replay: true } : {}),
+      },
+      { status: fired.replay ? 200 : 201 }
+    );
+  }
+
   return NextResponse.json(
     {
-      run: serializeRun(created.run),
+      run: serializeRun(fired.run),
       selection: {
-        target: selection.target,
-        hostId: selection.hostId,
-        explanation: selection.explanation,
-        missing: selection.missing,
-        degradation: selection.degradation,
+        target: fired.selection.target,
+        hostId: fired.selection.hostId,
+        explanation: fired.selection.explanation,
+        missing: fired.selection.missing,
+        degradation: fired.selection.degradation,
       },
       // Stated back so a client never has to infer it from the absence of a
-      // change: this route deliberately leaves the schedule exactly as it was.
+      // change: this route deliberately leaves the routine exactly as it was.
       nextRunAt: schedule.nextRunAt?.toISOString() ?? null,
-      ...(created.replay ? { replay: true } : {}),
+      ...(fired.replay ? { replay: true } : {}),
     },
-    { status: created.replay ? 200 : 201 }
+    { status: fired.replay ? 200 : 201 }
   );
 }

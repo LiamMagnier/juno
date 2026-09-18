@@ -872,7 +872,12 @@
           "summary": "When a watched folder on the Mac changes. Only a Mac can see this.",
           "requiresLocalHost": true
         },
-        { "value": "manual", "summary": "Only when the user runs it.", "requiresLocalHost": false }
+        { "value": "manual", "summary": "Only when the user runs it.", "requiresLocalHost": false },
+        {
+          "value": "api",
+          "summary": "When something calls this automation's fire URL with the token issued for it.",
+          "requiresLocalHost": false
+        }
       ]
     },
     "missedRunPolicies": {

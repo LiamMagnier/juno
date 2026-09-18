@@ -48,6 +48,8 @@ import {
   type WorkUnattendedPolicy,
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES } from "@/lib/work/notifications";
+import { WORK_SCHEDULE_RUN_KINDS, codeRoutineInputSchema } from "@/lib/work/code-routine";
+import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 
 // ---------------------------------------------------------------------------
 // Wall clock in a zone
@@ -1164,6 +1166,12 @@ export interface WorkScheduleRow {
   timezone: string;
   runConfig: unknown;
   runConfigVersion: number;
+  /** work | code. See `scheduleRunKindOf` in `./code-routine`. */
+  runKind: string;
+  codeConfig: unknown;
+  codeConfigVersion: number;
+  fireSecretHash: string | null;
+  fireSecretIssuedAt: Date | null;
   maxCostMicroUsd: number;
   maxTokens: number;
   maxRuntimeMs: number;
@@ -1216,6 +1224,22 @@ export interface ClientWorkSchedule {
   timezone: string;
   runConfig: unknown;
   runConfigVersion: number;
+  /** work | code. Older clients have never seen this key and read every
+   *  schedule as the Work schedule it used to be, which is what it is. */
+  runKind: string;
+  codeConfig: unknown;
+  codeConfigVersion: number;
+  /**
+   * Whether this routine has a fire token, and when it was issued — never the
+   * token and never its hash.
+   *
+   * A boolean rather than a redacted string, because "jfr_••••" invites a
+   * client to render something that looks copyable and is not; and a hash
+   * returned to every reader of the routine would be an offline guessing target
+   * for a credential that starts runs against somebody's repository.
+   */
+  hasFireToken: boolean;
+  fireTokenIssuedAt: string | null;
   budget: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
   unattendedPolicy: string;
   hostOfflinePolicy: string;
@@ -1257,6 +1281,11 @@ export function serializeSchedule(
     timezone: schedule.timezone,
     runConfig: schedule.runConfig,
     runConfigVersion: schedule.runConfigVersion,
+    runKind: schedule.runKind,
+    codeConfig: schedule.codeConfig,
+    codeConfigVersion: schedule.codeConfigVersion,
+    hasFireToken: schedule.fireSecretHash !== null,
+    fireTokenIssuedAt: schedule.fireSecretIssuedAt?.toISOString() ?? null,
     budget: {
       maxCostMicroUsd: schedule.maxCostMicroUsd,
       maxTokens: schedule.maxTokens,
@@ -1671,14 +1700,33 @@ export interface LegacyScheduledTaskRow {
   id: string;
   userId: string;
   name: string;
+  /**
+   * THE PLAINTEXT, NOT THE COLUMN.
+   *
+   * `ScheduledTask.prompt` is sealed at rest — `scripts/encrypt-columns.ts`
+   * backfills it and every legitimate reader unseals it — so the raw Prisma row
+   * carries `enc:v2:<base64>` here. Handing that string to this function does
+   * not fail: it produces a routine whose goal and instructions ARE the
+   * ciphertext, which then fires every morning, spends real money and returns
+   * nothing anybody asked for. That is exactly the "schedule that silently
+   * stops running" this retirement exists to avoid, wearing a green tick.
+   *
+   * So the caller decrypts first (`decryptField(task.prompt)` in
+   * `scripts/work-scheduler.ts`, asserted by
+   * `tests/field-encryption-coverage.test.ts`) and this module stays free of
+   * the cipher, which it has to: the automations editor bundles it for the
+   * browser.
+   */
   prompt: string;
   model: string;
-  /** DAILY | WEEKDAYS | WEEKLY | MONTHLY. */
+  /** DAILY | WEEKDAYS | WEEKLY | MONTHLY | ONCE. */
   cadence: string;
   hour: number;
   minute: number;
   weekday: number | null;
   monthday: number | null;
+  /** "YYYY-MM-DD" in the task's own zone. ONCE only, and null for the rest. */
+  onDate: string | null;
   timezone: string;
   webSearch: boolean;
   enabled: boolean;
@@ -1720,7 +1768,45 @@ const LEGACY_CADENCE_KINDS: Record<string, TimeTriggerKind> = {
   WEEKDAYS: "weekdays",
   WEEKLY: "weekly",
   MONTHLY: "monthly",
+  // The cadence the first version of this map left out, which is the whole
+  // reason the retirement could not happen: every ONCE task would have been a
+  // task the legacy runner still had to be kept alive for. `TaskCadence` has
+  // exactly these five members, so with this one the map is total and the
+  // legacy worker has nothing left that only it can run.
+  ONCE: "once",
 };
+
+/**
+ * Why a legacy task could not be turned into a routine.
+ *
+ * Named rather than returned as a bare null, because the caller's response to
+ * each is different and "left it alone" is not a thing a sweep may decide
+ * quietly: `unknown_cadence` means a deployment newer than this one wrote a
+ * value this build has never heard of, `malformed_once` means the row's own
+ * date column does not hold a date, and `unreadable_prompt` means the sealed
+ * prompt could not be decrypted. All three leave the task exactly as it is;
+ * only the sentence in the log differs, and that sentence is the only way
+ * anybody finds out.
+ *
+ * `unreadable_prompt` is the policy the retired `executeTask` already had — it
+ * compared the decrypted prompt against `FIELD_DECRYPT_PLACEHOLDER` and refused
+ * the run — carried over to the thing that replaced it. Adopting such a task
+ * would mint a routine whose whole instruction is the words "[encrypted field
+ * could not be decrypted]", and it would bill somebody every morning for it.
+ */
+export const TASK_MIGRATION_BLOCKERS = [
+  "unknown_cadence",
+  "malformed_once",
+  "unreadable_prompt",
+] as const;
+export type TaskMigrationBlocker = (typeof TASK_MIGRATION_BLOCKERS)[number];
+
+export type TaskMigrationResult =
+  | { ok: true; plan: ScheduleMigrationPlan }
+  | { ok: false; blocker: TaskMigrationBlocker; message: string };
+
+/** "YYYY-MM-DD" in the task's zone, as `onceRunInstant` reads it. */
+const LEGACY_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
  * Turns one `ScheduledTask` into the schedule that replaces it.
@@ -1731,34 +1817,92 @@ const LEGACY_CADENCE_KINDS: Record<string, TimeTriggerKind> = {
  * be lost in the migration itself — the exact failure the missed-run policy
  * exists to prevent, introduced by the thing that was supposed to preserve it.
  *
- * Returns null for a cadence this build cannot express. That is deliberate and
- * it is why the scheduler leaves such a task alone: mapping an unrecognised
- * cadence onto `daily` would produce a schedule that fires at a different time
- * from the task it claims to be, and the user would have no way to tell.
+ * A cadence this build cannot express is refused by name rather than mapped
+ * onto the nearest one: a task migrated onto `daily` would fire at a different
+ * time from the task it claims to be, and the user would have no way to tell.
+ * The caller leaves such a task exactly where it is and says so out loud —
+ * `tests/work-schedule.test.ts` walks the whole of `TaskCadence` to prove that
+ * the set needing that treatment is empty, because A SCHEDULE THAT SILENTLY
+ * STOPS RUNNING is the one outcome this retirement must not produce.
+ *
+ * `task.prompt` is the DECRYPTED prompt — see the field's own note — and a
+ * prompt that could not be decrypted is refused rather than adopted, because a
+ * routine is not better than a stopped schedule when what it runs every morning
+ * is a placeholder.
  */
-export function planTaskMigration(task: LegacyScheduledTaskRow): ScheduleMigrationPlan | null {
+export function planTaskMigration(task: LegacyScheduledTaskRow): TaskMigrationResult {
+  // Checked before the cadence, because this is the failure that costs money.
+  // An unreadable prompt is still a perfectly well-formed DAILY row, so nothing
+  // further down would ever notice it.
+  const prompt = task.prompt.trim();
+  if (prompt === "" || prompt === FIELD_DECRYPT_PLACEHOLDER) {
+    return {
+      ok: false,
+      blocker: "unreadable_prompt",
+      message:
+        "This task's prompt could not be read, so the routine it became would run an empty instruction every time it fired. It was left exactly as it is.",
+    };
+  }
+
   const kind = LEGACY_CADENCE_KINDS[task.cadence];
-  if (!kind) return null;
+  if (!kind) {
+    return {
+      ok: false,
+      blocker: "unknown_cadence",
+      message: `"${task.cadence}" is not a cadence this build can express as a trigger, so the task was left exactly as it is.`,
+    };
+  }
 
   const timezone = isValidTimeZone(task.timezone) ? task.timezone : LEGACY_TASK_TIMEZONE;
   const clock: JsonObject = { hour: task.hour, minute: task.minute };
-  const config: JsonObject =
-    kind === "weekly"
-      ? { ...clock, weekday: task.weekday ?? LEGACY_DEFAULT_WEEKDAY }
-      : kind === "monthly"
-        ? { ...clock, monthday: task.monthday ?? LEGACY_DEFAULT_MONTHDAY }
-        : clock;
 
-  return {
+  let config: JsonObject;
+  if (kind === "weekly") {
+    config = { ...clock, weekday: task.weekday ?? LEGACY_DEFAULT_WEEKDAY };
+  } else if (kind === "monthly") {
+    config = { ...clock, monthday: task.monthday ?? LEGACY_DEFAULT_MONTHDAY };
+  } else if (kind === "once") {
+    // The calendar date the task names, read exactly as `onceRunInstant` reads
+    // it — including its rule that a date which does not round-trip is not a
+    // date somebody picked. A one-off whose column cannot be read is left on
+    // its own row rather than migrated to an invented day: this is the single
+    // fire that task will ever have, and putting it on the wrong one is worse
+    // than not moving it at all.
+    const match = LEGACY_DATE.exec(task.onDate ?? "");
+    const year = match ? Number(match[1]) : 0;
+    const month = match ? Number(match[2]) : 0;
+    const day = match ? Number(match[3]) : 0;
+    const real =
+      match !== null &&
+      year >= 1970 &&
+      year <= 9999 &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= daysInMonth(year, month);
+    if (!real) {
+      return {
+        ok: false,
+        blocker: "malformed_once",
+        message:
+          "This one-off task does not name a real calendar date, so there is no single moment to migrate it to. It was left exactly as it is.",
+      };
+    }
+    config = { ...clock, year, month, day };
+  } else {
+    config = clock;
+  }
+
+  const plan: ScheduleMigrationPlan = {
     session: {
       title: task.name,
-      goal: task.prompt,
+      goal: prompt,
       conversationId: task.conversationId,
     },
     schedule: {
       name: task.name,
       enabled: task.enabled,
-      instructions: task.prompt,
+      instructions: prompt,
       timezone,
       // Legacy tasks are a prompt and a model. Nothing about them touches a
       // Mac, so migrating them to `automatic` would offer the planner a local
@@ -1788,6 +1932,48 @@ export function planTaskMigration(task: LegacyScheduledTaskRow): ScheduleMigrati
     },
     trigger: { kind, config },
   };
+  return { ok: true, plan };
+}
+
+/**
+ * What to do with a routine an EARLIER sweep adopted before the decrypt was
+ * there.
+ *
+ * Those deployments copied the sealed column straight into
+ * `WorkSchedule.instructions` and `WorkSession.goal`, so the rows exist and
+ * they are firing. Fixing `planTaskMigration` does nothing for them: the sweep
+ * skips a task that already has a routine, and always will. They need one pass
+ * of their own — `scripts/repair-adopted-prompts.ts` — and the decision it
+ * makes per row is here so it can be exercised without a database.
+ *
+ * `stored` is what the routine holds now; `recovered` is `decryptField(stored)`.
+ * Comparing the two is what distinguishes the three cases, and it is reliable
+ * precisely because `decryptField` returns a value it does not recognise
+ * untouched (the READ-BOTH property in field-crypto.ts):
+ *
+ *   - they are equal          → the row was never sealed. Correct already, and
+ *                               a rewrite would burn a write per routine per
+ *                               run of the repair.
+ *   - the recovery is the
+ *     placeholder             → the key that sealed it is gone. There is no
+ *                               plaintext to put back, so the routine is paused
+ *                               rather than left firing a sentence that means
+ *                               nothing — the same call `planTaskMigration`
+ *                               makes when it refuses the adoption outright.
+ *   - otherwise               → the plaintext, which is what the row should
+ *                               have held all along.
+ */
+export type AdoptedPromptRepair =
+  | { action: "leave" }
+  | { action: "rewrite"; prompt: string }
+  | { action: "pause" };
+
+export function planAdoptedPromptRepair(stored: string, recovered: string): AdoptedPromptRepair {
+  if (stored === recovered) return { action: "leave" };
+  if (recovered.trim() === "" || recovered === FIELD_DECRYPT_PLACEHOLDER) {
+    return { action: "pause" };
+  }
+  return { action: "rewrite", prompt: recovered };
 }
 
 // ---------------------------------------------------------------------------
@@ -1847,6 +2033,16 @@ export const createScheduleSchema = z.object({
   sessionId: idSchema.optional(),
   name: z.string().trim().min(1).max(MAX_NAME_CHARS),
   instructions: z.string().trim().min(1).max(MAX_INSTRUCTIONS_CHARS),
+  // Defaulted rather than required, unlike `target`: every schedule that
+  // existed before Code routines is a Work routine, and so is every request a
+  // client written against the old shape sends. `target` is required because
+  // `automatic` would silently reach a Mac; there is no equivalent hazard in
+  // defaulting a kind to the only kind there used to be.
+  runKind: z.enum(WORK_SCHEDULE_RUN_KINDS).default("work"),
+  /** Required when `runKind` is `code`; refused otherwise. The routes check
+   *  that pairing, because zod cannot say it without turning this object into
+   *  a discriminated union that every existing client would fail. */
+  code: codeRoutineInputSchema.optional(),
   timezone: z.string().trim().min(1).max(MAX_ID_CHARS),
   // Required rather than defaulted, for the reason `createSessionSchema` gives:
   // `automatic` is what lets scheduled work silently move off the user's Mac.
@@ -1872,6 +2068,17 @@ export const patchScheduleSchema = z
   .object({
     name: z.string().trim().min(1).max(MAX_NAME_CHARS).optional(),
     instructions: z.string().trim().min(1).max(MAX_INSTRUCTIONS_CHARS).optional(),
+    // The whole Code configuration or none of it, never a partial merge — the
+    // same rule `triggers` follows. A patch that could change the repository
+    // and leave the branch behind is a routine that pushes last week's branch
+    // to this week's repository.
+    //
+    // `runKind` is deliberately absent from this list. A routine's kind is what
+    // its history is made of — Work runs against one accumulating session, or
+    // Code sessions one per fire — and flipping it would leave every row already
+    // written pointing at a shape the editor no longer draws. Making a routine
+    // of the other kind is a create, which is one press and loses nothing.
+    code: codeRoutineInputSchema.optional(),
     timezone: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
     target: z.enum(WORK_TARGETS).optional(),
     // Explicitly nullable: clearing the host is how a local schedule is moved

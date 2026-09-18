@@ -41,6 +41,8 @@ import type { WorkTriggerDraft } from "@/components/work/work-transport";
 
 export function ScheduleArmingCard({
   triggers,
+  runKind,
+  code,
   target,
   hostId,
   hosts,
@@ -51,6 +53,11 @@ export function ScheduleArmingCard({
   enabled,
 }: {
   triggers: readonly WorkTriggerDraft[];
+  /** What one fire produces, which changes two of the four rows below. */
+  runKind: "work" | "code";
+  /** The repository and mode, for a Code routine. Null while the repository
+   *  typed is not one yet, which the row then says rather than guessing. */
+  code: { repo: { owner: string; name: string } | null; baseRef: string; permissionMode: string };
   target: "cloud" | "local" | "automatic";
   hostId: string | null;
   hosts: readonly ClientWorkHost[] | null;
@@ -86,7 +93,9 @@ export function ScheduleArmingCard({
             <span className="text-muted-foreground"> · times are {timezone.trim()}</span>
           )}
         </Row>
-        <Row label="Runs on">{describeTarget(target, hostId, hosts)}</Row>
+        <Row label="Runs on">
+          {runKind === "code" ? describeCodeTarget(code) : describeTarget(target, hostId, hosts)}
+        </Row>
         <Row label="What it does">
           {instructions.trim().length === 0 ? (
             <span className="text-muted-foreground">Not written yet.</span>
@@ -99,8 +108,16 @@ export function ScheduleArmingCard({
           )}
         </Row>
         <Row label="Unattended">
-          {describeUnattended(unattendedPolicy)}{" "}
-          <span className="text-muted-foreground">{describeOffline(hostOfflinePolicy, target)}</span>
+          {runKind === "code" ? (
+            describeCodeUnattended(code.permissionMode)
+          ) : (
+            <>
+              {describeUnattended(unattendedPolicy)}{" "}
+              <span className="text-muted-foreground">
+                {describeOffline(hostOfflinePolicy, target)}
+              </span>
+            </>
+          )}
         </Row>
       </dl>
     </section>
@@ -131,6 +148,44 @@ function describeTarget(
   return named === null
     ? "Wherever it fits: a Mac when it needs one, the cloud otherwise."
     : `Wherever it fits, preferring ${named.displayName}.`;
+}
+
+/**
+ * Where a Code routine's run happens, which is one sentence and a repository.
+ *
+ * The repository is the fact worth reading back. Every other part of a Code
+ * run's destination is fixed — a cloud runner, a branch of its own, a pull
+ * request — and the one thing a person can get wrong here is which repository
+ * they have just pointed an unsupervised agent at.
+ */
+function describeCodeTarget(code: {
+  repo: { owner: string; name: string } | null;
+  baseRef: string;
+}): string {
+  if (!code.repo) return "A repository has not been named yet.";
+  const from = code.baseRef.trim() ? `from ${code.baseRef.trim()}` : "from its default branch";
+  return `A cloud runner with ${code.repo.owner}/${code.repo.name} checked out ${from}, pushing a branch of its own and opening a pull request.`;
+}
+
+/**
+ * What a Code run may do with nobody there, as a consequence rather than a mode
+ * name.
+ *
+ * The same job `describeUnattended` does for a Work routine, against the
+ * control that actually governs a cloud run: the engine routes everything it
+ * cannot decide to the driver's `requestApproval`, which answers `deny` under
+ * anything narrower than `full`.
+ */
+function describeCodeUnattended(mode: string): string {
+  switch (mode) {
+    case "plan":
+      return "It works out what it would do and stops there. Nothing is written and nothing is pushed.";
+    case "auto-edit":
+      return "It edits files on its own branch. Anything else it cannot decide is refused rather than waited on, because nobody is there to ask.";
+    case "full":
+    default:
+      return "It decides for itself, inside its own branch and its own container. Nothing reaches your Macs and nothing merges without you.";
+  }
 }
 
 /**

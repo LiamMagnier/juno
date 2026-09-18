@@ -18,6 +18,12 @@ import {
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
 import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
+import { parseCodeRoutineConfig } from "@/lib/work/code-routine";
+import {
+  CODE_PERMISSION_MODES,
+  DEFAULT_CLOUD_PERMISSION_MODE,
+  type CodePermissionMode,
+} from "@/lib/code-environments";
 import { ceilingFieldValue } from "@/lib/work/budget";
 import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
 import { useApp } from "@/components/app/app-provider";
@@ -143,11 +149,44 @@ const NOTIFY_OPTIONS: readonly PolicyOption<WorkNotifyPolicy>[] = [
   },
 ];
 
+/**
+ * What a Code routine works in, as the form holds it.
+ *
+ * `repo` is one field and not two, because "owner/name" is how a repository is
+ * written everywhere else a person meets one — in a clone URL, in a pull request
+ * title, in the address bar — and a form that splits it is a form people paste
+ * the wrong half into.
+ */
+interface CodeDraft {
+  repo: string;
+  baseRef: string;
+  environmentId: string;
+  permissionMode: CodePermissionMode;
+}
+
+/**
+ * Splits "owner/name", or says it is not one yet.
+ *
+ * Refused rather than repaired: a repository is the one field of a Code routine
+ * with no honest default, and guessing at half of one would produce a routine
+ * that clones something nobody named.
+ */
+function splitRepo(value: string): { owner: string; name: string } | null {
+  const [owner, name, ...rest] = value.trim().replace(/^https:\/\/github\.com\//, "").split("/");
+  if (rest.length > 0 || !owner || !name) return null;
+  // `.git` is what a clone URL carries and what a paste therefore carries too.
+  const cleaned = name.replace(/\.git$/, "");
+  return cleaned ? { owner, name: cleaned } : null;
+}
+
 /** A draft of everything the form holds, before it becomes a request. */
 interface ScheduleDraft {
   name: string;
   instructions: string;
   timezone: string;
+  /** What one fire produces. Fixed at creation — see `patchScheduleSchema`. */
+  runKind: "work" | "code";
+  code: CodeDraft;
   target: "cloud" | "local" | "automatic";
   hostId: string | null;
   enabled: boolean;
@@ -195,13 +234,33 @@ function ceilingField(value: number): string {
 }
 
 function draftFrom(schedule: ClientWorkSchedule): ScheduleDraft {
+  // Read through the server's own parser, so what the form shows is what the
+  // dispatcher will act on rather than whatever happens to be in the column.
+  // A routine whose configuration this build cannot read opens on the blank
+  // one, and the save then refuses it by name rather than storing half of it.
+  const parsedCode = parseCodeRoutineConfig(schedule.codeConfig);
+  const runKind = schedule.runKind === "code" ? "code" : "work";
   return {
     budget: {
       costUsd: ceilingField(schedule.budget.maxCostMicroUsd / 1_000_000),
       tokens: ceilingField(schedule.budget.maxTokens),
       minutes: ceilingField(schedule.budget.maxRuntimeMs / 60_000),
     },
-    model: parseScheduleRunConfig(schedule.runConfig).model ?? "",
+    model:
+      (runKind === "code"
+        ? parsedCode.ok
+          ? parsedCode.config.model
+          : null
+        : parseScheduleRunConfig(schedule.runConfig).model) ?? "",
+    runKind,
+    code: parsedCode.ok
+      ? {
+          repo: `${parsedCode.config.repo.owner}/${parsedCode.config.repo.name}`,
+          baseRef: parsedCode.config.baseRef ?? "",
+          environmentId: parsedCode.config.environmentId ?? "",
+          permissionMode: parsedCode.config.permissionMode ?? DEFAULT_CLOUD_PERMISSION_MODE,
+        }
+      : blankCode(),
     name: schedule.name,
     instructions: schedule.instructions,
     timezone: schedule.timezone,
@@ -235,11 +294,26 @@ function draftFrom(schedule: ClientWorkSchedule): ScheduleDraft {
  * list because a schedule with no trigger cannot be saved at all, and opening
  * on a state the save button refuses teaches the reader that the form is broken.
  */
+function blankCode(): CodeDraft {
+  return {
+    repo: "",
+    baseRef: "",
+    environmentId: "",
+    // `full`, which is what every cloud run had before the column existed and
+    // what runner-context still resolves a null to. Opening on anything
+    // narrower would silently make a routine ask for approvals nobody is there
+    // to give — the run would checkpoint on its first edit and sit.
+    permissionMode: DEFAULT_CLOUD_PERMISSION_MODE,
+  };
+}
+
 function blankDraft(): ScheduleDraft {
   return {
     name: "",
     instructions: "",
     timezone: "",
+    runKind: "work",
+    code: blankCode(),
     target: "automatic",
     hostId: null,
     enabled: true,
@@ -335,11 +409,18 @@ export function WorkScheduleEditor({
     minutes: ceilingFieldValue(draft.budget.minutes),
   };
   const budgetValid = budget.costUsd !== null && budget.tokens !== null && budget.minutes !== null;
+  // The other rule the form can check before the server does, and the one that
+  // matters most for a Code routine: a repository is the single field with no
+  // honest default, so a routine saved without one would be a routine that
+  // fails every morning with an error only the log ever sees.
+  const isCode = draft.runKind === "code";
+  const repo = isCode ? splitRepo(draft.code.repo) : null;
   const canSave =
     draft.name.trim().length > 0 &&
     draft.instructions.trim().length > 0 &&
     draft.timezone.trim().length > 0 &&
     draft.triggers.length > 0 &&
+    (!isCode || repo !== null) &&
     !missingHost &&
     budgetValid &&
     !saving;
@@ -349,15 +430,39 @@ export function WorkScheduleEditor({
     setSaving(true);
     setRefusal(null);
 
+    const code = draft.runKind === "code" ? splitRepo(draft.code.repo) : null;
     const input: WorkScheduleInput = {
       name: draft.name.trim(),
       instructions: draft.instructions.trim(),
       timezone: draft.timezone.trim(),
-      target: draft.target,
+      // Sent on a create and on an edit alike. The PATCH route ignores the kind
+      // — a routine cannot change it — and refuses a `code` block that does not
+      // belong to the routine's own kind, which is the check that catches a
+      // client sending the wrong half of this form.
+      ...(schedule === null ? { runKind: draft.runKind } : {}),
+      ...(code
+        ? {
+            code: {
+              repo: code,
+              baseRef: draft.code.baseRef.trim() || null,
+              environmentId: draft.code.environmentId || null,
+              permissionMode: draft.code.permissionMode,
+              // The routine's model lives here for a Code routine and in
+              // `runConfig` for a Work one, because the two dispatchers read
+              // two different columns. One field on the form, two homes.
+              model: draft.model === "" ? null : draft.model,
+              reasoningEffort: null,
+            },
+          }
+        : {}),
+      // A Code routine is always cloud — the create route refuses anything else
+      // — and sending its `target` from the segmented control the form hides
+      // for one would depend on a default nobody chose.
+      target: draft.runKind === "code" ? "cloud" : draft.target,
       // Cleared rather than left dangling when the target moves off a Mac: a
       // cloud schedule still carrying a host id is a row two readers disagree
       // about, and the PATCH route reads an explicit null as "unpin it".
-      hostId: draft.target === "cloud" ? null : draft.hostId,
+      hostId: draft.runKind === "code" || draft.target === "cloud" ? null : draft.hostId,
       enabled: draft.enabled,
       triggers: draft.triggers,
       unattendedPolicy: draft.unattendedPolicy,
@@ -374,8 +479,11 @@ export function WorkScheduleEditor({
         maxRuntimeMs: Math.round((budget.minutes ?? 0) * 60_000),
       },
       // Null clears an override; the route reads absent as "leave it", so the
-      // empty choice has to be sent as null rather than dropped.
-      model: draft.model === "" ? null : draft.model,
+      // empty choice has to be sent as null rather than dropped. A Code
+      // routine's model went into its `code` block above, so this stays null
+      // for one rather than writing the same id into two columns that two
+      // different dispatchers read.
+      model: draft.runKind === "code" || draft.model === "" ? null : draft.model,
     };
 
     const result =
@@ -413,6 +521,42 @@ export function WorkScheduleEditor({
 
   return (
     <div className="space-y-7">
+      {/*
+        What one fire produces, and the first question because it decides which
+        of the two forms below applies. Only on a create: a routine's history is
+        made of one kind of row — Work runs against one accumulating session, or
+        a Code session per fire — and the PATCH route refuses to change it, so
+        offering the switch on an edit would be offering a save that 400s.
+      */}
+      {schedule === null ? (
+        <section>
+          <h2 className="mb-2.5 font-mono text-label text-muted-foreground">What it runs</h2>
+          <SegmentedControl
+            value={draft.runKind}
+            onChange={(runKind) => set("runKind", runKind)}
+            options={[
+              { value: "work", label: "A task" },
+              { value: "code", label: "Code" },
+            ]}
+            ariaLabel="What this automation runs"
+            optionClassName="px-3 py-1 text-ui"
+            className="max-w-xs"
+          />
+          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
+            {isCode
+              ? "Each run clones a repository on a cloud runner, works, and opens a pull request — a Code session of its own you can read and review."
+              : "Each run adds to one task and one transcript, so what it learns carries from one run to the next."}
+          </p>
+        </section>
+      ) : (
+        isCode && (
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            A Code automation. Each run is a Code session of its own, with its own branch and pull
+            request.
+          </p>
+        )
+      )}
+
       <section className="space-y-3">
         <div>
           <Label htmlFor="schedule-name">Name</Label>
@@ -431,7 +575,11 @@ export function WorkScheduleEditor({
             id="schedule-instructions"
             value={draft.instructions}
             onChange={(event) => set("instructions", event.target.value)}
-            placeholder="Describe the errand and what “done” looks like, the way you would to a person picking it up cold."
+            placeholder={
+              isCode
+                ? "Describe the change and how you would know it worked, the way you would to somebody picking up the repository cold."
+                : "Describe the errand and what “done” looks like, the way you would to a person picking it up cold."
+            }
             rows={4}
             disabled={saving}
             className="mt-1"
@@ -443,12 +591,22 @@ export function WorkScheduleEditor({
         </div>
       </section>
 
+      {isCode && (
+        <CodeRoutineFields
+          draft={draft.code}
+          repo={repo}
+          disabled={saving}
+          onChange={(code) => set("code", code)}
+        />
+      )}
+
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">When it runs</h2>
         <TriggerListEditor
           triggers={draft.triggers}
           onChange={(triggers) => set("triggers", triggers)}
           grants={grants}
+          runKind={draft.runKind}
           disabled={saving}
         />
         <div className="mt-3">
@@ -468,6 +626,12 @@ export function WorkScheduleEditor({
         </div>
       </section>
 
+      {/* Where a WORK routine runs. A Code routine has one answer — a cloud
+          runner with the repository checked out — so the control is absent
+          rather than present-and-locked: a segmented control showing three
+          choices with two of them impossible is a question the reader is
+          invited to answer wrongly. */}
+      {!isCode && (
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Where it runs</h2>
         <SegmentedControl
@@ -529,6 +693,7 @@ export function WorkScheduleEditor({
           </div>
         )}
       </section>
+      )}
 
       {/*
         What each run may spend, and on what.
@@ -544,8 +709,19 @@ export function WorkScheduleEditor({
       */}
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">
-          What each run may spend
+          {isCode ? "What each run uses" : "What each run may spend"}
         </h2>
+        {/*
+          The three ceilings are stamped onto a `WorkRun` at dispatch and
+          enforced by the Work executor per token. A Code run is a GitHub
+          Actions job whose spend goes through `/api/agent` against the
+          account's own budget, and it reads none of these columns — so for a
+          Code routine the fields are ABSENT rather than present and ignored.
+          A cost ceiling that binds nothing is the clearest possible example of
+          a control implying something the runtime cannot do.
+        */}
+        {!isCode && (
+        <>
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="schedule-budget-cost">Cost, in US dollars</Label>
@@ -608,14 +784,38 @@ export function WorkScheduleEditor({
             Each ceiling has to be left empty, or a number of zero or more.
           </p>
         )}
+        </>
+        )}
+        {isCode && (
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            A Code run spends against your account’s usage like any other cloud session, and stops
+            when that is spent. It carries no ceiling of its own.
+          </p>
+        )}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
             <Label htmlFor="schedule-model">Model</Label>
             {/* The same `field-well` recipe as the Mac select above, for the
-                same reason. Only the models the Work runner can drive; the
-                empty choice is the task's own model, which is what every
-                schedule ran on before this field existed. */}
+                same reason. Only the models an agent runtime can drive, which
+                is one line — `backendAgentCatalog` draws it for the Code runner
+                and `isWorkCapableModel` is that same line stated once — so one
+                control serves both kinds. The empty choice is the runtime's own
+                choice, which is what every routine ran on before this field
+                existed.
+
+                Where the answer is STORED differs: a Work routine's model lives
+                in `runConfig` and a Code routine's in its `codeConfig`, because
+                two dispatchers read two columns. The save routes it; the reader
+                answers one question once.
+
+                The value is `model.id`, the canonical `provider:providerModel`.
+                The runner's catalog carries the BARE provider id, so the route
+                that orders it (`.../runner-context`) compares the two through
+                `catalogEntryMatchesModel` rather than with `===`. A direct
+                comparison is always false, and the failure it produces is the
+                quiet one: the choice made here is dropped and the runner takes
+                whatever is first available, with nothing logged. */}
             <select
               id="schedule-model"
               value={draft.model}
@@ -623,7 +823,9 @@ export function WorkScheduleEditor({
               onChange={(event) => set("model", event.target.value)}
               className="field-well mt-1 h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <option value="">The task’s own model</option>
+              <option value="">
+                {isCode ? "Whatever the runner picks" : "The task’s own model"}
+              </option>
               {MODEL_LIST.filter(isWorkCapableModel).map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name}
@@ -658,20 +860,33 @@ export function WorkScheduleEditor({
 
       <section className="space-y-4">
         <h2 className="font-mono text-label text-muted-foreground">When nobody is watching</h2>
-        <PolicyGroup
-          label="Something it cannot undo"
-          options={UNATTENDED_OPTIONS}
-          value={draft.unattendedPolicy}
-          disabled={saving}
-          onChange={(value) => set("unattendedPolicy", value)}
-        />
-        <PolicyGroup
-          label="The Mac is not there"
-          options={HOST_OFFLINE_OPTIONS}
-          value={draft.hostOfflinePolicy}
-          disabled={saving}
-          onChange={(value) => set("hostOfflinePolicy", value)}
-        />
+        {/* The three unattended policies are enforced by the Work executor,
+            action by action, through `decideUnattendedAction`. The cloud Code
+            runner enforces the permission mode above instead — a different
+            mechanism answering the same question for a different runtime — so
+            showing both to a Code routine would be two controls over one
+            behaviour, one of which does nothing. */}
+        {!isCode && (
+          <PolicyGroup
+            label="Something it cannot undo"
+            options={UNATTENDED_OPTIONS}
+            value={draft.unattendedPolicy}
+            disabled={saving}
+            onChange={(value) => set("unattendedPolicy", value)}
+          />
+        )}
+        {/* Absent for a Code routine, which never waits on a Mac: the three
+            options all answer "what should happen when the machine you chose is
+            asleep", and a cloud runner is not a machine anybody chose. */}
+        {!isCode && (
+          <PolicyGroup
+            label="The Mac is not there"
+            options={HOST_OFFLINE_OPTIONS}
+            value={draft.hostOfflinePolicy}
+            disabled={saving}
+            onChange={(value) => set("hostOfflinePolicy", value)}
+          />
+        )}
         <PolicyGroup
           label="Fires that were missed"
           options={MISSED_RUN_OPTIONS}
@@ -679,17 +894,32 @@ export function WorkScheduleEditor({
           disabled={saving}
           onChange={(value) => set("missedRunPolicy", value)}
         />
-        <PolicyGroup
-          label="Tell me"
-          options={NOTIFY_OPTIONS}
-          value={draft.notifyPolicy}
-          disabled={saving}
-          onChange={(value) => set("notifyPolicy", value)}
-        />
-        <p className="text-caption leading-relaxed text-muted-foreground">
-          These arrive by email, at the address on your account, once per thing worth saying — a run
-          that finishes while a retry is still in flight does not write twice.
-        </p>
+        {/* The four notification options are read by the Work run notifier
+            (src/lib/work/notifications.ts), which watches `WorkRun` events. A
+            Code run produces none of those: it appears in the sidebar as a Code
+            session with a status dot, which is how every other Code run reports
+            itself. An email preference that nothing sends email for is the same
+            defect as a ceiling that binds nothing. */}
+        {!isCode ? (
+          <>
+            <PolicyGroup
+              label="Tell me"
+              options={NOTIFY_OPTIONS}
+              value={draft.notifyPolicy}
+              disabled={saving}
+              onChange={(value) => set("notifyPolicy", value)}
+            />
+            <p className="text-caption leading-relaxed text-muted-foreground">
+              These arrive by email, at the address on your account, once per thing worth saying — a
+              run that finishes while a retry is still in flight does not write twice.
+            </p>
+          </>
+        ) : (
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            Each run appears in the sidebar as its own Code session, with the status mark every Code
+            session has — including the one that stopped to ask you something.
+          </p>
+        )}
       </section>
 
       {/*
@@ -700,6 +930,8 @@ export function WorkScheduleEditor({
       */}
       <ScheduleArmingCard
         triggers={draft.triggers}
+        runKind={draft.runKind}
+        code={{ repo, baseRef: draft.code.baseRef, permissionMode: draft.code.permissionMode }}
         target={draft.target}
         hostId={draft.hostId}
         hosts={hosts}
@@ -724,6 +956,180 @@ export function WorkScheduleEditor({
     </div>
   );
 }
+
+/** The environments a Code routine may run in, as the list route serves them. */
+interface EnvironmentOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * What a Code routine clones, and what the runner may do with it.
+ *
+ * Four fields, and every one of them is read by the cloud runner: the
+ * repository and the branch reach `git clone`, the environment decides egress,
+ * variables and the setup step, and the permission mode decides what the agent
+ * may do before it would have to ask. Nothing here is stored and ignored, which
+ * is the rule this whole editor is written to — the Work-only controls that a
+ * Code run does not read are absent from the form rather than present and inert.
+ *
+ * The model is deliberately NOT here: it is the same field a Work routine has,
+ * one section down, and duplicating it would be two controls over one decision.
+ * The save routes it into whichever column this routine's dispatcher reads.
+ */
+function CodeRoutineFields({
+  draft,
+  repo,
+  disabled,
+  onChange,
+}: {
+  draft: CodeDraft;
+  /** The parsed repository, or null while what is typed is not one yet. */
+  repo: { owner: string; name: string } | null;
+  disabled: boolean;
+  onChange: (draft: CodeDraft) => void;
+}) {
+  const [environments, setEnvironments] = React.useState<EnvironmentOption[] | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/code/environments", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { environments?: EnvironmentOption[] } | null) => {
+        if (!cancelled) setEnvironments(data?.environments ?? []);
+      })
+      // A failed load leaves the list null, which renders as the built-in
+      // shape and nothing else. It is NOT rendered as an empty list: "you have
+      // no environments" and "we could not ask" are different statements, and
+      // the second must not delete a choice the reader already made.
+      .catch(() => {
+        if (!cancelled) setEnvironments(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const set = (patch: Partial<CodeDraft>) => onChange({ ...draft, ...patch });
+  const named = draft.environmentId
+    ? (environments ?? []).find((entry) => entry.id === draft.environmentId)
+    : undefined;
+
+  return (
+    <section>
+      <h2 className="mb-2.5 font-mono text-label text-muted-foreground">What it works in</h2>
+      {/* `@md:` and not `md:`: this form sits inside the app shell, so the
+          window's width is not this column's width (PREMIUM_AUDIT.md rule 11). */}
+      <div className="@container">
+        <div className="grid gap-3 @md:grid-cols-2">
+          <div>
+            <Label htmlFor="routine-repo">Repository</Label>
+            <Input
+              id="routine-repo"
+              value={draft.repo}
+              onChange={(event) => set({ repo: event.target.value })}
+              placeholder="owner/repository"
+              disabled={disabled}
+              className="mt-1"
+            />
+            {draft.repo.trim().length > 0 && repo === null && (
+              <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
+                Write it as owner/repository — the two halves of the address, or the clone URL
+                pasted whole.
+              </p>
+            )}
+          </div>
+          <div>
+            <Label htmlFor="routine-base">Branch it starts from</Label>
+            <Input
+              id="routine-base"
+              value={draft.baseRef}
+              onChange={(event) => set({ baseRef: event.target.value })}
+              placeholder="The repository’s default"
+              disabled={disabled}
+              className="mt-1"
+            />
+            <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
+              Every run branches from here and opens its own pull request. One run never builds on
+              the last, so a Tuesday cannot depend on a Monday nobody reviewed.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 @md:grid-cols-2">
+          <div>
+            <Label htmlFor="routine-environment">Environment</Label>
+            {/* The `field-well` recipe the Mac and model selects use, for the
+                reason stated at those call sites: one form, one fill. */}
+            <select
+              id="routine-environment"
+              value={draft.environmentId}
+              disabled={disabled || environments === null}
+              onChange={(event) => set({ environmentId: event.target.value })}
+              className="field-well mt-1 h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">No environment</option>
+              {/* The stored one, even when the list could not be read or no
+                  longer holds it. Dropping it would silently reset a choice the
+                  reader made, and the save would then write that reset. */}
+              {draft.environmentId && !named && (
+                <option value={draft.environmentId}>The one this automation already uses</option>
+              )}
+              {(environments ?? []).map((environment) => (
+                <option key={environment.id} value={environment.id}>
+                  {environment.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
+              No environment is the built-in shape: no network for the agent’s own commands, no
+              variables, and no setup step before the first turn.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="routine-permission">How far it may go on its own</Label>
+            <div className="mt-1">
+              <SegmentedControl
+                value={draft.permissionMode}
+                onChange={(permissionMode) => set({ permissionMode })}
+                options={PERMISSION_OPTIONS}
+                ariaLabel="How far a run may go on its own"
+                optionClassName="px-3 py-1 text-ui"
+              />
+            </div>
+            <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
+              {PERMISSION_HINTS[draft.permissionMode]}
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The three cloud permission modes, in the runner's own vocabulary.
+ *
+ * Read from `CODE_PERMISSION_MODES` rather than listed, so a mode added to the
+ * engine cannot be missing here — the labels are a lookup, and a mode with no
+ * label falls back to its own id rather than disappearing from the control.
+ */
+const PERMISSION_LABELS: Record<string, string> = {
+  plan: "Plan only",
+  "auto-edit": "Accept edits",
+  full: "Auto",
+};
+
+const PERMISSION_HINTS: Record<string, string> = {
+  plan: "It works out what it would do and stops. Nothing is written, so nothing is pushed.",
+  "auto-edit": "It edits files without asking. Anything else it cannot decide is refused, because nobody is there to ask.",
+  full: "It decides for itself, which is what every cloud run did before this control existed.",
+};
+
+const PERMISSION_OPTIONS = CODE_PERMISSION_MODES.map((mode) => ({
+  value: mode,
+  label: PERMISSION_LABELS[mode] ?? mode,
+}));
 
 /**
  * One policy, as a column of labelled choices with their consequences attached.

@@ -10,7 +10,12 @@ import {
   scheduleConversationSeed,
   serializeSchedule,
 } from "@/lib/work/schedule";
-import { normalizeTriggerDrafts } from "@/lib/work/triggers";
+import { apiTriggerRefusal, normalizeTriggerDrafts } from "@/lib/work/triggers";
+import {
+  codeRoutineConfigJson,
+  codeRoutineFromInput,
+  codeRoutineRefusal,
+} from "@/lib/work/code-routine";
 import { createWorkSession } from "@/lib/work/store";
 import { admissionRefusal } from "@/app/api/work/protocol";
 
@@ -62,6 +67,10 @@ export async function POST(req: Request) {
     );
   }
 
+  const isCode = body.runKind === "code";
+  const codeRefusal = codeRoutineRefusal(body.runKind, body.code, body.target, body.hostId ?? null);
+  if (codeRefusal) return NextResponse.json(codeRefusal, { status: 400 });
+
   // A local schedule has to name its Mac. `selectTarget` would happily pick any
   // capable host, and that is right for a session a person is watching — but a
   // schedule that fires at 07:00 and silently moves to whichever laptop happens
@@ -80,16 +89,44 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  const apiRefusal = apiTriggerRefusal(drafts.drafts);
+  if (apiRefusal) return NextResponse.json(apiRefusal, { status: 400 });
 
   // Cross-entity ownership is re-checked rather than trusted from the body: a
   // host id or a session id in a request is a claim, and the only thing that
   // makes it true is a row that also carries this user's id.
-  const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
-  const named = body.hostId ? hosts.find((host) => host.id === body.hostId) : undefined;
-  if (body.hostId && !named) return NextResponse.json({ error: "Host not found" }, { status: 404 });
+  //
+  // A Code routine names no host and needs no capability, so the whole of this
+  // is skipped for one: `admissionRefusal` answers a question about Macs, and
+  // asking it about a repository would refuse a perfectly good routine for
+  // having no machine that can do local file work.
+  if (!isCode) {
+    const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
+    const named = body.hostId ? hosts.find((host) => host.id === body.hostId) : undefined;
+    if (body.hostId && !named) {
+      return NextResponse.json({ error: "Host not found" }, { status: 404 });
+    }
+    const refusal = admissionRefusal(body.target, named, body.requiredCapabilities ?? [], hosts);
+    if (refusal) return NextResponse.json(refusal, { status: 409 });
+  }
 
-  const refusal = admissionRefusal(body.target, named, body.requiredCapabilities ?? [], hosts);
-  if (refusal) return NextResponse.json(refusal, { status: 409 });
+  // The environment is resolved before the routine is stored, so an id from a
+  // picker whose environment was deleted in another tab fails as a 404 the
+  // person can act on rather than as a routine that fires at 04:00 into a shape
+  // nobody chose. Existence is all that is read — the variables are unsealed
+  // once, by runner-context, for the runner alone.
+  if (isCode && body.code?.environmentId) {
+    const environment = await prisma.codeEnvironment.findFirst({
+      where: { id: body.code.environmentId, userId: user.id },
+      select: { id: true },
+    });
+    if (!environment) {
+      return NextResponse.json(
+        { error: "environment_not_found", message: "That environment no longer exists." },
+        { status: 404 }
+      );
+    }
+  }
 
   if (body.sessionId) {
     const session = await prisma.workSession.findFirst({
@@ -117,6 +154,11 @@ export async function POST(req: Request) {
       target: body.target,
       hostId: body.hostId ?? null,
       timezone: body.timezone,
+      runKind: body.runKind,
+      // The parser's output, not the body, for the reason `normalizeTriggerDrafts`
+      // gives: what is in the column has to be exactly what the dispatcher will
+      // read back, or a routine is accepted at the write and refused at the fire.
+      codeConfig: body.code ? codeRoutineConfigJson(codeRoutineFromInput(body.code)) : {},
       runConfig: {
         model: body.model ?? null,
         requiredCapabilities: body.requiredCapabilities ?? [],
@@ -176,6 +218,20 @@ export async function POST(req: Request) {
  * whereas a transaction spanning both would have to hold one open across the
  * trigger fan-out, and the failure it would protect against is cosmetic.
  *
+ * A CODE ROUTINE GETS THE SESSION AND NOT THE CONVERSATION
+ *
+ * `WorkSchedule.sessionId` is required, and what it points at is the TASK a
+ * routine re-runs: its name, the prompt, the model asked for. That is as true
+ * of a Code routine as of a Work one, and the row is the only place the task
+ * exists once — so it is written for both. What differs is the transcript. A
+ * Work routine accumulates its fires in one conversation, and that conversation
+ * is the session's own; a Code routine opens a fresh `kind: "code"` session per
+ * fire, because each run is a branch and a pull request, and twelve nightly
+ * runs in one thread would be twelve unrelated diffs sharing one branch name.
+ * So the session of a Code routine carries no `conversationId`, and nothing
+ * looks for one: its runs are `CodeTask` rows, each pointing at the
+ * conversation that fire opened.
+ *
  * NO PROJECT INHERITANCE HERE, and it is an absence rather than an omission: a
  * schedule carries no project — `createScheduleSchema` has no such field and
  * the adopter in scripts/work-scheduler.ts passes none either — so there is
@@ -188,9 +244,12 @@ async function createScheduleSession(
   userId: string,
   body: z.infer<typeof createScheduleSchema>
 ): Promise<{ id: string }> {
-  const conversation = await prisma.conversation.create({
-    data: { userId, ...scheduleConversationSeed(body.name, body.model) },
-  });
+  const conversation =
+    body.runKind === "code"
+      ? null
+      : await prisma.conversation.create({
+          data: { userId, ...scheduleConversationSeed(body.name, body.model) },
+        });
   return createWorkSession({
     userId,
     title: body.name,
@@ -198,7 +257,7 @@ async function createScheduleSession(
     // "default" would let an auto-titler rewrite a name they chose.
     titleSource: "manual",
     goal: body.instructions,
-    conversationId: conversation.id,
+    conversationId: conversation?.id ?? null,
     requestedTarget: body.target,
     preferredHostId: body.hostId ?? null,
     requestedModel: body.model ?? null,

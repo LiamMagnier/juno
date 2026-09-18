@@ -61,7 +61,21 @@ public struct NativeScheduledTask: Identifiable, Equatable, Sendable {
     public var nextRunAt: Date
     /// The chat the task writes its results into, once it has run at least once.
     public var conversationID: String?
+    /// The Automation this task became, once the server's sweep has adopted it.
+    ///
+    /// Non-nil means the routine is the live thing: `/api/tasks/<id>` answers
+    /// 409 `moved_to_automations` to every PATCH and DELETE, so the card's
+    /// switch, Edit and Delete cannot work. They are disabled on this, not
+    /// left enabled to fail — see ``isReadOnly``.
+    public var movedToScheduleID: String?
     public var latestRun: NativeTaskRun?
+
+    /// Whether this row is a shell whose routine runs it now.
+    ///
+    /// Also why the switch may read "off" with nothing wrong: the sweep clears
+    /// `ScheduledTask.enabled` in the same transaction that adopts the task, so
+    /// an adopted row is always off here and always running over there.
+    public var isReadOnly: Bool { movedToScheduleID != nil }
 
     /// "Daily · 08:00", "Weekly · Mon 09:00", "Monthly · 15th 09:00" — the same
     /// sentence the web card shows, so the two clients describe one schedule the
@@ -172,6 +186,30 @@ public enum NativeScheduledTaskError: Error, Equatable, LocalizedError, Sendable
     }
 }
 
+/// One `GET /api/tasks`: the rows, and what the server says may still be done
+/// to them.
+///
+/// A struct rather than a wider tuple because the answer stopped being "the
+/// tasks and a number" — the surface is retired, and the two flags are how the
+/// server says so. A client that guesses instead (the `limit == 0` reading this
+/// replaced) guesses wrong for every account that has a task, which is every
+/// account the retirement is about.
+public struct NativeScheduledTaskList: Equatable, Sendable {
+    public let tasks: [NativeScheduledTask]
+    public let limit: Int
+    public let isCreatable: Bool
+    public let isReadOnly: Bool
+
+    public init(
+        tasks: [NativeScheduledTask], limit: Int, isCreatable: Bool, isReadOnly: Bool
+    ) {
+        self.tasks = tasks
+        self.limit = limit
+        self.isCreatable = isCreatable
+        self.isReadOnly = isReadOnly
+    }
+}
+
 /// The scheduled-tasks REST surface (`/api/tasks`), which is bearer-capable and
 /// therefore usable from the phone unchanged.
 public struct NativeScheduledTaskClient: Sendable {
@@ -181,9 +219,7 @@ public struct NativeScheduledTaskClient: Sendable {
         self.sender = sender
     }
 
-    public func list(
-        for accountID: AccountID
-    ) async throws -> (tasks: [NativeScheduledTask], limit: Int) {
+    public func list(for accountID: AccountID) async throws -> NativeScheduledTaskList {
         let response = try await sender.send(
             try NativeBearerRequest(
                 path: "/api/tasks", headers: try HTTPHeaders(["accept": "application/json"])
@@ -193,7 +229,14 @@ public struct NativeScheduledTaskClient: Sendable {
         try requireSuccess(response)
         guard let wire = try? JSONDecoder().decode(ListWire.self, from: response.body)
         else { throw NativeScheduledTaskError.malformedResponse }
-        return (wire.tasks.compactMap(Self.decode), wire.limit ?? 0)
+        return NativeScheduledTaskList(
+            tasks: wire.tasks.compactMap(Self.decode),
+            limit: wire.limit ?? 0,
+            // A server that says nothing about either flag predates the
+            // retirement, and on that server creating and editing both worked.
+            isCreatable: wire.creatable ?? true,
+            isReadOnly: wire.readOnly ?? false
+        )
     }
 
     public func create(
@@ -287,6 +330,7 @@ public struct NativeScheduledTaskClient: Sendable {
             lastRunAt: wire.lastRunAt.flatMap(NativeISO8601.date(from:)),
             nextRunAt: nextRunAt,
             conversationID: wire.conversationId,
+            movedToScheduleID: wire.movedToScheduleId,
             latestRun: wire.latestRun.flatMap { run in
                 guard let startedAt = NativeISO8601.date(from: run.startedAt) else { return nil }
                 return NativeTaskRun(
@@ -331,14 +375,38 @@ public final class NativeScheduledTaskModel {
 
     public private(set) var phase: Phase = .idle
     public private(set) var tasks: [NativeScheduledTask] = []
-    /// How many tasks the account's plan allows. Zero means the feature is not
-    /// in the plan at all, which the screen states rather than hiding.
+    /// How many tasks the account's plan allows, or zero for no cap at all.
+    ///
+    /// It no longer says anything about the plan: the per-plan ceiling went
+    /// with the surface, and what a person may spend is their usage window
+    /// rather than a count of schedules. Kept because an old server still sends
+    /// a real number and ``isAtLimit`` still has to honour it.
     public private(set) var limit = 0
+    /// Whether the server will accept a new task at all.
+    ///
+    /// Read from the response, never derived. The derivation this replaced —
+    /// `limit == 0 && tasks.isEmpty` — was false for every account that had a
+    /// task, so the "new task" button stayed enabled on exactly the accounts
+    /// whose POST now answers 410.
+    public private(set) var isCreatable = true
+    /// Whether the surface as a whole only reads. Every row is also checked
+    /// individually (``NativeScheduledTask/isReadOnly``), because a row becomes
+    /// uneditable the moment the server's sweep adopts it.
+    public private(set) var isReadOnly = false
     public private(set) var isMutating = false
     public private(set) var lastErrorDescription: String?
 
     public var isAtLimit: Bool { limit > 0 && tasks.count >= limit }
-    public var isPlanLocked: Bool { phase == .ready && limit == 0 && tasks.isEmpty }
+    /// The surface is retired and there is nothing on it: the one state where a
+    /// screen has to explain itself rather than show a list.
+    public var isRetiredAndEmpty: Bool { phase == .ready && !isCreatable && tasks.isEmpty }
+
+    /// Whether this task's own controls can do anything. False once the task is
+    /// an Automation — PATCH and DELETE answer 409 from then on — and false
+    /// while the whole surface is read-only.
+    public func canEdit(_ task: NativeScheduledTask) -> Bool {
+        !isReadOnly && !task.isReadOnly
+    }
 
     private let client: NativeScheduledTaskClient
     private var accountID: AccountID?
@@ -362,6 +430,8 @@ public final class NativeScheduledTaskModel {
         accountID = nil
         tasks = []
         limit = 0
+        isCreatable = true
+        isReadOnly = false
         lastErrorDescription = nil
         phase = .idle
     }
@@ -373,6 +443,8 @@ public final class NativeScheduledTaskModel {
             guard self.accountID == accountID else { return }
             tasks = result.tasks
             limit = result.limit
+            isCreatable = result.isCreatable
+            isReadOnly = result.isReadOnly
             lastErrorDescription = nil
             phase = .ready
         } catch {
@@ -385,6 +457,10 @@ public final class NativeScheduledTaskModel {
     @discardableResult
     public func create(_ draft: NativeScheduledTaskDraft) async -> Bool {
         guard let accountID else { return false }
+        // The POST answers 410 once the surface is retired, and a 410 surfaces
+        // as a bare status phrase. Not sending it is the honest version of the
+        // same answer.
+        guard isCreatable else { return false }
         isMutating = true
         defer { isMutating = false }
         do {
@@ -409,15 +485,29 @@ public final class NativeScheduledTaskModel {
     /// under the thumb — and rolled back if the server refuses.
     public func setEnabled(id: String, enabled: Bool) async {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        // A switch that moves and springs back is worse than one that does not
+        // move: the optimistic flip below would show the task running for as
+        // long as the round trip takes, and an adopted task's PATCH is always a
+        // 409. The screens disable the control too; this is the guard that does
+        // not depend on a view remembering to.
+        guard canEdit(tasks[index]) else { return }
         let previous = tasks[index].enabled
         tasks[index].enabled = enabled
         if await apply(id: id, draft: nil, enabled: enabled) { return }
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
-        tasks[index].enabled = previous
+        // Only if the optimistic value is still the one showing. A refusal can
+        // have re-read the list on the way out (see `apply`), and the server's
+        // answer is newer than the value this was about to restore.
+        if tasks[index].enabled == enabled { tasks[index].enabled = previous }
     }
 
     public func delete(id: String) async {
         guard let accountID else { return }
+        // Refused for an adopted task, and deliberately: the routine holds this
+        // row's id as a unique key, so deleting it would leave the Automation
+        // running with nothing to say where it came from — while the person
+        // believed they had switched it off.
+        if let task = tasks.first(where: { $0.id == id }), !canEdit(task) { return }
         isMutating = true
         defer { isMutating = false }
         do {
@@ -444,13 +534,25 @@ public final class NativeScheduledTaskModel {
             )
             guard self.accountID == accountID else { return false }
             if let index = tasks.firstIndex(where: { $0.id == id }) {
-                tasks[index] = updated
+                var merged = updated
+                // The single-task responses return the row alone, without the
+                // list's `movedToScheduleId`. Dropping it here would re-enable
+                // this row's controls until the next refresh.
+                merged.movedToScheduleID = updated.movedToScheduleID ?? tasks[index].movedToScheduleID
+                tasks[index] = merged
             }
             lastErrorDescription = nil
             return true
         } catch {
             guard self.accountID == accountID else { return false }
             lastErrorDescription = NativeFailureMessage.presentable(error)
+            // 409 is `moved_to_automations`: the sweep adopted this task between
+            // the last refresh and this press. Re-reading is what puts
+            // `movedToScheduleId` on the row, which is what disables the control
+            // that just failed — otherwise the next press fails the same way.
+            if let refusal = error as? NativeScheduledTaskError, case .server(409, _) = refusal {
+                await refresh()
+            }
             return false
         }
     }
@@ -461,6 +563,11 @@ public final class NativeScheduledTaskModel {
 private struct ListWire: Decodable {
     let tasks: [TaskWire]
     let limit: Int?
+    /// Whether this surface still takes new tasks. Optional so a build of the
+    /// app talking to a server that predates the retirement keeps working; the
+    /// fallback is `true`, which is what that server meant.
+    let creatable: Bool?
+    let readOnly: Bool?
 }
 
 private struct SingleWire: Decodable {
@@ -494,6 +601,9 @@ private struct TaskWire: Decodable {
     let nextRunAt: String
     let conversationId: String?
     let latestRun: Run?
+    /// Absent on the single-task responses (`POST`/`PATCH` return the row
+    /// alone), and absent from any server that predates the retirement.
+    let movedToScheduleId: String?
 }
 
 /// The create/patch body. Every field is optional so one type serves both: PATCH

@@ -147,35 +147,26 @@ module.exports = {
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
-    {
-      // Scheduled-task worker: claims due ScheduledTasks every 60s and runs
-      // them (scripts/scheduled-task-runner.ts). Loads the repo .env itself.
-      name: "juno-scheduler",
-      cwd: runRoot,
-      script: "npm",
-      args: "run tasks:runner",
-      watch: false,
-      max_memory_restart: "400M",
-      env: {
-        ...releaseEnv,
-        NODE_ENV: "production",
-      },
-      error_file: "logs/scheduler-err.log",
-      out_file: "logs/scheduler-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-    },
+    // RETIRED: "juno-scheduler" (scripts/scheduled-task-runner.ts), the
+    // ScheduledTask worker. Juno had two dispatchers for "run this for me
+    // later" and juno-work-scheduler below is the one that survived; it adopts
+    // every remaining ScheduledTask into a WorkSchedule and switches the legacy
+    // row off in the same transaction, so no fire is dropped and none is run
+    // twice. Removing the app from this file does not stop a process already
+    // running on the host — on the release that drops it, run
+    // `pm2 delete juno-scheduler && pm2 save` once. A stale one is harmless in
+    // the meantime: every task it could claim has been switched off.
     {
       // Cloud Work executor: claims queued cloud runs every 5s and drives the
       // agent runtime (scripts/work-runner.ts). Loads the repo .env itself.
       //
-      // Its own app rather than a second process of juno-scheduler, because a
-      // Work run holds a model provider open for minutes at a time and a
-      // scheduled task does not: sharing a process would mean one OOM restart
-      // takes both down, and a Work run that is restarted mid-flight is a run
-      // that has already moved files or sent a message.
+      // Its own app rather than a second process of juno-work-scheduler,
+      // because a Work run holds a model provider open for minutes at a time
+      // and a dispatch tick does not: sharing a process would mean one OOM
+      // restart takes both down, and a Work run that is restarted mid-flight is
+      // a run that has already moved files or sent a message.
       //
-      // Headroom above the scheduler's 400M for the same reason: a run holds a
+      // Headroom above the dispatcher for the same reason: a run holds a
       // transcript, a plan, up to three connectors' MCP sessions and the bytes
       // of any deliverable it is packing, and MAX_CONCURRENT_RUNS is 3.
       name: "juno-work",

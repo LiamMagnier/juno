@@ -276,6 +276,25 @@ function initialiserOf(source: string, name: string, before: number): string | n
   return source.slice(declaration, matchingBrace(source, open) + 1);
 }
 
+/**
+ * Whether a route authenticates with a bearer credential instead of a session.
+ *
+ * Exactly one does: an `api` trigger's fire URL, which is called by a CI job or
+ * a webhook relay that has no browser session to read. The exemption below is
+ * therefore structural rather than a filename in a list — a route qualifies
+ * only by calling the VERIFIER, which is the thing that turns the id in its URL
+ * from a claim into something the caller proved. A route that stopped verifying
+ * would stop qualifying and would be held to the session rule again.
+ *
+ * The verifier and not the module it lives in: the route that MINTS a token
+ * imports from the same file and is an ordinary session-authenticated route, so
+ * a check on the import path would have exempted the one place a session is
+ * exactly what should be required.
+ */
+function isCredentialAuthenticated(source: string): boolean {
+  return /\bfireTokenMatches\(/.test(source);
+}
+
 test("there are Work route modules to check, and they were found on disk", () => {
   // Guards the rest of the section: a directory rename turns every assertion
   // below into a loop over nothing, which passes and proves nothing.
@@ -285,11 +304,52 @@ test("there are Work route modules to check, and they were found on disk", () =>
 });
 
 test("every Work route resolves the caller from the session before it reads a row", () => {
+  let credentialRoutes = 0;
   for (const file of ROUTE_FILES) {
     const source = routeSource(file);
+
+    if (isCredentialAuthenticated(source)) {
+      credentialRoutes += 1;
+      // The same rule, stated for the only other way a caller can be
+      // identified. The id in the URL is a claim and the token is the proof, so
+      // the row IS the lookup — there is no session to check first — and what
+      // matters is that nothing happens to it until the proof is in.
+      assert.match(source, /fireTokenMatches\(/, `${file} never verifies the token`);
+      assert.ok(
+        source.indexOf("fireTokenMatches(") < source.indexOf("fireScheduleNow("),
+        `${file} acts on the routine before it has verified the token`
+      );
+      // The guarded client is for queries that carry a session user. This route
+      // has none at the moment of the lookup and says so with `prismaUnguarded`,
+      // which is exactly what that client exists to make explicit; every scope
+      // after it comes off the row rather than out of the request.
+      assert.doesNotMatch(
+        source,
+        /\bprisma\.[a-z]/,
+        `${file} uses the guarded client without a session user`
+      );
+      // Every binding of the column resolves to the row the token proved.
+      // Captured and compared rather than matched with a negative lookahead:
+      // `\s*` can match nothing, so the lookahead would be evaluated against
+      // the space and pass for every line — a check that reads as strict and
+      // asserts nothing at all.
+      for (const binding of source.matchAll(/userId:\s*([^,}\n]+)/g)) {
+        assert.equal(
+          binding[1].trim(),
+          "schedule.userId",
+          `${file} scopes a query by something other than the row it authenticated`
+        );
+      }
+      continue;
+    }
+
+    // The guard, wherever it sits in the import list. Pinned to the named
+    // import rather than to a whole line, because a route that also needs a
+    // serialiser from the same module writes them together and is no less
+    // guarded for it.
     assert.match(
       source,
-      /import \{ requireUser \} from "@\/lib\/code-remote";/,
+      /import \{[^}]*\brequireUser\b[^}]*\} from "@\/lib\/code-remote";/,
       `${file} does not import the session guard`
     );
 
@@ -314,6 +374,11 @@ test("every Work route resolves the caller from the session before it reads a ro
       );
     }
   }
+  // Asserted rather than left implicit: a rename that stopped the recogniser
+  // matching would silently move the fire route into the session branch, which
+  // it cannot satisfy — so this would fail loudly instead of the branch above
+  // becoming dead code nobody notices.
+  assert.equal(credentialRoutes, 1, "the credential-authenticated branch matched nothing");
 });
 
 const SCOPED = /userId: user\.id/;
@@ -417,6 +482,11 @@ test("every Prisma query in a Work route is scoped to the session user", () => {
   let indirect = 0;
   for (const file of ROUTE_FILES) {
     const source = routeSource(file);
+    // A credential-authenticated route has no session user to scope by: its one
+    // lookup is keyed on the id its token proves, and the test above holds it to
+    // that rule instead. Skipping it here rather than widening `SCOPED` keeps
+    // "scoped to the session user" meaning what it says for every other route.
+    if (isCredentialAuthenticated(source)) continue;
     for (const clause of whereClauses(source)) {
       checked += 1;
       if (SCOPED.test(clause.text)) continue;

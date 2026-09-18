@@ -52,7 +52,11 @@ struct JunoMobileTasksView: View {
                 } label: {
                     JunoIconView(.plus, size: 17)
                 }
-                .disabled(model.isAtLimit || model.isPlanLocked || models.isEmpty)
+                // `isCreatable` is the server's own word for it. The reading it
+                // replaced — no limit and no tasks — was false for every
+                // account that had a task, so this `+` stayed enabled on
+                // exactly the accounts whose POST now answers 410.
+                .disabled(!model.isCreatable || model.isAtLimit || models.isEmpty)
                 .accessibilityLabel("tasks.new")
                 .accessibilityIdentifier("juno.mobile.tasks-new")
             }
@@ -114,8 +118,8 @@ struct JunoMobileTasksView: View {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
                 }
 
-                if model.isPlanLocked {
-                    locked
+                if model.isRetiredAndEmpty {
+                    moved
                 } else if model.tasks.isEmpty {
                     empty
                 } else {
@@ -123,6 +127,7 @@ struct JunoMobileTasksView: View {
                         JunoMobileTaskCard(
                             task: task,
                             busy: model.isMutating,
+                            editable: model.canEdit(task),
                             onToggle: { enabled in
                                 Task { await model.setEnabled(id: task.id, enabled: enabled) }
                             },
@@ -166,19 +171,22 @@ struct JunoMobileTasksView: View {
                 }
                 .junoProminentAction()
                 .controlSize(.large)
-                .disabled(models.isEmpty)
+                .disabled(models.isEmpty || !model.isCreatable)
                 .padding(.top, JunoSpace.hairline)
                 .contentShape(.rect)
             }
         }
     }
 
-    private var locked: some View {
+    /// Shown instead of the empty state once the surface is retired. Not the
+    /// old "part of Pro" card: the plan ceiling went with the surface, so
+    /// naming Pro would send somebody to a purchase that changes nothing.
+    private var moved: some View {
         JunoCard {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                JunoIconLabel("tasks.locked.title", icon: .lock, size: 18)
+                JunoIconLabel("tasks.moved.title", icon: .tasks, size: 18)
                     .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
-                Text("tasks.locked.detail")
+                Text("tasks.moved.detail")
                     .font(.callout)
                     .junoSecondaryInk()
             }
@@ -192,6 +200,12 @@ struct JunoMobileTasksView: View {
 private struct JunoMobileTaskCard: View {
     let task: NativeScheduledTask
     let busy: Bool
+    /// False once the task has become an Automation. Every write on
+    /// `/api/tasks/<id>` answers 409 from then on, so the switch would spring
+    /// back under the thumb and Edit and Delete would fail — and the same sweep
+    /// that adopted the task switched this row off, so without this the card
+    /// reads "paused" with no control that can unpause it.
+    let editable: Bool
     /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
     /// setter, whose accessors are `@Sendable` in the iOS 26 SDK. The toggle is
     /// driven on the main actor, so the annotation states what already happens.
@@ -231,7 +245,7 @@ private struct JunoMobileTaskCard: View {
                     Toggle("", isOn: Binding(get: { task.enabled }, set: { onToggle($0) }))
                         .labelsHidden()
                         .tint(Color.junoAccent)
-                        .disabled(busy)
+                        .disabled(busy || !editable)
                         .accessibilityLabel(
                             Text(
                                 String(
@@ -243,7 +257,10 @@ private struct JunoMobileTaskCard: View {
                             )
                         )
                     Menu {
+                        // Reading the results is not a write, so it survives;
+                        // the two that are writes do not.
                         Button { onEdit() } label: { JunoIconLabel("Edit", icon: .pencil) }
+                            .disabled(!editable)
                         if task.conversationID != nil {
                             Button { onOpenResults() } label: {
                                 JunoIconLabel("tasks.results", icon: .external)
@@ -253,6 +270,7 @@ private struct JunoMobileTaskCard: View {
                         Button(role: .destructive) { onDelete() } label: {
                             JunoIconLabel("Delete", icon: .trash)
                         }
+                        .disabled(!editable)
                     } label: {
                         JunoIconView(.ellipsis, size: 15)
                             .junoSecondaryInk()
@@ -293,6 +311,11 @@ private struct JunoMobileTaskCard: View {
             JunoIconLabel("tasks.status.running", icon: .refresh, size: 13)
                 .font(.caption)
                 .foregroundStyle(Color.junoAccent)
+        } else if !editable {
+            // Before the paused line, and that ordering is the point: an
+            // adopted task is always switched off here, and calling that
+            // "Paused" would describe a schedule that is in fact running.
+            Text("tasks.status.moved").font(.caption).junoSecondaryInk()
         } else if !task.enabled {
             Text("tasks.status.paused").font(.caption).junoSecondaryInk()
         } else if let run = task.latestRun, run.didFail {

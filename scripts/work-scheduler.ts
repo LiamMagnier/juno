@@ -1,18 +1,31 @@
 /**
- * The Work scheduler.
+ * The routine scheduler — the one process in Juno that answers "run this for me
+ * later".
  *
- * Decides which schedules are due, starts their runs, and adopts the legacy
- * `ScheduledTask` rows into `WorkSchedule` as it goes. Run it the way the other
- * two workers are run:
+ * Decides which routines are due, starts their runs, and adopts the legacy
+ * `ScheduledTask` rows as it goes. Run it the way the other two workers are
+ * run:
  *
  *     NODE_OPTIONS=--conditions=react-server npx tsx scripts/work-scheduler.ts
  *
- * It dispatches; it does not execute. A schedule firing produces a queued
+ * It dispatches; it does not execute. A Work routine firing produces a queued
  * `WorkRun`, which `scripts/work-runner.ts` (cloud) or the paired Mac (local)
- * claims through its own lease. Keeping the two apart is what lets the executor
- * be restarted, scaled or replaced without any schedule being missed, and what
- * lets this process finish a tick in milliseconds no matter how long the work
- * it started takes.
+ * claims through its own lease. A Code routine firing produces a `CodeTask` in
+ * a conversation of its own and asks GitHub Actions for a runner. Keeping
+ * dispatch and execution apart is what lets an executor be restarted, scaled or
+ * replaced without any routine being missed, and what lets this process finish
+ * a tick in milliseconds no matter how long the work it started takes.
+ *
+ * TWO KINDS OF FIRE, ONE CLOCK
+ *
+ * `WorkSchedule.runKind` decides what a fire produces. Everything before that
+ * decision — the trigger set, the zone and its daylight-saving edges, the
+ * catch-up policy, the lease, the pause, the concurrency caps, the budget
+ * admission — is the same question for both, and the branch is one `if` in
+ * `dispatchOne` plus a different table to count in flight. A second scheduler
+ * for Code would have been a second implementation of the arithmetic in
+ * `src/lib/work/schedule.ts`, which is the part that is genuinely hard to get
+ * right and the part nobody would have ported twice.
  *
  * Four properties are the whole design, and each one is a bug in the scheduler
  * this replaces:
@@ -78,6 +91,9 @@ import {
   type JsonObject,
   type WorkTriggerRow,
 } from "@/lib/work/schedule";
+import { decryptField } from "@/lib/field-crypto";
+import { LIVE_CODE_TASK_STATUSES, scheduleRunKindOf } from "@/lib/work/code-routine";
+import { startCodeRoutineRun } from "@/lib/work/code-dispatch";
 import { effectiveHostState } from "@/app/api/work/protocol";
 import { Prisma, type Plan } from "@prisma/client";
 
@@ -85,6 +101,15 @@ import { Prisma, type Plan } from "@prisma/client";
  *  can express (`hourly`), and short enough that `MISSED_RUN_GRACE_MS` is never
  *  reached by a scheduler that is simply busy. */
 const TICK_MS = 15_000;
+/**
+ * How long to hold a routine whose `runKind` this build cannot read.
+ *
+ * Five minutes: long enough that a mixed-version deployment does not spend a
+ * tick every fifteen seconds on rows it will never dispatch, short enough that
+ * the fire is picked up promptly once the deployment that understands it is
+ * the one holding the lease.
+ */
+const UNKNOWN_RUN_KIND_RETRY_MS = 5 * 60_000;
 /** Schedules examined per tick. A cap, not a throughput target: the work of a
  *  tick is bounded so one account with a hundred schedules cannot starve the
  *  rest. */
@@ -194,11 +219,12 @@ function migratedSessionId(taskId: string): string {
 /**
  * Adopts legacy `ScheduledTask` rows that have no `WorkSchedule` yet.
  *
- * Runs periodically rather than once at startup, because `/api/tasks` still
- * creates tasks and the native client still writes to it: a migration that ran
- * only at boot would adopt everything that existed that morning and nothing
- * created afterwards, which is a slow, silent split-brain rather than a clean
- * cutover.
+ * Runs periodically rather than once at startup. `/api/tasks` no longer creates
+ * anything — the surface is retired and the route answers 410 — so the set this
+ * walks is now closed, but a sweep that ran only at boot would still be wrong:
+ * a deployment restarted between two adoptions would leave the rest of the
+ * table to the next restart, and the rows it had not reached would be running
+ * on a worker that no longer exists.
  *
  * Re-running is safe by construction. The unique index on
  * `WorkSchedule.legacyScheduledTaskId` is what makes it so, not this function's
@@ -235,7 +261,29 @@ async function sweepMigrations(): Promise<void> {
     where: { legacyScheduledTaskId: { in: tasks.map((task) => task.id) } },
     select: { legacyScheduledTaskId: true },
   });
-  const already = new Set(adopted.map((row) => row.legacyScheduledTaskId));
+  // The column is nullable in the schema but cannot be null here — the query
+  // above filters on it — so the narrowing is a type formality, not a filter.
+  const already = new Set(
+    adopted.map((row) => row.legacyScheduledTaskId).filter((id): id is string => id !== null)
+  );
+
+  // The adopted rows this deployment did not adopt. Switching the legacy row
+  // off used to be missing entirely, so every task a PREVIOUS deployment
+  // adopted still reads `enabled: true` — and the loop below can never reach
+  // them, because it skips anything in `already` before it gets to the
+  // transaction. No double dispatch results (the legacy worker is deleted), but
+  // `GET /api/tasks` reports those rows to the native clients as running, which
+  // is the opposite of true. One statement, and it is a no-op from the sweep
+  // after the first.
+  if (already.size > 0) {
+    const closed = await prismaUnguarded.scheduledTask.updateMany({
+      where: { id: { in: [...already] }, enabled: true },
+      data: { enabled: false },
+    });
+    if (closed.count > 0) {
+      log("switched off legacy tasks a previous deployment adopted", { count: closed.count });
+    }
+  }
 
   let migrated = 0;
   let unmappable = 0;
@@ -243,14 +291,33 @@ async function sweepMigrations(): Promise<void> {
     if (stopping) break;
     if (already.has(task.id)) continue;
 
-    const plan = planTaskMigration(task);
-    if (!plan) {
-      // A cadence this build cannot express. Left alone deliberately: the task
-      // keeps running on the legacy runner, which is strictly better than a
-      // schedule that claims to be it and fires at a different time.
+    // `prompt` is sealed at rest, and `planTaskMigration` plans a routine
+    // whose goal and instructions ARE whatever string it is handed. Passing the
+    // row straight through produced routines whose entire instruction was
+    // `enc:v2:<base64>`: they fired every morning, spent real money and
+    // returned nothing. `tests/field-encryption-coverage.test.ts` asserts this
+    // call site by name.
+    const planned = planTaskMigration({ ...task, prompt: decryptField(task.prompt) });
+    if (!planned.ok) {
+      // A task this build cannot express as a routine. Left alone deliberately
+      // — enabled, untouched, and named in the log on every sweep — because
+      // this is the one condition under which retiring the legacy worker would
+      // take somebody's schedule down with it. A cadence mapped onto the
+      // nearest one it is not would fire at a different time from the task it
+      // claims to be, which the user has no way to notice.
+      //
+      // `tests/work-schedule.test.ts` walks the whole of `TaskCadence` and
+      // proves this branch is unreachable for every value the enum has, which
+      // is what makes the retirement safe rather than hopeful.
       unmappable += 1;
+      log("a scheduled task could not be adopted and was left as it is", {
+        taskId: task.id,
+        blocker: planned.blocker,
+        why: planned.message,
+      });
       continue;
     }
+    const plan = planned.plan;
 
     try {
       const sessionId = migratedSessionId(task.id);
@@ -273,35 +340,53 @@ async function sweepMigrations(): Promise<void> {
         });
       }
 
-      await prisma.workSchedule.create({
-        data: {
-          userId: task.userId,
-          sessionId,
-          name: plan.schedule.name,
-          enabled: plan.schedule.enabled,
-          instructions: plan.schedule.instructions,
-          target: plan.schedule.target,
-          timezone: plan.schedule.timezone,
-          runConfig: plan.schedule.runConfig,
-          unattendedPolicy: plan.schedule.unattendedPolicy,
-          hostOfflinePolicy: plan.schedule.hostOfflinePolicy,
-          missedRunPolicy: plan.schedule.missedRunPolicy,
-          maxConcurrentRuns: plan.schedule.maxConcurrentRuns,
-          notifyPolicy: plan.schedule.notifyPolicy,
-          lastRunAt: plan.schedule.lastRunAt,
-          // Verbatim. A task due at 09:00 being adopted at 09:04 has a fire
-          // owed, and recomputing here would lose it inside the migration that
-          // exists to preserve it.
-          nextRunAt: plan.schedule.nextRunAt,
-          legacyScheduledTaskId: plan.schedule.legacyScheduledTaskId,
-          triggers: {
-            create: {
-              userId: task.userId,
-              kind: plan.trigger.kind,
-              config: plan.trigger.config,
+      await prisma.$transaction(async (tx) => {
+        await tx.workSchedule.create({
+          data: {
+            userId: task.userId,
+            sessionId,
+            name: plan.schedule.name,
+            enabled: plan.schedule.enabled,
+            instructions: plan.schedule.instructions,
+            target: plan.schedule.target,
+            timezone: plan.schedule.timezone,
+            runConfig: plan.schedule.runConfig,
+            unattendedPolicy: plan.schedule.unattendedPolicy,
+            hostOfflinePolicy: plan.schedule.hostOfflinePolicy,
+            missedRunPolicy: plan.schedule.missedRunPolicy,
+            maxConcurrentRuns: plan.schedule.maxConcurrentRuns,
+            notifyPolicy: plan.schedule.notifyPolicy,
+            lastRunAt: plan.schedule.lastRunAt,
+            // Verbatim. A task due at 09:00 being adopted at 09:04 has a fire
+            // owed, and recomputing here would lose it inside the migration that
+            // exists to preserve it.
+            nextRunAt: plan.schedule.nextRunAt,
+            legacyScheduledTaskId: plan.schedule.legacyScheduledTaskId,
+            triggers: {
+              create: {
+                userId: task.userId,
+                kind: plan.trigger.kind,
+                config: plan.trigger.config,
+              },
             },
           },
-        },
+        });
+        // Switched off in the same transaction that adopts it, and this is the
+        // half the adopter was missing. Nothing has ever cleared
+        // `ScheduledTask.enabled`, so from the moment a task was adopted BOTH
+        // dispatchers held a live claim on the same 09:00: the legacy worker
+        // ran the prompt and wrote to the task thread, and this one started a
+        // run for the same fire. Two runs, two charges and two results a day,
+        // for every task that had ever been through this sweep.
+        //
+        // Inside the transaction rather than after it, because the failure that
+        // ordering guards against is the worse one: a task switched off by a
+        // write that then rolled back is a schedule that stops running with no
+        // routine to take it over.
+        await tx.scheduledTask.updateMany({
+          where: { id: task.id, userId: task.userId },
+          data: { enabled: false },
+        });
       });
       migrated += 1;
     } catch (error) {
@@ -313,8 +398,9 @@ async function sweepMigrations(): Promise<void> {
         // completes the adoption.
         continue;
       }
-      // One task that cannot be adopted must not stop the sweep. It keeps
-      // running on the legacy runner and the next sweep tries again.
+      // One task that cannot be adopted must not stop the sweep. Nothing was
+      // written — the adoption is one transaction — so the task is exactly as
+      // it was, still enabled, and the next sweep tries again.
       log("could not adopt a scheduled task", { taskId: task.id, error: String(error) });
     }
   }
@@ -389,6 +475,14 @@ interface MarkerRunInput {
  *
  * It shares its idempotency key with the run this fire would have produced, so
  * a fire yields exactly one row whichever way it went.
+ *
+ * A `WorkRun` for BOTH kinds of routine, including a Code one whose real runs
+ * are `CodeTask`s. That reads odd for a moment and is right: this row is the
+ * scheduler's record that a fire was dealt with, not a record of a run, and the
+ * alternative — minting a Code conversation and a failed task to say "the
+ * budget was spent" — would put a session in the user's Code sidebar that never
+ * cloned anything, opened nothing and read no prompt. The automation's history
+ * shows both lists for exactly this reason.
  */
 async function recordMarkerRun(input: MarkerRunInput): Promise<void> {
   const created = await createRun({
@@ -426,6 +520,93 @@ async function recordMarkerRun(input: MarkerRunInput): Promise<void> {
 }
 
 type ScheduleWithSession = Prisma.WorkScheduleGetPayload<{ include: { session: true } }>;
+
+/**
+ * How many runs this account has going from routines, of either kind.
+ *
+ * Two queries because the two kinds live in two tables and always will: a Work
+ * run is claimed by an executor that reports back over `WorkEvent`, and a Code
+ * run is a GitHub Actions job that reports over `CodeTaskEvent`. What must not
+ * be two is the NUMBER — `DEFAULT_USER_CONCURRENCY_CAP` is a statement about
+ * one account's budget and one person's attention, and an account whose
+ * routines are half Work and half Code has neither of those twice over.
+ */
+async function countScheduledRunsInFlight(userId: string): Promise<number> {
+  const [work, code] = await Promise.all([
+    prisma.workRun.count({
+      where: { userId, scheduleId: { not: null }, status: { in: [...WORK_LIVE_STATUSES] } },
+    }),
+    prisma.codeTask.count({
+      where: { userId, scheduleId: { not: null }, status: { in: [...LIVE_CODE_TASK_STATUSES] } },
+    }),
+  ]);
+  return work + code;
+}
+
+/**
+ * Starts the Code runs a due routine owes, and says how many really started.
+ *
+ * One conversation and one cloud run per fire, keyed by the same
+ * `scheduleRunIdempotencyKey` a Work fire uses, so a scheduler that dies
+ * between the dispatch and the advance does not clone the repository twice.
+ *
+ * A refusal does not throw: a catch-up of three fires must not lose the third
+ * because the first found GitHub unreachable for a second. But it is never only
+ * logged either. When the refusal came late enough for a `CodeTask` to exist,
+ * that row IS the record — it is in the routine's history, failed, with the
+ * reason in its own event log. When it came earlier — no linked GitHub account,
+ * no runner workflow — nothing exists to carry the news, so a marker run is
+ * written for exactly the reason one is written for a fire the budget stopped:
+ * a routine that has been unable to start for a fortnight must not look
+ * identical to one that has been running fine.
+ */
+async function dispatchCodeFires(
+  schedule: ScheduleWithSession,
+  fires: readonly Date[]
+): Promise<number> {
+  let started = 0;
+  for (const fireAt of fires) {
+    const outcome = await startCodeRoutineRun({
+      scheduleId: schedule.id,
+      userId: schedule.userId,
+      name: schedule.name,
+      instructions: schedule.instructions,
+      timezone: schedule.timezone,
+      codeConfig: schedule.codeConfig,
+      fireAt,
+      // Null: a clock fire carries no text. Only an API fire does, and that
+      // path has a caller to refuse when the routine has not opted in.
+      fireText: null,
+      idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
+    });
+    if (outcome.outcome === "started") started += 1;
+    if (outcome.outcome === "refused") {
+      log("a Code routine could not start a run", {
+        scheduleId: schedule.id,
+        fireAt: fireAt.toISOString(),
+        reason: outcome.reason,
+        recorded: outcome.recorded,
+        why: outcome.message,
+      });
+      if (!outcome.recorded) {
+        await recordMarkerRun({
+          scheduleId: schedule.id,
+          sessionId: schedule.sessionId,
+          userId: schedule.userId,
+          fireAt,
+          requestedTarget: schedule.target,
+          // `failed`, because it is: something the routine needs is not there,
+          // and the person has to act. It is not `superseded`, which means the
+          // routine moved past a fire deliberately, and not `host_offline`,
+          // which would send a reader looking for a Mac that was never involved.
+          reason: "failed",
+          explanation: outcome.message,
+        });
+      }
+    }
+  }
+  return started;
+}
 
 /**
  * Works out what one due schedule needs, and does it.
@@ -471,8 +652,34 @@ async function dispatchOne(
     return;
   }
 
+  const runKind = scheduleRunKindOf(schedule.runKind);
+  if (runKind === null) {
+    // A routine whose kind this build has never heard of, which means a newer
+    // deployment wrote it. The fire is left OWED — `nextRunAt` untouched, the
+    // lease set forward as a backoff — because the deployment that understands
+    // this routine can still run it, and the two wrong answers are both
+    // expensive: guessing `work` would run somebody's Code routine as a Work
+    // session, and advancing past the fire would drop it silently.
+    await prisma.workSchedule.updateMany({
+      where: { id: schedule.id, userId: schedule.userId },
+      data: { lockedUntil: new Date(now.getTime() + UNKNOWN_RUN_KIND_RETRY_MS) },
+    });
+    log("a routine of an unknown kind was left owed", {
+      scheduleId: schedule.id,
+      runKind: schedule.runKind,
+    });
+    return;
+  }
+  const isCode = runKind === "code";
+
   const runConfig = parseScheduleRunConfig(schedule.runConfig);
-  const hosts = await prisma.workHost.findMany({ where: { userId: schedule.userId } });
+  // A Code routine never reaches a Mac: one fire is a cloud session against a
+  // repository. So there is no host to rank, no capability to match against one
+  // — and the list is not even read, because a query per fire whose answer
+  // cannot change the outcome is a query for nothing.
+  const hosts = isCode
+    ? []
+    : await prisma.workHost.findMany({ where: { userId: schedule.userId } });
   // The schedule's chosen Mac first: `selectTarget` takes the first fully
   // capable host in the list, which is how "run it on the MacBook" is said to it.
   const ordered = schedule.hostId
@@ -487,31 +694,45 @@ async function dispatchOne(
   const limits = await accountLimits(schedule.userId, budgets);
 
   const [inFlightForSchedule, inFlightForUser] = await Promise.all([
-    prisma.workRun.count({
-      where: {
-        userId: schedule.userId,
-        scheduleId: schedule.id,
-        status: { in: [...WORK_LIVE_STATUSES] },
-      },
-    }),
-    // Every schedule of this account, not just this one. Ten schedules each
-    // capped at one still start ten simultaneous runs, and the budget and the
-    // user's attention are shared across all of them.
-    prisma.workRun.count({
-      where: {
-        userId: schedule.userId,
-        scheduleId: { not: null },
-        status: { in: [...WORK_LIVE_STATUSES] },
-      },
-    }),
+    // This routine's own in-flight runs, counted in the table its runs live in.
+    // A Code routine has no `WorkRun` at all, so counting those for one would
+    // read zero for ever and `maxConcurrentRuns` would mean nothing — which is
+    // the setting that stops a nightly routine stacking eight cloud runs on one
+    // repository while the first is still pushing.
+    isCode
+      ? prisma.codeTask.count({
+          where: {
+            userId: schedule.userId,
+            scheduleId: schedule.id,
+            status: { in: [...LIVE_CODE_TASK_STATUSES] },
+          },
+        })
+      : prisma.workRun.count({
+          where: {
+            userId: schedule.userId,
+            scheduleId: schedule.id,
+            status: { in: [...WORK_LIVE_STATUSES] },
+          },
+        }),
+    // Every routine of this account and both kinds of run, not just this one.
+    // Ten routines each capped at one still start ten simultaneous runs, and
+    // the budget and the user's attention are shared across all of them — a
+    // Code run spends the same account's money as a Work run, so counting them
+    // separately would make "as many as Juno will run at once" mean twice as
+    // many for anybody who has both.
+    countScheduledRunsInFlight(schedule.userId),
   ]);
 
   const decision = planScheduleDispatch({
     now,
     schedule: {
       enabled: schedule.enabled,
-      target: scheduleTargetOf(schedule.target),
-      hostId: schedule.hostId,
+      // Cloud, stated rather than read, for a Code routine. The create and
+      // patch routes refuse any other target for one, so the column already
+      // says cloud; passing it explicitly means a row edited by hand cannot
+      // send a routine pointed at a repository looking for a laptop.
+      target: isCode ? "cloud" : scheduleTargetOf(schedule.target),
+      hostId: isCode ? null : schedule.hostId,
       nextRunAt: dueAt,
       // Null rather than the lease this scheduler is holding. Passing the row's
       // own value back would make the planner report the schedule as contended
@@ -526,7 +747,11 @@ async function dispatchOne(
     inFlightForUser,
     userConcurrencyCap: DEFAULT_USER_CONCURRENCY_CAP,
     hosts: ordered.map((host) => hostCapabilityView(host, effectiveHostState(host, now))),
-    requiredCapabilities: runConfig.requiredCapabilities,
+    // The capabilities on a Code routine's `runConfig` are Work's vocabulary —
+    // local files, a browser, app control — and mean nothing to a cloud Code
+    // run. Carrying them into `selectTarget` would make every target fail to
+    // satisfy them and turn the routine into one that never runs anywhere.
+    requiredCapabilities: isCode ? [] : runConfig.requiredCapabilities,
     cloudAvailable: CLOUD_WORK_AVAILABLE,
     remainingBudgetMicroUsd: limits.remainingMicroUsd,
   });
@@ -544,6 +769,25 @@ async function dispatchOne(
 
   switch (decision.outcome) {
     case "dispatch": {
+      if (isCode) {
+        const started = await dispatchCodeFires(schedule, decision.fireAt);
+        await prisma.workSchedule.updateMany({
+          where: { id: schedule.id, userId: schedule.userId },
+          data: {
+            lastRunAt: decision.fireAt[decision.fireAt.length - 1],
+            nextRunAt: advanced(),
+            lockedUntil: null,
+          },
+        });
+        log("dispatched", {
+          scheduleId: schedule.id,
+          runKind,
+          started,
+          dropped: decision.dropped,
+        });
+        return;
+      }
+
       // The policy the executor will enforce, after narrowing. `narrowestPolicy`
       // is a `min`, so no layer can widen another: a Mac pinned to
       // `conservative` stays conservative under a `permissive` session, which is

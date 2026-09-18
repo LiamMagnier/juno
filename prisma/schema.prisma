@@ -1567,12 +1567,18 @@ model CodeTask {
   // second runner-context call for this task is refused — the clone token is
   // handed out AT MOST once per task. NULL for device tasks and un-started runs.
   runnerClaimedAt   DateTime?
+  // The routine whose fire started this run, when one did. A Code routine's
+  // history IS its list of tasks — there is no WorkRun behind them — so without
+  // this column a routine that has been failing every morning for a fortnight
+  // is indistinguishable from one that has never fired.
+  scheduleId        String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   device      CodeDevice?      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   environment CodeEnvironment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  schedule    WorkSchedule?    @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   events      CodeTaskEvent[]
 
   @@unique([userId, idempotencyKey])
@@ -1586,6 +1592,9 @@ model CodeTask {
   @@index([deviceId, status])
   @@index([conversationId])
   @@index([environmentId])
+  /// A routine's history, newest first, and the in-flight count its own
+  /// concurrency cap is checked against.
+  @@index([scheduleId, createdAt])
 }
 
 /// Relay-side index/cache of the local SwiftData Conversation(kind: .code).
@@ -2772,6 +2781,43 @@ model WorkSchedule {
   runConfig        Json @default("{}")
   runConfigVersion Int  @default(1)
 
+  /// What one fire of this routine produces: `work` (a WorkRun against the
+  /// session below) or `code` (a cloud Code run in a conversation of its own).
+  ///
+  /// A column and not a second table because everything above it — the
+  /// triggers, the timezone, the missed-run policy, the lease, the pause — is
+  /// the same question for both, and a parallel scheduler would be a second
+  /// implementation of the DST arithmetic and the catch-up rules. What differs
+  /// is only what a fire creates, which is one branch in the dispatcher.
+  ///
+  /// A value this build cannot read is NOT resolved to `work`: the dispatcher
+  /// leaves the fire owed for the deployment that understands it, because
+  /// running a Code routine as a Work session would run something nobody asked
+  /// for. See `scheduleRunKindOf` in src/lib/work/code-routine.ts.
+  runKind String @default("work")
+
+  /// A `code` routine's repository, environment, permission mode, model and
+  /// reasoning effort. Typed and versioned for the same reason `runConfig` is,
+  /// and empty for a `work` routine.
+  codeConfig        Json @default("{}")
+  codeConfigVersion Int  @default(1)
+
+  /// SHA-256 of the bearer token this routine's `api` trigger fires with, never
+  /// the token. Two decisions worth stating.
+  ///
+  /// A COLUMN AND NOT A KEY IN A TRIGGER'S `config`: `serializeSchedule` hands
+  /// `config` back verbatim to every client that can read the routine, so a
+  /// secret in it would be returned on every list.
+  ///
+  /// ON THE ROUTINE AND NOT ON THE TRIGGER ROW: a PATCH that changes the
+  /// trigger set deletes every row and writes the submitted set fresh — it must,
+  /// because a trigger has no client-stable identity — so a token stored on one
+  /// would be destroyed by editing an unrelated email filter, and the CI job
+  /// holding it would start failing with no edit anybody would connect to it.
+  /// One routine has one fire URL, which is the thing the token is for.
+  fireSecretHash     String?
+  fireSecretIssuedAt DateTime?
+
   maxCostMicroUsd Int @default(0)
   maxTokens       Int @default(0)
   maxRuntimeMs    Int @default(0)
@@ -2810,6 +2856,11 @@ model WorkSchedule {
   host     WorkHost?     @relation(fields: [hostId], references: [id], onDelete: SetNull)
   triggers WorkTrigger[]
   runs     WorkRun[]
+  /// The Code runs this routine's fires produced. SetNull on delete, exactly
+  /// like `WorkRun.scheduleId`: retiring a routine must not delete the sessions
+  /// it opened, which are ordinary Code conversations the user may still be
+  /// reading or turning into a pull request.
+  codeRuns CodeTask[]
 
   @@index([enabled, nextRunAt])
   @@index([userId, createdAt])

@@ -83,8 +83,15 @@ struct DesktopTasksScreen: View {
         model.task(withID: surface.selectedTaskID)
     }
 
+    /// Whether the *New Task* controls can do anything.
+    ///
+    /// `model.isCreatable` is the server's own answer (`creatable` on
+    /// `GET /api/tasks`) rather than something inferred from the limit. The
+    /// inference it replaced — no limit and no tasks — was false for every
+    /// account that had a task, so this page kept offering a button whose POST
+    /// answers 410.
     private var canCreate: Bool {
-        !model.isPlanLocked && !model.isAtLimit && !modelOptions.isEmpty
+        model.isCreatable && !model.isAtLimit && !modelOptions.isEmpty
     }
 
     var body: some View {
@@ -102,7 +109,13 @@ struct DesktopTasksScreen: View {
         Color.clear
             .overlay { page }
             .toolbar { tasksToolbar }
-            .onDeleteCommand { surface.deleteTarget = selectedTask }
+            // ⌫ is the one delete path with no button to disable, so the guard
+            // is here: DELETE is refused for an adopted task, and a
+            // confirmation dialog whose Delete cannot delete is a worse answer
+            // than the key doing nothing.
+            .onDeleteCommand {
+                surface.deleteTarget = selectedTask.flatMap { model.canEdit($0) ? $0 : nil }
+            }
             .sheet(item: $surface.editorRequest) { request in
                 DesktopTaskEditor(
                     model: model,
@@ -254,16 +267,7 @@ struct DesktopTasksScreen: View {
                 action: { Task { await model.refresh() } }
             )
         case .ready:
-            if model.isPlanLocked {
-                // The same sentence the web shows for `limit === 0`. No upgrade
-                // button: the desktop shell has no purchase surface to send
-                // anyone to, and a button that goes nowhere is worse than none.
-                JunoEmptyState(
-                    title: "Tasks are part of Pro",
-                    message: "Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson.",
-                    icon: .lock
-                )
-            } else if model.tasks.isEmpty {
+            if model.tasks.isEmpty {
                 emptyState
             } else {
                 tableCard
@@ -279,7 +283,18 @@ struct DesktopTasksScreen: View {
         // glyph in this state at all, so there is nothing to copy — but a page
         // whose sidebar row is a Lucide calendar-clock should not name itself
         // with a borrowed one when its empty state is the only picture on it.
-        if canCreate {
+        if model.isRetiredAndEmpty {
+            // Not "Tasks are part of Pro". The plan ceiling went with the
+            // surface, so naming Pro here would be a reason that no longer
+            // exists — and the person would go looking for a purchase that
+            // would change nothing. No button: the desktop shell has nowhere to
+            // send them, and a button that goes nowhere is worse than none.
+            JunoEmptyState(
+                title: "These moved to Automations",
+                message: "Scheduled tasks are Automations now — same time, same zone, plus event triggers and a proper catch-up policy. Anything you had has already moved.",
+                icon: .tasks
+            )
+        } else if canCreate {
             JunoEmptyState(
                 title: "Nothing scheduled",
                 message: message,
@@ -331,8 +346,14 @@ struct DesktopTasksScreen: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .tint(Color.junoAccent)
-                    .disabled(model.isMutating)
-                    .help(task.enabled ? "Pause this task" : "Resume this task")
+                    // Disabled once the task is an Automation: `PATCH
+                    // /api/tasks/<id>` answers 409 from then on, so the switch
+                    // would move under the pointer and spring straight back.
+                    // The sweep also clears `enabled` as it adopts, so without
+                    // this every row reads "off" with no control that can turn
+                    // it on.
+                    .disabled(model.isMutating || !model.canEdit(task))
+                    .help(taskToggleHelp(task))
                     .accessibilityLabel(
                         task.enabled ? "Pause \(task.name)" : "Resume \(task.name)"
                     )
@@ -415,19 +436,32 @@ struct DesktopTasksScreen: View {
                     .disabled(!canCreate)
             }
         } primaryAction: { ids in
-            guard let target = model.task(withID: ids.first) else { return }
+            guard let target = model.task(withID: ids.first), model.canEdit(target) else { return }
             surface.editorRequest = DesktopTaskEditorRequest(task: target)
         }
         .accessibilityIdentifier("juno.desktop.tasks-table")
     }
 
+    /// Why the switch is off, when "off" is not something the person did.
+    private func taskToggleHelp(_ task: NativeScheduledTask) -> String {
+        if !model.canEdit(task) {
+            return "This task is an Automation now. Pause or resume it in Automations."
+        }
+        return task.enabled ? "Pause this task" : "Resume this task"
+    }
+
     @ViewBuilder
     private func rowMenu(for task: NativeScheduledTask) -> some View {
+        // Every write on `/api/tasks/<id>` is refused for an adopted task, so
+        // all three of these are disabled together rather than one at a time.
+        // Reading the results is not a write and stays available.
+        let editable = model.canEdit(task)
         Button("Edit Task…") { surface.editorRequest = DesktopTaskEditorRequest(task: task) }
+            .disabled(!editable)
         Button(task.enabled ? "Pause Task" : "Resume Task") {
             Task { await model.setEnabled(id: task.id, enabled: !task.enabled) }
         }
-        .disabled(model.isMutating)
+        .disabled(model.isMutating || !editable)
         Button("Open Results") {
             guard let conversationID = task.conversationID else { return }
             openConversation(conversationID)
@@ -435,6 +469,7 @@ struct DesktopTasksScreen: View {
         .disabled(task.conversationID == nil)
         Divider()
         Button("Delete Task…", role: .destructive) { surface.deleteTarget = task }
+            .disabled(!editable)
     }
 
     // MARK: - Toolbar
@@ -467,8 +502,12 @@ struct DesktopTasksScreen: View {
                 Label("Edit Task", icon: .pencil)
             }
             .keyboardShortcut("e", modifiers: [.command])
-            .disabled(selectedTask == nil)
-            .help("Edit the selected task (⌘E)")
+            .disabled(selectedTask.map { !model.canEdit($0) } ?? true)
+            .help(
+                selectedTask.map { model.canEdit($0) } == false
+                    ? "This task is an Automation now. Edit it in Automations."
+                    : "Edit the selected task (⌘E)"
+            )
             .accessibilityLabel("Edit task")
             .accessibilityIdentifier("juno.desktop.tasks-edit")
         }
@@ -500,7 +539,7 @@ struct DesktopTasksScreen: View {
     }
 
     private var newTaskHelp: String {
-        if model.isPlanLocked { return "This account's plan allows no scheduled tasks." }
+        if !model.isCreatable { return "Scheduled tasks moved to Automations — create them there." }
         if model.isAtLimit { return "This plan allows \(model.limit) scheduled tasks." }
         if modelOptions.isEmpty { return "No model is available to schedule against." }
         return "Create a scheduled task (⇧⌘N)"

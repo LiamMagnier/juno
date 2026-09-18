@@ -243,7 +243,11 @@ function createRunArguments(source: string): string[] {
 
 const DISPATCHERS = [
   "../src/app/api/work/sessions/[id]/runs/route.ts",
-  "../src/app/api/work/schedules/[id]/run-now/route.ts",
+  // The Run-now button and an `api` trigger's fire URL are ONE implementation
+  // (see its own docblock), so the file that builds the run for both is where
+  // the window has to be read and merged. Pointing this at the route instead
+  // would pass while the fire URL dispatched runs with no window behind them.
+  "../src/lib/work/fire-now.ts",
   "../scripts/work-scheduler.ts",
   "../scripts/work-trigger-poller.ts",
 ];

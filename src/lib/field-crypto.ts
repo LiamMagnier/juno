@@ -40,15 +40,18 @@ import {
   isEncryptedMessageText,
   messageKeyId,
 } from "@/lib/message-crypto";
+import { FIELD_DECRYPT_PLACEHOLDER } from "@/lib/field-crypto-placeholder";
 
 /**
  * What a read returns when the ciphertext cannot be recovered.
  *
- * Deliberately a sentinel rather than an empty string: callers that feed a
- * column to a model (the scheduled-task prompt) can recognise it and refuse to
- * run rather than silently spending money on a meaningless request.
+ * Defined one module down and re-exported here, so that a pure module which
+ * only needs to RECOGNISE the sentinel — `src/lib/work/schedule.ts`, which the
+ * automations editor bundles for the browser — can import it without pulling
+ * `node:crypto` and the server env schema in behind it. See the note on the
+ * constant itself.
  */
-export const FIELD_DECRYPT_PLACEHOLDER = "[encrypted field could not be decrypted]";
+export { FIELD_DECRYPT_PLACEHOLDER };
 
 /**
  * Reasons already logged this process.

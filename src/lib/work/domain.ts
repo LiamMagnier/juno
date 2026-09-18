@@ -1271,6 +1271,11 @@ export const WORK_TRIGGER_KINDS = [
   "connector_event",
   "folder_change",
   "manual",
+  // A request, authenticated by a token issued for this one trigger. Appended
+  // rather than inserted beside `manual`: the order of this list is what the
+  // generated Swift enum's cases are written in, and a value added in the
+  // middle would rewrite every case after it for no reason.
+  "api",
 ] as const;
 
 export type WorkTriggerKind = (typeof WORK_TRIGGER_KINDS)[number];

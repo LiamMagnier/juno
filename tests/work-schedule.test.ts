@@ -35,6 +35,7 @@ import {
   planMissedRuns,
   planScheduleDispatch,
   planScheduleEdit,
+  planAdoptedPromptRepair,
   planTaskMigration,
   resolveWallTime,
   scheduleRunIdempotencyKey,
@@ -44,12 +45,17 @@ import {
   unattendedPolicyOf,
   type LegacyScheduledTaskRow,
   type ScheduleDispatchInput,
+  type ScheduleMigrationPlan,
   type ScheduleEditInput,
   type TimeTriggerSpec,
   type WorkHostRow,
   type WorkScheduleRow,
   type WorkTriggerRow,
 } from "@/lib/work/schedule";
+// The legacy cadence maths, imported only so the one-off migration can be
+// checked against the instant the old runner would actually have fired at
+// rather than against a date written out by hand here.
+import { onceRunInstant } from "@/lib/scheduled-task-cadence";
 
 /*
  * The schedule math, pinned against the cases that are only ever discovered in
@@ -845,6 +851,11 @@ function scheduleRow(overrides: Partial<WorkScheduleRow> = {}): WorkScheduleRow 
     timezone: PARIS,
     runConfig: { model: "anthropic:claude" },
     runConfigVersion: 1,
+    runKind: "work",
+    codeConfig: {},
+    codeConfigVersion: 1,
+    fireSecretHash: null,
+    fireSecretIssuedAt: null,
     maxCostMicroUsd: 250_000,
     maxTokens: 0,
     maxRuntimeMs: 0,
@@ -1178,6 +1189,7 @@ function legacyTask(overrides: Partial<LegacyScheduledTaskRow> = {}): LegacySche
     minute: 0,
     weekday: null,
     monthday: null,
+    onDate: null,
     timezone: PARIS,
     webSearch: true,
     enabled: true,
@@ -1188,77 +1200,245 @@ function legacyTask(overrides: Partial<LegacyScheduledTaskRow> = {}): LegacySche
   };
 }
 
+/** The plan, or a failure with its blocker named. Every assertion below wants
+ *  one of the two, and none of them wants to write the narrowing out again. */
+function migrated(task: LegacyScheduledTaskRow): ScheduleMigrationPlan {
+  const result = planTaskMigration(task);
+  if (!result.ok) throw new Error(`expected a plan, got ${result.blocker}: ${result.message}`);
+  return result.plan;
+}
+
 test("a migrated task keeps the exact fire it was owed", () => {
   // The whole point. A task due at 08:00 being adopted at 08:04 has a fire
   // owed; recomputing here would lose it inside the migration that exists to
   // preserve it.
-  const plan = planTaskMigration(legacyTask());
-  assert.equal(plan?.schedule.nextRunAt.getTime(), new Date("2026-08-05T06:00:00Z").getTime());
-  assert.equal(plan?.schedule.lastRunAt?.getTime(), new Date("2026-08-04T06:00:00Z").getTime());
-  assert.equal(plan?.schedule.legacyScheduledTaskId, "task-1");
-  assert.equal(plan?.session.conversationId, "cnv-1");
+  const plan = migrated(legacyTask());
+  assert.equal(plan.schedule.nextRunAt.getTime(), new Date("2026-08-05T06:00:00Z").getTime());
+  assert.equal(plan.schedule.lastRunAt?.getTime(), new Date("2026-08-04T06:00:00Z").getTime());
+  assert.equal(plan.schedule.legacyScheduledTaskId, "task-1");
+  assert.equal(plan.session.conversationId, "cnv-1");
 });
 
 test("a migrated task fires on the same day it has always fired on", () => {
   // The legacy cadence walk reads `weekday ?? 1` and `monthday ?? 1`, so a
   // WEEKLY task with no weekday has been running on Mondays. Choosing anything
   // else here would move it, quietly, during the migration.
-  const weekly = planTaskMigration(legacyTask({ cadence: "WEEKLY", weekday: null }));
-  assert.deepEqual(weekly?.trigger, { kind: "weekly", config: { hour: 8, minute: 0, weekday: 1 } });
+  const weekly = migrated(legacyTask({ cadence: "WEEKLY", weekday: null }));
+  assert.deepEqual(weekly.trigger, { kind: "weekly", config: { hour: 8, minute: 0, weekday: 1 } });
 
-  const monthly = planTaskMigration(legacyTask({ cadence: "MONTHLY", monthday: null }));
-  assert.deepEqual(monthly?.trigger, { kind: "monthly", config: { hour: 8, minute: 0, monthday: 1 } });
+  const monthly = migrated(legacyTask({ cadence: "MONTHLY", monthday: null }));
+  assert.deepEqual(monthly.trigger, {
+    kind: "monthly",
+    config: { hour: 8, minute: 0, monthday: 1 },
+  });
 
-  const stated = planTaskMigration(legacyTask({ cadence: "WEEKLY", weekday: 4 }));
-  assert.equal((stated?.trigger.config as { weekday: number }).weekday, 4);
+  const stated = migrated(legacyTask({ cadence: "WEEKLY", weekday: 4 }));
+  assert.equal((stated.trigger.config as { weekday: number }).weekday, 4);
 });
 
-test("every legacy cadence maps to a trigger that fires at the same wall time", () => {
+/**
+ * Every cadence the column can hold, read from the schema itself.
+ *
+ * Read rather than listed, because what the test below states is that the set
+ * needing special treatment is EMPTY — and a hand-written list would stop being
+ * the whole set the moment somebody added a value to the enum, which is exactly
+ * the case where a schedule silently stops running.
+ */
+function taskCadences(): string[] {
+  const schema = readFileSync("prisma/schema.prisma", "utf8");
+  const block = /enum TaskCadence \{([^}]*)\}/.exec(schema);
+  assert.notEqual(block, null, "prisma/schema.prisma no longer declares enum TaskCadence");
+  return (block?.[1] ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("//"));
+}
+
+test("every cadence the legacy column can hold becomes a trigger", () => {
+  // THE RETIREMENT DEPENDS ON THIS BEING TOTAL. The legacy worker is gone, so a
+  // cadence `planTaskMigration` cannot express is a schedule that stops running
+  // with nothing anywhere saying so. The adopter names such a row in its log
+  // and leaves it enabled; this is the proof that there is nothing to name.
+  const cadences = taskCadences();
+  assert.ok(cadences.length >= 5, "expected at least the five known cadences");
+  for (const cadence of cadences) {
+    // A ONCE task needs its date, exactly as the API required when it wrote the
+    // row; every recurring cadence ignores the column.
+    const result = planTaskMigration(
+      legacyTask({ cadence, weekday: 2, monthday: 12, onDate: "2027-03-09", hour: 8, minute: 30 })
+    );
+    assert.equal(result.ok, true, `${cadence} has no trigger`);
+  }
+});
+
+test("every recurring cadence maps to a trigger that fires at the same wall time", () => {
   const from = new Date("2026-08-05T12:00:00Z");
   for (const cadence of ["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY"]) {
-    const plan = planTaskMigration(legacyTask({ cadence, weekday: 2, monthday: 12, hour: 8, minute: 30 }));
-    assert.notEqual(plan, null, cadence);
-    if (!plan) throw new Error("unreachable");
-    const migrated = spec(plan.trigger.kind, plan.trigger.config, plan.schedule.timezone);
-    const fire = nextFireAfter(migrated, from);
+    const plan = migrated(legacyTask({ cadence, weekday: 2, monthday: 12, hour: 8, minute: 30 }));
+    const fire = nextFireAfter(
+      spec(plan.trigger.kind, plan.trigger.config, plan.schedule.timezone),
+      from
+    );
     assert.notEqual(fire, null, cadence);
     if (!fire) throw new Error("unreachable");
     assert.match(wall(fire, PARIS), /08:30$/, cadence);
   }
 });
 
-test("a cadence this build cannot express is left on the legacy runner", () => {
+test("a one-off migrates to the single moment it was going to fire at", () => {
+  // The cadence the first version of this map left out, and the reason the
+  // legacy worker could not be retired. `onceRunInstant` resolves the same wall
+  // time in the same zone, so the migrated trigger has to land on it exactly: a
+  // one-off moved by an hour is the whole of that task's life moved.
+  const task = legacyTask({ cadence: "ONCE", onDate: "2027-03-09", hour: 8, minute: 30 });
+  const plan = migrated(task);
+  assert.deepEqual(plan.trigger, {
+    kind: "once",
+    config: { hour: 8, minute: 30, year: 2027, month: 3, day: 9 },
+  });
+
+  // `TaskScheduleInput` is the narrow shape the legacy maths takes — the same
+  // columns, typed as the Prisma row types them — so the cadence is asserted
+  // into it rather than the row being widened to satisfy both.
+  const legacyInstant = onceRunInstant({ ...task, cadence: "ONCE" });
+  const migratedFire = nextFireAfter(
+    spec(plan.trigger.kind, plan.trigger.config, plan.schedule.timezone),
+    new Date("2026-08-05T12:00:00Z")
+  );
+  assert.notEqual(legacyInstant, null);
+  assert.equal(migratedFire?.getTime(), legacyInstant?.getTime());
+});
+
+test("a one-off that has already fired migrates with no fire left", () => {
+  // `executeTask` disabled a ONCE task after its run, so the row arrives here
+  // paused with a spent date. The migrated routine has to agree: a `once`
+  // trigger whose moment has passed has no next fire at all, and inventing one
+  // would re-run a task the user watched finish last year.
+  const plan = migrated(
+    legacyTask({ cadence: "ONCE", onDate: "2025-01-02", hour: 9, minute: 0, enabled: false })
+  );
+  assert.equal(plan.schedule.enabled, false);
+  assert.equal(
+    nextFireAfter(
+      spec(plan.trigger.kind, plan.trigger.config, plan.schedule.timezone),
+      new Date("2026-08-05T12:00:00Z")
+    ),
+    null
+  );
+});
+
+test("a one-off with no real date is left alone rather than moved to an invented one", () => {
+  // The one case that still cannot be migrated, and it is a corrupt row rather
+  // than a cadence. Left enabled and named in the adopter's log: this is the
+  // single fire that task will ever have, and putting it on the wrong day is
+  // worse than not moving it.
+  for (const onDate of [null, "", "not-a-date", "2027-02-30"]) {
+    const result = planTaskMigration(legacyTask({ cadence: "ONCE", onDate }));
+    assert.equal(result.ok, false, String(onDate));
+    if (result.ok) throw new Error("unreachable");
+    assert.equal(result.blocker, "malformed_once");
+  }
+});
+
+test("a cadence this build cannot express is left on its own row, by name", () => {
   // Mapping it onto `daily` would produce a schedule that fires at a different
   // time from the task it claims to be, and the user would have no way to tell.
-  assert.equal(planTaskMigration(legacyTask({ cadence: "FORTNIGHTLY" })), null);
+  const result = planTaskMigration(legacyTask({ cadence: "FORTNIGHTLY" }));
+  assert.equal(result.ok, false);
+  if (result.ok) throw new Error("unreachable");
+  assert.equal(result.blocker, "unknown_cadence");
+  assert.match(result.message, /FORTNIGHTLY/);
 });
 
 test("a migrated task falls back to the legacy default timezone, not to UTC", () => {
   // `computeNextRunAt` substitutes Europe/Paris for an unreadable zone, so the
   // task has been firing on Paris time; migrating it to UTC would move it.
-  const plan = planTaskMigration(legacyTask({ timezone: "Mars/Olympus" }));
-  assert.equal(plan?.schedule.timezone, LEGACY_TASK_TIMEZONE);
+  assert.equal(
+    migrated(legacyTask({ timezone: "Mars/Olympus" })).schedule.timezone,
+    LEGACY_TASK_TIMEZONE
+  );
 });
 
 test("a migrated task gains no permission it did not have", () => {
-  const plan = planTaskMigration(legacyTask());
-  assert.equal(plan?.schedule.unattendedPolicy, "pause_for_approval");
-  assert.equal(plan?.schedule.target, "cloud");
+  const plan = migrated(legacyTask());
+  assert.equal(plan.schedule.unattendedPolicy, "pause_for_approval");
+  assert.equal(plan.schedule.target, "cloud");
   // Faithful to what the legacy runner did: one overdue fire on the next tick,
   // then advance.
-  assert.equal(plan?.schedule.missedRunPolicy, "run_once");
-  assert.deepEqual(parseScheduleRunConfig(plan?.schedule.runConfig).requiredCapabilities, [
+  assert.equal(plan.schedule.missedRunPolicy, "run_once");
+  assert.deepEqual(parseScheduleRunConfig(plan.schedule.runConfig).requiredCapabilities, [
     "web_research",
   ]);
   assert.deepEqual(
-    parseScheduleRunConfig(planTaskMigration(legacyTask({ webSearch: false }))?.schedule.runConfig)
+    parseScheduleRunConfig(migrated(legacyTask({ webSearch: false })).schedule.runConfig)
       .requiredCapabilities,
     []
   );
 });
 
 test("a disabled task migrates as a disabled schedule", () => {
-  assert.equal(planTaskMigration(legacyTask({ enabled: false }))?.schedule.enabled, false);
+  assert.equal(migrated(legacyTask({ enabled: false })).schedule.enabled, false);
+});
+
+test("the prompt the routine is given is the plaintext it was handed", () => {
+  // `ScheduledTask.prompt` is sealed at rest and the caller decrypts before
+  // calling — the fixture above is plaintext for exactly that reason. This
+  // pins the two places the prompt lands, because a routine whose goal and
+  // instructions disagree is a run validated against something it was never
+  // asked to do.
+  const plan = migrated(legacyTask({ prompt: "  Summarise overnight email.  " }));
+  assert.equal(plan.session.goal, "Summarise overnight email.");
+  assert.equal(plan.schedule.instructions, "Summarise overnight email.");
+});
+
+test("a task whose prompt could not be decrypted is refused, not adopted", () => {
+  // The policy the retired `executeTask` had, carried over to the thing that
+  // replaced it. Adopting it would mint a routine that fires every morning,
+  // spends real money and instructs the run with the placeholder — which is a
+  // schedule that has stopped running while looking like one that has not.
+  for (const prompt of ["[encrypted field could not be decrypted]", "", "   "]) {
+    const result = planTaskMigration(legacyTask({ prompt }));
+    assert.equal(result.ok, false, JSON.stringify(prompt));
+    if (result.ok) throw new Error("unreachable");
+    assert.equal(result.blocker, "unreadable_prompt");
+  }
+});
+
+test("an unreadable prompt is refused before the cadence is even looked at", () => {
+  // Order matters: an unreadable prompt on a perfectly ordinary DAILY row is
+  // the expensive failure, and nothing further down the function would ever
+  // notice it. A row that is wrong in both ways must name this one.
+  const result = planTaskMigration(
+    legacyTask({ prompt: "[encrypted field could not be decrypted]", cadence: "FORTNIGHTLY" })
+  );
+  assert.equal(result.ok, false);
+  if (result.ok) throw new Error("unreachable");
+  assert.equal(result.blocker, "unreadable_prompt");
+});
+
+test("the repair leaves a routine that was never sealed alone", () => {
+  // `decryptField` returns a value it does not recognise untouched, so equal
+  // arguments mean the row is already plaintext. Rewriting it would cost a
+  // write per routine on every run of a script that is meant to be idempotent.
+  assert.deepEqual(planAdoptedPromptRepair("Summarise email.", "Summarise email."), {
+    action: "leave",
+  });
+});
+
+test("the repair puts the recovered plaintext back", () => {
+  assert.deepEqual(planAdoptedPromptRepair("enc:v2:abc", "Summarise email."), {
+    action: "rewrite",
+    prompt: "Summarise email.",
+  });
+});
+
+test("the repair pauses a routine whose prompt cannot be recovered", () => {
+  // No plaintext exists to put back, and a routine left running would bill
+  // somebody every morning to act on the sentinel. Same call the migration
+  // makes when it refuses such a task outright.
+  for (const recovered of ["[encrypted field could not be decrypted]", "  "]) {
+    assert.deepEqual(planAdoptedPromptRepair("enc:v2:abc", recovered), { action: "pause" });
+  }
 });
 
 // ---------------------------------------------------------------------------
