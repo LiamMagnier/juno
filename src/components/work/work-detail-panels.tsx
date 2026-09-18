@@ -492,10 +492,16 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
           window either, which is the account with spending limits switched off.
           `budgetExceeded` reads a zero as no ceiling, so nothing about the run
           itself would tell the reader why three bars are open-ended. */}
+      {/* Worded about the RUN and not about the account, because the run is the
+          only thing this panel can actually see. Three zeros are written by a
+          run dispatched with no window — the cap-disabled account — but they
+          were also written by every ordinary metered run before the windows
+          started sizing a dispatch, and those rows are still in the history.
+          Naming a cause the reader can check against their own settings would
+          be wrong for all of them. */}
       {unlimited && (
         <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-          This attempt ran with no ceiling of its own — spending limits are switched off on this
-          account, so there was no usage window to bound it.
+          This attempt recorded no ceiling of its own on any axis, so nothing here bounded it.
         </p>
       )}
       {ceiling.exceeded && (

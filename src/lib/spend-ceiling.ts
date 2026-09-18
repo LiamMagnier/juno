@@ -361,12 +361,55 @@ export const WEEKLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /**
  * A reference month, used when a billing period is shorter than one.
  *
- * The windows are TIME-PROPORTIONAL slices of the period budget, so they tile
- * it exactly: the weekly budgets and the session budgets each sum to the whole
- * period cap. Dividing by a whole four weeks — a month is 4.29 of them — would
- * hand out more than the month holds.
+ * The PACE figure each window draws is a TIME-PROPORTIONAL slice of the period
+ * budget, so the pace figures tile it exactly: the weekly slices and the
+ * session slices each sum to the whole period cap. Dividing by a whole four
+ * weeks — a month is 4.29 of them — would hand out more than the month holds,
+ * and a meter at 100% would then mean something other than "on pace to spend
+ * precisely the period budget".
  */
 export const REFERENCE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How much of the weekly allowance one five-hour sitting may burn through.
+ *
+ * A pace slice is not a gate. month ÷ 144 is the right denominator for a meter
+ * that answers "am I on pace to spend the month?", and it is the wrong number
+ * to refuse work by: enforcing it would mean an account could never burst,
+ * which is the opposite of the model this section cites — the references give a
+ * five-hour window that is a large fraction of the allowance, so somebody can
+ * do a day's work in a sitting and then wait. Enforcing the pace slice would
+ * have dispatched a PRO Work run under a $0.076 ceiling where the per-run table
+ * it replaced gave it $2, and the composer would have said "runs until the work
+ * is done" over a runtime that stopped it at seven cents.
+ *
+ * So the session cell is sized as a BURST allowance against the weekly cell,
+ * which is the real rolling cap. Half of it, because a weekly window one
+ * sitting can empty is a weekly window in name only, and because half a week's
+ * allowance is already far more than any single run realistically spends.
+ */
+export const SESSION_BURST_SHARE_OF_WEEK = 0.5;
+
+/**
+ * The smallest a window may be before it is allowed to refuse anything.
+ *
+ * Expressed as a multiple of a Work run's admission hold, because that is the
+ * failure it exists to prevent rather than a round number somebody liked.
+ * `checkUsageWindows` subtracts open reservations, and `createRun` holds
+ * `DEFAULT_ESTIMATE_MICRO_USD.work` for the whole life of a run — so a window
+ * smaller than that hold is a window one admitted run consumes entirely, and
+ * for as long as that run is in flight every chat turn on the account is
+ * refused with "you've used up your 5-hour usage limit" and no further run can
+ * be dispatched. An order of magnitude of headroom is what keeps one run's hold
+ * a fraction of the window rather than the whole of it.
+ *
+ * Clamped to the period budget at the point of use: an account whose whole
+ * month is smaller than this floor has no burst to allow, and the month is its
+ * real limit. Handing it a window LARGER than its month would be a window that
+ * can never bind while the surfaces went on naming it as the thing that stops a
+ * run.
+ */
+export const WINDOW_GATE_FLOOR_MICRO_USD = 10 * DEFAULT_ESTIMATE_MICRO_USD.work;
 
 export type UsageWindowName = "session" | "weekly";
 
@@ -376,8 +419,24 @@ export interface UsageWindowCell {
   startMs: number;
   /** When this cell rolls over and the window frees up. */
   resetsAtMs: number;
-  /** This cell's time-proportional slice of the period budget. */
+  /**
+   * What this cell REFUSES at — the burst allowance, not the pace slice.
+   *
+   * This is the number a run is dispatched under and the number a chat turn is
+   * admitted against, so it has to be a figure a real sitting can spend.
+   */
   budgetMicroUsd: number;
+  /**
+   * The cell's time-proportional share of the period budget, for the METER
+   * alone: spend ÷ this is "am I on pace to spend the month in this window?".
+   *
+   * Separate from `budgetMicroUsd` because the two answer different questions
+   * and one number cannot answer both. Drawing the gate as the meter would tell
+   * a PRO account it had used 3% of its five hours while it was on pace to
+   * spend the month thirty times over; enforcing the meter would refuse a run
+   * the account could comfortably afford.
+   */
+  paceBudgetMicroUsd: number;
 }
 
 export interface UsageWindowGrid {
@@ -402,15 +461,33 @@ export function usageWindowGrid(input: {
 }): UsageWindowGrid {
   const periodMs = Math.max(input.periodEndMs - input.periodStartMs, REFERENCE_MONTH_MS);
   const elapsed = Math.max(0, input.nowMs - input.anchorMs);
-  const cell = (span: number): UsageWindowCell => {
+  const pace = (span: number) => Math.round(input.monthBudgetMicroUsd * (span / periodMs));
+  // The floor cannot exceed the month it is carved out of, or an account with a
+  // tiny period budget would be handed a window it can never reach while every
+  // surface went on naming that window as the thing that stops a run.
+  const floor = Math.min(input.monthBudgetMicroUsd, WINDOW_GATE_FLOOR_MICRO_USD);
+  // The weekly cell stays a true seven-day share of the month: it is the real
+  // rolling cap, and the figure the rest of this package is written around.
+  const weeklyGate = Math.max(pace(WEEKLY_WINDOW_MS), floor);
+  // The session cell is a share of THAT, and never more than it: a five-hour
+  // window looser than the weekly one could not bind either.
+  const sessionGate = Math.min(
+    weeklyGate,
+    Math.max(Math.round(weeklyGate * SESSION_BURST_SHARE_OF_WEEK), floor)
+  );
+  const cell = (span: number, budgetMicroUsd: number): UsageWindowCell => {
     const startMs = input.anchorMs + Math.floor(elapsed / span) * span;
     return {
       startMs,
       resetsAtMs: startMs + span,
-      budgetMicroUsd: Math.round(input.monthBudgetMicroUsd * (span / periodMs)),
+      budgetMicroUsd,
+      paceBudgetMicroUsd: pace(span),
     };
   };
-  return { session: cell(SESSION_WINDOW_MS), weekly: cell(WEEKLY_WINDOW_MS) };
+  return {
+    session: cell(SESSION_WINDOW_MS, sessionGate),
+    weekly: cell(WEEKLY_WINDOW_MS, weeklyGate),
+  };
 }
 
 /** One window as the ledger reports it. A null budget means nothing is metered. */
@@ -418,6 +495,73 @@ export interface WindowSpend {
   spentMicroUsd: number;
   budgetMicroUsd: number | null;
   resetsAtMs: number;
+  /**
+   * Open holds opened INSIDE this cell, when the caller can scope them.
+   *
+   * Window-scoped rather than period-scoped because a hold taken by a run that
+   * started six hours ago belongs to a five-hour cell that has already rolled
+   * over — charging it to the current cell would refuse work against money the
+   * window never saw. The caller that cannot scope them passes none and uses
+   * `heldMicroUsd` below, which is the safe direction.
+   */
+  heldMicroUsd?: number;
+}
+
+/** The window with the least room, and what it has left. */
+export interface BindingWindow {
+  name: UsageWindowName;
+  /**
+   * Room left, which may be NEGATIVE when the holds exceed the cell.
+   *
+   * Left unclamped so the caller can tell "exactly spent" from "overdrawn";
+   * `windowVerdict` is where it becomes a number safe to hand to a guard.
+   */
+  remainingMicroUsd: number;
+  resetsAtMs: number;
+}
+
+/**
+ * Which of the two windows has the least room — the one derivation.
+ *
+ * Exported because the gate is not the only surface that has to name a binding
+ * window: the composer's disclosure, the voice briefing and the schedule editor
+ * all tell the reader which limit will stop their run, and they used to pick it
+ * by PERCENTAGE used while this picked it by absolute remainder. The weekly
+ * budget is many times the session budget, so the two disagreed routinely — a
+ * composer saying "runs until your weekly limit is used up" and naming a reset
+ * a day away, over a run the five-hour cell was about to stop. Two derivations
+ * of one fact is the defect this package exists to remove, so there is one.
+ *
+ * Null only when neither window has a budget, which is the account that has
+ * switched enforcement off.
+ */
+export function bindingWindow(input: {
+  session: WindowSpend;
+  weekly: WindowSpend;
+  heldMicroUsd?: number;
+}): BindingWindow | null {
+  const held = Math.max(0, Math.round(input.heldMicroUsd ?? 0));
+  const candidates: BindingWindow[] = [];
+  for (const [name, window] of [
+    ["session", input.session],
+    ["weekly", input.weekly],
+  ] as const) {
+    if (window.budgetMicroUsd == null) continue;
+    candidates.push({
+      name,
+      remainingMicroUsd:
+        window.budgetMicroUsd -
+        window.spentMicroUsd -
+        Math.max(0, Math.round(window.heldMicroUsd ?? 0)) -
+        held,
+      resetsAtMs: window.resetsAtMs,
+    });
+  }
+  if (candidates.length === 0) return null;
+  // Strictly less, so an equal pair leaves the session window in front.
+  return candidates.reduce((tightest, next) =>
+    next.remainingMicroUsd < tightest.remainingMicroUsd ? next : tightest
+  );
 }
 
 export interface WindowVerdict {
@@ -456,30 +600,16 @@ export function windowVerdict(input: {
   weekly: WindowSpend;
   heldMicroUsd?: number;
 }): WindowVerdict {
-  const held = Math.max(0, Math.round(input.heldMicroUsd ?? 0));
-  const candidates: Array<{ name: UsageWindowName; remaining: number; resetsAtMs: number }> = [];
-  for (const [name, window] of [
-    ["session", input.session],
-    ["weekly", input.weekly],
-  ] as const) {
-    if (window.budgetMicroUsd == null) continue;
-    candidates.push({
-      name,
-      remaining: window.budgetMicroUsd - window.spentMicroUsd - held,
-      resetsAtMs: window.resetsAtMs,
-    });
-  }
-  if (candidates.length === 0) {
+  const binding = bindingWindow(input);
+  if (binding == null) {
     return { allowed: true, bound: null, remainingMicroUsd: null, resetsAtMs: null };
   }
-  // Strictly less, so an equal pair leaves the session window in front.
-  const binding = candidates.reduce((tightest, next) =>
-    next.remaining < tightest.remaining ? next : tightest
-  );
   return {
-    allowed: binding.remaining > 0,
+    allowed: binding.remainingMicroUsd > 0,
     bound: binding.name,
-    remainingMicroUsd: Math.max(0, binding.remaining),
+    // Clamped here and not in `bindingWindow`: this number is handed to a
+    // guard as a ceiling, and a negative one would be read as no ceiling.
+    remainingMicroUsd: Math.max(0, binding.remainingMicroUsd),
     resetsAtMs: binding.resetsAtMs,
   };
 }

@@ -44,7 +44,6 @@ import "server-only";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
-import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import {
   createRun,
@@ -583,14 +582,18 @@ async function dispatchOne(
           degradation: decision.degradation,
           permissionPolicy: policy,
           // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
-          // set a figure defaulted to 0 — so the runs firing at 03:00 with
-          // nobody watching were the only ones with no ceiling at all, while a
-          // manually started run got a real one. The cost axis takes the
-          // no-window backstop first; then it is narrowed against what this
-          // account's binding window has left, which is what fills a cost
-          // ceiling the schedule left at zero. Substituted here rather than in
-          // `budgetExceeded` because 0-means-unlimited is the persisted
-          // contract the column and every client already speak.
+          // set a figure stores 0 on every axis. What fills that zero is the
+          // window: `runBudgetForWindow` writes the binding window's remainder
+          // onto the cost axis, and `narrowestBudget` keeps the schedule's own
+          // figure only where it asked for LESS.
+          //
+          // The no-window backstop is NOT applied to the schedule's own figure
+          // here, and that is the whole point: wrapping it in
+          // `unattendedRunCeiling` made every metered scheduled fire run at
+          // min($1, window) — a per-run ceiling, on every plan, contradicting
+          // the docs and this commit, and differing from the same schedule
+          // pressed by hand, which got the window. `runBudgetForWindow` already
+          // carries the backstop for the one account that has no window at all.
           //
           // Tokens and runtime stay at whatever the schedule asked for, and
           // that is usually zero: there is no per-run token or time ceiling any
@@ -601,7 +604,7 @@ async function dispatchOne(
           // under another.
           budget: narrowestBudget(
             {
-              maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
+              maxCostMicroUsd: schedule.maxCostMicroUsd,
               maxTokens: schedule.maxTokens,
               maxRuntimeMs: schedule.maxRuntimeMs,
             },

@@ -44,8 +44,20 @@ export interface ClientSettings {
 
 /** One rolling usage window (5-hour session or weekly) for the settings gauge. */
 export interface ClientUsageWindow {
-  /** spend ÷ this window's proportional budget (0..∞; 1 = on pace for the monthly cap). */
+  /** spend ÷ this window's PACE slice (0..∞; 1 = on pace for the monthly cap). */
   pct: number;
+  /**
+   * Settled spend in this window's current cell, and what the cell refuses at.
+   *
+   * Carried so a client can work out which window BINDS the same way the gate
+   * does — by absolute room left, not by percentage used. The two disagree
+   * routinely because the weekly budget is many times the session budget, and a
+   * composer naming the wrong one tells the reader to wait a day for a limit
+   * that frees up in an hour. A null budget is the account with enforcement
+   * switched off.
+   */
+  spentMicroUsd: number;
+  budgetMicroUsd: number | null;
   /** Epoch ms when this rolling window next frees up. */
   resetsAtMs: number;
 }

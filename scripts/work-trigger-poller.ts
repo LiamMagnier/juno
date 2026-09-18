@@ -64,7 +64,6 @@ import type { Plan } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget, checkUsageWindows } from "@/lib/spend";
-import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { runBudgetForWindow } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
@@ -1013,15 +1012,16 @@ async function offer(
     degradation: decision.degradation,
     permissionPolicy,
     // Same reason as the scheduler: a trigger-fired run has no human in the
-    // loop, and 0 on this column means unlimited. The no-window backstop first
-    // (`unattendedRunCeiling`), then narrowed against what this account's
-    // binding window has left, so a schedule with no figures of its own still
-    // has a real cost ceiling. Tokens and runtime carry none: there is no
-    // per-run ceiling on those axes any more, only what a schedule imposes on
-    // itself.
+    // loop, and 0 on this column means unlimited. What fills that zero is the
+    // account's binding window, and only what a schedule asks for BELOW it
+    // narrows it further. The no-window backstop is not applied to the
+    // schedule's own figure — that turned every metered fire into a $1 per-run
+    // ceiling, which is the thing this package removed;
+    // `runBudgetForWindow` carries the backstop for the account that has no
+    // window at all. Tokens and runtime carry no ceiling of their own either.
     budget: narrowestBudget(
       {
-        maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
+        maxCostMicroUsd: schedule.maxCostMicroUsd,
         maxTokens: schedule.maxTokens,
         maxRuntimeMs: schedule.maxRuntimeMs,
       },

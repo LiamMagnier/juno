@@ -17,6 +17,7 @@ import {
   type BudgetCapSource,
   type EffectiveBudget,
   type SpendKind,
+  type UsageWindowCell,
   type UsageWindowName,
 } from "@/lib/spend-ceiling";
 
@@ -393,11 +394,13 @@ export async function recordWorkRunSpend(input: {
 // The rolling windows are SESSION_WINDOW_MS and WEEKLY_WINDOW_MS, and their
 // grid arithmetic is `usageWindowGrid` — both in spend-ceiling.ts, so the
 // numbers that decide when somebody is told to come back are covered by a test
-// rather than reachable only through Prisma. Each window's budget is its exact
-// TIME-PROPORTIONAL share of the period, so the windows TILE the period budget
-// perfectly: the weekly budgets and the session budgets each sum to exactly the
-// €15 cap across a month (a window at 100% = on pace to spend precisely the
-// period budget).
+// rather than reachable only through Prisma. Each window carries TWO figures
+// and the difference is the whole point: the METER's denominator is the exact
+// time-proportional share of the period, so the pace slices tile the €15 cap
+// perfectly (a window at 100% = on pace to spend precisely the period budget),
+// while what the window REFUSES at is a burst allowance sized so a sitting can
+// actually be spent in one. Enforcing the pace slice would be a far tighter
+// ceiling than the per-run table this replaced — see `SESSION_BURST_SHARE_OF_WEEK`.
 //
 // They are no longer display-only. `checkUsageWindows` below is the gate, and
 // it is what bounds a delegated run now that the per-run ceiling is gone; the
@@ -619,11 +622,20 @@ export async function checkBudget(
  * asking mid-flight whether its window is spent knows what it has spent so far
  * and would otherwise be charged twice for it — once as its open estimate here,
  * and again as the live figure it hands in.
+ *
+ * `sinceMs` is for a caller measuring a WINDOW rather than the period. A hold
+ * opened six hours ago belongs to a five-hour cell that has already rolled
+ * over, and charging it to the current cell refuses work against money this
+ * window never saw — with a Work run's hold larger than a small window, one
+ * long-running run would otherwise close the account's chat for its whole
+ * duration. The monthly gate passes nothing and keeps the period scope, which
+ * is the right scope for the month.
  */
 async function openReservedMicroUsd(
   userId: string,
   period: BillingPeriod,
-  ignoreRef: string | null = null
+  ignoreRef: string | null = null,
+  sinceMs: number | null = null
 ): Promise<number> {
   const agg = await prisma.spendReservation.aggregate({
     where: {
@@ -631,6 +643,7 @@ async function openReservedMicroUsd(
       state: "open",
       spendPeriod: { userId, period: spendPeriodKey(period) },
       ...(ignoreRef ? { ref: { not: ignoreRef } } : {}),
+      ...(sinceMs != null ? { createdAt: { gte: new Date(sinceMs) } } : {}),
     },
     _sum: { estimateMicroUsd: true },
   });
@@ -995,10 +1008,18 @@ async function commitToSpendPeriod(userId: string, costMicroUsd: number): Promis
 
 export interface UsageWindow {
   spentMicroUsd: number;
-  /** This window's proportional slice of the period budget; null = unlimited. */
+  /**
+   * What this window refuses at — the burst allowance; null = unlimited.
+   *
+   * NOT the denominator of `pct`. This is the figure a run is dispatched under
+   * and a chat turn is admitted against; the meter below answers a different
+   * question and has a different denominator.
+   */
   budgetMicroUsd: number | null;
-  /** spend ÷ budget (0..∞; 1 = on pace for the full period budget). */
+  /** spend ÷ the window's PACE slice (0..∞; 1 = on pace for the full period budget). */
   pct: number;
+  /** Epoch ms when this window's grid cell began; spend is counted from here. */
+  startMs: number;
   /** Epoch ms when this window's grid cell rolls over. */
   resetsAtMs: number;
 }
@@ -1029,7 +1050,13 @@ export async function getUsageWindows(
 ): Promise<UsageWindows> {
   const nowMs = now.getTime();
   if (monthBudget == null || period == null) {
-    const w: UsageWindow = { spentMicroUsd: 0, budgetMicroUsd: null, pct: 0, resetsAtMs: nowMs };
+    const w: UsageWindow = {
+      spentMicroUsd: 0,
+      budgetMicroUsd: null,
+      pct: 0,
+      startMs: nowMs,
+      resetsAtMs: nowMs,
+    };
     return { session: w, weekly: w };
   }
   const grid = usageWindowGrid({
@@ -1043,10 +1070,15 @@ export async function getUsageWindows(
     spendSinceMicroUsd(userId, new Date(grid.session.startMs)),
     spendSinceMicroUsd(userId, new Date(grid.weekly.startMs)),
   ]);
-  const mk = (spent: number, cell: { budgetMicroUsd: number; resetsAtMs: number }): UsageWindow => ({
+  // `pct` reads the PACE slice and `budgetMicroUsd` the burst allowance, and
+  // the two are deliberately different numbers: the meter says whether this
+  // window is on pace to spend the month, and the gate says what one sitting
+  // may cost. One figure cannot answer both without lying about one of them.
+  const mk = (spent: number, cell: UsageWindowCell): UsageWindow => ({
     spentMicroUsd: spent,
     budgetMicroUsd: cell.budgetMicroUsd,
-    pct: cell.budgetMicroUsd > 0 ? spent / cell.budgetMicroUsd : 0,
+    pct: cell.paceBudgetMicroUsd > 0 ? spent / cell.paceBudgetMicroUsd : 0,
+    startMs: cell.startMs,
     resetsAtMs: cell.resetsAtMs,
   });
   return {
@@ -1073,7 +1105,7 @@ export interface UsageWindowStatus {
   /** The meters themselves, unadjusted — holds are netted into `remaining` only. */
   session: UsageWindow;
   weekly: UsageWindow;
-  /** Micro-USD held by work that is still running. */
+  /** Micro-USD held by work still running, scoped to the weekly cell. */
   reservedMicroUsd: number;
   /** `Settings.spendCapDisabled` is on, so there is no window. Say so. */
   capDisabled: boolean;
@@ -1092,10 +1124,11 @@ export interface UsageWindowStatus {
  * stale ones first for the same reason that function does — the mid-run caller
  * is not standing beside a monthly gate that would have reaped them, and a hold
  * left over from a crashed worker would make the window read full and stop a
- * run that had room. Period-scoped rather than window-scoped, which
- * over-counts a hold older than the 5-hour cell; that is the safe direction,
- * and the reaper bounds it to an hour for everything except a live Work run,
- * which genuinely is still spending.
+ * run that had room. Each window's holds are scoped to ITS OWN cell rather
+ * than to the billing period: a Work run's hold outlives a five-hour cell
+ * easily — the reaper leaves it alone precisely because the run genuinely is
+ * still spending — and a period-scoped sum would charge that one hold to every
+ * cell it lived through, closing the account's chat for the whole run.
  *
  * `pendingMicroUsd` is spend the caller has made that has not reached the
  * ledger yet — a running Work run bills at its pause and terminal boundaries,
@@ -1143,21 +1176,24 @@ export async function checkUsageWindows(
     getUsageWindows(userId, eff.budgetMicroUsd, p, now),
     expireStaleSpendReservations(userId, { now }),
   ]);
-  const reservedMicroUsd = await openReservedMicroUsd(
-    userId,
-    p,
-    options.ignoreReservationRef ?? null
-  );
+  // One sum per cell, not one for the period. A hold is charged to the window
+  // it was opened in: the run that started six hours ago spent its money into
+  // the ledger, where the current cell already counts whatever fell inside it,
+  // and counting the hold again would refuse work twice for one run.
+  const [sessionHeld, weeklyHeld] = await Promise.all([
+    openReservedMicroUsd(userId, p, options.ignoreReservationRef ?? null, windows.session.startMs),
+    openReservedMicroUsd(userId, p, options.ignoreReservationRef ?? null, windows.weekly.startMs),
+  ]);
   const verdict = windowVerdict({
-    session: windows.session,
-    weekly: windows.weekly,
-    heldMicroUsd: reservedMicroUsd + Math.max(0, Math.round(options.pendingMicroUsd ?? 0)),
+    session: { ...windows.session, heldMicroUsd: sessionHeld },
+    weekly: { ...windows.weekly, heldMicroUsd: weeklyHeld },
+    heldMicroUsd: Math.max(0, Math.round(options.pendingMicroUsd ?? 0)),
   });
   return {
     ...verdict,
     session: windows.session,
     weekly: windows.weekly,
-    reservedMicroUsd,
+    reservedMicroUsd: weeklyHeld,
     capDisabled: false,
   };
 }

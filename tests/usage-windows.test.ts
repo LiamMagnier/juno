@@ -2,14 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  DEFAULT_ESTIMATE_MICRO_USD,
   REFERENCE_MONTH_MS,
+  SESSION_BURST_SHARE_OF_WEEK,
   SESSION_WINDOW_MS,
   WEEKLY_WINDOW_MS,
+  WINDOW_GATE_FLOOR_MICRO_USD,
+  bindingWindow,
   describeWindow,
   usageWindowGrid,
   windowLimitMessage,
   windowVerdict,
 } from "@/lib/spend-ceiling";
+import { runBudgetForWindow } from "@/lib/work/budget";
+import { runLimitFrom } from "@/components/work/clarify/run-disclosure";
 
 /*
  * The windows, now that they refuse work rather than describe it.
@@ -38,24 +44,122 @@ const PERIOD = {
   monthBudgetMicroUsd: MONTH_BUDGET,
 };
 
-test("the windows tile the period budget exactly", () => {
+test("the PACE slices tile the period budget exactly, because they are a meter", () => {
   // The only split that stays honest to the €15 ceiling. Dividing by a whole
   // four weeks — a month is 4.29 of them — would hand out more than the month
   // holds, and a window at 100% would then mean something other than "on pace
-  // to spend precisely the period budget".
+  // to spend precisely the period budget". This is the denominator of the
+  // gauge, and of nothing else.
   const grid = usageWindowGrid({ ...PERIOD, nowMs: PERIOD.periodStartMs + 3 * HOUR });
   const periodMs = Math.max(PERIOD.periodEndMs - PERIOD.periodStartMs, REFERENCE_MONTH_MS);
   assert.equal(
-    grid.session.budgetMicroUsd,
+    grid.session.paceBudgetMicroUsd,
     Math.round(MONTH_BUDGET * (SESSION_WINDOW_MS / periodMs))
   );
   assert.equal(
-    grid.weekly.budgetMicroUsd,
+    grid.weekly.paceBudgetMicroUsd,
     Math.round(MONTH_BUDGET * (WEEKLY_WINDOW_MS / periodMs))
   );
   // Each grid's cells sum to the period budget to within their rounding.
   const sessions = periodMs / SESSION_WINDOW_MS;
-  assert.ok(Math.abs(grid.session.budgetMicroUsd * sessions - MONTH_BUDGET) < sessions);
+  assert.ok(Math.abs(grid.session.paceBudgetMicroUsd * sessions - MONTH_BUDGET) < sessions);
+});
+
+test("what a window REFUSES at is a burst allowance, not the pace slice", () => {
+  /*
+   * The finding this case exists for. The windows became a gate while keeping
+   * the meter's arithmetic verbatim, and month ÷ 144 as a hard gate is a far
+   * TIGHTER per-run ceiling than the plan-shaped table it replaced: a PRO run
+   * would have been dispatched at $0.076 where the table gave it $2, under a
+   * composer that had just told the reader the run goes until the work is done.
+   * A gate has to be a figure one sitting can actually spend.
+   */
+  const grid = usageWindowGrid({ ...PERIOD, nowMs: PERIOD.periodStartMs + 3 * HOUR });
+  // The weekly cell is the real rolling cap: a true seven-day share of the
+  // month, which is the figure the rest of the package is written around.
+  assert.equal(grid.weekly.budgetMicroUsd, grid.weekly.paceBudgetMicroUsd);
+  // And the session cell is a share of THAT, never of the month ÷ 144, with the
+  // floor under it for an account whose share would be too small to admit a run
+  // and the week's own figure over it.
+  assert.equal(
+    grid.session.budgetMicroUsd,
+    Math.min(
+      grid.weekly.budgetMicroUsd,
+      Math.max(
+        Math.round(grid.weekly.budgetMicroUsd * SESSION_BURST_SHARE_OF_WEEK),
+        WINDOW_GATE_FLOOR_MICRO_USD
+      )
+    )
+  );
+  assert.ok(
+    grid.session.budgetMicroUsd >= grid.session.paceBudgetMicroUsd * 10,
+    "the gate collapsed back onto the pace slice"
+  );
+  // Never looser than the weekly cell, or the five-hour window could not bind
+  // at all while every surface went on naming it.
+  assert.ok(grid.session.budgetMicroUsd <= grid.weekly.budgetMicroUsd);
+});
+
+test("one admitted run cannot take the whole window as a hold", () => {
+  /*
+   * The consequence that made the pace-slice gate more than a paper problem.
+   * `checkUsageWindows` subtracts open reservations and `createRun` holds
+   * DEFAULT_ESTIMATE_MICRO_USD.work for the life of a run — which is LARGER
+   * than a pace-sliced 5-hour window on every plan. So for as long as one Work
+   * run was in flight, every chat turn on the account was refused with "you've
+   * used up your 5-hour usage limit" and no second run could be dispatched.
+   */
+  assert.ok(WINDOW_GATE_FLOOR_MICRO_USD >= 10 * DEFAULT_ESTIMATE_MICRO_USD.work);
+  for (const monthBudget of [11_000_000, 55_000_000, 110_000_000]) {
+    const grid = usageWindowGrid({
+      ...PERIOD,
+      monthBudgetMicroUsd: monthBudget,
+      nowMs: PERIOD.periodStartMs + 3 * HOUR,
+    });
+    const held = DEFAULT_ESTIMATE_MICRO_USD.work;
+    const verdict = windowVerdict({
+      session: { ...grid.session, spentMicroUsd: 0, heldMicroUsd: held },
+      weekly: { ...grid.weekly, spentMicroUsd: 0, heldMicroUsd: held },
+    });
+    assert.equal(verdict.allowed, true, String(monthBudget));
+    // And a chat turn beside it still passes, which is the symptom a reader met.
+    assert.ok(verdict.remainingMicroUsd! > DEFAULT_ESTIMATE_MICRO_USD.chat, String(monthBudget));
+  }
+});
+
+test("a PRO Work run is dispatched with a ceiling larger than a realistic run", () => {
+  // The old per-run table gave PRO $2, and that figure is the honest benchmark
+  // for "a ceiling a real task does not hit": whatever replaces it must not be
+  // tighter than the thing it was argued to be kinder than.
+  const OLD_PRO_RUN_CEILING = 2_000_000;
+  const grid = usageWindowGrid({
+    ...PERIOD,
+    monthBudgetMicroUsd: 11_000_000, // PRO: €11 a month.
+    nowMs: PERIOD.periodStartMs + 3 * HOUR,
+  });
+  const verdict = windowVerdict({
+    session: { ...grid.session, spentMicroUsd: 0 },
+    weekly: { ...grid.weekly, spentMicroUsd: 0 },
+  });
+  assert.equal(verdict.bound, "session");
+  assert.ok(
+    runBudgetForWindow(verdict.remainingMicroUsd).maxCostMicroUsd > OLD_PRO_RUN_CEILING,
+    "a PRO run is bounded tighter than the ceiling this package removed"
+  );
+});
+
+test("a period budget smaller than the floor is not handed a window it can never reach", () => {
+  // FREE is €0.15 a month — a trial whose real limit is the message counter and
+  // the month itself. A floor of ten Work holds would be sixteen times its
+  // whole month, so the window would name a limit that could never bind while
+  // `checkBudget` did the actual refusing.
+  const grid = usageWindowGrid({
+    ...PERIOD,
+    monthBudgetMicroUsd: 150_000,
+    nowMs: PERIOD.periodStartMs + 3 * HOUR,
+  });
+  assert.equal(grid.session.budgetMicroUsd, 150_000);
+  assert.equal(grid.weekly.budgetMicroUsd, 150_000);
 });
 
 test("a cell contains now, and frees up one span later", () => {
@@ -129,6 +233,39 @@ test("holds are subtracted, or two runs admitted together both see the whole rem
   // A hold larger than the window does not manufacture a negative remainder
   // for a caller to hand to a guard as a ceiling.
   assert.equal(windowVerdict({ ...windows, heldMicroUsd: 9_000_000 }).remainingMicroUsd, 0);
+});
+
+test("a hold is charged to the cell it was opened in, not to every cell it outlives", () => {
+  /*
+   * A Work run's hold lives as long as the run does, and the reaper leaves it
+   * alone precisely because the run genuinely is still spending. A hold summed
+   * over the billing period is therefore charged to the current 5-hour cell
+   * even when it was opened six hours ago — against money that cell never saw,
+   * since whatever the run has spent is already on the ledger the cell counts.
+   * So each window carries its own scoped holds.
+   */
+  const windows = {
+    session: { spentMicroUsd: 0, budgetMicroUsd: 2_500_000, resetsAtMs: 1_000, heldMicroUsd: 0 },
+    weekly: {
+      spentMicroUsd: 0,
+      budgetMicroUsd: 3_500_000,
+      resetsAtMs: 9_000,
+      heldMicroUsd: 2_400_000,
+    },
+  };
+  // The old run's hold belongs to the week and not to this sitting.
+  const verdict = windowVerdict(windows);
+  assert.equal(verdict.bound, "weekly");
+  assert.equal(verdict.remainingMicroUsd, 1_100_000);
+  // Period-scoped, the one hold is charged to both cells, and the 5-hour cell —
+  // which has spent nothing — is the one reported as nearly gone.
+  const periodScoped = windowVerdict({
+    session: windows.session,
+    weekly: { ...windows.weekly, heldMicroUsd: 0 },
+    heldMicroUsd: 2_400_000,
+  });
+  assert.equal(periodScoped.bound, "session");
+  assert.equal(periodScoped.remainingMicroUsd, 100_000);
 });
 
 test("an account with no window is allowed and names none", () => {
@@ -223,4 +360,53 @@ test("the executor re-reads the window while a run works", () => {
   );
   assert.match(session, /stopForAccountBudget\(detail: string\): void \{/);
   assert.match(session, /this\.budget\.exhausted\('cost', detail\);/);
+});
+
+test("the composer names the same binding window the gate will refuse on", () => {
+  /*
+   * `runLimitFrom` picked the window by PERCENTAGE used while `windowVerdict`
+   * picked it by absolute room left. The weekly budget is many times the
+   * session budget, so the two disagreed for ordinary accounts: at 90% of the
+   * session cell and 95% of the weekly one, percentage says weekly and the
+   * remainder says session. The composer then read "runs until your weekly
+   * limit is used up" and named a reset a day away over a run the five-hour
+   * cell was about to stop — and the voice briefing said it out loud. They
+   * share one derivation now, so they cannot disagree at all.
+   */
+  const SESSION_BUDGET = 2_500_000;
+  const WEEKLY_BUDGET = 3_500_000;
+  const sessionWindow = {
+    pct: 0.9,
+    spentMicroUsd: Math.round(SESSION_BUDGET * 0.9),
+    budgetMicroUsd: SESSION_BUDGET,
+    resetsAtMs: 1_000,
+  };
+  const weeklyWindow = {
+    pct: 0.95,
+    spentMicroUsd: Math.round(WEEKLY_BUDGET * 0.95),
+    budgetMicroUsd: WEEKLY_BUDGET,
+    resetsAtMs: 9_000,
+  };
+  const verdict = windowVerdict({ session: sessionWindow, weekly: weeklyWindow });
+  const limit = runLimitFrom({
+    spentMicroUsd: 0,
+    budgetMicroUsd: 15_000_000,
+    eurPerUsd: 1,
+    reservedMicroUsd: 0,
+    capSource: "plan",
+    capDisabled: false,
+    userCapEur: null,
+    planBudgetMicroUsd: 15_000_000,
+    windows: { session: sessionWindow, weekly: weeklyWindow },
+    billing: { renewsAtMs: null, cancelAtPeriodEnd: false },
+  });
+  assert.equal(limit.window, verdict.bound);
+  assert.equal(limit.resetsAtMs, verdict.resetsAtMs);
+
+  // And the case the old percentage rule got backwards: the session cell has
+  // less money left while the weekly cell is further through as a fraction.
+  const tightSession = { ...sessionWindow, spentMicroUsd: SESSION_BUDGET - 10_000 };
+  assert.ok(tightSession.pct < weeklyWindow.pct);
+  assert.equal(windowVerdict({ session: tightSession, weekly: weeklyWindow }).bound, "session");
+  assert.equal(bindingWindow({ session: tightSession, weekly: weeklyWindow })?.name, "session");
 });

@@ -1285,8 +1285,11 @@ run works (agent-core has no database), so `scripts/work-runner.ts` re-reads it 
 on the poll that already watches for a stop and ends the run through the guard's own seam
 (`WorkAgentSession.stopForAccountBudget`) with a terminal reason of `budget_exceeded` and
 a detail naming the window and when it frees up. A skill, schedule, project or host may
-still ask for LESS (`narrowestBudget`); nothing may ask for more. The monthly `checkBudget`
-remains the outer bound, because a window is a slice of it. The argument for removing the
+still ask for LESS (`narrowestBudget`); nothing may ask for more. No dispatcher adds a
+per-run backstop of its own — a scheduled or trigger-fired run gets the window exactly as a
+hand-pressed one does, and `runBudgetForWindow` supplies `unattendedRunCeiling` only for the
+cap-disabled account that has no window. The monthly `checkBudget` remains the outer bound,
+because a window is a slice of it. The argument for removing the
 plan-shaped table that used to be here is `docs/design/TWO_PRODUCTS.md` §4. Abuse controls:
 10 dispatches/min/user and at most 3 live runs per user across all sessions.
 
@@ -1484,16 +1487,25 @@ The real ceiling for paid plans is a monthly **€ budget** (`spend.ts`, `BUDGET
 PRO 11, MAX 55, MAX20 110 — sized ~70 % of net revenue after cotisations). `checkBudget`
 sums the `ApiSpend` ledger since the period start (the period follows the subscriber's
 Stripe renewal date, not the calendar month). Budget-alert emails fire at ≥80 %.
-Rolling **5-hour session** and **weekly** windows (`getUsageWindows`) tile the € cap
-proportionally, anchored to the subscription so they reset on the subscriber's schedule.
+Rolling **5-hour session** and **weekly** windows (`getUsageWindows`) are anchored to the
+subscription so they reset on the subscriber's schedule. Each carries **two** figures and
+the difference is load-bearing: the meter's denominator is the window's exact
+time-proportional slice of the € cap, so the slices tile it and 100 % means *on pace to
+spend the month*; what the window **refuses** at is a burst allowance — the weekly cell is
+a true seven-day share, the session cell is `SESSION_BURST_SHARE_OF_WEEK` of that, and
+neither may fall below `WINDOW_GATE_FLOOR_MICRO_USD` (ten Work-run admission holds, itself
+clamped to the period budget). Enforcing the pace slice instead would be a far *tighter*
+ceiling than the per-run table it replaced — a PRO run at $0.076 against the old $2 — and
+an account that can never burst.
 They are **enforced**, not display-only: `checkUsageWindows` is the gate, beside
 `checkBudget` at every chat turn and every Work dispatch, and it is what bounds a delegated
-run now that there is no per-run ceiling (§9b.1). It names which window binds, so a refusal
-says *your 5-hour limit frees up at 14:00* rather than sending a reader to the pricing
-page; the grid and verdict arithmetic is pure, in `spend-ceiling.ts`, and it subtracts open
-reservations exactly as `checkBudget` does. An account with `spendCapDisabled` has no
-window at all, and a run dispatched by it falls back to `unattendedRunCeiling` rather than
-to nothing. `Usage` tracks message counts + token aggregates per `YYYY-MM`.
+run now that there is no per-run ceiling (§9b.1). It names which window binds — by room
+left, through the one `bindingWindow` helper every surface shares — so a refusal says *your
+5-hour limit frees up at 14:00* rather than sending a reader to the pricing page; the grid
+and verdict arithmetic is pure, in `spend-ceiling.ts`, and it subtracts open reservations as
+`checkBudget` does, scoped to each window's own cell so one long run's hold is not charged
+to every cell it outlives. An account with `spendCapDisabled` has no window at all, and a
+run dispatched by it falls back to `unattendedRunCeiling` rather than to nothing. `Usage` tracks message counts + token aggregates per `YYYY-MM`.
 `/api/profile/usage` mirrors quota + spend for native clients; `/api/profile/stats`
 aggregates the ledger into a token heatmap, per-model/provider mix, and lifetime cost
 (self-repairing under-billed rows).

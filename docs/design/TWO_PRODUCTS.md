@@ -144,7 +144,17 @@ of the executor's guard stays wired, to the window's remainder rather than to a
 constant, since a guard with every axis at zero cannot stop a runaway loop at
 all. Tokens and running time carry no ceiling at all any more.
 
-`docs/JUNO.md` §9b.1 is what this means in the code.
+**A window has to be a window, not a pace slice.** The meters divided the month
+by 144 to answer "am I on pace?", and enforcing that number would have been a
+far tighter per-run ceiling than the table it replaced — a PRO run dispatched at
+$0.076 against the old $2, under a composer that had just promised the reader
+their run would go until the work was done. So the figure a window *refuses* at
+is a burst allowance sized for one sitting, and the pace slice stays what it
+always was: the denominator of a meter. Two numbers, because they answer two
+questions. Nor does any dispatcher add a small ceiling back on the quiet — a
+scheduled fire is bounded by the same window a hand-pressed one is.
+
+`docs/JUNO.md` §9b.1 and §11.3 are what this means in the code.
 
 ## 5. What is deliberately not done
 

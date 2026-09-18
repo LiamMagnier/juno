@@ -7,6 +7,7 @@ import {
   type WorkEffectiveTarget,
   type WorkPermissionPolicy,
 } from "@/lib/work/domain";
+import { bindingWindow } from "@/lib/spend-ceiling";
 import type { ClientSpend } from "@/types/app";
 import { confirmPlanBeforeActing } from "@/lib/work/plan-review";
 import { useApp } from "@/components/app/app-provider";
@@ -59,11 +60,16 @@ export interface RunLimit {
  * defect as a control that implies something the runtime cannot do; it is just
  * quieter.
  *
- * The binding window is whichever is further through, because that is the one
- * that will stop the run first. `pct` and `resetsAtMs` are already on the
- * bootstrap for the settings gauge, so this costs no new plumbing and reads the
- * same numbers the gauge does — the composer and the usage page cannot disagree
- * about how much of the day is left.
+ * The binding window is whichever has the least room LEFT, and it is derived by
+ * `bindingWindow` — the same call `windowVerdict` makes, so there is one
+ * derivation rather than two. It used to compare percentages here while the
+ * gate compared absolute remainders, and the weekly budget is many times the
+ * session budget, so the two disagreed routinely: at 90% of the session window
+ * and 95% of the weekly one, percentage says weekly and the remainder says
+ * session. The composer then read out the weekly reset, a day or more away,
+ * over a run the five-hour cell was about to stop — a surface naming a limit
+ * that is not the one the runtime applies, which is the defect this whole
+ * package exists to remove.
  *
  * `unmetered` is the account with `Settings.spendCapDisabled`. It has no window
  * at all, and "0% of your 5-hour limit" would be a meter describing something
@@ -74,12 +80,18 @@ export function runLimitFrom(spend: ClientSpend): RunLimit {
   if (spend.capDisabled) {
     return { window: "session", resetsAtMs: null, unmetered: true };
   }
-  const weeklyBinds = spend.windows.weekly.pct > spend.windows.session.pct;
-  return {
-    window: weeklyBinds ? "weekly" : "session",
-    resetsAtMs: weeklyBinds ? spend.windows.weekly.resetsAtMs : spend.windows.session.resetsAtMs,
-    unmetered: false,
-  };
+  const binding = bindingWindow({
+    session: spend.windows.session,
+    weekly: spend.windows.weekly,
+  });
+  // A metered account with no window at all is not a state the bootstrap can
+  // produce — a budget it can enforce is what makes it metered — but the type
+  // allows it, and inventing a window here would be the invention this function
+  // exists to stop.
+  if (binding == null) {
+    return { window: "session", resetsAtMs: null, unmetered: true };
+  }
+  return { window: binding.name, resetsAtMs: binding.resetsAtMs, unmetered: false };
 }
 
 /** The limit as the tail of the one-line summary. */

@@ -95,8 +95,21 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       userCapEur: settings?.monthlySpendCapEur ?? null,
       planBudgetMicroUsd: budgetForPlan(quota.plan),
       windows: {
-        session: { pct: windows.session.pct, resetsAtMs: windows.session.resetsAtMs },
-        weekly: { pct: windows.weekly.pct, resetsAtMs: windows.weekly.resetsAtMs },
+        // Spend and budget as well as the percentage: `runLimitFrom` has to
+        // name the binding window by the same rule the gate uses, which is
+        // absolute room left rather than percentage used.
+        session: {
+          pct: windows.session.pct,
+          spentMicroUsd: windows.session.spentMicroUsd,
+          budgetMicroUsd: windows.session.budgetMicroUsd,
+          resetsAtMs: windows.session.resetsAtMs,
+        },
+        weekly: {
+          pct: windows.weekly.pct,
+          spentMicroUsd: windows.weekly.spentMicroUsd,
+          budgetMicroUsd: windows.weekly.budgetMicroUsd,
+          resetsAtMs: windows.weekly.resetsAtMs,
+        },
       },
       billing: {
         renewsAtMs: budget.resetsAtMs,

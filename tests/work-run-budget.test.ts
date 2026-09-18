@@ -266,6 +266,58 @@ test("every dispatcher sizes the run from the window it was admitted against", (
   }
 });
 
+test("a metered scheduled fire runs on its window, not on the unattended backstop", () => {
+  /*
+   * Both unattended dispatchers used to build the cost axis as
+   * `unattendedRunCeiling(schedule.maxCostMicroUsd)`, and that returns
+   * UNATTENDED_RUN_DEFAULT_MICRO_USD for the zero a schedule with no figure of
+   * its own stores. `narrowestBudget` then took the minimum, so every metered
+   * scheduled and trigger-fired run was dispatched at min($1, window) — a
+   * per-run ceiling, on every plan, contradicting the docs, the composer and
+   * the schedule editor, and differing from the same schedule pressed by hand,
+   * which got the window. The reader then saw `budget_exceeded` on a run their
+   * window had plenty of room for, and running it again hit the same $1.
+   *
+   * The backstop belongs to the account that has no window, and
+   * `runBudgetForWindow(null)` is where it lives.
+   */
+  const WINDOW_REMAINDER = 6_400_000; // Comfortably above the $1 backstop.
+  const scheduleWithNoFigures = { maxCostMicroUsd: 0, maxTokens: 0, maxRuntimeMs: 0 };
+  const dispatched = narrowestBudget(
+    scheduleWithNoFigures,
+    runBudgetForWindow(WINDOW_REMAINDER)
+  );
+  assert.equal(dispatched.maxCostMicroUsd, WINDOW_REMAINDER);
+  assert.notEqual(dispatched.maxCostMicroUsd, UNATTENDED_RUN_DEFAULT_MICRO_USD);
+  // A schedule that DOES set a smaller figure still gets it: asking for less
+  // was never the plan table's doing.
+  assert.equal(
+    narrowestBudget({ ...scheduleWithNoFigures, maxCostMicroUsd: 400_000 },
+      runBudgetForWindow(WINDOW_REMAINDER)).maxCostMicroUsd,
+    400_000
+  );
+  // And the cap-disabled account, which genuinely has no window, still gets the
+  // backstop rather than nothing.
+  assert.equal(
+    narrowestBudget(scheduleWithNoFigures, runBudgetForWindow(null)).maxCostMicroUsd,
+    UNATTENDED_RUN_DEFAULT_MICRO_USD
+  );
+
+  // The dispatchers themselves: the schedule's own figure reaches
+  // `narrowestBudget` raw, with no ceiling wrapped around it.
+  for (const file of ["../scripts/work-scheduler.ts", "../scripts/work-trigger-poller.ts"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.match(source, /maxCostMicroUsd: schedule\.maxCostMicroUsd,/, file);
+    assert.doesNotMatch(source, /unattendedRunCeiling\(/, file);
+  }
+  // And the helper text no longer promises the figure that is gone.
+  const editor = readFileSync(
+    new URL("../src/components/work/work-schedule-editor.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.doesNotMatch(editor, /stops at \$1 unless you set a figure/);
+});
+
 test("every dispatcher hands the plan it resolved to spend admission", () => {
   // `reserveSpend` will read the plan itself when handed nothing, and a
   // dispatcher that let it would give a subscription lapsing mid-request the

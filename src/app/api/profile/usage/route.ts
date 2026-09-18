@@ -47,6 +47,11 @@ export async function GET() {
       reservedMicroUsd: budget.reservedMicroUsd,
       capSource: budget.capSource,
       capDisabled: budget.capDisabled,
+      // Each window's `budgetMicroUsd` is what it REFUSES at — a burst
+      // allowance — while `pct` is measured against the window's pace slice of
+      // the month. They are deliberately different denominators, so a client
+      // draws `pct` rather than recomputing spend ÷ budget and arriving at a
+      // third answer for the same window. See `usageWindowGrid`.
       windows: {
         session: {
           spentMicroUsd: windows.session.spentMicroUsd,

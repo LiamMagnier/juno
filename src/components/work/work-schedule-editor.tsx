@@ -601,7 +601,7 @@ export function WorkScheduleEditor({
             ? "Empty means no ceiling of this schedule’s own. Spending limits are switched off on this account, so a run fired while nobody is watching stops at a small backstop ceiling unless you set a figure here."
             : `Empty means no ceiling of this schedule’s own: a run goes until the work is done or until your ${
                 limit.window === "session" ? "5-hour" : "weekly"
-              } usage limit is used up. A number here is a smaller ceiling for this schedule, and whichever is smaller wins — this, or what the window has left when it fires. A run fired while nobody is watching stops at $1 unless you set a figure.`}
+              } usage limit is used up. A number here is a smaller ceiling for this schedule, and whichever is smaller wins — this, or what the window has left when it fires.`}
         </p>
         {!budgetValid && (
           <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
