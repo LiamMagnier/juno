@@ -43,6 +43,20 @@ export interface SkillSecurityScan {
   permissions: SkillPermissionSurface;
 }
 
+/**
+ * What the scanner reads out of a version.
+ *
+ * Structural rather than the contract type itself, and the omission worth
+ * naming is `resourceAttachmentIds`. The files a skill brings are not part of
+ * its permission surface: they are the author's own uploads, checked against
+ * their account before the version is written and joined on `userId` again when
+ * the run reads them, and they reach the model inside the untrusted-content
+ * envelope where they cannot ask for anything. Folding them into the
+ * fingerprint would make swapping last month's template for this month's a
+ * "permission expansion" the reader has to approve before the skill will run,
+ * which is a consent press about a change that grants nothing — and a product
+ * that asks for those teaches people to click through the ones that matter.
+ */
 export interface SkillSecurityInput {
   name: string;
   description: string;

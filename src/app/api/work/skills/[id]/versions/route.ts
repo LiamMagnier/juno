@@ -21,6 +21,7 @@ import {
   permissionSurfaceFromScan,
   scanSkillVersion,
 } from "@/lib/work/skill-security";
+import { ownsEverySkillResource } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
 
@@ -103,6 +104,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // `currentVersion` backwards. History stays append-only, so "what was this
     // skill doing on the 3rd" keeps its answer, and the restore is itself a
     // dated row rather than an invisible pointer move.
+    //
+    // Its file list comes with it, and is NOT re-checked against the attachment
+    // library below. Those ids cleared the ownership check when the version
+    // they come from was written, so they are this user's own files or they are
+    // nothing; refusing over a file deleted since would make an old version
+    // unrestorable, which is the one thing a restore exists to prevent. The
+    // executor drops what it can no longer read and says so, which is where a
+    // missing file belongs — in the run that needed it.
     content = {
       instructions: source.instructions,
       contract: parseSkillContract(source.contract),
@@ -123,6 +132,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (content.instructions.length === 0) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  // The files this version says it brings. Only a contract that came off the
+  // wire is checked; see the note on the restore branch for why the other one
+  // is not. Refused rather than pruned, for the reason the create route gives
+  // at length: a version that silently brought fewer files than it names would
+  // run and produce the wrong document.
+  if (
+    restoreVersion === undefined &&
+    !(await ownsEverySkillResource(user.id, content.contract.resourceAttachmentIds))
+  ) {
+    return NextResponse.json(
+      {
+        error: "resource_not_found",
+        message:
+          "One of the files this version brings is not in your library, so nothing was saved. The version that was current still is.",
+      },
+      { status: 404 }
+    );
   }
 
   const securityScan = scanSkillVersion({

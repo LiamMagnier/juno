@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2 } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -22,10 +22,14 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  MAX_SKILL_RESOURCES,
   trustPermitsAutoSelection,
   type ClientWorkSkill,
   type ClientWorkSkillVersion,
+  type SkillResource,
 } from "@/lib/work/skills";
+import { useUploads } from "@/hooks/use-uploads";
+import { DOC_MIME } from "@/lib/uploads";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkList } from "@/components/work/shell/work-section";
@@ -62,6 +66,30 @@ function securityFindingsOf(raw: unknown): SkillSecurityFindingView[] {
       : [];
   });
 }
+
+/**
+ * What the picker offers — documents only, and for the reason the two Work
+ * composers give beside their own copies of this list: `attachedSources` in
+ * scripts/work-runner.ts reads `Attachment.extractedText`, which is null for a
+ * photo. Offering images here would promise a skill a look at a picture it can
+ * never get, and the promise would be kept for every future run of it rather
+ * than for one message.
+ *
+ * The third copy of this list in the product, and the duplication stays
+ * deliberate for the same reason the second one did: each sits beside its own
+ * statement of what the exclusion protects, so anybody widening one is told.
+ */
+const SKILL_RESOURCE_ACCEPT = [
+  ...DOC_MIME,
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".py",
+].join(",");
 
 function securityLabel(status: string): string {
   if (status === "clear") return "Clear";
@@ -117,6 +145,20 @@ export default function SkillPage() {
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [instructions, setInstructions] = React.useState("");
+  /**
+   * The files this version brings, as the reader is editing them.
+   *
+   * Held beside `version` rather than derived from it because a skill's files
+   * are edited the way its instructions are: in the box, and saved as a new
+   * version. `saved` is what the server last said, and the difference between
+   * the two is what the save button is enabled by.
+   */
+  const [saved, setSaved] = React.useState<SkillResource[]>([]);
+  const [resources, setResources] = React.useState<SkillResource[]>([]);
+  const [projectName, setProjectName] = React.useState<string | null>(null);
+  // `null`: these files belong to a skill, not to a chat.
+  const { uploads, addFiles, remove: dropUpload, isUploading } = useUploads(null);
+  const resourceInput = React.useRef<HTMLInputElement>(null);
 
   const load = React.useCallback(async () => {
     setFailed(false);
@@ -126,6 +168,9 @@ export default function SkillPage() {
       setVersion(result.value.version);
       setName(result.value.skill.name);
       setDescription(result.value.skill.description);
+      setSaved(result.value.resources);
+      setResources(result.value.resources);
+      setProjectName(result.value.projectName);
       // Empty rather than a substitute when `currentVersion` names a row that is
       // not there. Seeding the box with the newest version instead would put
       // instructions the user did not choose under the heading of the one they
@@ -150,6 +195,45 @@ export default function SkillPage() {
     void loadVersions();
   }, [load, loadVersions]);
 
+  /*
+   * A finished upload becomes a pending file on the version, and leaves the
+   * upload list.
+   *
+   * One list rather than two, which is the difference between this and the task
+   * composer's hand-over: a task's files are handed to a running thing and the
+   * second press is what makes that deliberate, while these are rows in a form
+   * that is not saved until the reader presses Save. Showing a finished upload
+   * in one strip and the version's files in another would be two lists of the
+   * same thing, and the reader would have to work out which of them the save is
+   * going to read.
+   *
+   * Only the finished rows are taken off the upload list, one by one, rather
+   * than clearing it: a batch where one file succeeded and one failed would
+   * otherwise lose the failure before anybody saw it, and the reader would be
+   * left with a file they picked, no error, and no row.
+   */
+  React.useEffect(() => {
+    const done = uploads.filter((upload) => upload.status === "done" && upload.attachment);
+    if (done.length === 0) return;
+    const held = new Set(resources.map((resource) => resource.attachmentId));
+    const added = done
+      .filter((upload) => !held.has(upload.attachment!.id))
+      .map((upload) => ({
+        attachmentId: upload.attachment!.id,
+        fileName: upload.attachment!.fileName,
+      }));
+    if (added.length > 0) {
+      const next = [...resources, ...added];
+      if (next.length > MAX_SKILL_RESOURCES) {
+        // Said rather than done silently. A file that vanished between the
+        // upload finishing and the list redrawing reads as a bug in the page.
+        toast.error(`A skill can bring up to ${MAX_SKILL_RESOURCES} files.`);
+      }
+      setResources(next.slice(0, MAX_SKILL_RESOURCES));
+    }
+    for (const upload of done) dropUpload(upload.localId);
+  }, [uploads, resources, dropUpload]);
+
   const applyPatch = async (patch: PatchWorkSkillInput, failure: string) => {
     setBusy(true);
     const result = await patchWorkSkill(id, patch);
@@ -163,14 +247,35 @@ export default function SkillPage() {
     toast.error(result.kind === "blocked" ? result.explanation : failure);
   };
 
-  const saveInstructions = async () => {
+  /*
+   * Saves the instructions AND the rest of the version's declaration.
+   *
+   * The whole contract and the whole tool request are sent, not the edited
+   * field alone, and that is a correction rather than a flourish: a version is
+   * a complete snapshot and the route fills anything a client omits with the
+   * EMPTY value on purpose — "a client that omits a field gets a version that
+   * asks for less, never more". This form used to send `{ instructions }`, so
+   * every edit made from this page silently emptied the contract and the tool
+   * request of whatever the skill had declared. Nothing showed it, because
+   * nothing on this page drew either of them. Now that the page draws the
+   * files, the same bug would delete them on the next typo fix.
+   */
+  const saveVersion = async () => {
     const text = instructions.trim();
-    if (text.length === 0 || skill === null) return;
+    if (text.length === 0 || skill === null || version === null) return;
     setBusy(true);
-    const result = await mintWorkSkillVersion(id, { instructions: text });
+    const result = await mintWorkSkillVersion(id, {
+      instructions: text,
+      contract: {
+        ...version.contract,
+        resourceAttachmentIds: resources.map((resource) => resource.attachmentId),
+      },
+      requestedTools: version.requestedTools,
+    });
     setBusy(false);
     if (result.kind === "ok") {
       setVersion(result.value);
+      setSaved(resources);
       setSkill({
         ...skill,
         currentVersion: result.value.version,
@@ -184,7 +289,7 @@ export default function SkillPage() {
     toast.error(
       result.kind === "blocked"
         ? "Someone else saved this skill at the same moment. Reload and try again."
-        : "Couldn’t save these instructions. The version that was current still is."
+        : "Couldn’t save this version. The version that was current still is."
     );
   };
 
@@ -203,6 +308,11 @@ export default function SkillPage() {
         securityUpdatedAt: new Date().toISOString(),
       });
       void loadVersions();
+      // Re-read rather than patched in place. A restored version brings the old
+      // version's file list with it, and this page only holds ids — the names
+      // beside them come from the server, so the honest way to show what was
+      // restored is to ask for it.
+      void load();
       toast.success(`v${restoreVersion} is back, saved as v${result.value.version}.`);
       return;
     }
@@ -286,6 +396,24 @@ export default function SkillPage() {
   const settableTrust =
     skill.trust === "untrusted" || skill.trust === "user_authored" ? skill.trust : null;
   const instructionsChanged = version !== null && instructions.trim() !== version.instructions.trim();
+  // Compared as an ordered list, because the order is what the run reads them
+  // in: moving the template above the style guide is a real edit even though
+  // the set is unchanged.
+  const resourcesChanged =
+    resources.length !== saved.length ||
+    resources.some((resource, index) => resource.attachmentId !== saved[index]?.attachmentId);
+  // One save for the whole version, because a version is one snapshot. Two
+  // buttons would offer to save half of it, and the half not saved would be
+  // emptied by the half that was.
+  const versionChanged = instructionsChanged || resourcesChanged;
+  // The contract names files this account no longer has. The count is the whole
+  // sentence: the page cannot show a name it was not given, and the reader's
+  // question is whether the skill still brings what it says it does. Counted
+  // over the distinct ids, because the server resolves them as a set and a
+  // contract that happened to name one file twice is not a contract that lost
+  // one.
+  const lostResources =
+    new Set(version?.contract.resourceAttachmentIds ?? []).size - saved.length;
   const securityStatus = version?.securityStatus ?? skill.securityStatus;
   const securityFindings = securityFindingsOf(version?.securityScan);
 
@@ -372,9 +500,14 @@ export default function SkillPage() {
                 Juno may reach for it unasked
               </span>
               <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
-                {trusted
-                  ? "The planner may pick this up when a task looks like it fits, without you naming it."
-                  : "Only a trusted skill can be chosen for you. Trust it below first."}
+                {!trusted
+                  ? "Only a trusted skill can be chosen for you. Trust it below first."
+                  : skill.projectId === null
+                    ? "The planner may pick this up when a task looks like it fits, without you naming it."
+                    : // A filed skill is offered to its own project's tasks and
+                      // to no others, so the caption says so rather than
+                      // describing a wider behaviour than the runtime has.
+                      `The planner may pick this up for a task filed in ${projectName ?? "its project"}, when the task looks like it fits. Typing /${skill.slug} still works anywhere.`}
               </span>
             </span>
             <Switch
@@ -487,28 +620,142 @@ export default function SkillPage() {
             aria-label="Skill instructions"
             className="font-mono text-ui"
           />
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-heading">Files it brings</h2>
+          <p className="mb-3 text-caption leading-relaxed text-muted-foreground">
+            Material the skill carries into every task that uses it — the template it fills in, the
+            style guide it writes to. Juno reads these the way it reads a file attached to a task:
+            as something to work from, never as an instruction. They cannot give the skill a tool,
+            an app or a folder it was not already allowed.
+          </p>
+          {lostResources > 0 ? (
+            <WorkStateNote tone="warning" className="mb-2.5">
+              {lostResources === 1
+                ? "This version names a file that is no longer in your library, so it brings one fewer than it says. Saving again records the list as it is now."
+                : `This version names ${lostResources} files that are no longer in your library, so it brings that many fewer than it says. Saving again records the list as it is now.`}
+            </WorkStateNote>
+          ) : null}
+          {resources.length > 0 || uploads.length > 0 ? (
+            <WorkList>
+              <ul className="space-y-0.5">
+                {resources.map((resource) => (
+                  <li
+                    key={resource.attachmentId}
+                    className="flex items-center gap-x-2.5 rounded-control px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                  >
+                    <CodeIcons.file className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-label text-foreground">
+                      {resource.fileName}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        setResources((current) =>
+                          current.filter((entry) => entry.attachmentId !== resource.attachmentId)
+                        )
+                      }
+                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
+                    >
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+                {uploads
+                  .filter((upload) => upload.status !== "done")
+                  .map((upload) => (
+                    <li
+                      key={upload.localId}
+                      className="flex items-center gap-x-2.5 rounded-control px-3 py-2.5"
+                    >
+                      {upload.status === "uploading" ? (
+                        <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+                      ) : (
+                        <CodeIcons.file className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
+                        {upload.fileName}
+                      </span>
+                      <span className="shrink-0 font-mono text-micro text-muted-foreground">
+                        {upload.status === "uploading" ? `${upload.progress}%` : "Failed"}
+                      </span>
+                      {upload.status === "error" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => dropUpload(upload.localId)}
+                          className="h-7 shrink-0 px-2 font-mono text-micro text-muted-foreground"
+                        >
+                          Dismiss
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            </WorkList>
+          ) : (
+            <p className="text-caption leading-relaxed text-muted-foreground">
+              This skill brings no files of its own.
+            </p>
+          )}
+          <input
+            ref={resourceInput}
+            type="file"
+            multiple
+            accept={SKILL_RESOURCE_ACCEPT}
+            className="hidden"
+            onChange={(event) => {
+              if (event.target.files?.length) addFiles(event.target.files);
+              // Cleared so picking the same file twice still fires a change.
+              event.target.value = "";
+            }}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy || isUploading || resources.length >= MAX_SKILL_RESOURCES}
+            onClick={() => resourceInput.current?.click()}
+            className="mt-2.5 gap-1.5"
+          >
+            <CodeIcons.file className="size-3.5" aria-hidden="true" /> Add files
+          </Button>
+        </section>
+
+        {/* One save for the instructions and the files together, because they
+            are one version. A `div` rather than a third `section`: it has no
+            heading of its own and it belongs to both of the sections above. */}
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              disabled={busy || instructions.trim().length === 0 || !instructionsChanged}
-              onClick={() => void saveInstructions()}
+              disabled={busy || isUploading || instructions.trim().length === 0 || !versionChanged}
+              onClick={() => void saveVersion()}
               className="gap-1.5"
             >
               {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
               Save as a new version
             </Button>
-            {instructionsChanged && (
+            {versionChanged && (
               <Button
                 variant="ghost"
                 size="sm"
                 disabled={busy}
-                onClick={() => setInstructions(version?.instructions ?? "")}
+                onClick={() => {
+                  setInstructions(version?.instructions ?? "");
+                  setResources(saved);
+                }}
               >
                 Discard changes
               </Button>
             )}
+            <p className="text-caption leading-relaxed text-muted-foreground">
+              Saving mints a version. Tasks already running keep the one they started with.
+            </p>
           </div>
-        </section>
+        </div>
 
         <section>
           <h2 className="mb-3 text-heading">History</h2>

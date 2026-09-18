@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import {
+  parseSkillContract,
   patchSkillSchema,
   serializeSkill,
   serializeSkillVersion,
   trustPermitsAutoSelection,
 } from "@/lib/work/skills";
+import { readSkillResources } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
 
@@ -27,12 +29,43 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     where: { skillId: skill.id, version: skill.currentVersion },
   });
 
+  // The project this skill is filed in, by name.
+  //
+  // The page needs it to tell the truth about one control. "Juno may reach for
+  // it unasked" means something narrower for a filed skill — `skillIsOfferedTo`
+  // offers it to tasks in its own project and to no others — and a switch whose
+  // caption says "when a task looks like it fits" would be describing a wider
+  // behaviour than the runtime has.
+  const project = skill.projectId
+    ? await prisma.project.findFirst({
+        where: { id: skill.projectId, userId: user.id },
+        select: { name: true },
+      })
+    : null;
+
+  // The names of the files this version brings, resolved for the page.
+  //
+  // The contract stores ids because that is what survives a rename, and a page
+  // that could only show ids would be asking the reader to recognise a cuid. A
+  // file deleted since is absent from this list rather than reported as an
+  // error — the version still names it, and the run that needed it is where
+  // that matters — so a shorter list than the contract's is itself the
+  // sentence: one of these files is no longer in your library.
+  const resources = version
+    ? await readSkillResources(user.id, parseSkillContract(version.contract).resourceAttachmentIds)
+    : [];
+
   return NextResponse.json({
     skill: serializeSkill(skill),
     // Null rather than a substitute when the pointer names a row that is not
     // there. Handing back the newest version instead would show the user
     // instructions they did not choose under the heading of the one they did.
     version: version ? serializeSkillVersion(version) : null,
+    resources,
+    // Null both when the skill is filed nowhere and when the project row has
+    // gone; the page draws the narrower sentence without a name in the second
+    // case, because `projectId` is still what the executor reads.
+    projectName: project?.name ?? null,
   });
 }
 

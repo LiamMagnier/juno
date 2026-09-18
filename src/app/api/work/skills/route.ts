@@ -18,6 +18,7 @@ import {
   trustPermitsAutoSelection,
 } from "@/lib/work/skills";
 import { scanSkillVersion } from "@/lib/work/skill-security";
+import { ownsEverySkillResource } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
 
@@ -79,6 +80,30 @@ export async function POST(req: Request) {
   const trust = trustForOrigin(origin);
   const contract = parsed.data.contract ?? emptySkillContract();
   const requestedTools = parsed.data.requestedTools ?? [];
+
+  // The files the skill says it brings, checked before anything is written. An
+  // imported contract can name any id its author felt like typing, and the only
+  // thing that makes one of them a file this skill may carry is an `Attachment`
+  // row with this user on it.
+  //
+  // Refused rather than quietly pruned, and the sentence says which way round
+  // it is. A skill shared from another account names that account's files, and
+  // importing it with the list silently emptied would hand the reader a skill
+  // that looks complete, runs, and produces the wrong document — whereas a
+  // refusal names the one thing they have to do, which is attach their own
+  // copy. Missing and not-yours are answered identically, so this route is not
+  // an oracle for which attachment ids exist.
+  if (!(await ownsEverySkillResource(user.id, contract.resourceAttachmentIds))) {
+    return NextResponse.json(
+      {
+        error: "resource_not_found",
+        message:
+          "One of the files this skill brings is not in your library, so nothing was saved. A skill can only carry files from the account it is saved in.",
+      },
+      { status: 404 }
+    );
+  }
+
   const securityScan = scanSkillVersion({
     name,
     description,

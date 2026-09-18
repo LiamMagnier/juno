@@ -65,6 +65,16 @@ export const MAX_REQUESTED_TOOLS = 64;
 export const MAX_REQUESTED_NAMES = 32;
 export const MAX_CONTRACT_FIELDS = 32;
 export const MAX_SKILL_EXAMPLES = 20;
+/**
+ * How many files one version may bring with it.
+ *
+ * A bound on a JSONB list, the same kind of thing as the two above, and not a
+ * ceiling on what a run may do: the text these files contribute is already
+ * bounded by the executor's per-run source budget, and the run's own limits are
+ * the plan's. This number only stops a malformed or pasted contract from
+ * carrying an unbounded array into the column.
+ */
+export const MAX_SKILL_RESOURCES = 32;
 
 const MAX_FIELD_NAME_CHARS = 80;
 const MAX_FIELD_DESCRIPTION_CHARS = 500;
@@ -293,6 +303,35 @@ export const skillContractSchema = z.object({
   requestedDomains: z
     .array(z.string().trim().min(1).max(MAX_DOMAIN_CHARS))
     .max(MAX_REQUESTED_NAMES)
+    .default([]),
+  /**
+   * The files the skill brings with it, as `Attachment` ids.
+   *
+   * A skill that formats a monthly report needs the template it formats into,
+   * and until this existed the instructions could only describe one. These are
+   * the skill's own material, put in front of the model beside the task's
+   * attachments — inside the same untrusted-content envelope, for the same
+   * reason: a document is something to work from, never an instruction.
+   *
+   * NOT a `requested*` field, and deliberately absent from `WorkSkillRequest`
+   * and from `resolveSkillPermissions`. The resolver's whole argument is that a
+   * skill may only ever narrow what the run already had, and every field it
+   * touches is a capability — a tool, a connector, an app, a domain, a policy,
+   * a ceiling. A resource is none of those: it is inert text that reaches the
+   * model through the envelope and cannot call anything. Routing it through the
+   * intersection would be a category error that made the resolver's invariant
+   * harder to read for no safety gained, because there is nothing here to
+   * intersect against.
+   *
+   * What does have to hold is that these ids are the author's own files. Both
+   * write routes check every id against an `Attachment` row carrying the
+   * caller's id before the version is minted, and the executor joins on
+   * `userId` again when it reads them, so an id pasted into an imported skill
+   * resolves to nothing rather than to somebody else's upload.
+   */
+  resourceAttachmentIds: z
+    .array(z.string().trim().min(1).max(MAX_ID_CHARS))
+    .max(MAX_SKILL_RESOURCES)
     .default([]),
   preferredTarget: z.enum(WORK_TARGETS).nullable().default(null),
   preferredModel: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS).nullable().default(null),
@@ -578,8 +617,17 @@ export interface WorkSkillVersionContent {
   requestedTools: string[];
 }
 
-/** The contract-shape version this build writes. */
-export const SKILL_CONTRACT_VERSION = 1;
+/**
+ * The contract-shape version this build writes.
+ *
+ * 2 since `resourceAttachmentIds` joined the shape. The number is stamped on
+ * the row rather than inferred from it so a reader of an old version knows the
+ * empty resource list is a shape that had no such field, not an author who
+ * removed every file — `parseSkillContract` cannot tell those apart, and the
+ * question is asked exactly when somebody is working out why a version stopped
+ * producing the document it used to.
+ */
+export const SKILL_CONTRACT_VERSION = 2;
 
 /**
  * The number a newly minted version takes.
@@ -716,6 +764,111 @@ export function skillVersionRunReference(input: {
       trust: coerceSkillTrust(input.trust),
       pinned: input.pinned,
       via: input.via,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The files a skill brings
+// ---------------------------------------------------------------------------
+
+/** One of the author's files, as the run will name it to the model. */
+export interface SkillResource {
+  attachmentId: string;
+  /** The file's own name. Never a path — this reaches every client. */
+  fileName: string;
+}
+
+export interface ResolvedSkillResources {
+  /** In the order the contract listed them, which is the order they are read. */
+  attached: SkillResource[];
+  /**
+   * Ids the version declares that no longer resolve to one of the user's files.
+   *
+   * Reported rather than dropped in silence, for the reason the withheld tool
+   * list exists: a skill that formats a report into a template and quietly
+   * stops bringing the template produces a worse document and no sentence
+   * anywhere saying why. The ids themselves are the caller's to log; nothing in
+   * this module puts one in front of a reader.
+   */
+  missing: string[];
+}
+
+/**
+ * Which of a version's declared files this run may actually read.
+ *
+ * `available` is what the caller found by looking the ids up **against the
+ * running user's own attachments** — that lookup is the security boundary and
+ * it lives at the call site, because this module cannot open a database. An id
+ * that is not in `available` is simply absent from the result: a deleted file,
+ * a file belonging to somebody else, a file invented by whoever wrote the JSON
+ * a skill was imported from. All three fail the same way, which is the point.
+ *
+ * Order follows the contract, not the lookup. A skill that lists a template
+ * before its style guide means the model to read them in that order, and a
+ * database returning them the other way round would quietly re-sequence the
+ * material every time the planner happened to be asked differently.
+ *
+ * Duplicates collapse. The same file named twice is one file, and paying for
+ * its text twice would come out of the room the task's own attachments have.
+ */
+export function resolveSkillResources(input: {
+  requested: readonly string[];
+  available: readonly SkillResource[];
+}): ResolvedSkillResources {
+  const byId = new Map(input.available.map((entry) => [entry.attachmentId, entry.fileName]));
+  const attached: SkillResource[] = [];
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const attachmentId of input.requested) {
+    if (seen.has(attachmentId)) continue;
+    seen.add(attachmentId);
+    const fileName = byId.get(attachmentId);
+    if (fileName === undefined) missing.push(attachmentId);
+    else attached.push({ attachmentId, fileName });
+  }
+  return { attached, missing };
+}
+
+/**
+ * The `WorkRunIO` row that records one file the skill brought.
+ *
+ * `skill_resource` rather than `attachment`, although both point at an
+ * `Attachment` row and both are read the same way. The manifest answers "what
+ * went in", and "the reader attached this" and "the skill carried this" are
+ * different answers to it — the first is something the reader chose for this
+ * task and the second is something they chose once, for every task that ever
+ * invokes the skill. Collapsing them would make a run look as though somebody
+ * had attached a file they have not thought about in months.
+ */
+export interface SkillResourceRunReference {
+  direction: "input";
+  refKind: "skill_resource";
+  /** The attachment's id, so the executor's existing join finds the text. */
+  refId: string;
+  label: string;
+  detail: {
+    skillId: string;
+    slug: string;
+    version: number;
+  };
+}
+
+export function skillResourceRunReference(input: {
+  resource: SkillResource;
+  skillId: string;
+  slug: string;
+  version: number;
+}): SkillResourceRunReference {
+  return {
+    direction: "input",
+    refKind: "skill_resource",
+    refId: input.resource.attachmentId,
+    label: input.resource.fileName,
+    detail: {
+      skillId: input.skillId,
+      slug: input.slug,
+      version: input.version,
     },
   };
 }
@@ -860,6 +1013,33 @@ export interface SkillCandidate {
   trust: string;
   autoSelect: boolean;
   currentVersion: number;
+  /**
+   * The project this skill was filed in, or null for one that belongs to the
+   * account. Read by `skillIsOfferedTo` below, which is what makes a project a
+   * bundle rather than a label.
+   */
+  projectId: string | null;
+}
+
+/**
+ * Whether a skill is on offer to a task, given where each of them is filed.
+ *
+ * This is the whole of what makes a project a *role* rather than a folder: file
+ * the invoice skills in Bookkeeping and a task filed there is offered them,
+ * while a task about next week's talk is not. An account-level skill (null) is
+ * offered everywhere, because that is what filing it nowhere means.
+ *
+ * It governs AUTOMATIC selection only. `selectSkillBySlug` does not consult it,
+ * for the reason it does not consult trust: the user typed the name, and a
+ * product that refuses a skill somebody explicitly asked for — because of where
+ * they happened to file the task — teaches them to keep every skill at the
+ * account level, which empties the feature out.
+ */
+export function skillIsOfferedTo(
+  skillProjectId: string | null,
+  taskProjectId: string | null
+): boolean {
+  return skillProjectId === null || skillProjectId === taskProjectId;
 }
 
 export interface ScoredSkillCandidate {
@@ -882,6 +1062,8 @@ export const SKILL_SELECTION_REFUSALS = [
   "auto_select_disabled",
   /** Imported and not vouched for. Never auto-selected, at any confidence. */
   "untrusted",
+  /** Filed in a different project from the task, so it was not on offer here. */
+  "other_project",
   "low_confidence",
   /** Two eligible skills scored identically. Picking either would be a guess. */
   "ambiguous",
@@ -918,21 +1100,37 @@ export function selectSkillBySlug(
   return { selected: true, candidate, via: "slash", confidence: 1 };
 }
 
-function eligibleForAutoSelection(candidate: SkillCandidate): boolean {
-  return candidate.enabled && candidate.autoSelect && trustPermitsAutoSelection(candidate.trust);
+function eligibleForAutoSelection(
+  candidate: SkillCandidate,
+  taskProjectId: string | null
+): boolean {
+  return (
+    candidate.enabled &&
+    candidate.autoSelect &&
+    trustPermitsAutoSelection(candidate.trust) &&
+    skillIsOfferedTo(candidate.projectId, taskProjectId)
+  );
 }
 
-function autoSelectionRefusalFor(candidate: SkillCandidate): SkillSelectionRefusal {
+function autoSelectionRefusalFor(
+  candidate: SkillCandidate,
+  taskProjectId: string | null
+): SkillSelectionRefusal {
   if (!candidate.enabled) return "disabled";
   // Trust before the toggle: `autoSelect` on an untrusted skill is a setting
   // that was never going to take effect, and reporting it would send the user
   // to switch on something that is already on.
   if (!trustPermitsAutoSelection(candidate.trust)) return "untrusted";
+  // Before the toggle for the same reason. A skill filed in another project has
+  // `autoSelect` switched on and is still not on offer to this task, so sending
+  // the user to switch on something that is already on would not change the
+  // answer — where the skill is filed is what did.
+  if (!skillIsOfferedTo(candidate.projectId, taskProjectId)) return "other_project";
   return "auto_select_disabled";
 }
 
 /**
- * Automatic selection, gated on confidence and on trust.
+ * Automatic selection, gated on confidence, on trust and on the project.
  *
  * Ineligible candidates are removed before ranking rather than allowed to block
  * the decision. If they were merely refused at the top, importing one untrusted
@@ -946,6 +1144,17 @@ function autoSelectionRefusalFor(candidate: SkillCandidate): SkillSelectionRefus
  */
 export function selectSkillAutomatically(input: {
   scored: readonly ScoredSkillCandidate[];
+  /**
+   * The project the task was filed in, or null when it was filed nowhere.
+   *
+   * Required rather than optional, although every call site would be happy with
+   * a default. An absent value reads as "this task is in no project", which puts
+   * every project's skills on offer to every task — the behaviour this argument
+   * exists to stop — and a defaulted parameter is how a caller that has simply
+   * not been updated acquires that behaviour without anybody noticing. Passing
+   * null is a sentence; omitting the argument is a silence.
+   */
+  taskProjectId: string | null;
   minConfidence?: number;
 }): SkillSelection {
   if (input.scored.length === 0) return { selected: false, reason: "no_candidate" };
@@ -956,9 +1165,14 @@ export function selectSkillAutomatically(input: {
   const ranked = [...input.scored].sort(
     (a, b) => b.confidence - a.confidence || a.candidate.slug.localeCompare(b.candidate.slug)
   );
-  const eligible = ranked.filter((entry) => eligibleForAutoSelection(entry.candidate));
+  const eligible = ranked.filter((entry) =>
+    eligibleForAutoSelection(entry.candidate, input.taskProjectId)
+  );
   if (eligible.length === 0) {
-    return { selected: false, reason: autoSelectionRefusalFor(ranked[0].candidate) };
+    return {
+      selected: false,
+      reason: autoSelectionRefusalFor(ranked[0].candidate, input.taskProjectId),
+    };
   }
 
   const best = eligible[0];
@@ -1510,6 +1724,7 @@ export function skillContractToJson(contract: WorkSkillContract): Prisma.InputJs
     requestedConnectors: [...contract.requestedConnectors],
     requestedApps: [...contract.requestedApps],
     requestedDomains: [...contract.requestedDomains],
+    resourceAttachmentIds: [...contract.resourceAttachmentIds],
     preferredTarget: contract.preferredTarget,
     preferredModel: contract.preferredModel,
     requestedPolicy: contract.requestedPolicy,

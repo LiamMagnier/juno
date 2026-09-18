@@ -1357,7 +1357,8 @@ progress bar that completes while the run never sees the file:
 | **Goal** | `WorkSession.goal`, written once. `PATCH /api/work/sessions/[id]` accepts `title \| pinned \| archived` **only** | Never — it is what the plan is validated against. Say more by sending a message, or start a new task |
 | **Files** | `WorkRunIO` rows written once at dispatch by `recordRunInputsFromGrants` from the session's live `WorkFileGrant` rows | Next attempt. The manifest is a snapshot on purpose: revoking a grant mid-run must not rewrite what the run actually read |
 | **Connectors** | `WorkSessionConnector`, chosen at session creation; `evaluateConnector` refuses anything else with `not_selected_for_task` | Next attempt |
-| **Skill** | `applySkill` parses a `/slug` out of the goal at run start (or matches one at ≥ 0.75 confidence) | Next attempt |
+| **Skill** | `applySkill` parses a `/slug` out of the goal at run start (or matches one at ≥ 0.75 confidence, among the skills on offer to the task's project) | Next attempt |
+| **The skill's own files** | `contract.resourceAttachmentIds`, resolved at run start against the user's own `Attachment` rows and recorded as `WorkRunIO` rows of kind `skill_resource` | Next attempt — and only by minting a new version, since the list is version content |
 | **Model, reasoning effort, permission policy** | `POST …/runs` accepts all three, but they bind when the loop is constructed | Next attempt. Target and permission policy are attempt-scoped overrides; they do not edit the session |
 | **An answer or an instruction** | `POST …/answer` → `question_answered` / `user_message` | **This attempt**, at its next step. Nothing already done is undone |
 
@@ -1366,6 +1367,32 @@ intersects what the skill asks for with what the run already had, so a shared or
 skill can never add a tool. And the goal is deliberately left un-stripped of its `/slug`
 invocation — it is what the user actually wrote, and validating a run against an edited
 goal would validate it against something nobody asked for.
+
+### 9b.5 A skill carries its own files, and a project carries a role
+
+**A skill brings the material its instructions describe.** A version's contract holds
+`resourceAttachmentIds` — the author's own uploads — and `applySkill` resolves them against
+`Attachment` rows carrying the *running* user's id before the run sees them. They reach the
+model through `openingContext`, inside the untrusted-content envelope, beside the task's own
+attachments and labelled as the skill's; they are never appended to the system block, because
+a template is material and material in the authority position is a document with authority
+nobody granted it. They are **not** part of the permission surface and never pass through
+`resolveSkillPermissions`: a resource cannot ask for anything, both write routes refuse an id
+that is not the caller's own file, and the executor joins on `userId` again — so the widest
+thing a resource can do is show a run a document its own author uploaded. Swapping the file a
+skill brings is therefore not a permission expansion and does not demand a consent press;
+`SkillSecurityInput` says why. A file deleted since the version was minted is reported as
+withheld, by count rather than by id, and the run does less rather than pretending.
+
+**A project is the bundle.** `WorkProjectDefaults` (`src/lib/work/projects.ts`) has always
+described what a project lends a task — target, model, effort, connectors, approval mode —
+and `resolveWorkDefaults` has always narrowed it against the account. `POST /api/work/sessions`
+now reads it: a task filed in a project inherits each of those for every field the client left
+unsaid, and a field the client sent stands, because the project is a default and not a policy.
+The layer that may not be overridden is still the Mac's, at dispatch. The skills half of the
+bundle needs no new field — a `WorkSkill` already carries a `projectId`, and `skillIsOfferedTo`
+scopes **automatic** selection to the account's skills plus the task's project's. A slash
+invocation still reaches the whole library: the user typed the name.
 
 ---
 

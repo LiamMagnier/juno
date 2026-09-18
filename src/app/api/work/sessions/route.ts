@@ -10,7 +10,17 @@ import {
   type SessionAttachmentGrant,
 } from "@/lib/work/store";
 import { isWorkModelAllowed } from "@/lib/work/models";
-import { DEFAULT_WORK_PERMISSION_POLICY } from "@/lib/work/domain";
+import {
+  DEFAULT_WORK_PERMISSION_POLICY,
+  NO_BUDGET,
+  type WorkPermissionPolicy,
+  type WorkTarget,
+} from "@/lib/work/domain";
+import {
+  parseWorkDefaults,
+  resolveWorkDefaults,
+  type WorkProjectDefaults,
+} from "@/lib/work/projects";
 import { getUserPlan } from "@/lib/usage";
 import {
   createSessionSchema,
@@ -161,6 +171,129 @@ async function replaySession(
   return NextResponse.json({ session: serializeSession(session), replay: true }, { status: 200 });
 }
 
+/** Null on a field means the project stated nothing about it. */
+interface InheritedFromProject {
+  model: string | null;
+  reasoningEffort: string | null;
+  permissionPolicy: WorkPermissionPolicy | null;
+  /** Null when the project states no list. `[]` would mean "reach nothing". */
+  connectorIds: string[] | null;
+  preferredHostId: string | null;
+}
+
+/**
+ * What a task takes from the project it was filed in, when it said nothing
+ * itself.
+ *
+ * This is what makes a project a *role* rather than a label. File a task in
+ * Bookkeeping and it arrives with Bookkeeping's connected apps, its approval
+ * mode and its model already chosen — the bundle a plugin carries elsewhere,
+ * expressed on the noun Juno already has for "this body of work" rather than on
+ * a second one beside it. The skills half of the bundle is not here: a skill
+ * filed in a project is already a `WorkSkill` carrying its `projectId`, and
+ * `skillIsOfferedTo` is what the executor reads.
+ *
+ * Every field is a DEFAULT, not a policy, and the distinction decides the shape
+ * of this function. A field the client sent is a decision somebody made about
+ * this one task and it stands; a field the client omitted has no per-task
+ * opinion, and the project's is the next-best answer. The layer that may not be
+ * overridden is the Mac's, and it is applied where it has always been applied —
+ * `resolveApprovalMode` at dispatch, which is a `min` and cannot widen.
+ *
+ * ABSENT IS NOT EMPTY, and it is the reason for the two `undefined` checks at
+ * the end. `resolveWorkDefaults` answers with the account's own value when the
+ * project declares nothing, which is right for the question it was written for
+ * and wrong here twice over: a project with no connector list would hand the
+ * task every app the account has linked and set `connectorsChosen`, turning
+ * "this client said nothing about apps" into "the reader switched them all on";
+ * and a project with no approval mode would resolve to the widest one, which is
+ * a silent widening of the default every task in the product has had. So a
+ * value is read back only where the project actually stated one.
+ *
+ * Returns nulls rather than throwing on anything it cannot honour. A project
+ * naming a Mac that has since been unpaired, or a model this plan does not
+ * include, must not make every task filed there impossible to create — the run
+ * picks a model and a target on its own and records what it chose, which is a
+ * working task with a degradation rather than a 403 on a setting the reader may
+ * not even know is there.
+ */
+async function inheritFromProject(
+  user: { id: string },
+  requestedTarget: WorkTarget,
+  defaults: WorkProjectDefaults
+): Promise<InheritedFromProject> {
+  // The account's linked apps, which are the ceiling the project's list is
+  // intersected against: a project naming Gmail does not thereby link Gmail.
+  // Read only when there is a list to intersect, so a project with no connector
+  // opinion costs no query.
+  const linked =
+    defaults.connectorIds === undefined
+      ? []
+      : (
+          await prisma.connection.findMany({
+            where: { userId: user.id },
+            select: { provider: true },
+          })
+        ).map((row) => row.provider);
+
+  const resolved = resolveWorkDefaults(
+    {
+      // The body's own target, passed through. `requestedTarget` is required in
+      // `createSessionSchema` precisely so that every task states one, so there
+      // is no such thing here as a task with no opinion about where it runs and
+      // the resolved target is deliberately not read back.
+      target: requestedTarget,
+      // Not read back either. Whatever limits a run is held to are decided when
+      // an attempt is dispatched, not when the task is composed, and this route
+      // has no business anticipating them. Zero on every axis means "no ceiling
+      // at this layer", so passing it narrows nothing.
+      budget: { ...NO_BUDGET },
+      // The account holds no stored Work approval mode of its own, so the
+      // widest value is the honest one for this layer: nothing about the
+      // account narrows a project today. The narrowing that does exist is the
+      // Mac's, at dispatch.
+      permissionPolicy: "permissive",
+      connectorIds: linked,
+      // Folder grants are not decided here — `recordRunInputsFromGrants` reads
+      // the session's own grants at dispatch — so the project's list is passed
+      // through as its own ceiling and the resolved value is not read. Passing
+      // an empty account layer instead would report every grant the project
+      // names as refused, which is a complaint about a question this route did
+      // not ask.
+      grantIds: defaults.grantIds ?? [],
+    },
+    defaults
+  );
+
+  // A Mac named in a stored JSON blob is a claim like any other id, and the row
+  // carrying this user is what makes it true. Dropped rather than refused when
+  // it does not resolve: the Mac may simply have been unpaired since, and
+  // `selectTarget` will choose again.
+  const host = resolved.preferredHostId
+    ? await prisma.workHost.findFirst({
+        where: { id: resolved.preferredHostId, userId: user.id },
+        select: { id: true },
+      })
+    : null;
+
+  // The same plan gate the body's model goes through, on the project's. The two
+  // are mutually exclusive — this branch is only reached when the client named
+  // no model — so the plan is read at most once per request. A model the plan
+  // does not include is dropped rather than refused, for the reason above.
+  const model =
+    resolved.model && isWorkModelAllowed(resolved.model, await getUserPlan(user.id))
+      ? resolved.model
+      : null;
+
+  return {
+    model,
+    reasoningEffort: resolved.reasoningEffort,
+    permissionPolicy: defaults.permissionPolicy === undefined ? null : resolved.permissionPolicy,
+    connectorIds: defaults.connectorIds === undefined ? null : resolved.connectorIds,
+    preferredHostId: host?.id ?? null,
+  };
+}
+
 export async function GET(req: Request) {
   const { user, error } = await requireUser();
   if (!user) return error;
@@ -305,12 +438,14 @@ export async function POST(req: Request) {
     });
     if (!host) return NextResponse.json({ error: "Host not found" }, { status: 404 });
   }
+  let projectDefaults: WorkProjectDefaults = {};
   if (projectId) {
     const project = await prisma.project.findFirst({
       where: { id: projectId, userId: user.id },
-      select: { id: true },
+      select: { id: true, workDefaults: true },
     });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    projectDefaults = parseWorkDefaults(project.workDefaults);
   }
   // The chat this task was delegated from, checked the same way and for a
   // sharper reason than the project: this pointer is what makes the run render
@@ -407,6 +542,24 @@ export async function POST(req: Request) {
     if (existing) return replaySession(existing, user, attachments, connectors);
   }
 
+  // What the project it was filed in supplies for everything the client left
+  // unsaid. Applied only where the body is silent, so filing a task in a project
+  // can never overrule a choice somebody made about that task.
+  //
+  // Below the replay check on purpose, and it is the same rule stated from the
+  // other side: a replay reconciles what THIS request carried, and a request
+  // that said nothing about apps must leave whatever the task already holds
+  // alone. Inheriting on a replay would let a second press of the composer
+  // overwrite a change the reader had made to the task in between with the
+  // project's defaults — which is the project overruling a per-task decision,
+  // by the back door.
+  const inherited = await inheritFromProject(user, requestedTarget, projectDefaults);
+  // Tested against null rather than against emptiness, which is the same
+  // distinction the block above draws: a present `[]` is a reader who switched
+  // every app off, and reading it as "nothing said" would hand the task back the
+  // apps they had just removed.
+  const chosenConnectors = connectors ?? inherited.connectorIds;
+
   try {
     const session = await createWorkSession({
       ...(sessionId ? { id: sessionId } : {}),
@@ -420,9 +573,13 @@ export async function POST(req: Request) {
       // Absent stays null, which is what a standalone task has always been.
       conversationId: conversationId ?? null,
       requestedTarget,
-      preferredHostId: preferredHostId ?? null,
-      requestedModel: model ?? null,
-      reasoningEffort: reasoningEffort ?? null,
+      // Each of the four below falls through to the project's answer only when
+      // the client gave none. `??` is the whole of that rule and it reads the
+      // right way round here: every one of these is a scalar where absent means
+      // "no opinion", unlike the connector list above.
+      preferredHostId: preferredHostId ?? inherited.preferredHostId,
+      requestedModel: model ?? inherited.model,
+      reasoningEffort: reasoningEffort ?? inherited.reasoningEffort,
       // The approval mode this task was composed with. Absent means the client
       // has no control for it — the native composer, and every browser build
       // before the segmented control shipped — and those tasks get
@@ -434,7 +591,13 @@ export async function POST(req: Request) {
       // with the Mac's advertised policy at dispatch. A session composed as Skip
       // that only ever lands on a Mac pinned to Manual runs Manual every time,
       // and the run says so.
-      permissionPolicy: permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
+      //
+      // The project's mode sits between the two, and only when the client sent
+      // none — a task filed in a project whose mode is Ask first is composed as
+      // Ask first, and a task that stated its own mode keeps it. The default
+      // stays last so a project that has never been asked the question changes
+      // nothing about what a task gets.
+      permissionPolicy: permissionPolicy ?? inherited.permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
       // Written in the same transaction as the session rather than by a second
       // call after it, so a session never comes back as created while the files
       // the reader attached to it are missing. See `createWorkSession`.
@@ -449,9 +612,9 @@ export async function POST(req: Request) {
     // 503 says so rather than reporting a task that was created with permissions
     // it does not hold. The idempotency key makes the next press land on this
     // same session and finish the job.
-    if (connectors) {
+    if (chosenConnectors) {
       try {
-        await writeSessionConnectors(user, session.id, connectors);
+        await writeSessionConnectors(user, session.id, chosenConnectors);
       } catch (err) {
         console.error("[work] could not save the session's connectors", {
           sessionId: session.id,
