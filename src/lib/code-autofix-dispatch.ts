@@ -7,6 +7,7 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { appendTaskEvents, persistCodeTaskOutcome } from "@/lib/code-remote";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
 import { STEERABLE_STATUSES, canSteerRun } from "@/lib/code-steer-policy";
+import { codeRunLockKey } from "@/lib/code-run-lock";
 import {
   AUTO_FIX_SKIP_NOTE,
   autoFixDispatchNote,
@@ -55,13 +56,30 @@ import {
  * guard. A cap answers a pricing question with a correctness mechanism, and it
  * fails in the direction that hurts: the fifth failing check is exactly as real
  * as the first, and a run that stops because of a counter leaves a branch
- * broken with nothing said. What IS enforced is serialisation — one auto-fix
- * run per branch at a time, because two runs pushing to one branch race, with a
+ * broken with nothing said. What IS enforced is serialisation — one run per
+ * conversation at a time, because two runs pushing to one branch race, with a
  * second event handed to the run already going as a `steer` rather than dropped
  * — and the duplicate guard, which refuses to answer the same evidence twice.
  * Everything else is bounded by the account's own usage window, which is the
  * only ceiling this product has and the only one a person can see.
+ *
+ * NOR IS THERE A CONCURRENCY CAP, and that is now the same statement for both
+ * creators of a run. `POST /api/code/tasks` carried a per-user "at most three
+ * cloud runs in flight" and a burst rate limit; both are gone, because a count
+ * of runs is not the resource and a person answering three reviewers at once
+ * was being locked out of their own composer by their own tooling. What the two
+ * paths DO share is the lock: `codeRunLockKey`, per conversation, so a composer
+ * send racing a webhook delivery contends instead of passing two guards that
+ * never meet.
  */
+
+/**
+ * The skips that say something about the world rather than about the delivery.
+ *
+ * Both are recoverable by nothing more than time passing, so neither may leave
+ * the evidence marked as answered — see `settle`.
+ */
+const TRANSIENT_SKIPS = new Set<AutoFixSkipReason>(["runner_unavailable", "dispatch_failed"]);
 
 /** What became of one delivery, for the row that records it. */
 export type AutoFixOutcome =
@@ -104,6 +122,35 @@ export async function findAutoFixWatches(event: AutoFixEvent) {
     },
     select: { id: true, userId: true, conversationId: true },
   });
+}
+
+/**
+ * Turn every watch on a closed pull request off, and say how many.
+ *
+ * The switch is a standing instruction about one pull request, and a merged or
+ * closed one has no more events worth answering: the branch is usually deleted
+ * with it, so a late check on that ref would dispatch a run onto nothing. The
+ * row is kept and only `enabled` is cleared, for the same reason the toggle
+ * writes it by hand — it is the record that this person once said yes, and the
+ * panel's delivery notes hang off it.
+ *
+ * Scoped by repository and number only. There is no user on a webhook, and
+ * every watch of that pull request is closed by the same fact.
+ */
+export async function closeAutoFixWatches(input: {
+  repo: { owner: string; name: string };
+  prNumber: number;
+}): Promise<number> {
+  const { count } = await prismaUnguarded.codeAutoFixWatch.updateMany({
+    where: {
+      repoOwner: { equals: input.repo.owner, mode: "insensitive" },
+      repoName: { equals: input.repo.name, mode: "insensitive" },
+      prNumber: input.prNumber,
+      enabled: true,
+    },
+    data: { enabled: false },
+  });
+  return count;
 }
 
 /**
@@ -153,7 +200,33 @@ export async function answerAutoFixDelivery(input: {
       where: { id: deliveryId },
       data:
         result.outcome === "skipped"
-          ? { outcome: "skipped", reason: result.reason, note: result.note }
+          ? {
+              outcome: "skipped",
+              reason: result.reason,
+              note: result.note,
+              /*
+               * A TRANSIENT FAILURE MUST NOT LOOK LIKE AN ANSWER FOREVER.
+               *
+               * The row was written first, on the unique (watchId, digest), and
+               * that is what makes a redelivery a duplicate. For a skip that is
+               * a fact about the delivery — a run already going, no branch —
+               * that is exactly right. For the two that are facts about the
+               * WORLD it is a silent hole: a five-minute cloud-runner outage
+               * would swallow every failing check that arrived during it, and
+               * GitHub's redelivery of the identical check run would be told it
+               * had already been answered.
+               *
+               * So the digest is released. The note stays in the panel, saying
+               * what happened; the evidence stops being claimed, so a
+               * redelivery inserts a fresh row and gets a real attempt. (A
+               * crash between the insert and this update still leaves the
+               * digest claimed — that residue is deliberate: nothing knows
+               * whether the run started, and answering twice is worse.)
+               */
+              ...(TRANSIENT_SKIPS.has(result.reason)
+                ? { digest: `${event.digest}#unanswered:${deliveryId}` }
+                : {}),
+            }
           : { outcome: result.outcome, reason: null, note: result.note, taskId: result.taskId },
     });
     return result;
@@ -219,16 +292,25 @@ export async function answerAutoFixDelivery(input: {
   const readiness = await getCloudRunnerReadiness();
 
   /*
-   * LOOK AND WRITE UNDER ONE LOCK, the pattern `POST /api/code/tasks` uses for
-   * its concurrency cap. Two deliveries about DIFFERENT evidence — a failing
-   * lint and a failing test, posted a second apart — both pass a plain
-   * "is anything running" read and both create a run, which is the very race
-   * this check exists to prevent. The advisory lock is per watch and releases
-   * on commit; a hash collision briefly serialises two unrelated pull requests.
+   * LOOK AND WRITE UNDER ONE LOCK, AND UNDER THE SAME LOCK THE COMPOSER TAKES.
+   *
+   * Two deliveries about DIFFERENT evidence — a failing lint and a failing
+   * test, posted a second apart — both pass a plain "is anything running" read
+   * and both create a run, which is the race this check exists to prevent.
+   *
+   * The key is the CONVERSATION, not the watch, and that is the point:
+   * `POST /api/code/tasks` creates runs in the same conversation, onto the same
+   * branch, from a person's click. A per-watch key would have left the two
+   * creators holding different locks, so a composer send racing a delivery
+   * passed both guards and produced exactly the two-runs-on-one-branch race
+   * this file calls not negotiable. One conversation, one key, one run at a
+   * time. The lock releases on commit; a hash collision briefly serialises two
+   * unrelated conversations.
    */
+  const conversationId = watch.conversationId;
   const prompt = buildAutoFixPrompt(event);
   const decision = await prismaUnguarded.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`autofix:${watch.id}`}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${codeRunLockKey(conversationId)}))`;
     const live = await tx.codeTask.findFirst({
       where: {
         userId: watch.userId,
@@ -279,16 +361,27 @@ export async function answerAutoFixDelivery(input: {
   if (decision.kind === "live") {
     const { live } = decision;
     if (!canSteerRun(live.status, live.target)) return skip("fix_in_flight");
+    /*
+     * `text` for the agent, `displayText` for anything that renders it — the
+     * split `POST /api/code/tasks/[id]/steer` documents. The cloud driver
+     * echoes a steer back into the transcript as `displayText ?? text`, so
+     * without the second field the native clients would draw the whole
+     * engineered prompt — fence markers, the untrusted comment, the "do
+     * exactly one of these three things" block — as a chat bubble the reader
+     * appears to have typed. The short sentence is the one already written to
+     * the web transcript three lines below, so both doors show the same thing.
+     */
+    const message = autoFixSessionMessage(event);
     await appendTaskEvents(live.id, [
       {
         kind: "steer",
-        payload: { requestId: `autofix:${event.digest}`, text: prompt },
+        payload: { requestId: `autofix:${event.digest}`, text: prompt, displayText: message },
         // Idempotent on the evidence, so a retry cannot queue the same event
         // twice into a run that is reading its backlog.
         key: `steer:autofix:${event.digest}`,
       },
     ]);
-    await writeSessionTurn(watch.conversationId, watch.userId, autoFixSessionMessage(event));
+    await writeSessionTurn(watch.conversationId, watch.userId, message);
     return settle({ outcome: "steered", taskId: live.id, note: autoFixSteerNote(event) });
   }
   const task = decision.task;

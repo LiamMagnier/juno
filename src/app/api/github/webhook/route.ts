@@ -7,8 +7,8 @@ import {
   githubWebhookSecretFromEnv,
   verifyGithubWebhookSignature,
 } from "@/lib/github-app";
-import { readAutoFixDelivery } from "@/lib/code-autofix";
-import { answerAutoFixDelivery, findAutoFixWatches } from "@/lib/code-autofix-dispatch";
+import { readAutoFixClosure, readAutoFixDelivery } from "@/lib/code-autofix";
+import { answerAutoFixDelivery, closeAutoFixWatches, findAutoFixWatches } from "@/lib/code-autofix-dispatch";
 
 export const runtime = "nodejs";
 
@@ -83,6 +83,16 @@ export async function POST(req: Request) {
     console.warn(`[github-webhook] ${eventName} delivery ${deliveryId} was not JSON`);
     return ok({ outcome: "malformed" });
   }
+
+  /*
+   * A closed pull request is the one delivery that turns the switch OFF rather
+   * than answering it. Checked first and returned on, because it is not an
+   * event to act on: nothing is dispatched, nothing is recorded, and a watch
+   * left on a merged pull request would answer a late check by pushing to a
+   * branch that was deleted with it.
+   */
+  const closure = readAutoFixClosure(eventName, payload);
+  if (closure) return ok({ outcome: "closed", watches: await closeAutoFixWatches(closure) });
 
   const reading = readAutoFixDelivery(eventName, payload);
   if (!reading.act) return ok({ outcome: "ignored", reason: reading.reason });

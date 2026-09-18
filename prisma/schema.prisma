@@ -1944,6 +1944,9 @@ model CodeAutoFixWatch {
   /// not a relation, for the same reason CodeTask.conversationId is one: the
   /// authoritative Conversation may live only on a Mac.
   conversationId String?
+  /// Turned on by hand, and turned off by hand or by the pull request closing.
+  /// A merged pull request usually takes its branch with it, so a watch left on
+  /// would answer a late check by pushing to a ref that no longer exists.
   enabled   Boolean @default(false)
 
   createdAt DateTime @default(now())
@@ -1965,8 +1968,10 @@ model CodeAutoFixWatch {
 /// is the duplicate guard — `digest` names the CHECK RUN or the COMMENT, not
 /// the delivery, so GitHub redelivering a webhook under a new delivery id is
 /// caught as well as a retry. And the row is the note: the reference's third
-/// outcome is "a duplicate or no-op is noted and skipped", and a note nobody
-/// can read is not a note, so the toggle's own panel shows the last few.
+/// outcome is "a no-op is noted and skipped", and a note nobody can read is not
+/// a note, so the toggle's own panel shows the last few. (A duplicate has no
+/// note of its own — the insert that would have carried it is the one the
+/// unique index refuses, and the first row already says what happened.)
 ///
 /// There is deliberately NO attempt counter here. Every reason a delivery can
 /// be skipped is a fact about that delivery; none of them is a quota. See
@@ -1976,10 +1981,16 @@ model CodeAutoFixDelivery {
   watchId String
   /// Identity of the evidence: "check_run:<id>:<conclusion>", "review:<id>",
   /// "review_comment:<id>".
+  ///
+  /// Released — suffixed so it can never match again — when the delivery was
+  /// skipped for a reason about the WORLD rather than about the delivery (the
+  /// runner was down, the dispatch failed). Otherwise a five-minute outage
+  /// would leave every check that arrived during it permanently "answered",
+  /// because GitHub's redelivery would collide with the row that says so.
   digest  String
   /// check_failed | review_comment | review.
   trigger String
-  /// dispatched | skipped.
+  /// dispatched | steered | skipped.
   outcome String
   /// The AutoFixSkipReason when nothing ran. Null on a dispatch.
   reason  String?

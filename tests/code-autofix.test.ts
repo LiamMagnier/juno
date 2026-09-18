@@ -11,11 +11,13 @@ import {
   autoFixSessionMessage,
   autoFixTaskTitle,
   buildAutoFixPrompt,
+  readAutoFixClosure,
   readAutoFixDelivery,
   sanitiseGithubUrl,
   sanitiseLogin,
   sanitiseUntrusted,
 } from "@/lib/code-autofix";
+import { codeRunLockKey } from "@/lib/code-run-lock";
 import { verifyGithubWebhookSignature } from "@/lib/github-app";
 
 /*
@@ -436,13 +438,17 @@ test("nothing in the skip vocabulary is a quota", () => {
    * account's own usage window.
    */
   const reasons = Object.keys(AUTO_FIX_SKIP_NOTE);
-  assert.deepEqual(reasons, [
-    "duplicate",
-    "fix_in_flight",
-    "no_session",
-    "runner_unavailable",
-    "dispatch_failed",
-  ]);
+  assert.deepEqual(reasons, ["fix_in_flight", "no_session", "runner_unavailable", "dispatch_failed"]);
+  /*
+   * And no "duplicate". It reads like a skip and it cannot be one: the
+   * duplicate is decided by the unique (watchId, digest) refusing the second
+   * insert, so there is no row to write the note on. A note the panel can never
+   * render is a promise the type makes and the runtime cannot keep.
+   */
+  assert.ok(
+    !("duplicate" in AUTO_FIX_SKIP_NOTE),
+    "a note that can never be written must not be in the vocabulary",
+  );
   const dispatch = read("src/lib/code-autofix-dispatch.ts");
   const reading = read("src/lib/code-autofix.ts");
   for (const [name, source] of [["the dispatcher", dispatch], ["the reading", reading]] as const) {
@@ -505,7 +511,7 @@ test("the toggle is off until a person turns it on, and is not offered where it 
   const route = read("src/app/api/code/tasks/[id]/auto-fix/route.ts");
   // A switch that turns on a thing the server cannot do is a defect: the
   // reader flips it, nothing happens, and the product has lied about itself.
-  for (const reason of ["no_webhook", "not_cloud", "no_pull_request"]) {
+  for (const reason of ["no_webhook", "not_cloud", "app_not_installed", "no_pull_request"]) {
     assert.ok(route.includes(`"${reason}"`), `${reason} must be a stated refusal`);
   }
   assert.match(route, /if \(resolved\.reason\) \{[\s\S]*status: 409/, "PUT refuses rather than storing it");
@@ -531,4 +537,192 @@ test("the toggle is off until a person turns it on, and is not offered where it 
     read(`prisma/migrations/${migration}/migration.sql`),
     /CREATE UNIQUE INDEX "CodeAutoFixDelivery_watchId_digest_key"/,
   );
+});
+
+/* ────────── What the panel promises, against what the runtime can do ────── */
+
+test("the switch is refused on a repository the app is not installed on", () => {
+  /*
+   * The one refusal of the four that is PER REPOSITORY, and the one the review
+   * found missing. Juno supports cloud runs where the app is not installed —
+   * `chooseCloneCredential` falls back to the submitter's OAuth token with that
+   * exact reason — but GitHub delivers webhooks along the app's INSTALLATIONS.
+   * On such a repository the switch would be on, the row would say so, and no
+   * check run and no review would ever reach the webhook.
+   */
+  const route = read("src/app/api/code/tasks/[id]/auto-fix/route.ts");
+  const webhook = route.indexOf('reason: "no_webhook"');
+  const installed = route.indexOf("isGithubAppInstalled(");
+  const pull = route.indexOf('reason: "no_pull_request"');
+  assert.ok(webhook !== -1 && installed !== -1 && pull !== -1);
+  assert.ok(webhook < installed && installed < pull, "asked after the deployment facts, before the pull request");
+
+  // A GitHub round trip on every code-sync event is not acceptable: the panel
+  // re-reads this route on mount and on every sync.
+  assert.match(read("src/lib/github-app.ts"), /GITHUB_APP_INSTALL_TTL_MS/, "the answer is cached with a TTL");
+
+  // And the remedy is named where the reader is. "Unavailable" with no next
+  // step reads as broken.
+  const banner = read("src/components/code/code-session-banner.tsx");
+  assert.match(banner, /reason === "app_not_installed"/);
+  assert.match(banner, /GitHub App installed on this repository/);
+});
+
+test("Plan mode changes the sentence, never the permission", () => {
+  /*
+   * The follow-up run inherits its mode from the anchor task, and must: a
+   * webhook decides no permissions. But `plan` is not a label — the runner
+   * denies every edit in it — so one of the three outcomes the panel promised,
+   * "pushing a fix to this branch", was impossible in a Plan session, and that
+   * was the outcome the copy named.
+   */
+  const dispatch = read("src/lib/code-autofix-dispatch.ts");
+  assert.match(dispatch, /permissionMode: anchor\.permissionMode/, "still inherited, never widened");
+
+  const route = read("src/app/api/code/tasks/[id]/auto-fix/route.ts");
+  assert.match(route, /permissionMode: resolved\.permissionMode/, "the route reports the resolved mode");
+  assert.match(route, /isCodePermissionMode\(anchor\.permissionMode\)/, "off the same anchor the dispatcher uses");
+
+  const banner = read("src/components/code/code-session-banner.tsx");
+  assert.match(banner, /state\?\.permissionMode === "plan"/);
+  const start = banner.indexOf("{planMode");
+  const plan = banner.slice(start, banner.indexOf("</p>", start));
+  assert.match(plan, /will not push/, "Plan mode says what it will not do");
+  assert.ok(
+    plan.indexOf("investigating") < plan.indexOf("will not push"),
+    "and what it will do instead — the switch is still worth pressing",
+  );
+});
+
+test("a steer carries a sentence for the reader as well as the prompt for the agent", () => {
+  /*
+   * `text` is read by the agent; `displayText` is what anything that renders it
+   * draws. The cloud driver echoes a steer back into the transcript as
+   * `displayText ?? text`, so without the second field the whole engineered
+   * prompt — the fence markers, the untrusted comment, the "do exactly one of
+   * these three things" block — arrived on the native clients as a chat bubble
+   * the reader appears to have typed: the defect the prompt's own design exists
+   * to prevent, coming in by the other door.
+   */
+  const dispatch = read("src/lib/code-autofix-dispatch.ts");
+  assert.match(dispatch, /text: prompt, displayText: message \}/);
+  assert.match(dispatch, /const message = autoFixSessionMessage\(event\)/);
+  assert.match(
+    read("scripts/cloud-code-runner.mjs"),
+    /steer\.displayText \?\? steer\.text/,
+    "which is what the runner echoes",
+  );
+});
+
+/* ──────────────── Ceilings, locks, and the things time fixes ────────────── */
+
+test("the only ceiling on a cloud run is the account's own usage window", () => {
+  /*
+   * The create route carried two of its own — ten dispatches a minute, and at
+   * most three cloud runs in flight — and auto-fix runs counted toward the
+   * second, so a person answering three reviewers at once could be locked out
+   * of their own composer by their own tooling. A count of runs is not the
+   * resource: what a run spends is plan budget and the rolling 5-hour and
+   * weekly windows, which are metered for real and shown in settings.
+   */
+  const route = read("src/app/api/code/tasks/route.ts");
+  assert.doesNotMatch(route, /CLOUD_TASK_CONCURRENCY_CAP|cloud_cap_exceeded/);
+  assert.doesNotMatch(route, /cloud runs in progress/);
+  assert.doesNotMatch(route, /\brateLimit\(/, "no burst ceiling on cloud dispatch either");
+  assert.match(route, /usage window/i, "and the argument is stated where the guard used to be");
+});
+
+test("both creators of a run in one conversation take the same lock", () => {
+  /*
+   * The claim is "one run per branch at a time, and it is not negotiable". Two
+   * locks that never contend do not deliver it: the create route held
+   * `cloud-cap:<userId>` and the dispatcher `autofix:<watchId>`, so a composer
+   * send racing a webhook delivery passed both guards and still produced two
+   * runs pushing to one branch.
+   */
+  assert.equal(codeRunLockKey("conv_123"), "code-run:conv_123");
+  const route = read("src/app/api/code/tasks/route.ts");
+  const dispatch = read("src/lib/code-autofix-dispatch.ts");
+  for (const [name, source] of [["the create route", route], ["the dispatcher", dispatch]] as const) {
+    assert.match(
+      source,
+      /pg_advisory_xact_lock\(hashtext\(\$\{codeRunLockKey\(/,
+      `${name} must lock on the shared key`,
+    );
+    assert.equal(
+      [...source.matchAll(/pg_advisory_xact_lock\(hashtext\(\$\{codeRunLockKey\(/g)].length,
+      [...source.matchAll(/pg_advisory_xact_lock\(/g)].length,
+      `${name} must not take a second, private lock beside the shared one`,
+    );
+  }
+});
+
+test("a delivery nothing could be attempted for can be redelivered", () => {
+  /*
+   * The delivery row is written first, on the unique (watchId, digest), and
+   * that is the duplicate guard. For a skip that is a fact about the delivery
+   * it is right. For the two that are facts about the WORLD — the runner down,
+   * the dispatch failed — it silently swallowed everything that arrived during
+   * a five-minute outage, because GitHub's redelivery of the identical check
+   * run collided with the row saying it had been answered.
+   */
+  const dispatch = read("src/lib/code-autofix-dispatch.ts");
+  assert.match(
+    dispatch,
+    /TRANSIENT_SKIPS = new Set<AutoFixSkipReason>\(\["runner_unavailable", "dispatch_failed"\]\)/,
+  );
+  assert.match(dispatch, /TRANSIENT_SKIPS\.has\(result\.reason\)[\s\S]{0,120}digest: `\$\{event\.digest\}#unanswered/);
+  // The note survives: the release is of the EVIDENCE, not of the record that
+  // a person can read in the panel.
+  assert.match(dispatch, /outcome: "skipped",\s*reason: result\.reason,\s*note: result\.note,/);
+});
+
+test("a closed pull request turns its own watch off", () => {
+  /*
+   * Nothing used to close a watch. `enabled` stayed true after the pull request
+   * merged and its branch was deleted, so a late or re-run check on that ref
+   * dispatched a cloud run onto a branch that no longer exists — which a person
+   * reads as a failed run rather than as "there is nothing to do here any more".
+   */
+  const closed = readAutoFixClosure("pull_request", {
+    action: "closed",
+    repository: { name: "widgets", owner: { login: "acme" } },
+    pull_request: { number: 42, merged: true },
+  });
+  assert.deepEqual(closed, { repo: { owner: "acme", name: "widgets" }, prNumber: 42 });
+
+  // Closed without a merge is the same fact: this pull request will not be
+  // worked on again.
+  assert.equal(
+    readAutoFixClosure("pull_request", {
+      action: "closed",
+      repository: { name: "widgets", owner: { login: "acme" } },
+      pull_request: { number: 7 },
+    })?.prNumber,
+    7,
+  );
+  assert.equal(readAutoFixClosure("pull_request", { action: "opened" }), null);
+  assert.equal(readAutoFixClosure("check_run", { action: "completed" }), null);
+  assert.equal(readAutoFixClosure("pull_request", { action: "closed" }), null, "a malformed body closes nothing");
+
+  const webhook = read("src/app/api/github/webhook/route.ts");
+  assert.ok(
+    webhook.indexOf("readAutoFixClosure(") < webhook.indexOf("readAutoFixDelivery("),
+    "a closure is not an event to answer, so it never reaches the dispatcher",
+  );
+  assert.match(read("src/lib/code-autofix-dispatch.ts"), /enabled: true,\s*\},\s*data: \{ enabled: false \}/);
+});
+
+test("the CI rollup is still announced when it changes", () => {
+  /*
+   * The chip became a button when it became a door into the panel, and a button
+   * is not a live region: a screen-reader user who used to be told "2 checks
+   * failing" the moment the branch went red would otherwise have to open the
+   * panel to find out. Every other chip on that row still carries role="status".
+   */
+  const banner = read("src/components/code/code-session-banner.tsx");
+  const trigger = banner.indexOf("<PopoverTrigger");
+  const live = banner.lastIndexOf('role="status"', trigger);
+  assert.notEqual(live, -1, "a status region must sit beside the trigger");
+  assert.match(banner.slice(live, trigger), /sr-only[\s\S]*checksLabel\(report\)/);
 });

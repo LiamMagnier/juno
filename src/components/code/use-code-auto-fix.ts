@@ -8,12 +8,14 @@ import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
  * THE PER-PULL-REQUEST AUTO-FIX TOGGLE, READ FROM THE SERVER RATHER THAN GUESSED.
  *
  * `available` comes back from the route and is the first thing the banner
- * reads, because the three things that make auto-fix impossible are all facts
+ * reads, because the four things that make auto-fix impossible are all facts
  * only the server holds: whether this deployment has a webhook secret at all,
- * whether this session runs in the cloud, and whether a pull request exists
+ * whether this session runs in the cloud, whether the GitHub App is installed
+ * on THIS repository — GitHub delivers webhooks along the app's installations,
+ * so without one nothing will ever arrive — and whether a pull request exists
  * yet. A client that inferred "there is a PR link, so the switch should work"
- * would draw a control whose backing behaviour is missing on two of those
- * three, which is the defect this package exists to remove.
+ * would draw a control whose backing behaviour is missing on three of those
+ * four, which is the defect this package exists to remove.
  *
  * NO POLL. The state changes when a person presses the switch and when a
  * delivery arrives, and a delivery arrives by starting a run — which the
@@ -24,7 +26,7 @@ import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
  */
 
 export interface AutoFixDeliveryNote {
-  /** "dispatched" | "skipped" — what came of one event GitHub reported. */
+  /** "dispatched" | "steered" | "skipped" — what came of one event GitHub reported. */
   outcome: string;
   /** Juno's own sentence about it. Never the event's own words. */
   note: string;
@@ -33,8 +35,15 @@ export interface AutoFixDeliveryNote {
 
 export interface AutoFixState {
   available: boolean;
-  /** Why not, when `available` is false: no_webhook | not_cloud | no_pull_request. */
+  /** Why not, when `available` is false: no_webhook | not_cloud | app_not_installed | no_pull_request. */
   reason: string | null;
+  /**
+   * The mode the answering run would inherit from the anchor task, when the
+   * server could resolve one. `plan` is not a label — the runner denies every
+   * edit in it — so the panel says what the switch can and cannot do rather
+   * than promising a push the mode forbids.
+   */
+  permissionMode: string | null;
   enabled: boolean;
   prNumber: number | null;
   prUrl: string | null;

@@ -1070,6 +1070,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "earlier steps not shown"
   },
   {
+    "id": "0e7f0cf106cf57fa",
+    "source": "too_many_environments"
+  },
+  {
     "id": "0e8d70ac00dd1c36",
     "source": "Delete announcement?"
   },
@@ -1474,6 +1478,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "On drag"
   },
   {
+    "id": "13e59698483ea33d",
+    "source": "That environment no longer exists."
+  },
+  {
     "id": "140bedbf9c3f6d56",
     "source": "none"
   },
@@ -1862,6 +1870,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Still thinking — working in the background"
   },
   {
+    "id": "1a144dda503190b5",
+    "source": "environment_not_found"
+  },
+  {
     "id": "1a15a6773af5331a",
     "source": "Voice conversation about the task you are writing"
   },
@@ -2196,6 +2208,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1eb618412dd902a6",
     "source": "run_cap_exceeded"
+  },
+  {
+    "id": "1ecef2c55c54786d",
+    "source": "empty_patch"
   },
   {
     "id": "1ed87d21bf295e3a",
@@ -3882,6 +3898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No saved versions yet"
   },
   {
+    "id": "36b9fd04ff586d8c",
+    "source": "duplicate_name"
+  },
+  {
     "id": "36bde66f289a3568",
     "source": "manual"
   },
@@ -4108,6 +4128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3966c0ea8ff1b474",
     "source": "follow-ups"
+  },
+  {
+    "id": "39878696a79ac0e2",
+    "source": "Juno answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead."
   },
   {
     "id": "399d0f64b21089fb",
@@ -5018,6 +5042,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently shipped"
   },
   {
+    "id": "4780fb159ed89293",
+    "source": "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
+  },
+  {
     "id": "4787eaf7c938045f",
     "source": "Legal"
   },
@@ -5416,6 +5444,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4d0ef130cf526c48",
     "source": "Preparing image…"
+  },
+  {
+    "id": "4d27d5a9fb005a9f",
+    "source": "Auto-fix could not start a cloud run. The branch was not changed."
   },
   {
     "id": "4d280a451d04b7a5",
@@ -7858,6 +7890,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The stored file is unavailable and cannot be restored."
   },
   {
+    "id": "6f23a9d2a7d3625b",
+    "source": "invalid_env_var"
+  },
+  {
     "id": "6f256d90244fd5bd",
     "source": "in the file."
   },
@@ -8504,6 +8540,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7846adde46c3b4d7",
     "source": "Reads only"
+  },
+  {
+    "id": "784e653184d73f57",
+    "source": "cloud_only_option"
   },
   {
     "id": "7863d1d0857268f1",
@@ -10942,6 +10982,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Do the cloud part"
   },
   {
+    "id": "9bc0cdc2fe513faf",
+    "source": "Auto-fix needs the Juno GitHub App installed on this repository — GitHub sends a check result or a review only to the repositories the app is installed on. Install it there and the switch appears here."
+  },
+  {
     "id": "9bc6a53f7ec49024",
     "source": "Rebuilding your chats with their original titles and dates."
   },
@@ -11494,6 +11538,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "3. Hébergement"
   },
   {
+    "id": "a2ce380e2ed08896",
+    "source": "Auto-fix on"
+  },
+  {
     "id": "a2d86b47b6976600",
     "source": "How can I help"
   },
@@ -11896,6 +11944,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7e2d0791061a5e3",
     "source": "Back to the diff"
+  },
+  {
+    "id": "a7e8eecc105931e7",
+    "source": "environment_secrets_unreadable"
   },
   {
     "id": "a7ebb9583dc8c204",
@@ -12480,6 +12532,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b027702d7227e0ca",
     "source": "Juno hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens."
+  },
+  {
+    "id": "b02d1740aadf7643",
+    "source": "webhook_not_configured"
   },
   {
     "id": "b049c05cacb9016e",
@@ -13474,6 +13530,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Images"
   },
   {
+    "id": "be88129db52c5a94",
+    "source": "Environments and permission modes apply to cloud runs. A run on your own computer uses that computer's settings."
+  },
+  {
     "id": "be91940b79f46910",
     "source": "Support"
   },
@@ -13522,6 +13582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This skill no longer exists. It may have been deleted from another device."
   },
   {
+    "id": "bf6787c3b6aeacd6",
+    "source": "bad_signature"
+  },
+  {
     "id": "bf6c07f870758424",
     "source": "Connect an app"
   },
@@ -13540,6 +13604,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bfa4c0f795f8538f",
     "source": "Qualified"
+  },
+  {
+    "id": "bfa9104d3b562e74",
+    "source": "The cloud runner is not available, so nothing was attempted."
   },
   {
     "id": "bfd3d7bf58e83578",
@@ -13572,6 +13640,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c029c1046077f728",
     "source": "Reply in the message box below"
+  },
+  {
+    "id": "c02c0af8d2062121",
+    "source": "No cloud run in this session to continue from, so there was no branch to fix."
   },
   {
     "id": "c02ee9c49cf6bd4c",
@@ -14654,6 +14726,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "What you could not answer."
   },
   {
+    "id": "ceb259fef27327ab",
+    "source": "Juno could not start a run for this. Nothing was changed on the branch."
+  },
+  {
     "id": "cececbebedaa860d",
     "source": "By subscribing you accept the"
   },
@@ -14972,6 +15048,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d2a272548a19fc43",
     "source": "Could not save the voice transcript."
+  },
+  {
+    "id": "d2cf3dbc2fc91fcf",
+    "source": "Auto-fix"
   },
   {
     "id": "d2d934ca8cc5642c",
@@ -15412,6 +15492,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d8e4dcef4f3d2039",
     "source": "Conversation not found"
+  },
+  {
+    "id": "d8f4289d4ed08c88",
+    "source": "Auto-fix off"
   },
   {
     "id": "d8f65e96e482a37e",
@@ -17150,6 +17234,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "On your Mac"
   },
   {
+    "id": "ef79d2272c32657a",
+    "source": "You already have an environment with that name."
+  },
+  {
     "id": "ef8e4285827f32b5",
     "source": "Brief rationale of what is being computed or analyzed."
   },
@@ -17452,10 +17540,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f3d75a69ea9dd309",
     "source": "session.closed"
-  },
-  {
-    "id": "f3ec00fe297844cc",
-    "source": "Too many cloud runs started. Try again shortly."
   },
   {
     "id": "f3f32cc3f49b447f",
@@ -18180,6 +18264,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fecdf1d4d01c7ebd",
     "source": "Prepended to every chat, work run, and code session in this project."
+  },
+  {
+    "id": "fed17cd5f6e0771e",
+    "source": "A run is going in this session that cannot be sent a new instruction, so this was not answered."
   },
   {
     "id": "fee7326ce5659a6c",

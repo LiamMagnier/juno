@@ -296,6 +296,18 @@ export function CodeSessionBanner({
             */}
             {(report || autoFixState) && (
               <Popover onOpenChange={(open) => open && autoFix?.refresh()}>
+                {/*
+                  The chip became a button when it became a door, and a button
+                  is not a live region: a screen-reader user who was told "2
+                  checks failing" the moment the branch went red would now only
+                  find out by opening the panel. The sentence is announced from
+                  a visually-hidden status beside the trigger, which is the one
+                  arrangement that keeps both — the control is a control, and
+                  the fact still arrives unprompted.
+                */}
+                <span role="status" className="sr-only">
+                  {report ? checksLabel(report) : ""}
+                </span>
                 <PopoverTrigger
                   className={cn(BANNER_CHIP, "pressable hover:bg-accent data-[state=open]:bg-secondary")}
                   aria-label={
@@ -456,8 +468,8 @@ export function CodeSessionBanner({
  * control over a behaviour that is not there.
  *
  * The delivery notes under the switch are the reference's third outcome made
- * visible: a duplicate or a no-op is noted and skipped, and a note nobody can
- * read is not a note. They are Juno's own sentences about what it did — never
+ * visible: a no-op is noted and skipped, and a note nobody can read is not a
+ * note. They are Juno's own sentences about what it did — never
  * the comment's or the check's own words, which belong only inside the fenced
  * prompt the run is given (src/lib/code-autofix.ts).
  */
@@ -470,6 +482,23 @@ function ChecksAndAutoFix({
 }) {
   const switchId = React.useId();
   const state = autoFix?.state?.available ? autoFix.state : null;
+  /*
+   * THE ONE REFUSAL WORTH A SENTENCE. Three of the four reasons the server can
+   * give are facts the reader cannot act on from here — this run is on a Mac,
+   * this deployment has no webhook secret, no pull request exists yet — and a
+   * panel that explained them would be chrome about an absence. `app_not_
+   * installed` is different: it is about THIS repository, the remedy is one
+   * action, and without it the most likely reading of a missing switch is that
+   * the feature is broken.
+   */
+  const notInstalled = autoFix?.state && !autoFix.state.available && autoFix.state.reason === "app_not_installed";
+  /*
+   * PLAN MODE MEANS ONE OF THE THREE PROMISED OUTCOMES CANNOT HAPPEN. The
+   * answering run inherits its mode from the anchor task — correctly, a webhook
+   * decides no permissions — and in Plan the runner denies every edit. So the
+   * copy says what the run will do instead of promising a push it cannot make.
+   */
+  const planMode = state?.permissionMode === "plan";
 
   return (
     <div className="flex flex-col">
@@ -516,7 +545,22 @@ function ChecksAndAutoFix({
         </>
       )}
 
-      {report && state && <div role="separator" aria-hidden="true" className="my-1 h-px bg-border/70" />}
+      {report && (state || notInstalled) && (
+        <div role="separator" aria-hidden="true" className="my-1 h-px bg-border/70" />
+      )}
+
+      {/* Only ever seen beside a CI report, because that is the only time this
+          panel opens without a switch in it — and a reader looking at a failing
+          check is exactly the reader whose next question is why Juno is not
+          offering to answer it. The remedy is named, because "unavailable" with
+          no next step reads as broken. */}
+      {notInstalled && (
+        <p className="px-2 py-1.5 text-caption text-muted-foreground">
+          Auto-fix needs the Juno GitHub App installed on this repository — GitHub sends a check
+          result or a review only to the repositories the app is installed on. Install it there and
+          the switch appears here.
+        </p>
+      )}
 
       {state && autoFix && (
         <div className="px-2 py-1.5">
@@ -528,10 +572,13 @@ function ChecksAndAutoFix({
               {/* What it will and will not do, in the order a reader worries
                   about them. The second sentence is the one that makes the
                   switch safe to press: the run stops and asks rather than
-                  guessing, and it never leaves this branch. */}
+                  guessing, and it never leaves this branch. In Plan mode the
+                  first sentence would be a promise the permission forbids, so
+                  it is the sentence that changes — never the permission. */}
               <p className="mt-0.5 text-caption text-muted-foreground">
-                Juno answers a failing check or a review comment here by pushing a fix to this branch.
-                When the ask is unclear or would change the design, it stops and asks you instead.
+                {planMode
+                  ? "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
+                  : "Juno answers a failing check or a review comment here by pushing a fix to this branch. When the ask is unclear or would change the design, it stops and asks you instead."}
               </p>
             </div>
             <Switch

@@ -297,6 +297,34 @@ export function readAutoFixDelivery(eventName: string, rawPayload: unknown): Aut
   return readReview(payload, repo, action);
 }
 
+/**
+ * The one delivery that ENDS a watch, rather than answering one.
+ *
+ * Nothing used to close a watch. `enabled` stayed true after the pull request
+ * merged and its branch was deleted, so a late or re-run check on that ref
+ * still dispatched a cloud run onto a ref that no longer exists — which the
+ * person sees as a failed run rather than as "there is nothing to do here any
+ * more", and which is the worst way to learn that a switch is still on.
+ *
+ * Deliberately NOT part of `AUTO_FIX_EVENTS` and not an `AutoFixReading`: those
+ * three deliveries all mean "there is something to answer", and folding a
+ * fourth meaning into that union would put a closure through a code path whose
+ * every branch builds a prompt. Closed covers merged — GitHub sends `closed`
+ * either way, with `merged: true` on one of them — and the distinction does not
+ * matter here, because both mean this pull request will not be worked on again.
+ */
+export function readAutoFixClosure(
+  eventName: string,
+  rawPayload: unknown,
+): { repo: { owner: string; name: string }; prNumber: number } | null {
+  if (eventName !== "pull_request") return null;
+  const payload = obj(rawPayload);
+  if (!payload || str(payload.action) !== "closed") return null;
+  const repo = readRepo(payload);
+  const prNumber = num(obj(payload.pull_request)?.number);
+  return repo && prNumber !== null ? { repo, prNumber } : null;
+}
+
 function readCheckRun(
   payload: Json,
   repo: { owner: string; name: string },
@@ -604,6 +632,14 @@ export function autoFixTaskTitle(event: AutoFixEvent): string {
  * person's time, because each of them means a real event went unanswered, and
  * they are the reference's third outcome: noted, and skipped.
  *
+ * THERE IS NO "duplicate" HERE, though the reference names one. A duplicate is
+ * decided by the unique (watchId, digest) in `answerAutoFixDelivery`, and the
+ * participant that decides it is the database refusing the second insert —
+ * which means there is no row to write the note on, and writing a second row
+ * would be recording that Juno noticed the same thing twice. The first row
+ * already says what happened to that evidence. A note that can never be
+ * rendered is worse than no note, so the vocabulary does not claim one.
+ *
  * WHAT IS NOT IN THIS LIST IS THE POINT. There is no "too many fixes" and no
  * attempt counter. Every entry here is a fact about THIS delivery — it is a
  * repeat, a run is already going, there is no branch, the runner is down — and
@@ -613,14 +649,12 @@ export function autoFixTaskTitle(event: AutoFixEvent): string {
  * ceiling this product has.
  */
 export type AutoFixSkipReason =
-  | "duplicate"
   | "fix_in_flight"
   | "no_session"
   | "runner_unavailable"
   | "dispatch_failed";
 
 export const AUTO_FIX_SKIP_NOTE: Record<AutoFixSkipReason, string> = {
-  duplicate: "Already answered — GitHub reported the same thing again.",
   fix_in_flight:
     "A run is going in this session that cannot be sent a new instruction, so this was not answered.",
   no_session: "No cloud run in this session to continue from, so there was no branch to fix.",

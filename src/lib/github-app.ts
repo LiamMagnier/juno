@@ -152,6 +152,64 @@ export async function resolveInstallationId(config: GithubAppConfig, owner: stri
   return body && typeof body.id === "number" ? body.id : null;
 }
 
+/** How long "the app is installed here" is trusted before GitHub is asked again. */
+export const GITHUB_APP_INSTALL_TTL_MS = 10 * 60_000;
+/**
+ * And how long the opposite is. Much shorter, because the answer "no" is the
+ * one a person acts on: they read "install the app on this repository", do it,
+ * and come straight back to the same panel. A ten-minute negative would have
+ * them pressing a switch that is still not there for a reason that is no longer
+ * true. The same asymmetry `getCloudRunnerReadiness` uses, for the same reason.
+ */
+export const GITHUB_APP_INSTALL_MISS_TTL_MS = 60_000;
+
+const installCache = new Map<string, { installed: boolean; expiresAt: number }>();
+
+/** Test seam. */
+export function resetGithubAppInstallCache(): void {
+  installCache.clear();
+}
+
+/**
+ * Whether the app is installed on `owner/repo` at all — cached, because this is
+ * asked on a read path.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM `getRepoInstallationToken`. That one is asked
+ * by a run that is about to clone, and it mints a credential. This is asked by
+ * a panel deciding whether to draw a switch, several times a session, and the
+ * answer it needs is a boolean. Minting a token to find out would be a real
+ * credential issued for a question about the user interface.
+ *
+ * A LOOKUP THAT THROWS ANSWERS "NOT INSTALLED". GitHub being unreachable and
+ * the app being absent are indistinguishable from here, and the two possible
+ * mistakes are not symmetric: claiming "installed" over a failed lookup draws a
+ * control whose events will never be delivered, which is the exact defect the
+ * caller is trying to avoid. The wrong answer is cached for a minute, not ten.
+ */
+export async function isGithubAppInstalled(
+  config: GithubAppConfig | null,
+  owner: string,
+  repo: string,
+): Promise<boolean> {
+  if (!config) return false;
+  const key = `${owner}/${repo}`.toLowerCase();
+  const now = config.now?.() ?? Date.now();
+  const hit = installCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.installed;
+
+  let installed: boolean;
+  try {
+    installed = (await resolveInstallationId(config, owner, repo)) !== null;
+  } catch {
+    installed = false;
+  }
+  installCache.set(key, {
+    installed,
+    expiresAt: now + (installed ? GITHUB_APP_INSTALL_TTL_MS : GITHUB_APP_INSTALL_MISS_TTL_MS),
+  });
+  return installed;
+}
+
 /**
  * An installation token scoped to ONE repository with the runner's two
  * permissions. GitHub narrows the token to the intersection of what the

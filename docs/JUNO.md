@@ -1220,14 +1220,30 @@ in the watched conversation, dispatched by its owner — and a webhook decides n
 
 **Two tables.** `CodeAutoFixWatch` is the switch, keyed `(userId, repoOwner, repoName,
 prNumber)` and written only by `PUT /api/code/tasks/[id]/auto-fix`; that route answers
-`available: false` with a reason (`no_webhook`, `not_cloud`, `no_pull_request`) and refuses to
-store a preference nothing would honour, which is what keeps the banner from drawing a switch
-over a behaviour that is not there. `CodeAutoFixDelivery` is the duplicate guard and the note:
-its unique `(watchId, digest)` names the **evidence** (`check_run:<id>:<conclusion>`,
+`available: false` with a reason (`no_webhook`, `not_cloud`, `app_not_installed`,
+`no_pull_request`) and refuses to store a preference nothing would honour, which is what keeps
+the banner from drawing a switch over a behaviour that is not there. `app_not_installed` is
+the only one of the four that is per-repository and the only one with a remedy, so the panel
+names it: Juno deliberately runs in the cloud on repositories the App does not cover — the
+clone falls back to the submitter's OAuth token — but **GitHub delivers webhooks along the
+App's installations**, so on such a repository no check run and no review would ever arrive.
+The answer is cached with a TTL, because the panel re-reads the route on every code-sync
+event. The watch is also turned **off** by `pull_request.closed`: a merged pull request
+usually takes its branch with it, and a late check on that ref would otherwise dispatch a run
+onto a branch that no longer exists. `CodeAutoFixDelivery` is the duplicate guard and the
+note: its unique `(watchId, digest)` names the **evidence** (`check_run:<id>:<conclusion>`,
 `review_comment:<id>`, `review:<id>`) rather than the delivery, so a redelivery is caught and
-a re-run — a new check-run id — is correctly treated as new evidence. The rows are also what
-the banner's panel shows, because "a duplicate or no-op is noted and skipped" needs the note
-to be readable.
+a re-run — a new check-run id — is correctly treated as new evidence. A skip for a reason
+about the *world* rather than about the delivery (the runner was down, the dispatch failed)
+releases that digest, so a five-minute outage does not leave every check that arrived during
+it permanently "answered". The rows are also what the banner's panel shows, because "a
+no-op is noted and skipped" needs the note to be readable.
+
+**And it says what the session's mode means for it.** The answering run inherits its
+permission mode from the anchor task — a webhook decides no permissions — but `plan` is not a
+label: the runner denies every edit in it. So the route reports the resolved mode and the
+panel's own sentence changes with it ("Juno will investigate and reply in this session; while
+this session is set to Plan it will not push"). The copy is what moves, never the permission.
 
 **Only people who could already push are answered.** A comment or review is acted on only
 when GitHub's own `author_association` on it is `OWNER`, `MEMBER` or `COLLABORATOR`, and never
@@ -1239,17 +1255,32 @@ need no such gate: creating one already requires write access to the repository.
 **There is no attempt ceiling, deliberately.** The obvious guard is "at most N auto-fixes per
 pull request" and it is the wrong one: the fifth failing check is as real as the first, and a
 run that stops because of a counter leaves a branch broken with nothing said. What is enforced
-is serialisation — one auto-fix run per branch at a time, because two runs pushing to one
-branch race — plus the duplicate guard. A second event arriving while a fix is going is not
-dropped: it is appended to that run as a **`steer`** (§9.1), which the cloud driver folds into
-the agent's next step, or into its opening prompt for a run that has not started. That matters
-because the commonest case is a reviewer leaving five line comments at once. Everything else
-is bounded by the account's own usage window.
+is serialisation — one run per conversation at a time, because two runs pushing to one branch
+race — plus the duplicate guard. A second event arriving while a fix is going is not dropped:
+it is appended to that run as a **`steer`** (§9.1) carrying both a `text` for the agent and a
+short `displayText` for every surface that renders it, which the cloud driver folds into the
+agent's next step, or into its opening prompt for a run that has not started. That matters
+because the commonest case is a reviewer leaving five line comments at once.
+
+**And there is no concurrency cap anywhere any more.** `POST /api/code/tasks` used to carry
+two abuse controls of its own — ten cloud dispatches a minute, and at most three cloud runs in
+flight per user — and both have been removed. A count of runs is not the resource. What a run
+spends is plan budget and the rolling 5-hour and weekly windows, which are metered for real
+(`src/lib/spend.ts`), shown in settings, and count the work rather than the clicks; a second,
+invisible ceiling on top of them could only refuse work the plan already allows, in a sentence
+that names no window and no reset. It also failed in a direction nobody chose: auto-fix runs
+are cloud runs, so a person with three pull requests answering their own reviewers was locked
+out of their own composer. **The account's usage window is the only ceiling, and it is the
+only one a person can see.** What both creators of a run still share is the lock —
+`codeRunLockKey`, per conversation (`src/lib/code-run-lock.ts`) — so a composer send racing a
+webhook delivery contends instead of passing two guards that never meet.
 
 **Setting it up.** On the same GitHub App as §9.3, set the webhook URL to
 `https://<your app>/api/github/webhook`, generate a secret into `GITHUB_APP_WEBHOOK_SECRET`,
-and subscribe the App to *Check run*, *Pull request review* and *Pull request review comment*.
-Without the secret the switch is simply not offered.
+and subscribe the App to *Check run*, *Pull request*, *Pull request review* and *Pull request
+review comment*. Install it on the repositories you want answered — deliveries follow the
+App's installations, so a repository it is not installed on is told so rather than offered a
+switch. Without the secret the switch is simply not offered anywhere.
 
 ---
 

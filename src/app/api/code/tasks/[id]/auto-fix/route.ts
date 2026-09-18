@@ -3,14 +3,15 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
-import { githubWebhookSecretFromEnv } from "@/lib/github-app";
+import { githubAppConfigFromEnv, githubWebhookSecretFromEnv, isGithubAppInstalled } from "@/lib/github-app";
+import { isCodePermissionMode, type CodePermissionMode } from "@/lib/code-environments";
 
 export const runtime = "nodejs";
 
 /**
  * The per-pull-request auto-fix toggle.
  *
- *   GET → 200 { available, reason, enabled, prNumber, prUrl, recent: [{…}] }
+ *   GET → 200 { available, reason, permissionMode, enabled, prNumber, prUrl, recent: [{…}] }
  *   PUT { enabled } → 200 the same shape
  *         400 invalid input
  *         401 unauthenticated
@@ -23,7 +24,7 @@ export const runtime = "nodejs";
  * feature: the reader flips it, nothing ever happens, and the product has
  * quietly lied about what it is. So the client is told whether auto-fix is
  * POSSIBLE here before it is told whether it is on, and it draws the control
- * only for `available: true`. Three things have to be true, and each has its
+ * only for `available: true`. Four things have to be true, and each has its
  * own reason:
  *
  *   `no_webhook`   — the deployment has no GITHUB_APP_WEBHOOK_SECRET, so no
@@ -31,12 +32,28 @@ export const runtime = "nodejs";
  *   `not_cloud`    — a device run works in a folder on someone's Mac. There is
  *                    no branch on GitHub for CI to have an opinion about, which
  *                    is the same refusal `/checks` already makes.
+ *   `app_not_installed` — the only one of the four that is PER REPOSITORY.
+ *                    Juno deliberately runs in the cloud on repositories the
+ *                    app does not cover: `chooseCloneCredential` falls back to
+ *                    the submitter's OAuth token with that exact reason. But
+ *                    GitHub delivers webhooks along the app's INSTALLATIONS, so
+ *                    on such a repository no `check_run` and no review will ever
+ *                    reach `/api/github/webhook` — the switch would be on, the
+ *                    row would say so, and nothing could ever happen.
  *   `no_pull_request` — nothing has been opened yet. Auto-fix answers events on
  *                    a pull request; without one there is nothing to watch.
  *
- * PUT refuses for the same three, rather than storing a preference nothing
+ * PUT refuses for the same four, rather than storing a preference nothing
  * honours — the argument `POST /api/code/tasks` makes about environments and
  * permission modes on a device task.
+ *
+ * ── AND IT SAYS WHAT THE SESSION'S MODE MEANS FOR IT ───────────────────────
+ *
+ * `permissionMode` rides along on both answers. The follow-up run inherits its
+ * mode from the anchor task, which is the right security choice and is not
+ * negotiable here; but `plan` is not a label — the runner denies every edit in
+ * it — so in a Plan session auto-fix can investigate and answer and cannot
+ * push. The panel's own sentence is what changes, not the permission.
  *
  * ── AND IT IS OFF UNTIL SOMEONE SAYS OTHERWISE ─────────────────────────────
  *
@@ -51,10 +68,12 @@ const schema = z.object({ enabled: z.boolean() });
 /** How many past deliveries the panel shows. Enough to see a pattern, not a log. */
 const RECENT_LIMIT = 5;
 
-type Unavailable = "no_webhook" | "not_cloud" | "no_pull_request";
+type Unavailable = "no_webhook" | "not_cloud" | "app_not_installed" | "no_pull_request";
 
 interface Resolved {
   reason: Unavailable | null;
+  /** The mode the answering run would inherit, resolved the way the dispatcher resolves it. */
+  permissionMode: CodePermissionMode | null;
   repoOwner: string | null;
   repoName: string | null;
   prNumber: number | null;
@@ -83,12 +102,14 @@ async function resolve(userId: string, taskId: string): Promise<Resolved | null>
       prUrl: true,
       branch: true,
       conversationId: true,
+      permissionMode: true,
     },
   });
   if (!task) return null;
 
   const base: Resolved = {
     reason: null,
+    permissionMode: isCodePermissionMode(task.permissionMode) ? task.permissionMode : null,
     repoOwner: task.repoOwner,
     repoName: task.repoName,
     prNumber: task.prNumber,
@@ -108,14 +129,36 @@ async function resolve(userId: string, taskId: string): Promise<Resolved | null>
     return { ...base, reason: "not_cloud" };
   }
   if (!githubWebhookSecretFromEnv()) return { ...base, reason: "no_webhook" };
+  /*
+   * Asked of GitHub, because nothing in this database knows it: a cloud run on
+   * a repository the app does not cover is an ordinary, supported session — it
+   * clones with the submitter's OAuth token — and it is exactly the session
+   * where this switch would do nothing, because deliveries follow the app's
+   * installations. Cached with a TTL (`isGithubAppInstalled`), since the panel
+   * re-reads this route on mount and on every code-sync event and a GitHub
+   * round trip per sync is not acceptable.
+   */
+  if (!(await isGithubAppInstalled(githubAppConfigFromEnv(), task.repoOwner, task.repoName))) {
+    return { ...base, reason: "app_not_installed" };
+  }
 
-  if ((base.prNumber === null || base.branch === null) && task.conversationId) {
+  /*
+   * One read, two questions. The newest cloud run in this conversation is the
+   * dispatcher's ANCHOR — the row it copies the permission mode off — so the
+   * mode reported here is the mode the answering run would actually get, rather
+   * than whatever the task the reader happens to have open was created with.
+   */
+  if (task.conversationId) {
     const siblings = await prisma.codeTask.findMany({
       where: { userId, conversationId: task.conversationId, target: "cloud" },
       orderBy: { createdAt: "desc" },
-      select: { prNumber: true, prUrl: true, branch: true },
+      select: { prNumber: true, prUrl: true, branch: true, permissionMode: true },
       take: 20,
     });
+    const anchor = siblings[0];
+    if (anchor) {
+      base.permissionMode = isCodePermissionMode(anchor.permissionMode) ? anchor.permissionMode : null;
+    }
     base.prNumber = base.prNumber ?? siblings.find((row) => row.prNumber !== null)?.prNumber ?? null;
     base.prUrl = base.prUrl ?? siblings.find((row) => row.prUrl)?.prUrl ?? null;
     /*
@@ -135,6 +178,7 @@ async function describe(userId: string, resolved: Resolved) {
     return {
       available: false,
       reason: resolved.reason,
+      permissionMode: resolved.permissionMode,
       enabled: false,
       prNumber: resolved.prNumber,
       prUrl: resolved.prUrl,
@@ -162,6 +206,7 @@ async function describe(userId: string, resolved: Resolved) {
   return {
     available: true,
     reason: null,
+    permissionMode: resolved.permissionMode,
     enabled: watch?.enabled ?? false,
     prNumber: resolved.prNumber,
     prUrl: resolved.prUrl,
