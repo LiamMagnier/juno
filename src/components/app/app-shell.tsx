@@ -96,6 +96,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // narrower than a phone; the rail stays in flow and the full panel becomes
   // an overlay you summon and dismiss.
   const [narrow, setNarrow] = React.useState(false);
+  /*
+   * AT md–lg THE PANEL IS SUMMONED, NEVER ARRIVED IN.
+   *
+   * `floating` used to be `narrow && !collapsed`, and `collapsed` defaults to
+   * false — so a first visit at 768–1023 painted the full 256px panel on top
+   * of the page, over a 5%-alpha scrim, with the greeting clipped behind it.
+   * The reader's first frame was their content covered by a menu nobody
+   * opened, and the only way out was to guess that the pale wash to its right
+   * was a dismiss target.
+   *
+   * This band is the one place the panel is an OVERLAY rather than a column,
+   * and an overlay has exactly one honest default: shut. So the narrow band
+   * gets its own open flag, held in memory rather than in localStorage —
+   * "expanded" is a preference about a column you can see beside your work,
+   * and it does not transfer to a thing that covers it. Leaving the band drops
+   * the flag, so a window dragged back past 1024 returns to the stored
+   * preference rather than to whatever the overlay was last doing.
+   */
+  const [narrowOpen, setNarrowOpen] = React.useState(false);
+  /** `narrow`, readable from handlers that were built before this render. */
+  const narrowRef = React.useRef(false);
+  narrowRef.current = narrow;
   const [streaming, setStreaming] = React.useState(false);
   // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
   // the ref mirrors it so pointermove handlers never read a stale closure.
@@ -195,7 +217,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px) and (max-width: 1023px)");
-    const sync = () => setNarrow(mq.matches);
+    const sync = () => {
+      setNarrow(mq.matches);
+      // Leaving the band forgets the overlay. Entering it needs nothing: the
+      // flag is already false, which is the rail.
+      if (!mq.matches) setNarrowOpen(false);
+    };
     mq.addEventListener("change", sync);
     sync();
     return () => mq.removeEventListener("change", sync);
@@ -256,7 +283,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
-    const collapseSidebar = () => setCollapsedPersist(true);
+    const collapseSidebar = () => {
+      if (narrowRef.current) setNarrowOpen(false);
+      else setCollapsedPersist(true);
+    };
     window.addEventListener("juno:collapse-sidebar", collapseSidebar);
     return () => window.removeEventListener("juno:collapse-sidebar", collapseSidebar);
   }, [setCollapsedPersist]);
@@ -312,7 +342,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => mq.removeEventListener("change", sync);
   }, [setSidebarOpen]);
 
-  const toggleCollapse = React.useCallback(() => setCollapsedPersist((prev) => !prev), [setCollapsedPersist]);
+  const toggleCollapse = React.useCallback(() => {
+    // In the band the control opens and closes an overlay, which is not a
+    // preference and is not written down.
+    if (narrowRef.current) setNarrowOpen((prev) => !prev);
+    else setCollapsedPersist((prev) => !prev);
+  }, [setCollapsedPersist]);
 
   // ⌘⇧S at any width: below md it opens the drawer, which is the sidebar there.
   const toggleAnySidebar = React.useCallback(() => {
@@ -326,11 +361,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [toggleAnySidebar]);
 
   // The floating panel dismisses on navigation, like a menu that did its job.
-  const floating = narrow && !collapsed;
+  const floating = narrow && narrowOpen;
+  /*
+   * What the COLUMN is, at this width. Inside the band it is the narrow
+   * overlay's flag; outside it, the stored preference. Every consumer below
+   * reads this rather than `collapsed`, so there is one answer to "is the
+   * panel showing" instead of two that can disagree at the breakpoint.
+   */
+  const shown = narrow ? narrowOpen : !collapsed;
   const floatingRef = React.useRef(floating);
   floatingRef.current = floating;
   React.useEffect(() => {
-    if (floatingRef.current) setCollapsedPersist(true);
+    if (floatingRef.current) setNarrowOpen(false);
     // Only the route change should dismiss it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
@@ -356,8 +398,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             aria-label="Close sidebar"
-            onClick={() => setCollapsedPersist(true)}
-            className="absolute inset-0 z-30 hidden cursor-default bg-foreground/5 motion-safe:animate-fade-in md:block"
+            onClick={() => setNarrowOpen(false)}
+            /* /10, not /5. At a twentieth the wash was imperceptible on paper
+               — the page behind the panel looked exactly as it had a frame
+               earlier, so nothing said the panel was a layer you could
+               dismiss by clicking past it. A tenth is still light enough to
+               read the transcript through, which is the point of a soft
+               dismiss rather than a modal. */
+            className="absolute inset-0 z-30 hidden cursor-default bg-foreground/10 motion-safe:animate-fade-in md:block"
           />
         </>
       )}
@@ -370,18 +418,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         data-floating={floating ? "" : undefined}
         className={cn(
           "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
-          floating ? "absolute inset-y-0 left-0 z-40" : "relative",
+          /* FLOATING MEANS ELEVATED. Over the content the panel had the same
+             hairline it wears as a column, so it read as a layout glitch —
+             a page that had failed to reflow — rather than as something
+             sitting above the page. The float shadow is the one thing that
+             says "this is a layer", and it is the same shadow every other
+             floating surface in the product wears. */
+          floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative",
           !resizing && "transition-[width] duration-base ease-in-out"
         )}
         style={
           {
-            width: collapsed ? RAIL_WIDTH : sidebarWidth,
+            width: shown ? sidebarWidth : RAIL_WIDTH,
             "--juno-sidebar-width": `${sidebarWidth}px`,
           } as React.CSSProperties
         }
       >
-        <AppSidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} product={product} />
-        {!collapsed && (
+        <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
+        {shown && (
           <div
             role="separator"
             aria-orientation="vertical"
@@ -440,7 +494,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         id="juno-main"
         tabIndex={-1}
         className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
-        style={{ "--juno-sidebar-width": collapsed || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
+        style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
       >
         <StreamProgress active={streaming} />
 

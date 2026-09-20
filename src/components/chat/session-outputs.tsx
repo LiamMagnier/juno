@@ -245,10 +245,16 @@ export function SessionOutputs({
               <h2 id="session-outputs-heading" className="text-body font-medium text-foreground">
                 Outputs
               </h2>
-              <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-4">
+              {/* TWO COLUMNS ONLY WHEN THERE ARE TWO THINGS. A lone tile in a
+                  two-column grid is a 150px card with 170px of nothing beside
+                  it, which reads as a panel that failed to load the rest. One
+                  output takes the full width and turns landscape to fill it;
+                  the card is the same card either way. */}
+              <ul className={cn("mt-3 grid gap-x-3 gap-y-4", outputs.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
                 {outputs.map((o) => (
                   <li key={o.id} className="min-w-0">
                     <OutputCard
+                      wide={outputs.length === 1}
                       tile={o}
                       onOpen={
                         o.identifier
@@ -302,7 +308,10 @@ export function SessionOutputs({
  * canvas; a generated image has no second view, and a control that looks
  * pressable and does nothing is worse than a static card.
  */
-function OutputCard({ tile, onOpen }: { tile: OutputTile; onOpen?: () => void }) {
+function OutputCard({ tile, onOpen, wide }: { tile: OutputTile; onOpen?: () => void; wide?: boolean }) {
+  // 4:3 in a column, 16:9 across the panel: a full-width tile at 4:3 is 216px
+  // tall and turns a one-item list into a poster.
+  const ratio = wide ? "aspect-[16/9]" : "aspect-[4/3]";
   const body = (
     <>
       {tile.imageUrl ? (
@@ -312,11 +321,11 @@ function OutputCard({ tile, onOpen }: { tile: OutputTile; onOpen?: () => void })
         <img
           src={tile.imageUrl}
           alt=""
-          className="surface-inset aspect-[4/3] w-full rounded-field object-cover"
+          className={cn("surface-inset w-full rounded-field object-cover", ratio)}
           loading="lazy"
         />
       ) : (
-        <ArtifactPreview type={tile.type} preview={tile.preview} title={tile.title} className="aspect-[4/3] w-full" />
+        <ArtifactPreview type={tile.type} preview={tile.preview} title={tile.title} className={cn("w-full", ratio)} />
       )}
       <p className="mt-2 truncate text-ui text-foreground">{tile.title}</p>
       <p className="truncate text-caption text-muted-foreground">{tile.label}</p>

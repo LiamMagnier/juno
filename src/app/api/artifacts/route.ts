@@ -51,12 +51,25 @@ export async function GET() {
    * the user's own conversations — and the ids are parameterised, so this
    * cannot widen what the caller can see.
    */
+  /*
+   * `::int` ON THE LENGTH IS LOAD-BEARING, and its absence broke this page for
+   * every account that owned an artifact.
+   *
+   * Prisma binds a JS number as int8. Postgres has `left(text, integer)` and
+   * no `left(text, bigint)`, so the query failed with 42883 and the grid
+   * rendered "Couldn't load your artifacts" — but only once you had one,
+   * because the guard below skips the query at zero. An empty library looked
+   * perfect and a used one did not, which is why it survived.
+   *
+   * src/lib/search/sql.ts casts every one of these for exactly this reason.
+   * This was the one call site that did not.
+   */
   const previews = new Map<string, string>();
   if (artifacts.length > 0) {
     const rows = await prisma.$queryRaw<{ artifactId: string; preview: string | null }[]>`
       SELECT DISTINCT ON (v."artifactId")
              v."artifactId" AS "artifactId",
-             left(v."content", ${PREVIEW_CHARS}) AS "preview"
+             left(v."content", ${PREVIEW_CHARS}::int) AS "preview"
       FROM "ArtifactVersion" v
       WHERE v."artifactId" IN (${Prisma.join(artifacts.map((a) => a.id))})
       ORDER BY v."artifactId", v."version" DESC
