@@ -297,10 +297,22 @@ export function normalizeProviderError(err: unknown, subject?: ErrorSubject): No
       userMessage = "Juno ran into a problem generating a response. Please try again.";
   }
 
+  /*
+   * The MODEL goes in the log too, and the omission is what made the report
+   * this file was last edited for hard to answer. "[Google] rate_limit
+   * status=429" is the same line for a throttled flagship and a healthy
+   * workhorse, so a log full of them cannot tell you which id is failing —
+   * which is the only fact worth having when a provider meters per model.
+   */
   const operatorMessage = [
-    providerLabel ? `[${providerLabel}]` : null,
+    modelName && providerLabel && modelName !== providerLabel
+      ? `[${providerLabel} · ${modelName}]`
+      : providerLabel || modelName
+        ? `[${providerLabel ?? modelName}]`
+        : null,
     klass,
     status !== null ? `status=${status}` : null,
+    retryAfterSeconds !== null ? `retry_after=${retryAfterSeconds}s` : null,
     raw ? raw.slice(0, 500) : null,
   ]
     .filter(Boolean)

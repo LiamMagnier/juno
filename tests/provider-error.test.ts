@@ -257,3 +257,11 @@ test("the old positional string still names the subject", () => {
   const normalized = normalizeProviderError(gemini429, "Google");
   assert.match(normalized.userMessage, /^Google /);
 });
+
+test("the operator line names the model as well as the provider", () => {
+  const normalized = normalizeProviderError(gemini429, { model: "Gemini 3.8 Flash", provider: "Google" });
+  // Per-model metering means a log without the id cannot say which model is
+  // failing — every throttled Gemini row writes the same line without it.
+  assert.match(normalized.operatorMessage, /\[Google · Gemini 3\.8 Flash\]/);
+  assert.match(normalized.operatorMessage, /retry_after=35s/);
+});
