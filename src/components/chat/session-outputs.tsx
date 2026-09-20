@@ -7,6 +7,8 @@ import { RollingNumber } from "@/components/ui/micro";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppIcons, CodeIcons, ComposerIcons } from "@/lib/app-icons";
+import { SettingsIcons } from "@/lib/app-icons";
+import { resolveModel } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ClientArtifact, ClientMessage } from "@/types/chat";
@@ -99,6 +101,19 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
   }));
 
   const uploads: string[] = [];
+  /*
+   * WHICH MODEL ACTUALLY ANSWERED, in order of first appearance.
+   *
+   * `Message.model` is the EFFECTIVE model — `modelId = modelInfo.id` in the
+   * chat route, set after eligibility, provider health and any Auto
+   * substitution have had their say — so this is the one place in the product
+   * that reports what was really called rather than what was asked for. That
+   * distinction is the whole reason the row exists: a person who picks a model
+   * and gets billed for another has no way to notice from a picker that keeps
+   * showing their choice, because the picker shows the CONVERSATION's sticky
+   * selection and the turn is a different fact.
+   */
+  const models: string[] = [];
   let searchTurns = 0;
   const searchSources = new Set<string>();
   const memories = new Set<string>();
@@ -126,6 +141,8 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
       }
     }
 
+    if (m.role === "ASSISTANT" && m.model && !models.includes(m.model)) models.push(m.model);
+
     if (m.sources?.length) {
       searchTurns += 1;
       for (const s of m.sources) if (s.url) searchSources.add(s.url);
@@ -144,6 +161,18 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
   outputs.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
   const used: UsedRow[] = [];
+  if (models.length > 0) {
+    const names = models.map((id) => resolveModel(id)?.name ?? id);
+    used.push({
+      id: "models",
+      Glyph: SettingsIcons.models,
+      // Plural when a conversation changed models mid-way, which is worth
+      // noticing on its own: it means an answer above was not written by the
+      // model the composer is showing you now.
+      label: names.length === 1 ? "Model" : "Models",
+      detail: names.length <= 2 ? names.join(" · ") : `${names[0]} +${names.length - 1}`,
+    });
+  }
   if (uploads.length > 0) {
     used.push({
       id: "uploads",

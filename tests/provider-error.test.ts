@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyProviderError, normalizeProviderError } from "@/lib/provider-error";
+import { classifyProviderError, normalizeProviderError, retryAfterFrom } from "@/lib/provider-error";
 
 /*
  * Fixtures shaped like what each SDK actually throws. The four billing cases
@@ -195,4 +195,65 @@ test("malformed input never throws", () => {
   for (const err of [null, undefined, 0, "", [], {}, new Error()]) {
     assert.doesNotThrow(() => normalizeProviderError(err));
   }
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * A rate limit belongs to a MODEL, and it comes with a number.
+ *
+ * Written from a real report: a person picked Gemini 3.8 Flash, got nothing,
+ * and pressed Try again repeatedly. Google meters each Gemini id separately —
+ * a new flagship's free-tier ceiling is the lowest in the catalogue — so the
+ * old copy ("Google is busy or rate-limiting right now. Try again in a
+ * moment.") was wrong twice: it blamed a provider that was answering fine on
+ * every other row, and it replaced a number the provider had supplied with
+ * the word "moment".
+ */
+
+const gemini429 = Object.assign(
+  new Error("Gemini generateContent failed: You exceeded your current quota. Please retry in 34.2s."),
+  { status: 429 }
+);
+const gemini429Bare = Object.assign(new Error("RESOURCE_EXHAUSTED: rate limit exceeded"), { status: 429 });
+
+test("retryAfterFrom reads both spellings, and refuses nonsense", () => {
+  assert.equal(retryAfterFrom("Please retry in 34.2s"), 35);
+  assert.equal(retryAfterFrom("please retry after 7s"), 7);
+  assert.equal(retryAfterFrom("try again in 90s"), 90);
+  assert.equal(retryAfterFrom("retry-after: 12"), 12);
+  assert.equal(retryAfterFrom("no delay here"), null);
+  assert.equal(retryAfterFrom("retry in 0s"), null);
+});
+
+test("a rate limit names the model, not the provider", () => {
+  const normalized = normalizeProviderError(gemini429, { model: "Gemini 3.8 Flash", provider: "Google" });
+  assert.equal(normalized.class, "rate_limit");
+  assert.match(normalized.userMessage, /Gemini 3\.8 Flash/);
+  // The provider must NOT be the subject: it was answering on every other row.
+  assert.doesNotMatch(normalized.userMessage, /^Google /);
+});
+
+test("a rate limit passes on the wait the provider asked for", () => {
+  const normalized = normalizeProviderError(gemini429, { model: "Gemini 3.8 Flash", provider: "Google" });
+  assert.equal(normalized.retryAfterSeconds, 35);
+  assert.match(normalized.userMessage, /35 seconds/);
+  assert.doesNotMatch(normalized.userMessage, /in a moment/);
+});
+
+test("with no stated wait it still says whose quota this is", () => {
+  const normalized = normalizeProviderError(gemini429Bare, { model: "Gemini 3.8 Flash", provider: "Google" });
+  assert.equal(normalized.retryAfterSeconds, null);
+  assert.match(normalized.userMessage, /that model's own quota/);
+  assert.match(normalized.userMessage, /pick another model/i);
+});
+
+test("an unavailable model still names the provider it is unavailable from", () => {
+  const missing = Object.assign(new Error("models/gemini-9.9-flash is not found"), { status: 404 });
+  const normalized = normalizeProviderError(missing, { model: "Gemini 9.9 Flash", provider: "Google" });
+  assert.equal(normalized.class, "not_found");
+  assert.match(normalized.userMessage, /from Google/);
+});
+
+test("the old positional string still names the subject", () => {
+  const normalized = normalizeProviderError(gemini429, "Google");
+  assert.match(normalized.userMessage, /^Google /);
 });

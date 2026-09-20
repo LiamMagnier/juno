@@ -47,7 +47,31 @@ export interface NormalizedProviderError {
   /** Full detail, for logs and operator alerts. Never rendered to a user. */
   operatorMessage: string;
   status: number | null;
+  /**
+   * How long the provider asked us to wait, when it said so.
+   *
+   * Gemini puts it in the 429 body ("Please retry in 34.2s") and most
+   * providers also send a `retry-after` header; `gemini-network.ts` has parsed
+   * the body for its own backoff since the beginning and thrown the number
+   * away before anyone could read it. It is the difference between "try again
+   * in a moment" — which is what made a person click Try again eleven times —
+   * and a number they can wait out.
+   */
+  retryAfterSeconds: number | null;
 }
+
+/**
+ * Who the message is about.
+ *
+ * A string stays the subject, which is what every older call site passes.
+ * The object form exists because the two are not interchangeable: a rate
+ * limit is almost always per MODEL (Google meters Gemini 3.8 Flash separately
+ * from 3.5 Flash, and a brand-new flagship's free-tier ceiling is the lowest
+ * in the catalogue), while "not available from" is about the PROVIDER. Saying
+ * "Google is busy" when one model of thirty is throttled sends the reader off
+ * to check Google's status page instead of to the model picker.
+ */
+export type ErrorSubject = string | { model?: string | null; provider?: string | null };
 
 interface ExtractedError {
   status: number | null;
@@ -182,10 +206,40 @@ const ACCOUNT_FAULT: Record<ProviderErrorClass, boolean> = {
  * length, etc.), but never pass through the raw provider body because it can
  * contain credentials, account identifiers, or opaque SDK envelopes.
  */
-export function normalizeProviderError(err: unknown, providerLabel?: string): NormalizedProviderError {
+/**
+ * Seconds the provider asked for, from its own words.
+ *
+ * Both spellings are real: Gemini writes "Please retry in 34.2s" into the 429
+ * body, OpenAI and Anthropic send `retry-after` as a header the SDKs fold into
+ * the message. A minute or more is rounded to whole seconds because nobody
+ * waits out a decimal.
+ */
+export function retryAfterFrom(raw: string): number | null {
+  const match =
+    /retry (?:in|after)\s*([0-9]+(?:\.[0-9]+)?)\s*s/i.exec(raw) ??
+    /try again in\s*([0-9]+(?:\.[0-9]+)?)\s*s/i.exec(raw) ??
+    /retry-after[:=]\s*([0-9]+)/i.exec(raw);
+  if (!match) return null;
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+}
+
+/** "in 34 seconds" / "in 2 minutes" — a wait a person can actually act on. */
+function waitPhrase(seconds: number): string {
+  if (seconds < 60) return `in ${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `in ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+export function normalizeProviderError(err: unknown, subject?: ErrorSubject): NormalizedProviderError {
   const { class: klass, status, raw } = classifyProviderError(err);
-  const who = providerLabel ?? "This model";
+  const modelName = typeof subject === "string" ? subject : subject?.model ?? null;
+  const providerLabel = typeof subject === "string" ? subject : subject?.provider ?? null;
+  // The model when we know it, because that is what the reader chose and what
+  // the provider is metering; the provider only as a fallback.
+  const who = modelName ?? providerLabel ?? "This model";
   const label = providerLabel ?? "provider";
+  const retryAfterSeconds = retryAfterFrom(raw);
 
   let userMessage: string;
   switch (klass) {
@@ -196,7 +250,27 @@ export function normalizeProviderError(err: unknown, providerLabel?: string): No
       userMessage = `${who} cannot respond because its API credits or provider quota are exhausted. Choose another model while service is restored.`;
       break;
     case "rate_limit":
-      userMessage = `${who} is busy or rate-limiting right now. Try again in a moment.`;
+      /*
+       * NAME THE MODEL AND THE WAIT.
+       *
+       * This said "<provider> is busy or rate-limiting right now. Try again in
+       * a moment." Two things were wrong with it, and together they produced
+       * the report this was written from — a person choosing Gemini 3.8 Flash,
+       * getting nothing, and pressing Try again until they gave up.
+       *
+       * It blamed the provider. Google meters each Gemini id separately and a
+       * new flagship's free-tier ceiling is the lowest in the catalogue, so
+       * "Google is busy" is false: every other Gemini row was answering fine.
+       * It also sent the reader to the wrong place — a status page, not the
+       * model picker.
+       *
+       * And "in a moment" is not a number. The provider almost always sends
+       * one; it was parsed for our own backoff and discarded before anyone
+       * could read it.
+       */
+      userMessage = retryAfterSeconds
+        ? `${who} has hit its rate limit. Try again ${waitPhrase(retryAfterSeconds)}, or pick another model.`
+        : `${who} has hit its rate limit — this is that model's own quota, not the whole provider. Try again shortly, or pick another model.`;
       break;
     case "context":
       userMessage =
@@ -239,5 +313,6 @@ export function normalizeProviderError(err: unknown, providerLabel?: string): No
     userMessage,
     operatorMessage,
     status,
+    retryAfterSeconds,
   };
 }

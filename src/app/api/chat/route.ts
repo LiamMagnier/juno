@@ -1208,7 +1208,7 @@ async function handleChat(req: Request) {
                 ? SHUTDOWN_USER_MESSAGE
                 : reason === "user_stopped"
                   ? "Generation stopped before any output."
-                  : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+                  : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
             sendActivity({
               kind: "warning",
               title: finishReasonTitle(reason),
@@ -2932,7 +2932,7 @@ async function handleChat(req: Request) {
             await markDurableReceiptFailed("error", failureCode);
             send({
               type: "error",
-              message: providerErrorMessage(persistErr, PROVIDERS[modelInfo.provider].label),
+              message: providerErrorMessage(persistErr, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label }),
               quota,
               finishReason: "error",
               ...(durableGenerationId
@@ -2968,7 +2968,7 @@ async function handleChat(req: Request) {
                     ? stallMessageFor(stallWatchdog)
                     : wasGenerationAbortedForShutdown(generationId)
                       ? SHUTDOWN_USER_MESSAGE
-                      : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+                      : providerErrorMessage(err, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
@@ -3019,7 +3019,7 @@ async function handleChat(req: Request) {
         const failureCode = terminalFailureCode(durableReceiptLeaseLost, INTERNAL_ERROR_FAILURE_CODE);
         await markDurableReceiptFailed(finishReason, failureCode);
         const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
-        const message = providerErrorMessage(error, PROVIDERS[modelInfo.provider].label);
+        const message = providerErrorMessage(error, { model: modelInfo.name, provider: PROVIDERS[modelInfo.provider].label });
         // This path bypasses the sender, so the frame is logged by hand. A
         // reconnecting client would otherwise tail a log whose last frame is
         // mid-answer and wait out the terminal grace before giving up.

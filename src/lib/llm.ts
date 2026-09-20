@@ -8,7 +8,7 @@ import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import { normalizeProviderError } from "@/lib/provider-error";
+import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
 import { providerAdapterFor } from "@/lib/provider-routing";
 import { clampMaxTokens } from "@/lib/provider-limits";
@@ -172,8 +172,8 @@ export async function* streamChat(opts: {
  * auth and billing to one neutral sentence would otherwise erase the only
  * signal that a provider account has run dry.
  */
-export function providerErrorMessage(err: unknown, providerLabel?: string): string {
-  const normalized = normalizeProviderError(err, providerLabel);
+export function providerErrorMessage(err: unknown, subject?: ErrorSubject): string {
+  const normalized = normalizeProviderError(err, subject);
   if (normalized.accountFault) {
     console.error("[provider] account fault", { detail: normalized.operatorMessage });
   }
