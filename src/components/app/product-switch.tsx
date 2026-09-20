@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, type MotionValue } from "framer-motion";
 import { Sparkles } from "lucide-react";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
@@ -10,6 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { PLANS, planRank } from "@/lib/plans";
 import { spring } from "@/lib/motion";
+import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import type { ClientQuota } from "@/types/chat";
 
@@ -163,6 +164,23 @@ export function ProductSwitch({
   // one thumb try to fly across to the other tree.
   const thumbId = `${React.useId()}-product-thumb`;
   const thumbTransition = reduceMotion ? { duration: 0 } : spring.standard;
+  /*
+   * THE THUMB IS RUBBER, NOT A TILE (lib/micro.ts, `STRETCH`).
+   *
+   * `layoutId` already moves it, and a rigid box sliding 32px reads as a
+   * sprite being repositioned. Stretched 10% along the travel and squashed
+   * 6% across it, the same 32px reads as one object being pulled — the
+   * reference calls this dilation and runs it at 19%, which is right for a
+   * showcase and twice what a control pressed in the corner of a work tool
+   * should be doing.
+   *
+   * The counter lives HERE rather than on the segment, because the segment
+   * that receives the thumb has just mounted: its own first effect is the
+   * mount, which `useTravelSquash` deliberately swallows. The control
+   * persists across the change and is the only thing that can see it as a
+   * change.
+   */
+  const thumbSquash = useTravelSquash(PRODUCTS.findIndex((p) => p.id === active));
 
   if (collapsed) {
     return (
@@ -218,6 +236,7 @@ export function ProductSwitch({
           locked={isLocked(product, plan)}
           thumbId={thumbId}
           thumbTransition={thumbTransition}
+          thumbSquash={thumbSquash}
           onNavigate={onNavigate}
         />
       ))}
@@ -231,6 +250,7 @@ function Segment({
   locked,
   thumbId,
   thumbTransition,
+  thumbSquash,
   onNavigate,
 }: {
   product: Product;
@@ -238,6 +258,7 @@ function Segment({
   locked: boolean;
   thumbId: string;
   thumbTransition: object;
+  thumbSquash: { scaleX: MotionValue<number>; scaleY: MotionValue<number> };
   onNavigate?: () => void;
 }) {
   return (
@@ -282,10 +303,20 @@ function Segment({
           layoutId={thumbId}
           aria-hidden="true"
           transition={thumbTransition}
-          className="absolute inset-0 rounded-md bg-sidebar shadow-soft"
+          className="absolute inset-0"
           // framer has to keep the corners true while it scales the box.
           style={{ borderRadius: 8 }}
-        />
+        >
+          {/* The carriage above only travels; the body below only deforms.
+              One node cannot do both — framer's layout projection owns the
+              outer transform, and a `scaleX` on the same node would be
+              rewritten by it every frame. */}
+          <motion.span
+            aria-hidden="true"
+            style={{ ...thumbSquash, borderRadius: 8 }}
+            className="block size-full rounded-md bg-sidebar shadow-soft"
+          />
+        </motion.span>
       )}
       {/* Reduced ink plus a sparkle is ChatGPT's own "not on your plan" mark,
           and it replaces the product glyph rather than joining it, so a gated

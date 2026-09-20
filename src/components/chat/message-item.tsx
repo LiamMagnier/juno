@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as Image
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
+import { Burst, Swell } from "@/components/ui/micro";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -455,6 +456,7 @@ function IconAction({
   children,
   active,
   busy,
+  celebrate,
 }: {
   label: string;
   onClick: () => void;
@@ -462,6 +464,19 @@ function IconAction({
   active?: boolean;
   /** In flight. Shows a spinner and blocks a second press. */
   busy?: boolean;
+  /**
+   * Swell and burst when this turns ON (components/ui/micro.tsx).
+   *
+   * Opt-in, and only two of the row's six actions take it. Copy, branch and
+   * regenerate are TRANSPORT — they move something somewhere, and the
+   * something is its own receipt (a toast, a new message, a rewritten
+   * answer). Feedback has no receipt at all: the thumb tints, and a tint on a
+   * 16px glyph at the bottom of a long answer is the easiest state change in
+   * the product to miss. The burst is that receipt, and it is worth the
+   * flourish precisely because rating an answer is the one thing here the
+   * person does FOR us rather than for themselves.
+   */
+  celebrate?: boolean;
 }) {
   return (
     <Tooltip>
@@ -477,7 +492,16 @@ function IconAction({
           aria-busy={busy || undefined}
           className={cn(active && "text-primary")}
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : children}
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : celebrate ? (
+            <span className="relative inline-flex items-center justify-center">
+              <Swell on={!!active}>{children}</Swell>
+              <Burst on={!!active} />
+            </span>
+          ) : (
+            children
+          )}
         </Pressable>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -1210,10 +1234,10 @@ export const MessageItem = React.memo(function MessageItem({
               )}
               {!privateMode && canFeedback && (
                 <>
-                  <IconAction label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
+                  <IconAction celebrate label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
                     <ThumbsUp className="size-4" />
                   </IconAction>
-                  <IconAction label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
+                  <IconAction celebrate label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
                     <ThumbsDown className="size-4" />
                   </IconAction>
                 </>

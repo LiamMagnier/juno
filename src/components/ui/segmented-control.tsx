@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { motion, useReducedMotion, type Transition } from "framer-motion";
+import { RollingNumber, useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 
 /**
@@ -80,6 +81,15 @@ export function SegmentedControl<T extends string>({
   // `layoutId` is global to the page, so two controls on screen at once must
   // not share one — the thumb would try to fly between them.
   const thumbId = `${React.useId()}-thumb`;
+  /* The thumb deforms along its travel (lib/micro.ts). The counter is the
+     selected index rather than a mount-time flag, so the control squashes when
+     the selection MOVES and sits still when it is merely rendered — and it has
+     to live on the group, since the segment receiving the thumb has only just
+     mounted and cannot tell a move from a first paint. */
+  const thumbSquash = useTravelSquash(
+    options.findIndex((o) => o.value === value),
+    orientation === "vertical" ? "y" : "x"
+  );
 
   const move = (dir: 1 | -1) => {
     const enabled = options.filter((o) => !o.disabled);
@@ -169,9 +179,17 @@ export function SegmentedControl<T extends string>({
                 // the dual shadow in both themes. The radius rides `style` too,
                 // so framer can keep the corners true while it scales the box
                 // between two segments of different widths.
-                className="surface-raised absolute inset-0 rounded-control"
+                className="absolute inset-0"
                 style={{ borderRadius: 10 }}
-              />
+              >
+                {/* Carriage / body: framer's layout projection owns the outer
+                    transform, so the deformation needs a node of its own. */}
+                <motion.span
+                  aria-hidden="true"
+                  style={{ ...thumbSquash, borderRadius: 10 }}
+                  className="surface-raised block size-full rounded-control"
+                />
+              </motion.span>
             )}
             {/* Steady: the mark neither scales nor bounces. Only its ink
                 follows the selection, on the same fast ramp as the label. */}
@@ -188,7 +206,9 @@ export function SegmentedControl<T extends string>({
             {/* The tally, in the register a `Badge` count wears: mono, tabular,
                 dimmed by opacity so the segment's own ink decides its colour. */}
             {!labelHidden && opt.count !== undefined && (
-              <span className="relative z-10 font-mono text-micro tabular-nums opacity-70">{opt.count}</span>
+              <span className="relative z-10 font-mono text-micro opacity-70">
+                <RollingNumber value={opt.count} />
+              </span>
             )}
             {/* The call to act: a small accent disc. Absent at zero, and never
                 drawn while the segment is the one selected — the reader is
@@ -198,7 +218,9 @@ export function SegmentedControl<T extends string>({
                 aria-hidden="true"
                 className="relative z-10 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-micro tabular-nums leading-none text-primary-foreground"
               >
-                {opt.badge > 99 ? "99+" : opt.badge}
+                {/* Over 99 stops being a number and becomes a word, so it
+                    cuts rather than rolls — there is nothing to roll to. */}
+                {opt.badge > 99 ? "99+" : <RollingNumber value={opt.badge} />}
               </span>
             )}
           </button>

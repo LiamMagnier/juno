@@ -5,6 +5,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { HoldButton } from "@/components/ui/hold-button";
 
 interface PrivacyStripProps {
   paused: boolean;
@@ -16,22 +17,23 @@ interface PrivacyStripProps {
   empty: boolean;
 }
 
+/**
+ * RESET IS A HOLD, NOT A SECOND CLICK.
+ *
+ * It used to be Reset → "Confirm reset": one button replacing another in
+ * place, with a 4-second self-cancel and an effect moving focus between the
+ * two so keyboard users were not dropped when the element under them was
+ * unmounted. That is three pieces of machinery — a state, a timer and a focus
+ * hand-off — to buy one moment of "are you sure", and the swap has a failure
+ * mode nothing can fix: the second button appears exactly where the first one
+ * was, under a finger that is already moving, so a double-click destroys
+ * everything. A hold cannot be double-clicked.
+ *
+ * It stays a hold rather than becoming a dialog because the sentence under
+ * this strip already says what reset does, permanently and in those words. A
+ * modal would repeat it at the cost of an interrupt.
+ */
 export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resetting, empty }: PrivacyStripProps) {
-  const [confirming, setConfirming] = React.useState(false);
-  const confirmRef = React.useRef<HTMLButtonElement>(null);
-  const resetRef = React.useRef<HTMLButtonElement>(null);
-
-  // The Reset ⇄ Confirm swap replaces the focused element — hand focus to the
-  // button that took its place so keyboard users aren't dropped.
-  React.useEffect(() => {
-    if (confirming) {
-      confirmRef.current?.focus();
-      const t = setTimeout(() => setConfirming(false), 4000);
-      return () => clearTimeout(t);
-    }
-    if (document.activeElement === document.body) resetRef.current?.focus();
-  }, [confirming]);
-
   return (
     // /40, not /20: --muted at a fifth over the true-black ground composites to
     // under 2% lightness, so the strip that fences the destructive controls had
@@ -51,34 +53,19 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={onExport} disabled={empty}>
             <ActionIcons.download className="size-3.5" /> Export
           </Button>
-          {confirming ? (
-            <Button
-              ref={confirmRef}
-              variant="destructive"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => {
-                setConfirming(false);
-                onReset();
-              }}
-              disabled={resetting}
-            >
-              {resetting ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
-              Confirm reset
-            </Button>
-          ) : (
-            <Button
-              ref={resetRef}
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-destructive danger-hover"
-              onClick={() => setConfirming(true)}
-              disabled={empty || resetting}
-            >
+          <HoldButton
+            onHold={onReset}
+            disabled={empty || resetting}
+            label="Reset memory — hold to confirm"
+            hint="Hold to reset"
+            holdingLabel="Keep holding…"
+            className="h-8 w-auto gap-1.5 px-2.5"
+          >
+            <span className="inline-flex items-center gap-1.5">
               {resetting ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.restore className="size-3.5" />}
-              {resetting ? "Resetting…" : "Reset"}
-            </Button>
-          )}
+              {resetting ? "Resetting…" : "Hold to reset"}
+            </span>
+          </HoldButton>
         </div>
       </div>
       <p id="memory-privacy-note" className="mt-2.5 flex items-start gap-1.5 text-caption text-muted-foreground/80">

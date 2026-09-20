@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
 import { Pressable } from "@/components/ui/pressable";
+import { RollingNumber } from "@/components/ui/micro";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppIcons, CodeIcons, ComposerIcons } from "@/lib/app-icons";
@@ -221,7 +222,11 @@ export function SessionOutputs({
               className={cn("h-9 gap-1.5 text-foreground/75 coarse:h-11", className)}
             >
               <CodeIcons.file className="size-4" />
-              {outputs.length > 0 && <span className="tabular-nums">{outputs.length}</span>}
+              {/* It rolls because it CHANGES WHILE YOU WATCH: an artifact
+                  finishing mid-answer is the one moment this chip has to
+                  announce itself, and a digit that cuts is indistinguishable
+                  from a digit that was always there. */}
+              {outputs.length > 0 && <RollingNumber value={outputs.length} />}
             </Pressable>
           </PopoverTrigger>
         </TooltipTrigger>
