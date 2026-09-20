@@ -163,18 +163,31 @@ export function AicssCodeBlock({
           </button>
         )}
       </div>
+      {/* The one scroll region, and therefore the one tab stop: a long line
+          has to be reachable without a pointer (SC 2.1.1), and the body is
+          where the scrolling happens now (globals.css). `role="region"` with
+          a name is what turns a focusable div into something a screen reader
+          can announce rather than an unlabelled stop. */}
       <div
+        tabIndex={0}
+        role="region"
+        aria-label={label ? `${label} code` : "Code"}
         className={cn("aicss-cb-body", maxBodyHeight && "overflow-y-auto scroll-fade-y")}
         style={maxBodyHeight ? { maxHeight: maxBodyHeight } : undefined}
       >
-        {lines.map((line, i) => (
-          <div className="aicss-cb-row" key={i}>
-            {numbered && <span className="aicss-cb-ln">{i + 1}</span>}
-            {/* A blank line still needs a box, or the row collapses and the
-                numbering stops tracking the source. */}
-            <code className="aicss-cb-code">{line === "" ? " " : line}</code>
-          </div>
-        ))}
+        {/* One box holding every line, wide enough for the longest. The gutter
+            hairline hangs off THIS rather than the scroller, so it stays
+            full-height and still travels with the code. */}
+        <div className="aicss-cb-lines">
+          {lines.map((line, i) => (
+            <div className="aicss-cb-row" key={i}>
+              {numbered && <span className="aicss-cb-ln">{i + 1}</span>}
+              {/* A blank line still needs a box, or the row collapses and the
+                  numbering stops tracking the source. */}
+              <code className="aicss-cb-code">{line === "" ? " " : line}</code>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

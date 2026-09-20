@@ -116,8 +116,22 @@
     --warning: 40 57% 45%;
     --warning-foreground: 40 57% 33%;
     --source: 187 62% 34%;
-    --code-string: 152 56% 42%;
-    --code-number: 32 80% 46%;
+    /*
+     * MEASURED AGAINST THE CODE BLOCK, NOT THE PAGE, and both of these used to
+     * fail it. `.aicss-cb` paints rgb(242,240,235); at 42% and 46% lightness
+     * these landed at 2.68:1 and 2.77:1 against it, where 12px body text needs
+     * 4.5 (SC 1.4.3). Every string, every number, every `True`/`null` in every
+     * code block the product has ever rendered on paper was below the floor.
+     *
+     * 30% and 34% put them at 4.81 and 4.69 with the hue and saturation
+     * untouched, so the palette keeps its character and stops being pastel on
+     * a light ground. The dark values are left alone: on rgb(48,46,44) they
+     * already measure 6.44 and 7.24, and the rest of the set (comment 4.89,
+     * keyword 4.57, plain 14.82) was always fine — these two were the whole
+     * failure.
+     */
+    --code-string: 152 56% 30%;
+    --code-number: 32 80% 34%;
     --ultra: 258 90% 66%;
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
@@ -2091,19 +2105,44 @@
   /* Hover is not an affordance on touch, and this control is a peer of the menu
      rows that already answer the keyboard. */
   .aicss-cb-copy:focus-visible { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+  /*
+   * ONE SCROLLER, NOT ONE PER LINE.
+   *
+   * `overflow-x: auto` used to sit on `.aicss-cb-code`, which is a single
+   * LINE — so a block with four long lines was four independent horizontal
+   * scrollers stacked on top of each other. Dragging line 3 left moved line 3
+   * and nothing else, and the block stopped being readable the moment it
+   * overflowed, which on a phone is most of the time. axe called it too:
+   * `scrollable-region-focusable`, serious, two nodes on the transcript at
+   * 390px, because each of those scrollers is keyboard-unreachable and adding
+   * a tab stop per line would have been worse than the bug.
+   *
+   * The body scrolls instead. Rows take `width: max-content` so the grid
+   * stops compressing them, one `tabindex` on the body answers the keyboard
+   * (SC 2.1.1) with a single stop, and every line travels together — which is
+   * what a person reading code expects, because the lines are one document.
+   */
   .aicss-cb-body {
-    position: relative;
     margin: 0 -16px -16px;
-    padding: 10px 0;
+    overflow-x: auto;
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 12px;
     line-height: 20px;
+    scrollbar-width: none;
   }
+  .aicss-cb-body::-webkit-scrollbar { display: none; }
+  .aicss-cb-body:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+  /* The lines, as one block wide enough to hold the longest of them. This
+     exists so the gutter hairline can stay full-height AND travel with the
+     code: an absolute rule on the SCROLLER would have stayed at 32px while
+     the numbers it belongs to slid out from under it. The body's vertical
+     padding lives here for the same reason — it has to be inside the thing
+     the hairline measures itself against. */
+  .aicss-cb-lines { position: relative; width: max-content; min-width: 100%; padding: 10px 0; }
   /* The gutter exists only on `.aicss-cb--numbered` (code-block.tsx: blocks
-     past its line threshold). Its hairline is full-height and independent of
-     the body's padding, so it runs the whole column rather than stopping
-     short of the first and last row. */
-  .aicss-cb--numbered .aicss-cb-body::before {
+     past its line threshold). Its hairline is full-height, so it runs the
+     whole column rather than stopping short of the first and last row. */
+  .aicss-cb--numbered .aicss-cb-lines::before {
     content: "";
     position: absolute;
     top: 0;
@@ -2124,13 +2163,10 @@
   .aicss-cb-code {
     /* Without a gutter the code takes the header's own left inset. */
     padding: 0 12px 0 16px;
-    overflow-x: auto;
     color: hsl(var(--foreground));
     white-space: pre;
-    scrollbar-width: none;
   }
   .aicss-cb--numbered .aicss-cb-code { padding-left: 8px; }
-  .aicss-cb-code::-webkit-scrollbar { display: none; }
 
   .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }
   .aicss-diff-stat { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; line-height: 1; }
