@@ -1120,7 +1120,16 @@ export function AppSidebar({
                       // project must not suppress the one sentence that says a
                       // person has no sessions yet.
                       (isCode || sidebarProjects.length === 0) && (
-                        <p className="px-2 py-8 text-center text-ui text-muted-foreground" aria-live="polite">
+                        /* LEFT, on the column's own text edge, and not
+                           centred. It was the only centred text in this
+                           panel — every heading, fold and title above it
+                           starts at the same vertical — so it floated in the
+                           middle of a left-aligned column and read as
+                           belonging to nothing. `py-8` went with it: eight
+                           above and eight below put it a third of the way
+                           down an empty list rather than under the thing it
+                           is about. */
+                        <p className="px-2 pb-2 pt-3 text-ui text-muted-foreground" aria-live="polite">
                           {isCode ? "No sessions yet." : "No conversations yet."}
                           <br />
                           Start one above.
