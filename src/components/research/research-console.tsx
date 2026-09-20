@@ -11,6 +11,7 @@ import { RunTimeline } from "./run-timeline";
 import { SourceDeck } from "./source-deck";
 import { hostOf } from "@/components/chat/source-chip";
 import { formatSpan } from "@/lib/run-receipt";
+import { RollingNumber } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isWorkingResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "./use-research-run";
@@ -145,11 +146,26 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
             research budget" note — after it had truncated the report. */}
         <span className="tabular-nums">{formatMicroUsd(run.costMicroUsd)}{run.budgetMicroUsd ? ` ${CONSOLE_COPY.of} ${formatMicroUsd(run.budgetMicroUsd)}` : ""}</span>
         <span aria-hidden>·</span>
-        <span className="tabular-nums">{run.sources.filter(source => source.read).length} {CONSOLE_COPY.sourcesRead}</span>
+        {/* THESE THREE ROLL, and this is the surface the roll was built for.
+            A research run's figures change every few seconds while the reader
+            sits watching them — a source finishing, a researcher reporting, a
+            finding landing — and a digit that cuts is indistinguishable from
+            a digit that was always there. On a card whose entire job is to
+            answer "is it doing anything", a silent counter is the failure
+            mode. The clock and the spend beside them are excluded on purpose:
+            a figure that changes every single tick is not news, and six
+            rolling numbers on one line is a slot machine. */}
+        <span><RollingNumber value={run.sources.filter(source => source.read).length} /> {CONSOLE_COPY.sourcesRead}</span>
         {team.total > 0 && <>
           <span aria-hidden>·</span>
-          <span className="tabular-nums">{team.working > 0 ? `${team.working} ${CONSOLE_COPY.of} ${team.total} ${CONSOLE_COPY.working}` : `${team.total} ${CONSOLE_COPY.reported}`}</span>
-          {team.findings > 0 && <><span aria-hidden>·</span><span className="tabular-nums">{team.findings} {CONSOLE_COPY.findings}</span></>}
+          <span>
+            {team.working > 0 ? (
+              <><RollingNumber value={team.working} /> {CONSOLE_COPY.of} <RollingNumber value={team.total} /> {CONSOLE_COPY.working}</>
+            ) : (
+              <><RollingNumber value={team.total} /> {CONSOLE_COPY.reported}</>
+            )}
+          </span>
+          {team.findings > 0 && <><span aria-hidden>·</span><span><RollingNumber value={team.findings} /> {CONSOLE_COPY.findings}</span></>}
         </>}
         {detail && <><span aria-hidden>·</span><span className="min-w-0 truncate">{detail}</span></>}
       </div>

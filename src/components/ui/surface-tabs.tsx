@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { spring } from "@/lib/motion";
+import { useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 
 /**
@@ -58,6 +59,11 @@ export function SurfaceTabs({
   // sidebar's product thumb) must never share one, or the bar tries to fly
   // between them.
   const barId = `${React.useId()}-tab-bar`;
+  /* The bar stretches as it travels (lib/micro.ts) — the same rubber the
+     product switch and the segmented control run, so the three selection
+     marks in the product move the same way. This one moves further than
+     either, which is exactly when a rigid box most looks teleported. */
+  const barSquash = useTravelSquash(tabs.findIndex((t) => t.href === activeHref));
 
   return (
     <nav aria-label={ariaLabel} className={cn("border-b border-border", className)}>
@@ -99,8 +105,16 @@ export function SurfaceTabs({
                   layoutId={barId}
                   aria-hidden="true"
                   transition={reduceMotion ? { duration: 0 } : spring.standard}
-                  className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-primary"
-                />
+                  className="absolute inset-x-0 bottom-0 h-0.5"
+                >
+                  {/* Carriage / body: layout projection owns the outer
+                      transform, so the deformation needs its own node. */}
+                  <motion.span
+                    aria-hidden="true"
+                    style={barSquash}
+                    className="block size-full rounded-full bg-primary"
+                  />
+                </motion.span>
               )}
             </li>
           );

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
 import {
   BURST_ANGLES,
   BURST_MS,
@@ -201,6 +201,16 @@ export function Burst({ on, className }: { on: boolean; className?: string }) {
  *
  * `tabular-nums` is not optional: proportional digits change width as they
  * roll, so the row reflows under the animation it is trying to show.
+ *
+ * THE BASELINE IS THE HARD PART, and it is why each column carries an
+ * invisible copy of its own digit. The obvious build — one clipped box per
+ * column, the digit absolutely positioned inside it — has no in-flow content,
+ * and CSS gives an inline-block with `overflow: hidden` the baseline of its
+ * bottom margin edge. Dropped into a sentence, every digit would sit a few
+ * pixels low while the words beside it stayed put. So the column is a plain
+ * inline-block whose in-flow child is an invisible digit (it sets both the
+ * width and the baseline) and the clipping happens in a second, absolutely
+ * positioned layer that the line box cannot see.
  */
 export function RollingNumber({ value, className }: { value: number; className?: string }) {
   const reduce = useReducedMotion() ?? false;
@@ -214,7 +224,7 @@ export function RollingNumber({ value, className }: { value: number; className?:
   if (reduce) return <span className={cn("tabular-nums", className)}>{value}</span>;
 
   return (
-    <span className={cn("inline-flex tabular-nums", className)}>
+    <span className={cn("tabular-nums", className)}>
       <span className="sr-only">{value}</span>
       {digits.map((d, i) => (
         <span
@@ -223,18 +233,29 @@ export function RollingNumber({ value, className }: { value: number; className?:
           // the ones column when the number gains a digit. Keyed from the left
           // it would re-mount every digit on 9 → 10 and roll all of them.
           key={`${digits.length - i}`}
-          className="relative inline-block h-[1em] overflow-hidden"
-          style={{ width: "0.62em" }}
+          className="relative inline-block"
         >
-          <motion.span
-            key={d}
-            className="absolute inset-0 flex items-center justify-center"
-            initial={{ y: up ? "100%" : "-100%" }}
-            animate={{ y: "0%" }}
-            transition={{ duration: ROLL_MS / 1000, ease: ease.outExpo }}
-          >
-            {d}
-          </motion.span>
+          <span className="invisible">{d}</span>
+          <span className="absolute inset-0 overflow-hidden">
+            {/* Both digits are on screen at once for the length of the roll —
+                the old one leaving the way the new one came in. Without the
+                exit it is a digit APPEARING, which is a different gesture and
+                a weaker one: what makes a roll legible is seeing the thing it
+                rolled away from. `initial={false}` keeps the first paint
+                still; a page load is not a change. */}
+            <AnimatePresence initial={false}>
+              <motion.span
+                key={d}
+                className="absolute inset-0"
+                initial={{ y: up ? "100%" : "-100%" }}
+                animate={{ y: "0%" }}
+                exit={{ y: up ? "-100%" : "100%" }}
+                transition={{ duration: ROLL_MS / 1000, ease: ease.outExpo }}
+              >
+                {d}
+              </motion.span>
+            </AnimatePresence>
+          </span>
         </span>
       ))}
     </span>
