@@ -138,7 +138,19 @@ export function HoldButton({
       }}
       onBlur={end}
       className={cn(
-        "pressable relative isolate flex h-9 w-full items-center justify-center gap-2 overflow-hidden rounded-control border border-destructive/30 bg-destructive/5 px-3 text-ui font-medium text-destructive transition-[background-color,border-color] duration-fast ease-out-soft hover:border-destructive/50 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none",
+        /*
+         * QUIET AT REST. The first draft wore a tinted fill and a visible
+         * border all the time, which made the one destructive control on a
+         * settings row the loudest object on it — and, when disabled, a loud
+         * object that does nothing. It sits beside a ghost Export button and
+         * has to read as its sibling until you reach for it.
+         *
+         * Destructive ink on nothing, then the tint and the hairline on
+         * hover: `.danger-hover`'s posture, stopping short of its solid fill,
+         * because a solid destructive background would swallow the progress
+         * bar this control exists to show.
+         */
+        "pressable relative isolate flex h-9 w-full items-center justify-center gap-2 overflow-hidden rounded-control border border-transparent px-3 text-ui font-medium text-destructive transition-[background-color,border-color] duration-fast ease-out-soft hover:border-destructive/35 hover:bg-destructive/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none",
         className
       )}
     >
@@ -146,7 +158,7 @@ export function HoldButton({
           the compositor and never reflows the label above it. */}
       <motion.span
         aria-hidden="true"
-        className="absolute inset-0 -z-10 origin-left bg-destructive/20"
+        className="absolute inset-0 -z-10 origin-left bg-destructive/25"
         style={{ scaleX: progress }}
       />
       <span className="relative truncate">

@@ -1029,8 +1029,33 @@ function CommandMenu() {
   const q = query.trim().toLowerCase();
 
   const items = React.useMemo<PaletteItem[]>(() => {
+    /*
+     * A QUERY MATCHES AT A WORD START, NEVER INSIDE ONE.
+     *
+     * This was a raw `includes` over a space-joined keyword blob, and the
+     * blob is where it went wrong: "Open Artifacts" carries the keywords
+     * "documents canvas generated", so typing `rate` matched it — inside
+     * "gene-RATE-d". Actions is the first section and its first row is the
+     * default selection, so typing the exact title of a conversation and
+     * pressing Enter navigated to the Artifacts page instead of opening the
+     * chat. `gen`, `an`, `ate`, `ent` and a dozen other common fragments do
+     * the same thing across the other rows.
+     *
+     * A word-start rule kills all of them and costs nothing real: `doc` still
+     * finds "documents", `canvas` still finds "canvas", and a multi-word
+     * query like `pull req` still matches "Open pull requests" because the
+     * needle only has to BEGIN on a boundary, not end on one. Matching the
+     * middle of a word was never a feature anybody asked for; it was what
+     * `includes` happened to do.
+     */
+    const atWordStart = (hay: string, needle: string) => {
+      for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
+        if (i === 0 || !/[a-z0-9]/.test(hay[i - 1])) return true;
+      }
+      return false;
+    };
     const matches = (label: string, keywords?: string) =>
-      !q || label.toLowerCase().includes(q) || (keywords ? keywords.includes(q) : false);
+      !q || atWordStart(label.toLowerCase(), q) || (keywords ? atWordStart(keywords, q) : false);
 
     // Five sections: Actions (things to start and places to go), Chats, Code
     // sessions, Projects, Settings. A typed query filters across all five.

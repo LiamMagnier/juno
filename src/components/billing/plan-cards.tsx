@@ -50,7 +50,14 @@ export interface PlanCardItem {
  * these cannot be interpolated; one-off counts fall back to the widest grid.
  */
 const GRID_COLS: Record<number, string> = {
-  1: "sm:max-w-sm",
+  // `mx-auto`, not just the width cap. A lone card was capped at 24rem and
+  // left where the grid put it — hard against the left gutter with two thirds
+  // of the page empty beside it, which reads as two cards that failed to
+  // load. One card is the whole row, so it belongs in the middle of it. This
+  // is reachable in production whenever a tier is withheld (billing not
+  // configured on a deployment, a plan hidden for an account), and it is what
+  // /upgrade renders today when Stripe is absent.
+  1: "sm:mx-auto sm:max-w-sm",
   2: "sm:grid-cols-2",
   3: "sm:grid-cols-2 lg:grid-cols-3",
   4: "sm:grid-cols-2 lg:grid-cols-4",
