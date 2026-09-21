@@ -92,26 +92,37 @@ test("a per-run ceiling can now actually be reached", () => {
 });
 
 /*
- * MiMo UltraSpeed is not priced like the Pro whose name it contains.
+ * The published MiMo V2.6 rates, pinned by VALUE rather than by ordering.
  *
- * `mimo-v2.6-pro-ultraspeed` matches `pm.includes("pro")`, so a rate table
- * that tests `pro` before `ultraspeed` bills the premium tier at a third of
- * what it costs — silently, on every call, in the direction Juno eats. The
- * branch order in pricing.ts is the fix; this is the test that keeps it.
+ * The first version of this test only asserted UltraSpeed > Pro. It passed
+ * while UltraSpeed was set to 1.305 — an estimate that turned out to be 3.3x
+ * UNDER the real 4.35, which is the direction Juno absorbs rather than the
+ * user. An ordering assertion cannot catch a magnitude error, and magnitude is
+ * the whole risk in a rate table.
+ *
+ * The id trap these numbers sit on: `mimo-v2.6-pro-ultraspeed` contains `pro`,
+ * so a branch tested in the wrong order bills a $4.35 model at $0.435.
  */
-test("MiMo UltraSpeed bills above the Pro tier its id contains", () => {
+test("MiMo V2.6 bills at Xiaomi's published rates", () => {
+  const expected: Record<string, { input: number; output: number }> = {
+    "mimo:mimo-v2.6-flash": { input: 0.14, output: 0.28 },
+    "mimo:mimo-v2.6-pro": { input: 0.435, output: 0.87 },
+    "mimo:mimo-v2.6-pro-ultraspeed": { input: 4.35, output: 8.7 },
+  };
+  for (const [id, rate] of Object.entries(expected)) {
+    const model = resolveModel(id);
+    assert.ok(model, `${id} is in the catalog`);
+    const actual = tokenRate(model);
+    assert.equal(actual.input, rate.input, `${id} input rate`);
+    assert.equal(actual.output, rate.output, `${id} output rate`);
+  }
+
+  // UltraSpeed is 10x Pro. Stated as a relationship as well as a pair of
+  // numbers, because the failure mode is a fall-through to the Pro branch,
+  // and that produces exactly 1x.
   const pro = resolveModel("mimo:mimo-v2.6-pro");
   const ultra = resolveModel("mimo:mimo-v2.6-pro-ultraspeed");
   assert.ok(pro && ultra, "both V2.6 Pro tiers are in the catalog");
-  const proRate = tokenRate(pro);
-  const ultraRate = tokenRate(ultra);
-
-  assert.ok(
-    ultraRate.input > proRate.input,
-    `UltraSpeed input ${ultraRate.input} must exceed Pro's ${proRate.input}`,
-  );
-  assert.ok(
-    ultraRate.output > proRate.output,
-    `UltraSpeed output ${ultraRate.output} must exceed Pro's ${proRate.output}`,
-  );
+  assert.equal(tokenRate(ultra).input / tokenRate(pro).input, 10);
+  assert.equal(tokenRate(ultra).output / tokenRate(pro).output, 10);
 });

@@ -218,19 +218,27 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "minimax":
       return { input: 0.3, output: 1.2 };
     case "mimo":
-      // UltraSpeed is tested BEFORE `pro`, and the order is the whole point:
-      // its id is `mimo-v2.6-pro-ultraspeed`, so it matches `pro` too and
-      // would otherwise bill at a third of what it costs.
+      // Xiaomi's published V2.6 card. These were estimates for one commit and
+      // two of the three were wrong, which is worth leaving on the record:
       //
-      // 3x the Pro rate, which is the V2.5 UltraSpeed precedent rather than a
-      // published V2.6 figure — Xiaomi's release note gives no rate for any of
-      // the three. Estimating above the known tier is the same thing the Qwen
-      // 3.8 Max line does a few cases down, and for the same reason: under-
-      // billing a premium tier is the expensive direction to be wrong in.
-      // Replace all three MiMo rates when the price card lands.
-      if (pm.includes("ultraspeed")) return { input: 1.305, output: 2.61 };
+      //   Flash       estimated 0.20 / 0.80   actual 0.14 / 0.28
+      //   Pro         estimated 0.435 / 0.87  actual 0.435 / 0.87   ✓
+      //   UltraSpeed  estimated 1.305 / 2.61  actual 4.35 / 8.70
+      //
+      // UltraSpeed is 10x Pro, not the 3x the V2.5 UltraSpeed precedent
+      // suggested — so the estimate under-billed it by 3.3x, which is the
+      // direction Juno eats rather than the user. A precedent from the
+      // previous generation is not a rate.
+      //
+      // UltraSpeed is still tested BEFORE `pro`, and that ordering is now
+      // load-bearing for a much bigger gap: its id is
+      // `mimo-v2.6-pro-ultraspeed`, so it matches `pro` too, and falling
+      // through would bill a $4.35 model at $0.435 — a tenth of cost, silently,
+      // on every call.
+      if (pm.includes("ultraspeed")) return { input: 4.35, output: 8.7 };
       if (pm.includes("pro")) return { input: 0.435, output: 0.87 };
-      return { input: 0.2, output: 0.8 };
+      // V2.6 Flash, and the V2/V2.5 rows that fall through to it.
+      return { input: 0.14, output: 0.28 };
     case "qwen":
       // 3.8 Max has no published pay-as-you-go rate yet; estimate above 3.7 Max.
       if (pm.includes("qwen3.8-max")) return { input: 3.0, output: 9.0 };
