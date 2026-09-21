@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -491,16 +492,37 @@ export function billingPeriodFor(
   return { startMs: start.getTime(), endMs: end.getTime(), anchorMs: anchor.getTime() };
 }
 
-/** Fetch the subscription and derive the current billing period. */
-export async function resolveBillingPeriod(
+/**
+ * Fetch the subscription and derive the current billing period.
+ *
+ * `cache()`d, for the same reason `getUserPlan` is (usage.ts): the billing
+ * period is asked for by every gate and every ledger write on the spend path,
+ * and the row it reads cannot change inside one request. Measured on a single
+ * chat send, this was TEN identical reads of one Subscription row — free on a
+ * database in the same process, and ten serial round trips to a hosted one,
+ * paid before the model is even called.
+ *
+ * The memo is keyed on both arguments, so an explicit `now` still resolves
+ * against the instant the caller asked about. Callers that pass their own
+ * clock (the period sweeps, the tests) therefore share nothing with the
+ * request path, which is the correct behaviour rather than a limitation.
+ */
+const billingPeriodOnce = cache(async function billingPeriodOnce(
   userId: string,
-  now = new Date()
+  nowMs: number
 ): Promise<BillingPeriod> {
   const sub = await prisma.subscription.findUnique({
     where: { userId },
     select: { createdAt: true, currentPeriodEnd: true },
   });
-  return billingPeriodFor(sub, now);
+  return billingPeriodFor(sub, new Date(nowMs));
+});
+
+export async function resolveBillingPeriod(
+  userId: string,
+  now = new Date()
+): Promise<BillingPeriod> {
+  return billingPeriodOnce(userId, now.getTime());
 }
 
 /**
@@ -518,7 +540,7 @@ export function spendPeriodKey(period: BillingPeriod): string {
  * settings. One read of Settings; pass the result on to `checkBudget` and
  * `reserveSpend` rather than resolving it twice per request.
  */
-export async function resolveEffectiveBudget(
+export const resolveEffectiveBudget = cache(async function resolveEffectiveBudget(
   userId: string,
   plan: Plan
 ): Promise<EffectiveBudget> {
@@ -532,7 +554,7 @@ export async function resolveEffectiveBudget(
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
   });
-}
+});
 
 export interface BudgetStatus {
   allowed: boolean;

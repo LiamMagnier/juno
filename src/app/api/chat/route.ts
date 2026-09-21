@@ -581,13 +581,21 @@ async function handleChat(req: Request) {
     }
   }
 
-  const plan = await getUserPlan(user.id);
-
+  // ONE WAVE, not two. The plan and the settings row are independent lookups —
+  // nothing between them reads the other — and awaiting them in turn spent a
+  // whole round trip on an ordering nothing needed. Free against a database in
+  // the same process; 20-40ms against a hosted one, on the path the reader is
+  // watching a spinner on. Same reasoning as the bootstrap's first wave
+  // (lib/app-data.ts).
+  //
   // Resolve the model: requested → user default → app default, then ensure the
   // provider is configured and the plan allows it, falling back if not.
   // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
   // chat model that can handle it (vision / web-search constraints applied).
-  const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
+  const [plan, settings] = await Promise.all([
+    getUserPlan(user.id),
+    prisma.settings.findUnique({ where: { userId: user.id } }),
+  ]);
 
   // Resolve the project assistant before any tool is admitted. Native clients
   // already hide denied controls, but the server is the trust boundary and the
@@ -1253,11 +1261,20 @@ async function handleChat(req: Request) {
     return new Response(stream, { headers: SSE_HEADERS });
   }
 
-  const budget = await checkBudget(user.id, plan);
+  // Both gates are reads of the same spend ledger and neither informs the
+  // other, so they ride in one wave. The refusal order is unchanged: the
+  // monthly budget still answers first, and a request refused by it reports
+  // the budget rather than the window. `usageWindowRefusal` having already run
+  // in that case costs nothing — it writes nothing — and the two now share the
+  // period and ceiling lookups underneath them (both `cache()`d in spend.ts)
+  // instead of each paying for its own.
+  const [budget, windowed] = await Promise.all([
+    checkBudget(user.id, plan),
+    usageWindowRefusal(user.id, plan),
+  ]);
   if (!budget.allowed) {
     return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
   }
-  const windowed = await usageWindowRefusal(user.id, plan);
   if (windowed) return windowed;
 
   const durableFirstSubmission = !!(

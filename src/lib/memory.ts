@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { decryptField, encryptField } from "@/lib/field-crypto";
@@ -85,8 +86,12 @@ export function utilityModelCandidates(): ModelInfo[] {
  * Fails closed: an account with no Settings row, or a row this build cannot
  * read, gets the privacy-preserving default rather than the old
  * walk-every-provider behaviour.
+ *
+ * `cache()`d per request: the chat route asks for this twice on its own (once
+ * for the memory profile, once for knowledge retrieval) and the policy cannot
+ * change between the two. One Settings read, not three.
  */
-export async function loadBackgroundProviderPolicy(
+export const loadBackgroundProviderPolicy = cache(async function loadBackgroundProviderPolicy(
   userId: string
 ): Promise<BackgroundProviderPolicy> {
   try {
@@ -104,7 +109,7 @@ export async function loadBackgroundProviderPolicy(
       allowedProviders: deploymentProviderAllowlist(),
     });
   }
-}
+});
 
 /**
  * The provider `same_provider` matches account-level background work against.
