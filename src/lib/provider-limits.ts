@@ -9,21 +9,25 @@ import type { Provider } from "@/lib/providers";
  * unreadable table does: two providers were simply missing from it, and the
  * lookup default silently capped them at 8192 tokens.
  */
-// Each provider's native max output tokens — the largest per-reply budget the
-// lab's own API will accept. A requested value is clamped to this so it never
-// exceeds what the model itself allows.
+// The largest per-reply budget that EVERY model in a lab's lineup accepts.
 //
-// These are per-LAB ceilings only. The per-MODEL bound is the model's own
-// context window, applied by `clampMaxTokens` below — which is why no entry
-// here is shaded down "to be context-safe" any more. Shading here was wrong in
-// both directions at once: it held the lab's flagship (1M context) to a
-// fraction of what it can write, while still handing its small siblings
-// (128k context) a budget larger than their entire window.
+// Not the flagship's ceiling. This one value is applied to every model of that
+// provider, so the SMALLEST output cap in the lineup is what it has to respect
+// — and within a lab those differ by more than an order of magnitude while the
+// context window says nothing about which is which. Qwen is the worked example:
+// qwen3.8-max takes 131,072 output tokens, and qwen3.6-flash rejects the same
+// number with a 400 despite having a LARGER (1M) context window.
 //
-// Asking for more than a lab accepts is a 400, so these track published
-// figures; asking for less than it accepts is a reply that stops mid-sentence,
-// which is what the reader actually reports. Audited 2026-09-21 — sources in
-// the per-entry notes.
+// That was learned the expensive way. Raising this entry to the Max line's
+// 131,072 shipped to production and 400'd every Qwen model —
+// "Qwen3.6 Flash couldn't accept this request", caught by the release smoke
+// after the build was already live. Output capability does not follow context
+// size, so the per-model context bound in `clampMaxTokens` cannot catch it.
+//
+// So a value here may only be raised against evidence about the lab's SMALLEST
+// model, never its largest. The two failure directions are not symmetrical:
+// too low truncates one reply, too high fails every request. Per-model raises
+// belong in a per-model table with per-model evidence, not here.
 export const PROVIDER_MAX_OUTPUT: Record<Provider, number> = {
   // 64k is the ceiling every Claude in the catalog accepts unconditionally.
   // The adaptive-era models (Opus 4.7/4.8, Sonnet 5, Fable 5.x) go to 128k —
@@ -38,38 +42,35 @@ export const PROVIDER_MAX_OUTPUT: Record<Provider, number> = {
   openai: 128000,
   google: 65536, // Gemini 3.x tops out at 65,536 output (thinking+answer combined)
   zhipu: 131072, // GLM-5.3 (and 5.2): 1M context, up to 128k output
-  // Kimi K3 takes max_completion_tokens up to 1,048,576 and DEFAULTS to
-  // 131,072; K2.5/K2.6 accept up to 262,144. 131,072 is the largest value every
-  // Moonshot model in the catalog accepts. Was 65536 on a "stays safe across
-  // the 128k-context models" note — the context bound below is what actually
-  // keeps those safe, and it does so without halving K3.
-  moonshot: 131072,
-  // DeepSeek's own V4 notes give 1M context / 384k max output; third-party
-  // hosts enforce far less (65,536 on Ollama Cloud, 32k reported elsewhere).
-  // 131,072 is under every figure any first-party doc quotes and 4x the old
-  // 32768, which was a "context-safe share" — a job the context bound now does
-  // per model instead of per lab.
-  deepseek: 131072,
-  mistral: 131072, // Mistral Large 3: 256k context, up to 131k output
-  // xAI publishes no separate text-output limit for the Grok 4.x line; 131,072
-  // is the largest figure its docs have ever quoted for a response, and the
-  // per-model context bound handles the 256k-window Grok Build.
-  xai: 131072,
+  // Kimi K3 accepts up to 1,048,576 and K2.5/K2.6 up to 262,144, so this is far
+  // under the flagship — and it is the value the whole Moonshot lineup has
+  // served in production without a 400, which is the bar this table has to
+  // clear. Raising it needs evidence about kimi-k2.7-code, not about K3.
+  moonshot: 65536,
+  deepseek: 32768, // DeepSeek's V4 notes say 384k output; 32768 is what this lineup is proven to take
+  mistral: 32768, // Mistral Large 3 documents 131k output; 32768 is what this lineup is proven to take
+  xai: 65536, // xAI publishes no text-output limit; 65536 is what this lineup is proven to take
   seedance: 8192, // media model — no long text output
   minimax: 131072, // MiniMax documents 131,072 recommended (524,288 hard max) for M3
-  // The number Xiaomi's API enforces — it rejects any completion budget above
-  // it. This was 16384, the only entry in the table with no note saying why,
-  // and 8x under the real ceiling: a MiMo answer was cut off at an eighth of
-  // what the model would have written, on a 1.05M context model, and the reader
-  // saw a reply that simply stopped.
+  // The one raise kept from the audit, because 16384 was not a conservative
+  // value — it was a broken one, and the bug this table was re-read for: MiMo
+  // answers stopped at an eighth of what the model would have written, on a
+  // 1.05M context model. 131072 is the number Xiaomi's API itself enforces, and
+  // it enforces it by REJECTING anything above — which is what makes 131072 an
+  // accepted value rather than a guess at one. That ceiling belongs to the API
+  // rather than to one model, so it covers Flash as well as Pro.
   mimo: 131072,
-  qwen: 131072, // Qwen3.7/3.8 Max: 131,072 output (the old 65536 note quoted Qwen3 Max, two generations back)
+  // 131072 is correct for qwen3.7/3.8-max and a 400 on qwen3.6-flash — the
+  // failure in the header. Alibaba caps the Flash and Plus lines well below the
+  // Max line, and nothing in the catalog records which model is which, so the
+  // lineup minimum stands until something does.
+  qwen: 65536,
   // meta and longcat were once MISSING from this table entirely, so
   // clampMaxTokens fell through to the 8192 default and neither lab could
   // produce a long answer on any plan — a silent cap that looked like the model
   // giving up early. Keep every provider present even when the figure is a
   // guess; absence is the failure that hides.
-  meta: 131072, // Meta Model API defaults max_tokens to 131,072 for the Muse Spark line
+  meta: 32768, // Meta publishes no per-model output cap; 131072 is unverified against the live API
   // Meituan publishes no output figure for LongCat 2.0, and it is still
   // comingSoon, so nothing calls this yet. Left at the value it was given
   // rather than raised on a guess — revisit when it goes live.

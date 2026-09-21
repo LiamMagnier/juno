@@ -37,31 +37,24 @@ test("every provider that serves chat can produce a long answer", () => {
 });
 
 /*
- * `> 8192` catches an entry that is MISSING. It does not catch one that is
- * merely far too small, and that is the failure this test was added for: mimo
- * sat at 16384 — above the fallback, so the test above passed — against a real
- * Xiaomi ceiling of 131072. Eight times under, on models with a 1.05M context,
- * and the symptom was a reply that just stopped mid-sentence.
+ * The bug that sent someone reading this table: mimo sat at 16384 against a
+ * Xiaomi API that enforces 131072, so MiMo replies stopped at an eighth of what
+ * the model would have written and the reader saw a message that just ended.
+ * 16384 was above the 8192 fallback, so the test above passed throughout.
  *
- * The invariant: a provider you can hand 256k tokens to should be able to hand
- * more than 32k back. Two numbers that far apart are not a considered trade-off
- * between context and output, they are a placeholder nobody revisited — which
- * is exactly what 16384 was, the one entry in the table carrying no note
- * saying why.
+ * Pinned by VALUE rather than by a "long context implies long output" rule,
+ * because that rule is false and cost a production outage: qwen3.6-flash has a
+ * 1M context window and rejects 131072 output with a 400, while qwen3.8-max has
+ * the same window and accepts it. Context size predicts nothing here. Only
+ * evidence about a specific lab's specific models does, so each entry has to be
+ * argued on its own note — which is what the table now does.
  */
-test("a long-context provider is not capped to a short answer", () => {
-  const LONG_CONTEXT = 256_000;
-  const FLOOR = 32_768;
-  for (const provider of PROVIDER_LIST) {
-    const longest = Object.values(MODELS)
-      .filter((m) => m.provider === provider && m.modality === "chat" && !m.comingSoon)
-      .reduce((max, m) => Math.max(max, m.contextWindow ?? 0), 0);
-    if (longest < LONG_CONTEXT) continue;
-    assert.ok(
-      PROVIDER_MAX_OUTPUT[provider] >= FLOOR,
-      `${provider} takes ${longest} tokens in but only allows ${PROVIDER_MAX_OUTPUT[provider]} out — check the lab's real ceiling`,
-    );
-  }
+test("the MiMo ceiling stays at what Xiaomi's API enforces", () => {
+  assert.equal(
+    PROVIDER_MAX_OUTPUT.mimo,
+    131_072,
+    "mimo back below Xiaomi's enforced ceiling — MiMo replies will truncate again",
+  );
 });
 
 test("clamping keeps a floor as well as a ceiling", () => {
