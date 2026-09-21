@@ -343,6 +343,37 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
       cacheWrite1h: input * 1.25,
     };
   }
+  if (model.provider === "mimo") {
+    /*
+     * Xiaomi prices a cache hit as its own column ("Input (cache hit)"), and it
+     * sits far below the 0.25x this function falls back to:
+     *
+     *   Flash       0.0028 against 0.14   = 2%
+     *   Pro         0.0036 against 0.435  = 0.83%
+     *   UltraSpeed  0.036  against 4.35   = 0.83%
+     *
+     * The fallback was billing a Pro cache hit at $0.109 against a real
+     * $0.0036 — 30x, charged to the reader on every cached token, on the
+     * longest conversations because those are the ones that cache.
+     *
+     * The `pro` test mirrors `baseRate`'s exactly, which is what keeps the two
+     * in step: any row billing Pro's input also bills Pro's cache ratio, and
+     * `-ultraspeed` lands here too because its id contains `pro` — correctly,
+     * since 0.036/4.35 is the same 0.83%.
+     *
+     * No published cache-WRITE rate, so writes cost plain input — the same
+     * conservative reading the zhipu branch above takes.
+     */
+    const pm = model.providerModel.toLowerCase();
+    return {
+      input,
+      output,
+      cacheRead: input * (pm.includes("pro") ? 0.00828 : 0.02),
+      cacheWrite: input,
+      cacheWrite5m: input,
+      cacheWrite1h: input,
+    };
+  }
   // Others: cached input is typically a fraction of full; writes carry no premium.
   return {
     input,

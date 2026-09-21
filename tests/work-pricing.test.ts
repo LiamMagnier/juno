@@ -104,17 +104,27 @@ test("a per-run ceiling can now actually be reached", () => {
  * so a branch tested in the wrong order bills a $4.35 model at $0.435.
  */
 test("MiMo V2.6 bills at Xiaomi's published rates", () => {
-  const expected: Record<string, { input: number; output: number }> = {
-    "mimo:mimo-v2.6-flash": { input: 0.14, output: 0.28 },
-    "mimo:mimo-v2.6-pro": { input: 0.435, output: 0.87 },
-    "mimo:mimo-v2.6-pro-ultraspeed": { input: 4.35, output: 8.7 },
+  // Xiaomi's three columns: Input (cache hit) · Input (cache miss) · Output.
+  const expected: Record<string, { hit: number; input: number; output: number }> = {
+    "mimo:mimo-v2.6-flash": { hit: 0.0028, input: 0.14, output: 0.28 },
+    "mimo:mimo-v2.6-pro": { hit: 0.0036, input: 0.435, output: 0.87 },
+    "mimo:mimo-v2.6-pro-ultraspeed": { hit: 0.036, input: 4.35, output: 8.7 },
   };
   for (const [id, rate] of Object.entries(expected)) {
     const model = resolveModel(id);
     assert.ok(model, `${id} is in the catalog`);
     const actual = tokenRate(model);
-    assert.equal(actual.input, rate.input, `${id} input rate`);
+    assert.equal(actual.input, rate.input, `${id} cache-miss input rate`);
     assert.equal(actual.output, rate.output, `${id} output rate`);
+    // The cache column is checked to the published precision rather than
+    // exactly: it is stored as a ratio of input, so it lands within a rounding
+    // step of the card rather than on it. A wrong TIER still fails by orders
+    // of magnitude, which is the error this is here to catch — the generic
+    // 0.25x fallback would put Pro at 0.109 against a real 0.0036.
+    assert.ok(
+      Math.abs(actual.cacheRead - rate.hit) < rate.hit * 0.01,
+      `${id} cache-hit rate ${actual.cacheRead} should be ~${rate.hit}`,
+    );
   }
 
   // UltraSpeed is 10x Pro. Stated as a relationship as well as a pair of
