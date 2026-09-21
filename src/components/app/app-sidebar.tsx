@@ -48,6 +48,7 @@ import { RUN_STATE_META, isBlockedOnYou, runState } from "@/lib/code-runs";
 import { codeRunTone, newestPerConversation, workRunIsOpen, type StatusTone } from "@/lib/conversation-status";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
+import { intentPrefetch } from "@/lib/intent-prefetch";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 
@@ -1448,6 +1449,7 @@ function NavRow({
   layoutId: string;
   transition: object;
 }) {
+  const router = useRouter();
   const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
@@ -1513,6 +1515,11 @@ function NavRow({
     <Link
       href={href}
       onClick={onClick}
+      /* The destinations behind these rows are reached once in a session if at
+         all, and each is a `force-dynamic` route whose prefetch is a full
+         server render. Aim, not viewport — see lib/intent-prefetch.ts. */
+      prefetch={false}
+      {...intentPrefetch(router, href)}
       data-active={activeAttr}
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
@@ -2068,6 +2075,9 @@ function ConversationRow({
       <Link
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
+        /* Prefetched on aim, not on scroll — see lib/intent-prefetch.ts. */
+        prefetch={false}
+        {...intentPrefetch(router, `/chat/${conversation.id}`)}
         aria-current={active ? "page" : undefined}
         /* No leading slot, so the title IS the row's left edge — 16px from the
            panel, on the same line as the section heading above it and 30px in
@@ -2210,6 +2220,7 @@ function ProjectRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const router = useRouter();
   // Open by default: a pinned project's recent chats are the reason it is
   // pinned, and Claude's sidebar shows them under the project at rest. The
   // chevron still folds a noisy one away.
@@ -2233,6 +2244,8 @@ function ProjectRow({
         <Link
           href={`/projects/${project.id}`}
           onClick={onNavigate}
+          prefetch={false}
+          {...intentPrefetch(router, `/projects/${project.id}`)}
           aria-current={active ? "page" : undefined}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-body font-normal"
           title={project.name}
@@ -2316,6 +2329,8 @@ function ProjectRow({
                 key={c.id}
                 href={`/chat/${c.id}`}
                 onClick={onNavigate}
+                prefetch={false}
+                {...intentPrefetch(router, `/chat/${c.id}`)}
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
                 title={signal ? `${label} — ${signal.meaning}` : label}
                 className={cn(

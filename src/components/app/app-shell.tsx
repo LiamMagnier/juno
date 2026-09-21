@@ -8,12 +8,12 @@ import { AppSidebar } from "@/components/app/app-sidebar";
 import { productOf } from "@/components/app/product-switch";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
-import { Onboarding } from "@/components/app/onboarding";
-import { CommandPalette } from "@/components/app/command-palette";
+import { OnboardingLazy } from "@/components/app/onboarding-lazy";
+import { CommandPaletteLazy } from "@/components/app/command-palette-lazy";
 import { DocumentTitle } from "@/components/app/document-title";
 import { PageTransition } from "@/components/app/page-transition";
-import { AnnouncementPopup } from "@/components/app/announcement-popup";
-import { AmbientAura } from "@/components/ambient/ambient-aura";
+import { AnnouncementPopupLazy } from "@/components/app/announcement-popup-lazy";
+import { AmbientAuraLazy } from "@/components/ambient/ambient-aura-lazy";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
@@ -505,7 +505,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             lit the frame around the sidebar and the navigation as well as the
             conversation — a mode light claiming chrome that is not in the
             mode. Mounted once, here, and absent unless a call is up. */}
-        <AmbientAura />
+        <AmbientAuraLazy />
 
         {/* An account that has never confirmed its address can read everything
             it owns and export it, but cannot spend — so the refusal has to be
@@ -566,9 +566,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      <Onboarding />
-      <AnnouncementPopup />
-      <CommandPalette />
+      <OnboardingLazy />
+      <AnnouncementPopupLazy />
+      <CommandPaletteLazy />
       <DocumentTitle />
     </div>
   );
