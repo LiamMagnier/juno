@@ -12,11 +12,12 @@ import {
 } from "framer-motion";
 import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
 
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { transition } from "@/lib/motion";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
+import { FilePreview } from "@/components/chat/file-preview";
 import type { PendingUpload } from "@/hooks/use-uploads";
 
 /**
@@ -693,7 +694,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
 );
 
 /* ————————————————————————————————————————————————————————————————————————
- * Attachments: a row of 56px thumbnails above the text
+ * Attachments: what you attached, said in words
  * ———————————————————————————————————————————————————————————————————— */
 
 const TILE_MOTION = {
@@ -708,7 +709,31 @@ function fileExtension(name: string) {
   return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).slice(0, 4).toUpperCase() : "FILE";
 }
 
-/** One 56px tile: the image itself, or the file's extension over a glyph. */
+/**
+ * ONE 64px TILE FOR AN IMAGE, A NAMED CARD FOR EVERYTHING ELSE.
+ *
+ * Every attachment used to be the same 56px square, and for anything that was
+ * not an image that square held a grey document glyph with "PDF" under it —
+ * no name, no excerpt, nothing. Attach three PDFs and the composer showed
+ * three identical grey squares; the only way to tell which was which was to
+ * hover one and read a `title` attribute, and on a touch device there was no
+ * way at all.
+ *
+ * That is the exact finding `FilePreview` was written for, one surface over:
+ * "a grid of eight documents was eight identical icons … images got
+ * recognition, files got a label." The Library got the fix; the composer —
+ * where you are looking at the file for the last time before you send it —
+ * never did, and it is the place the question "which one is that" is most
+ * expensive to get wrong.
+ *
+ * An image is still a square, because an image IS its own label. A file gets
+ * the two things a square cannot carry: its NAME, read rather than hovered,
+ * and a 64px page beside it showing the first lines of what is actually in it
+ * (`FilePreview`, whose excerpt comes bounded from the server and is cached
+ * per attachment). A file with no readable text — a PDF, an image-only scan —
+ * falls back to its extension on the same paper, which is what a PDF shows in
+ * every other viewer too.
+ */
 export function ComposerAttachmentTile({
   upload,
   onRemove,
@@ -718,34 +743,71 @@ export function ComposerAttachmentTile({
   onRemove?: () => void;
   className?: string;
 }) {
-  const image = upload.attachment?.kind === "IMAGE" ? upload.attachment : null;
+  const attachment = upload.attachment;
+  const isImage = attachment?.kind === "IMAGE";
   const status =
     upload.status === "uploading" ? `Uploading ${upload.progress}%` : upload.status === "error" ? "Failed" : null;
+  const extension = fileExtension(upload.fileName);
+  const meta = upload.size ? `${extension} · ${formatBytes(upload.size)}` : extension;
+
+  /* The paper square. Before the upload lands there is no attachment id, so
+     no excerpt can be asked for — it shows the extension, which is what the
+     excerpt falls back to anyway, so nothing moves when the id arrives. */
+  const page = attachment ? (
+    <FilePreview
+      item={{
+        id: attachment.id,
+        kind: "FILE",
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        url: attachment.url,
+      }}
+      className="size-16 shrink-0"
+      sizes="64px"
+    />
+  ) : (
+    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-caption font-medium text-muted-foreground/70">
+      {extension}
+    </span>
+  );
+
   return (
     <div
       title={status ? `${upload.fileName} — ${status}` : upload.fileName}
       className={cn(
-        // `rounded-control`: the same rung as every chip on the row below,
-        // so the tiles and the controls read as one family of objects.
-        "group relative size-14 shrink-0 overflow-hidden rounded-control border border-border/70 bg-secondary",
+        // `rounded-control`: the same rung as every chip on the row below, so
+        // the tiles and the controls read as one family of objects.
+        "group relative flex h-16 shrink-0 overflow-hidden rounded-control border border-border/70 bg-secondary",
+        isImage ? "w-16" : "w-56 max-w-full",
         upload.status === "error" && "border-destructive/60",
-        className
+        className,
       )}
     >
-      {image ? (
+      {isImage && attachment ? (
         <Image
-          src={image.url}
-          unoptimized={requiresViewerCredentials(image.url)}
+          src={attachment.url}
+          unoptimized={requiresViewerCredentials(attachment.url)}
           alt={upload.fileName}
           fill
-          sizes="56px"
+          sizes="64px"
           className="object-cover"
         />
       ) : (
-        <span className="flex size-full flex-col items-center justify-center gap-0.5 text-muted-foreground">
-          <CodeIcons.file className="size-5" aria-hidden="true" />
-          <span className="font-mono text-micro leading-none">{fileExtension(upload.fileName)}</span>
-        </span>
+        <>
+          {page}
+          <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 border-l border-border/60 px-2.5">
+            {/* Two lines, and the second one wraps rather than truncating —
+                a filename is identified by its END as often as its start
+                ("…-final-v3.pdf"), so `line-clamp-2` keeps the tail visible
+                where `truncate` would always eat it. */}
+            <span className="line-clamp-2 text-caption font-medium leading-tight text-foreground">
+              {upload.fileName}
+            </span>
+            <span className="truncate font-mono text-micro uppercase text-muted-foreground">
+              {status ?? meta}
+            </span>
+          </span>
+        </>
       )}
       {upload.status === "uploading" && (
         <span className="absolute inset-0 grid place-items-center bg-card/70">
@@ -768,7 +830,7 @@ export function ComposerAttachmentTile({
 }
 
 /**
- * The thumbnail row. Tiles pop in on the spring and pop out on removal;
+ * The attachment row. Tiles pop in on the spring and pop out on removal;
  * the row itself takes no space while it is empty.
  */
 export function ComposerAttachmentRow({
@@ -785,7 +847,7 @@ export function ComposerAttachmentRow({
       <MotionConfig reducedMotion="user">
         <AnimatePresence initial={false}>
           {uploads.map((upload) => (
-            <motion.div key={upload.localId} layout {...TILE_MOTION}>
+            <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
               <ComposerAttachmentTile upload={upload} onRemove={() => onRemove(upload.localId)} />
             </motion.div>
           ))}
