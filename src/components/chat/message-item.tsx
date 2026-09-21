@@ -55,7 +55,21 @@ const ApprovalCard = nextDynamic(
   { ssr: false },
 );
 import { SourcesPill } from "@/components/chat/sources-pill";
-import { CitationAuditPanel, isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
+import { isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
+
+/**
+ * Split, and gated on the phase rather than only imported lazily.
+ *
+ * The panel returns null for `idle` and `none` — which is every answer that is
+ * not a checked research report — so rendering it unconditionally behind a
+ * dynamic import would fetch the chunk for every message in every transcript
+ * to draw nothing. The condition below is exactly the panel's own early
+ * return, moved up one level so the import can stay unfetched with it.
+ */
+const CitationAuditPanel = nextDynamic(
+  () => import("@/components/chat/citation-audit-panel").then((m) => m.CitationAuditPanel),
+  { ssr: false },
+);
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 /**
  * Split: a full-screen editor that mounts only once a reader has pressed Edit
@@ -1226,7 +1240,9 @@ export const MessageItem = React.memo(function MessageItem({
         )}
         {/* Above the model/cost line but below the bibliography: what the answer
             rests on, then how well it rests on it. */}
-        <CitationAuditPanel state={citationAudit} />
+        {citationAudit.phase !== "idle" && citationAudit.phase !== "none" && (
+          <CitationAuditPanel state={citationAudit} />
+        )}
 
         {/* Five at rest — Copy · 👍 · 👎 · Regenerate ▾ · More ▾ — which is the
             Claude / ChatGPT count. Read aloud, Branch, Share, Quote and Copy

@@ -420,24 +420,59 @@ answers never produce) and `ApprovalCard` (24 kB, drawn only while the tool
 loop is holding for a decision). Both branches were already conditional; only
 the imports were not.
 
-**Where it stops, and why.** What remains in `/chat` is one chunk of
-`composer.tsx`, `chat-view.tsx`, `message-item.tsx`, `model-selector.tsx` and
-`citation-audit.tsx`. The last two are the next ~90 kB and **neither has a
-seam**, which was checked with the code open rather than assumed:
+**Where it stops, and why — and what the last two were actually worth.**
 
-- `ModelSelector` is one function holding the trigger and both stages of the
-  popover on shared state (`open`, `pickerOpen`, `query`, `cursorKey`). The
-  heavy part is stage two, and separating it means either restructuring the
-  component or putting a stand-in chip in front of the real one — which buys
-  ~12 kB and risks the chip needing two presses. A model picker that swallows
-  a click is worse than a model picker that loads 12 kB.
-- `citation-audit.tsx` has a seam but a discontiguous one: `SupportBadge` and
-  `ScoreMeter` (needed by `sources-pill`, which is always on screen) sit
-  *above* the four heavy sub-components, and `auditHeadline` (needed by
-  research-recap) sits *between* them and the panel. Three files import across
-  the middle. Worth doing; not worth doing blind, since an audit panel only
-  renders for a research answer with a cited corpus, which needs live
-  providers to produce.
+`ModelSelector` and `citation-audit.tsx` were the last two candidates. Both
+have now been split, and the result is the most useful number in this section
+because it is so much smaller than the source suggested:
+
+```
+                  before   round 1   round 2   round 3   round 4
+/chat             667 kB    528 kB    503 kB    488 kB    481 kB
+/chat/[id]        797 kB    563 kB    538 kB    523 kB    516 kB
+```
+
+Round four is ~90 kB of source moved out of the first load for a **7 kB**
+drop. The reason is worth internalising before proposing the next split:
+minified and gzipped, these two are 6 kB and 3 kB. They are mostly JSX and
+copy, which compresses hard, and every heavy thing they lean on — Radix,
+lucide, `model-metrics`, the plan tables — is used by something else on the
+same screen and stays in the shared chunk either way. **Source size is not
+wire size, and a 47 kB file is not a 47 kB win.** Measure the chunk.
+
+The two splits were still worth making — they are the right boundaries, and
+stage one no longer re-renders on every keystroke in a search field it does
+not own — but the bundle case for them was weak, and the bundle case for
+whatever looks big next probably is too.
+
+### How to split a component that shares state with its own trigger
+
+`ModelSelector` held the chip, the small card and the 600px catalogue in one
+function on one piece of state (`open`, `pickerOpen`, `query`, `cursorKey`,
+`recent`, the row refs). Nothing could be lazy while that was true. The move:
+
+1. **Give the heavy half its own state.** Everything only the catalogue uses
+   moved into `model-catalogue.tsx`. Stage one kept `value`, the resolved
+   model and the two open flags.
+2. **Mount it per open, keyed.** `key={openCount}` re-creates it each time, so
+   "reset the query when the catalogue opens" stopped being an effect keyed on
+   a flag and became initial state. A `catalogueMounted` latch keeps it
+   rendered after the first open so Radix still runs its exit animation.
+3. **Prefetch from the stage before it.** Stage two is only reachable through
+   stage one, so `onOpenChange` starts the import when the chip opens —
+   hundreds of milliseconds before anyone can reach the row that needs it.
+4. **Put anything both halves need in a third file.** This is the step that
+   was skipped on the first attempt, and it cost a whole build to find:
+   `isModelLocked` and `pushRecent` stayed in the catalogue and were imported
+   into the selector, so webpack put the catalogue back in the first-load
+   chunk. Green build, real chunk, 2 kB saved instead of 7. They live in
+   `src/lib/model-picker.ts` now, and its header says why.
+
+`citation-audit.tsx` needed only the discontiguous cut its panel file
+documents — plus one thing that is easy to miss: the panel is rendered
+unconditionally and returns null for `idle`/`none`, so the dynamic import
+alone would have fetched the chunk for every message. `message-item.tsx`
+hoists that early return into the render condition.
 
 ## 3. The rules
 
