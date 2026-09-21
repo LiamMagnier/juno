@@ -169,6 +169,9 @@ export const composerChipClass =
  * The armed mark
  * ———————————————————————————————————————————————————————————————————— */
 
+/** Where a mark's `detail` stops fitting. The row is the `@container`. */
+const ARMED_DETAIL_CLASS = "hidden @[30rem]:block";
+
 /**
  * A TOOL THAT IS ARMED FOR THE NEXT MESSAGE, drawn on the composer's own
  * surface: Deep research, Task, Web search, a connected app.
@@ -285,9 +288,17 @@ export function ComposerArmedMark({
             {/* The derived fact rides at 60%: it is a CONSEQUENCE of the state,
                 not a second state. Dropping it entirely was the other option
                 and it loses the only place the product says which depth a run
-                will get. */}
-            <span aria-hidden className={cn("shrink-0 text-primary-ink/60", labelClassName)}>·</span>
-            <span aria-hidden className={cn("shrink-0 truncate text-primary-ink/60", labelClassName)}>
+                will get.
+
+                IT IS THE FIRST THING TO GO when the row runs short, at every
+                mark count — hence its own query rather than `labelClassName`.
+                A lone "Deep research · Max" is ~40px wider than a 350px row
+                can spend beside the model chip, and the label truncating to
+                "Deep rese…" to keep a word that qualifies it is the wrong
+                thing to lose: the state's NAME outranks a detail about it, and
+                the detail is in the tooltip either way. */}
+            <span aria-hidden className={cn("shrink-0 text-primary-ink/60", ARMED_DETAIL_CLASS)}>·</span>
+            <span aria-hidden className={cn("shrink-0 truncate text-primary-ink/60", ARMED_DETAIL_CLASS)}>
               {detail}
             </span>
           </>

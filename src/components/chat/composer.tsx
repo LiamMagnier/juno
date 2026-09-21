@@ -2356,9 +2356,14 @@ export function Composer({
    * Three marks with words is ~330px, and a narrow composer has ~350 to spend
    * on everything including the model chip and the send circle. Below a 30rem
    * ROW (not window — the row is the `@container`, see composer-shell.tsx) the
-   * marks keep their icons and drop their words; one mark always keeps them,
-   * because one mark has never been the problem. The count mark is exempt at
-   * every width: its label IS its information — "⋯" alone says nothing.
+   * marks keep their icons and drop their words.
+   *
+   * ONE mark always keeps its words, because one mark has never been the
+   * problem: a lone telescope in the corner of a composer says nothing, where
+   * "Deep research" says all of it. What that case gives up instead is the
+   * `detail` — which the mark drops at this width on its own, at every count.
+   * The count mark is exempt at every width and in both directions: its label
+   * IS its information, and "⋯" alone says nothing at all.
    *
    * A literal, not a computed string: Tailwind scans source text, so a class
    * assembled at runtime would never be generated.
