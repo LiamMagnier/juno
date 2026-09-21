@@ -17,6 +17,11 @@ import {
 } from "@/lib/voice-relay-protocol";
 import type { ClientAttachment } from "@/types/chat";
 import {
+  VOICE_ATTACHMENT_LIMIT,
+  VOICE_QUERY_MAX_CHARS,
+  type VoiceAttachmentContextResponse,
+} from "@/lib/voice-attachment-context";
+import {
   applyTranscriptEvent,
   emptyCursor,
   openUserTurn,
@@ -101,6 +106,71 @@ function boundVoiceHistory(value: VoiceHistoryEntry[]): VoiceHistoryEntry[] {
   return result;
 }
 
+/** Why a composed voice turn was refused, for a surface that has to say so. */
+export type VoiceTurnRefusal = "not-live" | "empty" | "no-vision" | "attachments";
+
+/**
+ * What a composed turn actually did. A boolean was enough while images were
+ * the only attachment voice took; documents can arrive half-ready — indexed,
+ * still indexing, or unreadable — and a turn that sent the model a file it
+ * cannot see yet has to be able to say which.
+ */
+export interface VoiceTurnResult {
+  accepted: boolean;
+  refusal?: VoiceTurnRefusal;
+  /** The route's own sentence, when the refusal came from resolving files. */
+  message?: string;
+  /** Attached files whose text was not available to this turn. */
+  pendingFiles?: string[];
+  unavailableFiles?: string[];
+  /** The document context hit the wire limit and was cut. */
+  truncated?: boolean;
+}
+
+/**
+ * Resolve uploaded documents into the bounded context a voice turn carries.
+ *
+ * Document bytes never travel the voice socket. The authenticated route turns
+ * exact attachment ids into indexed passages and reports, per file, whether
+ * its text was actually available — which is what keeps "still indexing" from
+ * reaching the caller as a confident answer about a file nobody has read.
+ */
+async function fetchVoiceAttachmentContext(
+  attachmentIds: string[],
+  query: string,
+  provider: VoiceProviderId | null
+): Promise<VoiceAttachmentContextResponse> {
+  const response = await fetch("/api/voice/context", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      attachmentIds,
+      query: query.slice(0, VOICE_QUERY_MAX_CHARS),
+      ...(provider ? { provider } : {}),
+    }),
+  });
+  const body = (await response.json().catch(() => null)) as
+    | (Partial<VoiceAttachmentContextResponse> & { error?: string })
+    | null;
+  if (!response.ok || !body) {
+    throw new Error(body?.error || `Juno could not read those attachments (${response.status}).`);
+  }
+  return {
+    context: typeof body.context === "string" ? body.context : "",
+    attachments: body.attachments ?? [],
+    truncated: body.truncated === true,
+  };
+}
+
+/** The line the caller sees on a turn they attached to but did not narrate. */
+function describeSharedAttachments(images: number, files: number): string {
+  const parts: string[] = [];
+  if (images) parts.push(images === 1 ? "an image" : `${images} images`);
+  if (files) parts.push(files === 1 ? "a file" : `${files} files`);
+  return parts.length ? `Shared ${parts.join(" and ")}` : "";
+}
+
 async function attachmentToJpegBase64(attachment: ClientAttachment): Promise<string> {
   // Read through Juno's authenticated same-origin endpoint. Public/presigned
   // object URLs are not guaranteed to expose CORS headers to canvas.
@@ -179,6 +249,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const cursorRef = React.useRef(emptyCursor());
   const turnAttachmentsRef = React.useRef(new Map<string, ClientAttachment[]>());
   const capsRef = React.useRef<ProviderCapabilities | null>(null);
+  /** The provider the relay last confirmed, readable from stable callbacks. */
+  const liveProviderRef = React.useRef<VoiceProviderId | null>(null);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -615,6 +687,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       switch (msg.type) {
         case "session.ready":
           capsRef.current = msg.capabilities;
+          liveProviderRef.current = msg.provider;
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -720,6 +793,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setClosedReason(null);
       setCapabilities(null);
       capsRef.current = null;
+      liveProviderRef.current = null;
       setUsage(null);
       try {
         const res = await fetch("/api/voice/relay-token");
@@ -836,6 +910,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setProvider(next);
       setCapabilities(null);
       capsRef.current = null;
+      liveProviderRef.current = null;
       if (statusRef.current === "live") {
         statusRef.current = "connecting";
         setStatus("connecting");
@@ -866,39 +941,104 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   }, []);
 
   /**
-   * Route the normal chat composer through the live voice conversation. Images
-   * become realtime visual context; the relay echoes the typed user turn back
-   * with the same turn id so it appears in the normal chat transcript once.
+   * Route the normal chat composer through the live voice conversation.
+   *
+   * The two attachment kinds reach the model by different roads, because they
+   * have to. An image becomes a JPEG frame on the voice socket, so it needs a
+   * provider that can see. A document never travels this socket at all: the
+   * authenticated route resolves it into bounded text that rides along with
+   * the turn, which every provider can receive — MiniMax, which has no vision
+   * at all, included. So attaching a file does not require vision, and talking
+   * to a provider that cannot see does not cost you your files.
+   *
+   * Both halves resolve BEFORE anything is sent. A turn that is going to be
+   * refused must not leave frames behind in the model's context.
    */
-  const sendTurn = React.useCallback(async (text: string, attachments: ClientAttachment[]) => {
-    const socket = wsRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN || statusRef.current !== "live") return false;
-    if (attachments.some((attachment) => attachment.kind !== "IMAGE")) return false;
-    const images = attachments.slice(0, 4);
-    if (images.length > 0 && !capsRef.current?.videoInput) return false;
-    const generation = generationRef.current;
-    const providerEpoch = providerEpochRef.current;
-    const turnId = crypto.randomUUID();
-    if (images.length > 0) {
-      const frames = await Promise.all(images.map(attachmentToJpegBase64));
-      // Image conversion is asynchronous. Never send its result into a newly
-      // restarted/provider-switched session by accident.
+  const sendTurn = React.useCallback(
+    async (text: string, attachments: ClientAttachment[]): Promise<VoiceTurnResult> => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN || statusRef.current !== "live") {
+        return { accepted: false, refusal: "not-live" };
+      }
+      const selected = attachments.slice(0, VOICE_ATTACHMENT_LIMIT);
+      const images = selected.filter((attachment) => attachment.kind === "IMAGE");
+      const files = selected.filter((attachment) => attachment.kind !== "IMAGE");
+      if (images.length > 0 && !capsRef.current?.videoInput) {
+        return { accepted: false, refusal: "no-vision" };
+      }
+      const spoken = text.trim();
+      if (!spoken && selected.length === 0) return { accepted: false, refusal: "empty" };
+
+      const generation = generationRef.current;
+      const providerEpoch = providerEpochRef.current;
+      const turnId = crypto.randomUUID();
+      // Retrieval needs something to rank passages against. A turn with no
+      // words of its own still has an intent, and stating it plainly beats
+      // ranking against an empty string.
+      const query = spoken || (files.length > 0 ? "Summarize the attached files." : "Describe what I just shared.");
+
+      let frames: string[] = [];
+      let resolved: VoiceAttachmentContextResponse | null = null;
+      try {
+        [frames, resolved] = await Promise.all([
+          Promise.all(images.map(attachmentToJpegBase64)),
+          selected.length > 0
+            ? fetchVoiceAttachmentContext(
+                selected.map((attachment) => attachment.id),
+                query,
+                liveProviderRef.current
+              )
+            : Promise.resolve(null),
+        ]);
+      } catch (err) {
+        return {
+          accepted: false,
+          refusal: "attachments",
+          message: err instanceof Error ? err.message : undefined,
+        };
+      }
+
+      // Both halves are asynchronous. Never deliver their result into a
+      // session that restarted or switched provider while they resolved.
       if (
         generationRef.current !== generation ||
         providerEpochRef.current !== providerEpoch ||
         wsRef.current !== socket ||
         socket.readyState !== WebSocket.OPEN ||
         statusRef.current !== "live"
-      ) return false;
-      for (const jpegBase64 of frames) socket.send(JSON.stringify({ type: "video.frame", jpegBase64 } satisfies VoiceClientMessage));
-      turnAttachmentsRef.current.set(turnId, images);
-    }
-    const visibleText = text.trim() || (images.length === 1 ? "Shared an image" : images.length > 1 ? `Shared ${images.length} images` : "");
-    const message = text.trim() || (images.length > 0 ? "Please look at the image context I just shared and respond naturally." : "");
-    if (!message) return false;
-    socket.send(JSON.stringify({ type: "input.text", text: message, displayText: visibleText, turnId } satisfies VoiceClientMessage));
-    return true;
-  }, []);
+      ) {
+        return { accepted: false, refusal: "not-live" };
+      }
+
+      for (const jpegBase64 of frames) {
+        socket.send(JSON.stringify({ type: "video.frame", jpegBase64 } satisfies VoiceClientMessage));
+      }
+
+      const context = resolved?.context ?? "";
+      const visibleText = spoken || describeSharedAttachments(images.length, files.length);
+      const message =
+        spoken || "Please use the context I just shared and respond naturally.";
+      socket.send(
+        JSON.stringify({
+          type: "input.text",
+          text: message,
+          displayText: visibleText,
+          turnId,
+          ...(context ? { context } : {}),
+          ...(selected.length > 0 ? { attachmentIds: selected.map((attachment) => attachment.id) } : {}),
+        } satisfies VoiceClientMessage)
+      );
+      if (selected.length > 0) turnAttachmentsRef.current.set(turnId, selected);
+      const items = resolved?.attachments ?? [];
+      return {
+        accepted: true,
+        pendingFiles: items.filter((item) => item.availability === "pending").map((item) => item.fileName),
+        unavailableFiles: items.filter((item) => item.availability === "unavailable").map((item) => item.fileName),
+        truncated: resolved?.truncated === true,
+      };
+    },
+    []
+  );
 
   const toggleMute = React.useCallback(() => {
     setMuted((m) => {
@@ -1008,6 +1148,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setStatus("idle");
     setCapabilities(null);
     capsRef.current = null;
+    liveProviderRef.current = null;
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, releaseResources, sealTranscript]);
