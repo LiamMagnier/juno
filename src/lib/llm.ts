@@ -175,7 +175,15 @@ export async function* streamChat(opts: {
 export function providerErrorMessage(err: unknown, subject?: ErrorSubject): string {
   const normalized = normalizeProviderError(err, subject);
   if (normalized.accountFault) {
-    console.error("[provider] account fault", { detail: normalized.operatorMessage });
+    // ONE LINE, and the string is passed directly rather than wrapped in an
+    // object. `console.error("...", { detail })` pretty-prints the object
+    // across several lines once it is long enough, which puts the status and
+    // the provider's own words on a DIFFERENT line from the words an operator
+    // greps for. `pm2 logs | grep "account fault"` then returns a column of
+    // bare `{` and tells you nothing — which is exactly how this was found.
+    // `operatorMessage` is already formatted as
+    // `[provider · model] class status=NNN <raw>`.
+    console.error(`[provider] account fault ${normalized.operatorMessage}`);
   }
   return normalized.userMessage;
 }

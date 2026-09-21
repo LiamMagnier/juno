@@ -265,3 +265,36 @@ test("the operator line names the model as well as the provider", () => {
   assert.match(normalized.operatorMessage, /\[Google · Gemini 3\.8 Flash\]/);
   assert.match(normalized.operatorMessage, /retry_after=35s/);
 });
+
+/*
+ * The operator log line has to survive `grep`.
+ *
+ * `providerErrorMessage` (llm.ts) logs `operatorMessage` so an operator can
+ * find out WHICH provider rejected WHAT and with which status — that is the
+ * whole reason the detail is not collapsed into the neutral user-facing
+ * sentence. It was passed as `console.error("...", { detail })`, and Node
+ * pretty-prints an object across several lines once it is long enough, so
+ * `pm2 logs | grep "account fault"` returned a column of bare `{` with the
+ * status on a line the grep never matched.
+ *
+ * The wrapper itself is in llm.ts, which imports `server-only` and so cannot
+ * be loaded here — the note at the top of provider-error.ts records that gap.
+ * What IS testable is the invariant the fix depends on: `operatorMessage` is a
+ * single line carrying everything an operator needs, so logging it directly
+ * puts all of it on the line they search.
+ */
+test("operatorMessage is one greppable line carrying provider, model and status", () => {
+  const { operatorMessage } = normalizeProviderError(
+    { status: 403, error: { message: "model not enabled for this account" } },
+    { provider: "MiMo", model: "MiMo V2.6 Pro" },
+  );
+
+  assert.ok(!operatorMessage.includes("\n"), "single line — nothing to split across a grep");
+  assert.ok(operatorMessage.includes("status=403"), "carries the status");
+  assert.ok(operatorMessage.includes("MiMo V2.6 Pro"), "and which model was refused");
+  assert.ok(operatorMessage.includes("auth"), "and how it was classified");
+  assert.ok(
+    operatorMessage.includes("model not enabled for this account"),
+    "and the provider's own words, which are what actually say why",
+  );
+});
