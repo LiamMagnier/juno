@@ -1,4 +1,5 @@
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PenTool } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
@@ -23,7 +24,7 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
-  DESIGN: PenTool,
+  DESIGN: AppIcons.design,
 };
 
 /** Inert stand-in for an artifact tag inside the transcript. */

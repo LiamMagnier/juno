@@ -16,7 +16,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, MoreHorizontal, PenTool, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -167,7 +167,7 @@ export default function DesignPage() {
             >
               <span className="flex items-center gap-1.5 text-ui font-medium">
                 {creating === preset.key ? (
-                  <PenTool className="size-3.5 text-primary motion-safe:animate-icon-breathe" aria-hidden />
+                  <AppIcons.design className="size-3.5 text-primary motion-safe:animate-icon-breathe" aria-hidden />
                 ) : (
                   <Plus className="size-3.5 text-muted-foreground group-hover:text-primary" aria-hidden />
                 )}

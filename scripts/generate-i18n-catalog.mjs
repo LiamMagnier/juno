@@ -24,6 +24,15 @@ const COPY_PROPERTIES = new Set([
   "label",
   "lede",
   "message",
+  // The composer's armed marks (`ComposerArmedMark`) name two actions that a
+  // pointer user never reads: what pressing the mark does and what its ✕ does.
+  // They were `aria-label` attributes on two hand-written pills and were
+  // extracted as such; consolidating the marks into one ordered list moved the
+  // same sentences into object properties, where the attribute branch below
+  // cannot see them. A prop that holds a sentence a screen reader will read out
+  // is copy wherever it is written down.
+  "openLabel",
+  "removeLabel",
   // The time-of-day greeting phrases in chat/empty-state.tsx. They are the
   // first words a signed-in user reads and were the only UI copy on that screen
   // the extractor could not see — an array of strings under an object property,

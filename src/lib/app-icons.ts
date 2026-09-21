@@ -54,6 +54,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  Shapes,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -96,10 +97,26 @@ export const AppIcons = {
    *  stroke, nothing to lose. */
   work: Workflow,
   code: Code2,
-  /** Juno Design — the visual design surface. A pen nib rather than a paint
-   *  brush or a square: the mode is about drawing something precise that
-   *  becomes real, and the brush reads as illustration. */
-  design: PenTool,
+  /** Juno Design — the visual design surface.
+   *
+   *  A TRIANGLE, A SQUARE AND A CIRCLE. This was Lucide's pen nib, which is a
+   *  fine drawing at 24px and falls apart at the two sizes the product
+   *  actually draws it: 18px in the sidebar and 14px on an artifact card. The
+   *  nib is four elements — a body, a twenty-command bezier outline, a tail
+   *  stroke and a `circle r="2"` sitting INSIDE the body — and below about
+   *  20px the circle and the two strokes it sits between merge into one grey
+   *  lozenge. It was the least legible mark in the shell and it was on a
+   *  top-level destination.
+   *
+   *  It was also the wrong CLASS of thing. A nib is a TOOL, and every other
+   *  destination in this list names its contents — a folder of projects, a
+   *  shelf of library items, a stack of artifacts, a bubble of conversation.
+   *  Three primitives name what a design IS, which is the same reason the
+   *  file's first entry gave up the house for a speech bubble.
+   *
+   *  The nib is not retired: `DesignIcons.path` keeps it for a vector path
+   *  layer, where it names a tool because a tool is what it is. */
+  design: Shapes,
   library: Library,
   /** Deep research, wherever the shell has to name it — the command palette,
    *  a native sidebar row, an empty state. The SAME telescope the composer's
@@ -272,7 +289,12 @@ export const DesignIcons = {
   rectangle: Square,
   ellipse: Circle,
   line: Minus,
-  /** A vector path. The same nib the Design destination uses. */
+  /** A vector path. Lucide's pen nib — a TOOL naming the one layer kind that is
+   *  made with it. The Design destination used to draw this same mark and now
+   *  draws `Shapes`: the mode is not a tool, and at 18px the nib's inner circle
+   *  closed up (see `AppIcons.design`). At the 12px this tree sets its rows in,
+   *  the nib survives because it is the only mark in the panel with a diagonal
+   *  and the label is right beside it. */
   path: PenTool,
   text: Type,
   image: ImageIcon,

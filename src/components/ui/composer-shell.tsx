@@ -13,6 +13,7 @@ import {
 import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
 
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -84,7 +85,12 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
       className={cn("composer-surface relative flex w-full flex-col rounded-composer", className)}
       {...props}
     >
-      <div ref={fieldTierRef} className="relative flex w-full min-w-0 flex-col">
+      {/* `@container`, so what is inside the composer can be sized by the
+          COMPOSER. PREMIUM_AUDIT.md rule 11: the same box has ~500px inside a
+          1440px window with the sidebar out, and 350 on a phone — the window
+          number describes neither. The armed marks read this to decide whether
+          their labels fit beside the sentence (see `ComposerArmedMark`). */}
+      <div ref={fieldTierRef} className="@container relative flex w-full min-w-0 flex-col">
         {above}
         {field}
         {/* px-2.5 puts the 32px `+` glyph's left edge 10px in and its centre
@@ -119,13 +125,54 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
 export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } as const;
 
 /**
+ * EVERY PROPERTY THAT DECIDES WHERE A GLYPH LANDS, in one string.
+ *
+ * The box, the type and the wrapping — and nothing else. It is split out
+ * because two elements have to lay the draft out IDENTICALLY: the textarea,
+ * and the mirror painted behind it that draws connector mentions with their
+ * app's logo (`composerMirrorClass`). A caret that sits one pixel off the
+ * letter under it is the most obvious kind of broken an input can be, and the
+ * only way to guarantee it is for both to read their metrics from here.
+ */
+const COMPOSER_FIELD_METRICS =
+  // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
+  "block w-full min-h-[3.25rem] px-4 pb-2 pt-3.5 text-base leading-relaxed";
+
+/**
  * The textarea, directly on the surface: transparent, 16px inline padding
  * (the same inset the `+` glyph hangs off), `text-base` because iOS Safari
  * zooms into anything smaller.
  */
-export const composerFieldClass =
-  // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
-  "block w-full resize-none bg-transparent min-h-[3.25rem] px-4 pb-2 pt-3.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80 disabled:opacity-60";
+export const composerFieldClass = cn(
+  COMPOSER_FIELD_METRICS,
+  "resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground/80 disabled:opacity-60",
+);
+
+/**
+ * THE MIRROR: the draft painted a second time, underneath the textarea, so a
+ * connector mention can carry its app's logo.
+ *
+ * A textarea renders one run of plain text and nothing else — no spans, no
+ * images — so an `@GitHub` inside the sentence you are typing cannot be drawn
+ * as anything but the eight characters it is. The way every editor that shows
+ * rich mentions in a plain field does it is to paint the text twice: the
+ * textarea keeps the caret, the selection, IME composition, undo and the
+ * native mobile keyboard, and goes `text-transparent`; this layer sits behind
+ * it and draws the same string with the tokens marked up.
+ *
+ * It only paints text when there IS a token, which is the safety property that
+ * makes the whole technique acceptable on the product's most-used control: a
+ * draft with no mentions is drawn by the textarea itself, exactly as before, so
+ * a mirror that somehow failed to render could never leave the field looking
+ * empty.
+ *
+ * `select-none` and `pointer-events-none`: this is paint. Every event belongs
+ * to the textarea on top of it.
+ */
+export const composerMirrorClass = cn(
+  COMPOSER_FIELD_METRICS,
+  "pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-pre-wrap break-words text-foreground",
+);
 
 /**
  * A flat text chip on the controls row: model, target, permission. Quiet at
@@ -150,6 +197,272 @@ export const composerFieldClass =
  */
 export const composerChipClass =
   "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+
+/* ————————————————————————————————————————————————————————————————————————
+ * The field tier: armed marks and connector mentions, inside the draft
+ * ———————————————————————————————————————————————————————————————————— */
+
+/**
+ * WHERE AN ARMED TOOL IS SAID, and why it is not on the controls row.
+ *
+ * It used to be a filled pill — `bg-primary/10` inside `border-primary/30`,
+ * accent ink — sitting beside the `+` on the row UNDER the field. Two things
+ * were wrong with that and only one of them was the colour.
+ *
+ * The colour, first: that row is a `+`, a muted model chip, a muted mic and
+ * the send circle, so the pill was the only tinted FILL among them and the
+ * fact that this message will also search the web out-shouted the button that
+ * sends it. On a warm accent (coral is the default) a tinted capsule beside a
+ * neutral row reads as a warning badge, which is the one thing an armed tool
+ * is not. These are NEUTRAL now — `bg-accent`, foreground ink, a brand logo
+ * where the tool is an app — because an armed tool is a fact about the draft,
+ * not an alert about it.
+ *
+ * The position matters more. A tool armed for the next message is part of what
+ * you are about to say, and it was being stated in the chrome BELOW the thing
+ * you say it in — so the sentence and its qualifier lived on two different
+ * lines, in two different type sizes, and only one of them moved when you
+ * typed. The reference (ChatGPT) puts them in the field: "Deep research" sits
+ * where your first word would, and an app you mention sits in the sentence,
+ * at the point you mentioned it. That is where they are now, at the field's
+ * own 16px, which is what makes them read as part of the draft rather than as
+ * settings attached to it.
+ *
+ * TWO CONTROLS IN ONE OBJECT, and both are reachable. The label opens the menu
+ * the mark came from (that is where depth, approval mode and the connector
+ * list are actually changed); the ✕ disarms it. The ✕ is revealed on hover and
+ * on focus — `coarse:opacity-100`, because a touch device never hovers and the
+ * menu would otherwise be the only way to turn a tool off.
+ */
+export function ComposerArmedMark({
+  icon,
+  label,
+  labelClassName,
+  detail,
+  tooltip,
+  onOpen,
+  onRemove,
+  openLabel,
+  removeLabel,
+  disabled = false,
+}: {
+  /** The mark. A Lucide glyph, or a brand logo for a connector. */
+  icon: React.ReactNode;
+  label: string;
+  /**
+   * A container query that decides whether the WORDS fit, e.g.
+   * `hidden @[30rem]:inline`.
+   *
+   * With one mark in the field there is always room and this is left unset.
+   * With two or more there is not, below about 480px of composer, and the
+   * alternative to hiding the words is letting them eat the line you are
+   * typing on — a mark you cannot read is worse than a mark you cannot see,
+   * because it still costs the width. What survives is the icon, which for a
+   * connector is its own brand logo. The words stay in the accessible name and
+   * the tooltip.
+   */
+  labelClassName?: string;
+  /** A derived fact about the armed tool — research depth, approval mode. */
+  detail?: string;
+  /**
+   * What `detail` MEANS, in a sentence, on the label's tooltip.
+   *
+   * The mark can hold one word; "Max" does not explain that depth follows the
+   * model and the thinking effort, and "asks first" does not explain which
+   * actions it asks about. Both sentences already exist as copy
+   * (`RESEARCH_EFFORT_COPY`, `WORK_APPROVAL_MODE_SUMMARY`) and are the only
+   * place the product explains a state it lets you arm in one press.
+   */
+  tooltip?: React.ReactNode;
+  /** Opens the surface this was armed from. */
+  onOpen: () => void;
+  /** Disarms it. */
+  onRemove: () => void;
+  /** What pressing the label does, for a screen reader. */
+  openLabel: string;
+  removeLabel: string;
+  /** While the row is locked (streaming): the ✕ stops, the label still opens. */
+  disabled?: boolean;
+}) {
+  const trigger = (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={openLabel}
+      className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      {/* A fixed box, so a brand logo and a Lucide glyph put their labels on
+          the same edge. `[&_svg]:size-4` reaches the mark whether it arrived as
+          a `<GitHubMark>` or as a lucide component. */}
+      <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
+        {icon}
+      </span>
+      <span className={cn("truncate", labelClassName)}>{label}</span>
+      {detail && (
+        <>
+          {/* The derived fact rides muted: it is a CONSEQUENCE of the state,
+              not a second state. It is also the FIRST thing to go when the
+              composer runs short, at every mark count — the state's NAME
+              outranks a qualifier on it, and the qualifier is in the tooltip
+              either way. */}
+          <span aria-hidden className={cn("shrink-0 text-muted-foreground", ARMED_DETAIL_CLASS)}>·</span>
+          <span aria-hidden className={cn("shrink-0 truncate text-muted-foreground", ARMED_DETAIL_CLASS)}>
+            {detail}
+          </span>
+        </>
+      )}
+    </button>
+  );
+  return (
+    <span
+      className={cn(
+        "group/armed inline-flex min-w-0 items-center rounded-md bg-accent align-baseline font-medium text-foreground",
+        // It ARRIVES. A tool you just armed appearing with no transition in the
+        // line you are typing is the one moment this mark has to be noticed;
+        // after that it should be quiet, which is what the rest of the recipe
+        // is for. `motion-safe:` because a spring pop is exactly what reduced
+        // motion asks not to see.
+        "motion-safe:animate-pop-in",
+      )}
+    >
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="top" className="max-w-64 text-center">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger
+      )}
+      {/* `opacity-0`, never `hidden`. A ✕ that only takes up space on hover
+          re-measures the mark under the pointer and shifts the words after it
+          by 20px at the moment you are reaching for one of them. The space is
+          reserved at rest and costs nothing but air. */}
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        aria-label={removeLabel}
+        className="inline-flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 text-muted-foreground opacity-0 transition-opacity duration-fast hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-0 group-hover/armed:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+      >
+        <ActionIcons.dismiss aria-hidden className="size-3.5" />
+      </button>
+    </span>
+  );
+}
+
+/** Where a mark's `detail` stops fitting. The composer surface is the `@container`. */
+const ARMED_DETAIL_CLASS = "hidden @[30rem]:inline";
+
+/**
+ * The armed marks, laid into the START of the draft.
+ *
+ * They are drawn OVER the textarea rather than inside it — a textarea has no
+ * elements in it — and the textarea is given a `text-indent` exactly as wide
+ * as this group, so the first word you type lands after the marks instead of
+ * under them. That is one measurement, taken here and handed back through
+ * `onWidth`; nothing else in either layer knows the number.
+ *
+ * `pointer-events-none` on the layer and `auto` on the group: a click on a
+ * mark works it, a click anywhere else in the field falls through to the
+ * textarea and places the caret, which is what a field is for.
+ *
+ * The group TRANSLATES with the draft's own scroll. Past the composer's
+ * eight-line cap the textarea scrolls under a fixed box, and marks pinned to
+ * the frame would float over line fourteen; the layer clips, so they leave
+ * with the line they belong to.
+ */
+export function ComposerFieldLead({
+  children,
+  onWidth,
+  spanRef,
+}: {
+  children: React.ReactNode;
+  onWidth: (width: number) => void;
+  /**
+   * The group itself, so the host can write its scroll transform straight to
+   * the node. Through state it would re-render the whole composer on every
+   * frame of a scroll, which is the one thing this layer must not cost.
+   */
+  spanRef: React.RefObject<HTMLSpanElement | null>;
+}) {
+  React.useEffect(() => {
+    const el = spanRef.current;
+    if (!el) return;
+    const measure = () => onWidth(el.getBoundingClientRect().width);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // NOT keyed to `children`. The group's contents are a fresh array on every
+    // render of the composer, so a dependency on them would tear down and
+    // rebuild the observer on every keystroke — and the observer is the thing
+    // that already answers "the contents changed size".
+  }, [onWidth, spanRef]);
+  return (
+    <div className={cn(COMPOSER_FIELD_METRICS, "pointer-events-none absolute inset-0 overflow-hidden")}>
+      <span
+        ref={spanRef}
+        // `pr-1.5` is INSIDE the measured width, so it becomes the gap between
+        // the last mark and the first word — the marks are not touching the
+        // sentence, and the number is spent once rather than twice.
+        className="pointer-events-auto inline-flex max-w-full items-center gap-1 pr-1.5 align-baseline"
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+/** One run of the mirrored draft: plain text, or an app the draft mentions. */
+export type ComposerFieldSegment =
+  | { kind: "text"; value: string }
+  | { kind: "mention"; value: string; icon: React.ReactNode };
+
+/**
+ * The draft, painted behind the textarea, with its mentions marked up.
+ *
+ * See `composerMirrorClass` for why a second layer exists at all. What matters
+ * here is that a mention must not change a single advance: the caret in the
+ * textarea is positioned by the plain string, so anything this layer adds has
+ * to be out of flow. The app's logo is therefore drawn ON the "@" — which is
+ * transparent, and is about as wide as the mark that covers it — and the
+ * token's padding is a `box-shadow` spread, which paints outside the box
+ * without occupying any.
+ */
+export function ComposerFieldMirror({
+  segments,
+  indent,
+  viewportRef,
+}: {
+  segments: ComposerFieldSegment[];
+  indent: number;
+  viewportRef: React.Ref<HTMLDivElement>;
+}) {
+  return (
+    <div ref={viewportRef} aria-hidden className={composerMirrorClass} style={{ textIndent: indent || undefined }}>
+      {segments.map((segment, i) =>
+        segment.kind === "text" ? (
+          <React.Fragment key={i}>{segment.value}</React.Fragment>
+        ) : (
+          <span key={i} className="composer-mention">
+            <span className="composer-mention__at" aria-hidden>
+              @
+              <span className="composer-mention__logo">{segment.icon}</span>
+            </span>
+            {segment.value}
+          </span>
+        ),
+      )}
+      {/* A draft ending in a newline has no content on its last line, and a
+          block collapses that line away — so the mirror would come up one row
+          short of the textarea and every wrap below the fold would drift. */}
+      {"\n"}
+    </div>
+  );
+}
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =

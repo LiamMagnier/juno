@@ -1130,6 +1130,124 @@
   }
 
   /*
+   * AN APP MENTIONED INSIDE THE DRAFT — "…look on my @GitHub and…".
+   *
+   * Painted by the mirror behind the textarea (`composerMirrorClass`), and
+   * bound by one rule that decides every value here: IT MUST NOT MOVE A
+   * SINGLE CHARACTER. The caret the reader is typing with belongs to the
+   * textarea, which is laying out the same string in plain text; anything this
+   * token adds to an advance puts the caret off the letter it is under for the
+   * whole rest of the line.
+   *
+   * So: no font-weight (500 is wider than 400), no letter-spacing, no
+   * horizontal padding. The padding is a `box-shadow` SPREAD, which paints
+   * outside the box without occupying any, and the app's logo is absolutely
+   * positioned over the "@" — a glyph about as wide as the mark that replaces
+   * it, and the one character in the token that carries no information once
+   * the logo is there.
+   *
+   * Vertical padding is safe (an inline box's height does not feed back into
+   * the line box) and is what stops the fill hugging the x-height.
+   *
+   * NEUTRAL, not accent. The draft is foreground ink on the composer's card;
+   * a mention is the same ink on the accent fill — the product's quietest
+   * "this is a thing, not a word". An accent-coloured token here would put the
+   * loudest colour in the app inside the sentence you are writing.
+   */
+  .composer-mention {
+    border-radius: 5px;
+    padding-block: 0.08em;
+    background-color: hsl(var(--accent));
+    box-shadow: 0 0 0 2px hsl(var(--accent));
+    color: hsl(var(--foreground));
+    /* A mention that wraps gets two rounded ends, not one box cut in half. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .composer-mention__at {
+    position: relative;
+    color: transparent;
+  }
+  .composer-mention__logo {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: block;
+    line-height: 0;
+    color: hsl(var(--foreground));
+    /* `text-indent` IS INHERITED, and the mirror sets one whenever a mark is
+       laid into the head of the field. This box is absolutely positioned, so
+       it is a block container of its own: without this it indents its own only
+       child — the logo — by the width of those marks, and the app's mark lands
+       a hundred and eighty pixels away in the middle of another word. */
+    text-indent: 0;
+  }
+  .composer-mention__logo svg {
+    width: 0.95em;
+    height: 0.95em;
+  }
+
+  /*
+   * The textarea while the mirror is painting.
+   *
+   * `color: transparent` hands the text to the layer behind, and the two
+   * properties under it are what stop that from breaking the field. A caret
+   * inherits `color`, so it has to be named back; and a selection painted at
+   * full opacity by the textarea on top would hide the very text the mirror is
+   * drawing, so it goes translucent — which is what a selection over live text
+   * looks like anyway.
+   */
+  .composer-field--mirrored {
+    color: transparent;
+    caret-color: hsl(var(--foreground));
+  }
+  .composer-field--mirrored::selection {
+    background-color: hsl(var(--primary) / 0.28);
+    color: transparent;
+  }
+
+  /*
+   * THE SELECTED ROW IN THE SIDEBAR — one recipe, every list in the panel.
+   *
+   * Selection used to be a bare `bg-sidebar-accent` — a fill 4.1 points of
+   * lightness from the panel on light (darker) and 8.2 on dark (lighter), with
+   * no edge. At a glance the selected row read as a smudge rather than as the
+   * object you are standing on, and it was the one thing in the column a
+   * reader had to hunt for. Hover is the SAME colour at 60%, which covers 2.5
+   * of that step on light and 4.9 on dark: the two states were 1.6 points
+   * apart in the theme most people read in daylight and were told apart by
+   * opacity alone — a distinction that survives a side-by-side comparison and
+   * nothing else.
+   *
+   * The fix is an EDGE, not a louder fill. A hairline in `--sidebar-border` —
+   * the same ink the panel's own seam is drawn in, so the row is bounded by
+   * the panel's line rather than by a new one — turns the fill into a
+   * contained object, and it is the one property hover does not have. Fill
+   * says "the pointer is here"; fill plus an edge says "this is where you
+   * are". Drawn as an INSET box-shadow rather than a border: every row in this
+   * panel is a fixed height on `box-border`, and a real border would eat 2px
+   * of the 32px pitch the column's whole measurement table is keyed to.
+   *
+   * No shadow under it. This is a flat panel (docs/design/FLAT_UI.md §2.1) and
+   * the hairline is the lift; a raised row inside a recessed well is the Soft
+   * UI idiom the flat retune spent a release removing.
+   */
+  .sidebar-row-selected {
+    background-color: hsl(var(--sidebar-accent));
+    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-border));
+  }
+  /* The same state on a trigger that owns its own `data-state` — the account
+     band, whose "selected" is its menu being open. A className cannot read
+     Radix's attribute, and the alternative is an arbitrary
+     `data-[state=open]:shadow-[inset_0_0_0_1px_…]` written out at the call
+     site, which is the recipe copied rather than reused. */
+  .sidebar-row-selected-on-open[data-state="open"] {
+    background-color: hsl(var(--sidebar-accent));
+    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-border));
+  }
+
+  /*
    * The sidebar glyph.
    *
    * WHAT WAS HERE. Two hundred and sixteen lines of per-icon hover
