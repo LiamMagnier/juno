@@ -2,11 +2,11 @@ import { NextResponse, after } from "next/server";
 import { admitChatRequest } from "@/lib/chat-admission";
 import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { Prisma, type Plan } from "@prisma/client";
-import { windowLimitMessage } from "@/lib/spend-ceiling";
+import { effectiveBudget, windowLimitMessage, type EffectiveBudget } from "@/lib/spend-ceiling";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
-import { getQuota, getUserPlan, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
+import { getQuota, planFromAccount, consumeMessage, consumeRefusalBody, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
@@ -60,12 +60,17 @@ import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { encryptJsonField } from "@/lib/field-crypto";
 import {
+  billingPeriodFor,
+  budgetForPlan,
   checkBudget,
   checkUsageWindows,
+  eurPerUsd,
   recordSpend,
+  releaseSpend,
   reserveSpend,
   budgetExceededMessage,
   modelRatesMicroUsdPerToken,
+  type BillingPeriod,
 } from "@/lib/spend";
 import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
 import { researchEffortFor } from "@/lib/research/auto-effort";
@@ -462,8 +467,13 @@ function firstSubmissionRecoveryPort(userId: string): FirstSubmissionRecoveryPor
  * Beside `checkBudget`, never instead of it: a window is a slice of the month,
  * so the month remains the outer bound and can still refuse on its own.
  */
-async function usageWindowRefusal(userId: string, plan: Plan): Promise<NextResponse | null> {
-  const windows = await checkUsageWindows(userId, plan);
+async function usageWindowRefusal(
+  userId: string,
+  plan: Plan,
+  period?: BillingPeriod | null,
+  budget?: EffectiveBudget
+): Promise<NextResponse | null> {
+  const windows = await checkUsageWindows(userId, plan, period, budget);
   if (windows.allowed || windows.bound === null) return null;
   return NextResponse.json(
     {
@@ -592,10 +602,49 @@ async function handleChat(req: Request) {
   // provider is configured and the plan allows it, falling back if not.
   // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
   // chat model that can handle it (vision / web-search constraints applied).
-  const [plan, settings] = await Promise.all([
-    getUserPlan(user.id),
+  const [account, settings] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        email: true,
+        // Folded in from the durable-submission branch below, which used to
+        // read this column on its own.
+        emailVerified: true,
+        subscription: {
+          select: { plan: true, status: true, createdAt: true, currentPeriodEnd: true },
+        },
+      },
+    }),
     prisma.settings.findUnique({ where: { userId: user.id } }),
   ]);
+
+  /*
+   * ONE ACCOUNT, ONE SETTINGS ROW, AND EVERYTHING DERIVED FROM THEM.
+   *
+   * These three values were each resolved by whoever needed them, from their
+   * own query, several times per send: the plan through `getUserPlan` (a
+   * User+Subscription join), the billing period through `resolveBillingPeriod`
+   * (the Subscription again), and the ceiling through `resolveEffectiveBudget`
+   * (the Settings row again, a third of whose columns this function already
+   * has in hand). `cache()` cut each to once per request, but once per request
+   * each is still three round trips for two rows that were already read.
+   *
+   * Derived here and PASSED DOWN instead — `checkBudget`, `checkUsageWindows`
+   * and `reserveSpend` all take `period` and `budget` precisely so a caller
+   * that knows them does not make them look again. It is also the only way the
+   * gate and the meters are guaranteed to be reading the same numbers, which
+   * is the argument lib/app-data.ts makes for doing exactly this in the app
+   * bootstrap.
+   */
+  const subscription = account?.subscription ?? null;
+  const plan = planFromAccount(account?.email ?? null, subscription);
+  const period = billingPeriodFor(subscription);
+  const effective = effectiveBudget({
+    planBudgetMicroUsd: budgetForPlan(plan),
+    userCapEur: settings?.monthlySpendCapEur ?? null,
+    capDisabled: settings?.spendCapDisabled ?? false,
+    eurPerUsd: eurPerUsd(),
+  });
 
   // Resolve the project assistant before any tool is admitted. Native clients
   // already hide denied controls, but the server is the trust boundary and the
@@ -838,11 +887,11 @@ async function handleChat(req: Request) {
     const unavailable = privateModeFeatureRefusal(input);
     if (unavailable) return refuse(unavailable);
 
-    const budget = await checkBudget(user.id, plan);
+    const budget = await checkBudget(user.id, plan, period, effective);
     if (!budget.allowed) {
       return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
     }
-    const windowed = await usageWindowRefusal(user.id, plan);
+    const windowed = await usageWindowRefusal(user.id, plan, period, effective);
     if (windowed) return windowed;
 
     const consumed = await consumeMessage(user.id, plan);
@@ -892,7 +941,7 @@ async function handleChat(req: Request) {
      * hold is settled by `recordSpend` below, which is the one place every
      * streaming path passes through.
      */
-    await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
+    await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
     const generationController = new AbortController();
     const unregisterGeneration = registerGeneration(generationId, {
       userId: user.id,
@@ -1227,6 +1276,12 @@ async function handleChat(req: Request) {
         } finally {
           stallWatchdog.stop();
           clearInterval(heartbeat);
+          // Same leak, same fix as the saved path below: `recordSpend` is the
+          // only thing that settles this turn's hold, so a turn that never
+          // reaches one has to give the headroom back itself.
+          if (!spendRecorded) {
+            await releaseSpend(user.id, generationId).catch(() => {});
+          }
           unregisterGeneration();
           try {
             controller.close();
@@ -1269,8 +1324,8 @@ async function handleChat(req: Request) {
   // period and ceiling lookups underneath them (both `cache()`d in spend.ts)
   // instead of each paying for its own.
   const [budget, windowed] = await Promise.all([
-    checkBudget(user.id, plan),
-    usageWindowRefusal(user.id, plan),
+    checkBudget(user.id, plan, period, effective),
+    usageWindowRefusal(user.id, plan, period, effective),
   ]);
   if (!budget.allowed) {
     return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
@@ -1366,10 +1421,6 @@ async function handleChat(req: Request) {
     // message of a brand-new conversation, the exact turn a fresh disposable
     // account sends, the one turn the gate did not cover. Checked here,
     // before the transaction, because it must consume nothing.
-    const account = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { emailVerified: true },
-    });
     if (!account?.emailVerified) {
       return NextResponse.json(
         consumeRefusalBody({
@@ -1791,7 +1842,7 @@ async function handleChat(req: Request) {
         const retrievalOptions = {
           userId: user.id,
           query: knowledgeQuery,
-          policy: await loadBackgroundProviderPolicy(user.id),
+          policy: await loadBackgroundProviderPolicy(user.id, settings),
           // Embedding the question is background work on the user's content, so
           // it answers to the same provider policy as everything else — and
           // `same_provider` means the provider they picked for this turn.
@@ -1838,7 +1889,7 @@ async function handleChat(req: Request) {
         userId: user.id,
         attachmentIds: directAttachments.map((attachment) => attachment.id),
         query: knowledgeQuery,
-        policy: await loadBackgroundProviderPolicy(user.id),
+        policy: await loadBackgroundProviderPolicy(user.id, settings),
         conversationProvider: modelInfo.provider,
       });
       const pendingFiles = directAttachments
@@ -1980,7 +2031,7 @@ async function handleChat(req: Request) {
    * hold is settled by `recordSpend` below, which is the one place every
    * streaming path passes through.
    */
-  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
+  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan, period, budget: effective });
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -3012,6 +3063,31 @@ async function handleChat(req: Request) {
       } finally {
         stallWatchdog.stop();
         stopGenerationTimers();
+        /*
+         * RELEASE THE HOLD THIS TURN NEVER SPENT.
+         *
+         * `reserveSpend` opens a hold before the model is called and
+         * `recordSpend` settles it — and `recordSpend` is the ONLY thing that
+         * ever did. So a turn that ended without one (a stream aborted before
+         * its first token, a provider that failed outright, a research notice,
+         * which records no spend by design) left its hold open against the
+         * account until the hourly sweep found it. Production was carrying ten
+         * of them when this was written.
+         *
+         * A hold is an over-statement of what the account has spent, so while
+         * it sits there the budget gate refuses work the user has room for.
+         * That is the actual cost of the leak; the sweep was only ever the
+         * cleanup.
+         *
+         * Guarded by `spendRecorded` rather than left unconditional so a
+         * normal turn pays nothing extra: a settled reservation would find no
+         * `open` row and return false anyway, but it would still cost the
+         * round trip to discover that. Failure is swallowed — the answer has
+         * already been delivered, and the sweep remains the backstop.
+         */
+        if (!spendRecorded) {
+          await releaseSpend(user.id, generationId).catch(() => {});
+        }
         // After the terminal frame, before the registry entry goes: a client
         // that reconnects between the two must find the `done`/`error` in the
         // log rather than tail a generation this process no longer has.

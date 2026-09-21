@@ -91,17 +91,34 @@ export function utilityModelCandidates(): ModelInfo[] {
  * for the memory profile, once for knowledge retrieval) and the policy cannot
  * change between the two. One Settings read, not three.
  */
+/** The two columns this reads, for callers that hold the row already. */
+export type BackgroundProviderSettings = {
+  backgroundProviderMode: string | null;
+  backgroundProviderSelected: string | null;
+};
+
+/**
+ * `settings` skips the read entirely.
+ *
+ * The chat route loads the whole Settings row before it resolves a model, and
+ * then asked for these two columns twice more on the way to the provider — on
+ * the path a reader is watching "Starting your request" on. A caller that has
+ * the row passes it; one that does not still gets the lookup.
+ */
 export const loadBackgroundProviderPolicy = cache(async function loadBackgroundProviderPolicy(
-  userId: string
+  userId: string,
+  settings?: BackgroundProviderSettings | null
 ): Promise<BackgroundProviderPolicy> {
   try {
-    const settings = await prisma.settings.findUnique({
-      where: { userId },
-      select: { backgroundProviderMode: true, backgroundProviderSelected: true },
-    });
+    const row = settings !== undefined
+      ? settings
+      : await prisma.settings.findUnique({
+          where: { userId },
+          select: { backgroundProviderMode: true, backgroundProviderSelected: true },
+        });
     return normalizeBackgroundProviderPolicy({
-      mode: settings?.backgroundProviderMode as BackgroundProviderPolicy["mode"],
-      selectedProvider: settings?.backgroundProviderSelected,
+      mode: row?.backgroundProviderMode as BackgroundProviderPolicy["mode"],
+      selectedProvider: row?.backgroundProviderSelected,
       allowedProviders: deploymentProviderAllowlist(),
     });
   } catch {
