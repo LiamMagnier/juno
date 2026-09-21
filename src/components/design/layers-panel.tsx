@@ -51,6 +51,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ColorField, NumberField, PanelSelect, SelectField, TextField } from "@/components/design/effects-panel";
 import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
@@ -613,7 +614,7 @@ export function LayersPanel({
                     <ActionIcons.more className="size-3.5" aria-hidden />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className={MENU_W}>
                   <DropdownMenuItem
                     disabled={node.locked}
                     // Radix returns focus to its trigger as it closes, so an

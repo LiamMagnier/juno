@@ -33,6 +33,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -2119,7 +2120,14 @@ function ConversationRow({
           </TooltipTrigger>
           <TooltipContent>Options</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="end" className="w-56">
+        {/* ONE hairline, and it is the one before Delete.
+            This menu carried three, which cut seven rows into four groups —
+            Rename/Pin, the project submenu, Share/Archive, Delete — and a
+            four-part menu of seven verbs reads as a settings panel. The
+            reference set (ChatGPT's chat menu, Claude's, Linear's) all do the
+            same thing: the actions are one list, and the rule exists to put a
+            beat in front of the row that cannot be undone. */}
+        <DropdownMenuContent align="end" className={MENU_W}>
           <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
             <ActionIcons.edit className="size-4" /> Rename
           </DropdownMenuItem>
@@ -2131,34 +2139,30 @@ function ConversationRow({
               repository or workspace it runs in — so this submenu would offer
               to file a session into a folder the Code column never draws. */}
           {!isCodeSession && (
-            <>
-          <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <AppIcons.projects className="size-4" /> Add to project
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
-              <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                {conversation.projectId == null ? <StatusIcons.success className="size-4" /> : <span className="size-4" />}
-                No project
-              </DropdownMenuItem>
-              {projects.map((p) => (
-                <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                  {conversation.projectId === p.id ? <StatusIcons.success className="size-4" /> : <AppIcons.projects className="size-4" />}
-                  <span dir="auto" className="truncate">
-                    {p.name}
-                  </span>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <AppIcons.projects className="size-4" /> Add to project
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className={MENU_W}>
+                <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+                  {conversation.projectId == null ? <StatusIcons.success className="size-4 text-primary" /> : <span className="size-4" />}
+                  No project
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => router.push("/projects")}>
-                <Plus className="size-4" /> New project…
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-            </>
+                {projects.map((p) => (
+                  <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+                    {conversation.projectId === p.id ? <StatusIcons.success className="size-4 text-primary" /> : <AppIcons.projects className="size-4" />}
+                    <span dir="auto" className="truncate">
+                      {p.name}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => router.push("/projects")}>
+                  <Plus className="size-4" /> New project…
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           )}
-          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onShare(conversation.id)}>
             <ActionIcons.share className="size-4" /> Share
           </DropdownMenuItem>
@@ -2277,7 +2281,7 @@ function ProjectRow({
             </TooltipTrigger>
             <TooltipContent>Project options</TooltipContent>
           </Tooltip>
-          <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuContent align="end" className={MENU_W}>
             <DropdownMenuItem onSelect={onNewChat}>
               <Plus className="size-4" /> New chat in project
             </DropdownMenuItem>

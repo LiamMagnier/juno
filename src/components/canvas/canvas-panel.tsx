@@ -30,6 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -776,7 +777,7 @@ export function CanvasPanel({
               {exportingFormat ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ActionIcons.more className="size-4" aria-hidden />}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuContent align="end" className={MENU_W}>
             <DropdownMenuItem onSelect={copy}>
               <ActionIcons.copy className="size-4" aria-hidden /> Copy source
             </DropdownMenuItem>

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ArrowRight, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { JunoMark } from "@/components/brand/logo";
 import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -160,13 +162,17 @@ export function LandingPage({ nonce }: { nonce?: string }) {
               </summary>
               <nav
                 aria-label="Sections"
-                className="surface-float absolute right-0 top-full z-popper mt-2 min-w-40 rounded-popover p-1.5 motion-safe:animate-pop-in"
+                // The app's menu shell, not a second one drawn to look like
+                // it: this <details> menu is the first menu a visitor opens
+                // and it sat at a different radius, padding and row height
+                // from every menu behind the sign-in wall.
+                className={cn(menuShellClass, "absolute right-0 top-full mt-2 min-w-40 motion-safe:animate-pop-in")}
               >
                 {NAV_LINKS.map(({ href, label }) => (
                   <a
                     key={href}
                     href={href}
-                    className="menu-item flex items-center rounded-control px-3 py-2 text-ui transition-colors duration-fast ease-out-soft hover:bg-accent"
+                    className={cn(menuRowClass, menuGlyphInkClass, "hover:bg-accent")}
                   >
                     {label}
                   </a>

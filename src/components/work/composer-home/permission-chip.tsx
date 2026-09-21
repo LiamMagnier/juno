@@ -10,6 +10,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
   WORK_APPROVAL_MODE_LABEL,
@@ -83,7 +84,7 @@ export function WorkPermissionChip({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-[19rem]">
+      <DropdownMenuContent align="start" side="top" sideOffset={8} className={MENU_W_WIDE}>
         <DropdownMenuLabel className="font-mono text-label">
           How often this task asks
         </DropdownMenuLabel>

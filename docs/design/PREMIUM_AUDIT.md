@@ -295,6 +295,89 @@ what it looks like — up ONE level — on the ten pages that have a parent.
 **Rule:** a page opens with its name. Anything above the name has to say
 something the name does not.
 
+## 2c. The menus, and the weight of the app — September 2026
+
+Two findings from one report: *"the + menu design, the three dot menu design
+and overall UI/UX feels AI slop"*, and *"when I open the website it takes too
+much time to load"*. Both turned out to be measurable rather than a matter of
+taste, which is the only useful kind of finding about "slop".
+
+### P0 — `menu-item` marked five recipes and enforced none
+
+`menu-item` was stamped on five components as a shared class. It matched no
+CSS. So the five things it marked had drifted into five different objects:
+
+```
+dropdown-menu.tsx    gap-2.5  rounded-control  px-2.5 py-1.5  text-body  svg 18
+select.tsx           gap-2    rounded-control  pl-8 pr-2      text-ui    svg 16
+command-palette.tsx  gap-2.5  rounded-field    px-2           text-body  svg 16
+composer-plus-menu   gap-2.5  rounded-control  px-2.5 py-1.5  text-ui    svg 16
+landing nav          —        rounded-control  px-3 py-2      text-ui    —
+```
+
+The two that matter open seconds apart: the composer's `+` and the kebab on a
+sidebar row. One drew 36px rows of 13px type with a 16px glyph; the other drew
+32px rows of 15px type with an 18px glyph, on a shell two radius rungs rounder.
+Neither is wrong on its own. Together they say the product was assembled.
+
+The dropdown's row was also carrying `[&_svg]:size-4.5`, which compiles to
+`.cls svg` at (0,1,1) and outranks a plain `.size-4` **on** the svg at (0,1,0)
+— so roughly forty call sites that had written `className="size-4"` on a menu
+glyph were rendering at 18px, and no one could see why. Whence the
+`:not([class*='size-'])` guards in the recipe: a default that a call site can
+actually override.
+
+**Rule:** `menu-recipe.ts` is the recipe, and every floating list imports it.
+14px shell at `p-1`, 32px rows (44 on a coarse pointer) at `ui`/13px with a
+16px muted glyph, a hairline at 10%, and **two** widths — `MENU_W` for a list
+of verbs, `MENU_W_WIDE` for rows carrying a second line. Nine widths were in
+use for the same job. The command palette is the one deliberate exception and
+says so in its own note: its rows are the reader's own chats found by a search
+field, not verbs, and Raycast and Spotlight draw that row taller too.
+
+**And a menu gets one hairline.** The sidebar's conversation menu cut seven
+verbs into four groups. A rule is a beat before the row that cannot be undone,
+not a section heading; ChatGPT, Claude and Linear all spend exactly one.
+
+**`/dev/controls` now draws every menu side by side**, which is the only reason
+any of this was visible. Two menus that never appear on screen together in the
+product cannot drift in a way anyone notices until a user says the word "slop".
+
+### P0 — half the chat bundle was a maths typesetter and a syntax highlighter
+
+Measured on the production build:
+
+```
+                  before     after
+/chat             667 kB    528 kB
+/chat/[id]        797 kB    563 kB
+/settings         515 kB    381 kB
+/compare          456 kB    322 kB
+/memory           451 kB    316 kB
+/share/[token]    378 kB    284 kB
+```
+
+Four static imports, none of which render anything on a first paint:
+
+- **KaTeX (258 kB) + its 24 kB stylesheet.** `rehype-katex` was a static import
+  in `markdown.tsx` and `katex.min.css` was mounted by the signed-in layout, so
+  every page behind the login — settings, projects, the roadmap — paid for a
+  formula renderer. Now `markdown-plugins.ts` fetches it when a block's own
+  text contains maths, and the CSS travels in the same chunk.
+- **highlight.js**, the same way, when a block contains a fence.
+- **The Code session view (234 kB)** was statically imported by
+  `/chat/[id]/page.tsx`, which renders it for *one* kind of conversation, and
+  it dragged the canvas panel and the design editor's node machinery in behind
+  it.
+- **`CodeSurface`**, which registers about twenty highlight.js grammars at
+  module scope, was statically imported by the inline artifact card.
+
+**Rule:** a renderer whose absence degrades to readable text — source LaTeX,
+uncoloured code — is a dynamic import, keyed on the content that needs it. A
+renderer whose absence changes layout is not; do not extend the pattern to one.
+The general form: before defending a bundle, run the build and read the chunks.
+Every one of these four survived because nobody had.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,

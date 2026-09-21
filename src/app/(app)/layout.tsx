@@ -4,7 +4,6 @@ import { getAppBootstrap } from "@/lib/app-data";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { SettingsModalLazy } from "@/components/settings/settings-modal-lazy";
-import { KatexStyles } from "@/components/ui/katex-styles";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +15,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppProvider bootstrap={bootstrap}>
-      {/* KaTeX CSS rides with the app shell, not the root layout — see katex-styles.tsx. */}
-      <KatexStyles />
       {/* The aura is NOT mounted here any more. It used to portal to <body>
           and paint the whole window frame — across the sidebar — for whatever
           any of five sources happened to be doing. It belongs to voice, and to

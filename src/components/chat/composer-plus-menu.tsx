@@ -16,6 +16,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE, menuRowClass } from "@/components/ui/menu-recipe";
 import {
   Tooltip,
   TooltipContent,
@@ -27,8 +28,11 @@ import { cn } from "@/lib/utils";
 /**
  * The composer's `+` menu (docs/design/FLAT_UI.md §3).
  *
- * One `.surface-float` menu at `rounded-popover` with p-1.5, so its 36px rows
- * sit concentric at `rounded-control`. Three groups separated by a hairline
+ * One `.surface-float` menu on the shared recipe (`menu-recipe.ts`): a 14px
+ * shell with p-1, so its 32px rows sit concentric at `rounded-control`. The
+ * same shell and the same row as every kebab in the product — this menu used
+ * to be a near-copy of that one, differing only in the numbers nobody chooses.
+ * Three groups separated by a hairline
  * and nothing else — what you bring in, where this chat sits, what is armed
  * for the message — with no eyebrows naming them, because "Add files or
  * photos" already says what kind of row it is. Tool rows are checkmark rows
@@ -91,13 +95,25 @@ export type PlusMenuItem =
 
 export type PlusMenuSection = PlusMenuItem[];
 
-/** Shared row recipe: 36px, `rounded-control`, accent fill under the cursor. */
-export const plusMenuRowClass =
-  "flex min-h-9 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-ui text-foreground coarse:min-h-11";
+/**
+ * The row. `menu-recipe.ts` now, not a recipe of this menu's own.
+ *
+ * It used to be a near-copy — same radius, same gap, same 13px type — that
+ * differed from DropdownMenu's row in exactly the ways nobody chooses: 36px
+ * against 32, and a 16px glyph against 18. Which meant the two menus a person
+ * opens most in this product, often within seconds of each other, were
+ * visibly two different objects. They are one object now; anything this menu
+ * needs on top is stated here, beside the rows that need it.
+ */
+export const plusMenuRowClass = menuRowClass;
 
 /** The 16px glyph slot at the head of a row. */
 export function PlusMenuGlyph({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
-  return <Icon aria-hidden="true" className={cn("size-4 shrink-0 text-muted-foreground", className)} />;
+  // No size and no ink stated: the row's recipe supplies both (16px, muted) and
+  // does it for every menu in the product, so a glyph here and a glyph in a row
+  // kebab cannot drift apart again. `className` still wins where a call site
+  // means it to — that is what the recipe's :not() guards are for.
+  return <Icon aria-hidden="true" className={cn("shrink-0", className)} />;
 }
 
 /** One hairline between sections. */
@@ -268,7 +284,10 @@ export function PlusMenu({
           event.preventDefault();
           back();
         }}
-        className="w-72 max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto p-1.5"
+        // No padding restated: the shell's own p-1 is what makes its 14px edge
+        // concentric with the 10px rows inside it, and a p-1.5 here was quietly
+        // breaking that for the one menu people open most.
+        className={cn(MENU_W_WIDE, "max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto")}
       >
         {compact && panel?.kind === "sub" ? (
           // The panel arrives from the right and the root list comes back from
@@ -352,12 +371,13 @@ export function PlusMenu({
                             </span>
                           )}
                         </DropdownMenuSubTrigger>
-                        {/* Concentric with the root: the same 16px shell and p-1.5,
-                            so the flyout's rows sit on the same 10px rung. */}
+                        {/* Concentric with the root because it IS the root's
+                            shell — SubContent and Content are one recipe — so
+                            only the width is stated here. */}
                         <DropdownMenuSubContent
                           sideOffset={6}
                           collisionPadding={16}
-                          className="flex w-72 flex-col p-1.5"
+                          className={cn("flex flex-col", MENU_W_WIDE)}
                         >
                           {item.render()}
                         </DropdownMenuSubContent>

@@ -4,6 +4,7 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
+import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
@@ -39,9 +40,14 @@ const SelectTrigger = React.forwardRef<
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
 /**
- * The floating tier: `.surface-float` + `.overlay-glass` at `rounded-popover`
- * (16). 16px shell − p-1.5 (6px) = the 10px `rounded-control` items, exactly
- * as DropdownMenu: the two open side by side and must be the same object.
+ * The floating tier — `menu-recipe.ts`, the same shell DropdownMenu opens: the
+ * two appear side by side (a Select inside a settings panel, a kebab on the row
+ * behind it) and have to be one object.
+ *
+ * The shell's own `p-1` is dropped here and moved onto the Viewport, because
+ * Radix needs the scroll buttons OUTSIDE the padded box — padding on the
+ * Content would put a 4px band of popover between the button and the shell
+ * edge, and the list would slide through it.
  */
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
@@ -53,7 +59,8 @@ const SelectContent = React.forwardRef<
       className={cn(
         // pop-in/out fill `both`, which would permanently cancel translate-y utilities —
         // the trigger gap comes from sideOffset instead.
-        "surface-float overlay-glass relative z-popper max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-popover data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        menuShellClass,
+        "relative min-w-[8rem] overflow-hidden p-0 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))]",
         className
       )}
       position={position}
@@ -67,7 +74,7 @@ const SelectContent = React.forwardRef<
         <ChevronUp className="size-4" />
       </SelectPrimitive.ScrollUpButton>
       <SelectPrimitive.Viewport
-        className={cn("p-1.5", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
+        className={cn("p-1", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
       >
         {children}
       </SelectPrimitive.Viewport>
@@ -86,7 +93,9 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "menu-item group/menu-item relative flex w-full cursor-pointer select-none items-center gap-2 rounded-control py-1.5 pl-8 pr-2 text-ui outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      menuRowClass,
+      menuGlyphInkClass,
+      "w-full pl-8 pr-2 focus:bg-accent focus:text-accent-foreground",
       className
     )}
     {...props}
@@ -95,7 +104,7 @@ const SelectItem = React.forwardRef<
         the gutter it shares with DropdownMenu's identical indicator. */}
     <span className="absolute left-2 flex size-4 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
-        <StatusIcons.success className="size-4" />
+        <StatusIcons.success className="size-4 text-primary" />
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

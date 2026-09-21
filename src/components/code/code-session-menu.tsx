@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -130,7 +131,7 @@ export function CodeSessionMenu({ conversation }: { conversation: ClientConversa
           </TooltipTrigger>
           <TooltipContent>Session options</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent align="end" className={MENU_W}>
           <DropdownMenuItem
             onSelect={() => {
               setTitle(conversation.title);

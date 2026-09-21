@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Textarea } from "@/components/ui/textarea";
 import type { WorkRiskLevel } from "@/lib/work/domain";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
@@ -332,7 +333,7 @@ export function ApprovalCard({
                     <ChevronDown className="size-3.5" aria-hidden="true" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-72">
+                <DropdownMenuContent align="start" className={MENU_W_WIDE}>
                   <DropdownMenuItem onSelect={() => onDecide(approval, "allowed_always")}>
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span>{verb.verb}, and stop asking</span>

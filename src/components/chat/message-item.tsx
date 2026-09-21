@@ -21,6 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
 import { PROVIDERS } from "@/lib/providers";
@@ -542,7 +543,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
         </TooltipTrigger>
         <TooltipContent>Regenerate</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align="start" className={MENU_W}>
         <DropdownMenuItem onSelect={() => onRegenerate()}>
           <ActionIcons.refresh className="size-4" /> Try again
         </DropdownMenuItem>
@@ -550,7 +551,7 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
           <DropdownMenuSubTrigger>
             <SquareDashed className="size-4" /> Switch model
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-60 max-h-[min(24rem,60vh)]">
+          <DropdownMenuSubContent className={cn(MENU_W, "max-h-[min(24rem,60vh)]")}>
             {grouped.map(([provider, list]) => (
               <React.Fragment key={provider}>
                 <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-caption">
@@ -1269,7 +1270,7 @@ export const MessageItem = React.memo(function MessageItem({
                     </TooltipTrigger>
                     <TooltipContent>More</TooltipContent>
                   </Tooltip>
-                  <DropdownMenuContent align="start" className="w-60">
+                  <DropdownMenuContent align="start" className={MENU_W}>
                     {onSpeak && hasTextContent && (
                       <DropdownMenuItem onSelect={() => onSpeak(message.id, view.content)}>
                         {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
@@ -1288,7 +1289,7 @@ export const MessageItem = React.memo(function MessageItem({
                               CONVERSATION. */}
                           <GitBranch className="size-4" /> Branch from here
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-56">
+                        <DropdownMenuSubContent className={MENU_W}>
                           {canBranchSaved && (
                             <DropdownMenuItem onSelect={() => void branch()}>
                               <GitBranch className="size-4" /> Into a new saved chat

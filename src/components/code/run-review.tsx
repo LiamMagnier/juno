@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -886,7 +887,7 @@ function CreatePullRequest({
             {busy ? "Opening on GitHub…" : "Create pull request"}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuContent align="start" className={MENU_W}>
           <DropdownMenuItem onSelect={() => void open("full")}>
             <AppIcons.pulls className="size-4" aria-hidden="true" />
             Open for review

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -531,7 +532,7 @@ function ProjectTile({
                 <ActionIcons.more className="size-3.5" aria-hidden="true" />
               </Pressable>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuContent align="end" className={MENU_W}>
               <DropdownMenuItem onSelect={onToggleStar}>
                 {p.starred ? (
                   <>
@@ -550,7 +551,7 @@ function ProjectTile({
                 <span>Rename</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+              <DropdownMenuItem onSelect={onDelete} variant="destructive">
                 <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
                 <span>Delete</span>
               </DropdownMenuItem>

@@ -1,11 +1,36 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "lucide-react";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
-import { CodeSurface } from "@/components/canvas/code-surface";
-import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
+import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";
+
+/**
+ * Both split, because this card is in the chat bundle and neither of them
+ * renders until a message actually carries an artifact.
+ *
+ * `CodeSurface` is the expensive one: it registers about twenty highlight.js
+ * grammars at module scope, so a static import here meant every chat screen
+ * downloaded a syntax highlighter for Swift, Kotlin, Rust and the rest before
+ * showing its first word. `SandboxFrame` follows it rather than staying behind
+ * on its own account — they are the two halves of one card and splitting only
+ * one leaves the chunk in place.
+ *
+ * `ssr: false` on both: the sandbox is an iframe with a srcdoc and the code
+ * surface highlights in an effect, so neither contributes anything to the
+ * server render, and the types above are imported as types so nothing at
+ * runtime follows them.
+ */
+const CodeSurface = nextDynamic(
+  () => import("@/components/canvas/code-surface").then((m) => m.CodeSurface),
+  { ssr: false },
+);
+const SandboxFrame = nextDynamic(
+  () => import("@/components/canvas/sandbox-frame").then((m) => m.SandboxFrame),
+  { ssr: false },
+);
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { EmptyState } from "@/components/ui/empty-state";

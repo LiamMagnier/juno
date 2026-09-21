@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -440,7 +441,7 @@ function AddTriggerMenu({
           <Plus className="size-3.5" aria-hidden="true" /> Add a trigger
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72">
+      <DropdownMenuContent align="start" className={MENU_W_WIDE}>
         <DropdownMenuLabel className="font-mono text-label">On a clock</DropdownMenuLabel>
         {TIME_TRIGGER_KINDS.map((kind) => (
           <DropdownMenuItem key={kind} onSelect={() => onAdd(kind)} className="flex-col items-start gap-0.5">

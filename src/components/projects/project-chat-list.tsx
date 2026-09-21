@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -201,7 +202,7 @@ function ChatRow({
                 <FolderInput className="size-3.5" aria-hidden="true" />
               </Pressable>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className={MENU_W}>
               <p className="px-2 py-1 font-mono text-label text-muted-foreground">Move to project</p>
               {otherProjects.map((p) => (
                 <DropdownMenuItem

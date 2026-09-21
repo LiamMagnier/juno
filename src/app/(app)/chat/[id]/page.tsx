@@ -1,8 +1,25 @@
+import nextDynamic from "next/dynamic";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
-import { CodeSessionView } from "@/components/code/code-session-view";
+
+/**
+ * Split, not imported. This route renders ONE of two surfaces and the chat one
+ * is the overwhelming case, but a static import put the whole Code session
+ * view — and, through it, the canvas panel and the design editor's node
+ * machinery — into the first load of every conversation page. Measured: 234 kB
+ * of the route's 797 kB, downloaded and parsed by everyone who ever opens a
+ * chat, to render nothing.
+ *
+ * No `ssr: false`: a Server Component cannot ask for that, and it should not —
+ * a code session still renders its history on the server. `next/dynamic` here
+ * only moves the module into its own chunk, fetched when the branch below
+ * actually takes it.
+ */
+const CodeSessionView = nextDynamic(() =>
+  import("@/components/code/code-session-view").then((m) => m.CodeSessionView),
+);
 
 export default async function ConversationPage({
   params,

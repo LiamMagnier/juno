@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { detectPlatform, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { cn, formatBytes } from "@/lib/utils";
@@ -106,7 +107,7 @@ export function DownloadMenu({ className }: { className?: string }) {
           DropdownMenuContent, and the `!` on them was winning a specificity
           fight that no longer exists — restating a primitive's own animation at
           a call site is how ~30 menus in this product quietly drifted apart. */}
-      <DropdownMenuContent align="end" side="top" className="w-64">
+      <DropdownMenuContent align="end" side="top" className={MENU_W_WIDE}>
         <div className="px-2.5 pb-1.5 pt-2">
           {/* On the scale (`body`), not a hand-typed 0.8125rem with its own
               0.01em tracking — this is the same menu-header role the rest of the

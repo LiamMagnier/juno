@@ -45,6 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { DesignCanvas, type CanvasTool, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { InspectorPanel, type AlignAxis } from "@/components/design/inspector-panel";
 import { InteractionsPanel } from "@/components/design/interactions-panel";
@@ -621,7 +622,7 @@ export function DesignEditor({
               Export
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className={MENU_W}>
             {EXPORTS.map((item) => (
               <DropdownMenuItem key={item.format} onSelect={() => void exportAs(item.format)}>
                 {item.label}

@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { VoiceMeter } from "@/components/voice/voice-meter";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -160,7 +161,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               </TooltipTrigger>
               <TooltipContent>Call options</TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-56">
+            <DropdownMenuContent align="end" side="top" sideOffset={8} className={MENU_W}>
               <DropdownMenuLabel className="font-mono text-caption text-muted-foreground">Voice</DropdownMenuLabel>
               {VOICE_PROVIDERS.map((provider) => (
                 <DropdownMenuItem

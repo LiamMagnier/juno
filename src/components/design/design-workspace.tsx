@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
@@ -185,7 +186,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
               <ActionIcons.more className="size-4" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className={MENU_W}>
             <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
               <ActionIcons.delete className="size-4" aria-hidden />
               Delete design

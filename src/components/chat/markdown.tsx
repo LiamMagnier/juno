@@ -4,8 +4,7 @@ import * as React from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeHighlight from "rehype-highlight";
-import rehypeKatex from "rehype-katex";
+import { useContentPlugins } from "@/components/chat/markdown-plugins";
 import { AicssCodeBlock, splitHighlightedLines } from "@/components/aicss/code-block";
 import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
 import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
@@ -311,32 +310,17 @@ function remarkCitations(sourceCount: number) {
 }
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath] satisfies Options["remarkPlugins"];
-const REHYPE_PLUGINS: Options["rehypePlugins"] = [
-  /*
-   * `detect: false`, and that is the whole point of this note.
-   *
-   * With detection ON, highlight.js runs `highlightAuto` over any fence whose
-   * author wrote no language, picks whichever grammar scored highest, and
-   * rehype-highlight stamps `language-<guess>` onto the element. The block
-   * header then prints that guess as a CONFIDENT LABEL, because nothing
-   * downstream can tell a declared language from an inferred one.
-   *
-   * On real code the guess is usually harmless. On anything else it is a lie
-   * stated in the product's own voice: a two-line Gemini API error —
-   * `400 INVALID_ARGUMENT / Thinking level MEDIUM is not supported` — came out
-   * labelled **kotlin**, which is the kind of detail that costs a reader's
-   * trust in everything around it. Auto-detection over two lines of prose is
-   * a coin flip, and a coin flip does not belong in a label.
-   *
-   * The trade is that an unlabelled fence now renders uncoloured. That is the
-   * right side to err on, it is what ChatGPT and Claude both do, and the fix
-   * is available to the author: write the language.
-   */
-  [rehypeHighlight, { detect: false, ignoreMissing: true }],
-  // `throwOnError: false` keeps a malformed/incomplete expression (common mid-stream)
-  // as red source text instead of crashing the whole render.
-  [rehypeKatex, { throwOnError: false, output: "htmlAndMathml" }],
-];
+/*
+ * `rehypeHighlight` and `rehypeKatex` are NOT here.
+ *
+ * They were, and together they were about half the JavaScript the chat screen
+ * downloaded before it could be used — a syntax highlighter and a maths
+ * typesetter, fetched for every conversation whether or not one ever rendered
+ * a fence or a formula. `markdown-plugins.ts` fetches each when a block's own
+ * text says it is needed, and its header documents the trade and the two
+ * sniffs. Both plugins' options (including `detect: false`, which has a long
+ * story) moved there with them.
+ */
 
 /*
  * There is deliberately NO per-word entrance here any more. A previous version
@@ -561,12 +545,15 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
     () => (sourceCount > 0 ? [...REMARK_PLUGINS, remarkCitations(sourceCount)] : REMARK_PLUGINS),
     [sourceCount],
   );
+  // Whichever of highlight/KaTeX this block's own text asks for, once the
+  // chunk has landed — see markdown-plugins.ts.
+  const contentPlugins = useContentPlugins(content);
   // The offset stamp is indifferent to highlight and KaTeX: it only ever
   // touches nodes carrying a parse position, and everything those two plugins
-  // invent has none.
+  // invent has none. It stays LAST for that reason.
   const rehypePlugins = React.useMemo<Options["rehypePlugins"]>(
-    () => [...(REHYPE_PLUGINS ?? []), rehypeSourceOffsets(offset)],
-    [offset],
+    () => [...contentPlugins, rehypeSourceOffsets(offset)],
+    [contentPlugins, offset],
   );
   const components = React.useMemo<Components>(
     () => ({

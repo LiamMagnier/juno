@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { promptPreview } from "@/lib/prompt-preview";
 import { cn } from "@/lib/utils";
@@ -145,7 +146,7 @@ export function ProjectWorkspaceHeader({
                   <ActionIcons.more className="size-4" aria-hidden="true" />
                 </Pressable>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className={MENU_W}>
                 <DropdownMenuItem onSelect={openRename}>
                   <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
                   <span>Rename</span>
@@ -164,7 +165,7 @@ export function ProjectWorkspaceHeader({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={onDelete}
-                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  variant="destructive"
                 >
                   <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
                   <span>Delete project</span>

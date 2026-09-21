@@ -1,13 +1,103 @@
 "use client";
 
 import * as React from "react";
-import { Search, PenTool, Plus, Trash2, LayoutGrid, List as ListIcon } from "lucide-react";
+import {
+  Archive,
+  Download,
+  FolderPlus,
+  Image as ImageIcon,
+  LayoutGrid,
+  List as ListIcon,
+  Paperclip,
+  PenTool,
+  Pin,
+  Plus,
+  ChevronRight,
+  Search,
+  Share2,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Badge } from "@/components/ui/badge";
+import { StatusIcons } from "@/lib/app-icons";
+import {
+  MENU_W,
+  MENU_W_WIDE,
+  menuGlyphInkClass,
+  menuRowClass,
+  menuSeparatorClass,
+  menuShellClass,
+} from "@/components/ui/menu-recipe";
+import { cn } from "@/lib/utils";
+
+/**
+ * The menus above are drawn from the recipe's own classes rather than opened
+ * through Radix. A real dropdown portals to <body>, closes the moment focus
+ * moves to the next one, and cannot be screenshotted beside its neighbour —
+ * which is the one thing this section exists to do. The classes ARE the
+ * shipped ones, so a change to the recipe shows up here; only the portal and
+ * the focus management are missing.
+ */
+function StaticMenu({ title, width, children }: { title: string; width: string; children: React.ReactNode }) {
+  return (
+    <figure className="m-0">
+      <figcaption className="mb-2 font-mono text-caption text-muted-foreground">{title}</figcaption>
+      <div className={cn(menuShellClass, width, "static")}>{children}</div>
+    </figure>
+  );
+}
+
+function MenuRow({
+  icon: Icon,
+  children,
+  detail,
+  description,
+  ticked,
+  chevron,
+  destructive,
+  indent,
+}: {
+  icon?: typeof Plus;
+  children: React.ReactNode;
+  detail?: string;
+  description?: string;
+  ticked?: boolean;
+  chevron?: boolean;
+  destructive?: boolean;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        menuRowClass,
+        destructive ? "text-destructive" : menuGlyphInkClass,
+        description && "items-start py-2",
+        indent && "pl-8 pr-2",
+      )}
+    >
+      {ticked && indent && <StatusIcons.success className="absolute left-2 size-4 text-primary" />}
+      {Icon && <Icon aria-hidden className={cn("shrink-0", description && "mt-0.5")} />}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{children}</span>
+        {description && (
+          <span className="mt-0.5 block truncate text-caption font-normal text-muted-foreground">{description}</span>
+        )}
+      </span>
+      {detail && <span className="shrink-0 font-mono text-caption text-muted-foreground">{detail}</span>}
+      {ticked && !indent && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+      {chevron && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60" />}
+    </div>
+  );
+}
+
+function MenuHairline() {
+  return <div className={menuSeparatorClass} />;
+}
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
@@ -235,6 +325,52 @@ export function ControlsGallery() {
           <Badge variant="soft">Soft</Badge>
           <Badge variant="success">Success</Badge>
           <Badge variant="outline">Outline</Badge>
+        </Section>
+
+        <Section
+          title="Menus — the recipe, opened side by side"
+          note={
+            "Every floating list in the product, drawn statically so they can be compared. " +
+            "They are ONE recipe (menu-recipe.ts): 14px shell at p-1, 32px rows at 13px with a " +
+            "16px muted glyph, a hairline at 10%, and two widths — never nine. This section is " +
+            "the reason the drift is visible: the composer's + and a row kebab never appear on " +
+            "screen together in the real product, so for months they were two different objects."
+          }
+        >
+          <div className="flex flex-wrap items-start gap-6">
+            <StaticMenu title="Row kebab (⋯)" width={MENU_W}>
+              <MenuRow icon={PenTool}>Rename</MenuRow>
+              <MenuRow icon={Pin}>Pin</MenuRow>
+              <MenuRow icon={FolderPlus} chevron>Add to project</MenuRow>
+              <MenuRow icon={Share2}>Share</MenuRow>
+              <MenuRow icon={Archive}>Archive</MenuRow>
+              <MenuHairline />
+              <MenuRow icon={Trash2} destructive>Delete</MenuRow>
+            </StaticMenu>
+
+            <StaticMenu title="Composer + menu" width={MENU_W_WIDE}>
+              <MenuRow icon={Paperclip} detail="⌘U">Add files</MenuRow>
+              <MenuRow icon={ImageIcon}>Add photos</MenuRow>
+              <MenuHairline />
+              <MenuRow icon={FolderPlus} detail="None" chevron>Project</MenuRow>
+              <MenuHairline />
+              <MenuRow icon={Search} ticked>Web search</MenuRow>
+              <MenuRow icon={Sparkles}>Deep research</MenuRow>
+            </StaticMenu>
+
+            <StaticMenu title="Select" width={MENU_W}>
+              <MenuRow indent ticked>Automatic</MenuRow>
+              <MenuRow indent>Always on</MenuRow>
+              <MenuRow indent>Never</MenuRow>
+            </StaticMenu>
+
+            <StaticMenu title="With a label + a download row" width={MENU_W_WIDE}>
+              <p className="px-2.5 pb-1 pt-1.5 text-caption font-medium text-muted-foreground">Juno on your desktop</p>
+              <MenuHairline />
+              <MenuRow icon={Download} description="Apple silicon · 21.9 MB">macOS</MenuRow>
+              <MenuRow icon={Download} description="Not published yet">Windows</MenuRow>
+            </StaticMenu>
+          </div>
         </Section>
 
         <Section

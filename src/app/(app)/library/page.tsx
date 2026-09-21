@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/card";
@@ -375,7 +376,7 @@ function MobileItemMenu({
           <ActionIcons.more className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
+      <DropdownMenuContent align="end" className={MENU_W}>
         {item.deletedAt ? (
           <DropdownMenuItem onSelect={onRestore}>
             <ActionIcons.restore /> Restore
@@ -403,7 +404,7 @@ function MobileItemMenu({
         {!item.deletedAt && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+            <DropdownMenuItem onSelect={onDelete} variant="destructive">
               <ActionIcons.delete /> Delete
             </DropdownMenuItem>
           </>

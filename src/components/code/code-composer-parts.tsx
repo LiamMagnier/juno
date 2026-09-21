@@ -15,6 +15,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { AppIcons, ComposerIcons } from "@/lib/app-icons";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
@@ -91,14 +92,14 @@ export function ComposerAddMenu({
           />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+      <DropdownMenuContent align="start" side="top" sideOffset={8} className={MENU_W}>
         <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <ComposerIcons.attach className="text-muted-foreground" />
             <span className="flex-1">Attach</span>
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-52">
+          <DropdownMenuSubContent className={MENU_W}>
             <DropdownMenuItem onSelect={onPickPhotos}>
               <ComposerIcons.photos className="text-muted-foreground" />
               <span className="flex-1">Photos</span>

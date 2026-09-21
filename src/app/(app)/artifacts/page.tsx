@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
@@ -150,7 +151,7 @@ export default function ArtifactsPage() {
               )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className={MENU_W}>
             <DropdownMenuItem onSelect={() => router.push(href)}>
               <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
             </DropdownMenuItem>
@@ -169,7 +170,7 @@ export default function ArtifactsPage() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              variant="destructive"
               onSelect={() => setDeleteTarget(item)}
             >
               <ActionIcons.delete className="size-4" aria-hidden /> Delete

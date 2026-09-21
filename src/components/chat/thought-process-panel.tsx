@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1512,7 +1513,7 @@ export function ThoughtProcessPanel({
               </TooltipTrigger>
               <TooltipContent side="bottom">Filter steps</TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="end" sideOffset={6} className="min-w-[14rem]">
+            <DropdownMenuContent align="end" sideOffset={6} className={MENU_W}>
               <DropdownMenuItem
                 onSelect={() => {
                   setFindOpen(true);

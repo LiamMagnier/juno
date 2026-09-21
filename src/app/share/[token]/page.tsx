@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
-import { KatexStyles } from "@/components/ui/katex-styles";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
 import { getPublicShare, getSharedArtifactSnapshot, getSharedChatSnapshot, peekPublicShare } from "@/lib/share";
@@ -79,7 +78,6 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       {chat ? (
         // The transcript stays flat prose on the page ground, at the reading measure.
         <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
-          <KatexStyles />
               <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
         </AppPage>
       ) : artifact ? (

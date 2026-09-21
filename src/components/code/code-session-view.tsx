@@ -1,11 +1,23 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 
 import { MessageList } from "@/components/chat/message-list";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { splitEngaged } from "@/components/chat/split-layout";
-import { CanvasPanel } from "@/components/canvas/canvas-panel";
+
+/**
+ * Split, exactly as chat-view.tsx splits it, and for the same reason: the
+ * canvas is a panel you open, not part of the session's first paint. This was
+ * the one static import of it left in the product, which meant the split on
+ * the chat side bought nothing the moment a Code session shared a chunk with
+ * it.
+ */
+const CanvasPanel = nextDynamic(
+  () => import("@/components/canvas/canvas-panel").then((m) => m.CanvasPanel),
+  { ssr: false },
+);
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { CodeSessionBanner } from "@/components/code/code-session-banner";

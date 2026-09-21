@@ -4,6 +4,13 @@ import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { ChevronRight, Circle } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
+import {
+  menuGlyphInkClass,
+  menuLabelClass,
+  menuRowClass,
+  menuSeparatorClass,
+  menuShellClass,
+} from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -14,33 +21,24 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 /**
- * The floating tier — `.surface-float` + `.overlay-glass` at `rounded-popover`
- * (16). 16px shell − p-1.5 (6px) = concentric with the 10px `rounded-control`
- * items. Same material and radius as Popover and Select: the three open beside
- * each other and must be one object.
+ * The floating tier. Shell and row both come from `menu-recipe.ts`, which is
+ * also what Select, the command palette and the composer's `+` are cut from —
+ * those four open beside each other and have to read as one object. What the
+ * recipe's own header explains is why they did not.
  *
- * A menu taller than the space under its trigger has to scroll, or its last
- * items are simply unreachable: Radix flips and shifts a popper to fit but
- * never SHRINKS one, so the height is capped on the Radix variable and the
- * shell scrolls. 24rem before scrolling, matching Select.
+ * Only the height cap is stated here, because it is the one part that cannot
+ * be shared: it resolves against Radix's dropdown-specific available-height
+ * variable. Radix flips and shifts a popper to fit but never SHRINKS one, so a
+ * menu taller than the space under its trigger simply loses its last rows.
+ * 24rem before scrolling, matching Select.
  */
-const menuShell =
-  "surface-float overlay-glass z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain";
+const menuShell = cn(
+  menuShellClass,
+  "min-w-[11rem] overflow-y-auto overscroll-contain",
+  "max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))]",
+);
 
-/*
- * ON THE SHELL'S GRID, which is the whole point of there being one.
- *
- * The sidebar and the command palette were rebuilt on measured numbers — a
- * glyph 16px from the surface's edge, its label at 46, rows at `text-body`.
- * This recipe did not move, so every dropdown in the product — including the
- * kebab on a sidebar row, which opens two pixels from the column it disagrees
- * with — put its glyph at 14 and its label at 38, one rung of type smaller.
- *
- * `p-1.5` (6) on the content + `px-2.5` (10) here = 16 to the glyph; a `size-5`
- * slot + `gap-2.5` = 46 to the label. Same two numbers, same arithmetic.
- */
-const menuItem =
-  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-body outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4.5 [&_svg]:shrink-0";
+const menuItem = menuRowClass;
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -66,6 +64,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       menuItem,
+      menuGlyphInkClass,
       "focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent",
       inset && "pl-8",
       className
@@ -73,7 +72,9 @@ const DropdownMenuSubTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <ChevronRight className="menu-item__chevron ml-auto !size-3.5 text-muted-foreground/60" />
+    {/* No `!` on the size any more: the row's default is guarded on the
+        absence of a `size-*`, so stating one here is simply obeyed. */}
+    <ChevronRight className="menu-item__chevron ml-auto size-3.5 text-muted-foreground/60" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
@@ -111,9 +112,11 @@ const DropdownMenuItem = React.forwardRef<
     ref={ref}
     className={cn(
       menuItem,
+      // The destructive row does NOT take the muted glyph ink: its icon should
+      // carry the same red as its label, which it does by inheriting.
       variant === "destructive"
         ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
-        : "focus:bg-accent focus:text-accent-foreground",
+        : cn(menuGlyphInkClass, "focus:bg-accent focus:text-accent-foreground"),
       inset && "pl-8",
       className
     )}
@@ -128,13 +131,16 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(menuItem, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
+    className={cn(menuItem, menuGlyphInkClass, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
     checked={checked}
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <StatusIcons.success className="size-4" />
+        {/* `text-primary`, like the tick in the composer's `+` menu and the
+            one in Select. A checked row is the one row in a menu carrying the
+            accent, and it was the only one of the three left in plain ink. */}
+        <StatusIcons.success className="size-4 text-primary" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -148,7 +154,7 @@ const DropdownMenuRadioItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
-    className={cn(menuItem, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
+    className={cn(menuItem, menuGlyphInkClass, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
@@ -167,7 +173,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-caption font-medium text-muted-foreground", inset && "pl-8", className)}
+    className={cn(menuLabelClass, inset && "pl-8", className)}
     {...props}
   />
 ));
@@ -179,10 +185,11 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    // Foreground at 12%, not the border token: a separator inside a raised
-    // panel needs MORE contrast than one on the page, and foreground/12
-    // resolves against whatever the panel is made of in either theme.
-    className={cn("-mx-1.5 my-1 h-px bg-foreground/12", className)}
+    // Foreground-relative rather than the border token: a separator inside a
+    // raised panel resolves against whatever that panel is made of, in either
+    // theme. The weight and the -mx that cancels the shell's padding are the
+    // recipe's, so Select's separator is this separator.
+    className={cn(menuSeparatorClass, className)}
     {...props}
   />
 ));
