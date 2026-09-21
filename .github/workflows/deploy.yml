@@ -492,6 +492,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Presence is not validity. The step above proves each key EXISTS in
+      # PROD_ENV; this one asks each provider whether it actually accepts the
+      # key, before a single byte ships. It was added after a rejected MiMo key
+      # passed every gate here, deployed, and was found by a reader getting
+      # "cannot be used right now" — twenty minutes and a rollback later.
+      #
+      # ADVISORY, not blocking, and that is the point of `continue-on-error`.
+      # The first real run failed the whole deploy over a dead Meta key and a
+      # placeholder MiniMax one — neither related to the release being shipped.
+      # Fourteen third-party credentials must not each hold a veto over
+      # releasing this product; the annotation at the top of the run is what
+      # was actually missing, and that still lands.
+      - name: Every provider key in PROD_ENV is one its provider accepts
+        continue-on-error: true
+        run: node --env-file=.env --import tsx scripts/check-provider-keys.ts
+
       # `runner/agent-core/dist` is build output, and `scripts/work-runner.ts`
       # imports it directly by path. It must be built before `npm run build`
       # so that Next.js typechecking succeeds.

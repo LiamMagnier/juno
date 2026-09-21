@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { decryptField, encryptField } from "@/lib/field-crypto";
@@ -85,18 +86,39 @@ export function utilityModelCandidates(): ModelInfo[] {
  * Fails closed: an account with no Settings row, or a row this build cannot
  * read, gets the privacy-preserving default rather than the old
  * walk-every-provider behaviour.
+ *
+ * `cache()`d per request: the chat route asks for this twice on its own (once
+ * for the memory profile, once for knowledge retrieval) and the policy cannot
+ * change between the two. One Settings read, not three.
  */
-export async function loadBackgroundProviderPolicy(
-  userId: string
+/** The two columns this reads, for callers that hold the row already. */
+export type BackgroundProviderSettings = {
+  backgroundProviderMode: string | null;
+  backgroundProviderSelected: string | null;
+};
+
+/**
+ * `settings` skips the read entirely.
+ *
+ * The chat route loads the whole Settings row before it resolves a model, and
+ * then asked for these two columns twice more on the way to the provider — on
+ * the path a reader is watching "Starting your request" on. A caller that has
+ * the row passes it; one that does not still gets the lookup.
+ */
+export const loadBackgroundProviderPolicy = cache(async function loadBackgroundProviderPolicy(
+  userId: string,
+  settings?: BackgroundProviderSettings | null
 ): Promise<BackgroundProviderPolicy> {
   try {
-    const settings = await prisma.settings.findUnique({
-      where: { userId },
-      select: { backgroundProviderMode: true, backgroundProviderSelected: true },
-    });
+    const row = settings !== undefined
+      ? settings
+      : await prisma.settings.findUnique({
+          where: { userId },
+          select: { backgroundProviderMode: true, backgroundProviderSelected: true },
+        });
     return normalizeBackgroundProviderPolicy({
-      mode: settings?.backgroundProviderMode as BackgroundProviderPolicy["mode"],
-      selectedProvider: settings?.backgroundProviderSelected,
+      mode: row?.backgroundProviderMode as BackgroundProviderPolicy["mode"],
+      selectedProvider: row?.backgroundProviderSelected,
       allowedProviders: deploymentProviderAllowlist(),
     });
   } catch {
@@ -104,7 +126,7 @@ export async function loadBackgroundProviderPolicy(
       allowedProviders: deploymentProviderAllowlist(),
     });
   }
-}
+});
 
 /**
  * The provider `same_provider` matches account-level background work against.
