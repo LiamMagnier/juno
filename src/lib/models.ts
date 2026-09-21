@@ -909,6 +909,3 @@ export function catalogEntryMatchesModel(
   // was migrated to, which is the one the catalog carries.
   return resolveModel(chosen)?.id === canonical;
 }
-
-/** Max tokens to generate per response (bigger so artifacts don't truncate). */
-export const MAX_OUTPUT_TOKENS = 8192;
