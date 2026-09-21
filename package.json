@@ -57,6 +57,7 @@
     "import:recovery": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-import-runs.ts",
     "search:check": "NODE_OPTIONS=--conditions=react-server tsx scripts/check-search-providers.ts",
     "validate:models": "tsx scripts/validate-models.ts",
+    "providers:check": "tsx scripts/check-provider-keys.ts",
     "models:capabilities:audit": "tsx scripts/audit-model-capabilities.ts",
     "security:check": "node scripts/security-check.mjs",
     "security:dependencies": "node scripts/dependency-audit.mjs",
