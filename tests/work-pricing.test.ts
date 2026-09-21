@@ -90,3 +90,28 @@ test("a per-run ceiling can now actually be reached", () => {
     `$2.00 needs ${tokensToBurnTwoDollars} output tokens, which no run would reach`
   );
 });
+
+/*
+ * MiMo UltraSpeed is not priced like the Pro whose name it contains.
+ *
+ * `mimo-v2.6-pro-ultraspeed` matches `pm.includes("pro")`, so a rate table
+ * that tests `pro` before `ultraspeed` bills the premium tier at a third of
+ * what it costs — silently, on every call, in the direction Juno eats. The
+ * branch order in pricing.ts is the fix; this is the test that keeps it.
+ */
+test("MiMo UltraSpeed bills above the Pro tier its id contains", () => {
+  const pro = resolveModel("mimo:mimo-v2.6-pro");
+  const ultra = resolveModel("mimo:mimo-v2.6-pro-ultraspeed");
+  assert.ok(pro && ultra, "both V2.6 Pro tiers are in the catalog");
+  const proRate = tokenRate(pro);
+  const ultraRate = tokenRate(ultra);
+
+  assert.ok(
+    ultraRate.input > proRate.input,
+    `UltraSpeed input ${ultraRate.input} must exceed Pro's ${proRate.input}`,
+  );
+  assert.ok(
+    ultraRate.output > proRate.output,
+    `UltraSpeed output ${ultraRate.output} must exceed Pro's ${proRate.output}`,
+  );
+});

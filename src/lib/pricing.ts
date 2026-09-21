@@ -218,6 +218,17 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "minimax":
       return { input: 0.3, output: 1.2 };
     case "mimo":
+      // UltraSpeed is tested BEFORE `pro`, and the order is the whole point:
+      // its id is `mimo-v2.6-pro-ultraspeed`, so it matches `pro` too and
+      // would otherwise bill at a third of what it costs.
+      //
+      // 3x the Pro rate, which is the V2.5 UltraSpeed precedent rather than a
+      // published V2.6 figure — Xiaomi's release note gives no rate for any of
+      // the three. Estimating above the known tier is the same thing the Qwen
+      // 3.8 Max line does a few cases down, and for the same reason: under-
+      // billing a premium tier is the expensive direction to be wrong in.
+      // Replace all three MiMo rates when the price card lands.
+      if (pm.includes("ultraspeed")) return { input: 1.305, output: 2.61 };
       if (pm.includes("pro")) return { input: 0.435, output: 0.87 };
       return { input: 0.2, output: 0.8 };
     case "qwen":

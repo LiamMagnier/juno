@@ -9,7 +9,7 @@ import { env, isStripeConfigured, isStorageAvailable, isServerSttConfigured, isS
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
-import { providerSupportsWebSearch } from "@/lib/models";
+import { DEFAULT_MODEL, providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -111,10 +111,12 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
   const clientSettings: ClientSettings = {
     theme: (settings?.theme.toLowerCase() as ClientSettings["theme"]) ?? "system",
     accent: settings?.accent ?? "coral",
-    // An account with no settings row yet. Must name a CURRENT model: this is
-    // what the picker shows as selected before the user has chosen anything,
-    // and it was still pointing at Opus 4.8, two generations superseded.
-    defaultModel: settings?.defaultModel ?? "qwen:qwen3.6-flash",
+    // An account with no settings row yet. `DEFAULT_MODEL`, not a copy of it:
+    // this line has now drifted onto a superseded id twice — first Opus 4.8,
+    // then Qwen3.6 Flash, which went `legacy` when 3.8 shipped — because a
+    // hand-written id here has nothing tying it to the catalogue. Importing
+    // the constant is what makes the third drift impossible.
+    defaultModel: settings?.defaultModel ?? DEFAULT_MODEL,
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",

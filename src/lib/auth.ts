@@ -10,6 +10,7 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env, isGoogleConfigured } from "@/lib/env";
 import { encryptAccountTokens, decryptAccountTokens } from "@/lib/crypto";
 import { hashPassword, verifyPasswordConstantTime } from "@/lib/password";
+import { DEFAULT_MODEL } from "@/lib/models";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 import { sendMagicLink } from "@/lib/email";
 import { verifySecondFactor } from "@/lib/account-security";
@@ -259,7 +260,14 @@ export async function ensureUserDefaults(userId: string) {
   await prisma.$transaction([
     prisma.settings.upsert({
       where: { userId },
-      create: { userId },
+      // `defaultModel` is stated rather than left to the column default. The
+      // schema's default is `claude-sonnet-4-6` — a legacy row since Sonnet 5
+      // shipped — and because this `create` never named a model, that default
+      // is what every new account actually got: a hidden, superseded model on
+      // a provider that is not the funded one. `DEFAULT_MODEL` is the single
+      // answer to "what should a fresh account start on", and this is the
+      // create that was quietly ignoring it.
+      create: { userId, defaultModel: DEFAULT_MODEL },
       update: {},
     }),
     prisma.subscription.upsert({
