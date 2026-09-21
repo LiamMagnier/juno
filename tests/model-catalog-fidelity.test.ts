@@ -130,14 +130,16 @@ test("the remaining seven labs carry their current ids", () => {
   assert.equal(qwenFlash.providerModel, "qwen3.8-flash");
   assert.equal(byId.get("qwen:qwen3.6-flash")?.status, "legacy");
 
-  // A generation that is announced but not served must be selectable-looking
-  // and NOT routable, and must not sit in the family whose current row it
-  // would hide.
+  // GLM-5.3's API opened, so the gate came off and it rejoined `glm` ahead of
+  // 5.2 — which is what the `comingSoon` dance existed to allow. The inverse
+  // of the assertion this used to make: it must now be routable, and it must
+  // be in the SAME family as 5.2, because the newest current row per family is
+  // what the pickers show and the newest one answers.
   const glm53 = byId.get("zhipu:glm-5.3");
   assert.ok(glm53, "GLM-5.3 is in the catalog");
-  assert.equal(glm53.comingSoon, true, "Z.ai's API for it is not open yet");
-  assert.notEqual(glm53.family, byId.get("zhipu:glm-5.2")?.family, "it must not bury GLM-5.2");
-  assert.equal(byId.get("zhipu:glm-5.2")?.status, "current", "5.2 is still the routable flagship");
+  assert.notEqual(glm53.comingSoon, true, "Z.ai serves it on the General API now");
+  assert.equal(glm53.family, byId.get("zhipu:glm-5.2")?.family, "it leads the glm family now");
+  assert.equal(byId.get("zhipu:glm-5.2")?.status, "current", "5.2 is still routable behind it");
 
   // Delisted in the September 2026 price card.
   for (const id of ["zhipu:glm-5-turbo", "zhipu:glm-5v-turbo"]) {

@@ -195,7 +195,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":
       if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
-      // 5.3 reuses the 5.2 base and has no published rate of its own yet.
+      // One rate for both: 5.3 reuses the 5.2 base unchanged, and Z.ai's own
+      // price card lists the two at the same $1.40 / $4.40 per MTok.
       if (pm.includes("glm-5.3") || pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
       if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
       return { input: 0.6, output: 2.2 };

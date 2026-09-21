@@ -349,16 +349,18 @@ const CURATED: ModelInfo[] = [
   def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
 
   // —— Zhipu / Z.AI ——
-  // `comingSoon` on purpose. GLM-5.3 shipped 14 Aug 2026 and Z.ai's own
-  // developer docs still say the API is "coming soon" — so the row exists,
-  // shows disabled, and cannot be routed. It reuses the 5.2 base unchanged and
-  // takes its gains from post-training; reasoning is always on with no control.
+  // THE API IS OPEN, so the gate is gone. GLM-5.3 shipped 14 Aug 2026 behind a
+  // "coming soon" note in Z.ai's developer docs, and this row carried
+  // `comingSoon: true` in a `glm-next` family for exactly as long as that was
+  // true — the note the previous version left said it "rejoins `glm` on the
+  // day the API opens", and it has: Z.ai now serves it on the General API and
+  // publishes a rate for it ($1.40 / $4.40 per MTok, which pricing.ts already
+  // carried because 5.3 reuses the 5.2 base unchanged).
   //
-  // `glm-next` rather than `glm`, and that is not a fudge. The pickers show
-  // the newest CURRENT row per family, so putting an uncallable generation in
-  // `glm` would bury GLM-5.2 — the model that actually answers — behind a
-  // disabled row. It rejoins `glm` on the day the API opens.
-  def({ provider: "zhipu", id: "glm-5.3", name: "GLM-5.3", family: "glm-next", status: "current", comingSoon: true, released: "2026-08", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Z.ai's newest flagship — coding and long-horizon agents, always reasoning." }),
+  // Back in `glm` and ahead of 5.2, which is the whole point: the pickers show
+  // the newest CURRENT row per family, and the newest one now answers.
+  // Reasoning is always on with no control — the gains are post-training.
+  def({ provider: "zhipu", id: "glm-5.3", name: "GLM-5.3", family: "glm", status: "current", released: "2026-08", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Z.ai's newest flagship — coding and long-horizon agents, always reasoning." }),
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", released: "2026-05", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
   def({ provider: "zhipu", id: "glm-5-turbo", name: "GLM-5 Turbo", family: "glm-turbo", status: "deprecated", released: "2026-03", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Fast, low-latency tier of the GLM-5 generation.", deprecationNote: "Delisted by Z.ai in the September 2026 price card — use GLM-5.2", retiresOn: "2026-10-31", replacedBy: "zhipu:glm-5.2" }),
   def({ provider: "zhipu", id: "glm-5v-turbo", name: "GLM-5V Turbo", family: "glm-v", status: "deprecated", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, description: "Latest GLM vision-language model — image understanding.", deprecationNote: "Delisted by Z.ai in the September 2026 price card — use GLM-5.2", retiresOn: "2026-10-31", replacedBy: "zhipu:glm-5.2" }),
@@ -446,6 +448,38 @@ const CURATED: ModelInfo[] = [
   def({ provider: "minimax", id: "MiniMax-M2.5", name: "MiniMax M2.5", family: "m", status: "legacy", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 204_800, description: "Older agentic model." }),
 
   // —— MiMo (Xiaomi MiMo AI Labs) ——
+  // `comingSoon`, on the same terms GLM-5.3 was, and the gate is deliberate
+  // rather than cautious: as of 21 Sept 2026 there is no MiMo-V2.6 API, no
+  // published model identifier and no price list. Xiaomi named both variants
+  // and livestreamed their reinforcement-learning runs (the Pro run stopped on
+  // 20 Sept at 72.57 DeepSWE), but training finishing is not shipping.
+  //
+  // THE TRAP THAT MAKES THIS LOOK RELEASED: `mimo-v2.6-pro` appears on
+  // Xiaomi's own dashboard, so it reads exactly like a served endpoint. Those
+  // strings are TRAINING JOB NAMES. Sending one to /v1/chat/completions is a
+  // 404, and a routable row here would put that 404 in front of every user who
+  // picked it.
+  //
+  // To flip them the day the API opens: drop `comingSoon`, move Pro to
+  // `mimo` and Flash to `mimo-flash`, and check the ids against
+  // `GET /v1/models` on a real key first — `npm run models:probe` does exactly
+  // that. Add a pricing.ts branch in the same change or they bill at the
+  // provider default.
+  //
+  // THE CONTEXT WINDOWS ARE INHERITED, NOT ANNOUNCED — Pro takes V2.5 Pro's
+  // 1.05M and Flash takes V2 Flash's 256K, because they continue those lines.
+  // Stated rather than omitted on purpose: `getModelMetrics` falls back to a
+  // flat 128K when `contextWindow` is absent, so leaving it out does not
+  // produce an honest blank, it produces a wrong number with no note attached.
+  // Correct both the day Xiaomi publishes real ones.
+  //
+  // `mimo-next` / `mimo-flash-next` rather than `mimo` / `mimo-flash`, for the
+  // reason the GLM-5.3 note spells out: the pickers show the newest CURRENT
+  // row per family, so an uncallable generation in the live family would bury
+  // the model that actually answers behind a disabled row. They rejoin their
+  // families on the day the API opens.
+  def({ provider: "mimo", id: "mimo-v2.6-pro", name: "MiMo V2.6 Pro", family: "mimo-next", status: "current", comingSoon: true, released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "Xiaomi's next flagship — in reinforcement-learning training, not yet served." }),
+  def({ provider: "mimo", id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", family: "mimo-flash-next", status: "current", comingSoon: true, released: "2026-09", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 256_000, description: "The next efficient MiMo tier — in training, not yet served." }),
   def({ provider: "mimo", id: "mimo-v2.5", name: "MiMo V2.5", family: "mimo-omni", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Natively omnimodal — text, audio, images and video in — at half the Pro's cost." }),
   def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Xiaomi MiMo's reasoning, coding and agentic flagship." }),
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
