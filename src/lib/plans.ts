@@ -16,10 +16,15 @@ export interface PlanConfig {
   monthlyMessages: number | null;
   maxUploadMb: number;
   /**
-   * Requested output-token budget per reply. Set effectively unlimited on every
-   * plan — the real ceiling is each model's own native max, applied by
-   * clampMaxTokens() / PROVIDER_MAX_OUTPUT. No plan imposes a smaller per-reply
-   * cap, so replies are never truncated below what the model itself allows.
+   * Requested output-token budget per reply, before clampMaxTokens() bounds it
+   * by the lab ceiling and the model's own context window.
+   *
+   * Effectively unlimited on every PAID plan, so a paid reply is only ever
+   * limited by what the model itself allows. FREE is the one exception at 8192,
+   * and it is deliberate rather than an oversight — but it does mean a free
+   * reply can stop early on a model that would happily have written more, and
+   * it is the plan-level twin of the per-model truncation PROVIDER_MAX_OUTPUT
+   * exists to prevent. Raising it is a cost decision, not a bug fix.
    */
   maxOutputTokens: number;
   voice: boolean;

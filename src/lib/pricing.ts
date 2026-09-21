@@ -195,7 +195,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":
       if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
-      // 5.3 reuses the 5.2 base and has no published rate of its own yet.
+      // One rate for both: 5.3 reuses the 5.2 base unchanged, and Z.ai's own
+      // price card lists the two at the same $1.40 / $4.40 per MTok.
       if (pm.includes("glm-5.3") || pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
       if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
       return { input: 0.6, output: 2.2 };
@@ -217,8 +218,27 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "minimax":
       return { input: 0.3, output: 1.2 };
     case "mimo":
+      // Xiaomi's published V2.6 card. These were estimates for one commit and
+      // two of the three were wrong, which is worth leaving on the record:
+      //
+      //   Flash       estimated 0.20 / 0.80   actual 0.14 / 0.28
+      //   Pro         estimated 0.435 / 0.87  actual 0.435 / 0.87   ✓
+      //   UltraSpeed  estimated 1.305 / 2.61  actual 4.35 / 8.70
+      //
+      // UltraSpeed is 10x Pro, not the 3x the V2.5 UltraSpeed precedent
+      // suggested — so the estimate under-billed it by 3.3x, which is the
+      // direction Juno eats rather than the user. A precedent from the
+      // previous generation is not a rate.
+      //
+      // UltraSpeed is still tested BEFORE `pro`, and that ordering is now
+      // load-bearing for a much bigger gap: its id is
+      // `mimo-v2.6-pro-ultraspeed`, so it matches `pro` too, and falling
+      // through would bill a $4.35 model at $0.435 — a tenth of cost, silently,
+      // on every call.
+      if (pm.includes("ultraspeed")) return { input: 4.35, output: 8.7 };
       if (pm.includes("pro")) return { input: 0.435, output: 0.87 };
-      return { input: 0.2, output: 0.8 };
+      // V2.6 Flash, and the V2/V2.5 rows that fall through to it.
+      return { input: 0.14, output: 0.28 };
     case "qwen":
       // 3.8 Max has no published pay-as-you-go rate yet; estimate above 3.7 Max.
       if (pm.includes("qwen3.8-max")) return { input: 3.0, output: 9.0 };
@@ -321,6 +341,37 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
       cacheWrite: input * 1.25,
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 1.25,
+    };
+  }
+  if (model.provider === "mimo") {
+    /*
+     * Xiaomi prices a cache hit as its own column ("Input (cache hit)"), and it
+     * sits far below the 0.25x this function falls back to:
+     *
+     *   Flash       0.0028 against 0.14   = 2%
+     *   Pro         0.0036 against 0.435  = 0.83%
+     *   UltraSpeed  0.036  against 4.35   = 0.83%
+     *
+     * The fallback was billing a Pro cache hit at $0.109 against a real
+     * $0.0036 — 30x, charged to the reader on every cached token, on the
+     * longest conversations because those are the ones that cache.
+     *
+     * The `pro` test mirrors `baseRate`'s exactly, which is what keeps the two
+     * in step: any row billing Pro's input also bills Pro's cache ratio, and
+     * `-ultraspeed` lands here too because its id contains `pro` — correctly,
+     * since 0.036/4.35 is the same 0.83%.
+     *
+     * No published cache-WRITE rate, so writes cost plain input — the same
+     * conservative reading the zhipu branch above takes.
+     */
+    const pm = model.providerModel.toLowerCase();
+    return {
+      input,
+      output,
+      cacheRead: input * (pm.includes("pro") ? 0.00828 : 0.02),
+      cacheWrite: input,
+      cacheWrite5m: input,
+      cacheWrite1h: input,
     };
   }
   // Others: cached input is typically a fraction of full; writes carry no premium.

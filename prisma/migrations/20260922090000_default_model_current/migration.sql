@@ -1,0 +1,14 @@
+-- The Settings.defaultModel column default, moved onto a model that exists.
+--
+-- It was 'claude-sonnet-4-6' — an unprefixed id, and `legacy` in the catalogue
+-- since Sonnet 5 shipped. `ensureUserDefaults` creates the Settings row without
+-- naming a model, so this default is what every new account actually received:
+-- a superseded row, hidden from the picker, on a provider that is not the
+-- funded one. The catalogue's own answer to "what should a fresh account start
+-- on" is `DEFAULT_MODEL` (qwen:qwen3.8-flash), and it is now also this.
+--
+-- Expand-only (docs/JUNO.md §20.2b): a column DEFAULT only affects rows created
+-- after it. No existing row is read, rewritten or changed in meaning — anyone
+-- already on Sonnet 4.6 stays on Sonnet 4.6, which still resolves, and
+-- `resolveModel` migrates it to the family's current row when it stops.
+ALTER TABLE "Settings" ALTER COLUMN "defaultModel" SET DEFAULT 'qwen:qwen3.8-flash';

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PenTool } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import type { ArtifactType } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ const GLYPHS: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
-  DESIGN: PenTool,
+  DESIGN: AppIcons.design,
 };
 
 /** Lines of source a tile shows before the fade takes over. */

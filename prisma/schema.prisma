@@ -378,7 +378,11 @@ model Settings {
   userId                     String   @unique
   theme                      Theme    @default(SYSTEM)
   accent                     String   @default("coral")
-  defaultModel               String   @default("claude-sonnet-4-6")
+  // The funded default (src/lib/models.ts `DEFAULT_MODEL`). `ensureUserDefaults`
+  // names it explicitly on create, so this column default is a backstop rather
+  // than the deciding value — it was `claude-sonnet-4-6`, legacy since Sonnet 5,
+  // and it decided for every new account because that create never set one.
+  defaultModel               String   @default("qwen:qwen3.8-flash")
   customInstructions         String   @default("") @db.Text
   responseLanguage           String   @default("auto")
   // Interface language: "auto" (follow Accept-Language) or a BCP-47 tag.
