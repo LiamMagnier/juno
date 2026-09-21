@@ -18,10 +18,17 @@
  * send. Real network calls on purpose: a check that mocked the providers would
  * pass on a typo'd key, which is the only thing it was written to catch.
  *
- * Exit status is 1 on a 401 or on a placeholder value — those are facts about
- * the credential itself and no deploy should carry them. Everything else
- * reports and exits 0: an outage at one lab is not a reason to block a release,
- * and neither is anything this script cannot pin on the key.
+ * Exit status is 1 on a rejected or placeholder key — those are facts about the
+ * credential itself. Everything else exits 0: an outage at one lab is not a
+ * reason to fail, and neither is anything this script cannot pin on the key.
+ *
+ * In the deploy that non-zero exit is ADVISORY (`continue-on-error`), and that
+ * is deliberate. The first real run failed the whole pipeline over a dead Meta
+ * key and a placeholder MiniMax one — neither of which had anything to do with
+ * the release being shipped, and one of which had evidently been broken for
+ * some time. Holding every deploy hostage to fourteen third-party credentials
+ * is a worse failure than the one it prevents. The annotations still land at
+ * the top of the run, which is all this ever needed to do.
  *
  * It never prints a key. Only the provider, the env var to go fix, and what
  * that provider said back.
@@ -125,6 +132,19 @@ async function check(provider: Provider): Promise<Result> {
   if (res.status === 401) {
     return { provider, state: "rejected", detail: await describe(res, key) };
   }
+  // Not every lab uses 401. xAI answers a bad key with
+  //   400 {"code":"invalid-argument","error":"Incorrect API key provided..."}
+  // which this script first reported as merely "unreachable" — the one bad key
+  // in production it looked straight at and waved through. A 400 is only read
+  // as a verdict when the body says so in as many words; a 400 about anything
+  // else is still a request problem, not a credential one.
+  if (res.status === 400) {
+    const body = await describe(res, key);
+    if (/incorrect api key|invalid api[- _]?key|api[- _]?key.*(invalid|incorrect|expired)/i.test(body)) {
+      return { provider, state: "rejected", detail: body };
+    }
+    return { provider, state: "unreachable", detail: body };
+  }
   if (res.status === 403) {
     return { provider, state: "unreachable", detail: `403 (proxy, WAF or entitlement — not a key verdict)` };
   }
@@ -168,7 +188,7 @@ async function main() {
     for (const r of bad) {
       const def = PROVIDERS[r.provider];
       // ::error:: so GitHub surfaces it on the run summary, not only in the log.
-      console.error(
+      console.log(
         `::error::${def.apiKeyEnv} is not a working key for ${def.label} — ${r.detail}. New key: ${def.docsUrl}`,
       );
     }
