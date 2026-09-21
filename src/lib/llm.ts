@@ -7,7 +7,7 @@ import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
-import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
+import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
 import { providerAdapterFor } from "@/lib/provider-routing";
@@ -83,7 +83,18 @@ export async function* streamChat(opts: {
   const thinkingAllowance = thinkingTier
     ? { minimal: 2048, low: 4096, medium: 8192, high: 16384, xhigh: 24576, max: 32768 }[thinkingTier]
     : 0;
-  const maxTokens = clampMaxTokens(model.provider, opts.maxTokens + thinkingAllowance);
+  // The model's OWN window, not just the lab ceiling. Several providers
+  // enforce prompt + max_tokens <= context, so a lab-wide budget handed to
+  // that lab's small sibling asks for more output than the model can hold —
+  // `glm-4.6` was being offered 131,072 tokens of reply inside a
+  // 128,000-token window. getModelMetrics resolves the registry's
+  // contextWindow first and falls back to a family rule, so discovered models
+  // get a real number rather than none.
+  const maxTokens = clampMaxTokens(
+    model.provider,
+    opts.maxTokens + thinkingAllowance,
+    getModelMetrics(model).contextTokens,
+  );
   const active = opts.connectors ?? [];
 
   // Open the Unified Agent Toolset (Python, Browser, Computer + active MCP connectors)
