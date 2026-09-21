@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -491,16 +492,37 @@ export function billingPeriodFor(
   return { startMs: start.getTime(), endMs: end.getTime(), anchorMs: anchor.getTime() };
 }
 
-/** Fetch the subscription and derive the current billing period. */
-export async function resolveBillingPeriod(
+/**
+ * Fetch the subscription and derive the current billing period.
+ *
+ * `cache()`d, for the same reason `getUserPlan` is (usage.ts): the billing
+ * period is asked for by every gate and every ledger write on the spend path,
+ * and the row it reads cannot change inside one request. Measured on a single
+ * chat send, this was TEN identical reads of one Subscription row — free on a
+ * database in the same process, and ten serial round trips to a hosted one,
+ * paid before the model is even called.
+ *
+ * The memo is keyed on both arguments, so an explicit `now` still resolves
+ * against the instant the caller asked about. Callers that pass their own
+ * clock (the period sweeps, the tests) therefore share nothing with the
+ * request path, which is the correct behaviour rather than a limitation.
+ */
+const billingPeriodOnce = cache(async function billingPeriodOnce(
   userId: string,
-  now = new Date()
+  nowMs: number
 ): Promise<BillingPeriod> {
   const sub = await prisma.subscription.findUnique({
     where: { userId },
     select: { createdAt: true, currentPeriodEnd: true },
   });
-  return billingPeriodFor(sub, now);
+  return billingPeriodFor(sub, new Date(nowMs));
+});
+
+export async function resolveBillingPeriod(
+  userId: string,
+  now = new Date()
+): Promise<BillingPeriod> {
+  return billingPeriodOnce(userId, now.getTime());
 }
 
 /**
@@ -518,7 +540,7 @@ export function spendPeriodKey(period: BillingPeriod): string {
  * settings. One read of Settings; pass the result on to `checkBudget` and
  * `reserveSpend` rather than resolving it twice per request.
  */
-export async function resolveEffectiveBudget(
+export const resolveEffectiveBudget = cache(async function resolveEffectiveBudget(
   userId: string,
   plan: Plan
 ): Promise<EffectiveBudget> {
@@ -532,7 +554,7 @@ export async function resolveEffectiveBudget(
     capDisabled: settings?.spendCapDisabled ?? false,
     eurPerUsd: eurPerUsd(),
   });
-}
+});
 
 export interface BudgetStatus {
   allowed: boolean;
@@ -894,38 +916,77 @@ export async function expireStaleSpendReservations(
   options: { now?: Date; retentionMs?: number; limit?: number } = {}
 ): Promise<number> {
   const cutoff = new Date((options.now ?? new Date()).getTime() - (options.retentionMs ?? 60 * 60 * 1000));
-  const stale = await prisma.spendReservation.findMany({
-    where: { userId, state: "open", createdAt: { lt: cutoff } },
-    select: { ref: true, kind: true },
-    orderBy: { createdAt: "asc" },
-    take: Math.min(Math.max(options.limit ?? 200, 1), 1_000),
-  });
-  if (stale.length === 0) return 0;
+  const limit = Math.min(Math.max(options.limit ?? 200, 1), 1_000);
 
-  const workRefs = stale.filter((row) => row.kind === "work").map((row) => row.ref);
-  const liveWorkRefs = new Set(
-    workRefs.length === 0
-      ? []
-      : (
-          await prisma.workRun.findMany({
-            where: {
-              userId,
-              spendReservationRef: { in: workRefs },
-              status: { in: [...ACTIVE_WORK_RUN_STATUSES] },
-            },
-            select: { spendReservationRef: true },
-          })
-        )
-          .map((row) => row.spendReservationRef)
-          .filter((ref): ref is string => ref !== null)
-  );
-
-  let released = 0;
-  for (const row of stale) {
-    if (row.kind === "work" && liveWorkRefs.has(row.ref)) continue;
-    if (await releaseSpend(userId, row.ref)) released += 1;
-  }
-  return released;
+  /*
+   * ONE ROUND TRIP, not five per abandoned hold.
+   *
+   * This sweep runs inside `reserveSpend`, which is to say before the
+   * admission decision on every chat send — so its cost is paid while the
+   * reader is watching "Starting your request". It used to read the stale rows
+   * and then close them ONE AT A TIME, each `releaseSpend` its own transaction
+   * of find + update + counter decrement: about five round trips per row, in
+   * series.
+   *
+   * That is free against a database in the same process and it is not free
+   * against a hosted one. Production carried ten abandoned `chat` holds when
+   * this was measured, so every send was paying roughly fifty serial round
+   * trips — about a second at 20ms — to release the same backlog again.
+   *
+   * The set-based form below does exactly what the loop did, in one statement:
+   * close every releasable hold, total what each period gets back, and
+   * decrement those counters. Postgres runs data-modifying CTEs exactly once
+   * and always to completion, so `bumped` applies even though the final SELECT
+   * does not read it.
+   *
+   * WHAT IS DELIBERATELY UNCHANGED: a `work` hold belonging to a queued,
+   * running or paused run is still retained — pausing is a user's decision and
+   * the hold is that run's maximum-cost promise until they resume or end it.
+   * `GREATEST(…, 0)` still guards the counter, so a hold released twice cannot
+   * manufacture headroom that was never taken. And the row limit still bounds
+   * how much one sweep will do.
+   */
+  const rows = await prisma.$queryRaw<Array<{ released: number }>>(Prisma.sql`
+    WITH stale AS (
+      SELECT r."id", r."periodId", r."estimateMicroUsd"
+        FROM "SpendReservation" r
+       WHERE r."userId" = ${userId}
+         AND r."state" = 'open'
+         AND r."createdAt" < ${cutoff}
+         AND NOT (
+           r."kind" = 'work'
+           AND EXISTS (
+             SELECT 1 FROM "WorkRun" w
+              WHERE w."userId" = r."userId"
+                AND w."spendReservationRef" = r."ref"
+                AND w."status" IN (${Prisma.join([...ACTIVE_WORK_RUN_STATUSES])})
+           )
+         )
+       ORDER BY r."createdAt" ASC
+       LIMIT ${limit}
+    ),
+    closed AS (
+      UPDATE "SpendReservation" r
+         SET "state" = 'released', "settledMicroUsd" = NULL, "settledAt" = now()
+        FROM stale s
+       WHERE r."id" = s."id" AND r."state" = 'open'
+      RETURNING s."periodId" AS "periodId", s."estimateMicroUsd" AS "estimateMicroUsd"
+    ),
+    totals AS (
+      SELECT "periodId", SUM("estimateMicroUsd") AS freed
+        FROM closed GROUP BY "periodId"
+    ),
+    bumped AS (
+      UPDATE "SpendPeriod" p
+         SET "reservedMicroUsd" = GREATEST(p."reservedMicroUsd" - t.freed, 0),
+             "updatedAt" = now()
+        FROM totals t
+       WHERE p."id" = t."periodId" AND p."userId" = ${userId}
+      RETURNING p."id"
+    )
+    SELECT count(*)::int AS released FROM closed
+  `);
+  return rows[0]?.released ?? 0;
 }
 
 /**

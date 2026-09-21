@@ -14,7 +14,27 @@ import { prismaUnguarded } from "@/lib/db";
 import { RESEARCH_WORKING_STATES } from "@/lib/research/domain";
 import { researchEngine } from "@/lib/research/run";
 
+/*
+ * THE FLOOR, not the cadence.
+ *
+ * This worker is a restart-safety net: the API nudges an accepted run the
+ * moment it is created (see the note above), so this loop exists for the runs
+ * a process death would otherwise strand. It does not have to ask every five
+ * seconds forever — and asking anyway is not free when the database is in
+ * another datacentre.
+ *
+ * Production `pg_stat_statements` for this deployment: 6.3 MILLION queries at
+ * a mean execution time of 0.342ms, for an account base of two. The research
+ * poll alone accounted for roughly 750,000 of them. Each one is ~0.06ms of
+ * database work wrapped in a ~20ms round trip from the VM, on a box that is
+ * also running the web server the reader is waiting on.
+ *
+ * So: five seconds while there is work, doubling up to a minute once there is
+ * none, and back to five the instant a run appears. An idle deployment goes
+ * from 17,280 polls a day to about 1,400.
+ */
 const TICK_MS = 5_000;
+const IDLE_TICK_MAX_MS = 60_000;
 const MAX_RUNS_PER_TICK = 8;
 const WORKER_ID = `research-worker:${process.pid}:${process.env.HOSTNAME ?? "local"}`;
 
@@ -25,7 +45,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function tick(): Promise<void> {
+/** Returns how many runs this tick claimed, so the loop can decide to wait. */
+async function tick(): Promise<number> {
   const now = new Date();
   const candidates = await prismaUnguarded.researchRun.findMany({
     where: {
@@ -57,6 +78,8 @@ async function tick(): Promise<void> {
         }
       })
   );
+
+  return candidates.length;
 }
 
 async function main(): Promise<void> {
@@ -68,13 +91,20 @@ async function main(): Promise<void> {
   });
   console.info("[research-worker] started", { workerId: WORKER_ID });
 
+  let waitMs = TICK_MS;
   while (!stopping) {
     try {
-      await tick();
+      const claimed = await tick();
+      // Work resets the cadence immediately, so a busy deployment polls
+      // exactly as often as it did before. An idle one doubles its way out.
+      waitMs = claimed > 0 ? TICK_MS : Math.min(waitMs * 2, IDLE_TICK_MAX_MS);
     } catch (error) {
+      // A failing tick is not an idle one: keep the floor rather than backing
+      // off, or a database blip would quietly stretch recovery to a minute.
       console.error("[research-worker] tick failed", { error });
+      waitMs = TICK_MS;
     }
-    if (!stopping) await delay(TICK_MS);
+    if (!stopping) await delay(waitMs);
   }
 
   await prismaUnguarded.$disconnect();

@@ -57,10 +57,42 @@ server {
         proxy_send_timeout 7200s;
     }
 
+    # Build output: hashed filenames, so Next serves them `immutable` and a
+    # browser asks for each one exactly once. They are still worth their own
+    # location, because `location /` below turns proxy buffering OFF for the
+    # sake of SSE — and that setting applied to these too.
+    #
+    # Unbuffered, nginx relays a response in whatever slices it reads from the
+    # upstream socket, and cannot release that upstream connection until the
+    # slowest client has taken the last byte. A page here loads ~36 of these
+    # chunks, so a first visit on a slow link held ~36 Node connections open
+    # for its whole duration, on the single-process server that was also trying
+    # to render pages. Buffered, nginx takes each file from Next at local
+    # speed, frees the connection, and feeds the client on its own time.
+    #
+    # Next already gzips these and stamps `Cache-Control: immutable`, so there
+    # is nothing to add on either count — this is only about who does the
+    # waiting.
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_hide_header X-Powered-By;
+
+        proxy_buffering on;
+        # 256 KB of buffer per response: the largest chunk this app emits is
+        # ~330 KB raw / ~94 KB gzipped, so the common case is absorbed in one
+        # pass rather than spilling to a temp file.
+        proxy_buffers 32 8k;
+        proxy_buffer_size 16k;
+        proxy_busy_buffers_size 32k;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        
+
         # Headers for WebSockets and streaming
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
