@@ -404,24 +404,40 @@ else the importing module takes from the same file — and afterwards, check the
 chunk rather than the diff.
 
 ```
-                  before   round 1   round 2
-/chat             667 kB    528 kB    503 kB
-/chat/[id]        797 kB    563 kB    538 kB
-/settings         515 kB    381 kB    357 kB
-/compare          456 kB    322 kB    297 kB
-/memory           451 kB    316 kB    291 kB
-/share/[token]    378 kB    284 kB    262 kB
+                  before   round 1   round 2   round 3
+/chat             667 kB    528 kB    503 kB    488 kB
+/chat/[id]        797 kB    563 kB    538 kB    523 kB
+/settings         515 kB    381 kB    357 kB    357 kB
+/compare          456 kB    322 kB    297 kB    297 kB
+/memory           451 kB    316 kB    291 kB    291 kB
+/share/[token]    378 kB    284 kB    262 kB    262 kB
 ```
 
-**Where it stops, and why.** What remains in `/chat` is 347 kB of one chunk:
+Round three is two more of the same shape, found by reading the transcript's
+own render tree rather than the chunk list: `VisualLearningBlockRenderer`
+(112 kB of source — StepLab plus five block types, for a part kind most
+answers never produce) and `ApprovalCard` (24 kB, drawn only while the tool
+loop is holding for a decision). Both branches were already conditional; only
+the imports were not.
+
+**Where it stops, and why.** What remains in `/chat` is one chunk of
 `composer.tsx`, `chat-view.tsx`, `message-item.tsx`, `model-selector.tsx` and
-`citation-audit.tsx`. The last two are the next 90 kB and neither has a seam.
-The model picker's trigger is always on screen and only its popover is heavy,
-so splitting it means restructuring the component; `citation-audit.tsx`
-interleaves a hook, a predicate and four sub-components the panel needs, with
-three other files importing across the middle of it. Both are real work, and
-neither is the kind that should be done without being able to open the screen
-it changes.
+`citation-audit.tsx`. The last two are the next ~90 kB and **neither has a
+seam**, which was checked with the code open rather than assumed:
+
+- `ModelSelector` is one function holding the trigger and both stages of the
+  popover on shared state (`open`, `pickerOpen`, `query`, `cursorKey`). The
+  heavy part is stage two, and separating it means either restructuring the
+  component or putting a stand-in chip in front of the real one — which buys
+  ~12 kB and risks the chip needing two presses. A model picker that swallows
+  a click is worse than a model picker that loads 12 kB.
+- `citation-audit.tsx` has a seam but a discontiguous one: `SupportBadge` and
+  `ScoreMeter` (needed by `sources-pill`, which is always on screen) sit
+  *above* the four heavy sub-components, and `auditHeadline` (needed by
+  research-recap) sits *between* them and the panel. Three files import across
+  the middle. Worth doing; not worth doing blind, since an audit panel only
+  renders for a research answer with a cited corpus, which needs live
+  providers to produce.
 
 ## 3. The rules
 

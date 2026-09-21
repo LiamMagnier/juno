@@ -30,10 +30,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
-import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
+/**
+ * Split: the learning blocks are 112 kB of source (StepLab plus five block
+ * types) and they render for one part kind that most answers never produce.
+ * The branch below is already a ternary on `part.type`, so the chunk is
+ * fetched by the first message that actually contains one.
+ */
+const VisualLearningBlockRenderer = nextDynamic(
+  () =>
+    import("@/components/chat/learning/visual-learning-renderer").then(
+      (m) => m.VisualLearningBlockRenderer,
+    ),
+  { ssr: false },
+);
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { codeLiveCopy } from "@/components/code/code-activity";
-import { ApprovalCard } from "@/components/chat/approval-card";
+/**
+ * Split: a card that appears only while the tool loop in src/lib/mcp.ts is
+ * holding for a decision — `message.approvals?.length` guards it — and 24 kB
+ * of source that every other transcript was carrying.
+ */
+const ApprovalCard = nextDynamic(
+  () => import("@/components/chat/approval-card").then((m) => m.ApprovalCard),
+  { ssr: false },
+);
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { CitationAuditPanel, isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
