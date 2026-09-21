@@ -121,8 +121,26 @@ import {
 import { scanSkillVersion } from "@/lib/work/skill-security";
 import type { Prisma } from "@prisma/client";
 
-/** How often to look for work. */
+/** How often to look for work, while there IS work. */
 const TICK_MS = 5_000;
+/*
+ * The ceiling this loop drifts to once there is nothing to do.
+ *
+ * A queued run is dispatched by the API when it is created; this loop is the
+ * restart-safety net and the reclaimer of runs whose executor died. Neither
+ * job needs a five-second heartbeat forever, and on this deployment that
+ * heartbeat was not cheap: production `pg_stat_statements` shows 6.3 MILLION
+ * queries at a mean execution time of 0.342ms for an account base of two, of
+ * which the two WorkRun polls below were about 1.5 million. The database is
+ * not the thing struggling with that — the queries are microseconds — it is
+ * the ~20ms round trip to another datacentre, repeated forever, on the same
+ * small VM that serves pages.
+ *
+ * Back to TICK_MS the moment anything is reclaimed, claimed, or already in
+ * flight, so a busy worker behaves exactly as before. An idle one settles at
+ * one look a minute: ~17,280 ticks a day becomes ~1,400.
+ */
+const IDLE_TICK_MAX_MS = 60_000;
 /** How many runs one worker will drive at once. */
 const MAX_CONCURRENT_RUNS = 3;
 /** Renew a lease at a third of its life, so two renewals may fail harmlessly. */
@@ -2492,7 +2510,8 @@ async function findQueuedRuns(limit: number) {
   });
 }
 
-async function tick(): Promise<void> {
+/** Returns true when this tick found something to do, so the loop can wait. */
+async function tick(): Promise<boolean> {
   // Other workers' casualties first. A run whose executor died is invisible to
   // every surface as anything other than "still going", so clearing it is more
   // urgent than starting something new.
@@ -2500,12 +2519,16 @@ async function tick(): Promise<void> {
   if (swept.reclaimed.length > 0) {
     log("reclaimed stalled runs", { count: swept.reclaimed.length });
   }
+  let busy = swept.reclaimed.length > 0;
 
   const slots = MAX_CONCURRENT_RUNS - active.size;
-  if (slots <= 0) return;
+  // Full is the opposite of idle: keep the short cadence so a finishing run
+  // frees its slot to the next candidate within seconds.
+  if (slots <= 0) return true;
 
   for (const candidate of await findQueuedRuns(slots)) {
-    if (stopping) return;
+    busy = true;
+    if (stopping) return true;
     const claim = await claimRun({
       runId: candidate.id,
       userId: candidate.userId,
@@ -2523,6 +2546,9 @@ async function tick(): Promise<void> {
       active.delete(candidate.id);
     });
   }
+
+  // A run still being driven counts as work even on a tick that claimed none.
+  return busy || active.size > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -3841,16 +3867,22 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+  let waitMs = TICK_MS;
   while (!stopping) {
     try {
-      await tick();
+      waitMs = (await tick()) ? TICK_MS : Math.min(waitMs * 2, IDLE_TICK_MAX_MS);
     } catch (error) {
       // One bad tick must not end the worker: the next one may well succeed,
       // and a worker that exits on a transient database error takes every
       // queued run with it.
+      //
+      // A failed tick is not an idle tick either — it learned nothing about
+      // whether there is work — so it holds the floor rather than backing off,
+      // or a database blip would stretch reclaim to a minute.
       log("tick failed", { error: String(error) });
+      waitMs = TICK_MS;
     }
-    await new Promise((resolve) => setTimeout(resolve, TICK_MS));
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   // Leases are left to expire rather than released. A worker shutting down
