@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   AudioLines,
@@ -79,7 +80,19 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
-import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
+/**
+ * Split: it renders only while a clarification is pending, which is a state
+ * most messages never enter, and its render site is already guarded on
+ * `pendingClarification`. `ssr: false` because a pending clarification is
+ * client state by construction — the server has never had one to render.
+ */
+const ComposerClarificationPopover = nextDynamic(
+  () =>
+    import("@/components/chat/composer-clarification-popover").then(
+      (m) => m.ComposerClarificationPopover,
+    ),
+  { ssr: false },
+);
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
 import {

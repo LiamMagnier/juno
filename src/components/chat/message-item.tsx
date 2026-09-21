@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
@@ -36,7 +37,16 @@ import { ApprovalCard } from "@/components/chat/approval-card";
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { CitationAuditPanel, isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
-import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
+/**
+ * Split: a full-screen editor that mounts only once a reader has pressed Edit
+ * on a generated image, and 31 kB of source that every transcript was loading
+ * to render nothing. Its render site is already guarded on `editTarget`, so
+ * the chunk is fetched by the same press that opens it.
+ */
+const ImageEditOverlay = nextDynamic(
+  () => import("@/components/chat/image-edit-overlay").then((m) => m.ImageEditOverlay),
+  { ssr: false },
+);
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";

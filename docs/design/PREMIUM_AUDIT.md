@@ -378,6 +378,51 @@ renderer whose absence changes layout is not; do not extend the pattern to one.
 The general form: before defending a bundle, run the build and read the chunks.
 Every one of these four survived because nobody had.
 
+### P1 — a second pass, and where it stops
+
+Five more, all already guarded at their render site and all static imports:
+`ImageEditOverlay` (31 kB of source, mounts when a reader presses Edit on a
+generated image), `ComposerClarificationPopover` (21 kB, a state most messages
+never enter), `InlineVisualBlock` with `StepLabBlock` behind it (73 kB, for a
+`juno-visual` fence), and `MermaidBlock`.
+
+The sixth needed a file split rather than a dynamic import, and it is the one
+worth recording, because a `next/dynamic` alone would have moved nothing.
+`ActivityTimeline` renders on every turn and imported `buildRun`, `useRunClock`,
+`domainOf`, `toSearchSites` and `formatSpan` from `thought-process-panel.tsx` —
+so the module was in the chunk no matter how the panel itself was imported. The
+file had a clean seam at it: everything above `Prose` is the run model,
+everything below is the dock that draws it. Split into
+`thought-process-model.tsx` (33 kB, the strip needs it) and
+`thought-process-panel.tsx` (64 kB, only an opened dock needs it), the dynamic
+import finally splits. It also broke a type cycle: `run-receipt.ts` imported
+`RunModel` and `Step` from a module that imported `formatSpan` back out of it.
+
+**Rule:** a helper exported beside a heavy component is a static import of that
+component wearing a disguise. Before reaching for `next/dynamic`, check what
+else the importing module takes from the same file — and afterwards, check the
+chunk rather than the diff.
+
+```
+                  before   round 1   round 2
+/chat             667 kB    528 kB    503 kB
+/chat/[id]        797 kB    563 kB    538 kB
+/settings         515 kB    381 kB    357 kB
+/compare          456 kB    322 kB    297 kB
+/memory           451 kB    316 kB    291 kB
+/share/[token]    378 kB    284 kB    262 kB
+```
+
+**Where it stops, and why.** What remains in `/chat` is 347 kB of one chunk:
+`composer.tsx`, `chat-view.tsx`, `message-item.tsx`, `model-selector.tsx` and
+`citation-audit.tsx`. The last two are the next 90 kB and neither has a seam.
+The model picker's trigger is always on screen and only its popover is heavy,
+so splitting it means restructuring the component; `citation-audit.tsx`
+interleaves a hook, a predicate and four sub-components the panel needs, with
+three other files importing across the middle of it. Both are real work, and
+neither is the kind that should be done without being able to open the screen
+it changes.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,

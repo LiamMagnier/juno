@@ -1,18 +1,36 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
-  ThoughtProcessPanel,
   buildRun,
   domainOf,
   formatSpan,
   toSearchSites,
   useRunClock,
-} from "@/components/chat/thought-process-panel";
+} from "@/components/chat/thought-process-model";
+
+/**
+ * The panel is fetched when it is opened, not when the strip renders.
+ *
+ * This strip renders on every turn; the panel renders only once a reader
+ * presses it open, and it is 64 kB of source. They shared a module until the
+ * model was split out (thought-process-model.tsx), which is why the import
+ * below can be dynamic at all — a `next/dynamic` here while the helpers above
+ * still came from the panel's own file would have moved nothing.
+ *
+ * `ssr: false` is not a constraint: the render site is already behind
+ * `open && panel.container`, and `panel.container` is a DOM node the dock
+ * publishes after mount, so this never had a server render to give up.
+ */
+const ThoughtProcessPanel = nextDynamic(
+  () => import("@/components/chat/thought-process-panel").then((m) => m.ThoughtProcessPanel),
+  { ssr: false },
+);
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { Pressable } from "@/components/ui/pressable";

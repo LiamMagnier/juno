@@ -16,7 +16,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildRun } from "@/components/chat/thought-process-panel";
+import { buildRun } from "@/components/chat/thought-process-model";
 import {
   TOOLS_DESCRIPTION,
   TOOLS_NO_DETAIL_NOTE,

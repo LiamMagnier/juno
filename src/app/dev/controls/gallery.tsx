@@ -3,19 +3,16 @@
 import * as React from "react";
 import {
   Archive,
+  ChevronRight,
   Download,
-  FolderPlus,
-  Image as ImageIcon,
   LayoutGrid,
   List as ListIcon,
-  Paperclip,
   PenTool,
   Pin,
+  Plug,
   Plus,
-  ChevronRight,
+  Scan,
   Search,
-  Share2,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -24,7 +21,18 @@ import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Badge } from "@/components/ui/badge";
-import { StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
+import { PlusMenu, PlusMenuRow, type PlusMenuSection } from "@/components/chat/composer-plus-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   MENU_W,
   MENU_W_WIDE,
@@ -36,12 +44,28 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The menus above are drawn from the recipe's own classes rather than opened
- * through Radix. A real dropdown portals to <body>, closes the moment focus
- * moves to the next one, and cannot be screenshotted beside its neighbour —
- * which is the one thing this section exists to do. The classes ARE the
- * shipped ones, so a change to the recipe shows up here; only the portal and
- * the focus management are missing.
+ * THE STATIC MENUS, AND WHAT THEY ARE ALLOWED TO BE.
+ *
+ * A real dropdown portals to <body> and closes the moment focus moves to the
+ * next one, so two of them cannot be on screen together — which is the one
+ * thing this section exists to do. These are drawn from the recipe's own
+ * classes instead: a change to `menu-recipe.ts` shows up here, and only the
+ * portal and the focus management are missing.
+ *
+ * THE RULE THAT COST SOMETHING TO LEARN: the content has to be the shipped
+ * content, drawn with the shipped icons from the registry. The first version
+ * of this section invented a plausible `+` menu — "Add files" and "Add photos"
+ * as two rows, no "Add from library", and Lucide's `Sparkles` for Deep
+ * research. Every one of those is wrong about the product: the two attachment
+ * rows were deliberately merged into one (`ACCEPT_ATTRIBUTE` has always taken
+ * both), the library row exists, and `ComposerIcons.research` is a telescope,
+ * "never binoculars" and certainly never a sparkle. It was read as a change to
+ * the product and reported as a regression, which is exactly what a gallery
+ * that paraphrases will always produce.
+ *
+ * So: icons come from the registry, never from a fresh `lucide-react` import,
+ * and the rows mirror `composer.tsx` group for group. Anything this file
+ * cannot mirror honestly belongs in the live section below it instead.
  */
 function StaticMenu({ title, width, children }: { title: string; width: string; children: React.ReactNode }) {
   return (
@@ -97,6 +121,102 @@ function MenuRow({
 
 function MenuHairline() {
   return <div className={menuSeparatorClass} />;
+}
+
+/**
+ * The real `<PlusMenu>`, with the section shape composer.tsx builds — a merged
+ * attachment row, the library, where the chat sits, and what is armed for the
+ * message. Its handlers are no-ops; everything else is the shipped component,
+ * including the submenus and the phone-width drill-in.
+ */
+function LivePlusMenu() {
+  const [open, setOpen] = React.useState(false);
+  const [research, setResearch] = React.useState(false);
+  const [web, setWeb] = React.useState(true);
+  const [project, setProject] = React.useState<string | null>(null);
+  const noop = () => {};
+
+  const sections: PlusMenuSection[] = [
+    [
+      { kind: "action", id: "files", label: "Add files or photos", icon: ComposerIcons.attach, detail: "⌘U", onSelect: noop },
+      { kind: "action", id: "screenshot", label: "Take a screenshot", icon: Scan, onSelect: noop },
+      { kind: "action", id: "library", label: "Add from library", icon: AppIcons.library, onSelect: noop },
+    ],
+    [
+      {
+        kind: "sub",
+        id: "project",
+        label: "Add to project",
+        icon: AppIcons.projects,
+        detail: project ?? undefined,
+        render: () => (
+          <>
+            <PlusMenuRow selected={project === null} onSelect={() => setProject(null)}>No project</PlusMenuRow>
+            {["Juno", "Thesis", "Invoices"].map((name) => (
+              <PlusMenuRow key={name} icon={AppIcons.projects} selected={project === name} onSelect={() => setProject(name)}>
+                {name}
+              </PlusMenuRow>
+            ))}
+          </>
+        ),
+      },
+      { kind: "sub", id: "connectors", label: "Connectors", icon: Plug, detail: "2", render: () => (
+        <>
+          <PlusMenuRow icon={Plug} checked onSelect={noop}>Gmail</PlusMenuRow>
+          <PlusMenuRow icon={Plug} checked onSelect={noop}>Drive</PlusMenuRow>
+          <PlusMenuRow icon={Plug} checked={false} onSelect={noop}>Notion</PlusMenuRow>
+        </>
+      ) },
+    ],
+    [
+      { kind: "toggle", id: "research", label: "Deep research", icon: ComposerIcons.research, checked: research, detail: research ? "Standard" : undefined, onToggle: () => setResearch((v) => !v) },
+      { kind: "toggle", id: "task", label: "Do this as a task", icon: ComposerIcons.task, checked: false, onToggle: noop },
+      { kind: "toggle", id: "search", label: "Web search", icon: ComposerIcons.web, checked: web, onToggle: () => setWeb((v) => !v) },
+      { kind: "toggle", id: "memory", label: "Memory", icon: ComposerIcons.memory, checked: true, onToggle: noop },
+    ],
+  ];
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono text-caption text-muted-foreground">PlusMenu →</span>
+      <PlusMenu open={open} onOpenChange={setOpen} label="Add to this message" tooltip="Add" sections={sections} />
+    </div>
+  );
+}
+
+/** The real kebab, with ConversationRow's rows — one hairline, before Delete. */
+function LiveKebab() {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono text-caption text-muted-foreground">Kebab →</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Pressable kind="icon" size="md" aria-label="Conversation options">
+            <ActionIcons.more className="size-4" />
+          </Pressable>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className={MENU_W}>
+          <DropdownMenuItem><ActionIcons.edit className="size-4" /> Rename</DropdownMenuItem>
+          <DropdownMenuItem><Pin className="size-4" /> Pin</DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <AppIcons.projects className="size-4" /> Add to project
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className={MENU_W}>
+              <DropdownMenuItem><StatusIcons.success className="size-4 text-primary" /> No project</DropdownMenuItem>
+              <DropdownMenuItem><AppIcons.projects className="size-4" /> Juno</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem><Plus className="size-4" /> New project…</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuItem><ActionIcons.share className="size-4" /> Share</DropdownMenuItem>
+          <DropdownMenuItem><Archive className="size-4" /> Archive</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive"><ActionIcons.delete className="size-4" /> Delete</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 }
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
@@ -338,24 +458,33 @@ export function ControlsGallery() {
           }
         >
           <div className="flex flex-wrap items-start gap-6">
+            {/* Mirrors ConversationRow in app-sidebar.tsx, row for row. */}
             <StaticMenu title="Row kebab (⋯)" width={MENU_W}>
-              <MenuRow icon={PenTool}>Rename</MenuRow>
+              <MenuRow icon={ActionIcons.edit}>Rename</MenuRow>
               <MenuRow icon={Pin}>Pin</MenuRow>
-              <MenuRow icon={FolderPlus} chevron>Add to project</MenuRow>
-              <MenuRow icon={Share2}>Share</MenuRow>
+              <MenuRow icon={AppIcons.projects} chevron>Add to project</MenuRow>
+              <MenuRow icon={ActionIcons.share}>Share</MenuRow>
               <MenuRow icon={Archive}>Archive</MenuRow>
               <MenuHairline />
-              <MenuRow icon={Trash2} destructive>Delete</MenuRow>
+              <MenuRow icon={ActionIcons.delete} destructive>Delete</MenuRow>
             </StaticMenu>
 
+            {/* Mirrors `plusSections` in composer.tsx: one merged attachment
+                row that teaches ⌘U, the screenshot row where the browser has
+                getDisplayMedia, the library row — then where the chat sits,
+                then what is armed for the message. */}
             <StaticMenu title="Composer + menu" width={MENU_W_WIDE}>
-              <MenuRow icon={Paperclip} detail="⌘U">Add files</MenuRow>
-              <MenuRow icon={ImageIcon}>Add photos</MenuRow>
+              <MenuRow icon={ComposerIcons.attach} detail="⌘U">Add files or photos</MenuRow>
+              <MenuRow icon={Scan}>Take a screenshot</MenuRow>
+              <MenuRow icon={AppIcons.library}>Add from library</MenuRow>
               <MenuHairline />
-              <MenuRow icon={FolderPlus} detail="None" chevron>Project</MenuRow>
+              <MenuRow icon={AppIcons.projects} chevron>Add to project</MenuRow>
+              <MenuRow icon={Plug} detail="2" chevron>Connectors</MenuRow>
               <MenuHairline />
-              <MenuRow icon={Search} ticked>Web search</MenuRow>
-              <MenuRow icon={Sparkles}>Deep research</MenuRow>
+              <MenuRow icon={ComposerIcons.research}>Deep research</MenuRow>
+              <MenuRow icon={ComposerIcons.task}>Do this as a task</MenuRow>
+              <MenuRow icon={ComposerIcons.web} ticked>Web search</MenuRow>
+              <MenuRow icon={ComposerIcons.memory} ticked>Memory</MenuRow>
             </StaticMenu>
 
             <StaticMenu title="Select" width={MENU_W}>
@@ -371,6 +500,20 @@ export function ControlsGallery() {
               <MenuRow icon={Download} description="Not published yet">Windows</MenuRow>
             </StaticMenu>
           </div>
+        </Section>
+
+        <Section
+          title="Menus — the real components, openable"
+          note={
+            "The static row above cannot be wrong about geometry but can be wrong about content, " +
+            "and once was. These two are the shipped components — <PlusMenu> from " +
+            "composer-plus-menu.tsx and a <DropdownMenu> kebab — with the real section shape, so " +
+            "submenus, ticks, keyboard nav and the compact drill-in can be exercised rather than " +
+            "described. Open them one at a time; a portalled menu closes when the next one opens."
+          }
+        >
+          <LivePlusMenu />
+          <LiveKebab />
         </Section>
 
         <Section

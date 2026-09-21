@@ -1,5 +1,5 @@
 import type { ClientToolDetail } from "@/types/chat";
-import type { RunModel, Step } from "@/components/chat/thought-process-panel";
+import type { RunModel, Step } from "@/components/chat/thought-process-model";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE RUN, AS TEXT — the panel's two copy buttons and its one span formatter.

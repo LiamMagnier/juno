@@ -1,13 +1,32 @@
 "use client";
 
 import * as React from "react";
+import nextDynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { useContentPlugins } from "@/components/chat/markdown-plugins";
 import { AicssCodeBlock, splitHighlightedLines } from "@/components/aicss/code-block";
-import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
-import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
+
+/**
+ * The two rare fences, split out of the chat bundle.
+ *
+ * `InlineVisualBlock` pulls `StepLabBlock` behind it — 73 kB of source between
+ * them — and both render for exactly one thing: a fence whose info string is
+ * `juno-visual` (or `mermaid`). Almost no conversation contains one, and every
+ * conversation was paying for both.
+ *
+ * `ssr: false` because both are interactive surfaces that do their work in an
+ * effect or an iframe: the server render contributed nothing to hand over.
+ */
+const InlineVisualBlock = nextDynamic(
+  () => import("@/components/chat/inline-visual-block").then((m) => m.InlineVisualBlock),
+  { ssr: false },
+);
+const MermaidBlock = nextDynamic(
+  () => import("@/components/chat/learning/mermaid-block").then((m) => m.MermaidBlock),
+  { ssr: false },
+);
 import { SourceChip } from "@/components/chat/source-chip";
 import { DEMOTED_HEADINGS } from "@/lib/markdown-headings";
 import { cn } from "@/lib/utils";
