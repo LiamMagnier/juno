@@ -54,7 +54,7 @@ const ICONS = {
   home: "message-circle",
   work: "zap",
   code: "code-2",
-  library: "library",
+  library: "library-big",
   artifacts: "layers-3",
   projects: "folder",
   tasks: "calendar-clock",

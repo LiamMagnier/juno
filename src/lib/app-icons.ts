@@ -34,8 +34,8 @@ import {
   ImagePlus,
   Laptop,
   Layers3,
+  LibraryBig,
   LayoutTemplate,
-  Library,
   Lock,
   Mic,
   Info,
@@ -117,7 +117,19 @@ export const AppIcons = {
    *  The nib is not retired: `DesignIcons.path` keeps it for a vector path
    *  layer, where it names a tool because a tool is what it is. */
   design: Shapes,
-  library: Library,
+  /** Library — the images and documents your conversations have collected.
+   *
+   *  BOOKS WITH A SPINE, not four tick marks. Lucide's `Library` is four bare
+   *  strokes of different heights with the last one tilted; at the 18px this
+   *  panel draws it, "a shelf seen from the front" is not what arrives — what
+   *  arrives is an equaliser, and beside a folder and a stack of layers it was
+   *  the one mark in the column that had to be decoded rather than read.
+   *
+   *  `LibraryBig` is the same idea drawn with CLOSED SHAPES: three volumes
+   *  with tops and depth, which survive the size because an outlined form
+   *  survives what a bare hairline does not. Same metaphor, same word over it,
+   *  and the only thing that changes is whether you can tell what it is. */
+  library: LibraryBig,
   /** Deep research, wherever the shell has to name it — the command palette,
    *  a native sidebar row, an empty state. The SAME telescope the composer's
    *  Deep research tool draws (`ComposerIcons.research`): one feature, one

@@ -59,8 +59,13 @@ export function SharedArtifactViewer({
       {hasPreview && (
         <TabsContent value="preview" className={panel}>
           {isMarkdown ? (
-            <div className="h-full overflow-auto p-6">
-              <Markdown content={content} />
+            <div className="h-full overflow-auto px-6 py-8">
+              {/* The product's reading measure (ui/app-page.tsx). A shared
+                  document is the one artifact a visitor arrives to READ, and
+                  full-bleed it set at whatever the window happened to be. */}
+              <div className="mx-auto w-full max-w-3xl">
+                <Markdown content={content} />
+              </div>
             </div>
           ) : (
             <SandboxFrame type={type} content={content} language={language} mode={rt.mode} />

@@ -14,8 +14,11 @@ import {
   Maximize2,
   MessageCircleQuestion,
   Minimize2,
+  Monitor,
   Play,
   Presentation,
+  Smartphone,
+  Tablet,
   Terminal,
   type LucideIcon,
 } from "lucide-react";
@@ -31,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -54,6 +58,16 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 // Types whose sandbox carries the element inspector (MERMAID renders opaque SVG).
+/**
+ * The measures a live preview can be pinned to.
+ *
+ * Two real device widths and the panel's own. 390 is the iPhone 14/15 CSS
+ * width and 834 the iPad's — actual numbers a responsive site is written
+ * against, not round ones picked to look tidy.
+ */
+type PreviewWidth = "full" | "tablet" | "phone";
+const PREVIEW_WIDTHS = { full: 0, tablet: 834, phone: 390 } as const;
+
 const INSPECTABLE_LANG = new Set(["html", "tsx", "jsx", "svg", "css"]);
 
 type OfficeFormat = "docx" | "xlsx" | "pptx";
@@ -220,8 +234,22 @@ export function CanvasPanel({
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
   // Viewport breakpoints can't see the panel: a 500px canvas on a desktop
-  // screen is still "sm:". Contextual-action labels key off the PANEL width.
-  const [panelWide, setPanelWide] = React.useState(true);
+  // screen is still "sm:". Contextual-action labels key off the PANEL width —
+  // and so does the preview-width control, which has nothing to show when the
+  // panel is already narrower than a phone.
+  const [panelWidth, setPanelWidth] = React.useState(9999);
+  const panelWide = panelWidth >= 560;
+  /*
+   * WHAT THE PREVIEW IS BEING SIZED TO.
+   *
+   * A generated site is responsive, and a canvas docked beside a transcript is
+   * ~500px — so every website the product built was being judged on its phone
+   * layout, with no way to see the one it was actually designed for. The
+   * frame keeps the panel's full width by default and can be pinned to a
+   * tablet or a phone measure, centred on a gutter so the edges of the page
+   * are visible rather than bleeding into the chrome.
+   */
+  const [previewWidth, setPreviewWidth] = React.useState<PreviewWidth>("full");
   // Last version whose preview reached "done" — offered when a newer one fails.
   const lastGoodVersionRef = React.useRef<number | null>(null);
 
@@ -243,6 +271,7 @@ export function CanvasPanel({
     setRunStatus("idle");
     setRunNonce(0);
     setShareOpen(false);
+    setPreviewWidth("full");
     lastGoodVersionRef.current = null;
   }, [artifact.id]);
 
@@ -273,8 +302,7 @@ export function CanvasPanel({
     const el = rootRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0;
-      setPanelWide(width >= 560);
+      setPanelWidth(entries[0]?.contentRect.width ?? 0);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -712,6 +740,13 @@ export function CanvasPanel({
   const contextButton =
     "h-7 gap-1.5 rounded-control px-2 text-caption font-medium text-muted-foreground hover:text-foreground coarse:h-9 coarse:px-2.5";
 
+  /* Only worth offering once the panel is wider than the widest thing it can
+     pin to — below that every option renders the same pixels and the control
+     is three buttons that do nothing. */
+  const canSizePreview =
+    tab === "preview" && rt.mode === "web" && !isMarkdown && !isDesign && panelWidth > PREVIEW_WIDTHS.phone;
+  const frameWidth = previewWidth === "full" ? null : PREVIEW_WIDTHS[previewWidth];
+
   return (
     <div
       ref={rootRef}
@@ -1010,6 +1045,24 @@ export function CanvasPanel({
 
             {/* Contextual actions for the active view only. Markdown renders
                 natively (no sandbox), so run controls would be decorative. */}
+            {canSizePreview && (
+              /* Icon-only, always — the words "Full", "Tablet", "Phone" cost
+                 more of this row than the marks do and say nothing the marks
+                 do not. The labels ride the accessible name and the title. */
+              <SegmentedControl
+                value={previewWidth}
+                onChange={setPreviewWidth}
+                ariaLabel="Preview width"
+                labelHidden
+                className="h-7 shrink-0"
+                optionClassName="px-2"
+                options={[
+                  { value: "full", label: "Fit the panel", icon: <Monitor className="size-3.5" aria-hidden /> },
+                  { value: "tablet", label: "Tablet · 834px", icon: <Tablet className="size-3.5" aria-hidden /> },
+                  { value: "phone", label: "Phone · 390px", icon: <Smartphone className="size-3.5" aria-hidden /> },
+                ]}
+              />
+            )}
             {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && (
               <>
                 {canInspect && (
@@ -1092,12 +1145,39 @@ export function CanvasPanel({
                 ref={previewScrollRef}
                 onMouseUp={captureSelection}
                 onKeyUp={captureSelection}
-                className="h-full overflow-auto p-6 motion-safe:animate-fade-in"
+                className="h-full overflow-auto px-6 py-8 motion-safe:animate-fade-in"
               >
-                <Markdown content={versionContent} />
+                {/* A DOCUMENT GETS A MEASURE. This was full-bleed, so on a
+                    canvas dragged wide a memo set at 900px+ per line — roughly
+                    twice what the eye tracks without losing its place, and the
+                    one artifact type whose whole job is to be read. `max-w-3xl`
+                    is the product's own reading measure (ui/app-page.tsx), so
+                    a document reads the same width here as it does on a page. */}
+                <div className="mx-auto w-full max-w-3xl">
+                  <Markdown content={versionContent} />
+                </div>
               </div>
             ) : (
-              <div key={selectedVersion} className="h-full motion-safe:animate-fade-in">
+              /*
+               * Pinned to a device measure, the page gets a GUTTER and an edge:
+               * a 390px column butted against the panel's own background reads
+               * as a narrow preview rather than as a phone, and the one thing
+               * you are checking at that width is where the page ends.
+               */
+              <div
+                key={selectedVersion}
+                className={cn(
+                  "h-full motion-safe:animate-fade-in",
+                  frameWidth && "overflow-auto bg-muted/40 p-4",
+                )}
+              >
+                <div
+                  style={frameWidth ? { width: frameWidth, maxWidth: "100%" } : undefined}
+                  className={cn(
+                    "h-full",
+                    frameWidth && "mx-auto overflow-hidden rounded-card border border-border/60 shadow-raised",
+                  )}
+                >
                 <SandboxFrame
                   type={artifact.type}
                   content={versionContent}
@@ -1110,6 +1190,7 @@ export function CanvasPanel({
                   onConsole={onConsole}
                   onStatus={handleRunStatus}
                 />
+                </div>
               </div>
             )}
           </TabsContent>

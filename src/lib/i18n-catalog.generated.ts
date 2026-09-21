@@ -690,6 +690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "What Juno may remember between conversations."
   },
   {
+    "id": "08cf2045c958cd55",
+    "source": "https:"
+  },
+  {
     "id": "08d641af4250b4dc",
     "source": "Reaches"
   },
@@ -1442,6 +1446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No project folders have synced yet. Open one in the Juno app on your Mac and it appears here, ready for a run."
   },
   {
+    "id": "130ce35772ded939",
+    "source": "_blank"
+  },
+  {
     "id": "130f70ae5b44ed4c",
     "source": "CRM"
   },
@@ -2104,6 +2112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1c298130493715ff",
     "source": "Fill colour"
+  },
+  {
+    "id": "1c31dda07cb1e09e",
+    "source": "http:"
   },
   {
     "id": "1c608b3ca6267582",
@@ -5834,6 +5846,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Too many sign-up attempts. Please try again later."
   },
   {
+    "id": "51aa724cafdffef7",
+    "source": "Fit the panel"
+  },
+  {
     "id": "51c93e60fae26510",
     "source": "This view couldn’t load"
   },
@@ -6200,6 +6216,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "57fd7a0cf33f2666",
     "source": "Selected"
+  },
+  {
+    "id": "58046fe627a07f8e",
+    "source": "Phone · 390px"
   },
   {
     "id": "58062598b6963ba4",
@@ -8524,6 +8544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "75b27e813dcc792f",
     "source": "pl-8"
+  },
+  {
+    "id": "75c3abd151e8a885",
+    "source": "noopener,noreferrer"
   },
   {
     "id": "75d2bbc48dd76c47",
@@ -13530,6 +13554,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "New email address"
   },
   {
+    "id": "bb0e0b1a7cc2da90",
+    "source": "juno:open"
+  },
+  {
     "id": "bb1e4533587c84be",
     "source": "Create a new link"
   },
@@ -17972,6 +18000,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f5d3b616fa807b41",
     "source": "Allow this action for this connector"
+  },
+  {
+    "id": "f5e5cde66521eec4",
+    "source": "Tablet · 834px"
   },
   {
     "id": "f5e65825147c4ee3",
