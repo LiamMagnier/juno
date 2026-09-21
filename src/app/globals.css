@@ -1130,6 +1130,46 @@
   }
 
   /*
+   * THE SELECTED ROW IN THE SIDEBAR — one recipe, every list in the panel.
+   *
+   * Selection used to be a bare `bg-sidebar-accent` — a fill 4.1 points of
+   * lightness from the panel on light (darker) and 8.2 on dark (lighter), with
+   * no edge. At a glance the selected row read as a smudge rather than as the
+   * object you are standing on, and it was the one thing in the column a
+   * reader had to hunt for. Hover is the SAME colour at 60%, which covers 2.5
+   * of that step on light and 4.9 on dark: the two states were 1.6 points
+   * apart in the theme most people read in daylight and were told apart by
+   * opacity alone — a distinction that survives a side-by-side comparison and
+   * nothing else.
+   *
+   * The fix is an EDGE, not a louder fill. A hairline in `--sidebar-border` —
+   * the same ink the panel's own seam is drawn in, so the row is bounded by
+   * the panel's line rather than by a new one — turns the fill into a
+   * contained object, and it is the one property hover does not have. Fill
+   * says "the pointer is here"; fill plus an edge says "this is where you
+   * are". Drawn as an INSET box-shadow rather than a border: every row in this
+   * panel is a fixed height on `box-border`, and a real border would eat 2px
+   * of the 32px pitch the column's whole measurement table is keyed to.
+   *
+   * No shadow under it. This is a flat panel (docs/design/FLAT_UI.md §2.1) and
+   * the hairline is the lift; a raised row inside a recessed well is the Soft
+   * UI idiom the flat retune spent a release removing.
+   */
+  .sidebar-row-selected {
+    background-color: hsl(var(--sidebar-accent));
+    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-border));
+  }
+  /* The same state on a trigger that owns its own `data-state` — the account
+     band, whose "selected" is its menu being open. A className cannot read
+     Radix's attribute, and the alternative is an arbitrary
+     `data-[state=open]:shadow-[inset_0_0_0_1px_…]` written out at the call
+     site, which is the recipe copied rather than reused. */
+  .sidebar-row-selected-on-open[data-state="open"] {
+    background-color: hsl(var(--sidebar-accent));
+    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-border));
+  }
+
+  /*
    * The sidebar glyph.
    *
    * WHAT WAS HERE. Two hundred and sixteen lines of per-icon hover

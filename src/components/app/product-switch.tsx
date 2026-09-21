@@ -159,9 +159,13 @@ export function ProductSwitch({
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   // MANDATORY scoping: the sidebar mounts twice at phone width (the
-  // `hidden md:block` aside plus the drawer Sheet) inside one fixed
-  // `<LayoutGroup id="juno-sidebar">`. A global-string `layoutId` would make
-  // one thumb try to fly across to the other tree.
+  // `hidden md:block` aside plus the drawer Sheet), and a global-string
+  // `layoutId` would make one thumb try to fly across to the other tree — out
+  // of a `display: none` subtree, which framer measures as 0×0 at the origin.
+  // The panel's `LayoutGroup` is now namespaced per mount for the same reason
+  // (see `layoutScope` in app-sidebar.tsx), so this is belt and braces; it
+  // stays because a `layoutId` that only works while something else remembers
+  // to scope it is not scoped.
   const thumbId = `${React.useId()}-product-thumb`;
   const thumbTransition = reduceMotion ? { duration: 0 } : spring.standard;
   /*
@@ -294,8 +298,14 @@ function Segment({
       )}
     >
       {active && (
-        // Tonal, no border, no shadow (FLAT_UI §4): the sidebar's own active-row
-        // recipe, which is the whole reason this control belongs in the sidebar.
+        // A RAISED CELL, which is the segmented-control idiom and deliberately
+        // NOT the sidebar row's: a row is selected by a fill bounded by a
+        // hairline on the panel's ground, and a switch cell is selected by
+        // being lifted out of its own track (`bg-sidebar` on a
+        // `bg-sidebar-accent/70` track). The two states look different because
+        // they answer different questions — "which destination am I on" versus
+        // "which half of this switch is down" — and drawing them the same way
+        // is how a switch starts reading as two rows.
         // `spring.standard` — the documented cross-platform settle `JunoMotion`
         // mirrors — rather than a hand-tuned stiffness/damping triple, so travel
         // means the same thing here as it does under the page header.

@@ -474,6 +474,132 @@ unconditionally and returns null for `idle`/`none`, so the dynamic import
 alone would have fetched the chunk for every message. `message-item.tsx`
 hoists that early return into the render condition.
 
+## 2d. The two selections — September 2026
+
+One report, four sentences: *"rework the sidebar UI/UX and motion design"*,
+*"when a section is selected in the sidebar it should be like the hover
+effect"*, *"the design icon is horrible"*, and — of the composer's armed
+research pill — *"remove this ugly orange thing … do like ChatGPT, put it in
+the composer fill"*.
+
+Two of them are the same finding at opposite ends of the shell: **a state that
+had to be seen was drawn too faintly, and a state that could have gone unsaid
+was drawn too loudly.** The other two — motion, and one glyph — turned out to
+be about finishing what was already there rather than adding anything.
+
+### P0 — selection and hover were the same colour at two opacities
+
+The sidebar's selected row was `bg-sidebar-accent`; hover was
+`bg-sidebar-accent/60`. Measured on the dark theme, that is a fill at L=17%
+against a hover at L≈13.7% on a panel at L=8.8% — a 3.3-point step, on a shape
+with no edge, where the panel's own seam gets 12.2. Light is worse and runs
+the other way — the accent is *darker* than the panel there: 90.5% against
+≈92.1% on a 94.6% panel, so **1.6 points** separated "you are here" from "the
+pointer is here" in the theme most people read in daylight. With the
+pointer anywhere in the column, two rows claimed the same state in two
+strengths of the same paint and the reader had to compare them to find out
+which one was the page they were on.
+
+An edge is not "more fill". `.sidebar-row-selected` is the same fill plus a
+hairline in `--sidebar-border` — the ink the panel's own seam is drawn in — as
+an **inset box-shadow**, because every row here is a fixed height on
+`box-border` and a real border would eat 2px of the 32px pitch the column's
+measurement table is keyed to. Hover keeps the fill alone. A fill says the
+pointer is here; a bounded fill says this is where you are, and one of those
+is a property the other cannot have at any opacity.
+
+Three rows never had it at all, which the fix surfaced rather than caused:
+
+- **The rail.** The travelling fill was gated on `active && !collapsed`, so at
+  the one width where a row has no label — where the mark is the only thing
+  saying where you are — selection was the step from `--sidebar-foreground` to
+  `--foreground` on an 18px glyph and nothing else. The fill spans both widths
+  now, so collapsing slides it from the 208px row into the 44px square.
+- **More.** Not a `NavRow`, so it never had the fill element, and
+  `navRowClass`'s active branch paints no background by design. A destination
+  inside its flyout left the trigger looking exactly like the four inactive
+  rows above it.
+- **The account band.** `data-[state=open]:bg-sidebar-accent` — the one open
+  surface in the panel with a soft edge.
+
+And the panel's `LayoutGroup` carried a hard-coded id while `AppShell` mounts
+the sidebar **twice** (the `hidden md:block` aside plus the drawer Sheet), so
+both copies of the travelling fill claimed one `layoutId`. On a phone the
+other claimant is a `display: none` subtree, which framer measures as 0×0 at
+the origin. `useId()` per mount. `ProductSwitch` had already found this for
+its thumb and scoped only itself.
+
+### P1 — the armed pill was the loudest object in the composer
+
+Deep research armed drew `bg-primary/10` inside `border-primary/30` on the
+controls row. The row it sits on is a `+`, a muted model chip, a muted mic and
+the send circle: the pill was the only tinted **fill** among them, so "this
+message will also search the web" outranked the button that sends it. On the
+default coral accent a tinted capsule beside a neutral row reads as a warning
+badge, which is the one thing an armed tool is not. It was also a box inside a
+box, on a surface whose whole argument is that the text sits directly on it.
+
+It did not scale either. Two of them existed — research and task — each
+written out by hand at its call site, and everything *else* a message can
+carry had no mark at all: web search and up to five connectors were announced
+only inside the `+` button's accessible name, which a sighted reader never
+hears. A sticky preference set three days ago on a chat you have since
+forgotten is precisely the state a composer owes you a word about.
+
+`ComposerArmedMark` puts the accent in the **ink** and keeps the fill for
+hover, which is where every other control on that row keeps its fill. The
+marks are one ordered list (task, research, web, then the apps under their own
+brand logos), so the eighth thing that can be armed costs a line instead of
+twenty-five.
+
+**Rule:** the row states **three** and counts the rest, and below a 30rem
+**row** the marks keep their icons and drop their words. Flexbox's answer to
+eight marks on a 390px phone is to shrink all eight proportionally, which is a
+row of three-letter stubs each still paying its full padding — a mark you
+cannot read is worse than a mark you cannot see, because it still costs the
+width. The breakpoint is a container query on the controls row itself (rule
+11): the same composer has ~500px inside a 1440px window and 350 on a phone,
+and the window number describes neither.
+
+### P2 — a glyph that only worked at the size nobody draws it
+
+Design was Lucide's pen nib: four elements, a twenty-command bezier outline
+and a `circle r="2"` **inside** the body. At 24px it is a fine drawing. At the
+two sizes the product actually draws it — 18px in the sidebar, 14px on an
+artifact card — the circle and the strokes it sits between merge into one grey
+lozenge. It was the least legible mark in the shell and it was on a top-level
+destination.
+
+It was also the wrong class of thing. A nib is a **tool**; every other
+destination names its contents — a folder of projects, a stack of artifacts, a
+bubble of conversation. `Shapes` (a triangle, a square, a circle) names what a
+design is, and it is the same move `home` made when it gave up the house for a
+speech bubble. The nib keeps `DesignIcons.path`, where it names a tool because
+a tool is what it is.
+
+Four files drew the DESIGN artifact kind by importing `PenTool` directly
+rather than through `AppIcons`, which is how one destination ends up with two
+marks; they go through the registry now, which is what it is for.
+
+### What did NOT change, and why
+
+**No new motion.** The ask named motion design, and the answer was to finish
+the motion that exists rather than add any: the fill now travels at both
+widths, and the conversation list dissolves at its edges (`ScrollFade`, which
+five other scrollers in the product already used — including the connector
+list inside this very sidebar's `+` menu) instead of slicing its first visible
+title against the row above it. Rule 10 still holds. This panel has already
+had 216 lines of per-icon hover choreography removed from it once, and nothing
+here argues for putting any back.
+
+**Selection in the conversation list does not travel.** The four navigation
+rows are a fixed, always-mounted ladder eight pixels apart, so a fill sliding
+between them reads as one object moving. The list is a scroller: the row you
+left can be four hundred pixels up the column or unmounted entirely, and a
+fill flying that far — or vanishing mid-flight because its origin scrolled out
+of the well — is a projectile, not a correction. Same recipe, same edge, no
+travel.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,

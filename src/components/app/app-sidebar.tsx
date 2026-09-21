@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
 import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -126,12 +127,19 @@ import type { ClientConversation } from "@/types/chat";
  * `size-4.5` or `size-5` — every one of which has a rung on the optical stroke
  * ladder in globals.css, so a bigger mark thins rather than fattening.
  *
- * HOVER IS WEAKER THAN ACTIVE. `bg-sidebar-accent/60` on hover, the full fill
- * when selected. They used to be the same fill, so pointing anywhere in the
- * column made two rows claim to be selected at once and the real one vanished
- * under the pointer. Selection is fill + ink + (in a list) a filled bullet —
- * never weight: swapping a title from medium to semibold on click re-measured
- * it and visibly re-truncated the row you had just chosen.
+ * HOVER IS WEAKER THAN ACTIVE, AND IT IS A DIFFERENT KIND OF THING. Hover is
+ * `bg-sidebar-accent/60` — a fill and nothing else. Selection is that fill at
+ * full strength AND a hairline around it (`.sidebar-row-selected`), which is
+ * the property hover does not have at any opacity. The two used to differ only
+ * in ALPHA, and the alpha buys very little: `--sidebar-accent` is 4.1 points
+ * of lightness from `--sidebar` on light (darker) and 8.2 on dark (lighter),
+ * so the 60% hover covers 2.5 of that step on light and 4.9 on dark — leaving
+ * selected and hovered **1.6 points apart** in the theme most people read in
+ * daylight. With the pointer anywhere in the column, two rows claimed the same
+ * state in two strengths of the same paint and neither read as either. A fill says the pointer is here; a bounded
+ * fill says this is where you are. Never weight: swapping a title from medium
+ * to semibold on click re-measured it and visibly re-truncated the row you had
+ * just chosen.
  *
  * ONE TREE FOR BOTH WIDTHS. The rail is not a second component: every row is
  * a `motion.div layout`, so collapsing to 64px slides the glyphs into a
@@ -633,9 +641,25 @@ export function AppSidebar({
   }`;
 
   const layoutTransition = reduceMotion ? { duration: 0 } : spring.layout;
+  /*
+   * ONE NAMESPACE PER MOUNT, and the shell has two of them.
+   *
+   * `AppShell` renders this component twice: the desktop `<aside>`, which is
+   * `hidden md:block` — CSS-hidden below the breakpoint but still MOUNTED —
+   * and the phone drawer inside the Sheet. A `LayoutGroup` with a hard-coded
+   * id gives both mounts the SAME namespace, so both copies of the selection
+   * fill claim `layoutId="sidebar-nav-active"` at once. On a phone the other
+   * claimant is a `display: none` subtree, which framer measures as a 0×0 rect
+   * at the origin, so opening the drawer could animate the fill out of the top
+   * left corner of the window.
+   *
+   * `useId()` is stable across SSR and hydration and unique per instance,
+   * which is exactly the scope a layout namespace wants.
+   */
+  const layoutScope = React.useId();
 
   return (
-    <LayoutGroup id="juno-sidebar">
+    <LayoutGroup id={`juno-sidebar-${layoutScope}`}>
       <div
         key="sidebar"
         data-collapsed={collapsed ? "" : undefined}
@@ -934,23 +958,39 @@ export function AppSidebar({
         </nav>
 
         {/* ── Lists ────────────────────────────────────────────────────── */}
-        <div
-          ref={scrollRef}
-          className={cn(
-            // `pt-6` (24px), not `pt-3`. Measured, the reference leaves 55.8px
-            // between the last destination's label and the first section
-            // heading's; at `pt-3` this column left 42.9, so the list began
-            // while the navigation was still finishing. Every LATER heading
-            // gets the same break from `Section`'s own `mt-6` plus the row it
-            // follows — this is only the first one, which `first:mt-0`
-            // deliberately exempts from that margin and which therefore has to
-            // get its air from the scroller. (28px overshot it by three; this
-            // is the rung that lands on it.)
-            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-6",
-            // The rail has no lists to scroll; its own scroll region is the
-            // <nav> above, so this must not also claim the slack.
-            collapsed && "hidden"
-          )}
+        {/*
+         * THE LIST DISSOLVES AT ITS EDGES instead of being sliced by them.
+         *
+         * This was a bare `overflow-y-auto`, which meant a scrolled list cut
+         * its first visible title in half against the "More" row above it and
+         * its last against the account band below — two hard horizontal seams,
+         * both landing mid-letterform, in the one region of the panel that
+         * moves. A cut edge also says nothing: at rest the list looked
+         * identical whether there were two more chats below the fold or two
+         * hundred.
+         *
+         * `ScrollFade` is the product's own answer to both and was already
+         * drawn in five other scrollers — the connector list inside this very
+         * sidebar's "+" menu among them — so the panel with the longest list
+         * in the app was the one place still cutting. Its bands fade in only
+         * when there is something to scroll in that direction, so the top and
+         * bottom of a short list stay crisp.
+         */}
+        <ScrollFade
+          viewportRef={scrollRef}
+          // The rail has no lists to scroll; its own scroll region is the
+          // <nav> above, so this must not also claim the slack.
+          className={cn("min-h-0 flex-1", collapsed && "hidden")}
+          // `pt-6` (24px), not `pt-3`. Measured, the reference leaves 55.8px
+          // between the last destination's label and the first section
+          // heading's; at `pt-3` this column left 42.9, so the list began
+          // while the navigation was still finishing. Every LATER heading
+          // gets the same break from `Section`'s own `mt-6` plus the row it
+          // follows — this is only the first one, which `first:mt-0`
+          // deliberately exempts from that margin and which therefore has to
+          // get its air from the scroller. (28px overshot it by three; this
+          // is the rung that lands on it.)
+          viewportClassName="overscroll-contain px-2 pb-2 pt-6"
         >
           <AnimatePresence initial={false}>
             {!collapsed && (
@@ -1142,7 +1182,7 @@ export function AppSidebar({
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
+        </ScrollFade>
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
         {/*
@@ -1184,7 +1224,13 @@ export function AppSidebar({
                        the same pair every nav row uses, which is what puts the
                        last row your eye rests on at the same 44px as the rest
                        rather than a few pixels off it. */
-                    className="group flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
+                    /* `sidebar-row-selected-on-open` rather than a bare
+                       `data-[state=open]:bg-sidebar-accent`: an open menu is
+                       the same "you are here" the destinations above draw, and
+                       it should be bounded by the same hairline rather than
+                       being the one open surface in the panel with a soft
+                       edge. */
+                    className="group sidebar-row-selected-on-open flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-control text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
                   >
                     {/* The SAME avatar helper the menu this opens draws with.
                         The footer used to render mono initials in a bordered
@@ -1469,14 +1515,27 @@ function NavRow({
        * not an object with momentum. Under reduced motion `layoutTransition`
        * is `{ duration: 0 }`, so it jumps, which is the correct behaviour
        * rather than a degraded one.
+       *
+       * IT PAINTS AT BOTH WIDTHS. This used to be `active && !collapsed`, so
+       * the rail — the width where a row has NO LABEL and the mark is the only
+       * thing saying where you are — was the one place selection had no fill at
+       * all: an active destination there differed from an inactive one by the
+       * step from `--sidebar-foreground` to `--foreground` on an 18px glyph,
+       * and by nothing else at all. The same element spans both widths now, so
+       * collapsing the panel slides the fill from the 208px row into the 44px
+       * square rather than cutting between two states.
+       *
+       * The edge comes from `.sidebar-row-selected` (globals.css), which the
+       * conversation and project rows below draw too — one selected state for
+       * the whole panel, in one place.
        */}
-      {active && !collapsed && (
+      {active && (
         <motion.span
           layoutId="sidebar-nav-active"
           transition={t}
           aria-hidden
           data-nav-fill
-          className="absolute inset-0 -z-10 rounded-control bg-sidebar-accent"
+          className="sidebar-row-selected absolute inset-0 -z-10 rounded-control"
         />
       )}
       {/* A `size-5` BOX holding a `size-4.5` GLYPH, and the two numbers are
@@ -1612,6 +1671,24 @@ function navRowClass(collapsed: boolean, active: boolean) {
 }
 
 /**
+ * Selection for the rows that are NOT the travelling fill: conversations,
+ * projects, a project's own chats.
+ *
+ * They keep a CSS fill that cuts rather than travels, and that is deliberate.
+ * The four navigation rows are a fixed, always-mounted ladder eight pixels
+ * apart, so a fill sliding between them reads as one object moving. This list
+ * is a scroller: the row you leave can be four hundred pixels up the column or
+ * unmounted entirely, and a fill flying that far — or vanishing mid-flight
+ * because its origin scrolled out of the well — is a projectile, not a
+ * correction. Same recipe, same edge, no travel.
+ */
+function listRowClass(active: boolean) {
+  return active
+    ? "sidebar-row-selected text-foreground"
+    : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground";
+}
+
+/**
  * More: the destinations that do not earn a top-level row, in a
  * `.surface-float` flyout to the right of the sidebar (ChatGPT's "More").
  * The same flyout from the rail, where the trigger is an icon with a tooltip.
@@ -1672,19 +1749,32 @@ function MoreFlyout({
         // so nothing that links to it breaks.
       ];
   const anyActive = items.some((item) => item.active);
+  /*
+   * More is selected when the page you are on lives inside it, and while its
+   * flyout is open. Both used to resolve to `text-foreground` and nothing
+   * else: this trigger is not a `NavRow`, so it never had the travelling fill,
+   * and `navRowClass`'s active branch deliberately paints no background (the
+   * fill NavRow draws is an element, not a class). The result was the one row
+   * in the panel that could be the current destination while looking exactly
+   * like the four inactive ones around it — and, with the flyout open, a menu
+   * hanging off a trigger that had gone pale the moment the pointer left it.
+   */
+  const selected = open || anyActive;
   const rowClass =
     "flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-body font-normal text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
-  // An open flyout takes the ACTIVE recipe, not a fill bolted on beside the
-  // inactive one — otherwise `hover:bg-sidebar-accent/60` would win over it and
-  // the trigger would go pale the moment the pointer reached the menu it opened.
+  // `navRowClass(collapsed, selected)` FIRST, then the fill. The order is the
+  // point: the active branch of that recipe drops `hover:bg-sidebar-accent/60`,
+  // so the selected fill has nothing competing with it — bolt the fill onto the
+  // inactive recipe instead and the trigger goes pale the moment the pointer
+  // reaches the menu it opened.
   const trigger = (
     <button
       type="button"
       aria-label={collapsed ? "More" : undefined}
       aria-haspopup="menu"
       aria-expanded={open}
-      data-active={open ? "" : undefined}
-      className={cn(navRowClass(collapsed, open), anyActive && !open && "text-foreground")}
+      data-active={selected ? "" : undefined}
+      className={cn(navRowClass(collapsed, selected), selected && "sidebar-row-selected")}
     >
       <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
         <SidebarMotionIcon kind="more" />
@@ -2060,9 +2150,7 @@ function ConversationRow({
       className={cn(
         "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
         nested && "ml-4",
-        active
-          ? "bg-sidebar-accent text-foreground"
-          : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+        listRowClass(!!active)
       )}
     >
       <Link
@@ -2225,9 +2313,7 @@ function ProjectRow({
         data-active={active ? "" : undefined}
         className={cn(
           "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
-          active
-            ? "bg-sidebar-accent text-foreground"
-            : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+          listRowClass(active)
         )}
       >
         <Link
@@ -2321,7 +2407,7 @@ function ProjectRow({
                 className={cn(
                   "group group/pc flex h-8 items-center gap-2.5 rounded-control px-2 text-body font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
                   activePath === `/chat/${c.id}`
-                    ? "bg-sidebar-accent text-foreground"
+                    ? "sidebar-row-selected text-foreground"
                     : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
                 )}
               >

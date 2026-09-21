@@ -366,6 +366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Allow what I have approved"
   },
   {
+    "id": "044ba8a9ae43b296",
+    "source": "Always on"
+  },
+  {
     "id": "0453bda954556c21",
     "source": "On a clock"
   },
@@ -632,6 +636,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "08078af91ad3c4c4",
     "source": "Starts as trusted, because you wrote it. Juno may reach for it on its own once you switch that on."
+  },
+  {
+    "id": "08090d1ee812ee25",
+    "source": "Turn off web search"
   },
   {
     "id": "081aa84db6332fcd",
@@ -1774,6 +1782,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Empty means no ceiling of this schedule’s own. Spending limits are switched off on this account, so a run fired while nobody is watching stops at a small backstop ceiling unless you set a figure here."
   },
   {
+    "id": "1859c83039c81201",
+    "source": "Full-modality reasoning at low cost — the volume tier for high-frequency calls."
+  },
+  {
     "id": "185e6157305cbf11",
     "source": "Lead review: another round"
   },
@@ -2510,6 +2522,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Web search is being used too quickly. Try again in a moment."
   },
   {
+    "id": "221284051e8feb98",
+    "source": "⌘U"
+  },
+  {
     "id": "2226c981e8525467",
     "source": "Fastest MiniMax text tier for low-latency agent loops."
   },
@@ -2680,6 +2696,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "24a642de91961804",
     "source": "Open thought process — complete"
+  },
+  {
+    "id": "24c2136ec49b91b6",
+    "source": "Previous MiMo flagship, superseded by V2.6 Pro."
   },
   {
     "id": "24d7db5d48307f88",
@@ -2896,6 +2916,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "27a1febbfab0b3cb",
     "source": "content_hash_mismatch"
+  },
+  {
+    "id": "27b1eb31fd163dbb",
+    "source": "Composer + menu"
   },
   {
     "id": "27bb784df5d8b07a",
@@ -3730,10 +3754,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reading its history…"
   },
   {
-    "id": "333c4d5248ade324",
-    "source": "px-2 py-1.5 text-caption font-medium text-muted-foreground"
-  },
-  {
     "id": "337f911f9b4aad88",
     "source": "Close review"
   },
@@ -3752,10 +3772,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "33bcea6384893df2",
     "source": "Multiply"
-  },
-  {
-    "id": "33bd5cdb7a034754",
-    "source": "Z.AI's flagship — frontier reasoning and 1M-token context."
   },
   {
     "id": "33c8e8de41c3a351",
@@ -5094,6 +5110,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently shipped"
   },
   {
+    "id": "477c2d11b05ce795",
+    "source": "Hold to reset"
+  },
+  {
     "id": "4780fb159ed89293",
     "source": "Juno answers a failing check or a review comment here by investigating it and replying in this session. While this session is set to Plan, it will not push a fix to the branch."
   },
@@ -5228,6 +5248,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49e96d7cdf58069c",
     "source": "Amount"
+  },
+  {
+    "id": "49f4e57c2625d4ae",
+    "source": "Doc"
   },
   {
     "id": "49f7feb1dae129fe",
@@ -5384,6 +5408,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4ba8638b8ce71752",
     "source": "Align top edges"
+  },
+  {
+    "id": "4badfe7988a664ef",
+    "source": "Kebab →"
   },
   {
     "id": "4bb47f186df233e4",
@@ -5700,6 +5728,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5034a86845e5e659",
     "source": "What you are saving"
+  },
+  {
+    "id": "5036b1a245b7e409",
+    "source": "With a label + a download row"
   },
   {
     "id": "504bae9c67587d1d",
@@ -6970,6 +7002,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ACTIVE"
   },
   {
+    "id": "6312b4b9baf12770",
+    "source": "Drive"
+  },
+  {
     "id": "631aada47deaf488",
     "source": "credentials"
   },
@@ -7136,6 +7172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "656bc2d49dc8614b",
     "source": "List the user's recently played tracks."
+  },
+  {
+    "id": "6570fbaa7cd6a452",
+    "source": "Row kebab (⋯)"
   },
   {
     "id": "658034c150a5bda2",
@@ -8036,6 +8076,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6ffc4b1eee91d406",
     "source": "Deep research is available on a paid Juno plan."
+  },
+  {
+    "id": "70009bb99a70724c",
+    "source": "PlusMenu →"
   },
   {
     "id": "70130a2af1be156b",
@@ -9034,6 +9078,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous-generation Opus."
   },
   {
+    "id": "7df95d607039aaa9",
+    "source": "Used in this session"
+  },
+  {
     "id": "7dfa0e7283dd450c",
     "source": "Title contains"
   },
@@ -9722,6 +9770,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "How Juno came to believe this."
   },
   {
+    "id": "87cc2ddaba0eec32",
+    "source": "Web search is on for this chat. Opens the add menu."
+  },
+  {
     "id": "87d2f3386f90d631",
     "source": "Searching the web"
   },
@@ -9968,10 +10020,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8c536089ad5df578",
     "source": "Cancel research"
-  },
-  {
-    "id": "8c810a20dafc31b6",
-    "source": "Xiaomi MiMo's reasoning, coding and agentic flagship."
   },
   {
     "id": "8c93f005fb406056",
@@ -10274,6 +10322,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Diff copied to clipboard"
   },
   {
+    "id": "913c5e96ccce08c1",
+    "source": "Diagram"
+  },
+  {
     "id": "9143c13d4dc5f748",
     "source": "Result types to include; defaults to all four."
   },
@@ -10304,6 +10356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "919e16f5a2dcb14b",
     "source": "Add from library"
+  },
+  {
+    "id": "91a25573f04d5d6a",
+    "source": "Keep holding to confirm"
   },
   {
     "id": "91b9c8945cc9ce69",
@@ -10624,6 +10680,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "95be0e356dd984c3",
     "source": "No sources yet"
+  },
+  {
+    "id": "95be38df49b9c302",
+    "source": "Xiaomi's trillion-parameter flagship — omnimodal reasoning for long-horizon and high-stakes work."
   },
   {
     "id": "95bf851227b6c326",
@@ -11026,10 +11086,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Discovered, not yet read"
   },
   {
-    "id": "9af8dcb5fb8872f3",
-    "source": "Confirm reset"
-  },
-  {
     "id": "9afbdcdb78d68308",
     "source": "Vote on what matters to you, or request something new. We read every one."
   },
@@ -11112,6 +11168,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9bc6a53f7ec49024",
     "source": "Rebuilding your chats with their original titles and dates."
+  },
+  {
+    "id": "9bd3d29fb648250b",
+    "source": "Menus — the real components, openable"
   },
   {
     "id": "9bd40748abf2871d",
@@ -12022,6 +12082,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Shell"
   },
   {
+    "id": "a758a4f1919e7859",
+    "source": "Add to this message"
+  },
+  {
     "id": "a7596aa3beb103b5",
     "source": "Invalid input."
   },
@@ -12590,6 +12654,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older free-tier model."
   },
   {
+    "id": "aed6b7aa2a0511a9",
+    "source": "macOS"
+  },
+  {
     "id": "aeed4d26bb5f0c31",
     "source": "Starting"
   },
@@ -12636,6 +12704,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "af732da3a44de096",
     "source": "An http(s) URL from a search result."
+  },
+  {
+    "id": "af8a897d2feb975e",
+    "source": "Conversation options"
   },
   {
     "id": "af92524e4c086f56",
@@ -13582,6 +13654,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You've reached your monthly limit."
   },
   {
+    "id": "bd14d6fb3c48f826",
+    "source": "V2.6 Pro at up to 20x the speed — real-time and latency-sensitive work, at a premium rate."
+  },
+  {
     "id": "bd1bfdafd0362cb2",
     "source": "Too many follow-up requests."
   },
@@ -13660,6 +13736,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "be6eb1fc3b05bf9d",
     "source": "Collapse"
+  },
+  {
+    "id": "be74661d586851ba",
+    "source": "Menus — the recipe, opened side by side"
   },
   {
     "id": "be7c9fd6b52e4f35",
@@ -14986,6 +15066,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Drawing inline visual..."
   },
   {
+    "id": "cf7a1fa44f5efbe1",
+    "source": "Apple silicon · 21.9 MB"
+  },
+  {
     "id": "cf8d3c2d8e84bb31",
     "source": "New project…"
   },
@@ -15078,6 +15162,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "stale_snapshot"
   },
   {
+    "id": "d084236cbcc7f7f0",
+    "source": "Uploads"
+  },
+  {
     "id": "d089c8a9fc28e4e5",
     "source": "Unauthorized"
   },
@@ -15148,6 +15236,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d188ca78be54263b",
     "source": "Search requests"
+  },
+  {
+    "id": "d19a15c70437ed6e",
+    "source": "Gmail"
   },
   {
     "id": "d1aa2010ac4ef432",
@@ -15330,6 +15422,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No connected apps. It works from the task, its project and any files attached to it."
   },
   {
+    "id": "d461a493a3753877",
+    "source": "Automatic"
+  },
+  {
     "id": "d466c22f18d776a6",
     "source": "chat.liams.dev"
   },
@@ -15362,10 +15458,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The project folders a device run can work in. A folder appears here once you open it in the Juno app on that Mac; the Mac has to be awake for a run to start in it."
   },
   {
-    "id": "d4fb1b323f045871",
-    "source": "Efficient reasoning and coding at high speed."
-  },
-  {
     "id": "d4fecac3be9849ac",
     "source": "Skip this one"
   },
@@ -15396,6 +15488,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d56f6359d240f69e",
     "source": "apps"
+  },
+  {
+    "id": "d598026a9cbc6050",
+    "source": "Windows"
   },
   {
     "id": "d59ca99ca8f70a41",
@@ -15556,6 +15652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d7852cd0d2453e8c",
     "source": "Line"
+  },
+  {
+    "id": "d785c25ab4e131d4",
+    "source": "Not published yet"
   },
   {
     "id": "d78b8c5f38e3bf3d",
@@ -15860,10 +15960,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "daec74b7a515a79c",
     "source": "the repo"
-  },
-  {
-    "id": "daee7606b339f3c3",
-    "source": "Reset"
   },
   {
     "id": "db03fbbe3213fd24",
@@ -16860,6 +16956,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7b89d41bbc32cf6",
     "source": "Legacy alias routing to V4 Flash (thinking)."
+  },
+  {
+    "id": "e7ce99764a2debd2",
+    "source": "Outputs"
   },
   {
     "id": "e7cf3ef4f17c3999",
@@ -18246,6 +18346,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This visual explanation was incomplete, so Juno is showing a safe fallback."
   },
   {
+    "id": "fae9f11dea030429",
+    "source": "Web page"
+  },
+  {
     "id": "fb0b1d17a9a092c6",
     "source": "Note on"
   },
@@ -18268,6 +18372,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fb5f27d5457c4641",
     "source": "Detail"
+  },
+  {
+    "id": "fb60446cb86bcef9",
+    "source": "Previous volume tier, superseded by V2.6 Flash."
   },
   {
     "id": "fb611c42bc6f9c54",
@@ -18434,6 +18542,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete “"
   },
   {
+    "id": "fde3d339a180e833",
+    "source": "Previous GLM flagship, superseded by 5.3 — same 1M context and base."
+  },
+  {
     "id": "fdf96118371e5efa",
     "source": "This trigger needs an hour, 0 to 23."
   },
@@ -18508,6 +18620,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fef21f67ca68b936",
     "source": "It clashes with a fact you saved yourself, so Juno does not use it."
+  },
+  {
+    "id": "fef2363657fea6ee",
+    "source": "Reset memory — hold to confirm"
   },
   {
     "id": "ff18811f2706a731",

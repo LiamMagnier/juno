@@ -7,7 +7,6 @@ import {
   Download,
   LayoutGrid,
   List as ListIcon,
-  PenTool,
   Pin,
   Plug,
   Plus,
@@ -281,7 +280,7 @@ export function ControlsGallery() {
               ]}
             />
             <Button size="sm" variant="outline" className="gap-1.5">
-              <PenTool className="size-3.5" aria-hidden />
+              <AppIcons.design className="size-3.5" aria-hidden />
               New design
             </Button>
           </div>
@@ -317,7 +316,7 @@ export function ControlsGallery() {
               ]}
             />
             <Button size="sm" variant="outline" className="gap-1.5">
-              <PenTool className="size-3.5" aria-hidden />
+              <AppIcons.design className="size-3.5" aria-hidden />
               New design
             </Button>
           </div>

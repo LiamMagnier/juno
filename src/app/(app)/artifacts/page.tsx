@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,7 +42,7 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
-  DESIGN: PenTool,
+  DESIGN: AppIcons.design,
 };
 
 /** Filter-chip labels — what the artifact IS, not its file format. */
@@ -366,7 +366,7 @@ export default function ArtifactsPage() {
                 cannot. It comes back the moment there is a list to act on. */}
             {!empty && (
               <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-                <PenTool className="size-3.5" aria-hidden />
+                <AppIcons.design className="size-3.5" aria-hidden />
                 {startingDesign ? "Creating…" : "New design"}
               </Button>
             )}
@@ -454,7 +454,7 @@ export default function ArtifactsPage() {
                 Start building
               </Button>
               <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-                <PenTool className="size-3.5" aria-hidden />
+                <AppIcons.design className="size-3.5" aria-hidden />
                 {startingDesign ? "Creating…" : "New design"}
               </Button>
             </>

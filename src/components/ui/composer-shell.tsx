@@ -13,6 +13,7 @@ import {
 import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
 
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -91,8 +92,21 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             at 26px; the field's text starts at 16px. That is the Claude /
             ChatGPT geometry — the glyph reads as hanging just outside the
             text column rather than indented into it. */}
-        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
-          <div className={cn("flex min-w-0 shrink-0 items-center gap-1", dim)}>
+        {/* `@container`, so what is on this row can be sized by the ROW.
+            PREMIUM_AUDIT.md rule 11: a composer inside a 256px sidebar shell on
+            a 1440px window has ~500px to spend, and a composer on a 390px phone
+            has 350 — the window number describes neither. The armed marks read
+            this to decide whether their labels fit (see `ComposerArmedMark`),
+            and it is the only element here whose inline size IS the answer. */}
+        <div className="@container flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
+          {/* NOT `shrink-0`. This cluster is `+` plus the armed marks, and the
+              marks are the only truncatable strings on the left of the row —
+              a research mark, a task mark and two connector marks is ~300px on
+              a 390px phone. `+` carries its own `shrink-0`, so what gives way
+              is a label, never a control. Before the marks moved in here there
+              was nothing on this side to shrink, which is why it never
+              mattered. */}
+          <div className={cn("flex min-w-0 items-center gap-1", dim)}>
             {leading}
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1">
@@ -150,6 +164,175 @@ export const composerFieldClass =
  */
 export const composerChipClass =
   "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+
+/* ————————————————————————————————————————————————————————————————————————
+ * The armed mark
+ * ———————————————————————————————————————————————————————————————————— */
+
+/**
+ * A TOOL THAT IS ARMED FOR THE NEXT MESSAGE, drawn on the composer's own
+ * surface: Deep research, Task, Web search, a connected app.
+ *
+ * WHAT THIS REPLACES. A filled pill — `bg-primary/10` inside a
+ * `border-primary/30`, accent ink — sitting on the controls row beside the
+ * `+`. Three things were wrong with it and they compound.
+ *
+ * It was the loudest object in the composer. The row it sits on is `+`, a
+ * muted model chip, a muted mic and the send circle; the pill was the only
+ * tinted FILL among them, so the thing that says "this message will also
+ * search the web" outranked the thing that sends the message. On the accent
+ * themes with a warm primary (coral is the default) a tinted rectangle beside
+ * a neutral row reads as a warning badge — which is the one thing an armed
+ * tool is not.
+ *
+ * It was a second material. The composer is one quiet surface with the text
+ * sitting directly on it (no well, no second box, see the diagram at the top
+ * of this file); a bordered capsule inside it is a box inside the box, and it
+ * was the only one.
+ *
+ * And it did not scale. Two of them existed — research and task — each written
+ * out by hand at its call site, ~25 lines apiece, and everything ELSE a
+ * message can carry (web search, five connectors) had no mark at all: the only
+ * statement that four apps were attached to the next send was a count inside
+ * the `+` button's accessible name. Arming a tool is one idea and it now has
+ * one drawing, so the eighth thing that can be armed costs a line.
+ *
+ * WHAT IT IS INSTEAD. Icon, label, and the accent in the INK rather than in a
+ * fill — the reference (ChatGPT's composer) does the same, and it is the
+ * correct reading of the state: tinted text on the surface says "this word is
+ * live", where a tinted box says "this is a separate object with a status".
+ * The fill only arrives under the pointer, which is where every other control
+ * on this row keeps its fill too (`composerChipClass`, `composerIconButtonClass`).
+ *
+ * `h-8` and `rounded-control`, like everything else on the row: a mark one
+ * pixel off its neighbours is the kind of thing you cannot name but can see.
+ *
+ * TWO CONTROLS IN ONE OBJECT, and both are reachable. The label opens the menu
+ * the mark came from (that is where depth, approval mode and the connector
+ * list are actually changed); the ✕ disarms it. The ✕ is revealed on hover and
+ * on focus — `coarse:opacity-100`, because a touch device never hovers and the
+ * menu would otherwise be the only way to turn a tool off.
+ */
+export function ComposerArmedMark({
+  icon,
+  label,
+  labelClassName,
+  detail,
+  tooltip,
+  onOpen,
+  onRemove,
+  openLabel,
+  removeLabel,
+  disabled = false,
+}: {
+  /** The mark. A Lucide glyph, or a brand logo for a connector. */
+  icon: React.ReactNode;
+  label: string;
+  /**
+   * A container query that decides whether the WORDS fit, e.g.
+   * `hidden @[30rem]:block`.
+   *
+   * With one mark on the row there is always room and this is left unset. With
+   * two or more there is not, below about 480px of row, and the alternative to
+   * hiding the words is flexbox shrinking every mark proportionally — which at
+   * 390px turns four marks into four three-letter stubs, each still paying its
+   * full padding. A mark you cannot read is worse than a mark you cannot see.
+   *
+   * What survives is the icon, which for a connector is its own brand logo and
+   * for a tool is the glyph its menu row draws. The words are still in the
+   * accessible name and in the tooltip, so nothing is lost to a screen reader
+   * or to a second's hover — only to the glance, which is what ran out of room.
+   */
+  labelClassName?: string;
+  /** A derived fact about the armed tool — research depth, approval mode. */
+  detail?: string;
+  /**
+   * What `detail` MEANS, in a sentence, on the label's tooltip.
+   *
+   * The mark can hold one word; "Max" does not explain that depth follows the
+   * model and the thinking effort, and "asks first" does not explain which
+   * actions it asks about. Both sentences already exist as copy
+   * (`RESEARCH_EFFORT_COPY`, `WORK_APPROVAL_MODE_SUMMARY`) and are the only
+   * place the product explains a state it lets you arm in one press.
+   */
+  tooltip?: React.ReactNode;
+  /** Opens the surface this was armed from. */
+  onOpen: () => void;
+  /** Disarms it. */
+  onRemove: () => void;
+  /** What pressing the label does, for a screen reader. */
+  openLabel: string;
+  removeLabel: string;
+  /** While the row is locked (streaming): the ✕ stops, the label still opens. */
+  disabled?: boolean;
+}) {
+  const trigger = (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={openLabel}
+        className="inline-flex h-full min-w-0 items-center gap-1.5 rounded-control pl-1.5 pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        {/* A fixed box, so a 16px brand logo and a 16px Lucide glyph put their
+            labels on the same edge. `[&_svg]:size-4` reaches the mark whether
+            it arrived as a `<GitHubMark>` or as a lucide component. */}
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
+          {icon}
+        </span>
+        <span className={cn("truncate", labelClassName)}>{label}</span>
+        {detail && (
+          <>
+            {/* The derived fact rides at 60%: it is a CONSEQUENCE of the state,
+                not a second state. Dropping it entirely was the other option
+                and it loses the only place the product says which depth a run
+                will get. */}
+            <span aria-hidden className={cn("shrink-0 text-primary-ink/60", labelClassName)}>·</span>
+            <span aria-hidden className={cn("shrink-0 truncate text-primary-ink/60", labelClassName)}>
+              {detail}
+            </span>
+          </>
+        )}
+      </button>
+  );
+  return (
+    <span
+      className={cn(
+        "group/armed inline-flex h-8 min-w-0 items-center rounded-control text-ui font-medium text-primary-ink",
+        "transition-colors duration-fast ease-out-soft hover:bg-primary/10 motion-reduce:transition-none coarse:h-10",
+        // It ARRIVES. A tool you just armed appearing with no transition beside
+        // the "+" you armed it from is the one moment this mark has to be
+        // noticed; after that it should be quiet, which is what the rest of the
+        // recipe is for. `motion-safe:` because a spring pop is exactly what
+        // reduced motion asks not to see.
+        "motion-safe:animate-pop-in"
+      )}
+    >
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="top" className="max-w-64 text-center">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger
+      )}
+      {/* `opacity-0`, never `hidden`. A ✕ that only takes up space on hover
+          re-measures the mark under the pointer and shifts every mark to its
+          right by 20px at the moment you are reaching for one of them. The
+          space is reserved at rest and costs nothing but air. */}
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        aria-label={removeLabel}
+        className="inline-flex h-full shrink-0 items-center rounded-control pl-1 pr-1.5 text-primary-ink/60 opacity-0 transition-opacity duration-fast hover:text-primary-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-0 group-hover/armed:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+      >
+        <ActionIcons.dismiss aria-hidden className="size-3.5" />
+      </button>
+    </span>
+  );
+}
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =

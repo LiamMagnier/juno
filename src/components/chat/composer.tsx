@@ -19,7 +19,6 @@ import {
   SquareDashedMousePointer,
   SquarePen,
   TextQuote,
-  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import {
   ComposerAttachmentRow,
   ComposerPrimaryAction,
+  ComposerArmedMark,
   ComposerShell,
   composerFieldClass,
   composerIconButtonClass,
@@ -501,6 +501,37 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
+
+/**
+ * One tool armed for the next message, as data — see the list that builds these
+ * inside `Composer` for which states earn one and in what order.
+ */
+type ArmedMark = {
+  id: string;
+  /**
+   * The glyph, carrying `size-4` ITSELF rather than inheriting a size from the
+   * box around it.
+   *
+   * The optical stroke ladder in globals.css is written as
+   * `svg.lucide.size-4 { stroke-width: 2.25 }`, so a mark sized through a
+   * parent selector draws at 16px carrying the 24px REFERENCE weight — the
+   * same bug that once had the sidebar rendering hairline glyphs at the right
+   * size. `ComposerArmedMark`'s box keeps a `[&_svg]:size-4` floor so a caller
+   * that forgets cannot blow the row out to 24px, but the class has to be on
+   * the svg for the stroke to be right.
+   */
+  icon: React.ReactNode;
+  label: string;
+  /** A derived fact — research depth, a task's approval mode. */
+  detail?: string;
+  /** What `detail` means, in a sentence, on the mark's tooltip. */
+  tooltip?: React.ReactNode;
+  /** Accessible name for the half that opens the menu this was armed from. */
+  openLabel: string;
+  /** Accessible name for the ✕. */
+  removeLabel: string;
+  remove: () => void;
+};
 
 export function Composer({
   initialResearch = false,
@@ -2179,9 +2210,19 @@ export function Composer({
     return () => window.removeEventListener("keydown", onKey);
   }, [canAttach, plusLocked]);
 
-  const activeConnectorCount = connectors.filter((connector) =>
-    connectorsEnabled.includes(connector.id),
-  ).length;
+  /**
+   * The connected apps attached to THIS chat, in the account's own order.
+   *
+   * Derived from `connectors` (the fetched list) rather than from
+   * `connectorsEnabled` (a list of ids) because a mark needs a label and a
+   * logo, and because an id the account no longer has connected must not draw
+   * a row: `connectorsEnabled` is chat state and outlives a disconnection.
+   */
+  const attachedConnectors = React.useMemo(
+    () => connectors.filter((connector) => connectorsEnabled.includes(connector.id)),
+    [connectors, connectorsEnabled],
+  );
+  const activeConnectorCount = attachedConnectors.length;
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
     ? connectors.filter((connector) =>
@@ -2217,6 +2258,112 @@ export function Composer({
     : armedToolsInGroup;
   const activeToolCount = armedTools.length;
   const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
+
+  /**
+   * ── What the composer SHOWS is armed ──────────────────────────────────────
+   *
+   * The same states the summary above names, as objects this time, in one
+   * ordered list so the render site is a `.map` rather than five hand-written
+   * branches that can each drift. Order is fixed and is the menu's: what this
+   * message is (a task), how it answers (research, web), then what it can
+   * reach (the apps). Fixed order matters more than it looks — a list that
+   * re-sorted itself as you armed things would move the mark you were about to
+   * press out from under the pointer.
+   *
+   * MEMORY IS DELIBERATELY ABSENT, though the summary counts it. It is an
+   * account setting, on by default, that applies to every message in the
+   * product — a mark for it would be permanent furniture stating something
+   * true of the whole app rather than of this message, and a row where one
+   * mark is always lit teaches the reader to stop reading the row.
+   */
+  const armedMarks: ArmedMark[] = [
+    ...(taskArmed
+      ? [{
+          id: "task",
+          icon: <ComposerIcons.task className="size-4" />,
+          label: "Task",
+          detail: runApprovalPhrase(taskApprovalMode),
+          tooltip: WORK_APPROVAL_MODE_SUMMARY[taskApprovalMode],
+          openLabel: `This message runs as a task, and ${runApprovalPhrase(taskApprovalMode)}. Opens the add menu.`,
+          removeLabel: "Don’t run this as a task",
+          remove: () => setTask(false),
+        }]
+      : []),
+    ...(researchArmed
+      ? [{
+          id: "research",
+          icon: <ComposerIcons.research className="size-4" />,
+          label: "Deep research",
+          detail: researchEffortLabel(researchEffort),
+          tooltip: (
+            <>
+              {RESEARCH_EFFORT_COPY.find((tier) => tier.value === researchEffort)?.summary}. Depth follows
+              your model and thinking effort — pick a stronger model or raise thinking for a deeper run.
+            </>
+          ),
+          openLabel: `Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose. Opens the add menu.`,
+          removeLabel: "Turn off deep research",
+          remove: () => setResearch(false),
+        }]
+      : []),
+    ...(canWebSearch && webSearchEnabled
+      ? [{
+          id: "web",
+          icon: <ComposerIcons.web className="size-4" />,
+          label: "Web search",
+          openLabel: "Web search is on for this chat. Opens the add menu.",
+          removeLabel: "Turn off web search",
+          remove: () => onToggleWebSearch?.(false),
+        }]
+      : []),
+    /* Each connected app under its OWN logo — a GitHub mark says "GitHub"
+       faster than the word does, and an app with no drawing falls back to the
+       same plug the Connections destination uses. `pickConnector`, not
+       `onToggleConnector`: the per-chat cap is a rule about connectors, not
+       about one menu. */
+    ...(showConnectors
+      ? attachedConnectors.map((connector) => ({
+          id: `connector:${connector.id}`,
+          icon: <ConnectorMark id={connector.id} className="size-4" />,
+          label: connector.label,
+          openLabel: `${connector.label} is attached to this chat. Opens the add menu.`,
+          removeLabel: `Detach ${connector.label}`,
+          remove: () => pickConnector(connector.id),
+        }))
+      : []),
+  ];
+  /**
+   * THREE, THEN A COUNT.
+   *
+   * Deep research and Task are mutually exclusive (see `armResearch` /
+   * `armTask` above), so the worst case is seven marks, not eight: one of
+   * those two, web search, and five connectors. Seven is still four more than
+   * a row that also holds the model chip and the send circle can state.
+   * Flexbox would "solve" it by shrinking all seven proportionally, which on a
+   * 390px phone is a row of three-letter stubs — a mark you cannot read is
+   * worse than a mark you cannot see, because it still costs the width.
+   *
+   * So the row states three and counts the rest. Three is what fits beside the
+   * model chip at the composer's normal measure without any of them
+   * truncating; the tail collapses into one mark that names the rest in its
+   * tooltip and opens the menu where they are changed, and pressing its ✕
+   * clears exactly the states it stands for.
+   */
+  const ARMED_MARK_LIMIT = 3;
+  const shownArmedMarks = armedMarks.slice(0, ARMED_MARK_LIMIT);
+  const restArmedMarks = armedMarks.slice(ARMED_MARK_LIMIT);
+  /*
+   * Three marks with words is ~330px, and a narrow composer has ~350 to spend
+   * on everything including the model chip and the send circle. Below a 30rem
+   * ROW (not window — the row is the `@container`, see composer-shell.tsx) the
+   * marks keep their icons and drop their words; one mark always keeps them,
+   * because one mark has never been the problem. The count mark is exempt at
+   * every width: its label IS its information — "⋯" alone says nothing.
+   *
+   * A literal, not a computed string: Tailwind scans source text, so a class
+   * assembled at runtime would never be generated.
+   */
+  const armedLabelClass = armedMarks.length > 1 ? "hidden @[30rem]:block" : undefined;
 
   /**
    * The + menu, as data. Three sections in Claude's order: what you bring in,
@@ -3067,79 +3214,48 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
-            {taskArmed && (
-              /* The armed task, beside "+", on the research pill's recipe —
-                 same height, same tonal fill, same removable tail. Two ways of
-                 arming one message should not look like two different kinds of
-                 object. */
-              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-10">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => setPlusOpen(true)}
-                      aria-label={`This message runs as a task, and ${runApprovalPhrase(taskApprovalMode)}. Opens the add menu.`}
-                      className="inline-flex h-full items-center gap-1.5 pl-2.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                    >
-                      <ComposerIcons.task aria-hidden className="size-3.5" />
-                      <span>Task</span>
-                      <span aria-hidden className="text-primary-ink/60">·</span>
-                      <span>{runApprovalPhrase(taskApprovalMode)}</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-64 text-center">
-                    {WORK_APPROVAL_MODE_SUMMARY[taskApprovalMode]}
-                  </TooltipContent>
-                </Tooltip>
-                <button
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={() => setTask(false)}
-                  aria-label="Don’t run this as a task"
-                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
-                >
-                  <X aria-hidden className="size-3.5" />
-                </button>
-              </span>
-            )}
-            {researchArmed && (
-              /* h-8, like every other control on this row: a pill one pixel
-                 taller or shorter than its neighbours is the kind of thing you
-                 cannot name but can see. */
-              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-10">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    {/* A button, not a `tabIndex={0}` span. It was focusable
-                        with no role and nothing to activate, purely to host a
-                        tooltip — a dead stop in the tab order between the "+"
-                        and the model chip. Pressing it now does the obvious
-                        thing and opens the menu it came from. */}
-                    <button
-                      type="button"
-                      onClick={() => setPlusOpen(true)}
-                      aria-label={`Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose. Opens the add menu.`}
-                      className="inline-flex h-full items-center gap-1.5 pl-2.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                    >
-                      <ComposerIcons.research aria-hidden className="size-3.5" />
-                      <span>Research</span>
-                      <span aria-hidden className="text-primary-ink/60">·</span>
-                      <span>{researchEffortLabel(researchEffort)}</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-64 text-center">
-                    {RESEARCH_EFFORT_COPY.find((tier) => tier.value === researchEffort)?.summary}. Depth follows your model and thinking effort — pick a stronger model or raise thinking for a deeper run.
-                  </TooltipContent>
-                </Tooltip>
-                <button
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={() => setResearch(false)}
-                  aria-label="Turn off deep research"
-                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
-                >
-                  <X aria-hidden className="size-3.5" />
-                </button>
-              </span>
+            {/*
+             * WHAT IS ARMED FOR THIS MESSAGE, beside the "+" that armed it.
+             *
+             * The recipe and the argument for it are in `ComposerArmedMark`
+             * (composer-shell.tsx); which states earn a mark, in what order,
+             * and where the list is cut are decided in `armedMarks` above.
+             * This is only the drawing.
+             */}
+            {shownArmedMarks.map((mark) => (
+              <ComposerArmedMark
+                key={mark.id}
+                icon={mark.icon}
+                label={mark.label}
+                labelClassName={armedLabelClass}
+                detail={mark.detail}
+                tooltip={mark.tooltip}
+                onOpen={() => setPlusOpen(true)}
+                onRemove={mark.remove}
+                openLabel={mark.openLabel}
+                removeLabel={mark.removeLabel}
+                disabled={controlsLocked}
+              />
+            ))}
+            {restArmedMarks.length > 0 && (
+              <ComposerArmedMark
+                /* The overflow glyph, not a `+`: a plus on this row means "add
+                   something" — it is the button eight pixels to the left — and
+                   this mark removes rather than adds. */
+                icon={<ActionIcons.more className="size-4" />}
+                label={`${restArmedMarks.length} more`}
+                /* `shrink-0`, and no container query: this label IS the
+                   information — "⋯" alone says nothing, and "2 mo…" says it
+                   wrong. What gives way instead is the model chip, which is
+                   what the controls row was built to lose first. */
+                labelClassName="shrink-0"
+                tooltip={restArmedMarks.map((mark) => mark.label).join(", ")}
+                onOpen={() => setPlusOpen(true)}
+                onRemove={() => restArmedMarks.forEach((mark) => mark.remove())}
+                openLabel={`Also on for this message: ${restArmedMarks.map((mark) => mark.label).join(", ")}. Opens the add menu.`}
+                removeLabel={`Turn off ${restArmedMarks.map((mark) => mark.label).join(", ")}`}
+                disabled={controlsLocked}
+              />
             )}
             </>
           }
