@@ -483,9 +483,16 @@ research pill — *"remove this ugly orange thing … do like ChatGPT, put it in
 the composer fill"*.
 
 Two of them are the same finding at opposite ends of the shell: **a state that
-had to be seen was drawn too faintly, and a state that could have gone unsaid
-was drawn too loudly.** The other two — motion, and one glyph — turned out to
-be about finishing what was already there rather than adding anything.
+had to be seen was drawn too faintly, and a state that had to be said was
+drawn too loudly and in the wrong place.** The other two — motion, and one
+glyph — turned out to be about finishing what was already there rather than
+adding anything.
+
+The composer half took a second pass. Moving the pill into the controls row's
+own vocabulary — accent in the ink, fill on hover — fixed the volume and left
+the position: *"put them in the chat section, not the bottom of the composer …
+right in where you type your prompt and where you activate it."* That is a
+different and better answer, and it is the one below.
 
 ### P0 — selection and hover were the same colour at two opacities
 
@@ -529,37 +536,65 @@ other claimant is a `display: none` subtree, which framer measures as 0×0 at
 the origin. `useId()` per mount. `ProductSwitch` had already found this for
 its thumb and scoped only itself.
 
-### P1 — the armed pill was the loudest object in the composer
+### P1 — the armed pill was loud, and it was in the wrong place
 
 Deep research armed drew `bg-primary/10` inside `border-primary/30` on the
-controls row. The row it sits on is a `+`, a muted model chip, a muted mic and
-the send circle: the pill was the only tinted **fill** among them, so "this
-message will also search the web" outranked the button that sends it. On the
-default coral accent a tinted capsule beside a neutral row reads as a warning
-badge, which is the one thing an armed tool is not. It was also a box inside a
-box, on a surface whose whole argument is that the text sits directly on it.
+controls row. Two things were wrong and only one of them was the colour.
 
-It did not scale either. Two of them existed — research and task — each
-written out by hand at its call site, and everything *else* a message can
-carry had no mark at all: web search and up to five connectors were announced
-only inside the `+` button's accessible name, which a sighted reader never
-hears. A sticky preference set three days ago on a chat you have since
-forgotten is precisely the state a composer owes you a word about.
+The colour first. That row is a `+`, a muted model chip, a muted mic and the
+send circle: the pill was the only tinted **fill** among them, so "this message
+will also search the web" outranked the button that sends it. On the default
+coral accent a tinted capsule beside a neutral row reads as a warning badge,
+which is the one thing an armed tool is not. The marks are **neutral** now —
+`bg-accent`, foreground ink, a brand logo where the tool is an app.
 
-`ComposerArmedMark` puts the accent in the **ink** and keeps the fill for
-hover, which is where every other control on that row keeps its fill. The
-marks are one ordered list (task, research, web, then the apps under their own
-brand logos), so the eighth thing that can be armed costs a line instead of
-twenty-five.
+The position matters more. A tool armed for the next message is part of what
+you are about to say, and it was being stated in the chrome *below* the thing
+you say it in: the sentence and its qualifier on two lines, in two type sizes,
+and only one of them moving when you typed. The reference puts both in the
+field — "Deep research" where your first word would go, an app you mention in
+the clause you mention it in — and that is where they are now, at the field's
+own 16px.
 
-**Rule:** the row states **three** and counts the rest, and below a 30rem
-**row** the marks keep their icons and drop their words. Flexbox's answer to
-eight marks on a 390px phone is to shrink all eight proportionally, which is a
-row of three-letter stubs each still paying its full padding — a mark you
-cannot read is worse than a mark you cannot see, because it still costs the
-width. The breakpoint is a container query on the controls row itself (rule
-11): the same composer has ~500px inside a 1440px window and 350 on a phone,
-and the window number describes neither.
+**Three layers, and the textarea keeps everything that matters.** A textarea
+renders one run of plain text and nothing else, so `@GitHub` inside a sentence
+cannot be drawn as anything but the eight characters it is. The way every
+editor that shows rich mentions in a plain field does it is to paint the text
+twice: the textarea goes `text-transparent` and keeps the caret, the selection,
+IME composition, undo and the native mobile keyboard; a mirror behind it draws
+the same string marked up; the armed marks sit above, with `text-indent` on the
+two layers below reserving exactly their measured width. The mirror only paints
+text when the draft actually *has* a mention, which is the property that makes
+this acceptable on the product's most-used control: a mirror that failed to
+render could never leave the field looking empty.
+
+**A mention must not move a single character.** The caret is positioned by the
+plain string, so anything the token adds to an advance puts the caret off the
+letter it is under for the rest of the line. No font-weight (500 is wider than
+400), no letter-spacing, no horizontal padding: the padding is a `box-shadow`
+spread, which paints outside the box without occupying any, and the app's logo
+is absolutely positioned over the "@" — the one character in the token that
+carries no information once the logo is there. `text-indent` is inherited, and
+that absolutely-positioned logo is a block container: without an explicit
+`text-indent: 0` it indents its own logo by the width of the marks at the head
+of the field, and the mark lands 180px away in the middle of another word.
+
+**"@" was anchored at character zero**, like "/", and the two are not the same
+kind of thing. "/" is a command: it takes the whole line and there is nothing
+else in the draft when you type it. "@" names something inside a sentence,
+which is the only way anyone has ever written a mention. Anchored at zero it
+could not be written at all — the palette simply never opened once you had
+started a sentence — and every row it did offer ended in `setText("")`, so
+picking GitHub deleted the draft you were picking it into. It is anchored at
+the caret now, and an app becomes words: the fragment you typed is replaced by
+`@GitHub`, in place, and the rest of your sentence stays.
+
+**Rule:** the field states **two** marks and counts the rest, and below a 30rem
+composer they keep their icons and drop their words. The number that fits is
+*smaller* in the field than it would be on the controls row, not larger —
+every pixel a mark takes is a pixel the sentence starts further in. Most drafts
+never reach two, because an app named in the sentence is drawn there and is not
+a mark at all.
 
 ### P2 — a glyph that only worked at the size nobody draws it
 

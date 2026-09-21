@@ -33,10 +33,13 @@ import {
   ComposerAttachmentRow,
   ComposerPrimaryAction,
   ComposerArmedMark,
+  ComposerFieldLead,
+  ComposerFieldMirror,
   ComposerShell,
   composerFieldClass,
   composerIconButtonClass,
   useComposerAutosize,
+  type ComposerFieldSegment,
   type ComposerPrimaryFace,
 } from "@/components/ui/composer-shell";
 import { useModifierKeyLabel } from "@/components/ui/platform";
@@ -361,6 +364,58 @@ const connectorKey = (id: string) =>
     ? id.slice(COMPOSIO_ID_PREFIX.length)
     : id
   ).toLowerCase();
+
+/**
+ * What an app is called INSIDE a draft: "@GitHub", "@AppleCalendar".
+ *
+ * The app's own label closed up into one word, not `connectorKey` — the key is
+ * an id (`googlecalendar`, `composio:` stripped) and this is a word in a
+ * sentence the reader is writing. Both still MATCH, below; only one is
+ * written.
+ *
+ * EVERY non-word character goes, not just spaces, because the tokenizer's
+ * `[A-Za-z0-9_-]+` would stop at the first one: an app called "X.com" written
+ * as "@X.com" would match as "@X", find nothing, and draw as plain text. What
+ * is written has to be what can be read back.
+ */
+const mentionText = (label: string) => `@${label.replace(/[^\w]/g, "")}`;
+
+/**
+ * Split a draft into plain runs and the apps it mentions.
+ *
+ * `lookup` holds only the apps that are actually attached to this chat, so the
+ * paint follows the state: detach GitHub and the "@GitHub" you typed stays in
+ * the sentence as the eight characters it always was. A mention must start a
+ * word — "foo@github" is an email address, not a mention.
+ *
+ * The plain runs are returned verbatim, including their whitespace, because
+ * the mirror has to reproduce the string EXACTLY or the caret drifts.
+ */
+function draftSegments(
+  text: string,
+  lookup: Map<string, { id: string; label: string }>,
+): ComposerFieldSegment[] {
+  if (!text || lookup.size === 0) return [{ kind: "text", value: text }];
+  const out: ComposerFieldSegment[] = [];
+  const re = /@([A-Za-z0-9_-]+)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const before = text[m.index - 1];
+    if (before !== undefined && /[\w@]/.test(before)) continue;
+    const hit = lookup.get(m[1].toLowerCase());
+    if (!hit) continue;
+    if (m.index > last) out.push({ kind: "text", value: text.slice(last, m.index) });
+    out.push({
+      kind: "mention",
+      value: m[1],
+      icon: <ConnectorMark id={hit.id} />,
+    });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ kind: "text", value: text.slice(last) });
+  return out;
+}
 
 // Prefix match only, exactly as the slash list has always filtered — `match`
 // widens connector rows without changing how commands behave.
@@ -841,6 +896,14 @@ export function Composer({
     () => allConnectors.filter((c) => c.connected),
     [allConnectors],
   );
+  /* id → label, for the apps "@" can actually switch on. A row for an app that
+     is not linked yet goes to Connections instead of writing a word into the
+     draft, so only linked apps are here. */
+  const connectorLabels = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const connector of connectors) map.set(connector.id, connector.label);
+    return map;
+  }, [connectors]);
   const [connectorsLoading, setConnectorsLoading] = React.useState(false);
   /**
    * Whether the last connector fetch failed.
@@ -856,6 +919,31 @@ export function Composer({
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  /*
+   * ── The field tier's three pieces of bookkeeping ──────────────────────────
+   *
+   * `caret` is what lets "@" open its palette in the middle of a sentence
+   * rather than only at character zero — see `mentionAt`. It is read off the
+   * textarea on every change and every selection move, which is the only place
+   * the truth lives.
+   *
+   * `leadWidth` is how wide the armed marks drawn over the start of the field
+   * are; it becomes the textarea's `text-indent`, so the first word lands
+   * after them. Measured, never assumed: the marks hold a connector's label.
+   *
+   * `mirrorRef` / `leadRef` are written to directly while the draft scrolls,
+   * because doing it through state would re-render this component on every
+   * frame of a scroll.
+   */
+  const [caret, setCaret] = React.useState(0);
+  const [leadWidth, setLeadWidth] = React.useState(0);
+  const mirrorRef = React.useRef<HTMLDivElement>(null);
+  const leadRef = React.useRef<HTMLSpanElement>(null);
+  const onFieldScroll = React.useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    const top = e.currentTarget.scrollTop;
+    if (mirrorRef.current) mirrorRef.current.scrollTop = top;
+    if (leadRef.current) leadRef.current.style.transform = `translateY(${-top}px)`;
+  }, []);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const paletteAnchorRef = React.useRef<HTMLDivElement>(null);
   const paletteListRef = React.useRef<HTMLDivElement>(null);
@@ -1743,9 +1831,32 @@ export function Composer({
     router,
   ]);
 
-  // Both triggers share one convention (the only one this composer has ever
-  // had): anchored at the START of the draft, and closed by any character the
-  // token can't contain — typing a space is how you get a literal "@" or "/".
+  /**
+   * The "@" fragment the caret is sitting in the middle of, if any.
+   *
+   * "@" USED TO BE ANCHORED AT CHARACTER ZERO, like "/", and the two are not
+   * the same kind of thing. "/" is a command: it takes the whole line, it is
+   * the first thing you type, and there is nothing else in the draft when you
+   * type it. "@" names something INSIDE a sentence — "look on my @GitHub and
+   * push the branch" — which is the only way anyone has ever written a
+   * mention, in any product that has them. Anchored at zero it could not be
+   * written at all: the palette simply never opened, so the feature existed
+   * only for a draft you had not started.
+   *
+   * A mention starts a word, so the fragment has to be preceded by the start
+   * of the draft or by whitespace — otherwise every email address in a pasted
+   * paragraph opens a connector list.
+   */
+  const mentionAt = React.useMemo(() => {
+    const head = text.slice(0, caret);
+    const m = head.match(/(?:^|\s)@([\w-]*)$/);
+    if (!m) return null;
+    return { start: caret - m[1].length - 1, end: caret, query: m[1] };
+  }, [text, caret]);
+
+  // Both triggers close on any character the token can't contain — typing a
+  // space is how you get a literal "@" or "/". "/" is anchored at the start of
+  // the draft; "@" is anchored at the caret (see `mentionAt`).
   const slash = React.useMemo((): SlashState => {
     if (text.startsWith("/")) {
       const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
@@ -1768,16 +1879,12 @@ export function Composer({
       }
       return null;
     }
-    if (text.startsWith("@")) {
-      const mentionMatch = text.match(/^@([\w-]*)$/);
-      if (mentionMatch) {
-        const items = filterRows(mentions, mentionMatch[1].toLowerCase());
-        return items.length ? { kind: "mention", items } : null;
-      }
-      return null;
+    if (mentionAt) {
+      const items = filterRows(mentions, mentionAt.query.toLowerCase());
+      return items.length ? { kind: "mention", items } : null;
     }
     return null;
-  }, [text, models, commands, mentions]);
+  }, [text, models, commands, mentions, mentionAt]);
 
   const [slashIndex, setSlashIndex] = React.useState(0);
   /*
@@ -1850,6 +1957,25 @@ export function Composer({
       setSlashDismissed(false);
   }, [text]);
 
+  /**
+   * Put the caret at `at` and give the field back the focus.
+   *
+   * A palette row is a mouse target as well as a keyboard one, so a click has
+   * taken focus out of the textarea by the time this runs — without the
+   * `focus()` the next keystroke goes nowhere, which is the bug people
+   * describe as "it ate my typing".
+   */
+  const restoreCaret = React.useCallback((at: number) => {
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(at, at);
+      setCaret(at);
+      autoresize();
+    });
+  }, [autoresize]);
+
   const applySlash = (item: SlashItem) => {
     if ("providerModel" in item) {
       changeModel(item.id);
@@ -1874,6 +2000,35 @@ export function Composer({
           el.setSelectionRange(el.value.length, el.value.length);
         }
       });
+      return;
+    }
+    /*
+     * A MENTION IS EDITED IN PLACE; IT DOES NOT TAKE THE DRAFT WITH IT.
+     *
+     * Every row here used to end in `setText("")` — so picking GitHub out of
+     * the "@" list deleted the sentence you were writing it into. That was
+     * survivable only because "@" could not be typed past character zero,
+     * which is to say the feature was safe because it was unreachable.
+     *
+     * An app becomes WORDS: the fragment you typed is replaced by "@GitHub"
+     * and a space, so the mention is in the clause it qualifies and the mirror
+     * draws it there with the app's own logo. A tool (research, web, memory)
+     * becomes a MARK at the head of the field instead — "@research" is not
+     * English in the middle of a request — so its fragment is simply removed.
+     */
+    if (mentionAt && slash?.kind === "mention") {
+      const connector = "connectorId" in item ? item.connectorId : undefined;
+      const before = text.slice(0, mentionAt.start);
+      const after = text.slice(mentionAt.end);
+      const label = connector ? connectorLabels.get(connector) : undefined;
+      // The space is what ends the mention, so it is only owed when the draft
+      // does not already carry one — inserting into "… @gi| and push" must not
+      // leave two.
+      const gap = /^\s/.test(after) ? "" : " ";
+      const insert = label ? `${mentionText(label)}${gap}` : "";
+      item.run?.();
+      setDraftText(before + insert + after);
+      restoreCaret(before.length + insert.length);
       return;
     }
     item.run?.();
@@ -2223,6 +2378,39 @@ export function Composer({
     [connectors, connectorsEnabled],
   );
   const activeConnectorCount = attachedConnectors.length;
+
+  /*
+   * ── What the draft itself says ────────────────────────────────────────────
+   *
+   * An app attached to this chat can be named INSIDE the sentence — "look on
+   * my @GitHub and …" — which is where "@" put it, and where it belongs: it
+   * qualifies that clause, not the whole message. `lookup` answers both the
+   * word the reader typed (`@GitHub`) and the app's id (`@github`), because
+   * "@" offers the id and prose wants the label.
+   */
+  const mentionLookup = React.useMemo(() => {
+    const map = new Map<string, { id: string; label: string }>();
+    for (const connector of attachedConnectors) {
+      const row = { id: connector.id, label: connector.label };
+      map.set(mentionText(connector.label).slice(1).toLowerCase(), row);
+      map.set(connectorKey(connector.id), row);
+    }
+    return map;
+  }, [attachedConnectors]);
+  const draft = React.useMemo(() => draftSegments(text, mentionLookup), [text, mentionLookup]);
+  /* Which apps the sentence already names. They are drawn there and must not
+     ALSO be drawn as a mark at the head of the field — one state, one mark. */
+  const mentionedConnectorIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const segment of draft) {
+      if (segment.kind !== "mention") continue;
+      const hit = mentionLookup.get(segment.value.toLowerCase());
+      if (hit) ids.add(hit.id);
+    }
+    return ids;
+  }, [draft, mentionLookup]);
+  /* The mirror only paints while it has something the textarea cannot draw. */
+  const mirrored = mentionedConnectorIds.size > 0;
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
     ? connectors.filter((connector) =>
@@ -2322,7 +2510,9 @@ export function Composer({
        `onToggleConnector`: the per-chat cap is a rule about connectors, not
        about one menu. */
     ...(showConnectors
-      ? attachedConnectors.map((connector) => ({
+      ? attachedConnectors
+          .filter((connector) => !mentionedConnectorIds.has(connector.id))
+          .map((connector) => ({
           id: `connector:${connector.id}`,
           icon: <ConnectorMark id={connector.id} className="size-4" />,
           label: connector.label,
@@ -2333,42 +2523,101 @@ export function Composer({
       : []),
   ];
   /**
-   * THREE, THEN A COUNT.
+   * TWO, THEN A COUNT.
    *
    * Deep research and Task are mutually exclusive (see `armResearch` /
-   * `armTask` above), so the worst case is seven marks, not eight: one of
-   * those two, web search, and five connectors. Seven is still four more than
-   * a row that also holds the model chip and the send circle can state.
-   * Flexbox would "solve" it by shrinking all seven proportionally, which on a
-   * 390px phone is a row of three-letter stubs — a mark you cannot read is
-   * worse than a mark you cannot see, because it still costs the width.
+   * `armTask` above), so the worst case is seven marks: one of those two, web
+   * search, and five connectors. The marks now sit in the FIELD, at the
+   * draft's own 16px, and every pixel they take is a pixel the sentence starts
+   * further in — so the number that fits is smaller here than it would be on
+   * the controls row, not larger. Two named marks and a count is ~380px of a
+   * 760px composer; a third would leave less room for the prompt than for the
+   * things qualifying it.
    *
-   * So the row states three and counts the rest. Three is what fits beside the
-   * model chip at the composer's normal measure without any of them
-   * truncating; the tail collapses into one mark that names the rest in its
-   * tooltip and opens the menu where they are changed, and pressing its ✕
-   * clears exactly the states it stands for.
+   * Most drafts never reach two. An app named in the sentence is drawn THERE
+   * and is not a mark at all (`mentionedConnectorIds`), so this list is
+   * research-or-task, web search, and whatever was armed from the `+` menu
+   * without being mentioned.
+   *
+   * The tail collapses into one mark that names the rest in its tooltip and
+   * opens the menu where they are changed; pressing its ✕ clears exactly the
+   * states it stands for.
    */
-  const ARMED_MARK_LIMIT = 3;
+  const ARMED_MARK_LIMIT = 2;
   const shownArmedMarks = armedMarks.slice(0, ARMED_MARK_LIMIT);
   const restArmedMarks = armedMarks.slice(ARMED_MARK_LIMIT);
   /*
-   * Three marks with words is ~330px, and a narrow composer has ~350 to spend
-   * on everything including the model chip and the send circle. Below a 30rem
-   * ROW (not window — the row is the `@container`, see composer-shell.tsx) the
+   * Two marks with words is ~260px, and a phone composer is 350 wide — which
+   * would leave the sentence a third of its own line. Below a 30rem COMPOSER
+   * (not window; the composer is the `@container`, see composer-shell.tsx) the
    * marks keep their icons and drop their words.
    *
    * ONE mark always keeps its words, because one mark has never been the
-   * problem: a lone telescope in the corner of a composer says nothing, where
-   * "Deep research" says all of it. What that case gives up instead is the
-   * `detail` — which the mark drops at this width on its own, at every count.
-   * The count mark is exempt at every width and in both directions: its label
-   * IS its information, and "⋯" alone says nothing at all.
+   * problem: a lone telescope at the head of a field says nothing, where "Deep
+   * research" says all of it. What that case gives up instead is the `detail`
+   * — which the mark drops at this width on its own, at every count. The count
+   * mark is exempt at every width and in both directions: its label IS its
+   * information, and "⋯" alone says nothing at all.
    *
    * A literal, not a computed string: Tailwind scans source text, so a class
    * assembled at runtime would never be generated.
    */
-  const armedLabelClass = armedMarks.length > 1 ? "hidden @[30rem]:block" : undefined;
+  const armedLabelClass = armedMarks.length > 1 ? "hidden @[30rem]:inline" : undefined;
+
+  /**
+   * The marks, drawn into the head of the draft (`ComposerFieldLead`).
+   *
+   * They are built here rather than in the JSX below because the field slot is
+   * three layers deep and the one thing it must not also be is the place this
+   * list is decided.
+   */
+  /*
+   * The indent the two layers below the marks owe them — and ZERO the moment
+   * the marks are gone. `leadWidth` is the last measurement the group made;
+   * reading it directly would leave a 180px hole at the head of the field
+   * after the last mark was disarmed, because nothing re-measures a group that
+   * has unmounted.
+   */
+  const leadMarks = [
+    ...shownArmedMarks.map((mark) => (
+      <ComposerArmedMark
+        key={mark.id}
+        icon={mark.icon}
+        label={mark.label}
+        labelClassName={armedLabelClass}
+        detail={mark.detail}
+        tooltip={mark.tooltip}
+        onOpen={() => setPlusOpen(true)}
+        onRemove={mark.remove}
+        openLabel={mark.openLabel}
+        removeLabel={mark.removeLabel}
+        disabled={controlsLocked}
+      />
+    )),
+    ...(restArmedMarks.length > 0
+      ? [
+          <ComposerArmedMark
+            key="more"
+            /* The overflow glyph, not a `+`: a plus in this composer means
+               "add something" — it is the button to the left — and this mark
+               removes rather than adds. */
+            icon={<ActionIcons.more className="size-4" />}
+            label={`${restArmedMarks.length} more`}
+            /* `shrink-0`, and no container query: this label IS the
+               information — "⋯" alone says nothing, and "2 mo…" says it
+               wrong. */
+            labelClassName="shrink-0"
+            tooltip={restArmedMarks.map((mark) => mark.label).join(", ")}
+            onOpen={() => setPlusOpen(true)}
+            onRemove={() => restArmedMarks.forEach((mark) => mark.remove())}
+            openLabel={`Also on for this message: ${restArmedMarks.map((mark) => mark.label).join(", ")}. Opens the add menu.`}
+            removeLabel={`Turn off ${restArmedMarks.map((mark) => mark.label).join(", ")}`}
+            disabled={controlsLocked}
+          />,
+        ]
+      : []),
+  ];
+  const leadIndent = leadMarks.length > 0 ? leadWidth : 0;
 
   /**
    * The + menu, as data. Three sections in Claude's order: what you bring in,
@@ -3151,66 +3400,126 @@ export function Composer({
           }
           field={
             !showCollapsedDraft && (
-              <textarea
-                ref={textareaRef}
-                id={CHAT_COMPOSER_FIELD_ID}
-                aria-label={
-                  steerMode && steering
-                    ? steering.placeholder
-                    : placeholder || "Ask Juno"
-                }
-                value={text}
-                onChange={(e) => setDraftText(e.target.value)}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                // Live through a generation: the draft for the next message is
-                // typed while the reply streams (see `sendBlocked`). Only a hard
-                // send lock and the pre-flight check take the field away.
-                disabled={sendLocked || status === "checking"}
-                rows={1}
-                placeholder={
-                  steerMode && steering ? steering.placeholder : placeholder
-                }
-                // The palette is driven from here — focus never moves to it — so the
-                // textarea has to name the row the arrow keys are sitting on, and
-                // aria-controls ties that row's listbox back to this field while it
-                // is showing (activedescendant alone leaves AT to guess which list).
-                //
-                // The three attributes below are what makes that legible rather
-                // than merely present. The field was setting `aria-controls` and
-                // `aria-activedescendant` on a PLAIN TEXTAREA: an active
-                // descendant pointing into a list that, as far as assistive
-                // technology was concerned, did not exist and had never opened.
-                // Typing "/" announced nothing, and the first arrow key moved a
-                // selection the user had not been told about. A combobox that
-                // reports whether it is expanded is the difference between a
-                // palette and a trap.
-                role="combobox"
-                aria-expanded={slashOpen}
-                aria-autocomplete="list"
-                aria-haspopup="listbox"
-                aria-controls={
-                  slashOpen ? "composer-palette-listbox" : undefined
-                }
-                aria-activedescendant={
-                  slashOpen && slash
-                    ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}`
-                    : undefined
-                }
-                // 16px in EVERY state, and composerFieldClass is the only thing
-                // that sets it: iOS Safari zooms the whole page into a focused
-                // field below 16px and does not zoom back out on blur. The
-                // clarification and expanded-huge-draft states used to step
-                // down to the body rung right here — which re-opened exactly
-                // the zoom the base class exists to prevent, on the two states
-                // where the field is longest. Their density comes from
-                // useComposerAutosize's maxLines / maxHeight instead.
-                className={composerFieldClass}
-              />
+              /*
+               * ── THE FIELD TIER, THREE LAYERS DEEP ────────────────────────
+               *
+               * Bottom: the mirror, which paints the draft a second time so an
+               * app the sentence mentions can carry its logo. It only paints
+               * text while there IS such a mention; the rest of the time the
+               * textarea draws its own, exactly as it always has.
+               *
+               * Middle: the textarea. It keeps the caret, the selection, IME
+               * composition, undo and the native mobile keyboard — everything
+               * a rich-text rewrite of this control would have had to
+               * reimplement and get wrong.
+               *
+               * Top: the armed marks, laid into the start of the draft, with
+               * `text-indent` on the two layers below reserving exactly their
+               * width. They are the only part of this stack that takes a
+               * click.
+               */
+              <div className="relative">
+                {mirrored && (
+                  <ComposerFieldMirror segments={draft} indent={leadIndent} viewportRef={mirrorRef} />
+                )}
+                <textarea
+                  ref={textareaRef}
+                  id={CHAT_COMPOSER_FIELD_ID}
+                  aria-label={
+                    steerMode && steering
+                      ? steering.placeholder
+                      : placeholder || "Ask Juno"
+                  }
+                  value={text}
+                  onChange={(e) => {
+                    setDraftText(e.target.value);
+                    setCaret(e.target.selectionStart ?? e.target.value.length);
+                  }}
+                  // Arrow keys, clicks and drags move the caret without
+                  // changing a character, and "@" has to know where it is —
+                  // `onSelect` is the one event a textarea fires for all of
+                  // them.
+                  onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onScroll={onFieldScroll}
+                  onKeyDown={onKeyDown}
+                  onPaste={onPaste}
+                  // Live through a generation: the draft for the next message is
+                  // typed while the reply streams (see `sendBlocked`). Only a hard
+                  // send lock and the pre-flight check take the field away.
+                  disabled={sendLocked || status === "checking"}
+                  rows={1}
+                  /*
+                   * NO PLACEHOLDER WHILE A MARK IS IN THE LINE. The marks sit
+                   * at the head of the field and the placeholder starts after
+                   * them, so on a phone "Deep research" and "Message Juno…"
+                   * split one line between them and the prompt wraps under its
+                   * own hint. The field is still named — `aria-label` above —
+                   * and a composer holding an armed tool is not a composer
+                   * anyone needs told what to do with.
+                   */
+                  placeholder={
+                    leadMarks.length > 0
+                      ? ""
+                      : steerMode && steering
+                        ? steering.placeholder
+                        : placeholder
+                  }
+                  // The palette is driven from here — focus never moves to it — so the
+                  // textarea has to name the row the arrow keys are sitting on, and
+                  // aria-controls ties that row's listbox back to this field while it
+                  // is showing (activedescendant alone leaves AT to guess which list).
+                  //
+                  // The three attributes below are what makes that legible rather
+                  // than merely present. The field was setting `aria-controls` and
+                  // `aria-activedescendant` on a PLAIN TEXTAREA: an active
+                  // descendant pointing into a list that, as far as assistive
+                  // technology was concerned, did not exist and had never opened.
+                  // Typing "/" announced nothing, and the first arrow key moved a
+                  // selection the user had not been told about. A combobox that
+                  // reports whether it is expanded is the difference between a
+                  // palette and a trap.
+                  role="combobox"
+                  aria-expanded={slashOpen}
+                  aria-autocomplete="list"
+                  aria-haspopup="listbox"
+                  aria-controls={
+                    slashOpen ? "composer-palette-listbox" : undefined
+                  }
+                  aria-activedescendant={
+                    slashOpen && slash
+                      ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}`
+                      : undefined
+                  }
+                  // 16px in EVERY state, and composerFieldClass is the only thing
+                  // that sets it: iOS Safari zooms the whole page into a focused
+                  // field below 16px and does not zoom back out on blur. The
+                  // clarification and expanded-huge-draft states used to step
+                  // down to the body rung right here — which re-opened exactly
+                  // the zoom the base class exists to prevent, on the two states
+                  // where the field is longest. Their density comes from
+                  // useComposerAutosize's maxLines / maxHeight instead.
+                  className={cn(
+                    composerFieldClass,
+                    // Hands the text to the mirror behind, and takes the caret
+                    // and the selection colour back — see globals.css. Only
+                    // while there is something the textarea cannot draw.
+                    mirrored && "composer-field--mirrored no-scrollbar",
+                  )}
+                  // The marks drawn over the head of the field, as a hole in
+                  // the first line. `text-indent` is the only property that
+                  // indents one line rather than a block, which is exactly the
+                  // shape of what is being reserved.
+                  style={leadIndent ? { textIndent: leadIndent } : undefined}
+                />
+                {leadMarks.length > 0 && (
+                  <ComposerFieldLead onWidth={setLeadWidth} spanRef={leadRef}>
+                    {leadMarks}
+                  </ComposerFieldLead>
+                )}
+              </div>
             )
           }
           leading={
-            <>
             <PlusMenu
               open={plusOpen}
               onOpenChange={setPlusOpen}
@@ -3219,50 +3528,6 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
-            {/*
-             * WHAT IS ARMED FOR THIS MESSAGE, beside the "+" that armed it.
-             *
-             * The recipe and the argument for it are in `ComposerArmedMark`
-             * (composer-shell.tsx); which states earn a mark, in what order,
-             * and where the list is cut are decided in `armedMarks` above.
-             * This is only the drawing.
-             */}
-            {shownArmedMarks.map((mark) => (
-              <ComposerArmedMark
-                key={mark.id}
-                icon={mark.icon}
-                label={mark.label}
-                labelClassName={armedLabelClass}
-                detail={mark.detail}
-                tooltip={mark.tooltip}
-                onOpen={() => setPlusOpen(true)}
-                onRemove={mark.remove}
-                openLabel={mark.openLabel}
-                removeLabel={mark.removeLabel}
-                disabled={controlsLocked}
-              />
-            ))}
-            {restArmedMarks.length > 0 && (
-              <ComposerArmedMark
-                /* The overflow glyph, not a `+`: a plus on this row means "add
-                   something" — it is the button eight pixels to the left — and
-                   this mark removes rather than adds. */
-                icon={<ActionIcons.more className="size-4" />}
-                label={`${restArmedMarks.length} more`}
-                /* `shrink-0`, and no container query: this label IS the
-                   information — "⋯" alone says nothing, and "2 mo…" says it
-                   wrong. What gives way instead is the model chip, which is
-                   what the controls row was built to lose first. */
-                labelClassName="shrink-0"
-                tooltip={restArmedMarks.map((mark) => mark.label).join(", ")}
-                onOpen={() => setPlusOpen(true)}
-                onRemove={() => restArmedMarks.forEach((mark) => mark.remove())}
-                openLabel={`Also on for this message: ${restArmedMarks.map((mark) => mark.label).join(", ")}. Opens the add menu.`}
-                removeLabel={`Turn off ${restArmedMarks.map((mark) => mark.label).join(", ")}`}
-                disabled={controlsLocked}
-              />
-            )}
-            </>
           }
           trailing={
             <>
