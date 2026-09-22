@@ -40,6 +40,8 @@ export class GptLiveSession implements VoiceProviderSession {
   private suppressAssistantOutput = false;
   private speechGapTimer: ReturnType<typeof setTimeout> | null = null;
   private startedResolve: (() => void) | null = null;
+  /** The last error frame seen, so an abrupt close can quote it. */
+  private lastErrorDetail = "";
   private readonly thinking: boolean;
   private readonly model: string;
   private readonly backendModel: string;
@@ -99,12 +101,21 @@ export class GptLiveSession implements VoiceProviderSession {
         void err;
       };
       const onStartClose = (code: number, reason: Buffer) => {
-        const detail = reason?.toString().trim().slice(0, 200);
+        const detail = reason?.toString().trim().slice(0, 200) || this.lastErrorDetail;
+        // 1006 is synthetic: no close frame ever arrived, so the socket was
+        // dropped rather than refused with a reason. Saying "refused, check
+        // your model id" there invents a diagnosis the server never gave —
+        // after an accepted upgrade it points at the account not carrying
+        // GPT-Live, which no model id can fix.
         settle(
           new Error(
-            `gpt-live refused the session for model "${this.model}" (close ${code}${detail ? `: ${detail}` : ""}). ` +
-              `Check the model id and the backend delegation model "${this.backendModel}"; ` +
-              `override them with RELAY_OPENAI_MODEL and RELAY_OPENAI_BACKEND_MODEL.`
+            code === 1006 && !detail
+              ? `gpt-live dropped the connection after session.start with no close frame (model "${this.model}"). ` +
+                `The upgrade was accepted, so the endpoint is reachable — most often this is an account without ` +
+                `GPT-Live enabled. Pin RELAY_OPENAI_MODEL to a gpt-realtime id to use the previous protocol.`
+              : `gpt-live refused the session for model "${this.model}" (close ${code}${detail ? `: ${detail}` : ""}). ` +
+                `Check the model id and the backend delegation model "${this.backendModel}"; ` +
+                `override them with RELAY_OPENAI_MODEL and RELAY_OPENAI_BACKEND_MODEL.`
           )
         );
       };
@@ -128,6 +139,7 @@ export class GptLiveSession implements VoiceProviderSession {
 
     this.send({
       type: "session.start",
+      event_id: "juno_session_start",
       session: {
         model: this.model,
         instructions: seed.instructions,
@@ -272,6 +284,7 @@ export class GptLiveSession implements VoiceProviderSession {
       case "session.error": {
         const detail =
           typeof msg.error === "string" ? msg.error : msg.error?.message || msg.message || "unknown error";
+        this.lastErrorDetail = detail.slice(0, 200);
         ev.onError(`gpt-live: ${detail}`);
         if (msg.type === "session.error") ev.onClosed("error");
         return;

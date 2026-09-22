@@ -70,9 +70,22 @@ export interface TokenRates {
   textOut: number;
 }
 
+/**
+ * What a provider actually gave, once connected — which is not always what was
+ * asked for. A provider that answered on a fallback path reports the state the
+ * caller really got, plus a note the relay can put on session.ready.
+ */
+export interface SessionEstablished {
+  thinking: boolean;
+  /** Non-fatal; shown to the caller without ending the call. */
+  notice?: string;
+}
+
 export interface VoiceProviderSession {
   readonly provider: VoiceProviderId;
   connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void>;
+  /** Omit where what was asked for is always what was given. */
+  established?(): SessionEstablished;
   /** Mic audio, PCM16LE mono 16 kHz. No-op for non-S2S providers. */
   sendAudio(pcm16k: Buffer): void;
   /** Final client-side transcript utterance (needsClientTranscript providers). */

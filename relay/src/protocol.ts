@@ -85,7 +85,15 @@ export type ClientMessage =
 export type ServerMessage =
   /** `thinking` is the EFFECTIVE state, not the request: a provider with no
    *  reasoning variant reports false however it was asked. */
-  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities; thinking: boolean }
+  | {
+      type: "session.ready";
+      provider: VoiceProviderId;
+      capabilities: ProviderCapabilities;
+      thinking: boolean;
+      /** A non-fatal note about how the session came up — a fallback protocol,
+       *  say. Unlike `error` this does not end the call. */
+      notice?: string;
+    }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   /** Model output was cancelled (user barge-in). Client must flush its

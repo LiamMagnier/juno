@@ -1,6 +1,6 @@
 import type { VoiceProviderId } from "../protocol.js";
 import { GeminiLiveSession } from "./gemini-live.js";
-import { GptLiveSession } from "./gpt-live.js";
+import { OpenAiVoiceSession } from "./openai-voice.js";
 import { MinimaxComposedSession } from "./minimax-composed.js";
 import { MockVoiceSession } from "./mock.js";
 import { OpenAiShapedRealtimeSession, type RealtimeDialect } from "./openai-realtime.js";
@@ -95,7 +95,7 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
     create: ({ thinking }) =>
       openaiUsesLegacyRealtime()
         ? new OpenAiShapedRealtimeSession(openaiDialect)
-        : new GptLiveSession({ thinking }),
+        : new OpenAiVoiceSession(openaiDialect, { thinking }),
   },
   gemini: {
     id: "gemini",

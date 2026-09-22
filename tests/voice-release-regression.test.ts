@@ -20,6 +20,7 @@ const geminiLive = readFileSync(new URL("../relay/src/providers/gemini-live.ts",
 const gptLive = readFileSync(new URL("../relay/src/providers/gpt-live.ts", import.meta.url), "utf8");
 const relayRegistry = readFileSync(new URL("../relay/src/providers/registry.ts", import.meta.url), "utf8");
 const relaySession = readFileSync(new URL("../relay/src/session.ts", import.meta.url), "utf8");
+const openaiVoice = readFileSync(new URL("../relay/src/providers/openai-voice.ts", import.meta.url), "utf8");
 const voiceBar = readFileSync(new URL("../src/components/voice/realtime-voice.tsx", import.meta.url), "utf8");
 
 test("voice relay verifier resolves ws from the standalone relay package", () => {
@@ -146,7 +147,8 @@ test("voice runs the current live models, with thinking as the model choice it i
   assert.match(gptLive, /"session\.start"/);
   assert.match(gptLive, /"session\.input_audio\.append"/);
   assert.match(gptLive, /"session\.output_audio\.delta"/);
-  assert.match(relayRegistry, /new GptLiveSession\(\{ thinking \}\)/);
+  assert.match(relayRegistry, /new OpenAiVoiceSession\(openaiDialect, \{ thinking \}\)/);
+  assert.match(openaiVoice, /new GptLiveSession\(\{ thinking: this\.thinking \}\)/);
 });
 
 test("a provider with no reasoning variant is never told it has one", () => {
@@ -157,4 +159,18 @@ test("a provider with no reasoning variant is never told it has one", () => {
   assert.match(relayRegistry, /thinkingChoice: false/);
   // And the row only exists where the choice does.
   assert.match(voiceBar, /voice\.capabilities\?\.thinkingChoice && \(/);
+});
+
+test("a voice session that could not honour the request says so without ending the call", () => {
+  // GPT-Live is per-account and refuses by dropping the socket, so the openai
+  // provider tries it and falls back rather than leaving voice broken.
+  assert.match(openaiVoice, /await live\.connect\(seed, events\)/);
+  assert.match(openaiVoice, /new OpenAiShapedRealtimeSession\(this\.dialect\)/);
+  // A fallback reasons nowhere the caller asked it to; reporting the request
+  // back would leave the menu showing a mode nothing runs.
+  assert.match(openaiVoice, /thinking: this\.fellBack \? false : this\.thinking/);
+  // The note rides on session.ready, NOT on error — an error ends the call.
+  assert.match(relaySession, /established\.notice \? \{ notice: established\.notice \}/);
+  assert.match(voiceBar, /!voice\.error && voice\.notice/);
+  assert.match(voiceBar, /role="status"/);
 });
