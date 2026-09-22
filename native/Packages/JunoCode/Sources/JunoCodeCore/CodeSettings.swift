@@ -28,7 +28,8 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     /// stops the Settings window from erasing it when it saves an unrelated
     /// change to the same file.
     public var hooks: JSONValue?
-    /// Claude Code's switch for turning every hook off at once.
+    /// Claude Code's switch for turning hooks off at once. In a project's
+    /// file it reaches only that project's hooks; see `HookDiscovery`.
     public var disableAllHooks: Bool?
 
     public init(

@@ -509,8 +509,8 @@ public struct HookConfiguration: Equatable, Codable, Sendable {
     public let path: String
     public let hooks: [HookDefinition]
     public let diagnostics: [HookDiagnostic]
-    /// The file set `disableAllHooks`. Claude Code reads that as "no hooks at
-    /// all", whichever file says it, and so does discovery.
+    /// The file set `disableAllHooks`. How far that reaches depends on whose
+    /// file it is; `HookDiscovery` decides.
     public let disablesAllHooks: Bool
 
     public init(
@@ -532,8 +532,16 @@ public struct HookDiscoveryResult: Equatable, Sendable {
     public let configurations: [HookConfiguration]
     public let hooks: [HookDefinition]
     public let diagnostics: [HookDiagnostic]
-    /// The file whose `disableAllHooks` turned every hook off, if one did.
+    /// The file whose `disableAllHooks` switched hooks off, if one did: the
+    /// reader's own file switches off every hook, a repository file only the
+    /// repository's (see `disablesReaderHooks`).
     public let disabledBy: String?
+
+    /// Whether `disabledBy` reached the reader's own hooks, which only the
+    /// reader's own file can do.
+    public var disablesReaderHooks: Bool {
+        disabledBy == HookConfigurationFile.junoUser.path
+    }
 
     public init(
         configurations: [HookConfiguration] = [],

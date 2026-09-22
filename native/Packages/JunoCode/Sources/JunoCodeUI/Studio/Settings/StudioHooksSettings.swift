@@ -35,7 +35,9 @@ struct StudioHooksSettings: View {
     var body: some View {
         Section {
             if let disabledBy = hooks.disabledBy {
-                Text("Every hook is off: \(disabledBy) sets disableAllHooks.")
+                Text(hooks.disablesReaderHooks
+                    ? "Every hook is off: \(disabledBy) sets disableAllHooks."
+                    : "This project's hooks are off: \(disabledBy) sets disableAllHooks.")
                     .foregroundStyle(Studio.Ink.tertiary)
             } else if hooks.hooks.isEmpty {
                 Text("No hooks. Add them under \"hooks\" in .claude/settings.json or .juno/settings.json.")
@@ -70,7 +72,7 @@ struct StudioHooksSettings: View {
         } header: {
             Text("Hooks")
         } footer: {
-            Text("Hooks in ~/.juno/settings.json are yours: they run in every project without asking.")
+            Text("Hooks in ~/.juno/settings.json are yours: they run in every project without asking, and no project can switch them off.")
         }
 
         ForEach(events, id: \.self) { event in

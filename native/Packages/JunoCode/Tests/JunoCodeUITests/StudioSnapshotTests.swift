@@ -135,6 +135,18 @@ final class StudioSnapshotTests: XCTestCase {
                 name: "settings-hooks-\(dark ? "dark" : "light")"
             )
         }
+        // A project that switches its own hooks off: the reader's still run.
+        let projectOff = HookDiscoveryResult(hooks: [notify], disabledBy: HookConfigurationFile.claudeLocal.path)
+        XCTAssertFalse(projectOff.disablesReaderHooks)
+        try await render(
+            Form {
+                StudioHooksSettings(hooks: projectOff, policy: policy, setAllowed: { _ in })
+            }
+            .formStyle(.grouped),
+            size: CGSize(width: 720, height: 360),
+            dark: false,
+            name: "settings-hooks-project-off"
+        )
     }
 
     // MARK: - Rendering

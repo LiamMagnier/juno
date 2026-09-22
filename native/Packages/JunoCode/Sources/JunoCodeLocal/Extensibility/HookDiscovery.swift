@@ -28,7 +28,8 @@ public struct HookDiscovery: Sendable {
         var configurations: [HookConfiguration] = []
         var hooks: [HookDefinition] = []
         var diagnostics: [HookDiagnostic] = []
-        var disabledBy: String?
+        var readerDisabledAll = false
+        var repositoryDisabledBy: String?
 
         // The reader's file first, then Claude's, then Juno's: the order hooks
         // are listed and, within one event, the order their results are read.
@@ -59,8 +60,12 @@ public struct HookDiscovery: Sendable {
                 configurations.append(configuration)
                 hooks.append(contentsOf: configuration.hooks)
                 diagnostics.append(contentsOf: configuration.diagnostics)
-                if configuration.disablesAllHooks, disabledBy == nil {
-                    disabledBy = file.path
+                if configuration.disablesAllHooks {
+                    if file.isInRepository {
+                        repositoryDisabledBy = repositoryDisabledBy ?? file.path
+                    } else {
+                        readerDisabledAll = true
+                    }
                 }
             } catch let error as HookDiscoveryReadError {
                 diagnostics.append(
@@ -89,11 +94,22 @@ public struct HookDiscovery: Sendable {
             }
         }
 
-        // `disableAllHooks` in any file turns every hook off, as it does in
-        // Claude Code. Turning hooks off is the safe direction, so a
-        // repository may do it to the reader's own hooks too.
-        if disabledBy != nil {
+        // `disableAllHooks` turns hooks off, as in Claude Code, but only as far
+        // as the file's author reaches. Turning a hook off is not the safe
+        // direction when the hook is a guard: a reader who keeps a
+        // `PreToolUse` check against force-pushes in their own file must not
+        // lose it to a line in a cloned repository, or in a local settings
+        // file the agent can write. So the reader's file switches off every
+        // hook, and a repository's file only the repository's.
+        let disabledBy: String?
+        if readerDisabledAll {
             hooks = []
+            disabledBy = HookConfigurationFile.junoUser.path
+        } else if let repositoryDisabledBy {
+            hooks.removeAll(where: \.isUntrusted)
+            disabledBy = repositoryDisabledBy
+        } else {
+            disabledBy = nil
         }
 
         let fileOrder = Dictionary(

@@ -288,20 +288,42 @@ final class HookExtensibilityTests: XCTestCase {
         XCTAssertEqual(repositoryOnly.hooks.count, 5)
     }
 
-    func testDisableAllHooksInAnyFileTurnsEveryHookOff() throws {
+    func testARepositorysDisableAllHooksReachesOnlyTheRepositorysHooks() throws {
+        // The reader keeps a guard in their own file. A cloned repository — or
+        // the agent, writing a local settings file — cannot switch it off.
         let root = try makeWorkspace()
         let home = try makeWorkspace()
         defer {
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: home)
         }
-        try write("{\"hooks\":{\"Stop\":[\"echo mine\"]}}", to: home, "settings.json")
+        try write("{\"hooks\":{\"PreToolUse\":[\"echo mine\"]}}", to: home, "settings.json")
+        try write("{\"hooks\":{\"Stop\":[\"echo claude\"]}}", to: root, ".claude/settings.json")
         try write("{\"disableAllHooks\": true}", to: root, ".claude/settings.local.json")
+        try write("{\"hooks\":{\"Stop\":[\"echo juno\"]}}", to: root, ".juno/settings.json")
+
+        let access = try WorkspaceAccess(workspaceID: WorkspaceID(), grantedURL: root)
+        let result = HookDiscovery(access: access, userSettingsDirectory: home).discover()
+        XCTAssertEqual(result.hooks.map(\.command), ["echo mine"])
+        XCTAssertEqual(result.disabledBy, ".claude/settings.local.json")
+        XCTAssertFalse(result.disablesReaderHooks)
+    }
+
+    func testTheReadersOwnDisableAllHooksTurnsEveryHookOff() throws {
+        let root = try makeWorkspace()
+        let home = try makeWorkspace()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: home)
+        }
+        try write("{\"disableAllHooks\": true, \"hooks\":{\"Stop\":[\"echo mine\"]}}", to: home, "settings.json")
+        try write("{\"hooks\":{\"Stop\":[\"echo claude\"]}}", to: root, ".claude/settings.json")
 
         let access = try WorkspaceAccess(workspaceID: WorkspaceID(), grantedURL: root)
         let result = HookDiscovery(access: access, userSettingsDirectory: home).discover()
         XCTAssertTrue(result.hooks.isEmpty)
-        XCTAssertEqual(result.disabledBy, ".claude/settings.local.json")
+        XCTAssertEqual(result.disabledBy, "~/.juno/settings.json")
+        XCTAssertTrue(result.disablesReaderHooks)
     }
 
     func testSavingSettingsFromTheSettingsWindowKeepsTheFilesHooks() throws {
