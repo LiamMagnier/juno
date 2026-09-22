@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { FileSearch, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /**
- * What structured extraction made of one uploaded file.
+ * What structured extraction made of one uploaded file — WHEN IT WENT WRONG.
  *
  * Indexing runs *after* the upload response (see `scheduleIngest`), so without
  * this line a user has no way to learn that their scanned PDF produced nothing
@@ -14,6 +14,13 @@ import { cn } from "@/lib/utils";
  * degraded and failed cases therefore lead with the extractor's own sentence
  * rather than a status word: "This PDF has no text layer" is actionable,
  * "degraded" is not.
+ *
+ * NOTHING IS SAID ABOUT A FILE THAT WORKED. This used to end with
+ * "Indexed · 21 passages · 4 pages" on every healthy row, and that line was
+ * the product's internals wearing a user-facing voice: "passage" is a unit of
+ * the retrieval index, not of anything a person put in the file, and the count
+ * changes nothing they can do. A row that is fine should look fine. The
+ * exceptional states stay, because each of them is a thing to act on.
  *
  * Files no extractor claims (images, video) pass `null` and render nothing.
  * A photo is not a document that failed to index, and marking it as one would
@@ -80,18 +87,6 @@ export function IndexStatus({
     );
   }
 
-  if (status.state !== "ready") return null;
-
-  const detail = status.pageCount
-    ? `${status.blockCount} passages · ${status.pageCount} pages`
-    : `${status.blockCount} ${status.blockCount === 1 ? "passage" : "passages"}`;
-
-  return (
-    <span className={cn(shared, "text-muted-foreground", className)}>
-      <FileSearch className="size-3 shrink-0" aria-hidden="true" />
-      <span className="truncate" title={`Indexed for search — ${detail}`}>
-        Indexed · {detail}
-      </span>
-    </span>
-  );
+  // `ready` and everything else: silence. See the header.
+  return null;
 }

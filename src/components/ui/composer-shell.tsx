@@ -749,7 +749,7 @@ export function ComposerAttachmentTile({
    * index (see `useAttachmentReadiness`). A `.txt` is sent whatever the index
    * does, so it is left alone rather than given a status it does not have.
    */
-  readiness?: "reading" | "unreadable" | "ready";
+  readiness?: "reading" | "unreadable" | "partial" | "ready";
   onRemove?: () => void;
   className?: string;
 }) {
@@ -769,7 +769,13 @@ export function ComposerAttachmentTile({
    * a verdict; the warning only once it has actually settled.
    */
   const unreadable = readiness === "unreadable";
-  const line = unreadable ? "Couldn’t read this file" : readiness === "reading" ? "Reading…" : (status ?? meta);
+  const line = unreadable
+    ? "Couldn’t read this file"
+    : readiness === "partial"
+      ? "Read in part"
+      : readiness === "reading"
+        ? "Reading…"
+        : (status ?? meta);
 
   /* The paper square. Before the upload lands there is no attachment id, so
      no excerpt can be asked for — it shows the extension, which is what the
@@ -876,7 +882,7 @@ export function ComposerAttachmentRow({
 }: {
   uploads: readonly PendingUpload[];
   /** Attachment id → whether its text reached the index (`useAttachmentReadiness`). */
-  readiness?: ReadonlyMap<string, "reading" | "unreadable" | "ready">;
+  readiness?: ReadonlyMap<string, "reading" | "unreadable" | "partial" | "ready">;
   onRemove: (localId: string) => void;
   className?: string;
 }) {

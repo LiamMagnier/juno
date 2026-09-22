@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { isStripeConfigured } from "@/lib/env";
 import { getStripe } from "@/lib/stripe";
 import { deleteObject } from "@/lib/storage";
+import { thumbnailObjectKey } from "@/lib/attachments/thumbnail";
 
 /*
  * Permanent account deletion (GDPR right to be forgotten), shared by
@@ -43,7 +44,11 @@ export async function deleteAccountPermanently(user: {
     where: { userId: user.id },
     select: { storageKey: true },
   });
-  const keys = attachments.map((a) => a.storageKey);
+  // Each object and its rendered first page. The thumbnail is a picture OF the
+  // document — it carries the same content and answers to the same erasure, so
+  // purging the source and leaving the rendering behind would defeat the point
+  // of this function. A key with nothing behind it deletes as a no-op.
+  const keys = attachments.flatMap((a) => [a.storageKey, thumbnailObjectKey(a.storageKey)]);
   const avatarKey = user.image?.startsWith("/api/files/") ? user.image.slice("/api/files/".length) : null;
   if (avatarKey) keys.push(avatarKey);
 

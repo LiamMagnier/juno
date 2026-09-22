@@ -3,7 +3,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { UnifiedAgentRegistry, detectAutomaticEscalation, openUnifiedAgentToolset } from "../src/lib/agent/runtime";
 import { browserPageBody } from "../src/lib/agent/browser";
-import { BROWSER_TOOL_ID, chatRuntimeToolAllowlist } from "../src/lib/chat/tool-policy";
+import {
+  BROWSER_TOOL_ID,
+  INSPECT_IMAGE_TOOL_ID,
+  READ_DOCUMENT_TOOL_ID,
+  chatRuntimeToolAllowlist,
+} from "../src/lib/chat/tool-policy";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "../src/lib/untrusted-content";
 
 test("UnifiedAgentRegistry exposes only hosted-safe tools and emits valid provider schemas", () => {
@@ -13,8 +18,43 @@ test("UnifiedAgentRegistry exposes only hosted-safe tools and emits valid provid
   assert.ok(registry.getTool("browser_agent"));
   assert.equal(registry.getTool("computer_use"), undefined);
 
+  // The two attachment tools are registered but, like the browser tool, are
+  // only ever ATTACHED by an explicit allowlist — see the tests below.
+  assert.ok(registry.getTool(READ_DOCUMENT_TOOL_ID));
+  assert.ok(registry.getTool(INSPECT_IMAGE_TOOL_ID));
+
   const schemas = registry.toProviderToolSchemas();
-  assert.deepEqual(schemas.map((schema) => schema.function.name), ["browser_agent"]);
+  assert.deepEqual(schemas.map((schema) => schema.function.name), [
+    "browser_agent",
+    READ_DOCUMENT_TOOL_ID,
+    INSPECT_IMAGE_TOOL_ID,
+  ]);
+  // Every registered tool must carry an object schema with properties, or the
+  // stricter providers reject the whole request rather than the one tool.
+  for (const schema of schemas) {
+    assert.equal((schema.function.parameters as { type?: string }).type, "object");
+    assert.ok((schema.function.parameters as { properties?: object }).properties);
+  }
+});
+
+/*
+ * The registry is built at module load, so anything `server-only` in a tool's
+ * STATIC import graph takes the whole registry down outside a react-server
+ * runtime — which is how this very file first failed. Both attachment tools
+ * therefore reach Prisma, storage and the rasteriser through `await import()`
+ * inside `execute`. This pins that, because the symptom is far away from the
+ * cause.
+ */
+test("the attachment tools keep server-only modules out of the registry's graph", () => {
+  for (const file of ["document", "image"]) {
+    const source = readFileSync(new URL(`../src/lib/agent/${file}.ts`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /^import "server-only";/m, `${file}.ts must not import server-only`);
+    assert.doesNotMatch(
+      source,
+      /^import \{[^}]*\} from "@\/lib\/(prisma|storage|media\/raster|agent\/attachments|knowledge\/documents)"/m,
+      `${file}.ts must reach its server-only deps through a dynamic import`,
+    );
+  }
 });
 
 test("an explicit empty allowlist is treated as no hosted native tools", () => {
@@ -80,13 +120,49 @@ test("switching web access on is what attaches the browser tool", async () => {
   }
 });
 
+/*
+ * The attachment tools ride the attachments, not a user-facing toggle — but
+ * each one still rides its OWN condition. A turn carrying a PDF must not be
+ * handed the image inspector on a model that cannot see, and a turn carrying
+ * only a photo must not be handed the document reader: both would spend a
+ * round discovering there is nothing for them to do.
+ */
+test("each attachment tool is attached only by its own condition", async () => {
+  assert.deepEqual(chatRuntimeToolAllowlist({ webSearch: false }), []);
+  assert.deepEqual(chatRuntimeToolAllowlist({ webSearch: false, documents: true }), [
+    READ_DOCUMENT_TOOL_ID,
+  ]);
+  assert.deepEqual(chatRuntimeToolAllowlist({ webSearch: false, images: true }), [
+    INSPECT_IMAGE_TOOL_ID,
+  ]);
+  assert.deepEqual(
+    chatRuntimeToolAllowlist({ webSearch: true, documents: true, images: true }),
+    [BROWSER_TOOL_ID, READ_DOCUMENT_TOOL_ID, INSPECT_IMAGE_TOOL_ID],
+  );
+
+  const toolset = await openUnifiedAgentToolset([], agentContext, {
+    allowedToolIds: chatRuntimeToolAllowlist({ webSearch: false, documents: true }),
+  });
+  try {
+    assert.deepEqual(toolset.tools.map((t) => t.function.name), [READ_DOCUMENT_TOOL_ID]);
+    // Read-only, so the approval broker lets it through without a prompt —
+    // which is exactly why the allowlist above has to be the narrow gate.
+    assert.equal(toolset.accessFor(READ_DOCUMENT_TOOL_ID), "read");
+  } finally {
+    await toolset.close();
+  }
+});
+
 test("streamChat never forwards an absent allowlist to the registry", () => {
   // The registry's "undefined = everything" contract is kept (the test above
   // this file pins it), so the opt-in default has to live in streamChat.
   const llm = readFileSync(new URL("../src/lib/llm.ts", import.meta.url), "utf8");
   assert.match(llm, /allowedToolIds: opts\.allowedTools \?\? \[\.\.\.NO_RUNTIME_TOOLS\]/);
   const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
-  assert.match(route, /allowedTools: chatRuntimeToolAllowlist\(\{ webSearch: useWebSearch \}\)/);
+  assert.match(
+    route,
+    /allowedTools: chatRuntimeToolAllowlist\(\{\s*webSearch: useWebSearch,\s*\.\.\.attachmentToolToggles,\s*\}\)/,
+  );
 });
 
 test("a fetched page reaches the model whole, with its closing marker", () => {

@@ -3,13 +3,20 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { getModelMetrics, reasoningCaps } from "@/lib/model-metrics";
 import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/openai-prompt-cache";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import {
+  sendableToolImages,
+  toDataUrl,
+  toolImageIntro,
+  withheldImagesNote,
+} from "@/lib/tool-result-images";
 import { providerRequestModel } from "@/lib/model-request";
 import {
   accumulateToolCallDeltas,
@@ -69,6 +76,9 @@ async function toOpenAIMessages(
     0,
     Math.floor((history.length - BINARY_ATTACHMENT_LOOKBACK) / BINARY_ATTACHMENT_LOOKBACK) * BINARY_ATTACHMENT_LOOKBACK
   );
+  // What one attachment may spend, derived from this model's own window —
+  // never a constant, for the reason attachmentTextBudget's header gives.
+  const textBudget = attachmentTextBudget(model ? getModelMetrics(model).contextTokens : undefined);
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
@@ -98,7 +108,7 @@ async function toOpenAIMessages(
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
         } else if (att.extractedText) {
-          parts.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText) });
+          parts.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: textBudget }) });
         } else {
           const note = att.mimeType === "application/pdf"
             ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
@@ -512,7 +522,28 @@ export async function* streamOpenAICompat(
           parsedArgs = {};
         }
         const exec = await toolset!.execute(v.name, parsedArgs, signal);
-        messages.push({ role: "tool", tool_call_id: v.id, content: exec.text } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+        // A `tool` message takes a string and nothing else, so pixels follow
+        // it as an ordinary user turn — the shape OpenAI documents for showing
+        // a model an image a function produced. `toolImageIntro` is what stops
+        // that turn reading as something the person just uploaded.
+        const images = sendableToolImages(exec.images, model.vision);
+        messages.push({
+          role: "tool",
+          tool_call_id: v.id,
+          content: withheldImagesNote(exec.text, exec.images, images.length),
+        } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+        if (images.length) {
+          messages.push({
+            role: "user",
+            content: [
+              { type: "text", text: toolImageIntro(v.name, images) },
+              ...images.map((image) => ({
+                type: "image_url" as const,
+                image_url: { url: toDataUrl(image) },
+              })),
+            ],
+          } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+        }
         yield {
           type: "tool",
           server: label,

@@ -6,6 +6,7 @@
  */
 
 import type { ActionRiskClass, ActionReceiptBinding, ClientActionApproval } from "@/lib/action-approval";
+import type { ToolResultImage } from "@/lib/mcp";
 
 export type AgentMode = "chat" | "work" | "code" | "research" | "voice" | "data";
 
@@ -84,6 +85,16 @@ export interface ToolExecutionResult<TData = unknown> {
   error?: string;
   /** User-facing human summary of the outcome */
   summary?: string;
+  /**
+   * Pixels to hand back to the model alongside `stdout`.
+   *
+   * A tool that produces something to LOOK at — a crop, a magnified region,
+   * a rendered page — cannot say what it found in words without becoming a
+   * second opinion about the very thing the caller wanted to see for itself.
+   * The runtime passes these through to the adapter, which carries them into
+   * the tool round for every provider that accepts images there.
+   */
+  images?: readonly ToolResultImage[];
   /** Structured output artifacts produced during execution (charts, files, tables, diffs) */
   artifacts?: AgentOutputArtifact[];
   /** Execution latency in milliseconds */

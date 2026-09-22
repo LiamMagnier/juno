@@ -165,6 +165,29 @@ export interface McpFunctionTool {
  * fails" would read as a failed call. And only this function is on both sides
  * of the await that the duration measures.
  */
+/**
+ * A picture a tool produced, to be shown to the model rather than described.
+ *
+ * THE ONLY REASON THIS EXISTS. `inspect_image` crops and magnifies a region of
+ * a picture the model has already been shown — the licence plate, the axis
+ * label, the fifth row of the table in a screenshot. Every model downsamples a
+ * large image before it reaches the transformer, so "look closer" is not
+ * something it can do by trying harder, and a tool that answered with a
+ * *description* of the crop would just be a second model's guess laundered
+ * through a tool call. The crop has to come back as pixels.
+ *
+ * Every adapter that can carry an image back into a tool round does so; the
+ * ones talking to a model without vision drop the pixels and keep the note, so
+ * the tool degrades to a sentence rather than to an error.
+ */
+export interface ToolResultImage {
+  mimeType: string;
+  /** Raw base64, no data: prefix — each adapter wraps it its own way. */
+  base64: string;
+  /** One line for the panel and for a model that cannot see it. */
+  label?: string;
+}
+
 export interface ToolExecution {
   /** What goes back to the MODEL: envelope-wrapped, exactly as before. */
   text: string;
@@ -175,6 +198,8 @@ export interface ToolExecution {
   /** Set only when `client.callTool` was actually reached. Absent — never zero
    *  — for a call that never left Juno. */
   durationMs?: number;
+  /** Pixels to hand back with the text. Empty and absent mean the same thing. */
+  images?: readonly ToolResultImage[];
 }
 
 export interface McpToolset {

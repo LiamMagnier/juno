@@ -11,23 +11,57 @@
  * nothing but the untrusted-content rule stood in the way.
  *
  * The rule now: a runtime tool is attached only when the user explicitly
- * switched on the feature that needs it. Web browsing rides the existing
- * `webSearch` toggle — the same toggle that already adds the untrusted-content
- * rule to the system prompt, so the envelope the browser tool writes always has
- * a rule that reads it.
+ * switched on the feature that needs it, or when the turn is carrying the
+ * thing the tool acts on. Web browsing rides the existing `webSearch` toggle —
+ * the same toggle that already adds the untrusted-content rule to the system
+ * prompt, so the envelope the browser tool writes always has a rule that reads
+ * it. The two attachment tools ride the attachments themselves, which is a
+ * stricter condition than a toggle rather than a looser one: they can only
+ * reach files the person put in this conversation, so a turn with no
+ * attachments has nothing to offer them and does not carry them.
  */
 
 /** Registry id of the hosted page-reading tool (`src/lib/agent/browser.ts`). */
 export const BROWSER_TOOL_ID = "browser_agent";
 
+/** Registry id of the attached-document reader (`src/lib/agent/document.ts`). */
+export const READ_DOCUMENT_TOOL_ID = "read_document";
+
+/** Registry id of the crop-and-magnify tool (`src/lib/agent/image.ts`). */
+export const INSPECT_IMAGE_TOOL_ID = "inspect_image";
+
 /** An explicit empty allowlist: no runtime tool at all. */
 export const NO_RUNTIME_TOOLS: readonly string[] = Object.freeze([]);
+
+export interface RuntimeToolToggles {
+  webSearch: boolean;
+  /**
+   * This turn's history carries at least one indexed document.
+   *
+   * Not "an attachment exists": a file still being parsed has nothing for the
+   * reader to read, and offering a tool that can only answer "not indexed yet"
+   * invites the model to spend a round discovering that.
+   */
+  documents?: boolean;
+  /**
+   * There is a picture worth looking closer at, AND the model can see.
+   *
+   * Both halves matter. A model with no vision cannot use a crop, so handing
+   * it the tool only produces a tool call whose result it must be told to
+   * ignore — which is a worse outcome than never offering it.
+   */
+  images?: boolean;
+}
 
 /**
  * The runtime tools a chat turn may expose, from the request's feature toggles.
  * Always an array — never `undefined` — because `undefined` means "everything"
  * one layer down.
  */
-export function chatRuntimeToolAllowlist(toggles: { webSearch: boolean }): string[] {
-  return toggles.webSearch ? [BROWSER_TOOL_ID] : [...NO_RUNTIME_TOOLS];
+export function chatRuntimeToolAllowlist(toggles: RuntimeToolToggles): string[] {
+  const allowed: string[] = [];
+  if (toggles.webSearch) allowed.push(BROWSER_TOOL_ID);
+  if (toggles.documents) allowed.push(READ_DOCUMENT_TOOL_ID);
+  if (toggles.images) allowed.push(INSPECT_IMAGE_TOOL_ID);
+  return allowed;
 }

@@ -641,6 +641,23 @@ the model (see §6.3).
   recent 8 messages re-embed heavy binaries (block-anchored so the cache prefix stays
   stable); older ones degrade to text placeholders. Attachment claim mismatch → **409**
   `ATTACHMENT_CLAIM_FAILED`.
+
+  **A document reaches the model whole, not as four retrieved passages.** When
+  structured extraction settles, `persistExtractedText` (`lib/knowledge/index.ts`)
+  writes the assembled document back onto `Attachment.extractedText` — page and
+  slide markers included, up to 200 k chars — so a PDF, deck or workbook now
+  travels the same path a `.txt` always did. That is what makes an attached PDF
+  readable on the OpenAI-family adapters at all: they never receive raw PDF bytes,
+  so before this the file arrived as its filename plus whatever RAG happened to
+  match. How much of it each model is sent is `attachmentTextBudget`
+  (`lib/knowledge/document-text.ts`) — a third of that model's context window
+  rather than the flat 100 k every adapter used to slice at — and a cut says so,
+  inside the untrusted envelope, naming the tool that can fetch the rest.
+
+  **Two runtime tools ride the attachments** (`chatRuntimeToolAllowlist`, §5.6b):
+  `read_document` (list / outline / read a page range / search) and `inspect_image`
+  (crop and magnify a region, or rasterise a PDF page). Both are read-only and can
+  only reach files attached to the conversation they run in.
 - **Web search** has three modes: native provider search (Anthropic
   `web_search_20250305`, Google grounding, Grok Live Search), **deep research**
   (durable plan → parallel investigation rounds → lead review → synthesis → citation
@@ -673,6 +690,43 @@ the model (see §6.3).
 - **Artifacts** are emitted by the model as `<juno:artifact …>…</juno:artifact>` tags
   and persisted on completion (`persistArtifacts`); reusing an identifier appends a new
   version. Targeted canvas edits use an optimistic compare-and-bump patch protocol.
+
+### 5.6b Attachment tools: reading documents and looking closer at images
+
+Two read-only tools are attached per turn, by what the turn is carrying rather than
+by a user toggle (`src/lib/chat/tool-policy.ts`). Both resolve files through
+`conversationAttachments`, so the widest thing either can reach is a file the person
+already attached here — a prompt-injected id names something the model was being
+shown anyway.
+
+- **`read_document`** (`src/lib/agent/document.ts`) — attached when the history
+  carries a `ready` or `degraded` FILE. `list` (what is attached, how long),
+  `outline` (headings, with page numbers), `read` (a page range in reading order,
+  paginated with `offset`), `search` (literal `contains`, not the stemmed index, so
+  an identifier like `NDA-4417` is findable). It reads `KnowledgeBlock` rows, so it
+  costs a query rather than a re-parse, and every locator it returns is checkable.
+  Everything it returns is wrapped in the untrusted-content envelope, and the rule
+  that reads those markers is switched on whenever the tool is.
+- **`inspect_image`** (`src/lib/agent/image.ts`) — attached when the history carries
+  an image or PDF **and** the model has vision. Takes a region in percent and hands
+  back the crop as an *image*, magnified to at least 768 px on its short edge:
+  providers downsample large images before inference, so small text, serial numbers
+  and axis labels are not faint in the model's view but absent, and "look closer" is
+  otherwise an invitation to guess. Also renders a PDF page, for signatures, stamps
+  and charts with no text layer behind them.
+
+Tool results can therefore carry pixels (`ToolExecution.images`). Anthropic takes
+them inside the `tool_result` block; the other three adapters can only put a string
+in a function output, so the images follow as a user turn introduced by
+`toolImageIntro` — without which a model reads them as a fresh upload and thanks the
+user for sending it. A model that cannot see them gets `withheldImagesNote` instead
+of silence (`src/lib/tool-result-images.ts`).
+
+Rasterising is `src/lib/media/raster.ts`, on `unpdf` (already shipped) plus
+`@napi-rs/canvas` (its documented optional peer, kept in `serverExternalPackages`
+because it is a native module). The binding is optional: where it is missing every
+entry point returns `null`, thumbnails fall back to the extension badge and
+`inspect_image` tells the model it cannot crop.
 
 ### 5.7 Idempotency & durable receipts
 
@@ -1776,6 +1830,20 @@ files under 1 MB get their text pulled (≤200 k chars) for multimodal context.
 `GET /api/files/[...key]` is auth-gated with per-object authorization (`canReadObject`:
 attachments → owner only; avatars/announcement media → any signed-in user) and returns
 **404** for unreadable objects (no existence oracle); it honors HTTP Range for video.
+
+**Tiles show the document, not its format.** `GET /api/attachments/[id]/preview`
+returns the few lines a tile draws — from the object's own bytes for text, and from
+the file's `KnowledgeBlock` rows for anything whose bytes are not text — plus
+`thumbnailUrl` when a page picture is possible. `GET /api/attachments/[id]/thumbnail`
+renders page one of a PDF and caches the JPEG at `<storageKey>.thumb.jpg`, so the
+render happens once and every later request is a read; the key is derived rather than
+stored, so the whole existing library gets thumbnails with no backfill. Both routes
+are owner-scoped and 404 rather than 403. Account deletion purges the derived key
+alongside the object — a rendering of a page carries the page.
+
+`FilePreview` draws the three as a ladder in one element: excerpt or extension badge
+first, page image painted over it on load, and back to the badge on `onError`. There
+is no flash of an empty frame for a file that cannot be rendered.
 `/api/attachments/[id]` handles per-file get/rename/delete (deleting the object only when
 no other attachment shares the `storageKey` — library re-attach clones share keys).
 
@@ -2524,6 +2592,13 @@ npm run work:scheduler # the routine dispatcher (juno-work-scheduler)
 Tests (`tests/*.test.ts` + `scripts/test-*.ts`, run via `tsx`) cover auth token/locale
 helpers, message crypto, moderation logic (with provider keys scrubbed to force fail-open),
 memory backfill/suppression, clarify, and the code-remote-sessions ordering/planner logic.
+`tests/document-thumbnail.test.ts` rasterises a PDF assembled byte by byte, so the claim
+under test is "a real PDF becomes a real picture" rather than "our wrapper calls a
+library"; it skips itself, rather than failing, on a platform with no canvas binding.
+`tests/document-reading.test.ts` pins the parts of document reading that have judgement
+in them and no database: reading order and page markers, that a budgeted cut lands
+between blocks and admits itself, and that an ambiguous file reference resolves to
+nothing rather than to a guess.
 
 > **What still needs operational evidence, stated plainly:** the repository test
 > suite covers the chat pipeline, spend policy, provider adapters, authorization

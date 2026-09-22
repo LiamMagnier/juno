@@ -79,7 +79,15 @@ const nextConfig = {
   },
   // bcryptjs is pure JS but we keep it external to the server bundle to avoid
   // any bundler edge cases with its dynamic requires.
-  serverExternalPackages: ["bcryptjs"],
+  //
+  // @napi-rs/canvas is external for a harder reason: it is a NATIVE module.
+  // Its entry point picks a `.node` binary at runtime from the platform
+  // triple, which a bundler cannot follow — inlined, it resolves to nothing
+  // and PDF thumbnails and `inspect_image` both silently turn themselves off
+  // (they degrade rather than throw, so the symptom would be an absence, not
+  // an error). Left external, Next's file tracing copies the binary that this
+  // platform actually installed.
+  serverExternalPackages: ["bcryptjs", "@napi-rs/canvas"],
   images: {
     /*
      * hostname: "**" made /_next/image an open proxy: any visitor could make

@@ -2,6 +2,9 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import { attachedFileText } from "@/lib/attachment-context";
+import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import { getModelMetrics } from "@/lib/model-metrics";
+import { sendableToolImages, withheldImagesNote } from "@/lib/tool-result-images";
 import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
@@ -75,7 +78,11 @@ export function buildDynamicContext(): string {
 }
 
 /** Convert persisted messages (+ their attachments) into Anthropic message params. */
-export async function toAnthropicMessages(messages: MessageForModel[]): Promise<Anthropic.MessageParam[]> {
+export async function toAnthropicMessages(
+  messages: MessageForModel[],
+  /** Per-file text ceiling, from the model's own context window. */
+  attachmentTextMaxChars?: number
+): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
   // Only the last few messages re-embed heavy binaries; older ones are
   // summarized. Block-anchored (see openai-compat.ts): aging images out
@@ -119,7 +126,7 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
           }
         } else if (att.mimeType === "application/pdf") {
           if (!embedBinary && att.extractedText) {
-            blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true }) });
+            blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true, maxChars: attachmentTextMaxChars }) });
           } else if (!embedBinary) {
             blocks.push({ type: "text", text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
@@ -130,7 +137,7 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
             });
           }
         } else if (att.extractedText) {
-          blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText) });
+          blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {
           blocks.push({ type: "text", text: `[Attached file "${att.fileName}" (${att.mimeType}) — content not readable.]` });
         }
@@ -200,7 +207,7 @@ export async function* streamAnthropic(
   fastMode?: boolean,
   systemStablePrefix?: string
 ): AsyncGenerator<LlmEvent> {
-  const messages = await toAnthropicMessages(history);
+  const messages = await toAnthropicMessages(history, attachmentTextBudget(getModelMetrics(model).contextTokens));
   markConversationCacheBreakpoint(messages);
   // Cache the (large, stable) system prompt so it isn't re-billed every turn.
   // A 1h TTL (vs the 5m default) keeps the prefix warm across the pauses a real
@@ -400,7 +407,30 @@ export async function* streamAnthropic(
       for (const call of toolUses) {
         const label = toolset!.labelFor(call.name);
         const exec = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
-        results.push({ type: "tool_result", tool_use_id: call.id, content: exec.text });
+        /*
+         * Anthropic is the one provider where a picture belongs to the result
+         * that produced it: `tool_result.content` takes the same block array a
+         * message does, so the crop travels attached to the call that made it
+         * rather than as a separate turn that has to explain itself.
+         */
+        const images = sendableToolImages(exec.images, model.vision);
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: images.length
+            ? [
+                { type: "text" as const, text: withheldImagesNote(exec.text, exec.images, images.length) },
+                ...images.map((image) => ({
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: image.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                    data: image.base64,
+                  },
+                })),
+              ]
+            : withheldImagesNote(exec.text, exec.images, 0),
+        });
         yield {
           type: "tool",
           server: label,
