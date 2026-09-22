@@ -156,17 +156,21 @@ public struct StudioSettingsView: View {
             if section.isScoped {
                 StudioScopeSection(scope: $scope, settings: settings)
             }
+            // A scope whose file exists but cannot be read is shown, not
+            // edited: an edit would write the window's empty copy over it.
+            let locked = !settings.canEdit(scope)
             switch section {
             case .general: StudioGeneralSettings(workbench: workbench)
             case .permissions:
                 StudioPermissionsSettings(scope: scope, settings: settings)
+                    .disabled(locked)
                 if scope == .user, let remoteHosting {
                     Section("This Mac as a host") { remoteHosting }
                 }
-            case .environment: StudioEnvironmentSettings(scope: scope, settings: settings)
+            case .environment: StudioEnvironmentSettings(scope: scope, settings: settings).disabled(locked)
             case .instructions: StudioInstructionsSettings(settings: settings)
-            case .agent: StudioAgentSettings(scope: scope, settings: settings)
-            case .git: StudioGitSettings(scope: scope, settings: settings)
+            case .agent: StudioAgentSettings(scope: scope, settings: settings).disabled(locked)
+            case .git: StudioGitSettings(scope: scope, settings: settings).disabled(locked)
             case .tools: StudioToolsSettings(workbench: workbench, project: project)
             case .appearance: StudioAppearanceSettings()
             case .notifications: StudioNotificationSettings()

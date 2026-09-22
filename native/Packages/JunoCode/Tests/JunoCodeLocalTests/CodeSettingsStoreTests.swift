@@ -84,6 +84,55 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.resolved(projectRoot: project).environment["PATH"], "/opt/bin:/usr/bin")
     }
 
+    // MARK: - Writes keep what they did not change
+
+    private func userFile() throws -> URL {
+        try FileManager.default.createDirectory(at: store.userDirectory, withIntermediateDirectories: true)
+        return try XCTUnwrap(store.url(for: .user, projectRoot: nil))
+    }
+
+    /// A file that exists but cannot be read is refused, not replaced by the
+    /// empty document `load` answers for it.
+    func testAnUnreadableFileIsNeverOverwritten() throws {
+        let url = try userFile()
+        let original = #"{"env":{"PORT":3000},"permissions":{"deny":["Read(.env)"]},"instructions":"Be brief."}"#
+        try original.write(to: url, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try store.addAllowRule(PermissionRule(tool: "Bash", specifier: "npm test *"), scope: .user, projectRoot: nil)
+        ) { error in
+            guard case .unreadable? = error as? CodeSettingsStoreError else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), original)
+    }
+
+    /// Keys this version does not know, rules it cannot parse, a value it
+    /// rejects, and the reader's own spelling of the rules it keeps.
+    func testAnEditTouchesOnlyWhatItChanged() throws {
+        let url = try userFile()
+        try #"""
+        {"$schema":"https://example.com/juno-settings.json",
+         "futureSetting":{"depth":2},
+         "permissions":{"allow":["Bash( npm test * )","not a rule(","Read"],"remoteCeiling":"sometimes"},
+         "instructions":"Be brief."}
+        """#.write(to: url, atomically: true, encoding: .utf8)
+
+        try store.addAllowRule(PermissionRule(tool: "Bash", specifier: "make *"), scope: .user, projectRoot: nil)
+        try store.update(.user, projectRoot: nil) { file in
+            file.permissions?.allow?.removeAll { $0 == PermissionRule(tool: "Read") }
+        }
+
+        let written = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        XCTAssertEqual(written["$schema"] as? String, "https://example.com/juno-settings.json")
+        XCTAssertEqual((written["futureSetting"] as? [String: Any])?["depth"] as? Int, 2)
+        XCTAssertEqual(written["instructions"] as? String, "Be brief.")
+        let permissions = try XCTUnwrap(written["permissions"] as? [String: Any])
+        XCTAssertEqual(permissions["allow"] as? [String], ["Bash( npm test * )", "not a rule(", "Bash(make *)"])
+        XCTAssertEqual(permissions["remoteCeiling"] as? String, "sometimes")
+    }
+
     /// The system prompt names the branch without running Git.
     func testTheBranchIsReadFromHEADWithoutRunningGit() throws {
         let git = project.appendingPathComponent(".git")
