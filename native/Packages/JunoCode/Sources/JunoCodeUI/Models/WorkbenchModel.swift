@@ -570,7 +570,8 @@ public final class WorkbenchModel {
             // update. Every second visit to a session was dead.
             //
             // `attach()` guards on `storeObserver == nil`, so this is free when the
-            // controller is already attached and a full re-read when it is not.
+            // controller is already attached and a full re-read when it is not;
+            // while another caller's attach is still reading, it waits for it.
             await existing.attach()
             retainTranscripts(opening: sessionID)
             return existing
