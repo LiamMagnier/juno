@@ -80,7 +80,17 @@ test("the September 2026 models carry the ids their providers actually serve", (
   assert.ok(deepseek, "DeepSeek V4.1 Flash is in the catalog");
   assert.equal(deepseek.providerModel, "deepseek-flash");
   assert.equal(deepseek.status, "current");
-  assert.equal(byId.get("deepseek:deepseek-v4-flash")?.status, "legacy", "V4 Flash steps down");
+  // V4 Flash used to step down to `legacy` here. The 2026-09-22 catalog sync
+  // found DeepSeek no longer serving the versioned id at all and put it in
+  // UNAVAILABLE, which prunes the row from the picker — so the assertion that
+  // matters now is the pair: gone from the catalog, still resolvable, because
+  // conversations pinned to the old id must keep answering.
+  assert.equal(byId.get("deepseek:deepseek-v4-flash"), undefined, "V4 Flash is no longer served");
+  assert.equal(
+    resolveModel("deepseek:deepseek-v4-flash")?.id,
+    "deepseek:deepseek-flash",
+    "a pruned id still resolves to the live Flash row"
+  );
 
   // Both image variants ship under one version with two names.
   for (const [id, family] of [
