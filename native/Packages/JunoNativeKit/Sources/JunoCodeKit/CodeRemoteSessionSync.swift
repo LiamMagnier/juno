@@ -117,7 +117,12 @@ public struct CodeRemoteSyncedSession: Equatable, Sendable {
 public protocol CodeRemoteSyncSource: Sendable {
     /// Every session this host lets Remote see, and nothing else. What that set
     /// is belongs to the source; the uploader never widens it.
-    func remoteVisibleSessions() async -> [CodeRemoteSyncedSession]
+    ///
+    /// Nil when the source cannot say yet — its sessions have not been read.
+    /// That is not an empty list: a session missing from an answer is taken
+    /// off the phone and loses its cursor, so an answer given before loading
+    /// would retract everything this host listed before a relaunch.
+    func remoteVisibleSessions() async -> [CodeRemoteSyncedSession]?
 
     /// Up to `limit` relay events with `seq > afterSequence`, oldest first and
     /// contiguous. The mapping from the local transcript must be deterministic:
@@ -511,7 +516,10 @@ public actor CodeRemoteSessionSync {
         guard await isEnabled() else { return .complete }
         phase = .syncing
         var current = await loadedState()
-        let sessions = await source.remoteVisibleSessions()
+        // Nothing is sent and nothing forgotten until the source can answer:
+        // the relay keeps the list and the cursors stay as they were saved.
+        // The next change, or the reconcile, asks again.
+        guard let sessions = await source.remoteVisibleSessions() else { return .complete }
         let summaries = sessions.map(\.summary)
         let visible = Set(summaries.map(\.sessionID))
 

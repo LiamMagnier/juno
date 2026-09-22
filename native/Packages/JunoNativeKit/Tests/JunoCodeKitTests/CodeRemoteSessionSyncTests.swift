@@ -97,6 +97,43 @@ final class CodeRemoteSessionSyncTests: XCTestCase {
         XCTAssertEqual(saved?.listedSessionIDs, [], "a retracted list is not remembered as listed")
     }
 
+    /// A relaunch reaches the uploader before the host has read its sessions.
+    /// An answer then is not "this Mac has no sessions": taking it at its word
+    /// tombstoned every session the phone was showing and dropped every
+    /// cursor, so the next pass re-sent each transcript's first batch.
+    func testASourceThatHasNotLoadedChangesNothingOnTheRelay() async {
+        let source = SyncSource(
+            [session("s1", events: 40), session("s2", events: 12)], loaded: false
+        )
+        let relay = SyncRelay(stored: ["s1": 30, "s2": 12])
+        let saved = CodeRemoteSyncState(
+            deviceID: "device-1", cursors: ["s1": 30, "s2": 12],
+            listedSessionIDs: ["s1", "s2"], listVersion: 7
+        )
+        let store = InMemoryCodeRemoteSyncStateStore(saved)
+        let sync = makeSync(source: source, relay: relay, store: store)
+
+        let outcome = await sync.syncOnce()
+
+        XCTAssertEqual(outcome, .complete)
+        let requests = await relay.requestCount
+        XCTAssertEqual(requests, 0, "no list, no tombstones, no events")
+        let afterUnloaded = await store.state
+        XCTAssertEqual(afterUnloaded, saved, "the cursors and the listed set survive")
+
+        await source.load()
+        _ = await sync.syncOnce()
+
+        let puts = await relay.puts
+        XCTAssertEqual(puts.count, 1)
+        XCTAssertEqual(puts.first?.sessionIDs, ["s1", "s2"])
+        XCTAssertEqual(puts.first?.deleted, [], "nothing still here is taken off the phone")
+        XCTAssertEqual(puts.first?.listVersion, 8, "the generation carries on from the saved one")
+        let posts = await relay.posts
+        XCTAssertEqual(posts.map(\.sessionID), ["s1"], "a session already uploaded is not sent again")
+        XCTAssertEqual(posts.first?.seqs.first, 31, "the other resumes from its cursor")
+    }
+
     // MARK: - Events
 
     func testEventsGoInOrderedBatchesFromTheCursor() async {
@@ -420,11 +457,20 @@ private actor SleepRecorder {
 /// the determinism the real projection promises.
 private actor SyncSource: CodeRemoteSyncSource {
     private var sessions: [CodeRemoteSyncedSession]
+    /// False plays a host whose sessions have not been read yet.
+    private var isLoaded: Bool
     private(set) var eventReads = 0
 
-    init(_ sessions: [CodeRemoteSyncedSession]) { self.sessions = sessions }
+    init(_ sessions: [CodeRemoteSyncedSession], loaded: Bool = true) {
+        self.sessions = sessions
+        self.isLoaded = loaded
+    }
 
-    func remoteVisibleSessions() async -> [CodeRemoteSyncedSession] { sessions }
+    func remoteVisibleSessions() async -> [CodeRemoteSyncedSession]? {
+        isLoaded ? sessions : nil
+    }
+
+    func load() { isLoaded = true }
 
     func relayEvents(
         sessionID: String, after afterSequence: Int, limit: Int

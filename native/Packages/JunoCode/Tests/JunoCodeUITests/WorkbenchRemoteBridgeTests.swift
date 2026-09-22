@@ -4,6 +4,7 @@ import JunoCodeCore
 import JunoCodeKit
 import JunoCodeLocal
 import JunoCodeRuntime
+import JunoCore
 @testable import JunoCodeUI
 
 /// The Mac side of Remote against a real workbench: what a phone is shown,
@@ -12,6 +13,7 @@ import JunoCodeRuntime
 @MainActor
 final class WorkbenchRemoteBridgeTests: XCTestCase {
     private var workspaceURL: URL!
+    private var storageURL: URL!
     private var model: WorkbenchModel!
 
     override func setUp() async throws {
@@ -19,15 +21,20 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
             .appendingPathComponent("juno-remote-bridge-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         workspaceURL = root.appendingPathComponent("workspace")
+        storageURL = root.appendingPathComponent("storage")
         try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
-        model = WorkbenchModel(
+        model = makeModel()
+        await model.bootstrap()
+    }
+
+    private func makeModel() -> WorkbenchModel {
+        WorkbenchModel(
             dependencies: WorkbenchModel.Dependencies(
-                storageRootURL: root.appendingPathComponent("storage"),
+                storageRootURL: storageURL,
                 modelClient: RemoteBridgeModelClient(),
                 availableModels: [ModelOption(modelID: "test-model", displayName: "Test Model")]
             )
         )
-        await model.bootstrap()
     }
 
     // MARK: - Opening a phone's session
@@ -93,7 +100,8 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
         _ = await model.createSession(workspaceID: nil, configuration: AgentConfiguration(modelID: "test-model"))
         let bridge = makeBridge(shared: [shared.id.value])
 
-        let visible = await bridge.remoteVisibleSessions()
+        let answer = await bridge.remoteVisibleSessions()
+        let visible = try XCTUnwrap(answer)
 
         XCTAssertEqual(visible.map(\.summary.sessionID), [listedSession.id.value])
         XCTAssertEqual(visible.first?.summary.workspaceKey, shared.id.value)
@@ -153,6 +161,55 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
             WorkbenchRemoteBridge.remoteVisible(many, shared: ["ws-1"], now: now).count,
             WorkbenchRemoteBridge.remoteVisibleLimit
         )
+    }
+
+    // MARK: - After a relaunch
+
+    /// Remote starts at launch; the Code view reads the sessions only when it
+    /// appears. A Mac that relaunched onto Chat used to answer the uploader
+    /// with no sessions at all, which took every one the phone was showing off
+    /// it and forgot where each transcript's upload had got to.
+    func testTheUploaderReadsAWorkbenchNobodyHasOpenedAndTakesNothingOffThePhone() async throws {
+        let shared = try await sharedWorkspace()
+        let session = try await newSession(in: shared.id)
+        let uploaded = await model.sessionStore.eventCount(for: session.id)
+        XCTAssertGreaterThan(uploaded, 0)
+
+        // The next launch: same storage, a workbench no view has bootstrapped,
+        // and the bridge composed as the app composes it.
+        let relaunched = makeModel()
+        XCTAssertFalse(relaunched.hasLoaded)
+        let bridge = WorkbenchRemoteBridge(
+            model: relaunched,
+            sharedWorkspaceIDs: { Set(relaunched.workspaces.map(\.id.value)) },
+            defaultModelID: { "test-model" },
+            ceiling: { _ in .askBeforeChanges }
+        )
+        let relay = BridgeRelay()
+        let store = InMemoryCodeRemoteSyncStateStore(
+            CodeRemoteSyncState(
+                deviceID: "device-1", cursors: [session.id.value: uploaded],
+                listedSessionIDs: [session.id.value], listVersion: 3
+            )
+        )
+        let sync = makeSync(bridge: bridge, relay: relay, store: store)
+
+        await sync.start()
+        // A whole pass: the list, then whatever events it would send.
+        try await settle {
+            if case .synced = await sync.phase { return true }
+            return false
+        }
+        await sync.stop()
+
+        let put = await relay.puts.first
+        XCTAssertEqual(put?.sessionIDs, [session.id.value], "the session is still listed")
+        XCTAssertEqual(put?.deleted, [], "and nothing is tombstoned")
+        let posts = await relay.posts
+        XCTAssertTrue(posts.isEmpty, "a transcript already uploaded is not sent again")
+        let saved = await store.state
+        XCTAssertEqual(saved?.cursors[session.id.value], uploaded, "its cursor survives")
+        XCTAssertTrue(relaunched.hasLoaded)
     }
 
     // MARK: - The ceiling
@@ -245,6 +302,57 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
             defaultModelID: { "test-model" },
             ceiling: { _ in ceiling }
         )
+    }
+
+    /// Changes reach it only through an observation: the reconcile is an hour.
+    private func makeSync(
+        bridge: WorkbenchRemoteBridge, relay: BridgeRelay, store: InMemoryCodeRemoteSyncStateStore
+    ) -> CodeRemoteSessionSync {
+        CodeRemoteSessionSync(
+            deviceID: "device-1",
+            accountID: try! AccountID("account-a"),
+            source: bridge,
+            transport: relay,
+            stateStore: store,
+            debounce: .milliseconds(1),
+            reconcileInterval: .seconds(3_600)
+        )
+    }
+
+    private func settle(_ condition: @escaping () async -> Bool) async throws {
+        for _ in 0..<600 {
+            if await condition() { return }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("condition never became true")
+    }
+}
+
+/// Stores what it is sent.
+private actor BridgeRelay: CodeRemoteSyncTransport {
+    struct Put: Equatable {
+        let sessionIDs: [String]
+        let deleted: [String]
+    }
+
+    private(set) var puts: [Put] = []
+    private(set) var posts: [(sessionID: String, seqs: [Int])] = []
+    private var stored: [String: Int] = [:]
+
+    func putSessions(
+        deviceID: String, listVersion: Int, sessions: [CodeRemoteSessionUpload],
+        deletedSessionIDs: [String], for accountID: AccountID
+    ) async throws {
+        puts.append(Put(sessionIDs: sessions.map(\.sessionID), deleted: deletedSessionIDs))
+    }
+
+    func postEvents(
+        deviceID: String, sessionID: String, events: [CodeRemoteSessionEvent],
+        for accountID: AccountID
+    ) async throws -> Int {
+        posts.append((sessionID, events.map(\.seq)))
+        stored[sessionID] = max(stored[sessionID] ?? 0, events.map(\.seq).max() ?? 0)
+        return stored[sessionID] ?? 0
     }
 }
 

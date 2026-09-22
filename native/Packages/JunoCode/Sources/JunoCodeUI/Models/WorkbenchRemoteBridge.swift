@@ -78,13 +78,19 @@ public final class WorkbenchRemoteBridge:
     // MARK: - Authorisation inputs
 
     nonisolated public func isWorkspaceSharedWithRemote(_ workspaceID: String) async -> Bool {
-        await MainActor.run { sharedWorkspaceIDs().contains(workspaceID) }
+        await model.loadIfNeeded()
+        return await MainActor.run { sharedWorkspaceIDs().contains(workspaceID) }
     }
 
     /// The mode the session's turns actually run under: Ask and Plan are
     /// read-only whatever mode is stored beside them.
+    ///
+    /// Loads the model first. The adapter asks this before anything else, and
+    /// a session it could not see yet would skip the ceiling check and then be
+    /// found, loaded, by the call that acts on it.
     nonisolated public func permissionMode(forSession sessionID: String) async -> PermissionMode? {
-        await MainActor.run {
+        await model.loadIfNeeded()
+        return await MainActor.run {
             guard let session = session(sessionID) else { return nil }
             let configuration = session.configuration
             return configuration.behavior == .code ? configuration.permissionMode : .readOnly
@@ -92,6 +98,7 @@ public final class WorkbenchRemoteBridge:
     }
 
     nonisolated public func remoteCeiling(forSession sessionID: String) async -> PermissionMode? {
+        await model.loadIfNeeded()
         let lookup: (found: Bool, path: String?) = await MainActor.run {
             guard let session = session(sessionID) else { return (false, nil) }
             return (true, workspacePath(session.workspaceID))
@@ -101,6 +108,7 @@ public final class WorkbenchRemoteBridge:
     }
 
     nonisolated public func remoteCeiling(forWorkspace workspaceID: String) async -> PermissionMode {
+        await model.loadIfNeeded()
         let path = await MainActor.run { workspacePath(WorkspaceID(value: workspaceID)) }
         return ceiling(path)
     }
@@ -125,6 +133,7 @@ public final class WorkbenchRemoteBridge:
     nonisolated public func protocolSessions(
         defaultTargetID: ExecutionTargetID
     ) async -> [CodeSessionSummary] {
+        await model.loadIfNeeded()
         let sessions = await MainActor.run { model.sessions }
         var summaries: [CodeSessionSummary] = []
         summaries.reserveCapacity(sessions.count)
@@ -206,11 +215,16 @@ public final class WorkbenchRemoteBridge:
         )
     }
 
-    nonisolated public func remoteVisibleSessions() async -> [CodeRemoteSyncedSession] {
-        let listed = await MainActor.run { () -> [(CodeSession, String?)] in
-            Self.remoteVisible(model.sessions, shared: sharedWorkspaceIDs(), now: now())
+    /// Nil while the model has not been read, never an empty list: the
+    /// uploader treats a session missing from an answer as gone from this Mac.
+    nonisolated public func remoteVisibleSessions() async -> [CodeRemoteSyncedSession]? {
+        await model.loadIfNeeded()
+        let listed = await MainActor.run { () -> [(CodeSession, String?)]? in
+            guard model.hasLoaded else { return nil }
+            return Self.remoteVisible(model.sessions, shared: sharedWorkspaceIDs(), now: now())
                 .map { ($0, workspaceDisplayName($0.workspaceID)) }
         }
+        guard let listed else { return nil }
         var result: [CodeRemoteSyncedSession] = []
         result.reserveCapacity(listed.count)
         for (session, name) in listed {
@@ -230,6 +244,7 @@ public final class WorkbenchRemoteBridge:
         let id = CodeSessionID(value: sessionID)
         // The uploader only asks about listed sessions, but this is the
         // boundary, so it checks rather than trusts.
+        await model.loadIfNeeded()
         let visible = await MainActor.run {
             Self.remoteVisible(model.sessions, shared: sharedWorkspaceIDs(), now: now())
                 .contains { $0.id == id }
@@ -318,6 +333,7 @@ public final class WorkbenchRemoteBridge:
         }
         // A redelivered command finds the session it already opened. Its
         // first prompt went out with it, so it is not sent again.
+        await model.loadIfNeeded()
         if let requested = request.requestedID,
             await MainActor.run(body: { session(requested) != nil })
         {
@@ -540,6 +556,7 @@ public final class WorkbenchRemoteBridge:
 
     nonisolated private func controller(_ sessionID: String) async -> SessionController? {
         guard !sessionID.isEmpty else { return nil }
+        await model.loadIfNeeded()
         return await model.controller(for: CodeSessionID(value: sessionID))
     }
 

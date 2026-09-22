@@ -231,6 +231,15 @@ public final class WorkbenchModel {
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
     private var controllers: [CodeSessionID: SessionController] = [:]
     private var storeObserver: UUID?
+    /// True once `bootstrap()` has read the workspaces and sessions.
+    ///
+    /// Before that `sessions` is empty because nothing has been read, not
+    /// because there is nothing. The Code view bootstraps when it appears, but
+    /// Remote runs from launch, and a Mac that relaunched onto Chat used to
+    /// tell the relay every session it had listed was gone.
+    public private(set) var hasLoaded = false
+    /// The read in flight, shared by everyone who asks while it runs.
+    private var bootstrapping: Task<Void, Never>?
     #if DEBUG
     /// True only for the local `--juno-code-ui-preview` harness, which seeds
     /// in-memory fixtures and must not read the on-disk session store.
@@ -311,6 +320,29 @@ public final class WorkbenchModel {
     // MARK: - Bootstrap
 
     public func bootstrap() async {
+        // The Code view appearing while Remote loads the same model is two
+        // callers at once. They share one read: two interleaved reads would
+        // each find no store observer and attach one.
+        if let bootstrapping {
+            await bootstrapping.value
+            return
+        }
+        let read = Task { await performBootstrap() }
+        bootstrapping = read
+        await read.value
+        bootstrapping = nil
+    }
+
+    /// Reads the workspaces and sessions unless that has already happened.
+    ///
+    /// For callers that need the model's contents but not a refresh — Remote,
+    /// which may be answering a phone before anyone has opened Juno Code.
+    public func loadIfNeeded() async {
+        guard !hasLoaded else { return }
+        await bootstrap()
+    }
+
+    private func performBootstrap() async {
         #if DEBUG
         // The preview harness seeds fixtures in memory; never read the store.
         if isPreview { return }
@@ -324,6 +356,7 @@ public final class WorkbenchModel {
         }
         workspaces = await workspaceDirectory.allWorkspaces()
         sessions = await sessionStore.allSessions()
+        hasLoaded = true
         if selectedSessionID == nil {
             selectedSessionID = visibleSessions.first?.id
         }

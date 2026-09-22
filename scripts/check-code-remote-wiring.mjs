@@ -143,6 +143,8 @@ const required = [
   [desktopHost, "CodeRemoteSessionSync("],
   [desktopHost, "startRelayObservation"],
   [remoteBridge, "CodeRemoteSyncSource"],
+  // The phone is shown what this Mac has, never an unread workbench as empty.
+  [remoteBridge, "await model.loadIfNeeded()"],
   [remoteBridge, "CodeRelayEventProjection.relayEvents("],
   // A phone's create_session and a remote prompt that leaves the draft alone.
   [remoteAdapter, '"workspaceKey"'],
