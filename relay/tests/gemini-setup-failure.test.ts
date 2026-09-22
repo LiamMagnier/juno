@@ -153,3 +153,50 @@ test("a socket error never quotes the key back into a log or the caller's screen
   assert.equal(redactKey('failed: "?key=AIzaSecretValue"'), 'failed: "?key=***"');
   assert.equal(redactKey("nothing sensitive here"), "nothing sensitive here");
 });
+
+test("an auth rejection names the key's kind and clears the model of blame", async () => {
+  // Google's own words, from the failure this diagnosis exists for.
+  const googleSaid = "Request had invalid authentication credentials. Expected OAuth 2 access token";
+  await withFakeLive(
+    (socket) => socket.close(1008, googleSaid),
+    async () => {
+      const session = new GeminiLiveSession();
+      const err = await session.connect(seed, silentEvents()).then(
+        () => null,
+        (reason: unknown) => reason as Error
+      );
+      assert.ok(err);
+      assert.match(err.message, /rejected the credential/);
+      // The fixture key is a classic AIza one, so the shape is not the fault.
+      assert.match(err.message, /does hold a classic AI Studio key/);
+      // Google checks the credential first, so blaming the model id sends the
+      // reader to change the one thing that provably was not consulted.
+      assert.match(err.message, /never reached/);
+      assert.doesNotMatch(err.message, /refused the session setup/);
+      await session.close();
+    }
+  );
+});
+
+test("an AQ-format key is named as the wrong kind of key, and never printed", async () => {
+  await withFakeLive(
+    (socket) => socket.close(1008, "Request had invalid authentication credentials."),
+    async () => {
+      // Set inside the callback: withFakeLive installs its own fixture key
+      // just before calling this, so an outer assignment would be overwritten.
+      process.env.GEMINI_LIVE_API_KEY = "AQ.SecretValue123";
+      {
+        const session = new GeminiLiveSession();
+        const err = await session.connect(seed, silentEvents()).then(
+          () => null,
+          (reason: unknown) => reason as Error
+        );
+        assert.ok(err);
+        assert.match(err.message, /"AQ\." key, which the Live API does not accept/);
+        assert.match(err.message, /GEMINI_LIVE_API_KEY/);
+        assert.doesNotMatch(err.message, /SecretValue123/);
+        await session.close();
+      }
+    }
+  );
+});
