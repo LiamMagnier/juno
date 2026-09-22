@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { headObject } from "@/lib/storage";
+import { attachmentThumbnailPath, canThumbnailAttachment } from "@/lib/attachments/thumbnail";
 
 export const runtime = "nodejs";
 
 /**
- * The first few lines of a text attachment, for the Library's preview tiles.
+ * What a Library tile needs to draw itself: a few lines of the file, or the
+ * address of a picture of its first page.
  *
  * WHY A ROUTE AND NOT A CLIENT FETCH. The library renders up to 300 tiles; a
  * client reading each object to show six lines would pull entire files —
@@ -14,10 +16,20 @@ export const runtime = "nodejs";
  * again on every mount. This reads a bounded prefix on the server and returns
  * only what is drawn.
  *
- * TEXT ONLY, AND THE LIST IS A DENYLIST-FREE ALLOWLIST. A preview is offered for
- * types that are *meaningfully* text: a PDF is bytes that happen to contain some
- * ASCII, and excerpting it produces `%PDF-1.7 …` — noise wearing the shape of
- * content, which is worse than the extension badge the client falls back to.
+ * TWO SOURCES OF TEXT, AND THE SECOND ONE IS NEW. A file that is
+ * *meaningfully* text is excerpted from its own bytes: slicing a PDF produces
+ * `%PDF-1.7 …`, noise wearing the shape of content, which is worse than the
+ * extension badge. But a PDF, a deck or a workbook has already been read into
+ * `KnowledgeBlock` rows by structured extraction, in reading order — so where
+ * the bytes cannot be excerpted, the *extraction* can, and the tile shows the
+ * document's actual opening words instead of its file format.
+ *
+ * `thumbnailUrl` is the better answer again where it exists, and it REPLACES
+ * the excerpt rather than joining it: the first page of a PDF, drawn, is about
+ * to cover whatever was underneath, and reading twelve blocks for each of 300
+ * tiles to draw six lines nobody sees is six hundred queries spent on nothing.
+ * So a file that can be rendered returns a picture and no text, and one that
+ * cannot returns its opening words.
  */
 const PREVIEWABLE = [
   "text/",
@@ -46,6 +58,62 @@ function isPreviewable(mimeType: string): boolean {
   return PREVIEWABLE.some((prefix) => type.startsWith(prefix));
 }
 
+interface PreviewBody {
+  text: string | null;
+  previewable: boolean;
+  thumbnailUrl: string | null;
+  truncated?: boolean;
+}
+
+/**
+ * The answer, cached in the browser only when there is an answer.
+ *
+ * Indexing settles seconds after the upload response, so a tile that asks
+ * during that window legitimately gets nothing — and caching THAT for five
+ * minutes would leave a perfectly readable file looking blank until the page
+ * was reloaded. So an empty answer is never stored and a real one is: a
+ * library scroll then costs one request per tile per session rather than one
+ * per mount. `private` because this is one person's document.
+ */
+function json(body: PreviewBody): NextResponse {
+  const hasContent = Boolean(body.text || body.thumbnailUrl);
+  return NextResponse.json(body, {
+    headers: {
+      "Cache-Control": hasContent ? "private, max-age=300" : "no-store",
+    },
+  });
+}
+
+/**
+ * The opening of the document as structured extraction read it.
+ *
+ * Bounded by `take`, not by slicing a whole document: the blocks of a
+ * 300-page report are tens of thousands of rows, and the tile shows six lines
+ * of them. Headings come through as their own blocks, which is why the join is
+ * a plain space — the first line of most documents is its title.
+ */
+async function extractedOpening(userId: string, attachmentId: string): Promise<string | null> {
+  const document = await prisma.knowledgeDocument.findFirst({
+    where: { userId, attachmentId, deletedAt: null, supersededById: null },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+  if (!document) return null;
+
+  const blocks = await prisma.knowledgeBlock.findMany({
+    where: { userId, documentId: document.id, deletedAt: null },
+    orderBy: { ordinal: "asc" },
+    select: { text: true },
+    take: 12,
+  });
+  const text = blocks
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, MAX_CHARS);
+  return text || null;
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -56,11 +124,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // exists — the same no-existence-oracle rule the file route follows.
   const attachment = await prisma.attachment.findFirst({
     where: { id, userId: user.id, deletedAt: null },
-    select: { storageKey: true, mimeType: true },
+    select: { storageKey: true, mimeType: true, kind: true },
   });
   if (!attachment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const thumbnailUrl = canThumbnailAttachment(attachment) ? attachmentThumbnailPath(id) : null;
+
   if (!isPreviewable(attachment.mimeType)) {
-    return NextResponse.json({ text: null, previewable: false });
+    /*
+     * Not excerptable from its bytes — but structured extraction may have read
+     * it, and a page picture may be renderable. Either beats "PDF" on a square.
+     *
+     * The excerpt is SKIPPED when a page picture is coming, and that is a cost
+     * decision rather than a preference: the Library asks for up to 300 tiles
+     * at once, and reading twelve blocks for each of them is six hundred
+     * queries to draw six lines that the image is about to cover anyway. A
+     * file whose page cannot be rendered falls back to its extension badge,
+     * which is what it showed before any of this existed.
+     */
+    const text = thumbnailUrl ? null : await extractedOpening(user.id, id).catch(() => null);
+    return json({ text, previewable: !!text, thumbnailUrl });
   }
 
   try {
@@ -77,18 +160,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // decodes cleanly, and a preview of `����` helps nobody.
     const replacements = (decoded.match(/�/g) ?? []).length;
     if (replacements > decoded.length * 0.02) {
-      return NextResponse.json({ text: null, previewable: false });
+      return json({ text: null, previewable: false, thumbnailUrl });
     }
 
     const text = decoded.slice(0, MAX_CHARS);
-    return NextResponse.json({
+    return json({
       text,
       previewable: true,
+      thumbnailUrl,
       truncated: size > prefix.byteLength || decoded.length > MAX_CHARS,
     });
   } catch {
     // A missing object is not an error worth surfacing — the tile falls back to
     // its extension badge, which is what it would show for a PDF anyway.
-    return NextResponse.json({ text: null, previewable: false });
+    return json({ text: null, previewable: false, thumbnailUrl });
   }
 }

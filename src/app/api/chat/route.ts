@@ -139,6 +139,7 @@ import {
   type AttachmentKnowledge,
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
+import { backfillAttachmentText } from "@/lib/knowledge";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import {
@@ -1917,6 +1918,49 @@ async function handleChat(req: Request) {
   const attachmentContext = buildAttachmentContext(attachmentKnowledge);
   const promptContext = [projectContext, attachmentContext].filter(Boolean).join("\n\n");
 
+  /*
+   * Every file this conversation is carrying — not just the newest message's.
+   *
+   * "What did page 40 of that report say" arrives three turns after the report
+   * did, so both the backfill and the tool allowlist below have to see the
+   * whole window; a tool that vanished the moment a file scrolled out of the
+   * newest turn would be missing exactly when it is asked for.
+   */
+  const allAttachments = baseHistory
+    .flatMap((message) => message.attachments)
+    .filter((attachment) => !attachment.deletedAt);
+
+  // Files indexed before the indexer started writing its text back to the row
+  // would otherwise reach the model as a filename forever — ingest runs once
+  // per set of bytes and is not coming round again. The first turn that
+  // carries one pays for the assembly and patches the rows in place, so this
+  // turn already has the document rather than the next one.
+  await backfillAttachmentText(user.id, allAttachments);
+
+  /*
+   * Whether this turn is carrying anything for the two attachment tools.
+   *
+   * `documents` insists the file is actually indexed. A queued PDF has nothing
+   * for the reader to read, and offering the tool anyway buys a round trip
+   * whose only possible answer is "not yet" — the pending note that
+   * `buildAttachmentContext` already wrote says that better and for free.
+   *
+   * `images` insists the model can see. A crop handed to a text-only model is
+   * a tool call it must then be told to ignore.
+   */
+  const attachmentToolToggles = {
+    documents: allAttachments.some(
+      (attachment) =>
+        attachment.kind === "FILE" &&
+        (attachment.parserState === "ready" || attachment.parserState === "degraded"),
+    ),
+    images:
+      modelInfo.vision &&
+      allAttachments.some(
+        (attachment) => attachment.kind === "IMAGE" || attachment.mimeType === "application/pdf",
+      ),
+  };
+
   // Wholesale reference files ride the first user turn, each in its untrusted
   // envelope, instead of the system prompt — see buildProjectReferenceFiles.
   const projectReferenceFiles = buildProjectReferenceFiles(assistantProjectRow, projectKnowledge);
@@ -1962,7 +2006,13 @@ async function handleChat(req: Request) {
     !!projectKnowledge ||
     !!attachmentKnowledge ||
     projectReferenceFiles !== "" ||
-    historyCarriesAttachmentText;
+    historyCarriesAttachmentText ||
+    // `read_document` writes the same envelope from inside a tool round, so
+    // the rule that reads the markers has to be on whenever the tool is — a
+    // document whose text never made it onto the attachment row reaches the
+    // model only through the tool, and would otherwise arrive marked but
+    // ungoverned.
+    attachmentToolToggles.documents;
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -1987,6 +2037,8 @@ async function handleChat(req: Request) {
     composeSystemPrompt({
       base: baseSystem,
       webSearch: useWebSearch,
+      documentTool: attachmentToolToggles.documents,
+      imageTool: attachmentToolToggles.images,
       targetedArtifactEditPrompt,
       canvasOn,
     }),
@@ -2610,8 +2662,13 @@ async function handleChat(req: Request) {
           connectors: activeConnectors,
           // The hosted browser tool only when the user switched web access on.
           // Same toggle that adds the untrusted-content rule above, so a page
-          // the tool reads always arrives under a rule that governs it.
-          allowedTools: chatRuntimeToolAllowlist({ webSearch: useWebSearch }),
+          // the tool reads always arrives under a rule that governs it. The
+          // two attachment tools ride the attachments this turn is carrying —
+          // see `attachmentToolToggles`.
+          allowedTools: chatRuntimeToolAllowlist({
+            webSearch: useWebSearch,
+            ...attachmentToolToggles,
+          }),
           dynamicContext: buildDynamicContext(),
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,

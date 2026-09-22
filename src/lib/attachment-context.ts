@@ -10,8 +10,14 @@
 import { wrapUntrusted } from "@/lib/untrusted-content";
 
 /**
- * Per-attachment ceiling on the text an adapter sends. Was the same literal
- * in four adapters; one place now, so the bound cannot drift.
+ * Per-attachment ceiling on the text an adapter sends, when nothing better is
+ * known about the model. Was the same literal in four adapters; one place now,
+ * so the bound cannot drift.
+ *
+ * A caller that knows which model it is talking to should pass a budget
+ * instead — see `attachmentTextBudget` in `knowledge/document-text.ts`. This
+ * constant is the fallback for the callers that do not (the voice context
+ * route, tests), not a policy.
  */
 export const ATTACHMENT_TEXT_MAX_CHARS = 100_000;
 
@@ -29,12 +35,28 @@ export const ATTACHMENT_TEXT_MAX_CHARS = 100_000;
 export function attachedFileText(
   fileName: string,
   extractedText: string,
-  options: { sharedEarlier?: boolean } = {}
+  options: { sharedEarlier?: boolean; maxChars?: number } = {}
 ): string {
+  const limit = Math.max(1_000, options.maxChars ?? ATTACHMENT_TEXT_MAX_CHARS);
+  const body = extractedText.slice(0, limit);
+  /*
+   * A document that had to be cut says so, INSIDE the envelope.
+   *
+   * Silent truncation is the failure mode worth spending two lines on: a model
+   * handed the first 60% of a contract has no way to tell that from the whole
+   * contract, so it answers "the agreement contains no termination clause"
+   * with the same confidence either way. Saying where the text stops turns a
+   * wrong answer into a qualified one — and, when `read_document` is on the
+   * turn, into a second tool call that fetches the rest.
+   */
+  const note =
+    body.length < extractedText.length
+      ? `\n\n[This file continues past what is shown: ${body.length} of ${extractedText.length} characters are included. Use read_document to read further, and do not assume the remainder is empty.]`
+      : "";
   const heading = options.sharedEarlier
     ? `Attached file "${fileName}" (shared earlier):`
     : `Attached file "${fileName}":`;
-  return `${heading}\n\n${wrapUntrusted(fileName, extractedText.slice(0, ATTACHMENT_TEXT_MAX_CHARS))}`;
+  return `${heading}\n\n${wrapUntrusted(fileName, `${body}${note}`)}`;
 }
 
 const PENDING_STATES = new Set(["queued", "indexing", "extracting", "ocr"]);

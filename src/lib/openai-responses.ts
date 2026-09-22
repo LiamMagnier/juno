@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
-import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
+import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import {
   openAIPromptCacheRequestFields,
   openAIResponsesSystemInput,
@@ -13,6 +13,13 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import {
+  sendableToolImages,
+  toDataUrl,
+  toolImageIntro,
+  withheldImagesNote,
+} from "@/lib/tool-result-images";
 import { providerRequestModel } from "@/lib/model-request";
 
 /**
@@ -42,7 +49,9 @@ type InputItem = OpenAI.Responses.ResponseInputItem;
 
 async function toResponsesInput(
   history: MessageForModel[],
-  vision: boolean
+  vision: boolean,
+  /** Per-file text ceiling, from the model's own context window. */
+  attachmentTextMaxChars?: number
 ): Promise<InputItem[]> {
   const out: InputItem[] = [];
   // Block-anchored (see openai-compat.ts): keeps the cacheable prefix stable
@@ -84,7 +93,7 @@ async function toResponsesInput(
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
         } else if (att.extractedText) {
-          parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText) });
+          parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {
           const note = att.mimeType === "application/pdf"
             ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
@@ -155,7 +164,11 @@ export async function* streamOpenAIResponses(
   fastMode?: boolean,
   proMode?: boolean
 ): AsyncGenerator<LlmEvent> {
-  const input = await toResponsesInput(history, model.vision);
+  const input = await toResponsesInput(
+    history,
+    model.vision,
+    attachmentTextBudget(getModelMetrics(model).contextTokens)
+  );
   // GPT-5.6+: put system into input with an explicit cache breakpoint so the
   // static prefix is a first-class cached segment (see openai-prompt-cache.ts).
   // Older models keep `instructions` below.
@@ -408,7 +421,28 @@ export async function* streamOpenAIResponses(
           parsedArgs = {};
         }
         const exec = await toolset!.execute(call.name, parsedArgs, signal);
-        input.push({ type: "function_call_output", call_id: call.callId, output: exec.text } as InputItem);
+        // `function_call_output.output` is a string, so pixels follow it as a
+        // user turn carrying `input_image` parts — the documented way to show
+        // a Responses model an image a function produced.
+        const images = sendableToolImages(exec.images, model.vision);
+        input.push({
+          type: "function_call_output",
+          call_id: call.callId,
+          output: withheldImagesNote(exec.text, exec.images, images.length),
+        } as InputItem);
+        if (images.length) {
+          input.push({
+            role: "user",
+            content: [
+              { type: "input_text", text: toolImageIntro(call.name, images) },
+              ...images.map((image) => ({
+                type: "input_image",
+                detail: "high",
+                image_url: toDataUrl(image),
+              })),
+            ],
+          } as unknown as InputItem);
+        }
         yield {
           type: "tool",
           server: label,

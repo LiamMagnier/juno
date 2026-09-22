@@ -13,6 +13,8 @@ import type {
   AgentMode,
 } from "@/lib/agent/types";
 import { browserTool } from "@/lib/agent/browser";
+import { readDocumentTool } from "@/lib/agent/document";
+import { inspectImageTool } from "@/lib/agent/image";
 
 export class UnifiedAgentRegistry {
   private tools = new Map<string, ToolDefinition<unknown, unknown>>();
@@ -22,6 +24,14 @@ export class UnifiedAgentRegistry {
     // child process and is retained only for local migration/tests; it is not a
     // tenant isolation boundary and must never be exposed by the hosted toolset.
     this.registerTool(browserTool as unknown as ToolDefinition<unknown, unknown>);
+    // Both read-only and both scoped to what the person attached to the
+    // conversation they are running in (`agent/attachments.ts`). Registering
+    // them here does not attach them to anything: `chatRuntimeToolAllowlist`
+    // decides that per turn, and it only ever names a tool the turn has a use
+    // for — see the header of `chat/tool-policy.ts` for why an absent
+    // allowlist is the dangerous case.
+    this.registerTool(readDocumentTool as unknown as ToolDefinition<unknown, unknown>);
+    this.registerTool(inspectImageTool as unknown as ToolDefinition<unknown, unknown>);
   }
 
   public registerTool(tool: ToolDefinition<unknown, unknown>): void {
@@ -270,6 +280,10 @@ export async function openUnifiedAgentToolset(
           body,
           ok: result.success,
           ...(result.durationMs != null ? { durationMs: result.durationMs } : {}),
+          // Pixels ride alongside the text, not instead of it: a model without
+          // vision, or an adapter that cannot carry an image into a tool
+          // round, still gets a usable answer from `body` alone.
+          ...(result.images?.length ? { images: result.images } : {}),
         };
       }
       return baseMcpToolset.execute(toolName, args, signal, callId);

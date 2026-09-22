@@ -40,7 +40,9 @@ async function defaultStorageFetcher(storageKey: string): Promise<{ bytes: Uint8
 export async function toGeminiContents(
   history: MessageForModel[],
   vision: boolean,
-  fetchBytes: AttachmentBytesFetcher = defaultStorageFetcher
+  fetchBytes: AttachmentBytesFetcher = defaultStorageFetcher,
+  /** Per-file text ceiling, from the model's own context window. */
+  attachmentTextMaxChars?: number
 ): Promise<GeminiContent[]> {
   const contents: GeminiContent[] = [];
   const binaryFrom = Math.max(
@@ -79,7 +81,7 @@ export async function toGeminiContents(
           }
         } else if (att.mimeType === "application/pdf") {
           if (!embedBinary && att.extractedText) {
-            parts.push({ text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true }) });
+            parts.push({ text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true, maxChars: attachmentTextMaxChars }) });
           } else if (!embedBinary) {
             parts.push({ text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
@@ -92,7 +94,7 @@ export async function toGeminiContents(
             });
           }
         } else if (att.extractedText) {
-          parts.push({ text: attachedFileText(att.fileName, att.extractedText) });
+          parts.push({ text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {
           const note =
             att.mimeType === "application/pdf"

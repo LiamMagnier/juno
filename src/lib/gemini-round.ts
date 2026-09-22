@@ -229,12 +229,26 @@ export function appendGeminiToolRound(
   contents: GeminiContent[],
   assistantParts: GeminiPart[],
   responses: Array<{ name: string; response: Record<string, unknown> }>,
+  /**
+   * Pixels a tool produced, with the line that introduces them.
+   *
+   * They go in a SEPARATE user turn, after the one carrying the
+   * `functionResponse` parts. Gemini validates that turn against the model's
+   * function calls, and an `inlineData` part sitting among the responses is
+   * not one of them — so the image has to be its own turn or the round is
+   * rejected. The intro line is what keeps that turn from reading as a fresh
+   * upload from the person.
+   */
+  images?: { intro: string; parts: GeminiPart[] },
 ): void {
   contents.push({ role: "model", parts: assistantParts });
   contents.push({
     role: "user",
     parts: responses.map((r) => ({ functionResponse: { name: r.name, response: r.response } })),
   });
+  if (images?.parts.length) {
+    contents.push({ role: "user", parts: [{ text: images.intro }, ...images.parts] });
+  }
 }
 
 /**

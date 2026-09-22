@@ -6,6 +6,9 @@ import {
   geminiShouldContinue,
   type GeminiFinishDecision,
 } from "@/lib/gemini-finish";
+import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import { sendableToolImages, toolImageIntro, withheldImagesNote } from "@/lib/tool-result-images";
+import { getModelMetrics } from "@/lib/model-metrics";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -80,7 +83,12 @@ export async function* streamGemini(
   if (apiKeys.length === 0) throw new Error("Google API key is not configured.");
   const key = apiKeys[0];
 
-  const contents = await toGeminiContents(history, model.vision);
+  const contents = await toGeminiContents(
+    history,
+    model.vision,
+    undefined,
+    attachmentTextBudget(getModelMetrics(model).contextTokens)
+  );
   if (dynamicContext) {
     let lastUser = contents.length;
     for (let i = contents.length - 1; i >= 0; i--) {
@@ -286,6 +294,11 @@ export async function* streamGemini(
 
         if (hasTools && !isFinalRound && state.functionCalls.length > 0) {
           const responseParts: Array<{ name: string; response: Record<string, unknown> }> = [];
+          // Collected across every call in the round: they all land in one
+          // follow-up turn, because Gemini wants the functionResponse turn to
+          // contain nothing else.
+          const toolImages: GeminiPart[] = [];
+          let toolImageIntroLine = "";
 
           for (const call of state.functionCalls) {
             const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -300,7 +313,15 @@ export async function* streamGemini(
             };
 
             const exec = await toolset.execute(call.name, call.args, signal, callId);
-            responseParts.push({ name: call.name, response: { result: exec.body ?? exec.text } });
+            const images = sendableToolImages(exec.images, model.vision);
+            responseParts.push({
+              name: call.name,
+              response: { result: withheldImagesNote(exec.body ?? exec.text, exec.images, images.length) },
+            });
+            for (const image of images) {
+              toolImages.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
+              if (!toolImageIntroLine) toolImageIntroLine = toolImageIntro(call.name, images);
+            }
 
             yield {
               type: "tool",
@@ -315,7 +336,12 @@ export async function* streamGemini(
           }
 
           // Replays the assistant parts UNCHANGED, thought signatures included.
-          appendGeminiToolRound(contents, state.assistantParts, responseParts);
+          appendGeminiToolRound(
+            contents,
+            state.assistantParts,
+            responseParts,
+            toolImages.length ? { intro: toolImageIntroLine, parts: toolImages } : undefined,
+          );
           continue;
         }
 

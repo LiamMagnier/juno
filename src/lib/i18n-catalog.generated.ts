@@ -286,6 +286,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Monthly spend"
   },
   {
+    "id": "0318f6738f15134c",
+    "source": "Height of the region as a percentage, 0-100."
+  },
+  {
     "id": "031a8f0f659df890",
     "source": "Failed"
   },
@@ -324,6 +328,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "03867aea70acaf4c",
     "source": "Evidence"
+  },
+  {
+    "id": "0386fa6a86503af6",
+    "source": "Top edge of the region, 0-100, as a percentage of height."
   },
   {
     "id": "0389b81a8c747995",
@@ -988,6 +996,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0cea5f24ba9642d3",
     "source": "Couldn't load this image."
+  },
+  {
+    "id": "0d0f6753c8177d1e",
+    "source": "Which file, by name as it appears in the conversation. Optional when only one document is attached."
   },
   {
     "id": "0d1b73e37f4be10c",
@@ -1856,6 +1868,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "19295dff2f5ef157",
     "source": "The document list didn’t come back. Every design you have made is still stored against its conversation."
+  },
+  {
+    "id": "192bde64b1d75a95",
+    "source": "list = what is attached; outline = its headings; read = read the text; search = find a string in it."
   },
   {
     "id": "1934afbb86192490",
@@ -3926,6 +3942,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This run is not waiting for a plan decision."
   },
   {
+    "id": "3660315a9af3df25",
+    "source": "page"
+  },
+  {
     "id": "3664895579f0a7e6",
     "source": "Export"
   },
@@ -4016,6 +4036,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "374d8707859e87c2",
     "source": "Previous-generation Qwen-Max (2.5 line)."
+  },
+  {
+    "id": "3752cdb27a9456b9",
+    "source": "Contrast multiplier; 1 leaves it alone, 1.5 is a firm push for a pale scan."
   },
   {
     "id": "376b6d99a9b22d68",
@@ -4516,6 +4540,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3e992276b2298a1f",
     "source": "New task"
+  },
+  {
+    "id": "3ea42119db36f401",
+    "source": "Width of the region as a percentage, 0-100."
   },
   {
     "id": "3ec769983e05c017",
@@ -5646,6 +5674,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Products"
   },
   {
+    "id": "4edd6e6e457d0441",
+    "source": "This is the whole image, not a crop — give a region to magnify part of it."
+  },
+  {
     "id": "4edef513c5ee17c3",
     "source": "pages fetched"
   },
@@ -6032,6 +6064,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "54c2743c16f0938b",
     "source": "Generation stopped before any output."
+  },
+  {
+    "id": "54c567c727c9393f",
+    "source": "Rotate the crop clockwise: 0, 90, 180 or 270 degrees. For a sideways scan."
   },
   {
     "id": "54d1f51278f8ec34",
@@ -6574,6 +6610,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Project actions"
   },
   {
+    "id": "5d717b320f38b0cd",
+    "source": "Drop colour — helps with faded or tinted scans."
+  },
+  {
     "id": "5d72436256ada538",
     "source": "gemini"
   },
@@ -6832,6 +6872,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "60acc53f13a5d1bf",
     "source": "Dark"
+  },
+  {
+    "id": "60b1a51b3bdc2a56",
+    "source": "What you are looking for, in a few words."
   },
   {
     "id": "60d5d5b0b9ab69ab",
@@ -7698,6 +7742,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Users"
   },
   {
+    "id": "6b2305e50259ef46",
+    "source": "Last page to read, inclusive. Omit to read to the end or to the size limit."
+  },
+  {
     "id": "6b258083657fde33",
     "source": "No comments yet"
   },
@@ -7996,6 +8044,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6eedf80d418f4927",
     "source": "The provider did not send the arguments for this call."
+  },
+  {
+    "id": "6ef7c9b15ecdd690",
+    "source": "high"
   },
   {
     "id": "6f068865a01509e4",
@@ -8602,6 +8654,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The people you mention — family, colleagues, collaborators."
   },
   {
+    "id": "76f535cb344a775d",
+    "source": "First page to read (1-based). Omit to start at the beginning."
+  },
+  {
     "id": "76f7faf5875dfec6",
     "source": "Use the default"
   },
@@ -8664,6 +8720,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "78056f135b20da3d",
     "source": "Add details"
+  },
+  {
+    "id": "78099ca8842e9310",
+    "source": "Which attachment, by file name. Optional when only one image is attached."
   },
   {
     "id": "781e581aee6edac4",
@@ -10534,6 +10594,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This run is not paused."
   },
   {
+    "id": "93ccfa5553b285c0",
+    "source": "What you are trying to read, in a few words."
+  },
+  {
     "id": "93d67e433d6b537f",
     "source": "Visited source"
   },
@@ -10794,6 +10858,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Timed out"
   },
   {
+    "id": "971acb9f9facccc5",
+    "source": "Left edge of the region, 0-100, as a percentage of width."
+  },
+  {
     "id": "972b6a76cba4d2cb",
     "source": "Search files and artifacts…"
   },
@@ -10996,6 +11064,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "99cdda6b204f1a78",
     "source": "Response language"
+  },
+  {
+    "id": "99e3a8c360abde44",
+    "source": "Inspect image"
   },
   {
     "id": "99e8531bcf05fb25",
@@ -15906,10 +15978,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Inspector sections"
   },
   {
-    "id": "d9f500f5292e7081",
-    "source": "Indexed ·"
-  },
-  {
     "id": "d9f5c3356cdb6b0d",
     "source": "Upload limit reached. Try again later."
   },
@@ -15952,6 +16020,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "da750866aff87de3",
     "source": "Juno has drafted this from the steps it actually took. Change anything you like — it is saved exactly as it reads here, and nothing runs until you ask for it by name."
+  },
+  {
+    "id": "da9a0582f56be69d",
+    "source": "Inspected image"
   },
   {
     "id": "da9a3acba75737f7",
@@ -16998,6 +17070,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The claim asserts a cause the passage does not draw."
   },
   {
+    "id": "e82662735c2c4251",
+    "source": "Skip this many sections before reading. Use it to continue a read that stopped at the size limit."
+  },
+  {
     "id": "e835b78d7ee27203",
     "source": "Out of budget"
   },
@@ -17208,6 +17284,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eacadb06043db065",
     "source": "Open source chat"
+  },
+  {
+    "id": "eb14b6b455dd2b14",
+    "source": "For a PDF: which page to render as an image (1-based). Ignored for images."
   },
   {
     "id": "eb1a70e39274bb76",
@@ -18368,6 +18448,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fabbcc4dfbadd00f",
     "source": "This visual explanation was incomplete, so Juno is showing a safe fallback."
+  },
+  {
+    "id": "facd23eccb9e8b01",
+    "source": "For action 'search': the exact word, number or phrase to find."
   },
   {
     "id": "fae9f11dea030429",

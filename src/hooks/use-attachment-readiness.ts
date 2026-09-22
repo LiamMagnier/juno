@@ -21,14 +21,28 @@ import { isTextExtractable } from "@/lib/uploads";
  * upload time and reaches the model whatever the index does, so a failed index
  * on one of those costs citations, not content — warning about it would be a
  * lie. `isTextExtractable` excludes exactly one common type from that flat
- * path: `application/pdf`. A PDF's text reaches the model ONLY through the
- * index, so a PDF is the file whose index state is the difference between the
- * model reading it and the model receiving nothing at all.
+ * path: `application/pdf`. A PDF's text is produced by the indexer and nothing
+ * else — the indexer now writes it back onto the attachment row, so the model
+ * receives the whole document rather than a few retrieved passages, but the
+ * dependency is the same one: until indexing settles there is no text, and if
+ * it fails there never will be. A PDF is still the file whose index state is
+ * the difference between the model reading it and receiving nothing at all.
  */
-export type AttachmentReadiness = "reading" | "unreadable" | "ready";
+export type AttachmentReadiness = "reading" | "unreadable" | "partial" | "ready";
 
 const PENDING = new Set(["queued", "indexing", "extracting", "ocr"]);
-const UNREADABLE = new Set(["degraded", "failed"]);
+const UNREADABLE = new Set(["failed", "skipped"]);
+/**
+ * `degraded` is PARTIAL, not unreadable — and that changed with the indexer.
+ *
+ * It used to sit beside `failed` because a degraded PDF's text reached the
+ * model only as whatever retrieval happened to match, which for a half-read
+ * scan was usually nothing. The extracted text of a settled document is now
+ * written back onto the attachment itself, degraded ones included, so the
+ * pages that DID read come through in full. Calling that "couldn't read this
+ * file" would send the person away from a file Juno can largely read.
+ */
+const PARTIAL = new Set(["degraded"]);
 
 /** Fast at first, then slower: most files settle in the first second or two. */
 const POLL_MS = [1200, 1200, 1800, 2500, 4000] as const;
@@ -100,6 +114,7 @@ export function useAttachmentReadiness(
     const state = states[id];
     if (state === undefined || PENDING.has(state)) out.set(id, "reading");
     else if (UNREADABLE.has(state)) out.set(id, "unreadable");
+    else if (PARTIAL.has(state)) out.set(id, "partial");
     else out.set(id, "ready");
   }
   return out;

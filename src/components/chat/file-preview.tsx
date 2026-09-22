@@ -16,12 +16,21 @@ import { cn } from "@/lib/utils";
  *
  * A file gets the same treatment as an image now — a tile you can recognise:
  *
+ *   PDF-ish   the first page, drawn. A document's cover is how it is
+ *             recognised, the way an image is recognised by being itself.
  *   text-ish  the first lines of the file, set small, faded out at the bottom
  *             like a page continuing past the frame
  *   other     the extension, large, on the same paper surface
  *
- * The excerpt comes from `/api/attachments/<id>/preview`, which reads a bounded
- * prefix server-side. Fetching whole objects to draw six lines would pull a
+ * The three are a ladder, not a switch, and they are drawn on top of each
+ * other in that order: the excerpt (or the extension) paints first and the
+ * page image covers it once it arrives. A file whose page cannot be rendered
+ * therefore shows the tile it would have shown anyway, with no flash of an
+ * empty frame in between, and `onError` puts it back if the render fails.
+ *
+ * Both come from `/api/attachments/<id>/preview`, one request per tile: a
+ * bounded prefix read server-side, plus the address of the page rendering if
+ * one is possible. Fetching whole objects to draw six lines would pull a
  * megabyte of CSV through the browser to render its header row.
  * ───────────────────────────────────────────────────────────────────────────── */
 
@@ -44,6 +53,11 @@ export function extensionOf(item: { fileName: string; mimeType: string }): strin
   return (subtype.split(/[.+;]/)[0] || "FILE").slice(0, 5).toUpperCase();
 }
 
+interface FilePreviewData {
+  text: string | null;
+  thumbnailUrl: string | null;
+}
+
 /**
  * Cached per attachment id for the life of the page.
  *
@@ -51,39 +65,44 @@ export function extensionOf(item: { fileName: string; mimeType: string }): strin
  * closes repeatedly over one session. Without this, every open refetches every
  * excerpt — the same bytes, for tiles that have not changed.
  */
-const excerptCache = new Map<string, string | null>();
+const previewCache = new Map<string, FilePreviewData>();
 
-function useExcerpt(item: PreviewableItem, enabled: boolean): string | null | undefined {
-  const [excerpt, setExcerpt] = React.useState<string | null | undefined>(() =>
-    excerptCache.get(item.id),
+const EMPTY: FilePreviewData = { text: null, thumbnailUrl: null };
+
+function usePreview(item: PreviewableItem, enabled: boolean): FilePreviewData | undefined {
+  const [preview, setPreview] = React.useState<FilePreviewData | undefined>(() =>
+    previewCache.get(item.id),
   );
 
   React.useEffect(() => {
-    if (!enabled || excerptCache.has(item.id)) {
-      setExcerpt(excerptCache.get(item.id));
+    if (!enabled || previewCache.has(item.id)) {
+      setPreview(previewCache.get(item.id));
       return;
     }
     const controller = new AbortController();
     fetch(`/api/attachments/${item.id}/preview`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
-      .then((body: { text?: string | null } | null) => {
-        const text = typeof body?.text === "string" && body.text.trim() ? body.text : null;
-        excerptCache.set(item.id, text);
-        setExcerpt(text);
+      .then((body: { text?: string | null; thumbnailUrl?: string | null } | null) => {
+        const data: FilePreviewData = {
+          text: typeof body?.text === "string" && body.text.trim() ? body.text : null,
+          thumbnailUrl: typeof body?.thumbnailUrl === "string" ? body.thumbnailUrl : null,
+        };
+        previewCache.set(item.id, data);
+        setPreview(data);
       })
       .catch(() => {
         // A failed preview is not an error state — the tile shows its extension,
         // which is what a PDF shows anyway. Cached so it is not retried on every
         // scroll.
         if (!controller.signal.aborted) {
-          excerptCache.set(item.id, null);
-          setExcerpt(null);
+          previewCache.set(item.id, EMPTY);
+          setPreview(EMPTY);
         }
       });
     return () => controller.abort();
   }, [item.id, enabled]);
 
-  return excerpt;
+  return preview;
 }
 
 export function FilePreview({
@@ -99,8 +118,11 @@ export function FilePreview({
   excerpt?: boolean;
 }) {
   const [imageFailed, setImageFailed] = React.useState(false);
+  const [pageFailed, setPageFailed] = React.useState(false);
   const isImage = item.kind === "IMAGE" && !imageFailed;
-  const text = useExcerpt(item, wantsExcerpt && !isImage);
+  const preview = usePreview(item, wantsExcerpt && !isImage);
+  const text = preview?.text;
+  const pageUrl = pageFailed ? null : (preview?.thumbnailUrl ?? null);
 
   if (isImage) {
     return (
@@ -147,9 +169,33 @@ export function FilePreview({
           </span>
         </div>
       )}
+      {pageUrl && (
+        /*
+         * The rendered page, over whatever was drawn above.
+         *
+         * `object-top`, not `object-cover`'s centred default: a page is read
+         * from the top, and a tile that is squarer than A4 must keep the
+         * masthead and the title rather than a band from the middle of the
+         * body text. A plain <img> rather than next/image — the bytes are
+         * already a bounded JPEG from our own route, and putting the optimizer
+         * in front of them would re-encode a thumbnail into a thumbnail.
+         */
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={pageUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          onError={() => setPageFailed(true)}
+          className="absolute inset-0 size-full bg-card object-cover object-top"
+        />
+      )}
       {/* The extension stays legible over an excerpt: it is how you tell a .ts
-          from a .py at a glance, and both look like grey lines from a metre. */}
-      {text && (
+          from a .py at a glance, and both look like grey lines from a metre.
+          Over a rendered page it does the same job for a second reason — the
+          page itself never says what format it is. */}
+      {(text || pageUrl) && (
         <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-micro font-medium tracking-[0.06em] text-muted-foreground">
           {/* `bg-secondary`, opaque, at the `xs` rung. The chip was
               `bg-background/85` — the page colour — which lands within a point
