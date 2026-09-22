@@ -1010,6 +1010,15 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
             {hasMessages ? (
               <>
                 <MessageList
+                  /* Session → session is the same move chat → chat is, and it
+                     is preserved across the route the same way (see the note
+                     on the key in chat-view.tsx): a fresh mount per session so
+                     the follow, the entrance seed and the thread's own arrival
+                     all belong to the session being opened. There is no
+                     first-message handoff on this surface, so the entrance is
+                     unconditional. */
+                  key={conversation.id}
+                  entrance
                   messages={session.messages}
                   surface="code"
                   inlineRuns={codeActivity}

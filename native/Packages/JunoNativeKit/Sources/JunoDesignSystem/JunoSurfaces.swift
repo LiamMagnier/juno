@@ -28,15 +28,20 @@ public extension JunoColorToken {
     static let rowSelectedLight = JunoColorToken(unchecked: 0, 0, 0, 0.075)
     static let rowSelectedDark = JunoColorToken(unchecked: 1, 1, 1, 0.10)
 
-    // The navigation column's selected row — the web's `--sidebar-accent`.
+    // The navigation column's selected row — the web's `--sidebar-selected`.
     // Opaque, not an alpha wash, because it is fed to the platform as a *tint*
     // and the system composites it itself.
     //
-    // Projected rather than transcribed. These four were verified identical to
-    // globals.css before the switch, so nothing moves; the point is that they
-    // are no longer a second copy that a web-side change would leave behind.
-    static let sidebarSelectionLight = JunoGeneratedColors.sidebarAccent.light
-    static let sidebarSelectionDark = JunoGeneratedColors.sidebarAccent.dark
+    // Projected rather than transcribed, and this is the change that proves
+    // why. It read `--sidebar-accent` until the web split that token in two:
+    // the panel's general tonal fill stayed where it was and the selected row
+    // moved to a colour of its own, five points further from the column, so
+    // that selection and hover stop being one paint at two opacities. A
+    // transcribed constant would have left the Mac drawing the web's OLD
+    // selection against the web's new one; repointing the projection is the
+    // whole of the fix.
+    static let sidebarSelectionLight = JunoGeneratedColors.sidebarSelected.light
+    static let sidebarSelectionDark = JunoGeneratedColors.sidebarSelected.dark
 
     // The navigation column's resting ink — the web's `--sidebar-foreground`.
     // Barely off neutral: the same warm cast the rest of the palette carries, so
@@ -99,7 +104,7 @@ public extension Color {
     )
     /// Terminal and diff output.
     static let junoTerminal = Color.junoAdaptive(light: .terminalLight, dark: .terminalDark)
-    /// The navigation column's selected row — the web's `--sidebar-accent`.
+    /// The navigation column's selected row — the web's `--sidebar-selected`.
     ///
     /// Fed to `List` as a tint rather than painted by hand, so the platform keeps
     /// drawing the selection and Juno only says what colour it is. See

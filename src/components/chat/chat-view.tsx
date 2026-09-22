@@ -2164,6 +2164,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <AnimatedTitle
                   title={headerTitle}
                   animate={headerTitleSource === "ai"}
+                  /* Moving to another conversation crosses this title over as
+                     well, whoever wrote it — `animate` alone only covers the
+                     model renaming THIS chat, so a switch to a manually named
+                     one cut the heading while the transcript beneath it was
+                     still settling in. */
+                  subject={currentConversationId}
                   className="max-w-[40rem]"
                 />
               </h1>
@@ -2334,6 +2340,33 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
               )}
               <MessageList
+                /*
+                 * KEYED ON THE ROUTE'S CONVERSATION, which does two things
+                 * that were both missing.
+                 *
+                 * App Router preserves this ChatView across /chat/A → /chat/B
+                 * (see the note on the deep-link ref above), so the transcript
+                 * used to have the next conversation's messages pushed through
+                 * the same mounted list. Two pieces of state that are only
+                 * correct per thread came along with it: `prevRef`, which the
+                 * follow reads to decide whether the reader was at the bottom
+                 * — so a chat you had scrolled up in opened the NEXT chat at
+                 * that same offset instead of at its last turn — and `seenRef`,
+                 * which exists to stop an already-written conversation
+                 * replaying its entrances, and which was seeded with the
+                 * LENGTH OF THE PREVIOUS ONE, so opening a long thread after a
+                 * short one cascaded every message past the short one's count.
+                 * A fresh mount is the fix for both, and it is also what gives
+                 * the switch something to animate.
+                 *
+                 * `conversationId`, the ROUTE's id — never `currentConversationId`.
+                 * A brand-new chat gets its id from the first reply and rewrites
+                 * its own URL with replaceState; keying on the live id would
+                 * remount the list mid-stream and drop the reply being written
+                 * into it. The route prop stays null through all of that.
+                 */
+                key={conversationId ?? "new"}
+                entrance={handoff === null}
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
                 inlineRuns={privateMode ? [] : [

@@ -132,14 +132,14 @@ export function UserMenu({
             // No hover scale: nothing else in the retuned sidebar grows under
             // the pointer, and a face that swells is the loudest thing in a
             // quiet column.
-            className="group size-11 rounded-control hover:bg-sidebar-accent"
+            className="group size-11 rounded-control hover:bg-sidebar-hover"
             aria-label="Account menu"
             title={`${user.name ?? user.email ?? "Account"} · ${plan.name}`}
           >
             <UserAvatar className="size-6" />
           </Pressable>
         ) : (
-          <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-accent">
+          <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-hover">
             <UserAvatar className="size-8" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-ui font-medium">{user.name ?? user.email}</span>

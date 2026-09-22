@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 const RESOLVE_MS = 220;
 
 /**
- * In-place title resolve for AI-authored renames (chats, projects).
+ * In-place title resolve for AI-authored renames (chats, projects), and for
+ * the header title changing because the reader moved to another conversation.
  *
  * Manual renames pass `animate={false}` so a typed edit never feels delayed.
  * A cross-fade, and nothing else. This replaced a 780ms sweep that panned a
@@ -19,12 +20,27 @@ const RESOLVE_MS = 220;
 export function AnimatedTitle({
   title,
   animate = true,
+  subject,
   className,
   textClassName,
 }: {
   title: string;
   /** Animate server/AI-authored changes; manual edits can opt out. */
   animate?: boolean;
+  /**
+   * What this title BELONGS to — a conversation id for the chat header.
+   *
+   * When it changes, the new text cannot be a typed edit of the old one: the
+   * reader has moved to something else, and the label is arriving rather than
+   * being corrected. So the cross-fade runs whatever `animate` says, which is
+   * how the chat header stopped cutting its title on a switch while the
+   * transcript under it settled in — one event, drawn two different ways, on
+   * the one pair of elements a reader is looking straight at.
+   *
+   * Omitted, nothing changes: a title with no stated subject is assumed to
+   * belong to the same thing it always did.
+   */
+  subject?: string | null;
   className?: string;
   textClassName?: string;
 }) {
@@ -32,10 +48,13 @@ export function AnimatedTitle({
   const [previousTitle, setPreviousTitle] = React.useState<string | null>(null);
   const [resolving, setResolving] = React.useState(false);
   const lastTitleRef = React.useRef(title);
+  const lastSubjectRef = React.useRef(subject);
 
   React.useEffect(() => {
+    const subjectChanged = subject !== lastSubjectRef.current;
+    lastSubjectRef.current = subject;
     if (title === lastTitleRef.current) return;
-    if (!animate) {
+    if (!animate && !subjectChanged) {
       setPreviousTitle(null);
       setDisplayTitle(title);
       setResolving(false);
@@ -51,7 +70,7 @@ export function AnimatedTitle({
       setResolving(false);
     }, RESOLVE_MS);
     return () => window.clearTimeout(timer);
-  }, [animate, title]);
+  }, [animate, subject, title]);
 
   return (
     <span

@@ -99,7 +99,18 @@ const config: Config = {
           DEFAULT: "hsl(var(--sidebar) / <alpha-value>)",
           foreground: "hsl(var(--sidebar-foreground) / <alpha-value>)",
           border: "hsl(var(--sidebar-border) / <alpha-value>)",
+          // The panel's general tonal fill — the account band, the download
+          // menu, the product switch's track.
           accent: "hsl(var(--sidebar-accent) / <alpha-value>)",
+          // The two ROW STATES, which used to be this same accent at 60% and
+          // at 100%. They are separate colours now because a state told apart
+          // by opacity alone is not told apart at all; see the token block in
+          // globals.css for the rungs.
+          hover: "hsl(var(--sidebar-hover) / <alpha-value>)",
+          selected: {
+            DEFAULT: "hsl(var(--sidebar-selected) / <alpha-value>)",
+            border: "hsl(var(--sidebar-selected-border) / <alpha-value>)",
+          },
         },
         // The one dim value every modal backdrop shares. Four different scrim
         // treatments existed before this.
