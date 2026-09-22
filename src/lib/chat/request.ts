@@ -123,6 +123,33 @@ export const chatBodySchema = z
     // -> clampReasoningEffort, which coerces to what the model accepts.
     reasoningEffort: z.enum(REASONING_TIERS).optional(),
     connectors: z.array(z.string()).max(5).optional(),
+    /**
+     * A skill to apply to this message, by slug.
+     *
+     * Per-send and explicit, exactly like deep research: the composer puts it
+     * here when the reader picks one out of the "/" palette, and it is cleared
+     * after the send rather than becoming a sticky preference — a skill silently
+     * shaping every subsequent message is how a person ends up debugging an
+     * answer against instructions they forgot were armed.
+     *
+     * The ROUTE DOES NOT PARSE THE MESSAGE for a leading `/slug`, and that is
+     * the whole reason this field exists rather than being inferred. The
+     * composer is where people paste things, and a message that becomes a skill
+     * run because it happened to start with a slash is a surface where pasted
+     * text picks up instructions nobody chose. The composer converts the typed
+     * form into this field where the pill is visible and removable.
+     *
+     * Bounded by the slug rule itself rather than by a number: anything that is
+     * not a slug cannot name a skill, so it is refused here instead of costing a
+     * lookup. `.max()` mirrors MAX_SKILL_SLUG_CHARS, repeated as a literal only
+     * because this module is imported by clients that must not pull in Work.
+     */
+    skillSlug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .max(64)
+      .optional(),
     generationId: z.string().trim().min(8).max(120).optional(),
     privateMode: z.boolean().optional(),
     // Which surface sent the request — tags the spend ledger so admin can split

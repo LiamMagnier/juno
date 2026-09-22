@@ -101,6 +101,15 @@ export type SendOptions = {
   deepResearch?: boolean;
   /** Depth of a deep-research turn: quick | standard | deep | max. */
   researchEffort?: ResearchEffort;
+  /**
+   * A skill to apply to this one message, by slug.
+   *
+   * Per-send like deep research and for the same reason: a skill silently
+   * shaping every later message is how somebody ends up debugging an answer
+   * against instructions they forgot were armed. The composer clears it after
+   * each send.
+   */
+  skillSlug?: string;
   artifactEdit?: ArtifactEditRequest;
   /** Per-send connector selection. When set, overrides the sticky `opts.connectors`
    *  for this generation (used when auto-enabling from prompt intent). */
@@ -1197,6 +1206,7 @@ export function useChat(opts: UseChatOptions) {
       preflightClarification?: PreflightClarificationContext;
       deepResearch?: boolean;
       researchEffort?: ResearchEffort;
+      skillSlug?: string;
       artifactEdit?: ArtifactEditRequest;
       connectors?: string[];
     }): SendResult => {
@@ -1278,6 +1288,10 @@ export function useChat(opts: UseChatOptions) {
           // persists sources/activity, which private chats don't do).
           deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
           researchEffort: !opts.privateMode && input.deepResearch ? input.researchEffort : undefined,
+          // Sent in private mode too. A skill is the user's own stored
+          // instructions, not something that leaves the account, so the reason
+          // research and canvas edits are withheld there does not reach it.
+          skillSlug: input.skillSlug,
           artifactEdit: !opts.privateMode ? input.artifactEdit : undefined,
           reasoningEffort: opts.reasoningEffort,
           connectors: input.connectors ?? opts.connectors,
@@ -1367,6 +1381,7 @@ export function useChat(opts: UseChatOptions) {
           attachments,
           artifactEdit: options.artifactEdit,
           connectors,
+          skillSlug: options?.skillSlug,
         });
       }
 
@@ -1380,7 +1395,7 @@ export function useChat(opts: UseChatOptions) {
         deepResearch,
       });
       if (localSkip) {
-        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort });
+        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug });
       }
 
       setStatus("checking");
@@ -1419,6 +1434,10 @@ export function useChat(opts: UseChatOptions) {
             // the RESEARCH turn the user asked for, not an ordinary one.
             deepResearch: options?.deepResearch,
             researchEffort: options?.researchEffort,
+            // Parked for the same reason the research flag is: the user armed a
+            // skill, then answered three questions about their request. Losing
+            // it here would answer the scoped question the ordinary way.
+            skillSlug: options?.skillSlug,
           });
           setStatus("idle");
           return { accepted: false, clarificationPending: true };
@@ -1429,7 +1448,7 @@ export function useChat(opts: UseChatOptions) {
         clearTimeout(clarifyTimeout);
       }
 
-      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort });
+      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort, skillSlug: options?.skillSlug });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
   );
@@ -1558,6 +1577,7 @@ export function useChat(opts: UseChatOptions) {
         // have scoped a run that then never happened.
         deepResearch: pending.deepResearch,
         researchEffort: pending.researchEffort,
+        skillSlug: pending.skillSlug,
       });
     },
     [pendingClarification, startGeneration, status]
