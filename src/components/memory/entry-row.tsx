@@ -234,6 +234,7 @@ function ProvenanceLine({ memory }: { memory: Memory }) {
     if (memory.sourceRef === "manual") return "You added this";
     if (memory.sourceRef === "edit") return "From an edit you made";
     if (memory.sourceRef === "forget") return "From a fact you forgot";
+    if (memory.sourceRef === "import") return "Imported from another assistant";
     if (memory.source === "MANUAL") return "You told Juno";
     return null;
   })();

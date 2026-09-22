@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck, Upload } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +11,8 @@ interface PrivacyStripProps {
   paused: boolean;
   onPausedChange: (paused: boolean) => void;
   onExport: () => void;
+  /** Opens the import dialog. Absent where importing makes no sense. */
+  onImport?: () => void;
   onReset: () => void;
   resetting: boolean;
   /** No facts and no summary — export/reset have nothing to act on. */
@@ -41,7 +43,15 @@ interface PrivacyStripProps {
  * this strip already says what reset does, permanently and in those words. A
  * modal would repeat it at the cost of an interrupt.
  */
-export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resetting, empty }: PrivacyStripProps) {
+export function PrivacyStrip({
+  paused,
+  onPausedChange,
+  onExport,
+  onImport,
+  onReset,
+  resetting,
+  empty,
+}: PrivacyStripProps) {
   return (
     // /40, not /20: --muted at a fifth over the true-black ground composites to
     // under 2% lightness, so the strip that fences the destructive controls had
@@ -58,6 +68,21 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
           {paused ? "Memory paused" : "Pause memory"}
         </label>
         <div className="ml-auto flex items-center gap-1">
+          {/* Import sits with Export because they are the same question asked
+              in two directions — where does my memory go, and where can it
+              come from. Disabled while paused, like every other write. */}
+          {onImport && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={onImport}
+              disabled={paused}
+              aria-label={paused ? "Import — unavailable while memory is paused" : "Import memory from another assistant"}
+            >
+              <Upload className="size-3.5" aria-hidden="true" /> Import
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={onExport} disabled={empty}>
             <ActionIcons.download className="size-3.5" /> Export
           </Button>

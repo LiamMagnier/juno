@@ -11,6 +11,7 @@ import { PrivacyStrip } from "@/components/memory/privacy-strip";
 import { EditsPanel } from "@/components/memory/edits-panel";
 import { EntryList } from "@/components/memory/entry-list";
 import { MemoryStats } from "@/components/memory/memory-stats";
+import { ImportDialog } from "@/components/memory/import-dialog";
 import { MemoryToolbar, type MemoryView } from "@/components/memory/memory-toolbar";
 import { TopicsView } from "@/components/memory/topics-view";
 import { useMemory } from "@/components/memory/use-memory";
@@ -41,6 +42,7 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
   const [view, setView] = React.useState<MemoryView>("topics");
   const [query, setQuery] = React.useState("");
   const [editsOpen, setEditsOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
 
   /*
    * A drafted edit opens the queue that holds it.
@@ -179,6 +181,7 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
               onEdit={memory.editMemory}
               onForget={(entry) => void memory.forgetMemory(entry)}
               onDelete={(entry) => void memory.deleteMemory(entry)}
+              onImport={() => setImportOpen(true)}
             />
           ) : (
             <EntryList
@@ -198,10 +201,13 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
         paused={memory.paused}
         onPausedChange={(next) => void memory.setPaused(next)}
         onExport={memory.exportMemory}
+        onImport={() => setImportOpen(true)}
         onReset={() => void memory.resetMemory()}
         resetting={memory.resetting}
         empty={facts.length === 0 && !memory.summary}
       />
+
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={memory.reload} />
     </div>
   );
 }
