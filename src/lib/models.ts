@@ -469,7 +469,14 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5", retiresOn: "2026-07-31", replacedBy: "mistral:mistral-medium-latest" }),
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
-  def({ provider: "xai", id: "grok-4.6", name: "Grok 4.6", family: "grok", status: "current", released: "2026-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
+  // Grok 4.7 (2026-09-21): same $2/$6 pricing and 500K context as 4.6, on a
+  // 2.1T-parameter base (a 40% expansion over 4.6's 1.5T) with a longer
+  // reasoning ladder aimed at multi-hour agent runs. NOT verified live — no
+  // xAI credential in this repo — curated from SpaceXAI's own docs listing
+  // plus independent launch coverage; confirm the id against a real key
+  // before relying on it. See docs/models-september-22-2026.md.
+  def({ provider: "xai", id: "grok-4.7", name: "Grok 4.7", family: "grok", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — a larger base built for work that unfolds over many steps." }),
+  def({ provider: "xai", id: "grok-4.6", name: "Grok 4.6", family: "grok", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
   // —— xAI (SpaceXAI) / Grok ——
   // EU rollout landed (watchlist item cleared 2026-07-16). The /models list is
   // unreadable while the team carries no credit balance, so availability was
@@ -751,10 +758,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
   "deepseek:deepseek-coder": "deepseek:deepseek-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.
-  "xai:grok-4": "xai:grok-4.6",
-  "xai:grok-2": "xai:grok-4.6",
-  "xai:grok-beta": "xai:grok-4.6",
-  "xai:grok-3": "xai:grok-4.6",
+  "xai:grok-4": "xai:grok-4.7",
+  "xai:grok-2": "xai:grok-4.7",
+  "xai:grok-beta": "xai:grok-4.7",
+  "xai:grok-3": "xai:grok-4.7",
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // MiMo — ids Xiaomi no longer serves. The V2.5/V2 rows are still live and
