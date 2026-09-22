@@ -109,6 +109,25 @@ test("the upstream call follows the client away, and that is not a timeout", () 
   assert.equal(timers.pending, 0);
 });
 
+test("once the relay takes the client's leaving, it decides, and the deadlines still hold", () => {
+  const timers = new FakeTimers();
+  const parent = new AbortController();
+  const upstream = createUpstreamAbort(parent.signal, TIMEOUTS, timers);
+  upstream.headersReceived();
+  const reasons: unknown[] = [];
+  upstream.onClientLeave((reason) => reasons.push(reason));
+  parent.abort("client_closed");
+  parent.abort("again");
+  assert.deepEqual(reasons, ["client_closed"]);
+  // Not aborted: an answer already paid for may still be read to its end...
+  assert.equal(upstream.signal.aborted, false);
+  // ...but not for longer than the ceiling allows.
+  assert.equal(timers.pending, 1);
+  timers.tick(TIMEOUTS.ceilingMs);
+  assert.equal(upstreamTimeoutKind(upstream.signal), "ceiling");
+  assert.equal(timers.pending, 0);
+});
+
 test("a client that is already gone aborts before any timer is armed", () => {
   const timers = new FakeTimers();
   const parent = new AbortController();

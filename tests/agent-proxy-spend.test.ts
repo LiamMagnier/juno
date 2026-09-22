@@ -4,22 +4,29 @@ import { readFileSync } from "node:fs";
 import {
   UsageMeter,
   createUpstreamAbort,
+  hasRepeatedKey,
   inspectAgentRequest,
+  promptTextChars,
   providerWire,
   relayUpstreamBody,
   upstreamTimeoutKind,
   usageMeterFor,
+  type AgentRequest,
+  type MeteredUsage,
   type ProviderWire,
   type ProxyUsage,
   type RelayOutcome,
   type UpstreamTimers,
 } from "@/lib/agent-proxy";
+import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { resolveModel } from "@/lib/models";
 
 /*
  * The proxy bills Juno Code from the provider's own usage as the response
- * streams past. These pin the three things that can go wrong with that: reading
- * the wrong number (or none) out of a provider format, altering what the client
- * receives, and billing an exchange zero times or twice.
+ * streams past. These pin the things that can go wrong with that: reading the
+ * wrong number (or none) out of a provider format, altering what the client
+ * receives, billing an exchange zero times or twice, and forwarding a request
+ * the proxy reads differently from the provider.
  */
 
 const encoder = new TextEncoder();
@@ -32,10 +39,44 @@ function splitBytes(text: string, size: number): Uint8Array[] {
   return chunks;
 }
 
-function meter(wire: ProviderWire, format: "sse" | "json", text: string, size: number, fast = false) {
-  const m = new UsageMeter(wire, format, fast);
+function metered(
+  wire: ProviderWire,
+  format: "sse" | "json",
+  text: string,
+  size: number,
+  fast = false,
+  promptChars = 0,
+): MeteredUsage | null {
+  const m = new UsageMeter(wire, format, fast, promptChars);
   for (const chunk of splitBytes(text, size)) m.observe(chunk);
   return m.finish();
+}
+
+/** The usage the provider reported; an estimate here fails the test. */
+function meter(wire: ProviderWire, format: "sse" | "json", text: string, size: number, fast = false) {
+  const result = metered(wire, format, text, size, fast);
+  assert.equal(result?.estimated ?? false, false, "expected the provider's own usage, not the floor");
+  return result?.usage ?? null;
+}
+
+/** An accepted request, or the test fails with the refusal. */
+function accepted(wire: ProviderWire, raw: string): AgentRequest {
+  const checked = inspectAgentRequest(wire, raw);
+  assert.ok(checked.ok, checked.ok ? "" : `refused: ${checked.error}`);
+  return checked.request;
+}
+
+function refused(wire: ProviderWire, raw: string): string {
+  const checked = inspectAgentRequest(wire, raw);
+  assert.equal(checked.ok, false, `expected a refusal for ${raw.slice(0, 120)}`);
+  return checked.ok ? "" : checked.error;
+}
+
+/** What `recordSpend` would charge for this usage, in USD. */
+function priced(model: string, usage: ProxyUsage): number {
+  const info = resolveModel(model);
+  assert.ok(info, `unknown model ${model}`);
+  return estimateGenerationCostUsd(info, usage).costUsd;
 }
 
 function sse(events: Array<[string | null, unknown]>, newline = "\n"): string {
@@ -215,12 +256,120 @@ test("Chat Completions: DeepSeek's cache-hit dialect prices as a cache read", ()
   assert.equal(usage?.cacheWrite, undefined);
 });
 
-test("Chat Completions: a stream with no usage chunk bills nothing rather than guessing", () => {
+test("Chat Completions: a stream that never reports usage is billed at the character floor, not free", () => {
+  // A host that ignores include_usage, or a stream cut before its last chunk.
   const stream = sse([
-    [null, { choices: [{ index: 0, delta: { content: "Hello" } }], usage: null }],
+    [null, { service_tier: "priority", choices: [{ index: 0, delta: { content: "Hello" } }], usage: null }],
+    [null, { choices: [{ index: 0, delta: { reasoning_content: "why" } }], usage: null }],
     [null, "[DONE]"],
   ]);
-  assert.equal(meter("openai-chat", "sse", stream, 5), null);
+  const result = metered("openai-chat", "sse", stream, 5, false, 8000);
+  assert.deepEqual(result, {
+    estimated: true,
+    usage: {
+      promptTokens: 0,
+      completionTokens: 0,
+      promptChars: 8000,
+      completionChars: "Hello".length,
+      reasoningChars: "why".length,
+      // The served tier still decides the rate.
+      fastMode: true,
+    },
+  });
+});
+
+test("the floor is the request's text and what streamed, priced at the model's own rates", () => {
+  const usage = metered("openai-chat", "sse", sse([[null, { choices: [{ index: 0, delta: { content: "x".repeat(400) } }] }]]), 64, false, 40_000)!.usage;
+  const info = resolveModel("openai:gpt-6-sol")!;
+  const billed = estimateGenerationCostUsd(info, usage);
+  // Four characters a token, as the chat route bills a partial generation.
+  assert.equal(billed.promptTokens, 10_000);
+  assert.equal(billed.completionTokens, 100);
+  assert.ok(billed.costUsd > 0);
+  assert.equal(billed.costUsd, estimateGenerationCostUsd(info, { promptTokens: 10_000, completionTokens: 100 }).costUsd);
+});
+
+test("reported usage never carries the prompt floor, so a fully cached prompt is not billed twice", () => {
+  // Anthropic's input_tokens excludes cache reads and can be 0; the prompt
+  // floor would then be filled in as fresh input on top of the cache read.
+  const stream = sse([
+    ["message_start", { type: "message_start", message: { usage: { input_tokens: 0, cache_read_input_tokens: 90_000, output_tokens: 1 } } }],
+    ["message_delta", { type: "message_delta", usage: { output_tokens: 50 } }],
+  ]);
+  const result = metered("anthropic", "sse", stream, 16, false, 360_000);
+  assert.equal(result?.estimated, false);
+  assert.equal(result?.usage.promptChars, undefined);
+  assert.equal(result?.usage.cacheRead, 90_000);
+});
+
+test("an Anthropic stream cut before message_start is billed at the floor", () => {
+  const result = metered("anthropic", "sse", "event: message_start\ndata: {\"type\":\"message_st", 7, true, 2_000);
+  assert.equal(result?.estimated, true);
+  assert.equal(result?.usage.promptChars, 2_000);
+  assert.equal(result?.usage.fastMode, true);
+});
+
+test("a Responses stream cut before response.completed is billed at the floor", () => {
+  const cut = sse([
+    ["response.created", { type: "response.created", response: { object: "response", status: "in_progress", usage: null } }],
+    ["response.reasoning_summary_text.delta", { type: "response.reasoning_summary_text.delta", delta: "Plan" }],
+    ["response.output_text.delta", { type: "response.output_text.delta", delta: "Answer" }],
+  ]);
+  const result = metered("openai-responses", "sse", cut, 11, false, 3_000);
+  assert.deepEqual(result, {
+    estimated: true,
+    usage: { promptTokens: 0, completionTokens: 0, promptChars: 3_000, completionChars: 6, reasoningChars: 4, fastMode: false },
+  });
+});
+
+test("a provider that refuses in-band before producing anything is not billed; one that fails after output is", () => {
+  const refusedEarly = sse([[null, { error: { message: "content filtered", code: "1301" } }]]);
+  assert.equal(metered("openai-chat", "sse", refusedEarly, 9, false, 5_000), null);
+  const anthropicError = sse([["error", { type: "error", error: { type: "overloaded_error" } }]]);
+  assert.equal(metered("anthropic", "sse", anthropicError, 9, false, 5_000), null);
+  const failed = sse([["response.failed", { type: "response.failed", response: { object: "response", status: "failed", usage: null } }]]);
+  assert.equal(metered("openai-responses", "sse", failed, 9, false, 5_000), null);
+
+  const failedLate = sse([
+    [null, { choices: [{ index: 0, delta: { content: "partial answer" } }] }],
+    [null, { error: { message: "upstream reset" } }],
+  ]);
+  const late = metered("openai-chat", "sse", failedLate, 9, false, 5_000);
+  assert.equal(late?.estimated, true);
+  assert.equal(late?.usage.completionChars, "partial answer".length);
+});
+
+test("Chat Completions: every host's spelling of streamed text and reasoning counts toward the floor, once", () => {
+  const stream = sse([
+    [null, { choices: [{ index: 0, delta: { content: [{ type: "text", text: "ab" }, { type: "thinking", thinking: "cde" }] } }] }],
+    [null, { choices: [{ index: 0, delta: { thought: "fgh" } }] }],
+    [null, { choices: [{ index: 0, delta: { reasoning_details: [{ text: "ij" }, { text: "k" }] } }] }],
+    // Both spellings of the same text: counted once, in the Mac decoder's order.
+    [null, { choices: [{ index: 0, delta: { reasoning_content: "lmno", reasoning: "lmno" } }] }],
+    [null, { choices: [{ index: 0, delta: { refusal: "no" } }] }],
+  ]);
+  const usage = metered("openai-chat", "sse", stream, 13, false, 1)!.usage;
+  assert.equal(usage.completionChars, 2 + 2);
+  assert.equal(usage.reasoningChars, 3 + 3 + 3 + 4);
+});
+
+test("answerComplete: a JSON answer always, a Chat stream once every choice has finished, nothing else", () => {
+  assert.equal(new UsageMeter("anthropic", "json", false).answerComplete, true);
+  assert.equal(new UsageMeter("anthropic", "sse", false).answerComplete, false);
+
+  const chat = new UsageMeter("openai-chat", "sse", false);
+  assert.equal(chat.answerComplete, false);
+  chat.observe(encoder.encode(sse([[null, { choices: [{ index: 0, delta: { content: "a" } }, { index: 1, delta: { content: "b" } }] }]])));
+  assert.equal(chat.answerComplete, false);
+  chat.observe(encoder.encode(sse([[null, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }]])));
+  // Choice 1 is still generating.
+  assert.equal(chat.answerComplete, false);
+  chat.observe(encoder.encode(sse([[null, { choices: [{ index: 1, delta: {}, finish_reason: "length" }] }]])));
+  assert.equal(chat.answerComplete, true);
+
+  const responses = new UsageMeter("openai-responses", "sse", false);
+  responses.observe(encoder.encode(RESPONSES_STREAM));
+  assert.equal(responses.answerComplete, false);
 });
 
 test("Responses: response.completed carries the call's usage", () => {
@@ -293,20 +442,26 @@ test("comments, unknown fields, multi-line data and garbage never throw", () => 
     'data: {"choices":[],\ndata: "usage":{"prompt_tokens":5,"completion_tokens":6,"total_tokens":11}}\n\n';
   for (const chunk of splitBytes(text, 3)) m.observe(chunk);
   m.observe(new Uint8Array([0xff, 0xfe, 0x00, 0x0a, 0x0a]));
-  const usage = m.finish();
-  assert.equal(usage?.promptTokens, 5);
-  assert.equal(usage?.completionTokens, 6);
+  const result = m.finish();
+  assert.equal(result?.estimated, false);
+  assert.equal(result?.usage.promptTokens, 5);
+  assert.equal(result?.usage.completionTokens, 6);
   // finish() is idempotent and the meter ignores anything after it.
   m.observe(encoder.encode('data: {"usage":{"prompt_tokens":999}}\n\n'));
-  assert.deepEqual(m.finish(), usage);
+  assert.deepEqual(m.finish(), result);
 });
 
 test("a meter is only made for a successful model response", () => {
+  const request = { fastRequested: false, promptChars: 100 };
   const sseHeaders = new Headers({ "content-type": "text/event-stream; charset=utf-8" });
-  assert.ok(usageMeterFor("anthropic", { ok: true, headers: sseHeaders }, false));
-  assert.ok(usageMeterFor("openai-chat", { ok: true, headers: new Headers({ "content-type": "application/json" }) }, false));
-  assert.equal(usageMeterFor("anthropic", { ok: false, headers: sseHeaders }, false), null);
-  assert.equal(usageMeterFor("anthropic", { ok: true, headers: new Headers({ "content-type": "text/html" }) }, false), null);
+  const sseMeter = usageMeterFor("anthropic", { ok: true, headers: sseHeaders }, request);
+  assert.equal(sseMeter?.format, "sse");
+  const jsonMeter = usageMeterFor("openai-chat", { ok: true, headers: new Headers({ "content-type": "application/json" }) }, request);
+  assert.equal(jsonMeter?.format, "json");
+  // The request's text rides along for the floor.
+  assert.equal(jsonMeter?.finish()?.usage.promptChars, 100);
+  assert.equal(usageMeterFor("anthropic", { ok: false, headers: sseHeaders }, request), null);
+  assert.equal(usageMeterFor("anthropic", { ok: true, headers: new Headers({ "content-type": "text/html" }) }, request), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -322,7 +477,7 @@ test("each allowed path maps to its wire format", () => {
 
 test("include_usage is switched on for a streamed Chat Completions call that lacks it", () => {
   const raw = JSON.stringify({ model: "glm-5.2", stream: true, messages: [{ role: "user", content: "hi" }], max_tokens: 64 });
-  const request = inspectAgentRequest("openai-chat", raw);
+  const request = accepted("openai-chat", raw);
   const sent = JSON.parse(request.body);
   assert.deepEqual(sent.stream_options, { include_usage: true });
   // Everything else is what the client sent.
@@ -333,33 +488,186 @@ test("include_usage is switched on for a streamed Chat Completions call that lac
 
 test("an explicit include_usage:false is overridden, other stream options kept", () => {
   const raw = JSON.stringify({ model: "gpt-6-sol", stream: true, stream_options: { include_usage: false, include_obfuscation: false } });
-  const sent = JSON.parse(inspectAgentRequest("openai-chat", raw).body);
+  const sent = JSON.parse(accepted("openai-chat", raw).body);
   assert.deepEqual(sent.stream_options, { include_usage: true, include_obfuscation: false });
 });
 
 test("every other body is forwarded byte for byte", () => {
   // Deliberately odd formatting: re-serialising would change it.
   const already = '{ "model":"gpt-6-sol",  "stream":true, "stream_options":{"include_usage":true}, "temperature":1.0 }';
-  assert.equal(inspectAgentRequest("openai-chat", already).body, already);
+  assert.equal(accepted("openai-chat", already).body, already);
 
   const unstreamed = '{"model":"gpt-6-sol","stream":false, "temperature":1.0}';
-  assert.equal(inspectAgentRequest("openai-chat", unstreamed).body, unstreamed);
+  assert.equal(accepted("openai-chat", unstreamed).body, unstreamed);
+  const absent = '{"model":"gpt-6-sol", "temperature":1.0}';
+  assert.equal(accepted("openai-chat", absent).streamed, false);
 
   const anthropic = '{"model":"claude-opus-5-5","stream":true,"speed":"fast", "max_tokens":1.0e3}';
-  const a = inspectAgentRequest("anthropic", anthropic);
+  const a = accepted("anthropic", anthropic);
   assert.equal(a.body, anthropic);
   assert.equal(a.fastRequested, true);
   assert.equal(a.model, "claude-opus-5-5");
 
-  const responses = '{"model":"gpt-6-sol-pro","stream":true,"service_tier":"priority"}';
-  const r = inspectAgentRequest("openai-responses", responses);
+  const responses = '{"model":"gpt-6-sol-pro","stream":true,"service_tier":"priority","background":false,"store":false}';
+  const r = accepted("openai-responses", responses);
   assert.equal(r.body, responses);
   assert.equal(r.fastRequested, true);
+});
 
-  const broken = '{"model": "x", "stream": tru';
-  const b = inspectAgentRequest("openai-chat", broken);
-  assert.equal(b.body, broken);
-  assert.equal(b.model, null);
+test("a body the proxy cannot read exactly as the provider will is refused, not forwarded", () => {
+  // JSON.parse rejects these; a lax host (Python's json accepts NaN) would not.
+  refused("openai-chat", '{"model": "x", "stream": tru');
+  refused("openai-chat", '{"model":"glm-5.2","stream":true,"temperature":NaN}');
+  refused("openai-chat", '[{"model":"glm-5.2","stream":true}]');
+  refused("anthropic", '"just a string"');
+  refused("anthropic", "");
+
+  // A truthy `stream` that is not the boolean true would stream unmetered
+  // from a host that coerces it, with no include_usage switched on.
+  for (const stream of ["1", '"true"', "null", "{}", "0"]) {
+    const error = refused("openai-chat", `{"model":"glm-5.2","stream":${stream},"messages":[]}`);
+    assert.match(error, /stream/);
+  }
+
+  // No model, or not one: billing would price `<provider>:unknown`.
+  for (const model of ['""', '"   "', "42", "null", '["gpt-6-sol"]', JSON.stringify("m".repeat(201))]) {
+    const error = refused("openai-chat", `{"model":${model},"stream":true}`);
+    assert.match(error, /model/);
+  }
+  refused("anthropic", '{"stream":true,"messages":[]}');
+});
+
+test("a key named twice is refused wherever it is, escaped spellings included", () => {
+  // JSON.parse keeps the last model; a host that keeps the first serves another.
+  refused("openai-chat", '{"model":"gpt-6-nano","model":"gpt-6-astra","stream":true}');
+  refused("openai-chat", '{"model":"gpt-6-sol","stream":true,"stream":false}');
+  refused("openai-chat", '{"model":"gpt-6-sol","mod\\u0065l":"gpt-6-astra","stream":true}');
+  refused("openai-chat", '{"model":"gpt-6-sol","stream":true,"stream_options":{"include_usage":false,"include_usage":true}}');
+  refused("anthropic", '{"model":"claude-opus-5-5","messages":[{"role":"user","content":[{"type":"text","text":"a","text":"b"}]}]}');
+});
+
+test("hasRepeatedKey reads keys, not text that looks like keys", () => {
+  assert.equal(hasRepeatedKey('{"a":1,"b":{"a":2},"c":[{"a":3},{"a":4}]}'), false);
+  assert.equal(hasRepeatedKey('{"a":"\\"a\\":1,","b":"{\\"a\\"","c":"\\\\","d":"}]["}'), false);
+  assert.equal(hasRepeatedKey('{"text":"{\\"model\\":1, \\"model\\":2}","model":"x"}'), false);
+  assert.equal(hasRepeatedKey('{"a":[1,{"b":1,"b":2}]}'), true);
+  assert.equal(hasRepeatedKey('{"a":{},"a":{}}'), true);
+  assert.equal(hasRepeatedKey('{"\\\\":1,"\\u005c":2}'), true);
+  assert.equal(hasRepeatedKey("[]"), false);
+});
+
+test("Responses: background, stored responses and conversations are refused", () => {
+  const base = { model: "gpt-6-astra", stream: true, store: false, input: [{ role: "user", content: "hi" }] };
+  // Comes back `queued` with no usage while OpenAI runs the whole generation.
+  for (const background of [true, "true", 1, null, {}]) {
+    const error = refused("openai-responses", JSON.stringify({ ...base, background, reasoning: { effort: "xhigh" } }));
+    assert.match(error, /[Bb]ackground/);
+  }
+  refused("openai-responses", JSON.stringify({ ...base, stream: false, background: true }));
+  refused("openai-responses", JSON.stringify({ ...base, previous_response_id: "resp_abc" }));
+  refused("openai-responses", JSON.stringify({ ...base, conversation: "conv_abc" }));
+  refused("openai-responses", JSON.stringify({ ...base, conversation: { id: "conv_abc" } }));
+  accepted("openai-responses", JSON.stringify({ ...base, background: false, previous_response_id: null }));
+  // The other wires have no such thing, and are not second-guessed.
+  accepted("openai-chat", JSON.stringify({ model: "glm-5.2", stream: true, background: true }));
+});
+
+test("the bodies Juno's own clients send are all accepted", () => {
+  // BackendCodeModelClient's three builders, and agent-core's two adapters.
+  accepted(
+    "anthropic",
+    JSON.stringify({
+      model: "claude-opus-5-5",
+      max_tokens: 128000,
+      system: [{ type: "text", text: "You are Juno Code.", cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: [{ type: "text", text: "Fix the bug." }] }],
+      stream: true,
+      thinking: { type: "adaptive" },
+      tools: [{ name: "read_file", description: "Read a file.", input_schema: { type: "object", properties: {} } }],
+    }),
+  );
+  accepted(
+    "openai-chat",
+    JSON.stringify({
+      model: "glm-5.2",
+      messages: [{ role: "system", content: "You are Juno Code." }, { role: "user", content: "Fix the bug." }],
+      stream: true,
+      stream_options: { include_usage: true },
+      max_tokens: 128000,
+      tools: [{ type: "function", function: { name: "read_file", description: "Read.", parameters: { type: "object" } } }],
+    }),
+  );
+  accepted(
+    "openai-responses",
+    JSON.stringify({
+      model: "gpt-6-sol-pro",
+      instructions: "You are Juno Code.",
+      input: [{ role: "user", content: [{ type: "input_text", text: "Fix the bug." }] }],
+      stream: true,
+      store: false,
+      max_output_tokens: 128000,
+      reasoning: { effort: "high", summary: "detailed" },
+    }),
+  );
+});
+
+test("the prompt floor counts the text the model reads, and not image, file or opaque bytes", () => {
+  const image = "iVBORw0KGgo".repeat(10_000);
+  const anthropic = {
+    model: "claude-opus-5-5",
+    system: [{ type: "text", text: "SYSTEM" }],
+    messages: [
+      { role: "user", content: [{ type: "text", text: "look" }, { type: "image", source: { type: "base64", media_type: "image/png", data: image } }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "hmm", signature: "S".repeat(5_000) },
+          { type: "redacted_thinking", data: "R".repeat(5_000) },
+          { type: "tool_use", id: "t1", name: "read", input: { path: "a.ts" } },
+        ],
+      },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "FILE CONTENTS" }] },
+    ],
+    tools: [{ name: "read", description: "Read a file", input_schema: { type: "object" } }],
+    max_tokens: 1000,
+  };
+  const count = promptTextChars("anthropic", anthropic);
+  const text = ["SYSTEM", "look", "hmm", "a.ts", "FILE CONTENTS", "Read a file"].join("").length;
+  // Plus the short structural strings (types, roles, ids, names, media type),
+  // which the provider tokenises too; never the image or the opaque blobs.
+  assert.ok(count >= text, `${count} >= ${text}`);
+  assert.ok(count < text + 200, `${count} < ${text + 200}`);
+  assert.equal(accepted("anthropic", JSON.stringify(anthropic)).promptChars, count);
+
+  const chat = {
+    model: "glm-5.2",
+    messages: [
+      { role: "user", content: [{ type: "text", text: "describe" }, { type: "image_url", image_url: { url: `data:image/png;base64,${image}` } }] },
+      { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "run", arguments: '{"cmd":"ls"}' } }] },
+    ],
+  };
+  assert.ok(promptTextChars("openai-chat", chat) < 200);
+
+  const responses = {
+    model: "gpt-6-sol-pro",
+    instructions: "INSTR",
+    input: [
+      { role: "user", content: [{ type: "input_image", image_url: `data:image/png;base64,${image}` }, { type: "input_file", file_data: image }] },
+      { type: "reasoning", encrypted_content: "E".repeat(5_000) },
+      { type: "function_call_output", call_id: "c1", output: "OUTPUT" },
+    ],
+  };
+  assert.ok(promptTextChars("openai-responses", responses) < 200);
+  // Fields outside the prompt (the model id, sampling settings) are not text the model reads.
+  assert.equal(promptTextChars("openai-chat", { model: "m".repeat(150), messages: [] }), 0);
+});
+
+test("the prompt floor has no depth limit to hide text under", () => {
+  const depth = 20_000;
+  const nested = "[".repeat(depth) + JSON.stringify("T".repeat(1000)) + "]".repeat(depth);
+  const raw = `{"model":"glm-5.2","stream":false,"messages":[{"role":"user","content":${nested}}]}`;
+  const request = accepted("openai-chat", raw);
+  assert.ok(request.promptChars >= 1000);
 });
 
 // ---------------------------------------------------------------------------
@@ -391,7 +699,7 @@ function countingTimers(): UpstreamTimers & { readonly pending: number } {
 interface Harness {
   stream: ReadableStream<Uint8Array>;
   endings: RelayOutcome[];
-  billed: Array<ProxyUsage | null>;
+  billed: Array<MeteredUsage | null>;
   abort: ReturnType<typeof createUpstreamAbort>;
   timers: ReturnType<typeof countingTimers>;
   upstreamCancelled: () => boolean;
@@ -404,7 +712,13 @@ interface Harness {
 function harness(
   wire: ProviderWire,
   script: (controller: ReadableStreamDefaultController<Uint8Array>, signal: AbortSignal) => void,
-  options: { idleMs?: number; parent?: AbortSignal; followsSignal?: boolean } = {},
+  options: {
+    idleMs?: number;
+    parent?: AbortSignal;
+    followsSignal?: boolean;
+    format?: "sse" | "json";
+    promptChars?: number;
+  } = {},
 ): Harness {
   const timers = countingTimers();
   const abort = createUpstreamAbort(
@@ -432,13 +746,14 @@ function harness(
       cancelled = true;
     },
   });
-  const m = new UsageMeter(wire, "sse", false);
+  const m = new UsageMeter(wire, options.format ?? "sse", false, options.promptChars ?? 0);
   const endings: RelayOutcome[] = [];
-  const billed: Array<ProxyUsage | null> = [];
+  const billed: Array<MeteredUsage | null> = [];
   const stream = relayUpstreamBody({
     body: upstream,
     abort,
     observe: (chunk) => m.observe(chunk),
+    answerComplete: () => m.answerComplete,
     onEnd: (outcome) => {
       endings.push(outcome);
       billed.push(m.finish());
@@ -477,7 +792,7 @@ test("the client receives the provider's bytes unchanged, and the call is billed
   const received = await readAll(h.stream);
   assert.deepEqual(received, encoder.encode(ANTHROPIC_STREAM));
   assert.deepEqual(h.endings, ["completed"]);
-  assert.deepEqual(h.billed, [ANTHROPIC_EXPECTED]);
+  assert.deepEqual(h.billed, [{ usage: ANTHROPIC_EXPECTED, estimated: false }]);
   assert.equal(h.timers.pending, 0);
   // Nothing after the ending can bill it again.
   await h.stream.cancel("late").catch(() => undefined);
@@ -513,7 +828,8 @@ test("a client that leaves mid-stream is billed what the provider reported, once
 
   assert.deepEqual(h.endings, ["cancelled"]);
   assert.equal(h.billed.length, 1);
-  const usage = h.billed[0];
+  assert.equal(h.billed[0]?.estimated, false);
+  const usage = h.billed[0]?.usage;
   assert.equal(usage?.promptTokens, 2000);
   assert.equal(usage?.cacheRead, 500);
   // No final count arrived, so the streamed text is the output floor.
@@ -547,17 +863,176 @@ test("the client abort arriving first is the same single ending", async () => {
   const h = harness(
     "openai-chat",
     (controller) => controller.enqueue(encoder.encode(CHAT_STREAM.slice(0, 40))),
-    { parent: parent.signal },
+    { parent: parent.signal, promptChars: 1200 },
   );
   const reader = h.stream.getReader();
   await reader.read();
   await tick();
   parent.abort("client_closed");
   await tick();
+  // The request signal alone closes the client's side too: nothing waits on it.
+  await assert.rejects(() => reader.read());
   await reader.cancel("client_closed").catch(() => undefined);
   assert.deepEqual(h.endings, ["cancelled"]);
-  // OpenAI sends usage last: a stream cut before it is not billed on a guess.
-  assert.deepEqual(h.billed, [null]);
+  // OpenAI sends usage last, so a stream cut before it is billed at the floor.
+  assert.equal(h.billed.length, 1);
+  assert.equal(h.billed[0]?.estimated, true);
+  assert.equal(h.billed[0]?.usage.promptChars, 1200);
+  assert.equal(h.abort.signal.aborted, true);
+  assert.equal(h.timers.pending, 0);
+});
+
+test("hanging up just before OpenAI's usage chunk no longer makes a call free", async () => {
+  // The reviewer's case: a large prompt, an answer the client reads, then a
+  // long tool call it hangs up on before the final usage chunk.
+  const prompt = "Explain the whole codebase. ".repeat(4_000);
+  const raw = JSON.stringify({ model: "gpt-6-sol", stream: true, messages: [{ role: "user", content: prompt }] });
+  const request = accepted("openai-chat", raw);
+  assert.equal(request.promptChars, prompt.length + "user".length);
+
+  const answer = sse([[null, { choices: [{ index: 0, delta: { content: "A".repeat(2_000) } }] }]]);
+  const toolStart = sse([[null, { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: "pad", arguments: '{"x":"' } }] } }] }]]);
+  const h = harness(
+    "openai-chat",
+    (controller) => {
+      controller.enqueue(encoder.encode(answer));
+      controller.enqueue(encoder.encode(toolStart));
+      // ...and the model goes on writing filler for as long as it is allowed.
+    },
+    // A body that ignores the fetch signal, so the cancel itself is seen arriving.
+    { promptChars: request.promptChars, followsSignal: false },
+  );
+  const reader = h.stream.getReader();
+  await reader.read();
+  await reader.read();
+  await tick();
+  await reader.cancel("client_closed");
+  await tick();
+
+  assert.deepEqual(h.endings, ["cancelled"]);
+  // Mid-generation, so the provider is stopped rather than drained.
+  assert.equal(h.abort.signal.aborted, true);
+  assert.equal(h.upstreamCancelled(), true);
+  const billed = h.billed[0];
+  assert.equal(billed?.estimated, true);
+  assert.equal(billed?.usage.promptChars, request.promptChars);
+  assert.equal(billed?.usage.completionChars, 2_000 + '{"x":"'.length);
+  assert.ok(priced("openai:gpt-6-sol", billed!.usage) > 0);
+  assert.equal(h.timers.pending, 0);
+});
+
+test("a non-streamed answer the client stops reading is read to its end and billed exactly", async () => {
+  const body = JSON.stringify({
+    object: "chat.completion",
+    choices: [{ index: 0, message: { role: "assistant", content: "Z".repeat(5_000) } }],
+    // Usage comes last, which is what a client that hangs up early would skip.
+    usage: { prompt_tokens: 9_000, completion_tokens: 1_500, total_tokens: 10_500 },
+  });
+  const head = encoder.encode(body.slice(0, 3_000));
+  const rest = encoder.encode(body.slice(3_000));
+  const h = harness(
+    "openai-chat",
+    (controller) => {
+      controller.enqueue(head);
+      setTimeout(() => {
+        controller.enqueue(rest);
+        controller.close();
+      }, 20);
+    },
+    { format: "json", promptChars: 36_000 },
+  );
+  const reader = h.stream.getReader();
+  const first = await reader.read();
+  assert.equal(first.value?.byteLength, head.byteLength);
+  await tick(); // the relay's next read is now waiting on the provider
+  await reader.cancel("client_closed");
+  assert.deepEqual(h.endings, []);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  assert.deepEqual(h.endings, ["cancelled"]);
+  // The read in flight when the client left was taken over, not lost or
+  // counted twice: the meter saw the whole body, usage and all.
+  assert.deepEqual(h.billed, [
+    {
+      estimated: false,
+      usage: {
+        promptTokens: 9_000,
+        completionTokens: 1_500,
+        reasoningTokens: undefined,
+        totalTokens: 10_500,
+        cacheRead: undefined,
+        cacheWrite: undefined,
+        completionChars: undefined,
+        reasoningChars: undefined,
+        fastMode: false,
+      },
+    },
+  ]);
+  // The answer was already paid for; reading it cost nothing, and nothing was aborted.
+  assert.equal(h.abort.signal.aborted, false);
+  assert.equal(h.upstreamCancelled(), false);
+  assert.equal(h.timers.pending, 0);
+});
+
+test("a Chat stream left after its finish_reason is read on for the usage chunk", async () => {
+  const done = encoder.encode(
+    sse([
+      [null, { choices: [{ index: 0, delta: { content: "All done." } }] }],
+      [null, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }],
+    ]),
+  );
+  const usage = encoder.encode(
+    sse([
+      [null, { choices: [], usage: { prompt_tokens: 700, completion_tokens: 40, total_tokens: 740, completion_tokens_details: { reasoning_tokens: 30 } } }],
+      [null, "[DONE]"],
+    ]),
+  );
+  const parent = new AbortController();
+  const h = harness(
+    "openai-chat",
+    (controller) => {
+      controller.enqueue(done);
+      setTimeout(() => {
+        controller.enqueue(usage);
+        controller.close();
+      }, 20);
+    },
+    { parent: parent.signal, promptChars: 2_800 },
+  );
+  const reader = h.stream.getReader();
+  await reader.read();
+  await tick();
+  // The request signal reports it first this time; same decision.
+  parent.abort("client_closed");
+  await reader.cancel("client_closed").catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  assert.deepEqual(h.endings, ["cancelled"]);
+  assert.equal(h.billed[0]?.estimated, false);
+  // The hidden reasoning is in the bill, which the floor could never have seen.
+  assert.equal(h.billed[0]?.usage.reasoningTokens, 30);
+  assert.equal(h.billed[0]?.usage.promptTokens, 700);
+  assert.equal(h.abort.signal.aborted, false);
+  assert.equal(h.timers.pending, 0);
+});
+
+test("reading the rest after the client leaves is still bounded by the idle deadline", async () => {
+  const h = harness(
+    "anthropic",
+    (controller) => controller.enqueue(encoder.encode('{"type":"message","content":[{"type":"text","text":"half')),
+    { format: "json", idleMs: 25, promptChars: 4_000 },
+  );
+  const reader = h.stream.getReader();
+  await reader.read();
+  await tick();
+  await reader.cancel("client_closed");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.deepEqual(h.endings, ["cancelled"]);
+  assert.equal(upstreamTimeoutKind(h.abort.signal), "idle");
+  // The provider never finished the body, so the floor is what is billed.
+  assert.equal(h.billed[0]?.estimated, true);
+  assert.equal(h.billed[0]?.usage.promptChars, 4_000);
   assert.equal(h.timers.pending, 0);
 });
 
@@ -576,7 +1051,7 @@ test("a provider that errors mid-stream ends once, billed for what it reported",
     }
   });
   assert.deepEqual(h.endings, ["failed"]);
-  assert.equal(h.billed[0]?.promptTokens, 5000);
+  assert.equal(h.billed[0]?.usage.promptTokens, 5000);
   assert.equal(h.timers.pending, 0);
 });
 
@@ -595,7 +1070,7 @@ test("a provider that goes silent mid-stream is cut by the idle deadline, not by
   await assert.rejects(() => reader.read());
   assert.equal(upstreamTimeoutKind(h.abort.signal), "idle");
   assert.deepEqual(h.endings, ["failed"]);
-  assert.equal(h.billed[0]?.promptTokens, 77);
+  assert.equal(h.billed[0]?.usage.promptTokens, 77);
   assert.equal(h.timers.pending, 0);
 });
 
@@ -622,7 +1097,7 @@ test("a stream that keeps talking outlives the idle deadline many times over", a
   assert.ok(pieces.length * 8 > 90);
   assert.deepEqual(received, encoder.encode(CHAT_STREAM));
   assert.deepEqual(h.endings, ["completed"]);
-  assert.deepEqual(h.billed, [CHAT_EXPECTED]);
+  assert.deepEqual(h.billed, [{ usage: CHAT_EXPECTED, estimated: false }]);
 });
 
 // ---------------------------------------------------------------------------
@@ -631,8 +1106,12 @@ test("a stream that keeps talking outlives the idle deadline many times over", a
 
 test("the proxy is the one writer of Code spend for the calls it forwards", () => {
   const route = readFileSync(new URL("../src/app/api/agent/[...path]/route.ts", import.meta.url), "utf8");
-  assert.match(route, /recordSpend\(\{ userId, model: spendModel, kind: "code", source, \.\.\.usage \}\)/);
+  assert.match(route, /recordSpend\(\{ userId, model: spendModel, kind: "code", source, \.\.\.metered\.usage \}\)/);
   assert.match(route, /relayUpstreamBody\(/);
+  assert.match(route, /answerComplete: meter \? \(\) => meter\.answerComplete : undefined/);
+  // A body the proxy would read differently from the provider never leaves.
+  assert.match(route, /if \(!checked\.ok\) return NextResponse\.json\(\{ error: checked\.error \}, \{ status: 400 \}\);/);
+  assert.ok(route.indexOf("inspectAgentRequest(") < route.indexOf("await fetch(target"));
   assert.match(route, /upstreamTimeoutsFor\(request\.streamed\)/);
   // The fixed total is gone, and so is the Vercel-only directive that implied one.
   assert.doesNotMatch(route, /UPSTREAM_TIMEOUT_MS/);

@@ -161,6 +161,14 @@ export interface UpstreamAbort {
   read<T>(next: () => Promise<T>): Promise<T>;
   /** Abort the upstream call now (the client went away) and disarm everything. */
   abort(reason: unknown): void;
+  /**
+   * From now on, the client going away calls `handler` instead of aborting the
+   * upstream call, and the handler decides. Until a response arrives there is
+   * nothing to decide — the provider is working for nobody — so this is for
+   * the relay, which may still want to read the rest of an answer that is
+   * already paid for. The deadlines stay armed either way.
+   */
+  onClientLeave(handler: (reason: unknown) => void): void;
   /** The exchange is over: clear every timer and the client listener. */
   cancel(): void;
 }
@@ -180,6 +188,7 @@ export function createUpstreamAbort(
   let headersTimer: unknown = null;
   let idleTimer: unknown = null;
   let ceilingTimer: unknown = null;
+  let clientLeft: ((reason: unknown) => void) | null = null;
 
   const disarm = (handle: unknown) => {
     if (handle !== null) timers.clear(handle);
@@ -198,7 +207,8 @@ export function createUpstreamAbort(
     if (!controller.signal.aborted) controller.abort(reason);
   };
   function onParentAbort() {
-    abort(parent.reason);
+    if (clientLeft) clientLeft(parent.reason);
+    else abort(parent.reason);
   }
 
   if (parent.aborted) {
@@ -227,6 +237,9 @@ export function createUpstreamAbort(
       }
     },
     abort,
+    onClientLeave(handler) {
+      clientLeft = handler;
+    },
     cancel,
   };
 }
@@ -261,20 +274,52 @@ export function providerWire(kind: "anthropic" | "openai", forwardPath: string):
 export interface AgentRequest {
   /** What to forward: the client's own bytes, unless usage had to be switched on. */
   body: string;
-  /** The provider model id the body names, or null when it names none. */
-  model: string | null;
+  /** The provider model id the body names. */
+  model: string;
   streamed: boolean;
   /** Asked for the premium tier: Anthropic `speed:"fast"`, OpenAI `service_tier:"priority"`. */
   fastRequested: boolean;
+  /**
+   * Characters of text the request puts in front of the model: system prompt,
+   * messages, tool results and tool definitions, without image or file bytes.
+   * The floor a call is billed at when the provider never says what it used.
+   */
+  promptChars: number;
 }
+
+/** What the proxy will forward, or why it will not. */
+export type AgentRequestCheck = { ok: true; request: AgentRequest } | { ok: false; error: string };
+
+/** No provider names a model at anything like this length; a longer id is not a model. */
+const MAX_MODEL_ID_CHARS = 200;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function refuse(error: string): AgentRequestCheck {
+  return { ok: false, error };
+}
+
 /**
- * Read what billing needs from the client's body, and make sure a streamed
- * Chat Completions call will report its usage.
+ * Read what billing needs from the client's body, refuse a body that billing
+ * and the provider could read differently, and make sure a streamed Chat
+ * Completions call will report its usage.
+ *
+ * Billing is only as good as the proxy's reading of the request, so the proxy
+ * forwards nothing it cannot read the way the provider will. A body JSON.parse
+ * rejects (a lax host accepts `NaN`), a `stream` that is not a boolean (a lax
+ * host coerces `1` to true), or a key named twice (parsers disagree on which
+ * one wins) would each let the provider stream an answer the proxy believes is
+ * something else — unmetered, or priced as another model. None of Juno's
+ * clients sends any of them, so each is refused rather than guessed at.
+ *
+ * On the Responses wire, `background` is refused too: a background response
+ * comes back `queued` with no usage while OpenAI runs the whole generation on
+ * Juno's key, so it can never be billed. `previous_response_id` and
+ * `conversation` go with it — they are how a stored background result would be
+ * pulled into a cheap follow-up, and they reach responses stored under Juno's
+ * key rather than the caller's. The Mac client uses none of the three.
  *
  * OpenAI-compatible providers send usage on a stream only when
  * `stream_options.include_usage` is true; without it the proxy sees the whole
@@ -285,17 +330,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * otherwise. The extra final chunk carries an empty `choices` array, which the
  * OpenAI stream format has always allowed.
  */
-export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentRequest {
+export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentRequestCheck {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { body: raw, model: null, streamed: false, fastRequested: false };
+    return refuse("The request body is not valid JSON.");
   }
-  if (!isRecord(parsed)) return { body: raw, model: null, streamed: false, fastRequested: false };
+  if (!isRecord(parsed)) return refuse("The request body must be a JSON object.");
+  if (hasRepeatedKey(raw)) return refuse("The request body names the same field more than once.");
 
-  const model =
-    typeof parsed.model === "string" && parsed.model.trim() ? parsed.model.trim().slice(0, 200) : null;
+  const rawModel = parsed.model;
+  const model = typeof rawModel === "string" ? rawModel.trim() : "";
+  if (!model || model.length > MAX_MODEL_ID_CHARS) return refuse("The request must name a model.");
+  if (Object.hasOwn(parsed, "stream") && typeof parsed.stream !== "boolean") {
+    return refuse("`stream` must be true or false.");
+  }
+  if (wire === "openai-responses") {
+    if (Object.hasOwn(parsed, "background") && parsed.background !== false) {
+      return refuse("Background responses are not available through Juno.");
+    }
+    if (parsed.previous_response_id != null || parsed.conversation != null) {
+      return refuse("Send the whole conversation: stored responses are not available through Juno.");
+    }
+  }
+
   const streamed = parsed.stream === true;
   const fastRequested = wire === "anthropic" ? parsed.speed === "fast" : parsed.service_tier === "priority";
 
@@ -306,7 +365,104 @@ export function inspectAgentRequest(wire: ProviderWire, raw: string): AgentReque
       body = JSON.stringify({ ...parsed, stream_options: { ...options, include_usage: true } });
     }
   }
-  return { body, model, streamed, fastRequested };
+  return {
+    ok: true,
+    request: { body, model, streamed, fastRequested, promptChars: promptTextChars(wire, parsed) },
+  };
+}
+
+/**
+ * Whether any object in `raw`, already known to be valid JSON, names a key
+ * twice. JSON.parse keeps the last; some parsers keep the first, and some
+ * refuse. Keys are compared decoded, so `"mod\u0065l"` repeats `"model"`.
+ *
+ * A single pass that jumps from quote to quote, so a body made mostly of long
+ * strings (base64 images) costs little more than finding their ends.
+ */
+export function hasRepeatedKey(raw: string): boolean {
+  // One entry per open container: the keys seen so far, or null for an array.
+  const scopes: Array<Set<string> | null> = [];
+  let expectingKey = false;
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if (code === 0x22) {
+      const close = closingQuote(raw, i);
+      const scope = scopes[scopes.length - 1];
+      if (expectingKey && scope) {
+        const literal = raw.slice(i + 1, close);
+        const key = literal.includes("\\") ? (JSON.parse(`"${literal}"`) as string) : literal;
+        if (scope.has(key)) return true;
+        scope.add(key);
+        expectingKey = false;
+      }
+      i = close;
+    } else if (code === 0x7b) {
+      scopes.push(new Set());
+      expectingKey = true;
+    } else if (code === 0x5b) {
+      scopes.push(null);
+      expectingKey = false;
+    } else if (code === 0x7d || code === 0x5d) {
+      scopes.pop();
+      expectingKey = false;
+    } else if (code === 0x2c) {
+      expectingKey = scopes[scopes.length - 1] != null;
+    }
+  }
+  return false;
+}
+
+/** The index of the quote that closes the string opening at `open`: the first one not escaped. */
+function closingQuote(raw: string, open: number): number {
+  let from = open + 1;
+  for (;;) {
+    const quote = raw.indexOf('"', from);
+    if (quote === -1) return raw.length;
+    let backslashes = 0;
+    while (raw.charCodeAt(quote - 1 - backslashes) === 0x5c) backslashes++;
+    if (backslashes % 2 === 0) return quote;
+    from = quote + 1;
+  }
+}
+
+/** The top-level fields each wire's prompt is made of. */
+const PROMPT_FIELDS: Record<ProviderWire, readonly string[]> = {
+  anthropic: ["system", "messages", "tools"],
+  "openai-chat": ["messages", "tools"],
+  "openai-responses": ["instructions", "input", "tools"],
+};
+
+/**
+ * Keys whose values the model does not read as text: base64 images, audio and
+ * files (`data`, `file_data`, `image_url`), and the opaque blobs a provider
+ * hands back to itself (thinking `signature`, Responses `encrypted_content`,
+ * redacted thinking's `data`). Counting them would bill a screenshot as a
+ * novel.
+ */
+const OPAQUE_KEYS = new Set(["data", "file_data", "image_url", "signature", "encrypted_content"]);
+
+/**
+ * The prompt's text, in characters: every string in the fields that make up
+ * the prompt, walked without recursion so no nesting depth can stop the count
+ * short. Object keys are left out, so this sits a little under the tokens the
+ * provider counts, which is the right side for a floor to be on.
+ */
+export function promptTextChars(wire: ProviderWire, body: Record<string, unknown>): number {
+  let total = 0;
+  const pending: unknown[] = PROMPT_FIELDS[wire].map((field) => body[field]);
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      total += value.length;
+    } else if (Array.isArray(value)) {
+      for (const item of value) pending.push(item);
+    } else if (isRecord(value)) {
+      for (const key of Object.keys(value)) {
+        if (!OPAQUE_KEYS.has(key)) pending.push(value[key]);
+      }
+    }
+  }
+  return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +487,14 @@ export interface ProxyUsage {
   cacheWrite1h?: number;
   webSearchRequests?: number;
   /**
+   * The request's text, sent only when the provider reported no usage at all.
+   * With reported usage it must stay out: `resolveBillableTokens` fills an
+   * absent prompt count from it, and Anthropic's `input_tokens` can be zero on
+   * a fully cached prompt, which would then bill the prompt again at full rate
+   * on top of its cache reads.
+   */
+  promptChars?: number;
+  /**
    * Streamed answer, tool-argument and reasoning characters. `resolveBillableTokens`
    * bills the higher of these (at four characters a token) and the reported
    * output, which is what stops an Anthropic stream cut before its final
@@ -342,6 +506,16 @@ export interface ProxyUsage {
   fastMode: boolean;
 }
 
+/** What one call is billed at, and whether that came from the provider or the floor. */
+export interface MeteredUsage {
+  usage: ProxyUsage;
+  /**
+   * True when the provider reported nothing and the usage is the character
+   * floor: the request's text plus whatever streamed before the end.
+   */
+  estimated: boolean;
+}
+
 /** An SSE line or event, or a JSON body, larger than this is relayed but not metered. */
 const MAX_METERED_CHARS = MAX_AGENT_BODY_BYTES;
 
@@ -351,6 +525,24 @@ function count(value: unknown): number {
 
 function chars(value: unknown): number {
   return typeof value === "string" ? value.length : 0;
+}
+
+/**
+ * The reasoning in one Chat Completions delta, under whichever name its host
+ * uses: `reasoning_content` (DeepSeek, Moonshot), `reasoning` (OpenRouter
+ * style), `thought`, `thinking`, or `reasoning_details` text. Read in the Mac
+ * decoder's order and only the first that is present, because a host that
+ * sends two of them sends the same text twice.
+ */
+function chatReasoningChars(delta: Record<string, unknown>): number {
+  for (const key of ["reasoning_content", "reasoning", "thought", "thinking"]) {
+    const length = chars(delta[key]);
+    if (length > 0) return length;
+  }
+  if (!Array.isArray(delta.reasoning_details)) return 0;
+  let total = 0;
+  for (const detail of delta.reasoning_details) if (isRecord(detail)) total += chars(detail.text);
+  return total;
 }
 
 /**
@@ -373,6 +565,16 @@ function chars(value: unknown): number {
  * multi-line `data:` joins with a newline, comments and other fields are
  * ignored. A line or event split across network chunks is reassembled, and so
  * is a UTF-8 character split across them.
+ *
+ * When the provider reported nothing — a Chat Completions or Responses stream
+ * cut before its last event, an Anthropic stream cut before `message_start`, a
+ * host that ignores `include_usage` — the call is billed at the character
+ * floor instead: the request's text and everything that streamed, four
+ * characters a token, as the chat route bills a partial generation. Billing
+ * nothing there would let any client make every call free by hanging up just
+ * before the usage arrives, and the budget gates, which read only the ledger,
+ * would never close. The floor misses what never streams (hidden reasoning),
+ * so it stays below the provider's own count.
  */
 export class UsageMeter {
   private readonly decoder = new TextDecoder();
@@ -388,13 +590,33 @@ export class UsageMeter {
   private webSearchCalls = 0;
   private textChars = 0;
   private reasoningChars = 0;
-  private result: ProxyUsage | null | undefined;
+  /** The provider refused or failed in-band, inside a 2xx response. */
+  private sawError = false;
+  /** Chat Completions choices seen, and those that have a finish_reason. */
+  private readonly openChoices = new Set<number>();
+  private readonly finishedChoices = new Set<number>();
+  private result: MeteredUsage | null | undefined;
 
   constructor(
     private readonly wire: ProviderWire,
-    private readonly format: "sse" | "json",
+    readonly format: "sse" | "json",
     private readonly fastRequested: boolean,
+    /** The request's text in characters (`AgentRequest.promptChars`), for the floor. */
+    private readonly promptChars = 0,
   ) {}
+
+  /**
+   * Whether the provider has finished the answer, so the rest of the body
+   * costs nothing more to read and may still carry the bill: a non-streamed
+   * response is complete before its first byte, and a Chat Completions stream
+   * whose every choice has a `finish_reason` has only the usage chunk to come.
+   */
+  get answerComplete(): boolean {
+    if (this.format === "json") return true;
+    if (this.wire !== "openai-chat" || this.finishedChoices.size === 0) return false;
+    for (const index of this.openChoices) if (!this.finishedChoices.has(index)) return false;
+    return true;
+  }
 
   /** Feed one chunk of the response body. Never throws. */
   observe(chunk: Uint8Array): void {
@@ -410,11 +632,15 @@ export class UsageMeter {
   }
 
   /**
-   * The usage the provider reported, or null when it reported none. Safe to
-   * call more than once; the first call closes the meter.
+   * What to bill: the usage the provider reported, or else the character
+   * floor. Null only when there is nothing to bill — an empty request that
+   * produced nothing, or a provider that refused in-band before producing
+   * anything, which is a refusal like a non-2xx one. Safe to call more than
+   * once; the first call closes the meter.
    */
-  finish(): ProxyUsage | null {
+  finish(): MeteredUsage | null {
     if (this.result !== undefined) return this.result;
+    let reported: ProxyUsage | null = null;
     try {
       const rest = this.decoder.decode();
       if (this.format === "json") {
@@ -427,11 +653,37 @@ export class UsageMeter {
         this.endEvent();
       }
       this.pending = "";
-      this.result = this.compose();
+      reported = this.compose();
     } catch {
-      this.result = null;
+      // Whatever went wrong reading the end, the floor below still holds.
     }
+    this.result = reported ? { usage: reported, estimated: false } : this.floor();
     return this.result;
+  }
+
+  private floor(): MeteredUsage | null {
+    const streamed = this.textChars + this.reasoningChars;
+    if (this.sawError && streamed === 0) return null;
+    if (this.promptChars + streamed <= 0) return null;
+    return {
+      estimated: true,
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        promptChars: this.promptChars || undefined,
+        completionChars: this.textChars || undefined,
+        reasoningChars: this.reasoningChars || undefined,
+        fastMode: this.servedFast(),
+      },
+    };
+  }
+
+  /** What the provider says it served outranks what was asked for. */
+  private servedFast(): boolean {
+    if (this.wire === "anthropic") {
+      return this.anthropic.speed != null ? this.anthropic.speed === "fast" : this.fastRequested;
+    }
+    return this.servedTier != null ? this.servedTier === "priority" : this.fastRequested;
   }
 
   private appendJson(text: string): void {
@@ -518,6 +770,9 @@ export class UsageMeter {
         else if (delta.type === "thinking_delta") this.reasoningChars += chars(delta.thinking);
         return;
       }
+      case "error":
+        this.sawError = true;
+        return;
     }
   }
 
@@ -528,14 +783,31 @@ export class UsageMeter {
   private readChat(event: Record<string, unknown>): void {
     if (isRecord(event.usage)) this.openaiUsage = event.usage;
     if (typeof event.service_tier === "string") this.servedTier = event.service_tier;
+    // Several compatible hosts report a failure as a 200 stream with an
+    // `error` payload instead of an error status.
+    if (event.error != null) this.sawError = true;
     if (!Array.isArray(event.choices)) return;
     for (const choice of event.choices) {
-      if (!isRecord(choice) || !isRecord(choice.delta)) continue;
+      if (!isRecord(choice)) continue;
+      const index = typeof choice.index === "number" ? choice.index : 0;
+      this.openChoices.add(index);
+      if (typeof choice.finish_reason === "string" && choice.finish_reason) this.finishedChoices.add(index);
+      if (!isRecord(choice.delta)) continue;
       const delta = choice.delta;
-      this.textChars += chars(delta.content);
-      // `reasoning_content` is DeepSeek's and Moonshot's name; `reasoning`
-      // is OpenRouter-style and a few hosts'.
-      this.reasoningChars += chars(delta.reasoning_content) + chars(delta.reasoning);
+      this.textChars += chars(delta.refusal);
+      if (Array.isArray(delta.content)) {
+        // The content-parts form a few hosts stream, thinking parts included.
+        for (const part of delta.content) {
+          if (!isRecord(part)) continue;
+          if (part.type === "text") this.textChars += chars(part.text);
+          else if (part.type === "thinking" || part.type === "reasoning") {
+            this.reasoningChars += chars(part.thinking) || chars(part.text);
+          }
+        }
+      } else {
+        this.textChars += chars(delta.content);
+      }
+      this.reasoningChars += chatReasoningChars(delta);
       if (!Array.isArray(delta.tool_calls)) continue;
       for (const call of delta.tool_calls) {
         if (isRecord(call) && isRecord(call.function)) this.textChars += chars(call.function.arguments);
@@ -549,10 +821,17 @@ export class UsageMeter {
       case "response.in_progress":
       case "response.completed":
       case "response.incomplete":
-      case "response.failed":
         if (isRecord(event.response)) this.readResponseObject(event.response);
         return;
+      case "response.failed":
+        this.sawError = true;
+        if (isRecord(event.response)) this.readResponseObject(event.response);
+        return;
+      case "error":
+        this.sawError = true;
+        return;
       case "response.output_text.delta":
+      case "response.refusal.delta":
       case "response.function_call_arguments.delta":
         this.textChars += chars(event.delta);
         return;
@@ -594,16 +873,15 @@ export class UsageMeter {
         webSearchRequests: u.webSearchRequests || undefined,
         completionChars,
         reasoningChars,
-        // What the provider says it served outranks what was asked for; a
-        // provider that reports no speed leaves the request to decide, as in
+        // A provider that reports no speed leaves the request to decide, as in
         // the chat adapter.
-        fastMode: u.speed != null ? u.speed === "fast" : this.fastRequested,
+        fastMode: this.servedFast(),
       };
     }
 
     const u = this.openaiUsage;
     if (!u) return null;
-    const fastMode = this.servedTier != null ? this.servedTier === "priority" : this.fastRequested;
+    const fastMode = this.servedFast();
 
     if (this.wire === "openai-chat") {
       const promptTokens = count(u.prompt_tokens);
@@ -656,13 +934,12 @@ export class UsageMeter {
 export function usageMeterFor(
   wire: ProviderWire,
   response: { ok: boolean; headers: Headers },
-  fastRequested: boolean,
+  request: Pick<AgentRequest, "fastRequested" | "promptChars">,
 ): UsageMeter | null {
   if (!response.ok) return null;
   const type = (response.headers.get("content-type") ?? "").toLowerCase();
-  if (type.includes("text/event-stream")) return new UsageMeter(wire, "sse", fastRequested);
-  if (type.includes("json")) return new UsageMeter(wire, "json", fastRequested);
-  return null;
+  const format = type.includes("text/event-stream") ? "sse" : type.includes("json") ? "json" : null;
+  return format ? new UsageMeter(wire, format, request.fastRequested, request.promptChars) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +948,12 @@ export function usageMeterFor(
 
 /** How the exchange ended: the provider finished, it failed or timed out, or the client left. */
 export type RelayOutcome = "completed" | "failed" | "cancelled";
+
+/**
+ * The most the relay reads on its own once the client has gone: a response as
+ * large as a request may be. Past it the meter has stopped counting anyway.
+ */
+const MAX_DRAIN_BYTES = MAX_AGENT_BODY_BYTES;
 
 /**
  * Carry the provider's body to the client unchanged, and say exactly once how
@@ -686,15 +969,33 @@ export type RelayOutcome = "completed" | "failed" | "cancelled";
  * what makes billing happen on every path, including a disconnect halfway
  * through, and never twice. It runs after the timers are cleared, so nothing
  * is left armed behind a finished exchange.
+ *
+ * When the client goes away — its body cancelled or its request aborted,
+ * whichever Next.js reports first — the relay usually hangs up on the provider
+ * at once, because a provider still generating is spending for nobody. The
+ * exception is an answer the provider has already finished (`answerComplete`):
+ * what is left of it costs nothing more, and it is where the usage is — at the
+ * end of a JSON body, in the last chunk of a Chat Completions stream. Hanging
+ * up there would turn an exact bill into an estimate for a client that merely
+ * stopped reading a few bytes early, so the relay reads the rest itself, under
+ * the same deadlines, and ends only then.
  */
 export function relayUpstreamBody(input: {
   body: ReadableStream<Uint8Array>;
   abort: UpstreamAbort;
   observe?: (chunk: Uint8Array) => void;
+  /** Asked once, when the client leaves: is the provider's answer already complete? */
+  answerComplete?: () => boolean;
   onEnd: (outcome: RelayOutcome) => void;
 }): ReadableStream<Uint8Array> {
   const reader = input.body.getReader();
+  let downstream: ReadableStreamDefaultController<Uint8Array> | null = null;
   let ended = false;
+  let left = false;
+  // The read `pull` is waiting on. If the client leaves meanwhile, a drain
+  // takes it over, so the chunk it brings is observed exactly once.
+  let inflight: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+
   const end = (outcome: RelayOutcome): void => {
     if (ended) return;
     ended = true;
@@ -706,22 +1007,101 @@ export function relayUpstreamBody(input: {
     }
   };
 
+  const observe = (chunk: Uint8Array): void => {
+    if (!input.observe) return;
+    try {
+      input.observe(chunk);
+    } catch {
+      // The chunk is already on its way; a metering fault stays here.
+    }
+  };
+
+  // Through the reader, which holds the lock — `body.cancel()` on a locked
+  // stream rejects and would leave the provider generating for nobody — and
+  // through the fetch signal, which closes the connection itself.
+  const hangUp = (reason: unknown): void => {
+    input.abort.abort(reason ?? "client_closed");
+    reader.cancel(reason).catch(() => undefined);
+  };
+
+  const drain = async (reason: unknown): Promise<void> => {
+    let complete = false;
+    try {
+      let taken = inflight;
+      inflight = null;
+      let drained = 0;
+      for (;;) {
+        const result = await (taken ?? input.abort.read(() => reader.read()));
+        taken = null;
+        if (result.done) {
+          complete = true;
+          break;
+        }
+        observe(result.value);
+        drained += result.value.byteLength;
+        if (drained > MAX_DRAIN_BYTES) break;
+      }
+    } catch {
+      // The provider failed or a deadline fired while the rest was read: the
+      // meter bills what arrived.
+    }
+    end("cancelled");
+    if (!complete) hangUp(reason);
+  };
+
+  const leave = (reason: unknown): void => {
+    if (ended || left) return;
+    left = true;
+    // When the request signal reports the leaving first, the stream towards
+    // the client is still open: close it as failed, so nothing waits on it and
+    // no further pull can race a drain for the provider's chunks. After a
+    // cancel this does nothing.
+    try {
+      downstream?.error(reason ?? "client_closed");
+    } catch {
+      // Already closed.
+    }
+    let complete = false;
+    try {
+      complete = input.answerComplete?.() ?? false;
+    } catch {
+      // Unknown is not complete: hang up.
+    }
+    if (complete) {
+      void drain(reason);
+      return;
+    }
+    end("cancelled");
+    hangUp(reason);
+  };
+
+  input.abort.onClientLeave(leave);
+
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      downstream = controller;
+    },
     async pull(controller) {
+      if (ended || left) return;
+      const read = input.abort.read(() => reader.read());
+      inflight = read;
       let result: ReadableStreamReadResult<Uint8Array>;
       try {
-        result = await input.abort.read(() => reader.read());
+        result = await read;
       } catch (error) {
-        // Already ended: the client left, and this is the read that aborting
-        // the provider for it interrupted.
-        if (ended) return;
+        // The client left, and this is the read that hanging up interrupted,
+        // or that a drain now owns.
+        if (ended || left) return;
+        inflight = null;
         const signal = input.abort.signal;
         controller.error(error);
         end(signal.aborted && !isUpstreamTimeout(signal) ? "cancelled" : "failed");
         return;
       }
-      // The client left while this read was in flight; the stream is closed.
-      if (ended) return;
+      // The client left while this read was in flight: the stream is closed,
+      // and a drain, if there is one, has this chunk.
+      if (ended || left) return;
+      inflight = null;
       if (result.done) {
         // The client's end of stream first, the bookkeeping after it.
         controller.close();
@@ -729,21 +1109,10 @@ export function relayUpstreamBody(input: {
         return;
       }
       controller.enqueue(result.value);
-      if (input.observe) {
-        try {
-          input.observe(result.value);
-        } catch {
-          // The chunk is already on its way; a metering fault stays here.
-        }
-      }
+      observe(result.value);
     },
-    async cancel(reason) {
-      end("cancelled");
-      // Through the reader, which holds the lock — `body.cancel()` on a locked
-      // stream rejects and would leave the provider generating for nobody —
-      // and through the fetch signal, which closes the connection itself.
-      input.abort.abort(reason ?? "client_closed");
-      await reader.cancel(reason).catch(() => undefined);
+    cancel(reason) {
+      leave(reason);
     },
   });
 }

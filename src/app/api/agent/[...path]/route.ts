@@ -47,10 +47,12 @@ function isAllowedPath(kind: "anthropic" | "openai", provider: Provider, forward
  * existing request-building and SSE parsing, and the user never pastes a key.
  *
  * BILLING. Every call is charged here, from the usage the provider itself
- * reports in the response, as one ApiSpend row of kind "code". This is the one
- * place that can: every request on Juno's provider keys from a Code engine
- * passes through it, and nothing else sees what the provider said it cost. The
- * callers, and why none of them is charged a second time:
+ * reports in the response (or, when it reports none before the exchange ends,
+ * at the character floor of the request and what streamed), as one ApiSpend
+ * row of kind "code". This is the one place that can: every request on Juno's
+ * provider keys from a Code engine passes through it, and nothing else sees
+ * what the provider said it cost. The callers, and why none of them is charged
+ * a second time:
  *
  *  - The Mac app (`BackendCodeModelClient`, native bearer): Code sessions, their
  *    sub-agents, device-queued tasks and Work runs hosted on the Mac. It never
@@ -183,10 +185,14 @@ export async function POST(
   // What billing needs from the body, read once here — and, for a streamed
   // Chat Completions call that did not ask for it, the one change the proxy
   // makes: switching on the final usage chunk. Everything else is forwarded as
-  // the client sent it.
+  // the client sent it. A body the proxy cannot read exactly as the provider
+  // will, or a Responses call whose cost could never reach the ledger
+  // (`background`), is refused before it costs anything; see inspectAgentRequest.
   const wire = providerWire(def.kind, forwardPath);
   if (!wire) return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });
-  const request = inspectAgentRequest(wire, bodyResult.body);
+  const checked = inspectAgentRequest(wire, bodyResult.body);
+  if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+  const request = checked.request;
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (def.kind === "anthropic") {
     headers["x-api-key"] = key;
@@ -232,11 +238,11 @@ export async function POST(
     return new Response(null, { status: upstream.status, headers: respHeaders });
   }
 
-  const meter = usageMeterFor(wire, upstream, request.fastRequested);
+  const meter = usageMeterFor(wire, upstream, request);
   // The Juno catalog id, `<provider>:<provider model>`, so `resolveModel`
   // finds the model's real rates; a bare provider id would be priced at the
   // unknown-model fallback.
-  const spendModel = `${provider}:${request.model ?? "unknown"}`;
+  const spendModel = `${provider}:${request.model}`;
   const userId = user.id;
   // The runner is Juno's own server-side execution, the bucket a cloud Work
   // run's spend lands in too; every other caller of this proxy is an app.
@@ -245,6 +251,7 @@ export async function POST(
     body: upstream.body,
     abort: upstreamAbort,
     observe: meter ? (chunk) => meter.observe(chunk) : undefined,
+    answerComplete: meter ? () => meter.answerComplete : undefined,
     onEnd: (outcome) => {
       const timeout = upstreamTimeoutKind(upstreamAbort.signal);
       if (timeout) {
@@ -252,16 +259,23 @@ export async function POST(
       }
       // Billed on every ending, a client that left halfway included: the
       // provider charged for what it produced whether or not anyone read it.
-      // Only what it REPORTED is billed. A stream cut before any usage arrived
-      // (OpenAI sends it last) is not guessed at.
-      const usage = meter?.finish();
-      if (!usage) return;
-      if (outcome !== "completed") {
+      // What it reported, when it reported anything; otherwise the character
+      // floor (the request's text and what streamed), because OpenAI-style
+      // usage arrives last and a client that hangs up just before it must not
+      // make the call free.
+      const metered = meter?.finish();
+      if (!metered) return;
+      if (metered.estimated) {
+        // A call that finished without usage is a host ignoring include_usage,
+        // worth noticing; one cut short is an ordinary Stop.
+        const log = outcome === "completed" ? console.warn : console.info;
+        log("[agent-proxy] no usage reported; billing the character floor", { provider, outcome });
+      } else if (outcome !== "completed") {
         console.info("[agent-proxy] billing a stream that did not complete", { provider, outcome });
       }
       // Not awaited: the ledger write happens after the client has its last
       // byte, never in front of it. `recordSpend` catches its own failures.
-      void recordSpend({ userId, model: spendModel, kind: "code", source, ...usage }).catch(
+      void recordSpend({ userId, model: spendModel, kind: "code", source, ...metered.usage }).catch(
         () => undefined,
       );
     },
