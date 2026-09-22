@@ -1,19 +1,26 @@
 import Foundation
 import JunoCodeCore
 
-/// Reads only the two known, workspace-relative configuration files. The
-/// `WorkspaceAccessing` gateway resolves and canonicalizes every path before
-/// this type reads it, so a symlink cannot smuggle an external settings file
-/// into the catalog.
+/// Reads hooks from the known settings files and nothing else.
+///
+/// Repository files are read through the `WorkspaceAccessing` gateway, which
+/// resolves and canonicalizes every path before this type reads it, so a
+/// symlink cannot smuggle an external settings file into the catalog. The
+/// reader's own `~/.juno/settings.json` is read directly, and only when the
+/// caller names the folder it lives in — a test, or a host that has no user
+/// settings, passes nil and gets repository hooks alone.
 public struct HookDiscovery: Sendable {
     private let access: any WorkspaceAccessing
+    private let userSettingsDirectory: URL?
     private let parser: HookConfigurationParser
 
     public init(
         access: any WorkspaceAccessing,
+        userSettingsDirectory: URL? = nil,
         parser: HookConfigurationParser = HookConfigurationParser()
     ) {
         self.access = access
+        self.userSettingsDirectory = userSettingsDirectory
         self.parser = parser
     }
 
@@ -21,43 +28,44 @@ public struct HookDiscovery: Sendable {
         var configurations: [HookConfiguration] = []
         var hooks: [HookDefinition] = []
         var diagnostics: [HookDiagnostic] = []
+        var disabledBy: String?
 
-        // Claude first and Juno second mirrors SlashCommands: a repository can
-        // migrate one hook at a time, and the Juno convention wins when the
-        // caller later chooses to de-duplicate by identity/name.
-        for source in [ExtensibilitySource.claude, .juno] {
-            let path = source.hooksPath
-            guard let workspacePath = try? WorkspacePath(path) else {
+        // The reader's file first, then Claude's, then Juno's: the order hooks
+        // are listed and, within one event, the order their results are read.
+        // They run in parallel, so the order decides only whose reason is
+        // quoted when two hooks block the same call.
+        for file in HookConfigurationFile.allCases {
+            let url: URL
+            do {
+                guard let resolved = try locate(file) else { continue }
+                url = resolved
+            } catch {
                 diagnostics.append(
                     HookDiagnostic(
-                        path: path,
+                        path: file.path,
                         severity: .error,
                         message: "The built-in hook path is invalid."
                     )
                 )
                 continue
             }
-            guard let url = try? access.resolveForReading(workspacePath) else {
-                // Missing optional configuration is normal and should not put
-                // a warning in the inspector.
-                continue
-            }
+            // Missing optional configuration is normal and should not put a
+            // warning in the inspector.
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
 
             do {
                 let data = try Self.readBoundedData(from: url)
-                let configuration = try parser.parse(
-                    data: data,
-                    source: source,
-                    path: path
-                )
+                let configuration = try parser.parse(data: data, file: file)
                 configurations.append(configuration)
                 hooks.append(contentsOf: configuration.hooks)
                 diagnostics.append(contentsOf: configuration.diagnostics)
+                if configuration.disablesAllHooks, disabledBy == nil {
+                    disabledBy = file.path
+                }
             } catch let error as HookDiscoveryReadError {
                 diagnostics.append(
                     HookDiagnostic(
-                        path: path,
+                        path: file.path,
                         severity: .error,
                         message: error.message
                     )
@@ -65,7 +73,7 @@ public struct HookDiscovery: Sendable {
             } catch let error as HookConfigurationError {
                 diagnostics.append(
                     HookDiagnostic(
-                        path: path,
+                        path: file.path,
                         severity: .error,
                         message: Self.configurationErrorMessage(error)
                     )
@@ -73,7 +81,7 @@ public struct HookDiscovery: Sendable {
             } catch {
                 diagnostics.append(
                     HookDiagnostic(
-                        path: path,
+                        path: file.path,
                         severity: .error,
                         message: "The hook configuration could not be read."
                     )
@@ -81,20 +89,45 @@ public struct HookDiscovery: Sendable {
             }
         }
 
+        // `disableAllHooks` in any file turns every hook off, as it does in
+        // Claude Code. Turning hooks off is the safe direction, so a
+        // repository may do it to the reader's own hooks too.
+        if disabledBy != nil {
+            hooks = []
+        }
+
+        let fileOrder = Dictionary(
+            uniqueKeysWithValues: HookConfigurationFile.allCases.enumerated().map { ($1.path, $0) }
+        )
+        let eventOrder = Dictionary(
+            uniqueKeysWithValues: HookLifecycleEvent.allCases.enumerated().map { ($1, $0) }
+        )
         hooks.sort {
-            if $0.source != $1.source {
-                return $0.source == .claude
-            }
+            let left = fileOrder[$0.path] ?? Int.max
+            let right = fileOrder[$1.path] ?? Int.max
+            if left != right { return left < right }
             if $0.event != $1.event {
-                return $0.event.rawValue < $1.event.rawValue
+                return (eventOrder[$0.event] ?? 0) < (eventOrder[$1.event] ?? 0)
             }
             return $0.ordinal < $1.ordinal
         }
         return HookDiscoveryResult(
             configurations: configurations,
             hooks: hooks,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            disabledBy: disabledBy
         )
+    }
+
+    /// The file's location, or nil when it cannot exist here: the user file
+    /// without a user folder, or a repository path the gateway will not
+    /// resolve (for example, one that does not exist).
+    private func locate(_ file: HookConfigurationFile) throws -> URL? {
+        guard file.isInRepository else {
+            return userSettingsDirectory?.appendingPathComponent("settings.json")
+        }
+        let workspacePath = try WorkspacePath(file.path)
+        return try? access.resolveForReading(workspacePath)
     }
 
     private static func readBoundedData(from url: URL) throws -> Data {

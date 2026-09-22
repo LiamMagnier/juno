@@ -98,10 +98,14 @@ public struct ToolRegistry: Sendable {
     /// Validates and authorizes one invocation, suspending while an approval
     /// is pending. Throws when the action is refused. On success the action
     /// may be executed with `executeAuthorized`.
+    ///
+    /// - Parameter hookPermission: a `PreToolUse` hook's answer about the
+    ///   prompt. The coordinator weighs it below the reader's own rules.
     public func authorizeInvocation(
         toolName: String,
         input: JSONValue,
-        permissions: PermissionCoordinator
+        permissions: PermissionCoordinator,
+        hookPermission: AgentHookPermission? = nil
     ) async throws {
         guard let tool = tools[toolName] else {
             throw ToolError.unknownTool(name: toolName)
@@ -120,7 +124,8 @@ public struct ToolRegistry: Sendable {
             risk: risk,
             summary: tool.summary(input: input),
             approvalPolicy: tool.approvalPolicy,
-            subject: ToolRuleSubjects.subject(toolName: toolName, input: input)
+            subject: ToolRuleSubjects.subject(toolName: toolName, input: input),
+            hookPermission: hookPermission
         )
         switch outcome {
         case .allowed:

@@ -34,6 +34,11 @@ public struct DelegateTaskTool: CodeTool {
     /// delegation remains read-only, even if the model asks for writes.
     private let executionFactory: SubagentExecutionFactory?
     private let fallbackResolver: (any ModelFallbackResolver)?
+    /// The parent session's hooks. Each child gets the sub-agent view of them
+    /// — its tool calls are vetted by the same `PreToolUse` guards, and its
+    /// finish runs `SubagentStop` — so delegating is never a way around a
+    /// project's hooks.
+    private let lifecycleHooks: (any AgentLifecycleHooks)?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -64,7 +69,8 @@ public struct DelegateTaskTool: CodeTool {
         parentSystemPrompt: String,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
-        fallbackResolver: (any ModelFallbackResolver)? = nil
+        fallbackResolver: (any ModelFallbackResolver)? = nil,
+        lifecycleHooks: (any AgentLifecycleHooks)? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -77,6 +83,7 @@ public struct DelegateTaskTool: CodeTool {
         self.executionFactory = executionFactory
         self.controls = controls
         self.fallbackResolver = fallbackResolver
+        self.lifecycleHooks = lifecycleHooks
     }
 
     public let name = "delegate_task"
@@ -450,6 +457,9 @@ public struct DelegateTaskTool: CodeTool {
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,
+            lifecycleHooks: lifecycleHooks?.subagentHooks(
+                executionRootPath: environment.executionRootPath
+            ),
             fallbackResolver: fallbackResolver
         )
         await controls?.register(

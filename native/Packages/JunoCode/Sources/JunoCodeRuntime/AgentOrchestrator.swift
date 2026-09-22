@@ -18,6 +18,9 @@ public enum OrchestratorError: Error, Equatable, Sendable {
     case sessionNotRunning
     case sessionTerminated
     case iterationLimitReached(limit: Int)
+    /// A `UserPromptSubmit` hook refused the prompt, which was not sent. The
+    /// thread already says which hook and why.
+    case promptBlocked(reason: String)
 }
 
 /// The per-session agent loop: sends model turns, executes gated tool calls,
@@ -97,6 +100,21 @@ public actor AgentOrchestrator {
     private var contextTokens: Int?
     private var lastOutputTokens: Int?
     private var usageObserver: (@Sendable (Int?, Int?) -> Void)?
+    /// Whether this orchestrator has asked the `SessionStart` hooks yet. The
+    /// integration also remembers it across orchestrators, since one is
+    /// replaced whenever the turn contract changes.
+    private var sessionStartHooksRan = false
+    /// `SessionStart` context that arrived with a prompt a hook then blocked,
+    /// kept for the next prompt that is sent.
+    private var pendingHookContext: [String] = []
+    /// Set when a tool hook answers `"continue": false`, so the batch stops
+    /// between waves and the run ends once every call is answered.
+    private var hookHaltReason: String?
+
+    /// How many times stop hooks may send one run back to work. Hooks are
+    /// told when they already have (`stop_hook_active`) and are expected to
+    /// let go; this is the bound for one that never does.
+    static let maximumStopHookContinuations = 8
 
     public init(
         sessionID: CodeSessionID,
@@ -200,11 +218,14 @@ public actor AgentOrchestrator {
             throw OrchestratorError.sessionAlreadyRunning
         }
         try await prepare()
+        // Before anything is recorded: a blocked prompt was never sent, so it
+        // must not appear as a turn in the transcript or the model history.
+        let hookContext = try await promptHookContext(for: prompt)
         // The transcript stays faithful to what the reader typed while callers
         // may enrich the model-only turn with explicitly selected, bounded
         // workspace context. Keeping those two representations separate avoids
         // dumping source files into the visible conversation.
-        let turnText = modelPrompt ?? prompt
+        let turnText = AgentHookContext.appending(hookContext, to: modelPrompt ?? prompt)
         conversation.append(images.isEmpty ? .user(turnText) : .userWithImages(turnText, images))
         try await store.appendEvent(
             sessionID: sessionID,
@@ -265,6 +286,10 @@ public actor AgentOrchestrator {
         let visible = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visible.isEmpty || !images.isEmpty else { return "" }
         try await prepare()
+        // A steer is a prompt too, and a hook that vets prompts vets it. A
+        // blocked one is never recorded as an instruction, so a restored
+        // session cannot pick it back up from the transcript.
+        let hookContext = try await promptHookContext(for: prompt)
         let event = UserInstructionEvent(text: prompt, kind: kind)
         _ = try await store.appendEvent(
             sessionID: sessionID,
@@ -273,11 +298,41 @@ public actor AgentOrchestrator {
         pendingInstructions.append(
             PendingInstruction(
                 event: event,
-                modelPrompt: modelPrompt ?? prompt,
+                modelPrompt: AgentHookContext.appending(hookContext, to: modelPrompt ?? prompt),
                 images: images
             )
         )
         return event.id
+    }
+
+    /// Runs the hooks that stand between the reader and the model: the
+    /// session's start, once, then the prompt itself. Returns what they add
+    /// to the model's context, and throws when one blocks the prompt.
+    private func promptHookContext(for prompt: String) async throws -> [String] {
+        var context = pendingHookContext
+        pendingHookContext = []
+        if !sessionStartHooksRan {
+            sessionStartHooksRan = true
+            let source: AgentSessionStartSource = conversation.isEmpty ? .startup : .resume
+            if let start = await lifecycleHooks?.sessionStarted(sessionID: sessionID, source: source) {
+                await ToolScheduler.record(start.notices, sessionID: sessionID, store: store)
+                context += start.context
+            }
+        }
+        guard let response = await lifecycleHooks?.promptSubmitted(
+            sessionID: sessionID,
+            prompt: prompt
+        ) else {
+            return context
+        }
+        await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+        if let reason = response.haltReason ?? response.blockReason {
+            // The session did start, so what its start hooks said still
+            // belongs in front of the model — with the next prompt that goes.
+            pendingHookContext = context
+            throw OrchestratorError.promptBlocked(reason: reason)
+        }
+        return context + response.context
     }
 
     /// Requests an immediate stop: cancels the loop and denies every pending
@@ -329,6 +384,7 @@ public actor AgentOrchestrator {
             // Bound as a local for the same reason `store` and `sessionID` are: the
             // observer must not capture the actor.
             let permissions = self.permissions
+            let hooks = self.lifecycleHooks
             approvalObserverToken = await permissions.addObserver { update in
                 Task {
                     switch update {
@@ -340,6 +396,22 @@ public actor AgentOrchestrator {
                         _ = try? await store.updateSession(id: sessionID) { session in
                             session.hasPendingApproval = true
                             session.status = .waitingForApproval
+                        }
+                        // A `Notification` hook is how a reader who has walked
+                        // away hears that the run is waiting on them. A hook's
+                        // own approval is left out: it would announce itself.
+                        if request.toolName != "hook",
+                           let response = await hooks?.notify(
+                               sessionID: sessionID,
+                               kind: .permissionPrompt,
+                               message: "Juno needs your permission: \(request.summary)"
+                           )
+                        {
+                            await ToolScheduler.record(
+                                response.notices,
+                                sessionID: sessionID,
+                                store: store
+                            )
                         }
                     case let .resolved(id, decision):
                         _ = try? await store.appendEvent(
@@ -377,8 +449,8 @@ public actor AgentOrchestrator {
         var filesChanged = Set<String>()
         var lastAssistantText = ""
         var testsPassed: Bool?
-
-        await lifecycleHooks?.sessionStarted(sessionID: sessionID)
+        var stopHookContinuations = 0
+        hookHaltReason = nil
 
         defer {
             runTask = nil
@@ -768,6 +840,18 @@ public actor AgentOrchestrator {
                 if await applyPendingInstructions(includeQueued: true) {
                     continue
                 }
+                // The agent means to stop. A stop hook may send it back with a
+                // reason, which reaches the model the way Claude Code phrases
+                // it, as the next thing to act on.
+                if let reason = await stopHookFeedback(
+                    lastMessage: lastAssistantText,
+                    continuations: stopHookContinuations
+                ) {
+                    stopHookContinuations += 1
+                    conversation.append(.user("Stop hook feedback:\n" + reason))
+                    try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                    continue
+                }
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 await finish(
                     status: .completed,
@@ -796,6 +880,9 @@ public actor AgentOrchestrator {
                     guard let self else { return true }
                     if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
                        lifecycle != .active {
+                        return true
+                    }
+                    if await self.hookHaltReason != nil {
                         return true
                     }
                     return await self.hasPendingSteer
@@ -873,6 +960,18 @@ public actor AgentOrchestrator {
                 )
             )
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+            // A hook answered `"continue": false`: the run ends now that every
+            // call has its answer. The hook's own row already says why.
+            if let halt = hookHaltReason {
+                await finish(
+                    status: .completed,
+                    summary: "Stopped by a hook: \(halt)",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
             if let terminalGoalLifecycle {
                 let status: SessionStatus =
                     terminalGoalLifecycle == .completed ? .completed : .cancelled
@@ -1023,7 +1122,7 @@ public actor AgentOrchestrator {
     private func executeToolCall(
         _ call: (id: String, name: String, input: JSONValue)
     ) async -> ToolScheduler.ExecutionResult {
-        await ToolScheduler.executeCall(
+        let result = await ToolScheduler.executeCall(
             id: call.id,
             name: call.name,
             input: call.input,
@@ -1035,6 +1134,41 @@ public actor AgentOrchestrator {
             maximumToolImages: configuration.maximumToolImages,
             maximumToolImageBytes: configuration.maximumToolImageBytes
         )
+        if let halt = result.haltReason, hookHaltReason == nil {
+            hookHaltReason = halt
+        }
+        return result
+    }
+
+    /// Asks the stop hooks whether the agent may finish. Returns the reason to
+    /// keep working, or nil to stop.
+    private func stopHookFeedback(lastMessage: String, continuations: Int) async -> String? {
+        guard let lifecycleHooks else { return nil }
+        guard continuations < Self.maximumStopHookContinuations else {
+            await ToolScheduler.record(
+                [
+                    HookActivityEvent(
+                        hookEvent: "Stop",
+                        hookName: "",
+                        outcome: .stopped,
+                        message: "Stop hooks sent Juno back to work \(continuations) times in one run, so it stopped here."
+                    ),
+                ],
+                sessionID: sessionID,
+                store: store
+            )
+            return nil
+        }
+        let response = await lifecycleHooks.agentStopping(
+            sessionID: sessionID,
+            stopHookActive: continuations > 0,
+            lastMessage: lastMessage
+        )
+        await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
+        // `"continue": false` outranks a block here too: the agent was
+        // stopping anyway, and that is what it was told to do.
+        guard response.haltReason == nil else { return nil }
+        return response.blockReason
     }
 
     private func finish(

@@ -90,19 +90,23 @@ public actor PermissionCoordinator {
 
     // MARK: - Authorization
 
+    /// - Parameter hookPermission: what a `PreToolUse` hook said about this
+    ///   call's prompt, weighed below the reader's own rules.
     public func authorize(
         toolName: String,
         actionDigest: String,
         risk: ActionRisk,
         summary: String,
         approvalPolicy: ApprovalPolicy = .byRisk,
-        subject: PermissionRuleSubject? = nil
+        subject: PermissionRuleSubject? = nil,
+        hookPermission: AgentHookPermission? = nil
     ) async -> AuthorizationOutcome {
         let ruling = Self.ruling(
             mode: mode,
             risk: risk,
             approvalPolicy: approvalPolicy,
-            rule: rules.evaluate(toolName: toolName, subject: subject)
+            rule: rules.evaluate(toolName: toolName, subject: subject),
+            hook: hookPermission
         )
         switch ruling {
         case .allow:
@@ -170,12 +174,14 @@ public actor PermissionCoordinator {
         mode: PermissionMode,
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy,
-        rule: PermissionRuleDecision?
+        rule: PermissionRuleDecision?,
+        hook: AgentHookPermission? = nil
     ) -> PermissionRuling {
         let ladder = PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy)
+        let ruled: PermissionRuling
         switch rule {
         case nil:
-            return ladder
+            ruled = ladder
         case let .deny(rule)?:
             return .deny(reason: "Blocked by the permission rule \(rule).")
         case .ask?:
@@ -183,7 +189,34 @@ public actor PermissionCoordinator {
             return .requireApproval
         case .allow?:
             if case .deny = ladder { return ladder }
-            return risk == .destructive ? .requireApproval : .allow
+            ruled = risk == .destructive ? .requireApproval : .allow
+        }
+        return hookRuling(ruled, hook: hook, risk: risk, approvalPolicy: approvalPolicy)
+    }
+
+    /// A hook's word on the prompt, applied after the reader's own rules.
+    ///
+    /// A hook is the project's automation, not the reader, so it gets less
+    /// say than a rule the reader saved. `ask` can only add a prompt, never
+    /// turn a refusal into one. `allow` can only remove a prompt the mode
+    /// itself would have asked for: an ask rule has already returned above,
+    /// a read-only mode still refuses, a destructive action still asks, and
+    /// so does a tool pinned to always asking — pinning means the reader sees
+    /// that exact call, and a hook is not the reader.
+    private static func hookRuling(
+        _ ruling: PermissionRuling,
+        hook: AgentHookPermission?,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy
+    ) -> PermissionRuling {
+        switch (hook, ruling) {
+        case (.ask?, .allow):
+            return .requireApproval
+        case (.allow?, .requireApproval)
+            where risk != .destructive && approvalPolicy == .byRisk:
+            return .allow
+        default:
+            return ruling
         }
     }
 

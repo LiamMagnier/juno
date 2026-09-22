@@ -289,9 +289,10 @@ public final class SessionController {
         let computerUseActive: Bool
         /// Rebuilds the system prompt after a durable goal transition.
         let goalUpdatedAt: Date?
-        /// Rebuilds the orchestrator when the user enables or disables
-        /// repository hooks. Permission mode itself remains live through the
-        /// coordinator; the hook adapter reads it dynamically.
+        /// Rebuilds the orchestrator when the hooks that would run change: one
+        /// allowed or switched off in Settings, or a settings file edited.
+        /// Permission mode itself remains live through the coordinator; the
+        /// hook adapter reads it dynamically.
         let hookPolicyFingerprint: String
         /// The workspace-authored agent shaping the system prompt, if any.
         let customAgentID: String?
@@ -328,6 +329,34 @@ public final class SessionController {
             allowsNetwork: resolved.allowsNetwork,
             writablePaths: resolved.writablePaths
         )
+        // Hooks are settings too: re-read with the rest, so a hook allowed in
+        // Settings or added to a file applies to the next run, not the next
+        // launch.
+        if let context = live.context {
+            reloadHooks(from: context)
+        }
+    }
+
+    /// Reads the hooks and the reader's trust decision from disk.
+    private func reloadHooks(from context: WorkspaceContext) {
+        hookDiscoveryResult = HookDiscovery(
+            access: context.access,
+            userSettingsDirectory: context.userSettingsDirectory
+        ).discover()
+        hookPolicy = context.hookPolicyStore.load(
+            permissionMode: session.configuration.behavior == .code
+                ? session.configuration.permissionMode
+                : .readOnly
+        )
+    }
+
+    /// The hooks the next Code run will use: those the policy admits, less any
+    /// the reader switched off.
+    var activeHooks: [HookDefinition] {
+        let disabled = CodeDefaults.shared.disabledHooks
+        return hookDiscoveryResult.hooks.filter {
+            hookPolicy.admits($0) && !disabled.contains($0.id)
+        }
     }
 
     private var standingInstructions: [String] {
@@ -413,6 +442,9 @@ public final class SessionController {
     /// Whether `gh pr create` is in flight.
     public private(set) var isCreatingPullRequest = false
     public private(set) var hookPolicy = HookExecutionPolicy.denyAll
+    /// What this session's hooks remember across orchestrators: whether it
+    /// has started, whether it has ended, whether anything has happened since.
+    private let hookLedger = HookSessionLedger()
     public private(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
     /// and empty whenever nothing is streaming. Never persisted: the
@@ -526,9 +558,10 @@ public final class SessionController {
         "This conversation has no project. Open one to \(action)."
     }
 
-    private static func hookPolicyFingerprint(_ policy: HookExecutionPolicy) -> String {
-        let ids = policy.allowedHookIDs.sorted().joined(separator: ",")
-        return "\(policy.allowUntrustedHooks ? "trusted" : "off"):\(ids)"
+    /// The hooks that would run, with the one setting their identity leaves
+    /// out: a changed timeout is the same hook, run differently.
+    private static func hookPolicyFingerprint(_ hooks: [HookDefinition]) -> String {
+        hooks.map { "\($0.id)@\($0.timeoutSeconds)" }.joined(separator: ",")
     }
 
     /// The reader's Settings switches, as one string the contract can compare.
@@ -626,7 +659,7 @@ public final class SessionController {
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
             computerUseActive: computerUseActive,
             goalUpdatedAt: session.goal?.updatedAt,
-            hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy),
+            hookPolicyFingerprint: Self.hookPolicyFingerprint(activeHooks),
             customAgentID: session.configuration.customAgentID,
             extensionsFingerprint: Self.extensionsFingerprint(),
             settingsFingerprint: settingsFingerprint
@@ -677,6 +710,11 @@ public final class SessionController {
             systemPrompt += goalSystemPrompt
         }
         systemPrompt += extensionsSystemPrompt(customAgentID: contract.customAgentID)
+        // Hooks run in Code only. Plan and Ask promise that nothing executes,
+        // and a hook is a command.
+        let lifecycleHooks = contract.behavior == .code
+            ? makeHookAdapter(context: context, live: live)
+            : nil
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
@@ -758,7 +796,8 @@ public final class SessionController {
                     }
                 },
                 controls: live.subagentControls,
-                fallbackResolver: live.fallbackResolver
+                fallbackResolver: live.fallbackResolver,
+                lifecycleHooks: lifecycleHooks
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -785,29 +824,6 @@ public final class SessionController {
                 )
             )
         }
-        let disabledHooks = CodeDefaults.shared.disabledHooks
-        let activeHooks = hookDiscoveryResult.hooks.filter {
-            hookPolicy.allowedHookIDs.contains($0.id) && !disabledHooks.contains($0.id)
-        }
-        let lifecycleHooks: (any AgentLifecycleHooks)?
-        if contract.behavior == .code,
-           !activeHooks.isEmpty,
-           hookPolicy.allowUntrustedHooks
-        {
-            let permissions = live.permissions
-            lifecycleHooks = WorkspaceAgentHooks(
-                definitions: activeHooks,
-                executor: context.executor,
-                permissions: permissions,
-                allowUntrustedHooks: true,
-                currentPermissionMode: { await permissions.permissionMode },
-                didRun: { hookID in
-                    Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
-                }
-            )
-        } else {
-            lifecycleHooks = nil
-        }
         return AgentOrchestrator(
             sessionID: sessionID,
             model: live.modelClient,
@@ -826,6 +842,50 @@ public final class SessionController {
             // chosen one is a surprise unless they asked for it.
             fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil
         )
+    }
+
+    /// The hook adapter for a Code run, or nil when no hook would run.
+    private func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
+        let definitions = activeHooks
+        guard !definitions.isEmpty else { return nil }
+        let permissions = live.permissions
+        let store = live.store
+        return WorkspaceAgentHooks(
+            definitions: definitions,
+            executor: context.executor,
+            permissions: permissions,
+            policy: hookPolicy,
+            projectDirectory: context.access.rootURL.path,
+            ledger: hookLedger,
+            currentPermissionMode: { await permissions.permissionMode },
+            transcriptPath: { store.transcriptURL(for: $0)?.path },
+            recordActivity: { sessionID, notices in
+                for notice in notices {
+                    _ = try? await store.appendEvent(sessionID: sessionID, payload: .hookActivity(notice))
+                }
+            },
+            didRun: { hookID in
+                Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
+            }
+        )
+    }
+
+    /// Runs `SessionEnd` hooks for a session that is going away: deleted, or
+    /// the reader signed out. Only a session whose start hooks ran ends, and
+    /// only once.
+    ///
+    /// The adapter is built afresh rather than kept from the last run, so a
+    /// hook the reader has since switched off or stopped trusting stays off.
+    ///
+    /// - Parameter reason: Claude Code's vocabulary — `logout`, `clear`,
+    ///   `other`.
+    public func endHookSession(reason: String) async {
+        guard let live, let context = live.context,
+              session.configuration.behavior == .code
+        else { return }
+        reloadHooks(from: context)
+        await makeHookAdapter(context: context, live: live)?
+            .sessionEnded(sessionID: sessionID, reason: reason)
     }
 
     private func orchestratorConfiguration(
@@ -1102,6 +1162,9 @@ public final class SessionController {
                 pendingAttachments = []
             } catch OrchestratorError.sessionNotRunning {
                 transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
+            } catch OrchestratorError.promptBlocked {
+                // The thread already says which hook refused it and why. The
+                // draft stays in the composer, since nothing was sent.
             } catch {
                 transientError = "Could not deliver the instruction: \(error)"
             }
@@ -1135,6 +1198,8 @@ public final class SessionController {
             pendingAttachments = []
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
+        } catch OrchestratorError.promptBlocked {
+            // As above: the hook's row explains, and the draft is kept.
         } catch {
             transientError = "Could not start the run: \(error)"
         }
@@ -2025,37 +2090,26 @@ public final class SessionController {
         }
     }
 
+    /// Hooks the policy lets run, the reader's own included.
     public var enabledHookCount: Int {
-        hookDiscoveryResult.hooks.filter { hookPolicy.allowedHookIDs.contains($0.id) }.count
+        hookDiscoveryResult.hooks.filter { hookPolicy.admits($0) }.count
     }
 
     public var hooksAreEnabled: Bool {
-        hookPolicy.allowUntrustedHooks && enabledHookCount > 0
+        enabledHookCount > 0
     }
 
-    /// Trusts or revokes every currently discovered workspace hook. The trust
+    /// Trusts or revokes every currently discovered repository hook. The trust
     /// decision is private-storage state; the repository cannot enable itself
-    /// by changing `.claude/settings.json` or `.juno/hooks.json`.
+    /// by changing `.claude/settings.json` or `.juno/settings.json`.
     public func setHooksEnabled(_ enabled: Bool) async {
         guard let context = live?.context else {
             transientError = Self.noProjectMessage("change hook trust")
             return
         }
-        if hookDiscoveryResult.hooks.isEmpty {
-            await refreshWorkspacePanels()
-        }
-        let next = HookExecutionPolicy(
-            allowedHookIDs: enabled
-                ? Set(hookDiscoveryResult.hooks.map(\.id))
-                : [],
-            permissionMode: session.configuration.behavior == .code
-                ? session.configuration.permissionMode
-                : .readOnly,
-            allowUntrustedHooks: enabled
-        )
+        reloadHooks(from: context)
         do {
-            try context.hookPolicyStore.save(next)
-            hookPolicy = next
+            hookPolicy = try context.setRepositoryHooksAllowed(enabled, discovered: hookDiscoveryResult)
             if let orchestrator, await !orchestrator.isRunning {
                 await orchestrator.release()
                 self.orchestrator = nil
@@ -2077,14 +2131,9 @@ public final class SessionController {
         guard let context = live?.context else { return }
         testSuggestions = await context.tests.detectSuggestions()
         instructionFiles = await context.instructionFiles()
-        hookDiscoveryResult = HookDiscovery(access: context.access).discover()
+        reloadHooks(from: context)
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
         customAgents = CustomAgentDiscovery(access: context.access).discover()
-        hookPolicy = context.hookPolicyStore.load(
-            permissionMode: session.configuration.behavior == .code
-                ? session.configuration.permissionMode
-                : .readOnly
-        )
         mcpConfigurationError = context.mcpConfigurationError
         if let registry = context.mcpRegistry {
             mcpServerConfigurations = await registry.serverConfigurations()

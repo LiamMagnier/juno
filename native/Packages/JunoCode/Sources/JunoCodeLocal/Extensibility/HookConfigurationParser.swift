@@ -8,10 +8,34 @@ import JunoCodeCore
 public struct HookConfigurationParser: Sendable {
     public init() {}
 
+    /// Where the hooks being parsed came from, carried into every definition.
+    private struct Provenance {
+        let source: ExtensibilitySource
+        let path: String
+        let trust: ExtensibilityTrust
+    }
+
+    /// Parses one of the known hook files, with that file's provenance.
+    public func parse(data: Data, file: HookConfigurationFile) throws -> HookConfiguration {
+        try parse(
+            data: data,
+            source: file.source,
+            path: file.path,
+            trust: file.trust,
+            allowsBareEventMap: file == .junoHooks
+        )
+    }
+
+    /// - Parameter allowsBareEventMap: whether the event map may be the file's
+    ///   root. Only Juno's own `hooks.json` has that compact form; a settings
+    ///   file always nests hooks under `hooks`, beside unrelated settings.
+    ///   Nil keeps the older rule: any Juno file may.
     public func parse(
         data: Data,
         source: ExtensibilitySource,
-        path: String
+        path: String,
+        trust: ExtensibilityTrust = .untrustedWorkspace,
+        allowsBareEventMap: Bool? = nil
     ) throws -> HookConfiguration {
         let root: JSONValue
         do {
@@ -34,18 +58,17 @@ public struct HookConfigurationParser: Sendable {
                         severity: .warning,
                         message: "Hooks are disabled by this configuration."
                     )
-                ]
+                ],
+                disablesAllHooks: true
             )
         }
 
         let hooksValue: JSONValue?
         if let explicit = object["hooks"] {
             hooksValue = explicit
-        } else if source == .juno,
+        } else if allowsBareEventMap ?? (source == .juno),
                   object.keys.contains(where: { HookLifecycleEvent(configurationKey: $0) != nil })
         {
-            // A compact `.juno/hooks.json` may use the event map as its root.
-            // Claude settings always have the enclosing `hooks` key.
             hooksValue = .object(object)
         } else {
             hooksValue = nil
@@ -58,6 +81,7 @@ public struct HookConfigurationParser: Sendable {
             throw HookConfigurationError.hooksMustBeObject(path: path)
         }
 
+        let provenance = Provenance(source: source, path: path, trust: trust)
         var hooks: [HookDefinition] = []
         var diagnostics: [HookDiagnostic] = []
         var ordinal = 0
@@ -79,8 +103,7 @@ public struct HookConfigurationParser: Sendable {
                 value,
                 event: event,
                 inheritedMatcher: nil,
-                source: source,
-                path: path,
+                provenance: provenance,
                 hooks: &hooks,
                 diagnostics: &diagnostics,
                 ordinal: &ordinal
@@ -98,9 +121,10 @@ public struct HookConfigurationParser: Sendable {
     public func parse(
         json: String,
         source: ExtensibilitySource,
-        path: String
+        path: String,
+        trust: ExtensibilityTrust = .untrustedWorkspace
     ) throws -> HookConfiguration {
-        try parse(data: Data(json.utf8), source: source, path: path)
+        try parse(data: Data(json.utf8), source: source, path: path, trust: trust)
     }
 
     // MARK: - Event shapes
@@ -109,12 +133,12 @@ public struct HookConfigurationParser: Sendable {
         _ value: JSONValue,
         event: HookLifecycleEvent,
         inheritedMatcher: String?,
-        source: ExtensibilitySource,
-        path: String,
+        provenance: Provenance,
         hooks: inout [HookDefinition],
         diagnostics: inout [HookDiagnostic],
         ordinal: inout Int
     ) {
+        let path = provenance.path
         guard hooks.count < HookExecutionLimits.maximumHooksPerConfiguration else {
             diagnostics.append(
                 HookDiagnostic(
@@ -145,8 +169,7 @@ public struct HookConfigurationParser: Sendable {
                     item,
                     event: event,
                     inheritedMatcher: inheritedMatcher,
-                    source: source,
-                    path: path,
+                    provenance: provenance,
                     hooks: &hooks,
                     diagnostics: &diagnostics,
                     ordinal: &ordinal
@@ -170,8 +193,7 @@ public struct HookConfigurationParser: Sendable {
                     nested,
                     event: event,
                     inheritedMatcher: matcher,
-                    source: source,
-                    path: path,
+                    provenance: provenance,
                     hooks: &hooks,
                     diagnostics: &diagnostics,
                     ordinal: &ordinal
@@ -181,8 +203,7 @@ public struct HookConfigurationParser: Sendable {
                     object,
                     event: event,
                     inheritedMatcher: inheritedMatcher,
-                    source: source,
-                    path: path,
+                    provenance: provenance,
                     hooks: &hooks,
                     diagnostics: &diagnostics,
                     ordinal: &ordinal
@@ -195,8 +216,7 @@ public struct HookConfigurationParser: Sendable {
                 matcher: inheritedMatcher,
                 timeout: nil,
                 event: event,
-                source: source,
-                path: path,
+                provenance: provenance,
                 location: event.rawValue,
                 hooks: &hooks,
                 diagnostics: &diagnostics,
@@ -218,12 +238,12 @@ public struct HookConfigurationParser: Sendable {
         _ object: [String: JSONValue],
         event: HookLifecycleEvent,
         inheritedMatcher: String?,
-        source: ExtensibilitySource,
-        path: String,
+        provenance: Provenance,
         hooks: inout [HookDefinition],
         diagnostics: inout [HookDiagnostic],
         ordinal: inout Int
     ) {
+        let path = provenance.path
         let location = "\(event.rawValue)[\(ordinal)]"
         if let type = object["type"]?.stringValue,
            type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "command"
@@ -298,6 +318,19 @@ public struct HookConfigurationParser: Sendable {
             return
         }
 
+        // Claude Code's `if` narrows a hook with a permission rule. Juno does
+        // not evaluate it, and says so, rather than let the reader believe a
+        // hook runs less often than it does.
+        if object["if"] != nil {
+            diagnostics.append(
+                HookDiagnostic(
+                    path: path,
+                    location: location,
+                    message: "The `if` filter is not supported; this hook runs for every call its matcher matches."
+                )
+            )
+        }
+
         guard let command = object["command"]?.stringValue else {
             diagnostics.append(
                 HookDiagnostic(
@@ -315,8 +348,7 @@ public struct HookConfigurationParser: Sendable {
             matcher: matcher,
             timeout: timeout,
             event: event,
-            source: source,
-            path: path,
+            provenance: provenance,
             location: location,
             hooks: &hooks,
             diagnostics: &diagnostics,
@@ -367,7 +399,7 @@ public struct HookConfigurationParser: Sendable {
             )
             return (nil, false)
         }
-        return (matcher.isEmpty ? nil : matcher, true)
+        return (matcher, true)
     }
 
     private func appendHook(
@@ -375,14 +407,14 @@ public struct HookConfigurationParser: Sendable {
         matcher: String?,
         timeout: Double?,
         event: HookLifecycleEvent,
-        source: ExtensibilitySource,
-        path: String,
+        provenance: Provenance,
         location: String,
         hooks: inout [HookDefinition],
         diagnostics: inout [HookDiagnostic],
         ordinal: inout Int
     ) {
         defer { ordinal += 1 }
+        let path = provenance.path
         let command = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else {
             diagnostics.append(
@@ -427,19 +459,26 @@ public struct HookConfigurationParser: Sendable {
             )
             return
         case let .permitted(risk, _):
-            let effectiveTimeout = timeout ?? HookExecutionLimits.defaultTimeoutSeconds
-            guard effectiveTimeout.isFinite,
-                  effectiveTimeout > 0,
-                  effectiveTimeout <= HookExecutionLimits.maximumTimeoutSeconds
-            else {
+            var effectiveTimeout = timeout ?? HookExecutionLimits.defaultTimeoutSeconds
+            guard effectiveTimeout.isFinite, effectiveTimeout > 0 else {
                 diagnostics.append(
                     HookDiagnostic(
                         path: path,
                         location: location,
-                        message: "The hook timeout must be greater than zero and at most \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
+                        message: "The hook timeout must be a positive number of seconds."
                     )
                 )
                 return
+            }
+            if effectiveTimeout > HookExecutionLimits.maximumTimeoutSeconds {
+                effectiveTimeout = HookExecutionLimits.maximumTimeoutSeconds
+                diagnostics.append(
+                    HookDiagnostic(
+                        path: path,
+                        location: location,
+                        message: "The hook timeout was shortened to Juno's limit of \(Int(HookExecutionLimits.maximumTimeoutSeconds)) seconds."
+                    )
+                )
             }
 
             hooks.append(
@@ -448,10 +487,10 @@ public struct HookConfigurationParser: Sendable {
                     matcher: HookMatcher(pattern: matcher),
                     command: command,
                     timeoutSeconds: effectiveTimeout,
-                    source: source,
+                    source: provenance.source,
                     path: path,
                     ordinal: ordinal,
-                    trust: .untrustedWorkspace,
+                    trust: provenance.trust,
                     risk: risk
                 )
             )

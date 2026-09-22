@@ -23,6 +23,13 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     public var git: Git?
     /// Standing instructions added to every session's system prompt.
     public var instructions: String?
+    /// Hooks, in Claude Code's shape. Kept as the JSON the reader wrote:
+    /// `HookConfigurationParser` is what reads it, and holding it here is what
+    /// stops the Settings window from erasing it when it saves an unrelated
+    /// change to the same file.
+    public var hooks: JSONValue?
+    /// Claude Code's switch for turning every hook off at once.
+    public var disableAllHooks: Bool?
 
     public init(
         permissions: Permissions? = nil,
@@ -30,7 +37,9 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         sandbox: Sandbox? = nil,
         agent: Agent? = nil,
         git: Git? = nil,
-        instructions: String? = nil
+        instructions: String? = nil,
+        hooks: JSONValue? = nil,
+        disableAllHooks: Bool? = nil
     ) {
         self.permissions = permissions
         self.env = env
@@ -38,6 +47,8 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         self.agent = agent
         self.git = git
         self.instructions = instructions
+        self.hooks = hooks
+        self.disableAllHooks = disableAllHooks
     }
 
     public struct Permissions: Codable, Equatable, Sendable {

@@ -392,6 +392,26 @@ enum CodePreviewData {
                 risk: .read, status: .succeeded,
                 result: "3 matches in 2 files.", duration: 0.6
             )
+            // A project hook refusing a command, exactly as the runtime
+            // records it: proposed, the hook's note, then the denial.
+            builder.toolProposed(
+                id: "call-clean-build", name: "run_command",
+                summary: "Run rm -rf .build",
+                risk: .execute
+            )
+            builder.hookActivity(HookActivityEvent(
+                hookEvent: "PreToolUse",
+                hookName: ".claude/hooks/guard-rm.sh",
+                outcome: .blocked,
+                message: "rm -rf is blocked in this repository. Use `swift package clean` instead.",
+                toolCallID: "call-clean-build"
+            ))
+            builder.toolCompleted(
+                "call-clean-build",
+                status: .denied,
+                result: "Action blocked by hook: rm -rf is blocked in this repository.",
+                duration: 0.1
+            )
             builder.fileChanged("Sources/JunoCodeUI/Theme/JunoCodeTheme.swift", .modified, 12, 4)
             builder.fileChanged("Sources/JunoCodeUI/Views/Inspector/InspectorView.swift", .modified, 6, 11)
             builder.assistant("Both files now read from the shared scale. The inspector's local constants are gone.")
@@ -870,6 +890,10 @@ enum CodePreviewData {
 
         mutating func errorOccurred(_ message: String, recoverable: Bool) {
             append(.errorOccurred(ErrorEvent(message: message, isRecoverable: recoverable)))
+        }
+
+        mutating func hookActivity(_ activity: HookActivityEvent) {
+            append(.hookActivity(activity))
         }
 
         mutating func compaction(_ summary: String, before: Int, after: Int) {
