@@ -80,7 +80,10 @@ const STYLES = `
      that cannot load it (see the header note): a tonal cross-fade on hover at
      the fast rung (120ms on --ease-out-soft), a dip to 0.97 on press at the
      press rung (70ms), and the global 2px focus outline. Numbers copied from
-     globals.css's --dur-* / --ease-* tokens, which are not available here. */
+     globals.css's --dur-* / --ease-* tokens, which are not available here.
+     The outline is a fixed ink per theme, never currentColor: the primary
+     button's text IS the page ground, so a currentColor ring drawn 2px out
+     onto the page was the page's own colour and could not be seen. */
   .juno-fallback-button {
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 0.875rem;
@@ -99,7 +102,7 @@ const STYLES = `
   }
   .juno-fallback-button:hover { border-color: #cfc6b3; }
   .juno-fallback-button:active { transform: scale(0.97); }
-  .juno-fallback-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  .juno-fallback-button:focus-visible { outline: 2px solid #1f1e1c; outline-offset: 2px; }
   .juno-fallback-button--primary {
     background: #1f1e1c;
     border-color: #1f1e1c;
@@ -134,6 +137,7 @@ const STYLES = `
     .juno-fallback-copy { color: #a8a297; }
     .juno-fallback-button { background: #211e19; border-color: #38342c; color: #f0ece1; }
     .juno-fallback-button:hover { border-color: #4d4840; }
+    .juno-fallback-button:focus-visible { outline-color: #f0ece1; }
     .juno-fallback-button--primary { background: #f0ece1; border-color: #f0ece1; color: ${THEME_COLOR.dark}; }
     .juno-fallback-button--primary:hover { background: #ffffff; border-color: #ffffff; }
     .juno-fallback-digest { color: #6f6a60; }

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2 } from "@/components/ui/icons";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -33,7 +33,7 @@ import { DOC_MIME } from "@/lib/uploads";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
-import { WorkList, workRowEnterClass } from "@/components/work/shell/work-section";
+import { WorkList, workRowControlClass, workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { trustLabel } from "@/components/work/work-skill-row";
 import {
@@ -898,7 +898,7 @@ export default function SkillPage() {
             <EmptyState
               size="panel"
               tone="error"
-              icon={CodeIcons.error}
+              icon={StatusIcons.error}
               title="Couldn’t read the history"
               description="This skill’s history couldn’t be read just now. Nothing about it has changed."
             />
@@ -983,8 +983,16 @@ export default function SkillPage() {
  * `--dur-fast`, and a transition utility would replace that shorthand and take
  * the press dip with it.
  */
-const TRAILING_ACTION_CLASS =
-  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100";
+const TRAILING_ACTION_CLASS = cn(
+  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100",
+  // While the page is busy the button is disabled, and the Button's base
+  // `disabled:opacity-50` (a pseudo-class, so more specific than `opacity-0`)
+  // would fade every hidden action in at rest until the request settled. The
+  // rest state has to win while disabled too; the reveal keeps the dimming.
+  "disabled:opacity-0 group-hover:disabled:opacity-50 group-focus-within:disabled:opacity-50 coarse:disabled:opacity-50",
+  // Its hover tint composes over the row's, which is the ghost fill itself.
+  workRowControlClass
+);
 
 /**
  * The page frame every state of this route shares, so the header sits in the

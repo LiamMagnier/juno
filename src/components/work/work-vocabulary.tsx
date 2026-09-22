@@ -269,15 +269,18 @@ export function WorkTag({
   className,
   children,
 }: {
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: IconComponent;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
     <span className={cn(PILL_SHAPE, PILL_CLASS.neutral, className)}>
       {/* `size-3`, the bottom rung of the ladder and the size `RiskPill` beside
-          it already uses; at 12px the set draws its bold cut on its own. */}
-      {Icon && <Icon className="size-3" aria-hidden="true" />}
+          it already uses; at 12px the set draws its bold cut on its own.
+          `motion="none"`: a tag's glyph is a label, and a tag often sits inside
+          a row's link, so the glyph's own hover gesture would play every time
+          the row is hovered (ICONS_AND_MOTION.md §1.3). */}
+      {Icon && <Icon motion="none" className="size-3" aria-hidden="true" />}
       {children}
     </span>
   );

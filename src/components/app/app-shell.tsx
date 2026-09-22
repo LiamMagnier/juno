@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Menu, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -19,7 +19,7 @@ import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
-import { spring, transition } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
@@ -125,14 +125,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the ref mirrors it so pointermove handlers never read a stale closure.
   const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
   const [resizing, setResizing] = React.useState(false);
-  const reduceMotion = useReducedMotion();
   /*
    * THE FRAME ANIMATES ONLY ONCE THE PAGE HAS SETTLED.
    *
    * The stored width and the stored collapse are both read after the first
    * render (the width in a layout effect, the collapse in an effect), so the
-   * frame's first real change is a correction, not a gesture — and a spring
-   * starting from the SSR default played the sidebar folding shut on every
+   * frame's first real change is a correction, not a gesture — and a width
+   * transition starting from the SSR default played the sidebar folding shut on every
    * load for anyone who keeps it collapsed. One frame after mount the frame
    * starts answering the reader instead.
    */
@@ -453,22 +452,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
             the content instead of reflowing it mid-animation.
 
-            ONE SPRING FOR THE FRAME AND EVERYTHING IN IT. The frame used to be
-            a CSS width transition at 220ms in-out while the rows inside it slid
-            on `spring.layout` (360ms, no bounce) — two clocks on one gesture,
-            so the frame finished closing while its own glyphs were still
-            travelling, and a second ⌘⇧S mid-fold restarted one clock and not
-            the other. framer drives the width now, on the same spring the
-            sidebar's rows use, so the panel folds as one object and a reversal
-            carries its velocity instead of snapping into a new tween.
-
-            Instant while dragging, so resize follows the pointer 1:1; instant
-            under reduced motion, where a panel that slides is travel. */}
-        <motion.aside
+            A CSS width transition on the symmetric rung (220ms, `ease-in-out`:
+            both endpoints of a collapse are on screen, so this is an A-to-B
+            move). It is the one sanctioned width animation in the product
+            (tailwind.config.ts names "sidebar width" beside the curve), and it
+            stays the SHORT rung on purpose: `<main>` re-flows on every frame
+            of it, so the panel is kept off the 360ms layout spring its rows
+            ride. Dropped while dragging so resize follows the pointer 1:1,
+            before the page has settled (see `frameLive`), and under reduced
+            motion, where a panel that slides is travel. */}
+        <aside
           data-floating={floating ? "" : undefined}
-          initial={false}
-          animate={{ width: shown ? sidebarWidth : RAIL_WIDTH }}
-          transition={frameLive && !resizing && !reduceMotion ? spring.layout : { duration: 0 }}
           className={cn(
             "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
             /* FLOATING MEANS ELEVATED. Over the content the panel had the same
@@ -477,9 +471,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                sitting above the page. The float shadow is the one thing that
                says "this is a layer", and it is the same shadow every other
                floating surface in the product wears. */
-            floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative"
+            floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative",
+            frameLive && !resizing && "transition-[width] duration-base ease-in-out motion-reduce:transition-none"
           )}
-          style={{ "--juno-sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+          style={
+            {
+              width: shown ? sidebarWidth : RAIL_WIDTH,
+              "--juno-sidebar-width": `${sidebarWidth}px`,
+            } as React.CSSProperties
+          }
         >
           <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
           {shown && (
@@ -516,7 +516,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               />
             </div>
           )}
-        </motion.aside>
+        </aside>
 
         {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock),
             sliding in on `sheet-in`. The sidebar's rungs are re-based for the

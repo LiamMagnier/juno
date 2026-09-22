@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
-import { GlyphSwap } from "@/components/auth/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 function tokenFromFragment(): string {
   if (typeof window === "undefined") return "";
@@ -153,10 +153,7 @@ export function ResetPasswordForm() {
             aria-pressed={showPassword}
             onClick={() => setShowPassword((v) => !v)}
           >
-            <GlyphSwap
-              state={showPassword ? "hide" : "show"}
-              glyphs={{ show: <Eye className="size-4" />, hide: <EyeOff className="size-4" /> }}
-            />
+            <IconSwap swapped={showPassword} from={<Eye className="size-4" />} to={<EyeOff className="size-4" />} />
           </Pressable>
         }
       />

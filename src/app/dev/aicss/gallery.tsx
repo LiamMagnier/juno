@@ -183,12 +183,13 @@ export function AicssGallery() {
             <div className="w-[288px]">
               <div className="relative aspect-video overflow-hidden rounded-field">
                 <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
-                {/* The set's play mark on the plate. `fill` because the plate
-                    IS the play control's face — the solid triangle is the
-                    convention every video player shares — and no hover
-                    articulation, because the placeholder is not pressable. */}
-                <div className="generation-media__play">
-                  <Play weight="fill" motion="none" className="generation-media__play-icon" />
+                {/* The set's play mark on the plate, as generation-placeholder
+                    draws it: the regular line, because `fill` means on or
+                    selected (ICONS_AND_MOTION.md §1.2) and a placeholder is
+                    neither; and no hover articulation, because it is not
+                    pressable. */}
+                <div className="generation-media__play" aria-hidden="true">
+                  <Play motion="none" className="generation-media__play-icon" />
                 </div>
               </div>
               <div className="mt-2.5 flex flex-col gap-0.5">

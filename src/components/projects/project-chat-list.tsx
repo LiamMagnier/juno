@@ -81,7 +81,7 @@ export function ProjectChatList({
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {conversations.length}
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto gap-1.5">
+        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto">
           <Plus className="size-3.5" aria-hidden="true" />
           New chat
         </Button>

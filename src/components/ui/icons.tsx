@@ -25,7 +25,9 @@
  * spellings the codebase already used (`ChevronDown`, `Loader2`, `Settings`) so
  * the migration touched imports, not call sites. Replacing any mark with a
  * bespoke Juno drawing — on the same 256 grid, 16-unit line, round caps — is a
- * one-line change in this file and reaches every surface at once.
+ * one-line change in this file and reaches every surface at once. Four marks
+ * already are Juno's own (`juno-glyphs.tsx`): `JunoChat`, `JunoCode`,
+ * `JunoDesign` and `Send`, the places and the verb the product is known by.
  *
  * MOTION. Each glyph can carry one hover articulation (`data-motion`), played
  * by `globals.css` when the interactive element around it is hovered or
@@ -36,9 +38,9 @@
  *
  * Server-component safe: built on the SSR entry, no context, no hooks.
  */
-import type { ComponentPropsWithoutRef, JSX, Ref } from "react";
+import type { ComponentPropsWithoutRef, ComponentType, JSX, Ref } from "react";
 
-import type { Icon as PhosphorIcon, IconWeight } from "@phosphor-icons/react/dist/lib/types";
+import type { IconProps as PhosphorIconProps, IconWeight } from "@phosphor-icons/react/dist/lib/types";
 import {
   AlignBottomIcon,
   AlignCenterHorizontalIcon,
@@ -172,7 +174,6 @@ import {
   NotePencilIcon,
   PackageIcon,
   PaperclipIcon,
-  PaperPlaneTiltIcon,
   PauseCircleIcon,
   PauseIcon,
   PencilSimpleIcon,
@@ -243,6 +244,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react/dist/ssr";
 
+import { JunoChatGlyph, JunoCodeGlyph, JunoDesignGlyph, JunoSendGlyph } from "@/components/ui/juno-glyphs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -328,8 +330,12 @@ function opticalWeight({
   return "regular";
 }
 
+/** Anything drawn on the 256 grid with Phosphor's prop shape: a Phosphor icon,
+ *  or one of Juno's own drawings in `juno-glyphs.tsx`. */
+type GlyphBase = ComponentType<PhosphorIconProps>;
+
 function glyph(
-  Base: PhosphorIcon,
+  Base: GlyphBase,
   name: string,
   defaults: { motion?: IconMotion; mirrored?: boolean } = {},
 ): IconComponent {
@@ -364,6 +370,20 @@ function glyph(
   JunoIcon.displayName = name;
   return JunoIcon;
 }
+
+// ---------------------------------------------------------------------------
+// Juno's own marks — the three places the product is known by. Drawn for Juno
+// in juno-glyphs.tsx from the two motifs of the logo (the open ring with its
+// ball terminal, and the four-point spark); `Send` below is the fourth.
+// ---------------------------------------------------------------------------
+
+/** Chat: the logo's bubble as a line. Its `fill` weight is the logo itself —
+ *  the solid bubble with the spark cut out — for the selected state. */
+export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "pop" });
+/** Code: the spark between two chevrons, where `</>` puts a slash. */
+export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "pop" });
+/** Design: a square in front of a circle, stacked like cut paper. */
+export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "lift" });
 
 // ---------------------------------------------------------------------------
 // Direction & navigation
@@ -423,7 +443,10 @@ export const Upload = glyph(UploadSimpleIcon, "upload", { motion: "nudge-u" });
 export const UploadCloud = glyph(CloudArrowUpIcon, "upload-cloud", { motion: "nudge-u" });
 export const FileUp = glyph(FileArrowUpIcon, "file-up", { motion: "nudge-u" });
 export const Save = glyph(FloppyDiskIcon, "save");
-export const Send = glyph(PaperPlaneTiltIcon, "send", { motion: "nudge-ne" });
+/** Juno's own send mark (juno-glyphs.tsx): an up arrow whose head has the
+ *  spark's concave flanks. Every "send this" in the product draws it — the
+ *  composer's send circle, Ask Juno, steering a run, sending a voice draft. */
+export const Send = glyph(JunoSendGlyph, "send", { motion: "nudge-u" });
 export const Share2 = glyph(ShareNetworkIcon, "share");
 export const Printer = glyph(PrinterIcon, "printer");
 export const Search = glyph(MagnifyingGlassIcon, "search", { motion: "tilt" });

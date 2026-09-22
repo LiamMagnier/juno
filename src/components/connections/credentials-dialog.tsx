@@ -189,9 +189,9 @@ export function CredentialsDialog({
                   the password branch below. This one kept its Music2 glyph
                   while waiting on Apple's popup — the only sign anything was
                   happening was the label — and drew it at 3.5 where its
-                  sibling draws 4, which is also the size the Button base
-                  forces on any icon that does not name one. */}
-              <Button className="gap-1.5" onClick={authorizeMusic} disabled={busy}>
+                  sibling draws 4, the button rung of the icon ladder
+                  (ICONS_AND_MOTION §1.2), at the Button's own gap-2. */}
+              <Button onClick={authorizeMusic} disabled={busy}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Music2 className="size-4" />}
                 {busy ? "Waiting for Apple…" : "Sign in with Apple Music"}
               </Button>
@@ -247,7 +247,6 @@ export function CredentialsDialog({
               <Button
                 type="submit"
                 disabled={busy || !appleId.trim() || !appPassword.trim()}
-                className="gap-1.5"
               >
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
                 {busy ? "Verifying…" : "Connect"}

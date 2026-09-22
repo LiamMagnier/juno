@@ -80,13 +80,16 @@ TabsList.displayName = TabsPrimitive.List.displayName;
  * blinked rather than moved.
  *
  * A trigger rendered outside `<Tabs>` (a bare Radix root) keeps the old
- * per-trigger fill, so nothing loses its selected state.
+ * per-trigger fill, so nothing loses its selected state. So does an `asChild`
+ * trigger: Radix hands its children to a Slot, which takes exactly one child,
+ * so there is no room for a thumb beside the caller's element.
  */
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
 >(({ className, children, value, ...props }, ref) => {
-  const thumb = React.useContext(TabsThumbContext);
+  const context = React.useContext(TabsThumbContext);
+  const thumb = props.asChild ? null : context;
   const reduceMotion = useReducedMotion() ?? false;
   const thumbId = thumb !== null && thumb.value === value ? thumb.id : null;
   return (
@@ -108,19 +111,25 @@ const TabsTrigger = React.forwardRef<
       )}
       {...props}
     >
-      {thumbId !== null && (
-        <motion.span
-          layoutId={thumbId}
-          aria-hidden="true"
-          transition={reduceMotion ? { duration: 0 } : spring.standard}
-          // The raised key. The radius rides `style` so framer keeps the
-          // corners true while it scales the box between two triggers of
-          // different widths.
-          className="surface-raised pointer-events-none absolute -inset-px -z-10 border-border/60"
-          style={{ borderRadius: 10 }}
-        />
+      {thumb === null ? (
+        children
+      ) : (
+        <>
+          {thumbId !== null && (
+            <motion.span
+              layoutId={thumbId}
+              aria-hidden="true"
+              transition={reduceMotion ? { duration: 0 } : spring.standard}
+              // The raised key. The radius rides `style` so framer keeps the
+              // corners true while it scales the box between two triggers of
+              // different widths.
+              className="surface-raised pointer-events-none absolute -inset-px -z-10 border-border/60"
+              style={{ borderRadius: 10 }}
+            />
+          )}
+          {children}
+        </>
       )}
-      {children}
     </TabsPrimitive.Trigger>
   );
 });

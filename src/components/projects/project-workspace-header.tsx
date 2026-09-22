@@ -147,7 +147,6 @@ export function ProjectWorkspaceHeader({
               variant="outline"
               size="sm"
               onClick={onEditInstructions}
-              className="gap-1.5"
             >
               <NotebookPen className="size-3.5" aria-hidden="true" />
               Instructions

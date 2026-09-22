@@ -16,9 +16,10 @@
  */
 
 import * as React from "react";
-import { ArrowUp, Loader2 } from "@/components/ui/icons";
+import { Loader2, Send } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { GlyphSwap } from "@/components/design/glyph-swap";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
@@ -185,24 +186,31 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           className="min-w-0 flex-1 bg-transparent px-1 py-1.5 text-ui outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
 
-        <Button
-          type="submit"
-          size="icon-sm"
-          disabled={!draft.trim() || busy || blocked}
-          aria-label={busy ? "Juno is working" : "Ask Juno"}
-          // `control` (10), not `field` (12): the bar is a 16px shell with
-          // `p-1.5` (6), so its seated controls are 16 − 6 = 10. The same
-          // arithmetic the dropdown shell and the segmented track already use.
-          className="shrink-0 rounded-control"
-        >
-          {/* Send and busy share one key and cross-fade — the arrow does not
-              vanish in a frame the moment the request leaves. */}
-          <GlyphSwap
-            swapped={busy}
-            from={<ArrowUp className="size-4" />}
-            to={<Loader2 className={cn("size-4", busy && "motion-safe:animate-spin")} />}
-          />
-        </Button>
+        {/* The hint says what the accessible name says. Radix closes it on
+            the click that sends, so it never hangs over the busy key. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="submit"
+              size="icon-sm"
+              disabled={!draft.trim() || busy || blocked}
+              aria-label={busy ? "Juno is working" : "Ask Juno"}
+              // `control` (10), not `field` (12): the bar is a 16px shell with
+              // `p-1.5` (6), so its seated controls are 16 − 6 = 10. The same
+              // arithmetic the dropdown shell and the segmented track already use.
+              className="shrink-0 rounded-control"
+            >
+              {/* Send and busy share one key and cross-fade — the arrow does not
+                  vanish in a frame the moment the request leaves. */}
+              <GlyphSwap
+                swapped={busy}
+                from={<Send className="size-4" />}
+                to={<Loader2 className={cn("size-4", busy && "motion-safe:animate-spin")} />}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{busy ? "Juno is working" : "Ask Juno"}</TooltipContent>
+        </Tooltip>
       </form>
     </div>
   );

@@ -10,7 +10,7 @@ import {
   useReducedMotion,
   type AnimationPlaybackControls,
 } from "framer-motion";
-import { ArrowUp, AudioLines, Loader2, Square } from "@/components/ui/icons";
+import { AudioLines, Loader2, Send, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -510,6 +510,18 @@ export function ComposerDivider(_: { className?: string }) {
  * paints in between; framer's `animate` then drives the inline style, which
  * is the same property the measurement reads back from, so an interrupted
  * growth carries on from wherever it was. Reduced motion snaps.
+ *
+ * THE ONE HEIGHT TWEEN IN THE PRODUCT, on purpose. ICONS_AND_MOTION.md §2.2
+ * rule 8 says height never animates, and its three escape hatches all fail
+ * here: `grid-rows` 0fr → 1fr needs a track that resolves to the content's
+ * height, and a textarea's height is not content-sized (it would need a
+ * hidden mirror of the text kept in sync with the field's metrics); `scale`
+ * would squash the glyphs and the caret mid-growth; framer `layout` animates
+ * by scaling too, and the corrective counter-scale does not reach the text
+ * inside a textarea. So the field's inline height rides the spring. The cost
+ * is bounded: one element, a layout per frame for the ~220ms after the text
+ * crosses a line boundary, nothing while it does not, and nothing at all
+ * under reduced motion.
  */
 export function useComposerAutosize(
   ref: React.RefObject<HTMLTextAreaElement | null>,
@@ -657,8 +669,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // product was the one `.pressable` that did not press like one.
           // The class already transitions colour and background at --dur-fast
           // and transform at --dur-press, which is everything this needed.
+          //
+          // Focus is the global 2px --ring outline at its 2px offset
+          // (globals.css), which follows the round corner. The ring and
+          // card-coloured ring offset it used to add painted a halo on top of
+          // it (ICONS_AND_MOTION.md §2.2, rule 3).
           "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
           face === "voice"
             ? // Quiet, and reaching the accent only on hover — enough to say it
               // is live without competing with the send circle it becomes.
@@ -693,7 +709,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
                 {/* The bold cut: the one glyph on the row set on a solid
                     accent disc, where the regular line thins against the fill
                     — the same weight Claude and ChatGPT give their send arrow. */}
-                <ArrowUp weight="bold" className="size-4" />
+                <Send weight="bold" className="size-4" />
               </motion.span>
             )}
           </AnimatePresence>

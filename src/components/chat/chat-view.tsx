@@ -1877,20 +1877,25 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <ActionIcons.refresh className="size-3.5" />
             Retry
           </button>
-          <Pressable
-            kind="icon"
-            size="lg"
-            onClick={discardFailedVoiceSave}
-            aria-label="Discard unsaved voice transcript"
-            // danger-hover overrides the default accent fill: this one deletes.
-            // It does that on its own — the selector is doubled (globals.css)
-            // precisely so it outranks a variant's hover utility — so the
-            // `hover:bg-transparent` that used to ride along here never painted
-            // and only made it look as though two rules were fighting.
-            className="danger-hover"
-          >
-            <ActionIcons.delete className="size-3.5" />
-          </Pressable>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable
+                kind="icon"
+                size="lg"
+                onClick={discardFailedVoiceSave}
+                aria-label="Discard unsaved voice transcript"
+                // danger-hover overrides the default accent fill: this one deletes.
+                // It does that on its own — the selector is doubled (globals.css)
+                // precisely so it outranks a variant's hover utility — so the
+                // `hover:bg-transparent` that used to ride along here never painted
+                // and only made it look as though two rules were fighting.
+                className="danger-hover"
+              >
+                <ActionIcons.delete className="size-3.5" />
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent>Discard unsaved voice transcript</TooltipContent>
+          </Tooltip>
         </div>
       )}
     </div>

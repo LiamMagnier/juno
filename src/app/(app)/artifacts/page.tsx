@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
@@ -139,12 +140,28 @@ export default function ArtifactsPage() {
    * the whole reason the grid could be added without the two views drifting:
    * one definition of what you can do to an artifact, wherever you are looking
    * at it.
+   *
+   * A render function, called as `renderActions(item, href)`, not a component.
+   * It used to be a component created inside `useCallback([downloadingId,
+   * router])`, so every download that started or finished gave it a new
+   * identity and React unmounted every actions button on the page and mounted
+   * fresh ones. That killed two things: the more → spinner cross-fade, which
+   * mounted already in its final state (a transition does not run on first
+   * paint), and keyboard focus, which Radix had just returned to the trigger
+   * after "Download source" and which then fell to <body> with it. Called as a
+   * function, the menu is part of this page's own tree and survives the state
+   * change. `download` and `openRename` are declared further down, which is
+   * fine: this only runs during render, after both exist.
    */
-  const ArtifactActions = React.useCallback(
-    function ArtifactActions({ item, href }: { item: Item; href: string }) {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+  const renderActions = (item: Item, href: string) => (
+    <DropdownMenu>
+      {/* Menu trigger outside the tooltip trigger, as on the canvas header's
+          overflow button, so the button's `data-state` stays the menu's (the
+          inner Slot's props win) and `data-[state=open]:opacity-100` keeps
+          the trigger showing while its menu is open. */}
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -160,39 +177,36 @@ export default function ArtifactsPage() {
                 to={<Loader2 className={cn("size-4", downloadingId === item.id && "motion-safe:animate-spin")} />}
               />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className={MENU_W}>
-            <DropdownMenuItem onSelect={() => router.push(href)}>
-              <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
-              <MessagesSquare className="size-4" aria-hidden /> Open conversation
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => openRename(item)}>
-              <ActionIcons.edit className="size-4" aria-hidden /> Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => download(item)}>
-              <ActionIcons.download className="size-4" aria-hidden /> Download source
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setShareTarget(item)}>
-              <ActionIcons.share className="size-4" aria-hidden /> Share
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => setDeleteTarget(item)}
-            >
-              <ActionIcons.delete className="size-4" aria-hidden /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `download` and
-    // `openRename` are declared below this point; both are stable for the life
-    // of the page and neither closes over anything that changes identity.
-    [downloadingId, router],
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className={MENU_W}>
+        <DropdownMenuItem onSelect={() => router.push(href)}>
+          <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
+          <MessagesSquare className="size-4" aria-hidden /> Open conversation
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => openRename(item)}>
+          <ActionIcons.edit className="size-4" aria-hidden /> Rename
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => download(item)}>
+          <ActionIcons.download className="size-4" aria-hidden /> Download source
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setShareTarget(item)}>
+          <ActionIcons.share className="size-4" aria-hidden /> Share
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => setDeleteTarget(item)}
+        >
+          <ActionIcons.delete className="size-4" aria-hidden /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const changeView = React.useCallback((next: ArtifactView) => {
@@ -567,7 +581,7 @@ export default function ArtifactsPage() {
                     </span>
                   </Link>
                   <div className="relative z-10 -mr-1 flex shrink-0 items-center">
-                    <ArtifactActions item={item} href={href} />
+                    {renderActions(item, href)}
                   </div>
                 </div>
               </li>
@@ -620,7 +634,7 @@ export default function ArtifactsPage() {
                 </span>
 
                 <div className="relative z-10 flex shrink-0 items-center">
-                  <ArtifactActions item={item} href={href} />
+                  {renderActions(item, href)}
                 </div>
               </li>
             );

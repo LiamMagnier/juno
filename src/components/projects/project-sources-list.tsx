@@ -213,7 +213,7 @@ export function ProjectSourcesList({
           variant="secondary"
           onClick={onUploadClick}
           disabled={uploading}
-          className="ml-auto gap-1.5"
+          className="ml-auto"
         >
           {uploading ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />

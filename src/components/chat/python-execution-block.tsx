@@ -43,12 +43,14 @@ export function PythonExecutionBlock({
   return (
     // A hairline, no shadow: the block sits in the reading column (FLAT_UI §2).
     <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-caption">
-      {/* Focus is the global `:focus-visible` outline; the inset ring that
-          replaced it here is gone. */}
+      {/* Focus is the global `:focus-visible` outline, pulled inside the
+          button. The header fills the top edge of the `overflow-hidden`
+          section, so the default 2px outside offset would be clipped on three
+          sides and read as a single line under the header. */}
       <button
         type="button"
         onClick={() => setIsCodeOpen((open) => !open)}
-        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/45 motion-reduce:transition-none"
+        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/45 focus-visible:-outline-offset-2 motion-reduce:transition-none"
         aria-expanded={isCodeOpen}
         aria-controls={codeId}
       >
@@ -67,7 +69,7 @@ export function PythonExecutionBlock({
         <span className="flex shrink-0 items-center gap-2">
           {status === "running" ? (
             <span className="flex items-center gap-1.5 font-medium text-primary" aria-live="polite">
-              <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
               Running…
             </span>
           ) : isSuccess ? (

@@ -74,9 +74,13 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
         </div>
       </figcaption>
 
+      {/* The frame changes size in one step. Height is layout, not travel
+          (ICONS_AND_MOTION §2.2.8): tweening `max-height` re-laid-out the
+          transcript on every frame. The glyph cross-fade in the header is the
+          acknowledgement that the view changed. */}
       <div
         className={cn(
-          "flex items-center justify-center overflow-auto bg-background/70 p-4 transition-[max-height] duration-base ease-out-soft motion-reduce:transition-none",
+          "flex items-center justify-center overflow-auto bg-background/70 p-4",
           isExpanded ? "max-h-[800px]" : "max-h-[420px]"
         )}
       >

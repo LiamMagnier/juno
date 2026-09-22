@@ -115,6 +115,16 @@ export const workRowClass =
   "group flex items-start gap-3 rounded-control border border-transparent px-3.5 py-3 " +
   "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
+/**
+ * A ghost control that sits inside a hover-filled row: Run now, Pause, Restore,
+ * Remove. The row takes `--accent` under the pointer, which is also the ghost
+ * button's own hover fill, so a hovered control in a hovered row showed no fill
+ * of its own and only its ink changed. A translucent ink tint composes over
+ * whatever the row is showing and lands a step past it in either theme. It is
+ * the nested-control recipe the sidebar's row actions already use.
+ */
+export const workRowControlClass = "hover:bg-foreground/5 active:bg-foreground/10";
+
 /** How a row arrives: dealt in on the shared stagger, holding its `from` frame while it waits. */
 export const workRowEnterClass = "motion-safe:animate-rise-in [animation-fill-mode:backwards]";
 
