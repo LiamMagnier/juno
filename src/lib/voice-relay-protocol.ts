@@ -48,6 +48,8 @@ export type VoiceServerMessage =
       provider: VoiceProviderId;
       capabilities: ProviderCapabilities;
       thinking: boolean;
+      /** The model actually serving the call, as the provider reports it. */
+      model?: string;
       /** Non-fatal note about how the session came up; does not end the call. */
       notice?: string;
     }

@@ -1,5 +1,10 @@
 import WebSocket from "ws";
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type {
+  ProviderEvents,
+  SessionEstablished,
+  VoiceProviderSession,
+  VoiceSessionSeed,
+} from "./types.js";
 import { requiredEnv } from "./types.js";
 import { providerText } from "../voice-context.js";
 
@@ -9,6 +14,17 @@ const DEFAULT_LIVE_URL =
 /** The REST host the token exchange talks to; tests point it elsewhere. */
 function restBase(): string {
   return process.env.RELAY_GEMINI_REST_URL || "https://generativelanguage.googleapis.com";
+}
+
+/**
+ * How hard Extended Thinking may think per turn.
+ *
+ * `low`, `medium` and `high` are the accepted values — `minimal` is rejected,
+ * as is any level at all on the non-thinking model.
+ */
+function thinkingLevel(): string {
+  const requested = (process.env.RELAY_GEMINI_THINKING_LEVEL || "").toLowerCase();
+  return ["low", "medium", "high"].includes(requested) ? requested : "low";
 }
 
 /** Read per call, not at import: tests point this at a local server. */
@@ -92,6 +108,10 @@ export class GeminiLiveSession implements VoiceProviderSession {
     this.model = this.thinking
       ? process.env.RELAY_GEMINI_THINKING_MODEL || "gemini-3.8-live-extended-thinking"
       : process.env.RELAY_GEMINI_MODEL || "gemini-3.8-live";
+  }
+
+  established(): SessionEstablished {
+    return { thinking: this.thinking, model: this.model };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
@@ -259,6 +279,15 @@ export class GeminiLiveSession implements VoiceProviderSession {
         model: `models/${this.model}`,
         generationConfig: {
           responseModalities: ["AUDIO"],
+          // Exactly one of these models wants a thinking level, and the other
+          // refuses one. Extended Thinking fails setup without `thinkingLevel`
+          // ("Thinking level must be specified for this model"), and plain
+          // 3.8 Live fails setup WITH it — so this cannot be a constant, and
+          // sending it to both is as broken as sending it to neither.
+          // "low" keeps a live call conversational: the model narrates while
+          // it reasons either way, and a level above this buys depth with the
+          // one thing a spoken turn cannot spend, which is time.
+          ...(this.thinking ? { thinkingConfig: { thinkingLevel: thinkingLevel() } } : {}),
           ...(seed.voice
             ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: seed.voice } } } }
             : {}),
