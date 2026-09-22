@@ -269,6 +269,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * and the toggle looks stuck.
    */
   const confirmedThinkingRef = React.useRef(false);
+  /**
+   * Whether this call should know what Juno remembers, and in which scope —
+   * set by the caller at start (a chat that is not incognito), kept across
+   * reconnects. The memory itself never passes through here: the relay asks
+   * the app for it, server to server.
+   */
+  const memoryRef = React.useRef<{ projectId: string | null } | null>(null);
+  /** The relay confirmed the call was given memory (`session.ready.memory`). */
+  const [memoryOn, setMemoryOn] = React.useState(false);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -290,7 +299,14 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const bargeSamplesRef = React.useRef(0);
   const interruptRef = React.useRef<() => void>(() => {});
   // Reconnects re-enter `start` from inside its own socket handlers.
-  const startRef = React.useRef<((initialProvider?: VoiceProviderId, history?: VoiceHistoryEntry[]) => Promise<void>) | null>(null);
+  const startRef = React.useRef<
+    | ((
+        initialProvider?: VoiceProviderId,
+        history?: VoiceHistoryEntry[],
+        opts?: { memory?: { projectId: string | null } | null }
+      ) => Promise<void>)
+    | null
+  >(null);
 
   React.useEffect(() => {
     statusRef.current = status;
@@ -714,6 +730,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           // caller has to be told without the call being torn down for it.
           setNotice(msg.notice ?? null);
           setModel(msg.model ?? null);
+          setMemoryOn(msg.memory === true);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -809,13 +826,21 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   );
 
   const start = React.useCallback(
-    async (initialProvider?: VoiceProviderId, history?: VoiceHistoryEntry[]) => {
+    async (
+      initialProvider?: VoiceProviderId,
+      history?: VoiceHistoryEntry[],
+      opts?: { memory?: { projectId: string | null } | null }
+    ) => {
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
       // Re-entry from the reconnect timer keeps the visible "reconnecting"
       // state; a fresh/manual start resets the retry budget.
       const isReconnect = statusRef.current === "reconnecting" && reconnectAttemptsRef.current > 0;
       if (!isReconnect) reconnectAttemptsRef.current = 0;
+      // A fresh call says afresh whether it wants memory; a reconnect keeps
+      // what the call it continues asked for.
+      if (!isReconnect) memoryRef.current = opts?.memory ?? null;
+      setMemoryOn(false);
       clearReconnectTimer();
       releaseResources();
       if (history) historyRef.current = boundVoiceHistory(history);
@@ -831,7 +856,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setModel(null);
       setUsage(null);
       try {
-        const res = await fetch("/api/voice/relay-token");
+        const memory = memoryRef.current;
+        const res = await fetch(
+          memory
+            ? `/api/voice/relay-token?${new URLSearchParams({
+                memory: "1",
+                ...(memory.projectId ? { projectId: memory.projectId } : {}),
+              })}`
+            : "/api/voice/relay-token"
+        );
         const data = (await res.json().catch(() => ({}))) as {
           token?: string;
           url?: string;
@@ -1239,6 +1272,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     error,
     notice,
     model,
+    /** True once the relay confirms this call knows what Juno remembers. */
+    memory: memoryOn,
     closedReason,
     levelRef,
     speechInterim: speech.interim,

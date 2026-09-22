@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "@/components/ui/icons";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -158,7 +158,22 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 relay log before, so a call that had quietly fallen back to
                 another protocol looked identical to one that had not. */}
             {subtitle && (
-              <span className="truncate text-micro text-muted-foreground">{subtitle}</span>
+              <span className="flex min-w-0 items-center gap-1 text-micro text-muted-foreground">
+                <span className="truncate">{subtitle}</span>
+                {/* Said, not left to be discovered by being remembered. Only
+                    once the relay confirms it: a call that asked and could not
+                    reach memory must not claim it. */}
+                {voice.memory && (
+                  <span
+                    className="flex shrink-0 items-center gap-1 motion-safe:animate-fade-in"
+                    title="This call knows what Juno remembers about you"
+                  >
+                    <span aria-hidden="true">·</span>
+                    <ComposerIcons.memory className="size-3" aria-hidden="true" />
+                    <span>Memory</span>
+                  </span>
+                )}
+              </span>
             )}
           </span>
         </div>

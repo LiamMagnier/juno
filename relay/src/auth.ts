@@ -19,22 +19,44 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * token captured off the wire is useless within a minute, and a relay process
  * that is killed leaves nothing reusable behind.
  */
-export function mintRelayCallbackToken(userId: string, ttlSeconds = 60): string {
+/** What a callback is for. Each has its own audience, checked by its own route. */
+export type RelayCallbackAudience = "juno.voice.spend" | "juno.voice.memory";
+
+export function mintRelayCallbackToken(
+  userId: string,
+  ttlSeconds = 60,
+  audience: RelayCallbackAudience = "juno.voice.spend",
+  /** Signed alongside: the project a memory request is for. */
+  claims: { pid?: string } = {}
+): string {
   const secret = process.env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET is not configured on the relay.");
   const payload = JSON.stringify({
     uid: userId,
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
-    // Names the direction, so a token minted for a callback can never be
-    // replayed as a session token and vice versa.
-    aud: "juno.voice.spend",
+    // Names the direction AND the purpose, so a token minted for a callback can
+    // never be replayed as a session token, and a spend report's token can
+    // never read memory (or the reverse).
+    aud: audience,
+    ...(claims.pid ? { pid: claims.pid } : {}),
   });
   const body = Buffer.from(payload).toString("base64url");
   const mac = createHmac("sha256", secret).update(body).digest("base64url");
   return `${body}.${mac}`;
 }
 
-export function verifyRelayToken(token: string | null): { userId: string } | null {
+/**
+ * What a session token grants. `memory` is set when the app minted the token
+ * for a call that should know what Juno remembers — from a chat that is not
+ * incognito — with the project it belongs to, if any. The app checked access
+ * to that project before signing it; the relay only carries the claim back.
+ */
+export interface RelayGrant {
+  userId: string;
+  memory: { projectId: string | null } | null;
+}
+
+export function verifyRelayToken(token: string | null): RelayGrant | null {
   if (!token) return null;
   const secret = process.env.AUTH_SECRET;
   if (!secret) throw new Error("AUTH_SECRET is not configured on the relay.");
@@ -49,6 +71,8 @@ export function verifyRelayToken(token: string | null): { userId: string } | nul
       uid?: string;
       exp?: number;
       aud?: unknown;
+      mem?: unknown;
+      pid?: unknown;
     };
     // Spend callback tokens use the same HMAC secret but are for the opposite
     // direction. Accepting their audience here would let a captured relay
@@ -56,7 +80,11 @@ export function verifyRelayToken(token: string | null): { userId: string } | nul
     if (payload.aud !== undefined) return null;
     if (typeof payload.uid !== "string" || payload.uid.length === 0 || typeof payload.exp !== "number") return null;
     if (payload.exp * 1000 <= Date.now()) return null;
-    return { userId: payload.uid };
+    const memory =
+      payload.mem === 1
+        ? { projectId: typeof payload.pid === "string" && payload.pid.length > 0 ? payload.pid : null }
+        : null;
+    return { userId: payload.uid, memory };
   } catch {
     return null;
   }

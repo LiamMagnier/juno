@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { verifyRelayToken } from "./auth.js";
+import { verifyRelayToken, type RelayGrant } from "./auth.js";
 import { RelaySession } from "./session.js";
 import { PROVIDERS } from "./providers/registry.js";
 import { isAllowedRelayOrigin, parseAllowedOrigins } from "./origin.js";
@@ -47,7 +47,7 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  let auth: { userId: string } | null = null;
+  let auth: RelayGrant | null = null;
   try {
     auth = verifyRelayToken(url.searchParams.get("token"));
   } catch (err) {
@@ -59,12 +59,13 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit("connection", ws, auth.userId);
+    wss.emit("connection", ws, auth);
   });
 });
 
-wss.on("connection", (ws: WebSocket, userId: string) => {
-  const session = new RelaySession(ws, userId);
+wss.on("connection", (ws: WebSocket, grant: RelayGrant) => {
+  const { userId } = grant;
+  const session = new RelaySession(ws, userId, { memory: grant.memory });
   console.info("[relay] client connected", { userId });
 
   ws.on("message", (data, isBinary) => {

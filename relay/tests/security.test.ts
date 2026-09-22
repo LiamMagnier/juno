@@ -27,7 +27,7 @@ test("relay callback tokens cannot authenticate an inbound voice session", () =>
   assert.equal(verifyRelayToken(callback), null);
   assert.deepEqual(
     verifyRelayToken(inboundToken({ uid: "user-1", exp: Math.floor(Date.now() / 1000) + 60 })),
-    { userId: "user-1" },
+    { userId: "user-1", memory: null },
   );
   assert.equal(verifyRelayToken(inboundToken({ uid: "user-1", exp: Math.floor(Date.now() / 1000) - 1 })), null);
 });
