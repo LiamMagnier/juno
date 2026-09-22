@@ -530,7 +530,7 @@ struct DesktopCodeWorkspace: View {
                 Label("Terminal", systemImage: "terminal")
             }
             .disabled(controller?.context == nil)
-            .help("Terminal (⌥⌘T)")
+            .help("Terminal (⌥⌘C)")
             .accessibilityIdentifier("juno.code.terminal.toggle")
 
             Menu {
@@ -612,7 +612,7 @@ struct DesktopCodeWorkspace: View {
         if let controller {
             items += [
                 CodePaletteItem(id: "action.review", kind: .action, title: "Changes", icon: .diff, shortcut: "⌥⌘R"),
-                CodePaletteItem(id: "action.terminal", kind: .action, title: "Terminal", icon: .terminal, shortcut: "⌥⌘T"),
+                CodePaletteItem(id: "action.terminal", kind: .action, title: "Terminal", icon: .terminal, shortcut: "⌥⌘C"),
                 CodePaletteItem(id: "action.preview", kind: .action, title: previewTarget == nil ? "Preview" : "Hide preview", icon: .canvas),
                 CodePaletteItem(id: "action.open-file", kind: .action, title: "Open file…", icon: .fileSearch),
             ]

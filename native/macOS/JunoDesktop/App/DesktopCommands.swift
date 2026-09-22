@@ -184,8 +184,11 @@ struct JunoDesktopCommands: Commands {
                 Button("Changes") { codeActions?.toggleReview() }
                     .keyboardShortcut("r", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
+                // ⌥⌘C, not ⌥⌘T: ToolbarCommands above binds ⌥⌘T to Show/Hide
+                // Toolbar, and the View menu is matched first, so ⌥⌘T hid
+                // the Code window's toolbar instead of opening the terminal.
                 Button("Terminal") { codeActions?.toggleConsole() }
-                    .keyboardShortcut("t", modifiers: [.command, .option])
+                    .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
                 Button("Toggle Side Panel") { codeActions?.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
