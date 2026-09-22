@@ -14,6 +14,7 @@ import { PPTX_PARSER_VERSION, extractPptx } from "./pptx";
 import { TEXT_PARSER_VERSION, extractTextDocument, textFlavor } from "./text";
 import { XLSX_PARSER_VERSION, extractXlsx } from "./xlsx";
 import { ocrPdf, OCR_VERSION } from "../ocr";
+import { extractPdfWithEngine, PDF_ENGINE, PDF_ENGINE_VERSION } from "./pdf-engine";
 import type { ExtractionResult } from "./types";
 
 export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "text";
@@ -96,6 +97,15 @@ export interface ExtractInput {
  * thrown error and a failed result identically and there is no reason for the
  * caller to handle two shapes of the same thing.
  */
+/** The pages an extraction actually produced text for. */
+function readablePages(result: { blocks: readonly { page?: number }[] }): Set<number> {
+  const pages = new Set<number>();
+  for (const block of result.blocks) {
+    if (typeof block.page === "number") pages.add(block.page);
+  }
+  return pages;
+}
+
 export async function extractDocument(input: ExtractInput): Promise<ExtractionResult | null> {
   const extractor = selectExtractor(input.fileName, input.mimeType);
   if (!extractor) return null;
@@ -108,31 +118,78 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
           // OCR is a fallback only. Preserve embedded text at confidence 1 and
           // add OCR blocks only for pages the native parser could not read.
           if (parsed.status !== "degraded" || parsed.pageCount === undefined) return parsed;
+
+          /*
+           * ── THE PDF.JS RUNG, BETWEEN THE NATIVE PARSER AND OCR ───────────
+           *
+           * The native parser degrades on a whole class of ordinary file:
+           * subset CID fonts with Identity-H encoding and no `/ToUnicode`
+           * map, which is what LaTeX and InDesign emit, which is to say most
+           * technical reports. Those used to fall straight through to OCR —
+           * and OCR needs `JUNO_OCR_ENDPOINT` or tesseract on the host, so on
+           * a deployment with neither, a perfectly readable PDF indexed as
+           * NOTHING and the first anyone heard of it was the model saying it
+           * had received no text.
+           *
+           * pdf.js decodes those fonts, it is already in this repo (`unpdf`,
+           * reading PDFs for the research engine), and it costs no binaries
+           * and no service. So it goes first. OCR keeps its place as the last
+           * resort, for pages that have no text layer at all — a scan — which
+           * is the only thing it was ever the right answer for.
+           */
+          const engine = await extractPdfWithEngine({
+            bytes: input.bytes,
+            fileName: input.fileName,
+            skipPages: readablePages(parsed),
+            maxPages: parsed.pageCount,
+          });
+          const enginePages = engine.status === "ok" ? engine.pages : new Set<number>();
+          const withEngine =
+            engine.status === "ok"
+              ? {
+                  ...parsed,
+                  parserVersion: `${PDF_PARSER_VERSION}+${PDF_ENGINE}${PDF_ENGINE_VERSION}`,
+                  blocks: [...parsed.blocks, ...engine.blocks],
+                }
+              : parsed;
+
+          // Every page accounted for: the document is whole, however it was
+          // read, and calling it degraded would send a reader looking for a
+          // problem that no longer exists.
+          const readAfterEngine = readablePages(withEngine);
+          if (readAfterEngine.size >= (parsed.pageCount ?? 0)) {
+            return {
+              ...withEngine,
+              status: "ok" as const,
+              reason: undefined,
+            };
+          }
+
           const ocr = await ocrPdf({
             bytes: input.bytes,
             fileName: input.fileName,
             pageCount: parsed.pageCount,
           });
+          const recovered = enginePages.size
+            ? ` The PDF reader recovered ${enginePages.size} page${enginePages.size === 1 ? "" : "s"} the native parser could not decode.`
+            : "";
           if (ocr.status !== "ok") {
             return {
-              ...parsed,
-              parserVersion: `${PDF_PARSER_VERSION}+ocr${OCR_VERSION}`,
-              reason: `${parsed.reason ?? "This PDF is only partially readable."} OCR fallback was unavailable: ${ocr.reason}`,
+              ...withEngine,
+              parserVersion: `${PDF_PARSER_VERSION}+${PDF_ENGINE}${PDF_ENGINE_VERSION}+ocr${OCR_VERSION}`,
+              reason: `${parsed.reason ?? "This PDF is only partially readable."}${recovered} OCR fallback was unavailable: ${ocr.reason}`,
             };
           }
-          const embeddedPages = new Set(
-            parsed.blocks.map((block) => block.page).filter((page): page is number => typeof page === "number")
-          );
           const ocrBlocks = ocr.blocks.filter(
-            (block) => typeof block.page === "number" && !embeddedPages.has(block.page)
+            (block) => typeof block.page === "number" && !readAfterEngine.has(block.page)
           );
           const ocrPages = new Set(ocrBlocks.map((block) => block.page).filter((page): page is number => typeof page === "number"));
           return {
-            ...parsed,
-            parserVersion: `${PDF_PARSER_VERSION}+ocr${OCR_VERSION}`,
+            ...withEngine,
+            parserVersion: `${PDF_PARSER_VERSION}+${PDF_ENGINE}${PDF_ENGINE_VERSION}+ocr${OCR_VERSION}`,
             status: "degraded",
-            blocks: [...parsed.blocks, ...ocrBlocks],
-            reason: `${parsed.reason ?? "Some PDF pages required OCR."} OCR recovered ${ocrPages.size} page${ocrPages.size === 1 ? "" : "s"} with measured confidence; verify OCR text against the original.`,
+            blocks: [...withEngine.blocks, ...ocrBlocks],
+            reason: `${parsed.reason ?? "Some PDF pages required OCR."}${recovered} OCR recovered ${ocrPages.size} page${ocrPages.size === 1 ? "" : "s"} with measured confidence; verify OCR text against the original.`,
           };
         }
       case "docx":

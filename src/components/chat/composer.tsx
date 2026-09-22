@@ -109,6 +109,7 @@ import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
+import { useAttachmentReadiness } from "@/hooks/use-attachment-readiness";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
@@ -968,6 +969,10 @@ export function Composer({
     [privateMode, readyAttachments],
   );
   const uploading = privateMode ? false : isUploading;
+  /* Whether the files on the row can actually be read — polled until indexing
+     settles, so "Juno could not read this PDF" arrives before the send rather
+     than inside the reply to it. */
+  const attachmentReadiness = useAttachmentReadiness(uploads);
 
   const addComposerFiles = React.useCallback(
     (files: FileList | File[]) => {
@@ -3100,7 +3105,7 @@ export function Composer({
               )}
 
             {!privateMode && (
-              <ComposerAttachmentRow uploads={uploads} onRemove={remove} />
+              <ComposerAttachmentRow uploads={uploads} readiness={attachmentReadiness} onRemove={remove} />
             )}
 
             {quote && (

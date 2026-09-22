@@ -85,6 +85,37 @@ const SANDBOX_CSP_META =
 export const SANDBOX_ALLOW =
   "allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock";
 
+/**
+ * Module name → PyPI wheel, for the libraries Pyodide does not bundle.
+ *
+ * Deliberately short, and every entry is here for the same reason: it is a
+ * PURE-PYTHON package, so micropip can install it in a browser with no
+ * compilation, and it is one of the things people ask a chat assistant to do
+ * with a file. Producing a PDF, a Word document or a deck; reading a PDF back;
+ * turning Markdown or HTML into either. Anything needing a C extension is
+ * absent, because micropip cannot build one and a name in this list that fails
+ * to install is worse than a name that was never offered.
+ *
+ * Pyodide's OWN bundled set — numpy, pandas, matplotlib, scipy, sympy, pillow,
+ * openpyxl, lxml, beautifulsoup4 and some eighty more — is not repeated here.
+ * `loadPackagesFromImports` finds those from the script's imports already; this
+ * is only what it cannot.
+ */
+const PY_WHEELS: Record<string, string> = {
+  fpdf: "fpdf2",              // write a PDF
+  reportlab: "reportlab",     // write a PDF, the heavyweight way
+  pypdf: "pypdf",             // read, merge, split a PDF
+  docx: "python-docx",        // write/read .docx
+  pptx: "python-pptx",        // write/read .pptx
+  markdown: "markdown",       // Markdown → HTML
+  markdownify: "markdownify", // HTML → Markdown
+  tabulate: "tabulate",       // tables for a terminal or a document
+  qrcode: "qrcode",
+  pydantic: "pydantic",
+  dateutil: "python-dateutil",
+  jinja2: "Jinja2",
+};
+
 const BASE_STYLE = `<style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;color:#111}</style>`;
 const CLOSE_SCRIPT = /<\/script/gi;
 const esc = (s: string) => s.replace(CLOSE_SCRIPT, "<\\/script");
@@ -608,12 +639,59 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
   status('loading','Loading Python…');
   var s=document.createElement('script'); s.src='${PYODIDE_INDEX}pyodide.js';
   s.onload=function(){
-    loadPyodide({indexURL:'${PYODIDE_INDEX}'}).then(function(py){
+    var py=null;
+    loadPyodide({indexURL:'${PYODIDE_INDEX}'}).then(function(p){
+      py=p;
       py.setStdout({batched:function(t){line(t,'log');}});
       py.setStderr({batched:function(t){line(t,'error');}});
+      /*
+       * THE PACKAGES THE SCRIPT ACTUALLY ASKS FOR.
+       *
+       * Pyodide ships a large set of compiled wheels — numpy, pandas,
+       * matplotlib, scipy, sympy, pillow, openpyxl, lxml — but loads NONE of
+       * them until told, so "import pandas" used to fail with
+       * ModuleNotFoundError in a runtime that had pandas sitting right there.
+       * loadPackagesFromImports() reads the source's own import statements and
+       * fetches exactly those.
+       */
+      status('loading','Loading packages…');
+      return py.loadPackagesFromImports(raw).catch(function(){ /* a package it cannot place is not a failed run */ });
+    }).then(function(){
+      /*
+       * …and the ones it does NOT ship, from PyPI.
+       *
+       * The document libraries are pure Python, so micropip can install them
+       * at runtime: this is what makes "write me a PDF" work in a browser.
+       * Only wheels whose module the script actually imports are fetched —
+       * installing the whole list on every run would put a megabyte of
+       * unrelated code in front of a two-line calculation.
+       */
+      var wanted=${JSON.stringify(PY_WHEELS)};
+      var imported={};
+      var re=/^[ \t]*(?:from[ \t]+([A-Za-z_][\w]*)|import[ \t]+([A-Za-z_][\w]*))/gm, m;
+      while((m=re.exec(raw))) imported[m[1]||m[2]]=true;
+      var wheels=Object.keys(wanted).filter(function(mod){
+        if(!imported[mod]) return false;
+        try{ return !py.pyimport(mod); }catch(e){ return true; }
+      }).map(function(mod){ return wanted[mod]; });
+      if(wheels.length===0) return;
+      status('loading','Installing '+wheels.join(', ')+'…');
+      return py.loadPackage('micropip').then(function(){
+        return py.pyimport('micropip').install(wheels);
+      }).catch(function(e){
+        line('Could not install '+wheels.join(', ')+': '+(e&&e.message?e.message:String(e)),'warn');
+      });
+    }).then(function(){
       status('running','Running');
-      return py.runPythonAsync(raw);
-    }).then(function(){status('done','Done');}).catch(function(e){printErr(e);status('error','Error');});
+      // Snapshot the working directory so anything the script WRITES can be
+      // told apart from the runtime's own files afterwards.
+      var before={};
+      try{ py.FS.readdir('.').forEach(function(n){ before[n]=true; }); }catch(e){}
+      return py.runPythonAsync(raw).then(function(){ return before; });
+    }).then(function(before){
+      offerFiles(py, before);
+      status('done','Done');
+    }).catch(function(e){printErr(e);status('error','Error');});
   };
   s.onerror=function(){printErr('Couldn’t load the Python runtime (offline?).');status('error','Error');};
   document.head.appendChild(s);`
@@ -648,6 +726,56 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
   function line(text,cls){var d=document.createElement('span');d.className='ln '+(cls||'log');d.textContent=text;term.appendChild(d);term.scrollTop=term.scrollHeight;try{parent.postMessage({type:'juno:console',level:cls==='result'?'log':(cls||'log'),text:text},'*');}catch(e){}}
   function printErr(e){line((e&&e.stack)?e.stack:(e&&e.message?e.message:String(e)),'error');}
   function status(s,detail){st.textContent=detail||s;dot.style.background=s==='done'?'#34d399':s==='error'?'#f87171':s==='running'?'#38bdf8':'#f5a524';try{parent.postMessage({type:'juno:status',status:s,detail:detail||''},'*');}catch(e){}}
+  /*
+   * A FILE THE SCRIPT WROTE, AS A FILE YOU CAN KEEP.
+   *
+   * "Produce a PDF" only finishes when the PDF leaves the sandbox. The script
+   * writes into Pyodide's in-memory filesystem, which nothing outside the
+   * frame can see — so anything that appeared in the working directory during
+   * the run is offered here as a download link on the terminal's last line.
+   *
+   * A blob URL and a same-frame click: the iframe carries allow-downloads
+   * and no allow-same-origin, so this reaches the reader's disk without the
+   * bytes ever touching the app's origin or a server.
+   */
+  var MAX_FILES=12, MAX_FILE_BYTES=25*1024*1024;
+  function mimeOf(name){
+    var ext=(name.split('.').pop()||'').toLowerCase();
+    return {pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',gif:'image/gif',
+      csv:'text/csv',txt:'text/plain',md:'text/markdown',json:'application/json',html:'text/html',xml:'application/xml',
+      docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      zip:'application/zip'}[ext]||'application/octet-stream';
+  }
+  function humanBytes(n){var u=['B','KB','MB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return (Math.round(n*10)/10)+' '+u[i];}
+  function offerFiles(py, before){
+    if(!py||!py.FS) return;
+    var names=[];
+    try{ names=py.FS.readdir('.').filter(function(n){ return n!=='.'&&n!=='..'&&!before[n]; }); }catch(e){ return; }
+    if(names.length===0) return;
+    var row=document.createElement('span');
+    row.className='ln muted';
+    row.appendChild(document.createTextNode(names.length===1?'Produced 1 file: ':'Produced '+names.length+' files: '));
+    var shown=0;
+    names.forEach(function(name){
+      if(shown>=MAX_FILES) return;
+      var data;
+      try{
+        var stat=py.FS.stat(name);
+        if(py.FS.isDir(stat.mode)||stat.size>MAX_FILE_BYTES) return;
+        data=py.FS.readFile(name);
+      }catch(e){ return; }
+      var url=URL.createObjectURL(new Blob([data],{type:mimeOf(name)}));
+      var a=document.createElement('a');
+      a.href=url; a.download=name; a.textContent=name+' ('+humanBytes(data.length)+')';
+      a.style.cssText='color:#7dd3fc;text-decoration:underline;margin-right:10px';
+      if(shown>0) row.appendChild(document.createTextNode(' '));
+      row.appendChild(a);
+      shown++;
+    });
+    if(shown>0){ term.appendChild(row); term.scrollTop=term.scrollHeight; }
+  }
   ['log','info','warn','error'].forEach(function(k){var o=console[k]?console[k].bind(console):function(){};console[k]=function(){var a=Array.prototype.map.call(arguments,function(x){return typeof x==='string'?x:fmt(x);}).join(' ');line(a,k);o.apply(null,arguments);};});
   window.addEventListener('unhandledrejection',function(e){printErr(e.reason);});
   ${boot}

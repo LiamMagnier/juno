@@ -707,6 +707,101 @@ page ends. **A document had the opposite problem**: full-bleed, so on a canvas
 dragged wide a memo set at 900px+ per line. It takes the product's own reading
 measure now, the same one every page uses.
 
+## 2f. Why the model said it could not read the PDF — September 2026
+
+*"MiMo n'arrive pas à lire le PDF, c'est un problème du modèle ou du site ?"*
+The site. The model never received the file, and three separate things had to
+be true for that to happen.
+
+### P0 — the native PDF parser could not decode an ordinary technical report
+
+`extract/pdf.ts` is a dependency-free parser and its header is honest about
+where it stops: no CID font decoding beyond an embedded `/ToUnicode` map, and
+"a page whose text fails the printability check is dropped and the document
+degrades." That is not an edge case — subset CID fonts with Identity-H
+encoding are what LaTeX and InDesign emit, so the class of file it cannot read
+is *technical report*.
+
+Reproduced with a fixture built to match: a Type0/Identity-H font with glyph
+ids renumbered from 3 the way a real subset font renumbers them, and a
+Flate-compressed `/ToUnicode` CMap. The native parser returns
+`status: degraded, blocks: 0` — and its stated reason is **wrong**: *"This PDF
+has no text layer — it looks like a scan or an export of images."* The file is
+not a scan. It has a perfect text layer. A reader told that would go and
+re-scan a document that never needed it.
+
+**The engine that decodes those fonts was already in the repo.** `unpdf` is
+pdf.js repackaged for serverless, already reading PDFs the research engine
+fetches, already held down by real-byte fixtures. An *uploaded* PDF was the one
+that never got it. It is now a rung between the native parser and OCR — which
+is the right order: the native parser gives verified text at confidence 1 with
+a measured bbox, pdf.js gives the author's text through a font-decoding layer
+at 0.9, and OCR, which needs binaries or a service, stays the last resort for
+pages that genuinely have no text layer. Same fixture, after: `status: ok`,
+text extracted.
+
+`printableRatio` is now exported and applied on both rungs. pdf.js is more
+willing than the native parser to hand back *something* for a font it cannot
+map — undecodable glyph ids come back as control and private-use characters,
+which look like blank space in a terminal and like text to an index. The
+second fixture, with no `/ToUnicode` at all, still degrades. Indexing mojibake
+is worse than indexing nothing, because nothing is honest.
+
+### P0 — only two adapters ever send a PDF
+
+`anthropic.ts` and `gemini-core.ts` attach the bytes. Every OpenAI-compatible
+provider — MiMo, and most of the catalogue — gets `extractedText`, and
+`isTextExtractable()` excludes `application/pdf` outright. So a PDF's text
+reaches those models **only** through the knowledge index. When the index has
+nothing, they get a bracketed note. That is exactly what the model reported,
+in the right words, and it was right.
+
+### P1 — nothing said so until the reply arrived
+
+Indexing is scheduled, not awaited, so every attachment reaches the client as
+`queued` and settles in a worker the client never hears from. Nothing showed
+that: a PDF Juno could not read looked exactly like one it could — through
+writing the message, sending it, and waiting — and the first word on the
+subject came from the model, in the reply, having spent the request.
+
+`parserState` now reaches the client, `/api/attachments/state` answers for a
+whole row in one request, and the tile says "Reading…" and then "Couldn't read
+this file". **Scoped to the files where it is true**: a `.txt`, `.csv` or
+`.json` carries a flat `extractedText` from upload and reaches the model
+whatever the index does, so warning about one of those would be a lie.
+`isTextExtractable` excludes one common type from that flat path, and it is
+the PDF.
+
+### P2 — and the canvas could not run Python at all
+
+The same CSP that blocked `eval` (§2e) blocked WebAssembly: `wasm-unsafe-eval`
+is not implied by `'unsafe-inline'`, and Pyodide is a WASM build. Verified in
+Chromium — old policy: *"Refused to compile or instantiate WebAssembly module"*;
+new policy: compiles. Every Python artifact in the canvas had been failing
+before its first line ran.
+
+With it running, two things it was missing: Pyodide ships numpy, pandas,
+matplotlib, scipy, pillow and openpyxl but **loads none of them until told**,
+so `import pandas` failed in a runtime that had pandas sitting right there —
+`loadPackagesFromImports` reads the script's own imports and fetches exactly
+those. And the pure-Python document libraries it does not ship (fpdf2, pypdf,
+python-docx, python-pptx, reportlab, markdown) are installed through micropip,
+but only when the script imports them: installing the list on every run would
+put a megabyte of unrelated code in front of a two-line calculation.
+
+**"Produce a PDF" only finishes when the PDF leaves the sandbox.** Anything
+the script writes into the working directory is offered as a download on the
+terminal's last line, through a blob URL and the frame's new `allow-downloads`
+— so the bytes reach the reader's disk without ever touching the app's origin
+or a server.
+
+**Server-side Python stays off, deliberately.** `UnifiedAgentRegistry`'s
+constructor says why: `sandbox/python.ts` spawns a child process on the host
+and "is not a tenant isolation boundary and must never be exposed by the
+hosted toolset." Exposing it would be a security regression, not a feature
+flag; `code-interpreter.ts` already names the backends that would make it safe
+(`microvm | container`), and that is infrastructure, not a code change.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,

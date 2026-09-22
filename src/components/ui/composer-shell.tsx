@@ -736,10 +736,20 @@ function fileExtension(name: string) {
  */
 export function ComposerAttachmentTile({
   upload,
+  readiness,
   onRemove,
   className,
 }: {
   upload: PendingUpload;
+  /**
+   * Whether Juno can actually READ this file, once indexing has settled.
+   *
+   * Only ever set for the files where the answer changes what the model
+   * receives — in practice, PDFs, whose text reaches a model only through the
+   * index (see `useAttachmentReadiness`). A `.txt` is sent whatever the index
+   * does, so it is left alone rather than given a status it does not have.
+   */
+  readiness?: "reading" | "unreadable" | "ready";
   onRemove?: () => void;
   className?: string;
 }) {
@@ -749,6 +759,17 @@ export function ComposerAttachmentTile({
     upload.status === "uploading" ? `Uploading ${upload.progress}%` : upload.status === "error" ? "Failed" : null;
   const extension = fileExtension(upload.fileName);
   const meta = upload.size ? `${extension} · ${formatBytes(upload.size)}` : extension;
+  /*
+   * THE LINE THAT WAS MISSING, and it is the one sentence that costs a whole
+   * request to learn any other way: a PDF whose text could not be extracted
+   * reaches the model as a bracketed note and nothing else. It used to be
+   * indistinguishable from a readable one until the reply arrived saying so.
+   *
+   * "Reading…" while the indexer works, so the empty second does not read as
+   * a verdict; the warning only once it has actually settled.
+   */
+  const unreadable = readiness === "unreadable";
+  const line = unreadable ? "Couldn’t read this file" : readiness === "reading" ? "Reading…" : (status ?? meta);
 
   /* The paper square. Before the upload lands there is no attachment id, so
      no excerpt can be asked for — it shows the extension, which is what the
@@ -779,7 +800,7 @@ export function ComposerAttachmentTile({
         // the tiles and the controls read as one family of objects.
         "group relative flex h-16 shrink-0 overflow-hidden rounded-control border border-border/70 bg-secondary",
         isImage ? "w-16" : "w-56 max-w-full",
-        upload.status === "error" && "border-destructive/60",
+        (upload.status === "error" || unreadable) && "border-destructive/60",
         className,
       )}
     >
@@ -803,8 +824,13 @@ export function ComposerAttachmentTile({
             <span className="line-clamp-2 text-caption font-medium leading-tight text-foreground">
               {upload.fileName}
             </span>
-            <span className="truncate font-mono text-micro uppercase text-muted-foreground">
-              {status ?? meta}
+            <span
+              className={cn(
+                "truncate font-mono text-micro uppercase",
+                unreadable ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {line}
             </span>
           </span>
         </>
@@ -814,7 +840,16 @@ export function ComposerAttachmentTile({
           <Loader2 className="size-4 animate-spin text-foreground" aria-hidden="true" />
         </span>
       )}
-      <span className="sr-only">{status ? `${upload.fileName}, ${status}` : upload.fileName}</span>
+      {/* Said out loud too, and as a live region: a reader who cannot see the
+          tile turning red has to be TOLD that the file they attached is one
+          the model will not receive. */}
+      <span role={unreadable ? "status" : undefined} className="sr-only">
+        {unreadable
+          ? `${upload.fileName} — Juno could not read this file, so its contents will not reach the model.`
+          : status
+            ? `${upload.fileName}, ${status}`
+            : upload.fileName}
+      </span>
       {onRemove && (
         <button
           type="button"
@@ -835,10 +870,13 @@ export function ComposerAttachmentTile({
  */
 export function ComposerAttachmentRow({
   uploads,
+  readiness,
   onRemove,
   className,
 }: {
   uploads: readonly PendingUpload[];
+  /** Attachment id → whether its text reached the index (`useAttachmentReadiness`). */
+  readiness?: ReadonlyMap<string, "reading" | "unreadable" | "ready">;
   onRemove: (localId: string) => void;
   className?: string;
 }) {
@@ -848,7 +886,11 @@ export function ComposerAttachmentRow({
         <AnimatePresence initial={false}>
           {uploads.map((upload) => (
             <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
-              <ComposerAttachmentTile upload={upload} onRemove={() => onRemove(upload.localId)} />
+              <ComposerAttachmentTile
+                upload={upload}
+                readiness={upload.attachment ? readiness?.get(upload.attachment.id) : undefined}
+                onRemove={() => onRemove(upload.localId)}
+              />
             </motion.div>
           ))}
         </AnimatePresence>

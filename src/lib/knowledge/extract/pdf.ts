@@ -520,7 +520,15 @@ function runsOfContent(content: string): { runs: TextRun[]; sawTextOperator: boo
  * (which sits above 0.98 even with heavy punctuation) and well clear of glyph
  * soup (which rarely clears 0.4).
  */
-function printableRatio(text: string): number {
+/**
+ * How much of a string is characters a reader could actually read.
+ *
+ * Exported because the pdf.js rung applies the SAME bar (`pdf-engine.ts`): a
+ * font with no usable mapping yields glyph ids wearing the shape of text, and
+ * two readers holding two different opinions about what counts as readable is
+ * how mojibake reaches the index through whichever one is more lenient.
+ */
+export function printableRatio(text: string): number {
   if (!text.length) return 1;
   let printable = 0;
   for (const ch of text) {
