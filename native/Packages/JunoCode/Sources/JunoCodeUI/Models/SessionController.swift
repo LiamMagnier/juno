@@ -311,6 +311,9 @@ public final class SessionController {
     /// A settings file that exists but could not be read, so the reader learns
     /// their rules are not in force rather than finding out from a prompt.
     public private(set) var settingsProblem: String?
+    /// A project settings file that asks for more than the reader has
+    /// approved, so only its narrowing parts are in force.
+    public private(set) var settingsNotice: String?
     private let settingsStore = CodeSettingsStore()
 
     /// Re-reads the settings files and applies the parts that take effect
@@ -322,6 +325,10 @@ public final class SessionController {
         settingsProblem = CodeSettingsStore.Scope.allCases.lazy
             .compactMap { self.settingsStore.loadError($0, projectRoot: root) }
             .first
+        settingsNotice = settingsStore.awaitingApproval(projectRoot: root).first.map { scope in
+            let name = scope == .project ? ".juno/settings.json" : ".juno/settings.local.json"
+            return "\(name) is not approved, so only its deny and ask rules apply. Review it in Juno Code Settings to use its allow rules, environment and folders."
+        }
         await live.permissions.setRules(resolved.rules)
         live.context?.commandOverrides.update(
             environment: resolved.environment,

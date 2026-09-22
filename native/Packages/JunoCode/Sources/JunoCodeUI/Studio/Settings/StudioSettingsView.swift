@@ -212,8 +212,21 @@ struct StudioScopeSection: View {
                     .buttonStyle(.link)
                 }
             }
+            if settings.awaitingApproval.contains(scope) {
+                // A project file arrives with a clone and sits where the agent
+                // can write it, so what it widens waits for the reader.
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Not approved. Its deny and ask rules apply; its allow rules, environment, folders and network access wait until you approve this version.")
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(Studio.Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Approve") { settings.approve(scope) }
+                        .help("Put this file in force as it reads now. Any later change to it needs approving again.")
+                }
+            }
         } footer: {
-            Text("Rules add up across all three. For everything else, the most specific file wins.")
+            Text("Rules add up across all three. For everything else, the most specific file wins, except that a project's files can only lower the remote limit, and apply their allow rules, environment and folders only once you approve them.")
         }
     }
 }
@@ -505,6 +518,12 @@ struct StudioEnvironmentSettings: View {
                     Text(key).font(Studio.Font.mono)
                     Text(value).font(Studio.Font.mono).foregroundStyle(Studio.Ink.secondary).lineLimit(1)
                     Spacer()
+                    if scope != .user, CodeSettingsEnvironment.isReserved(key) {
+                        Text("Not applied")
+                            .font(Studio.Font.meta)
+                            .foregroundStyle(Studio.Ink.tertiary)
+                            .help("A project's files cannot set a variable that decides which programs run or what they load. Set it in All projects instead.")
+                    }
                     Button {
                         settings.update(scope) { $0.env?.removeValue(forKey: key) }
                     } label: { JunoIconView(.minus, size: 12) }
@@ -531,7 +550,9 @@ struct StudioEnvironmentSettings: View {
         } header: {
             Text("Environment variables")
         } footer: {
-            Text("Every command Juno runs receives these. Commands can print them, so keep secrets out.")
+            Text(scope == .user
+                ? "Every command Juno runs receives these. Commands can print them, so keep secrets out."
+                : "Every command Juno runs receives these once this file is approved, except PATH, GIT_ and other variables that decide which programs run. Commands can print them, so keep secrets out.")
         }
 
         Section {
@@ -553,7 +574,9 @@ struct StudioEnvironmentSettings: View {
         } header: {
             Text("Folders commands may write to")
         } footer: {
-            Text("Commands run in a macOS sandbox. They can read what you can; they can write only inside the project, temporary folders, package caches and the folders above.")
+            Text(scope == .user
+                ? "Commands run in a macOS sandbox. They can read what you can; they can write only inside the project, temporary folders, package caches and the folders above. Never your home folder itself."
+                : "Commands run in a macOS sandbox. A project's files can only add folders inside the project, and only once approved.")
         }
         .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
             guard case let .success(url) = result else { return }
