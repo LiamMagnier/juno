@@ -385,6 +385,37 @@ export function downloadHref(download: AppDownload): string | null {
   return `/download/${download.platform}${version}`;
 }
 
+/** The attributes of the link a page renders for a download. */
+export interface DownloadLink {
+  href: string;
+  /** Only ever on a permanent link; see `downloadLink`. */
+  download?: true;
+}
+
+/**
+ * The link a page renders for a download: `downloadHref`, plus the `download`
+ * attribute only when that href is the asset's own permanent URL.
+ *
+ * The attribute must stay off the `/download/<platform>` route. That link is
+ * same-origin, and on a same-origin link `download` makes the browser save
+ * whatever the redirects end on. When the route signs the file, that still
+ * works, because Chromium turns the cross-origin hop into a navigation. But
+ * when the route sends the reader back to `/download` (a newer release has
+ * replaced the one on screen, or signing failed), the browser saves that page
+ * as `download.html` instead of showing it. A plain navigation needs no help:
+ * GitHub signs the URL with `Content-Disposition: attachment` and the asset's
+ * file name, so the file downloads and the page stays where it was, and a
+ * redirect back to `/download` just opens the page.
+ *
+ * The permanent link keeps the attribute it always had. It points at
+ * github.com, another origin, where browsers ignore it anyway.
+ */
+export function downloadLink(download: AppDownload): DownloadLink | null {
+  const href = downloadHref(download);
+  if (!href) return null;
+  return href === download.url ? { href, download: true } : { href };
+}
+
 /**
  * The visitor's platform, from the User-Agent.
  *

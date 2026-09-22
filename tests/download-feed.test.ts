@@ -8,9 +8,12 @@ import {
   buildDownloadFeed,
   resetDownloadFeedCache,
 } from "@/lib/download-feed";
-import { downloadHref, isUpdaterDownloadUrl, type AppDownload } from "@/lib/app-downloads";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { downloadHref, downloadLink, isUpdaterDownloadUrl, type AppDownload } from "@/lib/app-downloads";
 import { GET as feedRoute } from "../src/app/api/downloads/route";
 import { GET as redirectRoute } from "../src/app/download/[platform]/route";
+import DownloadPage from "../src/app/download/page";
 
 /*
  * The release feed against a scripted GitHub.
@@ -465,10 +468,67 @@ test("the pages link through the redirect route for a signed URL, and straight t
   );
   assert.equal(downloadHref({ ...signed, available: false, url: null }), null);
 
-  // Neither surface renders the feed's own URL into a link.
+  // `download` only on the permanent link. On the same-origin route it would
+  // make the browser save the /download page the route falls back to.
+  assert.deepEqual(downloadLink(signed), { href: "/download/macos?version=1.5.4" });
+  assert.deepEqual(downloadLink({ ...signed, url: "https://github.com/x/y.dmg", urlExpiresAt: null }), {
+    href: "https://github.com/x/y.dmg",
+    download: true,
+  });
+  assert.equal(downloadLink({ ...signed, available: false, url: null }), null);
+
+  // Neither surface renders the feed's own URL into a link, or decides on the
+  // `download` attribute for itself. The menu only renders inside an open
+  // Radix portal, which a server render never mounts, so its anchor is held
+  // to the helper here; the page's is rendered below.
   for (const file of ["../src/app/download/page.tsx", "../src/components/app/download-menu.tsx"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    assert.match(source, /downloadHref\(download\)/, file);
+    assert.match(source, /const link = downloadLink\(download\);/, file);
+    assert.match(source, /<a \{\.\.\.link\}>/, file);
     assert.doesNotMatch(source, /href=\{download\.url\}/, file);
+    assert.doesNotMatch(source, /<a\b[^>]*\sdownload[\s=>]/, file);
   }
+});
+
+/** The page's download anchors, as their `href` and whether they carry `download`. */
+function downloadAnchors(html: string): { href: string; download: boolean }[] {
+  return [...html.matchAll(/<a\b([^>]*)>/g)]
+    .map((match) => match[1])
+    .filter((attributes) => /\bhref="(?:\/download\/|https:)/.test(attributes))
+    .map((attributes) => ({
+      href: (/\bhref="([^"]*)"/.exec(attributes)?.[1] ?? "").replace(/&amp;/g, "&"),
+      download: /\sdownload(?:=""|\s|$)/.test(attributes),
+    }));
+}
+
+/**
+ * The /download page, rendered. `tsx` compiles JSX the classic way (the repo's
+ * tsconfig says `preserve`, which is Next's to handle), so a file that never
+ * imports React, as a Next page need not, looks for it globally.
+ */
+async function renderDownloadPage(): Promise<string> {
+  const scope = globalThis as { React?: typeof React };
+  scope.React ??= React;
+  return renderToStaticMarkup(await DownloadPage());
+}
+
+test("the /download page links a private release through the route as a plain link", async () => {
+  // The page reads the feed on the real clock, with the token from the environment.
+  clock = Date.now();
+  process.env.JUNO_RELEASES_GITHUB_TOKEN = TOKEN;
+  installGitHub({ isPrivate: true });
+  const html = await renderDownloadPage();
+
+  // With `download`, a same-origin link saves whatever the route answers, and
+  // when that is its 303 back to /download the visitor gets download.html.
+  assert.deepEqual(downloadAnchors(html), [{ href: "/download/macos?version=1.5.4", download: false }]);
+  assert.doesNotMatch(html, /githubusercontent\.com/, "the signed URL itself is never rendered");
+});
+
+test("the /download page keeps a public release's permanent link exactly as it was", async () => {
+  installGitHub({ isPrivate: false });
+  const html = await renderDownloadPage();
+  assert.deepEqual(downloadAnchors(html), [
+    { href: `https://github.com/${REPO}/releases/download/v1.5.4/Juno-1.5.4.dmg`, download: true },
+  ]);
 });

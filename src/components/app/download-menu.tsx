@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { detectPlatform, downloadHref, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
+import { detectPlatform, downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { cn, formatBytes } from "@/lib/utils";
 
 /**
@@ -192,11 +192,14 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
   // its glyph at full row ink: the item's own `data-disabled` dim already
   // halves it, and a second `opacity-40` on top put the mark at a fifth.
   //
-  // The link is `downloadHref`, never `download.url`: the feed is fetched once
+  // The link is `downloadLink`, never `download.url`: the feed is fetched once
   // per page, the menu can be reopened an hour later, and a private release's
-  // URL is signed for minutes.
-  const href = downloadHref(download);
-  if (!href) {
+  // URL is signed for minutes. That same staleness is why the anchor must not
+  // carry `download` on its own. An hour later the route may answer "go back
+  // to /download", and `downloadLink` keeps the attribute off the one link
+  // where that would save the page as a file.
+  const link = downloadLink(download);
+  if (!link) {
     return (
       <DropdownMenuItem disabled className="h-auto items-start gap-2.5 px-2.5 py-2">
         <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
@@ -207,10 +210,11 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
 
   return (
     <DropdownMenuItem asChild className="h-auto items-start gap-2.5 px-2.5 py-2">
-      {/* A plain link with `download`: the browser owns the transfer, so it
-          resumes, reports progress in the place people look for it, and survives
-          the tab being closed. */}
-      <a href={href} download>
+      {/* A plain link: the browser owns the transfer, so it resumes, reports
+          progress in the place people look for it, and survives the tab being
+          closed. The file arrives as an attachment either way, so the app
+          stays on screen. */}
+      <a {...link}>
         <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
         {body}
       </a>

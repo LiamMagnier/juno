@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { JunoMark } from "@/components/brand/logo";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildDownloadFeed } from "@/lib/download-feed";
-import { downloadHref, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
+import { downloadLink, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { staggerDelay } from "@/lib/motion";
 import { formatBytes } from "@/lib/utils";
 
@@ -123,7 +123,9 @@ function DownloadRow({ download, index }: { download: AppDownload; index: number
   const PlatformIcon = PLATFORM_ICON[download.platform];
   // Not `download.url`: for a private repository that is a signed URL which
   // dies within minutes of this render, and a reader may take longer than that.
-  const href = downloadHref(download);
+  // Spread whole, because whether the anchor may carry `download` depends on
+  // where it points (see `downloadLink`).
+  const link = downloadLink(download);
 
   return (
     <li
@@ -150,14 +152,14 @@ function DownloadRow({ download, index }: { download: AppDownload; index: number
           </div>
         </div>
 
-        {href ? (
+        {link ? (
           // The product's primary button, so the press, the hover and the
           // glyph's nudge downward are the ones every other primary action
           // has. The hand-built anchor it replaces carried `transition-colors`
           // after `.pressable`, which overrode the press timing and made the
           // dip snap instead of travel.
           <Button asChild className="shrink-0">
-            <a href={href} download>
+            <a {...link}>
               <ActionIcons.download aria-hidden />
               Download
             </a>

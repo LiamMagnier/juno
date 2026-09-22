@@ -25,6 +25,10 @@ const NO_STORE = { "Cache-Control": "no-store" } as const;
  * rather than handed a file other than the one described. So is anyone asking
  * for a platform with nothing to download. Redirects use the configured public
  * URL, not req.url, which behind nginx is the internal address.
+ *
+ * A page reaches this by plain navigation, never through an `<a download>`: on
+ * a same-origin link that attribute would save the `/download` page as a file
+ * instead of opening it (`downloadLink`).
  */
 export async function GET(req: Request, { params }: { params: Promise<{ platform: string }> }) {
   const { platform } = await params;

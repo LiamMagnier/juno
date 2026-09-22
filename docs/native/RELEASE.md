@@ -197,7 +197,10 @@ at most a minute and never with less than four minutes to run.
 
 The web pages never render a signed URL: they link to
 `/download/<platform>?version=…`, which signs a fresh one when the click
-arrives. The final step of `release-macos.sh` accepts either the github.com
+arrives. That link has no `download` attribute. It is same-origin, so with one
+the browser would save the `/download` page as a file whenever the route
+redirects there, and the signed URL is served as an attachment with the file's
+name anyway. The final step of `release-macos.sh` accepts either the github.com
 link or a signed release-host URL, and in both cases downloads it with no
 credential and requires this build's exact bytes.
 
