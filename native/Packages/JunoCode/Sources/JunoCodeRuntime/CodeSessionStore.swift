@@ -23,8 +23,11 @@ public enum SessionStoreError: Error, Equatable, Sendable {
 /// drawn from them, and a transcript can run to tens of thousands of events,
 /// so decoding one is the cost of opening that session — never of listing it.
 /// The only exception is a session that was mid-run when the app died, whose
-/// repair needs to see how its transcript ends; it reads the last two events
-/// from the end of the file.
+/// repair needs to see how its transcript ends and to number the events that
+/// close it: it decodes the last two events, read from the end of the file,
+/// and counts lines without decoding them — only those written after the
+/// saved summary when that summary is intact, every line when it is not. The
+/// summary itself is left to the background pass, as every other one is.
 public actor CodeSessionStore {
     private let directoryURL: URL
     private var sessions: [CodeSessionID: CodeSession] = [:]
@@ -313,10 +316,6 @@ public actor CodeSessionStore {
     }
 
     /// Appends while the store's in-memory index is already populated.
-    ///
-    /// Startup repair uses this path so `loadIfNeeded()` can leave `loaded`
-    /// false until every session and repair write succeeds, without recursively
-    /// entering itself through the public `appendEvent` API.
     private func appendLoadedEvent(
         sessionID: CodeSessionID,
         payload: SessionEventPayload
@@ -324,9 +323,60 @@ public actor CodeSessionStore {
         guard sessions[sessionID] != nil else {
             throw SessionStoreError.sessionNotFound(id: sessionID.value)
         }
+        var index = TranscriptIndex.empty
+        let (event, line) = try writeEvent(sessionID: sessionID, payload: payload) { end in
+            index = transcriptIndex(for: sessionID, fileLength: end)
+            return index.summary.eventCount
+        }
+        index.absorb(event, writtenAs: line)
+        transcripts[sessionID] = index
+        scheduleTranscriptSave(for: sessionID)
+        notify(.eventAppended(event))
+        return event
+    }
+
+    /// Appends the events that close an interrupted run, from inside
+    /// `loadIfNeeded()` — which leaves `loaded` false until every session and
+    /// repair write succeeds, so this must not re-enter it through the public
+    /// `appendEvent` API.
+    ///
+    /// Numbered from a count of the transcript's lines rather than from its
+    /// summary. The session list waits for this, and the summary is the one
+    /// thing launch must not have to build: for a session saved before
+    /// summaries existed, or whose summary a crash cut short, building it means
+    /// decoding the whole transcript. None is installed, then; the launch pass
+    /// that follows catches the saved one up with these events, or rebuilds
+    /// it, off the actor like every other.
+    private func appendRepairEvents(
+        sessionID: CodeSessionID,
+        payloads: [SessionEventPayload]
+    ) throws {
+        var next: Int?
+        for payload in payloads {
+            let (event, _) = try writeEvent(sessionID: sessionID, payload: payload) { _ in
+                // Counted once: each event written here is one more line.
+                let sequence = next ?? TranscriptFiles.nextSequence(
+                    eventsURL: eventsURL(sessionID),
+                    summaryURL: summaryURL(sessionID)
+                )
+                next = sequence + 1
+                return sequence
+            }
+            notify(.eventAppended(event))
+        }
+    }
+
+    /// Writes one event as the transcript's next line.
+    ///
+    /// - Parameter sequence: the event's sequence, given the file's length
+    ///   before the write.
+    /// - Returns: the event and the bytes written for it.
+    private func writeEvent(
+        sessionID: CodeSessionID,
+        payload: SessionEventPayload,
+        sequence: (Int) -> Int
+    ) throws -> (SessionEvent, Data) {
         let url = eventsURL(sessionID)
-        let event: SessionEvent
-        var index: TranscriptIndex
         do {
             // Opened for update rather than for writing: the last byte has to
             // be read before anything is appended after it.
@@ -335,10 +385,9 @@ public actor CodeSessionStore {
                 : nil
             defer { try? handle?.close() }
             let end = try handle.map { Int(try $0.seekToEnd()) } ?? 0
-            index = transcriptIndex(for: sessionID, fileLength: end)
-            event = SessionEvent(
+            let event = SessionEvent(
                 sessionID: sessionID,
-                sequence: index.summary.eventCount,
+                sequence: sequence(end),
                 timestamp: Date(),
                 payload: payload
             )
@@ -362,14 +411,10 @@ public actor CodeSessionStore {
             } else {
                 try line.write(to: url, options: .atomic)
             }
-            index.absorb(event, writtenAs: line)
+            return (event, line)
         } catch {
             throw SessionStoreError.persistenceFailed(message: String(describing: error))
         }
-        transcripts[sessionID] = index
-        scheduleTranscriptSave(for: sessionID)
-        notify(.eventAppended(event))
-        return event
     }
 
     /// The whole transcript, decoded: the cost of opening a session.
@@ -466,7 +511,9 @@ public actor CodeSessionStore {
     /// read could resume in either order, and a transcript's order is the
     /// order its appends were called in. The cost falls only on the first
     /// append to a session the launch pass has not reached, and is a full read
-    /// only for a session saved before summaries existed.
+    /// only for a session whose saved summary is missing or failed its checks
+    /// — most often one saved before summaries existed. Launch itself never
+    /// comes here: see `appendRepairEvents(sessionID:payloads:)`.
     private func transcriptIndex(for id: CodeSessionID, fileLength: Int) -> TranscriptIndex {
         if let index = transcripts[id], index.byteCount == fileLength {
             return index
@@ -630,12 +677,15 @@ public actor CodeSessionStore {
                 // from presenting stale active work. Repair events are added
                 // only when the canonical terminal suffix is incomplete, so a
                 // retry after a half-written repair is idempotent. That suffix
-                // is two events long, so two events are all that is read.
+                // is two events long, so two events are all that is decoded.
                 try persist(session)
                 let trailingEvents = TranscriptFiles.trailingEvents(
                     in: eventsURL(session.id),
                     limit: 2,
                     decoder: eventDecoder
+                )
+                let interruption = SessionEventPayload.errorOccurred(
+                    ErrorEvent(message: interruptionMessage, isRecoverable: true)
                 )
                 switch interruptionRepairState(
                     events: trailingEvents,
@@ -644,22 +694,14 @@ public actor CodeSessionStore {
                 case .complete:
                     break
                 case .missingError:
-                    _ = try appendLoadedEvent(
-                        sessionID: session.id,
-                        payload: .errorOccurred(
-                            ErrorEvent(message: interruptionMessage, isRecoverable: true)
-                        )
-                    )
+                    try appendRepairEvents(sessionID: session.id, payloads: [interruption])
                 case .missingStatusAndError:
-                    _ = try appendLoadedEvent(
+                    try appendRepairEvents(
                         sessionID: session.id,
-                        payload: .statusChanged(StatusChangedEvent(status: .failed))
-                    )
-                    _ = try appendLoadedEvent(
-                        sessionID: session.id,
-                        payload: .errorOccurred(
-                            ErrorEvent(message: interruptionMessage, isRecoverable: true)
-                        )
+                        payloads: [
+                            .statusChanged(StatusChangedEvent(status: .failed)),
+                            interruption,
+                        ]
                     )
                 }
                 repairedSessions.append(session)

@@ -29,6 +29,24 @@ private final class DecodeCounter: @unchecked Sendable {
     }
 }
 
+/// The first count recorded, from whichever thread records it.
+private final class LockedCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Int?
+
+    var value: Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func recordOnce(_ count: Int) {
+        lock.lock()
+        if storage == nil { storage = count }
+        lock.unlock()
+    }
+}
+
 final class CodeSessionStoreSummaryTests: XCTestCase {
     private var directory: URL!
 
@@ -274,14 +292,161 @@ final class CodeSessionStoreSummaryTests: XCTestCase {
 
         let counter = DecodeCounter()
         let relaunched = makeStore(counter: counter)
-        let listed = await relaunched.allSessions()
+        let (listed, decodedAtLaunch) = await launch(relaunched, counter: counter)
         XCTAssertEqual(listed.first?.status, .failed)
-        XCTAssertEqual(counter.count, 2, "the last two events, not all two hundred and two")
+        XCTAssertEqual(decodedAtLaunch, 2, "the last two events, not all two hundred and two")
 
+        await relaunched.awaitTranscriptMaintenance()
+        XCTAssertEqual(
+            counter.count,
+            4,
+            "the launch pass catches the saved summary up with the repair's two events and reads nothing before them"
+        )
         let summary = await relaunched.transcriptSummary(for: session.id)
         XCTAssertEqual(summary?.eventCount, 204, "the repair's two events are counted")
         let opened = await relaunched.events(for: session.id)
         XCTAssertEqual(opened.map(\.sequence), Array(0..<204))
+        assertEndsWithInterruptionRepair(opened)
+    }
+
+    /// The first launch after upgrading, with a session the old build was
+    /// running when it quit: no summary beside it, and a repair to number.
+    /// Numbering must not mean building the summary on the launch path — that
+    /// is a decode of the whole transcript while the session list waits.
+    func testInterruptedLegacySessionIsRepairedWithoutDecodingItsTranscript() async throws {
+        let session = CodeSession(
+            workspaceID: nil,
+            title: "Running when the old build quit",
+            status: .running,
+            configuration: AgentConfiguration(modelID: "test-model"),
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+        try writeLegacySession(session, lines: try (0..<300).map { index in
+            try encodedLine(
+                .userPrompt(UserPromptEvent(text: "Prompt \(index)")),
+                session: session.id,
+                sequence: index
+            )
+        })
+
+        let counter = DecodeCounter()
+        let store = makeStore(counter: counter)
+        let (listed, decodedAtLaunch) = await launch(store, counter: counter)
+        XCTAssertEqual(listed.first?.status, .failed)
+        XCTAssertEqual(decodedAtLaunch, 2, "the last two events, not all three hundred")
+
+        await store.awaitTranscriptMaintenance()
+        let summary = await store.transcriptSummary(for: session.id)
+        XCTAssertEqual(summary?.eventCount, 302)
+        XCTAssertEqual(summary?.messageCount, 300)
+        let opened = await store.events(for: session.id)
+        XCTAssertEqual(opened.map(\.sequence), Array(0..<302))
+        assertEndsWithInterruptionRepair(opened)
+    }
+
+    /// A crash inside the save delay leaves a summary behind the transcript,
+    /// which is the usual state of a session killed mid-run. The repair counts
+    /// only what was written after it.
+    func testInterruptedSessionWithAStaleSummaryNumbersFromIt() async throws {
+        let seed = makeStore()
+        let session = try await createSession(in: seed)
+        for index in 0..<10 {
+            try await seed.appendEvent(
+                sessionID: session.id,
+                payload: .userPrompt(UserPromptEvent(text: "Prompt \(index)"))
+            )
+        }
+        await seed.saveTranscriptSummaries()
+        for index in 0..<5 {
+            try await seed.appendEvent(
+                sessionID: session.id,
+                payload: .toolOutput(
+                    ToolOutputEvent(toolCallID: "call-1", channel: .stdout, text: "line \(index)")
+                )
+            )
+        }
+        try await seed.setStatus(id: session.id, status: .running)
+
+        let counter = DecodeCounter()
+        let relaunched = makeStore(counter: counter)
+        let (listed, decodedAtLaunch) = await launch(relaunched, counter: counter)
+        XCTAssertEqual(listed.first?.status, .failed)
+        XCTAssertEqual(decodedAtLaunch, 2)
+
+        await relaunched.awaitTranscriptMaintenance()
+        XCTAssertEqual(counter.count, 2 + 8, "the pass reads the six lines the summary missed and the repair's two")
+        let summary = await relaunched.transcriptSummary(for: session.id)
+        XCTAssertEqual(summary?.eventCount, 19)
+        XCTAssertEqual(summary?.messageCount, 10)
+        let opened = await relaunched.events(for: session.id)
+        XCTAssertEqual(opened.map(\.sequence), Array(0..<19))
+        assertEndsWithInterruptionRepair(opened)
+    }
+
+    /// A corrupt summary cannot be caught up from, and a transcript whose last
+    /// line a crash cut short still spent a sequence number on it. Both are
+    /// answered by counting lines, not by decoding them.
+    func testInterruptedSessionWithABrokenSummaryAndACutOffLineIsNumberedByCounting() async throws {
+        let seed = makeStore()
+        let session = try await createSession(in: seed)
+        for index in 0..<30 {
+            try await seed.appendEvent(
+                sessionID: session.id,
+                payload: .userPrompt(UserPromptEvent(text: "Prompt \(index)"))
+            )
+        }
+        try await seed.setStatus(id: session.id, status: .running)
+        await seed.saveTranscriptSummaries()
+        try Data("{\"formatVersion\": 1, \"byteC".utf8).write(to: summaryURL(session.id))
+        let handle = try FileHandle(forWritingTo: eventsURL(session.id))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"id\":\"cut-sh".utf8))
+        try handle.close()
+
+        let counter = DecodeCounter()
+        let relaunched = makeStore(counter: counter)
+        let (listed, decodedAtLaunch) = await launch(relaunched, counter: counter)
+        XCTAssertEqual(listed.first?.status, .failed)
+        XCTAssertEqual(decodedAtLaunch, 3, "the cut-off line, then the last two events that decode")
+
+        await relaunched.awaitTranscriptMaintenance()
+        let summary = await relaunched.transcriptSummary(for: session.id)
+        XCTAssertEqual(summary?.eventCount, 35, "thirty-two events, the fragment, and the repair's two")
+        XCTAssertEqual(summary?.messageCount, 30)
+        let opened = await relaunched.events(for: session.id)
+        XCTAssertEqual(opened.map(\.sequence), Array(0..<32) + [33, 34])
+        assertEndsWithInterruptionRepair(opened)
+    }
+
+    func testLineCountAgreesWithTheSummaryAcrossChunkBoundaries() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("lines.jsonl")
+        let content = Data("first\n\nsecond, a longer line\n\n\nthird\nfourth, cut sh".utf8)
+        try content.write(to: url)
+
+        var index = TranscriptIndex.empty
+        index.absorb(content, decoder: SessionEventLineDecoder { _ in nil })
+        XCTAssertEqual(index.summary.eventCount, 4)
+        for chunkLength in [1, 2, 3, 5, 8, 64, 1_024 * 1_024] {
+            XCTAssertEqual(
+                TranscriptFiles.lineCount(of: url, in: 0..<content.count, chunkLength: chunkLength),
+                index.summary.eventCount,
+                "chunks of \(chunkLength) bytes"
+            )
+        }
+        // From the start of a later line, as when counting what was written
+        // after a saved summary.
+        let secondLine = Data("first\n\n".utf8).count
+        XCTAssertEqual(
+            TranscriptFiles.lineCount(of: url, in: secondLine..<content.count, chunkLength: 3),
+            3
+        )
+        XCTAssertEqual(TranscriptFiles.lineCount(of: url, in: 0..<0), 0)
+        XCTAssertNil(
+            TranscriptFiles.lineCount(of: url, in: 0..<(content.count + 1)),
+            "a file shorter than the range is not counted as if it were whole"
+        )
     }
 
     // MARK: - Sessions saved before summaries existed
@@ -482,6 +647,44 @@ final class CodeSessionStoreSummaryTests: XCTestCase {
             eventDecoder: counter?.decoder ?? .standard,
             transcriptSaveDelay: .seconds(3_600)
         )
+    }
+
+    /// Lists a fresh store's sessions, and reports how many lines it had
+    /// decoded when its launch finished repairing interrupted sessions.
+    ///
+    /// Counted at the store's announcement of the sessions it repaired, which
+    /// it makes once every repair is written and before it starts the
+    /// background pass — so the number is the launch path's alone, not
+    /// whatever the pass has reached by the time the listing returns. Nil
+    /// when nothing needed repair.
+    private func launch(
+        _ store: CodeSessionStore,
+        counter: DecodeCounter
+    ) async -> (sessions: [CodeSession], decodedAtLaunch: Int?) {
+        let decodedAtLaunch = LockedCount()
+        let observer = await store.addObserver { update in
+            if case .sessionChanged = update {
+                decodedAtLaunch.recordOnce(counter.count)
+            }
+        }
+        let sessions = await store.allSessions()
+        await store.removeObserver(observer)
+        return (sessions, decodedAtLaunch.value)
+    }
+
+    private func assertEndsWithInterruptionRepair(
+        _ events: [SessionEvent],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard events.count >= 2,
+            case let .statusChanged(status) = events[events.count - 2].payload,
+            case let .errorOccurred(error) = events[events.count - 1].payload
+        else {
+            return XCTFail("expected the interruption repair's two events last", file: file, line: line)
+        }
+        XCTAssertEqual(status.status, .failed, file: file, line: line)
+        XCTAssertEqual(error.message, "Interrupted by app termination.", file: file, line: line)
     }
 
     private func createSession(

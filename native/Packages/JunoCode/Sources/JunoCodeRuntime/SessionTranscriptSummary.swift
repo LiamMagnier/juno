@@ -120,6 +120,15 @@ struct TranscriptIndex: Equatable, Sendable {
 
     var fingerprint: String { Digests.sha256Hex(tail) }
 
+    /// Whether the covered range ends between lines, so bytes written after it
+    /// can be counted on their own.
+    ///
+    /// Catching up from the middle of a line is only safe when this store wrote
+    /// what followed, because it ends a cut-off line before appending. An older
+    /// build would have continued it, so a summary that stops mid-line is
+    /// rebuilt instead.
+    var endsOnLineBoundary: Bool { tail.isEmpty || tail.last == 0x0A }
+
     /// Accounts for bytes appended to the covered range. `bytes` must start
     /// where the covered range ended, and no line may straddle the two: the
     /// store only ever appends whole lines, preceded by a newline when the
@@ -183,39 +192,124 @@ enum TranscriptFiles {
         decoder: SessionEventLineDecoder
     ) -> Loaded {
         let length = regularFileLength(eventsURL) ?? 0
-        if let saved = savedRecord(at: summaryURL),
-            saved.formatVersion == TranscriptIndex.formatVersion,
-            saved.byteCount >= 0,
-            saved.byteCount <= length
-        {
-            let tailStart = max(0, saved.byteCount - TranscriptIndex.fingerprintLength)
-            if let tail = bytes(of: eventsURL, in: tailStart..<saved.byteCount),
-                Digests.sha256Hex(tail) == saved.tailFingerprint
+        if var index = verifiedSavedIndex(
+            eventsURL: eventsURL,
+            summaryURL: summaryURL,
+            length: length
+        ) {
+            if index.byteCount == length {
+                return Loaded(index: index, needsSave: false)
+            }
+            if index.endsOnLineBoundary,
+                let appended = bytes(of: eventsURL, in: index.byteCount..<length)
             {
-                var index = TranscriptIndex(
-                    summary: saved.summary,
-                    byteCount: saved.byteCount,
-                    tail: tail
-                )
-                if saved.byteCount == length {
-                    return Loaded(index: index, needsSave: false)
-                }
-                // Catching up from the middle of a line is only safe when this
-                // store wrote what followed, because it ends a cut-off line
-                // before appending. An older build would have continued it, so
-                // a summary that stops mid-line is rebuilt instead.
-                if tail.isEmpty || tail.last == 0x0A,
-                    let appended = bytes(of: eventsURL, in: saved.byteCount..<length)
-                {
-                    index.absorb(appended, decoder: decoder)
-                    return Loaded(index: index, needsSave: true)
-                }
+                index.absorb(appended, decoder: decoder)
+                return Loaded(index: index, needsSave: true)
             }
         }
         return Loaded(
             index: rebuiltIndex(eventsURL: eventsURL, length: length, decoder: decoder),
             needsSave: true
         )
+    }
+
+    /// The sequence the next event appended to this transcript receives — the
+    /// `eventCount` that `loadIndex` would arrive at — found by counting lines
+    /// rather than decoding them.
+    ///
+    /// For the interruption repair at launch, which has to number an event or
+    /// two before the session list can be shown and has no use for the rest of
+    /// the summary. With an intact saved summary it counts only the lines
+    /// written after it; without one it counts them all, which is a scan for
+    /// newlines rather than a decode of every event.
+    static func nextSequence(eventsURL: URL, summaryURL: URL) -> Int {
+        let length = regularFileLength(eventsURL) ?? 0
+        if let saved = verifiedSavedIndex(
+            eventsURL: eventsURL,
+            summaryURL: summaryURL,
+            length: length
+        ) {
+            if saved.byteCount == length {
+                return saved.summary.eventCount
+            }
+            if saved.endsOnLineBoundary,
+                let appended = lineCount(of: eventsURL, in: saved.byteCount..<length)
+            {
+                return saved.summary.eventCount + appended
+            }
+        }
+        // Unreadable counts as empty, as it does for a rebuilt index.
+        return lineCount(of: eventsURL, in: 0..<length) ?? 0
+    }
+
+    /// The saved summary, when the transcript still holds the bytes it was
+    /// saved for; nil when it is missing, unreadable, of another format, or
+    /// describes a file that has since been cut back or rewritten.
+    private static func verifiedSavedIndex(
+        eventsURL: URL,
+        summaryURL: URL,
+        length: Int
+    ) -> TranscriptIndex? {
+        guard let saved = savedRecord(at: summaryURL),
+            saved.formatVersion == TranscriptIndex.formatVersion,
+            saved.byteCount >= 0,
+            saved.byteCount <= length
+        else { return nil }
+        let tailStart = max(0, saved.byteCount - TranscriptIndex.fingerprintLength)
+        guard let tail = bytes(of: eventsURL, in: tailStart..<saved.byteCount),
+            Digests.sha256Hex(tail) == saved.tailFingerprint
+        else { return nil }
+        return TranscriptIndex(summary: saved.summary, byteCount: saved.byteCount, tail: tail)
+    }
+
+    /// Lines in `range` of the transcript, counted as `TranscriptIndex.absorb`
+    /// counts them — runs of bytes between newlines, empty runs not counted —
+    /// without decoding any. `range` must start at the beginning of a line.
+    /// Read a chunk at a time, so a long transcript never sits in memory
+    /// whole; nil when the file cannot be read that far.
+    static func lineCount(
+        of url: URL,
+        in range: Range<Int>,
+        chunkLength: Int = 1_024 * 1_024
+    ) -> Int? {
+        guard !range.isEmpty else { return 0 }
+        guard chunkLength > 0,
+            let handle = try? FileHandle(forReadingFrom: url)
+        else { return nil }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(range.lowerBound))) != nil else { return nil }
+
+        var remaining = range.count
+        var count = 0
+        var atLineStart = true
+        while remaining > 0 {
+            guard let chunk = try? handle.read(upToCount: min(chunkLength, remaining)),
+                !chunk.isEmpty
+            else { return nil }
+            remaining -= chunk.count
+            chunk.withUnsafeBytes { buffer in
+                guard let base = buffer.baseAddress else { return }
+                var offset = 0
+                while offset < buffer.count {
+                    // memchr rather than a byte loop: a transcript is mostly
+                    // long lines, and this skips each in one call.
+                    let found = memchr(base + offset, 0x0A, buffer.count - offset)
+                    let lineEnd = found.map { base.distance(to: UnsafeRawPointer($0)) }
+                        ?? buffer.count
+                    if lineEnd > offset, atLineStart {
+                        count += 1
+                    }
+                    guard found != nil else {
+                        // The line runs on into the next chunk, if at all.
+                        if lineEnd > offset { atLineStart = false }
+                        break
+                    }
+                    atLineStart = true
+                    offset = lineEnd + 1
+                }
+            }
+        }
+        return count
     }
 
     /// Reads the whole transcript into a fresh index — the path for a session
