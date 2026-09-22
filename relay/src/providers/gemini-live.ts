@@ -12,6 +12,34 @@ function liveUrl(): string {
 }
 
 /**
+ * Name what kind of key this is, without ever printing it.
+ *
+ * The Live surface takes a classic AI Studio key (`AIza…`). The newer `AQ.…`
+ * keys authenticate only against the OpenAI-compat surface, and the failure
+ * they produce here is a generic credential rejection that reads like a
+ * revoked key rather than a key of the wrong kind.
+ */
+function describeGeminiKey(key: string): string {
+  const source = process.env.GEMINI_LIVE_API_KEY ? "GEMINI_LIVE_API_KEY" : "GOOGLE_API_KEY";
+  if (key.startsWith("AQ.")) {
+    return (
+      `${source} holds an "AQ." key, which the Live API does not accept — that surface takes a classic ` +
+      `AI Studio key. Mint one (it starts "AIza") and set GEMINI_LIVE_API_KEY to it.`
+    );
+  }
+  if (!key.startsWith("AIza")) {
+    return (
+      `${source} does not hold a classic AI Studio key (those start "AIza"), which is what the Live API ` +
+      `accepts. Mint one and set GEMINI_LIVE_API_KEY to it.`
+    );
+  }
+  return (
+    `${source} does hold a classic AI Studio key, so the shape is right — check that it is enabled for the ` +
+    `Generative Language API and not restricted by referrer or IP.`
+  );
+}
+
+/**
  * The API key travels in the query string, so it can surface in whatever a
  * socket error quotes back. Scrub it on the way out — an error message ends up
  * in a relay log and on the caller's screen, and neither is a place for a
@@ -119,11 +147,20 @@ export class GeminiLiveSession implements VoiceProviderSession {
       };
       const onSetupClose = (code: number, reason: Buffer) => {
         const detail = reason?.toString().trim().slice(0, 200);
+        // Google reports an unusable credential and an unusable model through
+        // the same close, so say which one this looks like rather than listing
+        // both and leaving the reader to guess. The key's SHAPE is knowable
+        // here without asking anyone: the Live surface takes classic AI Studio
+        // keys, and the newer "AQ." keys reach only the OpenAI-compat surface.
+        const authRejected = code === 1008 || /authenticat|credential|API key|permission/i.test(detail);
         settle(
           new Error(
-            `gemini refused the session setup for model "${this.model}" (close ${code}${detail ? `: ${detail}` : ""}). ` +
-              `Check that the model id exists on the Live API and that the key is a classic AI Studio key; ` +
-              `override the id with RELAY_GEMINI_MODEL.`
+            authRejected
+              ? `gemini rejected the credential (close ${code}${detail ? `: ${detail}` : ""}). ` +
+                describeGeminiKey(key) +
+                ` The model id "${this.model}" was never reached — Google checks the credential first.`
+              : `gemini refused the session setup for model "${this.model}" (close ${code}${detail ? `: ${detail}` : ""}). ` +
+                `Check that the model id exists on the Live API; override it with RELAY_GEMINI_MODEL.`
           )
         );
       };
