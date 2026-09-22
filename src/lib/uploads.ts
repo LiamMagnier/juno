@@ -34,6 +34,15 @@ export const OFFICE_MIME = [
   "application/vnd.ms-word.document.macroenabled.12",
   "application/vnd.ms-excel.sheet.macroenabled.12",
   "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+  // OpenDocument — what LibreOffice, OpenOffice and Google Docs' "download as
+  // ODF" produce. Underneath it is the same shape as a .docx: a ZIP with an
+  // XML document inside, which is why one extractor reads all three kinds.
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  // Both RTF spellings, so the verdict stops depending on the sender's OS.
+  "application/rtf",
+  "text/rtf",
 ];
 
 // Document/text types we accept and can pass to the model. (No text/html — see below.)
@@ -54,6 +63,47 @@ export const DOC_MIME = [
 // Types that must never be accepted: a browser would render them inline (XSS / phishing).
 const BLOCKED_MIME = ["text/html", "application/xhtml+xml", "image/svg+xml"];
 
+/**
+ * The same refusal, keyed on the name.
+ *
+ * `BLOCKED_MIME` alone is a gate anyone can walk around: a browser that
+ * reports `text/plain` for a `.html` — or a caller that simply says so — used
+ * to sail past it on the `startsWith("text/")` arm. The rule is about the
+ * FILE, so it has to be enforced on the evidence that survives a wrong label.
+ */
+const BLOCKED_EXTENSIONS = new Set(["html", "htm", "xhtml", "svg", "svgz"]);
+
+/**
+ * Extensions Juno can read, as the evidence of last resort.
+ *
+ * WHY THE GATE NEEDED THIS AT ALL. `isAcceptedMime` judged on the MIME type
+ * and `selectExtractor` judges on the extension, so the two disagreed on
+ * exactly the files people upload most: a `.sql` from a Mac arrives as
+ * `text/plain` and is accepted, while the same `.sql` from a Linux desktop
+ * arrives as `application/sql` and is refused 415. The gate's verdict for
+ * identical bytes depended on the uploading machine's MIME database. Every
+ * entry below is a format `textFlavor` or `selectExtractor` already reads —
+ * this widens nothing except the set of machines that can send them.
+ */
+const READABLE_EXTENSIONS = new Set([
+  // Prose and data
+  "txt", "text", "log", "md", "markdown", "mdx", "csv", "tsv", "json", "jsonc",
+  "xml", "yaml", "yml", "toml", "ini", "rtf",
+  // Code — the same list `textFlavor` claims
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs", "java", "kt",
+  "swift", "c", "h", "cc", "cpp", "hpp", "cs", "php", "sh", "bash", "zsh", "sql",
+  "css", "scss", "less", "gradle", "graphql", "proto",
+  // Documents with a real extractor
+  "pdf", "docx", "docm", "xlsx", "xlsm", "pptx", "pptm",
+  "odt", "ods", "odp", "fodt",
+]);
+
+/** The extension, lowercased, or "" for a name that has none. */
+function extensionOf(fileName: string): string {
+  const dot = fileName.lastIndexOf(".");
+  return dot > 0 ? fileName.slice(dot + 1).toLowerCase() : "";
+}
+
 export function isAcceptedMime(mime: string): boolean {
   const normalized = mime.toLowerCase().split(";")[0].trim();
   if (BLOCKED_MIME.includes(normalized)) return false;
@@ -64,6 +114,27 @@ export function isAcceptedMime(mime: string): boolean {
     normalized.startsWith("text/") ||
     normalized === "application/octet-stream"
   );
+}
+
+/**
+ * Whether this upload is accepted — judged on the type AND the name.
+ *
+ * The type is the weaker signal and always was: `planAttachmentUpload` stores
+ * every non-image as `application/octet-stream` on purpose, and senders label
+ * files inconsistently across operating systems. So a file whose EXTENSION
+ * Juno can read is accepted even when its declared type is one this gate has
+ * never heard of — which is what stops the answer depending on which machine
+ * the person happened to be sitting at.
+ *
+ * The blocklist is not weakened by this: it is checked on both the type and
+ * the name, so a `.html` declared `text/plain` is now refused where it used to
+ * slip through the `startsWith("text/")` arm.
+ */
+export function isAcceptedUpload(fileName: string, mime: string): boolean {
+  const extension = extensionOf(fileName);
+  if (BLOCKED_EXTENSIONS.has(extension)) return false;
+  if (isAcceptedMime(mime)) return true;
+  return READABLE_EXTENSIONS.has(extension);
 }
 
 export function attachmentKind(mime: string): "IMAGE" | "FILE" {
@@ -154,6 +225,10 @@ export const ACCEPT_ATTRIBUTE = [
   ...IMAGE_MIME,
   ...DOC_MIME,
   ...OFFICE_MIME,
-  ".txt", ".md", ".csv", ".json", ".ts", ".tsx", ".js", ".py",
-  ".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm",
+  // Every readable extension, so the picker, drag-and-drop and paste give the
+  // SAME answer. They did not: the picker listed eight extensions and greyed
+  // out .go, .rs, .java, .swift and the rest, while drag and paste applied no
+  // filter at all and the server took them happily. One file, three verdicts,
+  // depending only on how you put it in.
+  ...[...READABLE_EXTENSIONS].map((extension) => `.${extension}`),
 ].join(",");

@@ -155,6 +155,65 @@ export async function renderDocumentPage(input: {
   }
 }
 
+/**
+ * The first pages of a document, drawn, for a model that gets no other way in.
+ *
+ * WHEN THIS IS THE RIGHT ANSWER, WHICH IS NARROWER THAN IT LOOKS. Anthropic,
+ * Gemini and the OpenAI Responses API all accept a raw PDF and rasterise every
+ * page themselves, better and more cheaply than this can — so calling it for
+ * them would duplicate their work at several times the token cost. It earns
+ * its place on exactly one path: the OpenAI-COMPATIBLE gateways (xAI, Mistral,
+ * DeepSeek, Moonshot and the rest), which are vision-capable but implement
+ * only `image_url` and have no document part at all. There, a scan reaches the
+ * model as pictures of its pages or it does not reach the model.
+ *
+ * Bounded hard, because every page is an image and images are the most
+ * expensive thing that can go in a prompt.
+ */
+export async function renderDocumentPages(input: {
+  bytes: Uint8Array;
+  maxPages?: number;
+  targetWidth?: number;
+}): Promise<RasterImage[]> {
+  const canvas = await loadCanvas();
+  if (!canvas) return [];
+  const limit = Math.min(Math.max(1, Math.floor(input.maxPages ?? 4)), MAX_RENDERED_PAGES);
+
+  let pageCount = 0;
+  try {
+    const { getDocumentProxy } = await import("unpdf");
+    // `.slice()`: pdf.js transfers what it is handed, and the loop below needs
+    // the bytes again for every page it draws.
+    const pdf = await getDocumentProxy(input.bytes.slice(), { verbosity: 0 });
+    pageCount = pdf.numPages;
+  } catch {
+    return [];
+  }
+
+  const out: RasterImage[] = [];
+  for (let page = 1; page <= Math.min(pageCount, limit); page++) {
+    const rendered = await renderDocumentPage({
+      bytes: input.bytes.slice(),
+      page,
+      // Wide enough that body text survives the provider's own downsample;
+      // a thumbnail-sized page is a picture of a document nobody can read.
+      targetWidth: input.targetWidth ?? 1_100,
+    });
+    if (!rendered) break;
+    out.push(rendered);
+  }
+  return out;
+}
+
+/**
+ * The ceiling on pages drawn for one attachment.
+ *
+ * Six pages at ~1100px is already a substantial share of a prompt. Beyond it
+ * the right move is not more pictures but `read_document`, which reads the
+ * whole file as text for a fraction of the cost.
+ */
+const MAX_RENDERED_PAGES = 6;
+
 /** A rectangle in PERCENT of the source image, x/y from the top-left corner. */
 export interface RasterRegion {
   x: number;

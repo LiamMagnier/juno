@@ -242,3 +242,140 @@ test("a PDF a browser mislabelled is still recognised as one", async () => {
   assert.equal(isPdfAttachment({ mimeType: "application/pdf", fileName: "td1" }), true);
   assert.equal(isPdfAttachment({ mimeType: "application/octet-stream", fileName: "notes.bin" }), false);
 });
+
+/* -------------------------------------------------------------------------- */
+/* The gate agrees with the reader, whatever machine sent the file             */
+/* -------------------------------------------------------------------------- */
+
+test("the same file is accepted whichever operating system sent it", async () => {
+  /*
+   * THE BUG. The gate judged on MIME (`isAcceptedMime`) while the router
+   * judges on extension (`selectExtractor`), so identical bytes got opposite
+   * verdicts depending on the uploading machine's MIME database: a `.sql` from
+   * a Mac arrives as `text/plain` and was accepted; the same `.sql` from a
+   * Linux desktop arrives as `application/sql` and was refused 415. Every one
+   * of these is a format `textFlavor` already reads.
+   */
+  const { isAcceptedUpload } = await import("@/lib/uploads");
+  const osSpecific: [string, string][] = [
+    ["query.sql", "application/sql"],
+    ["config.yaml", "application/yaml"],
+    ["deploy.sh", "application/x-shellscript"],
+    ["script.zsh", "application/x-zsh"],
+    ["model.rb", "application/x-ruby"],
+    ["schema.graphql", "application/graphql"],
+    ["Cargo.toml", "application/toml"],
+    ["index.php", "application/x-httpd-php"],
+  ];
+  for (const [name, mime] of osSpecific) {
+    assert.ok(isAcceptedUpload(name, mime), `${name} as ${mime} must be accepted`);
+    // And the Mac spelling of the same file, which always worked.
+    assert.ok(isAcceptedUpload(name, "text/plain"));
+  }
+});
+
+test("a file that renders inline is refused however it is labelled", async () => {
+  /*
+   * The blocklist got a second key. It was MIME-only, so a `.html` a browser
+   * reported as `text/plain` sailed through the `startsWith("text/")` arm —
+   * the gate was walkable around by mislabelling the very thing it existed to
+   * stop.
+   */
+  const { isAcceptedUpload } = await import("@/lib/uploads");
+  for (const name of ["page.html", "page.htm", "doc.xhtml", "logo.svg"]) {
+    assert.equal(isAcceptedUpload(name, "text/plain"), false, `${name} must be refused`);
+    assert.equal(isAcceptedUpload(name, "application/octet-stream"), false, `${name} must be refused`);
+  }
+});
+
+test("the picker offers everything the server will accept", async () => {
+  // Picker, drag-and-drop and paste used to give three different answers for
+  // one file: the picker listed eight extensions and greyed out .go/.rs/.java,
+  // while drag and paste filtered nothing and the server took them happily.
+  const { ACCEPT_ATTRIBUTE, isAcceptedUpload } = await import("@/lib/uploads");
+  for (const ext of ["go", "rs", "java", "swift", "sql", "yaml", "odt", "rtf"]) {
+    assert.ok(ACCEPT_ATTRIBUTE.includes(`.${ext}`), `.${ext} must be offered by the picker`);
+    assert.ok(isAcceptedUpload(`f.${ext}`, "application/octet-stream"));
+  }
+});
+
+/* -------------------------------------------------------------------------- */
+/* Formats that had no reader at all                                           */
+/* -------------------------------------------------------------------------- */
+
+test("RTF is read as prose, not as its own control words", async () => {
+  /*
+   * RTF had no extractor, so it fell through the text extractor's
+   * `startsWith("text/")` arm — RTF is ASCII, so nothing objected — and the
+   * index filled with \fonttbl, \colortbl and \pard. And whether that happened
+   * at all was decided by the sender's OS: macOS says `text/rtf` (accepted),
+   * Linux and Windows say `application/rtf` (refused 415).
+   */
+  const { rtfToText } = await import("@/lib/knowledge/extract/rtf");
+  const rtf = `{\\rtf1\\ansi\\ansicpg1252
+{\\fonttbl\\f0\\fswiss Helvetica;}
+{\\colortbl;\\red255\\green255\\blue255;}
+{\\*\\expandedcolortbl;;}
+\\pard\\f0\\fs28 Quarterly Report\\
+\\fs24 Revenue rose to 4.2 million \\'80 in Q3.\\
+The board said \\'93yes\\'94 on 14 August \\u8212 ? unanimously.\\
+}`;
+  const bytes = new Uint8Array(Buffer.from(rtf, "latin1"));
+
+  for (const mime of ["application/rtf", "text/rtf"]) {
+    const result = await extractDocument({ bytes, fileName: "notes.rtf", mimeType: mime });
+    assert.equal(result?.status, "ok", `${mime} must be read`);
+    const text = textOf(result);
+    assert.match(text, /Revenue rose to 4\.2 million/);
+    assert.doesNotMatch(text, /\\(fonttbl|colortbl|pard|fs\d)/, "control words must not reach the index");
+  }
+
+  const text = rtfToText(rtf);
+  // cp1252 is where RTF keeps its punctuation, and those bytes are C1 control
+  // characters in Latin-1 — decoding them naively loses a euro sign entirely.
+  assert.match(text, /4\.2 million €/, "\\'80 is a euro sign, not a control character");
+  assert.match(text, /“yes”/, "\\'93 and \\'94 are curly quotes");
+  assert.match(text, /14 August —/, "\\uN is a unicode escape with a fallback to drop");
+  // A trailing backslash IS a line break; missing it ran every paragraph into
+  // the next one ("Quarterly ReportRevenue rose to...").
+  assert.doesNotMatch(text, /ReportRevenue/, "paragraphs must stay separated");
+});
+
+test("OpenDocument is read, including its tables and separators", async () => {
+  const JSZip = (await import("jszip")).default;
+  const content = `<?xml version="1.0"?><office:document-content xmlns:office="u" xmlns:text="u" xmlns:table="u"><office:body><office:text>
+<text:h text:outline-level="1">Quarterly Report</text:h>
+<text:p>The board approved the<text:tab/>Ontario expansion<text:line-break/>on 14 August.</text:p>
+<table:table><table:table-row><table:table-cell><text:p>Ontario</text:p></table:table-cell><table:table-cell><text:p>4,200,000</text:p></table:table-cell></table:table-row></table:table>
+</office:text></office:body></office:document-content>`;
+  const zip = new JSZip();
+  zip.file("mimetype", "application/vnd.oasis.opendocument.text");
+  zip.file("content.xml", content);
+  const bytes = new Uint8Array(await zip.generateAsync({ type: "nodebuffer" }));
+
+  const result = await extractDocument({
+    bytes,
+    fileName: "report.odt",
+    mimeType: "application/vnd.oasis.opendocument.text",
+  });
+  assert.equal(result?.status, "ok");
+  const blocks = result!.blocks;
+  assert.equal(blocks[0].type, "heading", "text:h is an outline entry, not body prose");
+  assert.match(blocks[0].text, /Quarterly Report/);
+  // `<text:tab/>` and `<text:line-break/>` are self-closing, which the XML
+  // scanner reports as `empty` rather than `open`. Matching only `open` ran
+  // the words on either side together.
+  assert.match(textOf(result), /approved the Ontario expansion on 14 August/);
+  assert.match(textOf(result), /4,200,000/, "table cells are content too");
+});
+
+test("a mislabelled or damaged OpenDocument fails with a reason, not a crash", async () => {
+  const notAZip = new Uint8Array(Buffer.from("this is not an archive"));
+  const result = await extractDocument({
+    bytes: notAZip,
+    fileName: "broken.odt",
+    mimeType: "application/vnd.oasis.opendocument.text",
+  });
+  assert.notEqual(result?.status, "ok");
+  assert.ok((result?.reason ?? "").length > 0, "a failure must explain itself");
+});

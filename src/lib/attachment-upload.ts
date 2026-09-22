@@ -1,6 +1,6 @@
 import {
   attachmentKind,
-  isAcceptedMime,
+  isAcceptedUpload,
   isTextExtractable,
   sanitizeFileName,
   sniffDocumentMime,
@@ -54,7 +54,7 @@ export function planAttachmentUpload(input: {
 }): { ok: true; plan: AttachmentUploadPlan } | { ok: false; error: AttachmentUploadRejection } {
   const declaredMime = input.declaredMime || "application/octet-stream";
 
-  if (!isAcceptedMime(declaredMime)) {
+  if (!isAcceptedUpload(input.fileName || "file", declaredMime)) {
     return {
       ok: false,
       error: {

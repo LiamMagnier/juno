@@ -11,13 +11,15 @@
 import { DOCX_PARSER_VERSION, extractDocx } from "./docx";
 import { PDF_PARSER_VERSION, extractPdf } from "./pdf";
 import { PPTX_PARSER_VERSION, extractPptx } from "./pptx";
+import { ODT_PARSER_VERSION, extractOdt } from "./odt";
+import { RTF_PARSER_VERSION, extractRtf } from "./rtf";
 import { TEXT_PARSER_VERSION, extractTextDocument, textFlavor } from "./text";
 import { XLSX_PARSER_VERSION, extractXlsx } from "./xlsx";
 import { ocrPdf, OCR_VERSION } from "../ocr";
 import { extractPdfWithEngine, PDF_ENGINE, PDF_ENGINE_VERSION } from "./pdf-engine";
 import type { ExtractionResult } from "./types";
 
-export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "text";
+export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "odt" | "rtf" | "text";
 
 /**
  * The version each extractor is currently on, in one place.
@@ -32,6 +34,8 @@ export const PARSER_VERSIONS: Record<ExtractorId, string> = {
   docx: DOCX_PARSER_VERSION,
   pptx: PPTX_PARSER_VERSION,
   xlsx: XLSX_PARSER_VERSION,
+  odt: ODT_PARSER_VERSION,
+  rtf: RTF_PARSER_VERSION,
   text: TEXT_PARSER_VERSION,
 };
 
@@ -43,6 +47,12 @@ const BY_EXTENSION: Record<string, ExtractorId> = {
   pptm: "pptx",
   xlsx: "xlsx",
   xlsm: "xlsx",
+  rtf: "rtf",
+  odt: "odt",
+  ods: "odt",
+  odp: "odt",
+  // The flat-XML variants LibreOffice offers beside them.
+  fodt: "odt",
 };
 
 const BY_MIME: Record<string, ExtractorId> = {
@@ -50,6 +60,14 @@ const BY_MIME: Record<string, ExtractorId> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  // Both spellings. macOS says one, Linux and Windows say the other, and the
+  // file is identical — RTF used to be accepted or refused by operating
+  // system, then indexed as control words when it did get through.
+  "application/rtf": "rtf",
+  "text/rtf": "rtf",
+  "application/vnd.oasis.opendocument.text": "odt",
+  "application/vnd.oasis.opendocument.spreadsheet": "odt",
+  "application/vnd.oasis.opendocument.presentation": "odt",
 };
 
 /**
@@ -250,6 +268,10 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
         return await extractPptx(input);
       case "xlsx":
         return await extractXlsx(input);
+      case "odt":
+        return await extractOdt(input);
+      case "rtf":
+        return extractRtf(input);
       case "text":
         return extractTextDocument(input);
     }
