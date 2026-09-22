@@ -26,6 +26,12 @@ import {
   type RetrievalResult,
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
+import {
+  SENSITIVE_TOPICS,
+  SENSITIVE_TOPIC_META,
+  normalizeSensitiveTopics,
+  type SensitiveTopic,
+} from "@/lib/memory-sensitive";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
 // through, deliberately: a second way of turning usage into money is how an
@@ -576,7 +582,39 @@ export interface SaveCandidatesResult {
   superseded: number;
   /** Stored but not believed: suppressed, or beaten by an explicit fact. */
   rejected: number;
+  /**
+   * Refused because they fall under a sensitive topic this account has not
+   * opted into — counted apart from `rejected` because nothing was written at
+   * all, and because a user who has just seen "nothing was remembered from
+   * that chat" is owed the reason that has a switch attached to it.
+   */
+  sensitiveSkipped: number;
+  /** The distinct topics behind `sensitiveSkipped`, for that explanation. */
+  sensitiveTopics: SensitiveTopic[];
 }
+
+/**
+ * The sensitive topics an account has opted into, normalized.
+ *
+ * Fails closed, like `loadBackgroundProviderPolicy` and for the same reason: an
+ * account with no Settings row, or a row this build cannot read, gets the
+ * private default rather than an accidental yes. `cache()`d per request because
+ * a chat turn asks for it on the extraction path and the page asks again to
+ * render the flags.
+ */
+export const loadAllowedSensitiveTopics = cache(async function loadAllowedSensitiveTopics(
+  userId: string
+): Promise<SensitiveTopic[]> {
+  try {
+    const row = await prisma.settings.findUnique({
+      where: { userId },
+      select: { memorySensitiveTopics: true },
+    });
+    return normalizeSensitiveTopics(row?.memorySensitiveTopics);
+  } catch {
+    return [];
+  }
+});
 
 /**
  * Persist candidate facts through the Memory v2 lifecycle: classify, detect
@@ -601,6 +639,12 @@ export async function saveCandidates(
     conversationProvider?: string | null;
     embed?: MemoryEmbedder;
     /**
+     * Sensitive topics this account permits. Loaded from Settings when
+     * omitted — never defaulted to "all", so a caller that has not been taught
+     * about the gate refuses rather than storing a diagnosis.
+     */
+    allowedSensitiveTopics?: readonly SensitiveTopic[];
+    /**
      * Receives the "Memory updated" receipt when this batch created a fact —
      * shaped for the chat activity timeline, so the caller can forward it to
      * `sendActivity` unchanged. Never called for a batch that only refreshed
@@ -609,10 +653,22 @@ export async function saveCandidates(
     onActivity?: (event: MemoryUpdateActivity) => void;
   } = {}
 ): Promise<SaveCandidatesResult> {
-  const result: SaveCandidatesResult = { created: 0, refreshed: 0, superseded: 0, rejected: 0 };
+  const result: SaveCandidatesResult = {
+    created: 0,
+    refreshed: 0,
+    superseded: 0,
+    rejected: 0,
+    sensitiveSkipped: 0,
+    sensitiveTopics: [],
+  };
   if (facts.length === 0) return result;
 
-  const rows = await prisma.memoryEntry.findMany({ where: { userId }, select: LIFECYCLE_SELECT });
+  const [rows, allowedSensitiveTopics] = await Promise.all([
+    prisma.memoryEntry.findMany({ where: { userId }, select: LIFECYCLE_SELECT }),
+    opts.allowedSensitiveTopics
+      ? Promise.resolve(opts.allowedSensitiveTopics)
+      : loadAllowedSensitiveTopics(userId),
+  ]);
   const entries: LifecycleEntry[] = rows.filter((r) => r.kind === "FACT");
   const suppressions = rows.filter((r) => r.kind === "SUPPRESSION").map((r) => r.content);
   const now = new Date();
@@ -625,10 +681,17 @@ export async function saveCandidates(
   const createdContents: string[] = [];
 
   for (const fact of facts) {
-    const plan = planFactIngestion({ content: fact, source, projectId }, { entries, suppressions, now });
+    const plan = planFactIngestion(
+      { content: fact, source, projectId },
+      { entries, suppressions, now, allowedSensitiveTopics }
+    );
 
     if (plan.action === "skip") {
       if (plan.reason === "suppressed") result.rejected++;
+      if (plan.reason === "sensitive") {
+        result.sensitiveSkipped++;
+        if (!result.sensitiveTopics.includes(plan.topic)) result.sensitiveTopics.push(plan.topic);
+      }
       continue;
     }
 
@@ -854,7 +917,7 @@ export async function extractConversationMemory(opts: {
   }
   if (current.length) chunks.push(current);
 
-  const [recentFacts, suppressions] = await Promise.all([
+  const [recentFacts, suppressions, allowedSensitiveTopics] = await Promise.all([
     prisma.memoryEntry.findMany({
       where: { userId: opts.userId, kind: "FACT" },
       orderBy: { createdAt: "desc" },
@@ -862,10 +925,18 @@ export async function extractConversationMemory(opts: {
       select: { content: true },
     }),
     getSuppressions(opts.userId),
+    loadAllowedSensitiveTopics(opts.userId),
   ]);
 
+  // Belt AND braces. `saveCandidates` refuses a sensitive candidate whatever
+  // the model returns, so this line changes no outcome — but an extractor that
+  // is not asked for a diagnosis does not put one in a prompt, and the
+  // difference between "refused at the door" and "never requested" is the
+  // difference between the content having been sent to a provider and not.
+  const offLimits = SENSITIVE_TOPICS.filter((topic) => !allowedSensitiveTopics.includes(topic));
+
   const system = `You maintain a long-term memory of durable facts about a user. From the chat messages below (all written BY the user), extract NEW durable facts worth remembering — identity, role, location, preferences, tools and languages they use, ongoing projects, goals, recurring themes. Ignore one-off task details, questions that reveal nothing durable, and anything already known. Never extract secrets, passwords, or API keys.
-${suppressions.length ? `The user asked to FORGET the following — never extract anything about them:\n${suppressions.map((s) => `- ${s}`).join("\n")}\n` : ""}Already known:
+${offLimits.length ? `NEVER extract anything touching these subjects, even when the user states it plainly — ${offLimits.map((topic) => SENSITIVE_TOPIC_META[topic].label.toLowerCase()).join(", ")}. Leave them out entirely rather than paraphrasing around them.\n` : ""}${suppressions.length ? `The user asked to FORGET the following — never extract anything about them:\n${suppressions.map((s) => `- ${s}`).join("\n")}\n` : ""}Already known:
 ${recentFacts.length ? recentFacts.map((f) => `- ${f.content}`).join("\n") : "(nothing yet)"}
 
 Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one line: what this chat is about>"} — facts may be empty.`;
@@ -913,6 +984,9 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
       // same conversation provider rather than resolving its own.
       policy,
       conversationProvider,
+      // Resolved once above with the suppressions, for the same reason the
+      // policy is: it cannot change half-way through an extraction.
+      allowedSensitiveTopics,
     });
     created += createdInChunk;
     const isLastChunkOverall = processed + 1 === chunks.length;

@@ -18,6 +18,14 @@ interface PrivacyStripProps {
 }
 
 /**
+ * PAUSE IS NOT RESET, AND THE STRIP HAS TO SAY SO.
+ *
+ * The two controls sit inches apart and one of them is irreversible, so the
+ * note below spells out the difference in the words a user would use: pausing
+ * KEEPS everything and stops Juno reading or adding to it; resetting erases it.
+ * That distinction is also why pause is a switch and reset is a hold — the
+ * shapes carry the weight before the label is read.
+ *
  * RESET IS A HOLD, NOT A SECOND CLICK.
  *
  * It used to be Reset → "Confirm reset": one button replacing another in
@@ -71,8 +79,9 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
       <p id="memory-privacy-note" className="mt-2.5 flex items-start gap-1.5 text-caption text-muted-foreground/80">
         <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         <span>
-          Pausing stops Juno from saving or using memories. Private chats are never remembered. Resetting permanently
-          erases every saved fact and the summary.
+          Pausing keeps everything below but stops Juno using it or adding to it. Incognito chats are never remembered,
+          and sensitive subjects are never learned unless you ask. Resetting permanently erases every saved fact and the
+          summary.
         </span>
       </p>
     </div>

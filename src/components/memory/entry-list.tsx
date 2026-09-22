@@ -1,27 +1,16 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { AnimatePresence } from "framer-motion";
+import { ChevronDown, MessageSquare } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import {
-  MEMORY_CATEGORY_META,
-  MEMORY_STATUS_META,
-  confidenceLabel,
-  isMemoryCategory,
-  isMemoryStatus,
-  memoryCategoryLabel,
-} from "@/lib/memory-categories";
+import { MemoryIcons } from "@/components/memory/memory-icons";
 import { cn } from "@/lib/utils";
-import type { Memory } from "./memory-model";
+import { EntryRow } from "@/components/memory/entry-row";
+import { isRetired, type Memory } from "@/components/memory/memory-model";
 
 /*
- * The entry list — what Juno remembers, one fact at a time.
+ * The entry list — what Juno remembers, one fact at a time, unsorted by topic.
  *
  * The page used to hold these rows without ever showing them: the consolidated
  * summary was the whole interface. That reads well until a fact is wrong, at
@@ -29,228 +18,42 @@ import type { Memory } from "./memory-model";
  * believes it because they said so or because a background model guessed, and
  * no way to tell an account-wide fact from one that should never have left a
  * project. Prose cannot carry provenance. Rows can.
+ *
+ * It survives alongside the topics view rather than being replaced by it,
+ * because the two answer different questions. Topics answer "what does Juno
+ * think I'm like"; this answers "what did it learn, and when" — newest first,
+ * every subject interleaved, which is the only reading that shows you what
+ * yesterday's conversation actually added.
  */
-
-/** Retired entries are the trail, not the memory — collapsed until asked for. */
-const RETIRED_STATUSES = new Set(["superseded", "contradicted", "suppressed", "expired"]);
-
-function ProvenanceLine({ memory }: { memory: Memory }) {
-  const learnedFrom = (() => {
-    if (memory.sourceRef === "manual") return "You added this";
-    if (memory.sourceRef === "edit") return "From an edit you made";
-    if (memory.sourceRef === "forget") return "From a fact you forgot";
-    if (memory.source === "MANUAL") return "You told Juno";
-    return null;
-  })();
-
-  return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-      {learnedFrom ? (
-        <span>{learnedFrom}</span>
-      ) : memory.sourceRef ? (
-        <Link
-          href={`/chat/${memory.sourceRef}`}
-          className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
-        >
-          <MessageSquare className="size-3" aria-hidden="true" />
-          Remembered from a chat
-        </Link>
-      ) : (
-        <span>Remembered from your chats</span>
-      )}
-      <span aria-hidden="true">·</span>
-      <span>{timeAgo(memory.createdAt)}</span>
-      {memory.lastUsedAt && (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>used {timeAgo(memory.lastUsedAt)}</span>
-        </>
-      )}
-      {memory.expiresAt && (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>expires {new Date(memory.expiresAt).toLocaleDateString()}</span>
-        </>
-      )}
-    </p>
-  );
-}
-
-interface EntryRowProps {
-  memory: Memory;
-  busy: boolean;
-  onEdit: (id: string, content: string) => Promise<boolean>;
-  onForget: (memory: Memory) => void;
-  onDelete: (memory: Memory) => void;
-}
-
-function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(memory.content);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const editButtonRef = React.useRef<HTMLButtonElement>(null);
-  const wasEditing = React.useRef(false);
-
-  // The row swaps its text for an input, which destroys the focused element —
-  // hand focus to whichever control took its place so keyboard users aren't
-  // dropped back to the top of the document.
-  React.useEffect(() => {
-    if (editing) {
-      wasEditing.current = true;
-      const timer = setTimeout(() => inputRef.current?.focus(), 60);
-      return () => clearTimeout(timer);
-    }
-    if (wasEditing.current) editButtonRef.current?.focus();
-    wasEditing.current = false;
-  }, [editing]);
-
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const next = draft.trim();
-    if (!next || next === memory.content) {
-      setEditing(false);
-      return;
-    }
-    if (await onEdit(memory.id, next)) setEditing(false);
-    else inputRef.current?.focus();
-  };
-
-  const retired = RETIRED_STATUSES.has(memory.status);
-  const statusMeta = isMemoryStatus(memory.status) ? MEMORY_STATUS_META[memory.status] : null;
-  const categoryMeta = isMemoryCategory(memory.category) ? MEMORY_CATEGORY_META[memory.category] : null;
-
-  return (
-    // A hover tint is the only thing telling you the row's controls belong to
-    // THIS fact rather than the one above it — the rows are divided by a hairline
-    // and nothing else, which on the black ground is very little.
-    <li
-      className={cn(
-        "px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
-        retired && "opacity-70"
-      )}
-    >
-      {editing ? (
-        <form onSubmit={save} className="flex items-center gap-1.5">
-          <Input
-            ref={inputRef}
-            value={draft}
-            maxLength={500}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setDraft(memory.content);
-                setEditing(false);
-              }
-            }}
-            aria-label="Edit this memory"
-            className="h-9"
-          />
-          <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Cancel editing"
-            onClick={() => {
-              setDraft(memory.content);
-              setEditing(false);
-            }}
-          >
-            <ActionIcons.dismiss className="size-3.5" />
-          </Button>
-        </form>
-      ) : (
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p className={cn("text-ui text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
-              {memory.content}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge variant="soft" title={categoryMeta?.description}>
-                {memoryCategoryLabel(memory.category)}
-              </Badge>
-              {memory.projectId && (
-                <Badge
-                  variant="outline"
-                  className="gap-1"
-                  title="Only chats in this project can see this memory."
-                >
-                  <FolderLock className="size-3" aria-hidden="true" />
-                  {memory.projectName ?? "One project"}
-                </Badge>
-              )}
-              <Badge variant="muted" title="How Juno came to believe this.">
-                {confidenceLabel(memory.confidence)}
-              </Badge>
-              {statusMeta && memory.status !== "active" && (
-                <Badge variant="outline" title={statusMeta.description}>
-                  {statusMeta.label}
-                </Badge>
-              )}
-            </div>
-            <ProvenanceLine memory={memory} />
-            {memory.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{memory.reason}</p>}
-          </div>
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Button
-              ref={editButtonRef}
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit: ${memory.content}`}
-              onClick={() => setEditing(true)}
-              disabled={busy}
-            >
-              <ActionIcons.edit className="size-3.5" />
-            </Button>
-            {memory.status !== "suppressed" && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Forget: ${memory.content}`}
-                title="Stop using this, and never learn it again."
-                onClick={() => onForget(memory)}
-                disabled={busy}
-              >
-                <EyeOff className="size-3.5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-destructive danger-hover"
-              aria-label={`Delete: ${memory.content}`}
-              onClick={() => onDelete(memory)}
-              disabled={busy}
-            >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
-            </Button>
-          </div>
-        </div>
-      )}
-    </li>
-  );
-}
 
 interface EntryListProps {
   memories: Memory[];
   busyIds: ReadonlySet<string>;
   paused: boolean;
+  /** True when a search or filter is narrowing the list — a different empty. */
+  filtered: boolean;
   onEdit: (id: string, content: string) => Promise<boolean>;
   onForget: (memory: Memory) => void;
   onDelete: (memory: Memory) => void;
 }
 
-export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelete }: EntryListProps) {
+export function EntryList({
+  memories,
+  busyIds,
+  paused,
+  filtered,
+  onEdit,
+  onForget,
+  onDelete,
+}: EntryListProps) {
   const [showRetired, setShowRetired] = React.useState(false);
 
   // Suppressions are a block-list, not memories — they have their own strip on
   // the page and listing them here would read as "Juno remembers that you asked
   // it to forget X", which is the opposite of what the user did.
   const facts = memories.filter((memory) => memory.kind === "FACT");
-  const active = facts.filter((memory) => !RETIRED_STATUSES.has(memory.status));
-  const retired = facts.filter((memory) => RETIRED_STATUSES.has(memory.status));
+  const active = facts.filter((memory) => !isRetired(memory));
+  const retired = facts.filter(isRetired);
 
   return (
     <section
@@ -284,23 +87,30 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
         <div className="border-t border-border/50">
           <EmptyState
             size="panel"
-            icon={MessageSquare}
-            title="Nothing specific yet"
-            description="Facts appear here as you chat."
+            icon={filtered ? MemoryIcons.search : MessageSquare}
+            title={filtered ? "Nothing matches that" : "Nothing specific yet"}
+            description={
+              filtered
+                ? "Try a shorter word, or clear the filters to see everything Juno remembers."
+                : "Facts appear here as you chat."
+            }
           />
         </div>
       ) : (
         <ul className="divide-y divide-border/50 border-t border-border/50">
-          {active.map((memory) => (
-            <EntryRow
-              key={memory.id}
-              memory={memory}
-              busy={busyIds.has(memory.id)}
-              onEdit={onEdit}
-              onForget={onForget}
-              onDelete={onDelete}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {active.map((memory) => (
+              <EntryRow
+                key={memory.id}
+                memory={memory}
+                busy={busyIds.has(memory.id)}
+                paused={paused}
+                onEdit={onEdit}
+                onForget={onForget}
+                onDelete={onDelete}
+              />
+            ))}
+          </AnimatePresence>
         </ul>
       )}
 
@@ -338,16 +148,19 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
           >
             <div className="min-h-0 overflow-hidden" inert={!showRetired}>
               <ul className="divide-y divide-border/50 border-t border-border/50">
-                {retired.map((memory) => (
-                  <EntryRow
-                    key={memory.id}
-                    memory={memory}
-                    busy={busyIds.has(memory.id)}
-                    onEdit={onEdit}
-                    onForget={onForget}
-                    onDelete={onDelete}
-                  />
-                ))}
+                <AnimatePresence initial={false}>
+                  {retired.map((memory) => (
+                    <EntryRow
+                      key={memory.id}
+                      memory={memory}
+                      busy={busyIds.has(memory.id)}
+                      paused={paused}
+                      onEdit={onEdit}
+                      onForget={onForget}
+                      onDelete={onDelete}
+                    />
+                  ))}
+                </AnimatePresence>
               </ul>
             </div>
           </div>

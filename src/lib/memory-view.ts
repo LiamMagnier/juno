@@ -1,5 +1,7 @@
 import "server-only";
 
+import { sensitiveTopicOf } from "@/lib/memory-sensitive";
+
 /**
  * The one shape a memory entry takes on the wire.
  *
@@ -54,6 +56,10 @@ export function serializeMemoryEntry(row: MemoryEntryRow) {
   const { project, ...entry } = row;
   return {
     ...entry,
+    // Computed, never stored — see the header of memory-sensitive.ts. Sent on
+    // every entry so the page can flag a row whatever build wrote it, including
+    // the rows that predate the gate entirely.
+    sensitive: sensitiveTopicOf(row.content),
     // The project's NAME, not just its id: the memory page has to be able to
     // say "only in Thesis" without a second round-trip per entry.
     projectName: project?.name ?? null,

@@ -9,6 +9,7 @@ import { PERSONALITY_IDS } from "@/lib/personalities";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
+import { SENSITIVE_TOPICS } from "@/lib/memory-sensitive";
 
 const schema = z.object({
   // The display name — what the sidebar and the greeting call you. Lives on
@@ -24,6 +25,11 @@ const schema = z.object({
   responseLanguage: z.string().max(40).optional(),
   uiLocale: z.string().max(35).optional(),
   memoryEnabled: z.boolean().optional(),
+  // Sensitive topics this account opts INTO remembering. Enumerated for the
+  // same reason `backgroundProviderMode` is: the column is TEXT[], and an
+  // unrecognised value stored here would be a permission nobody granted and
+  // nothing can revoke from the UI. Deduplicated on write below.
+  memorySensitiveTopics: z.array(z.enum(SENSITIVE_TOPICS)).max(SENSITIVE_TOPICS.length).optional(),
   // Where background work (memory extraction, titles, planning, moderation)
   // may be sent. Validated against the union rather than accepted as free text,
   // so an unknown value cannot be stored and later read as permission to cross
@@ -73,6 +79,10 @@ export async function GET() {
       customInstructions: true,
       responseLanguage: true,
       memoryEnabled: true,
+      // Exposed so macOS and iOS draw the same sensitive-topic switches the
+      // web does — a client that assumed "all on" would show memory keeping
+      // things the server refuses to keep.
+      memorySensitiveTopics: true,
       // Exposed so macOS and iOS show the same policy the web does, rather
       // than each client assuming a default.
       backgroundProviderMode: true,
@@ -135,6 +145,9 @@ export async function PATCH(req: Request) {
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
       ...(uiLocale !== undefined ? { uiLocale } : {}),
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),
+      ...(d.memorySensitiveTopics !== undefined
+        ? { memorySensitiveTopics: [...new Set(d.memorySensitiveTopics)] }
+        : {}),
       ...(d.backgroundProviderMode !== undefined
         ? { backgroundProviderMode: d.backgroundProviderMode }
         : {}),
