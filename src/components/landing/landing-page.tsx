@@ -66,6 +66,10 @@ const CONTACT_EMAIL = (process.env.EMAIL_FROM ?? "Juno <hello@chat.liams.dev>").
  * so `?next=` keeps the item and makes the redirect intentional.
  */
 const COMPANY_LINKS = [
+  // Named for the article it opens, not for a section that does not exist yet
+  // — the same reason there is no Status link two lines down. When there is a
+  // second engineering page, this becomes an index and the label follows.
+  { href: "/engineering/file-understanding", label: "How Juno reads files" },
   { href: `mailto:${CONTACT_EMAIL}`, label: "Contact" },
   { href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Juno support")}`, label: "Support" },
   { href: "/sign-in?next=/roadmap", label: "Changelog & roadmap" },
