@@ -14,6 +14,12 @@
  *      finds them, and an embedding failure degrades to lexical — never dies
  *   6. capturing a new fact emits the "Memory updated" timeline activity
  *   7. the edit ledger is server rows with an idempotent import
+ *   8. forgetting — facts retired, suppression written, and a summary written
+ *      before the forget is benched rather than injected
+ *   9. the dreamer's account query honours pause, the background-learning
+ *      switch and already-distilled history; an active account is skipped
+ *  10. Code is shown coding facts only — never identity or a sensitive fact
+ *  11. imports are MANUAL; an AUTO sensitive fact is refused until opted in
  *
  * Requires NODE_OPTIONS=--conditions=react-server (set by the npm script) so
  * the `server-only` guard inside the lib import chain resolves to a no-op.
@@ -23,12 +29,16 @@ import {
   backfillMemories,
   consolidateMemories,
   extractConversationMemory,
+  forgetStatements,
+  getCodingMemory,
   getMemoryProfile,
   pendingBackfill,
   saveCandidates,
   type MemoryEmbedder,
   type UtilityLlm,
 } from "../src/lib/memory";
+import { dreamForAccount, findAccountsToDream } from "../src/lib/memory-dreamer";
+import { encryptField } from "../src/lib/field-crypto";
 import type { MemoryUpdateActivity } from "../src/lib/memory-lifecycle";
 import type { EmbeddingModelInfo } from "../src/lib/knowledge/embed";
 
@@ -109,6 +119,27 @@ async function factExists(userId: string, needle: string): Promise<boolean> {
     select: { id: true },
   });
   return !!row;
+}
+
+/** Throwaway accounts for sections 8+, deleted with the main one. */
+const extraUsers: string[] = [];
+async function extraUser(
+  tag: string,
+  settings: { memoryEnabled?: boolean; memoryBackgroundLearning?: boolean } = {}
+): Promise<string> {
+  const created = await prisma.user.create({
+    data: { email: `memory-test-${tag}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.test`, name: tag },
+  });
+  extraUsers.push(created.id);
+  await prisma.settings.create({ data: { userId: created.id, ...settings } });
+  return created.id;
+}
+
+/** A stored fact, written directly — these sections test what READS memory. */
+async function rawFact(userId: string, content: string, extra: { category?: string } = {}) {
+  await prisma.memoryEntry.create({
+    data: { userId, content, kind: "FACT", source: "AUTO", status: "active", category: extra.category ?? "preferences" },
+  });
 }
 
 async function main() {
@@ -331,9 +362,93 @@ async function main() {
     await prisma.memoryEdit.createMany({ data: [ledgerRow], skipDuplicates: true });
     const ledgerCount = await prisma.memoryEdit.count({ where: { userId: user.id } });
     check("a retried import cannot duplicate a ledger record", ledgerCount === 1, `count=${ledgerCount}`);
+
+    // ------------------------------------------------------------------
+    console.log("\n8. Forgetting reaches the next chat — the stale summary is benched");
+    // ------------------------------------------------------------------
+    const fu = await extraUser("forget");
+    await rawFact(fu, "The user works at Acme.", { category: "identity" });
+    await rawFact(fu, "The user works at Acme as a staff designer.", { category: "identity" });
+    await rawFact(fu, "The user prefers metric units.");
+    // Written BEFORE the forget, and quoting the forgotten fact in prose.
+    await prisma.memorySummary.create({
+      data: { userId: fu, content: encryptField("## Work context\nThe user works at Acme."), entryCount: 3 },
+    });
+    const beforeForget = await getMemoryProfile(fu, { query: "where do I work" });
+    check("before the forget, the summary is injected", !!beforeForget.summary?.includes("Acme"));
+    await new Promise((r) => setTimeout(r, 20));
+    const forgot = await forgetStatements(fu, ["The user works at Acme."]);
+    check("every covering fact is retired", forgot.retired === 2, `retired=${forgot.retired}`);
+    const fuRows = await prisma.memoryEntry.findMany({ where: { userId: fu } });
+    check("retired, not deleted", fuRows.filter((r) => r.kind === "FACT" && r.status === "suppressed").length === 2);
+    check("one suppression written", fuRows.filter((r) => r.kind === "SUPPRESSION").length === 1);
+    const afterForget = await getMemoryProfile(fu, { query: "where do I work" });
+    check("the summary written before the forget is benched", afterForget.summary === null);
+    check("nothing retired reaches context", !afterForget.recent.some((f) => f.includes("Acme")));
+    check("active facts still do", afterForget.recent.includes("The user prefers metric units."));
+    const twice = await forgetStatements(fu, ["The user works at Acme."]);
+    check("forgetting the same thing twice writes nothing", twice.statements.length === 0 && twice.retired === 0);
+
+    // ------------------------------------------------------------------
+    console.log("\n9. The dreamer draws only idle, consenting accounts with unread history");
+    // ------------------------------------------------------------------
+    const idle = await extraUser("dream-idle");
+    const pausedU = await extraUser("dream-paused", { memoryEnabled: false });
+    const optedOut = await extraUser("dream-optout", { memoryBackgroundLearning: false });
+    const distilled = await extraUser("dream-done");
+    const longAgo = new Date(Date.now() - 3 * 86_400_000);
+    for (const id of [idle, pausedU, optedOut, distilled]) {
+      const convo = await prisma.conversation.create({ data: { userId: id, title: "t", lastMessageAt: longAgo } });
+      if (id === distilled) {
+        await prisma.conversationMemory.create({ data: { userId: id, conversationId: convo.id, processedAt: longAgo } });
+      }
+    }
+    const drawn = await findAccountsToDream(10_000);
+    check("an idle account with an unread chat is drawn", drawn.includes(idle));
+    check("a paused account is never drawn", !drawn.includes(pausedU));
+    check("an account that switched background learning off is never drawn", !drawn.includes(optedOut));
+    check("an account with nothing unread is not drawn", !drawn.includes(distilled));
+    const busy = await extraUser("dream-active");
+    await prisma.conversation.create({ data: { userId: busy, title: "now", lastMessageAt: new Date() } });
+    check("an account mid-session is skipped", (await dreamForAccount(busy)).skipped === "active");
+    check("an idle account is visited", (await dreamForAccount(idle)).skipped === null);
+
+    // ------------------------------------------------------------------
+    console.log("\n10. Code is shown how the user works — nothing about who they are");
+    // ------------------------------------------------------------------
+    const cu = await extraUser("code");
+    await rawFact(cu, "The user uses pnpm and Vitest.", { category: "workflows" });
+    await rawFact(cu, "The user lives in Lisbon.", { category: "identity" });
+    await rawFact(cu, "The user prefers dark mode because of migraines.");
+    const coding = await getCodingMemory(cu, "add a pnpm test script");
+    check("coding facts reach Code", coding.includes("The user uses pnpm and Vitest."));
+    check("identity never reaches Code", !coding.some((f) => f.includes("Lisbon")));
+    check("a sensitive preference never reaches Code", !coding.some((f) => /migraine/i.test(f)));
+    const cuPaused = await extraUser("code-paused", { memoryEnabled: false });
+    await rawFact(cuPaused, "The user uses pnpm.", { category: "workflows" });
+    check("a paused account gives Code nothing", (await getCodingMemory(cuPaused, "pnpm")).length === 0);
+
+    // ------------------------------------------------------------------
+    console.log("\n11. Imports are the user's choice; AUTO sensitive facts wait for consent");
+    // ------------------------------------------------------------------
+    const iu = await extraUser("import");
+    const imported = await saveCandidates(iu, ["The user speaks Portuguese.", "The user has ADHD."], "import", {
+      source: "MANUAL",
+    });
+    check("a MANUAL import stores what was ticked, sensitive included", imported.created === 2);
+    check(
+      "imported rows say where they came from",
+      (await prisma.memoryEntry.findMany({ where: { userId: iu } })).every((r) => r.sourceRef === "import")
+    );
+    const refused = await saveCandidates(iu, ["The user was diagnosed with diabetes."], "chat-a", { source: "AUTO" });
+    check("an AUTO sensitive fact is refused, naming its topic", refused.sensitiveSkipped === 1 && refused.sensitiveTopics[0] === "health");
+    await prisma.settings.update({ where: { userId: iu }, data: { memorySensitiveTopics: ["health"] } });
+    const admitted = await saveCandidates(iu, ["The user was diagnosed with diabetes."], "chat-b", { source: "AUTO" });
+    check("…and admitted once the topic is opted in", admitted.created === 1);
   } finally {
     await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
-    console.log("\nCleaned up throwaway user.");
+    for (const id of extraUsers) await prisma.user.delete({ where: { id } }).catch(() => {});
+    console.log("\nCleaned up throwaway users.");
   }
 
   if (failures.length) {
