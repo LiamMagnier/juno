@@ -1,6 +1,18 @@
 import Foundation
 import JunoCodeCore
 
+public enum CodeSettingsStoreError: Error, Equatable, LocalizedError {
+    /// The file exists and could not be read, so an edit would replace it.
+    case unreadable(file: String, reason: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .unreadable(file, reason):
+            "\(file) could not be read, so it was left as it is. Fix it in an editor first. (\(reason))"
+        }
+    }
+}
+
 /// Reads and writes the three Juno Code settings files.
 ///
 /// Stateless on purpose: every read goes to disk. The files are small, a
@@ -173,18 +185,111 @@ public struct CodeSettingsStore: Sendable {
     /// written: the change is theirs. One that was awaiting approval stays
     /// that way, so an edit made through Juno can never approve what someone
     /// else put in the file first.
+    ///
+    /// **Nothing else in the file is lost.** A file that exists but cannot be
+    /// read is refused rather than replaced: `load` answers an empty document
+    /// for it, and writing that back turned a hand-edited file with one typo,
+    /// a comment or a number where a string belongs into a file holding only
+    /// the one change, silently. A readable file is edited as JSON, touching
+    /// only the keys the change altered, so keys this version does not know
+    /// (`$schema`, a newer version's settings), rules it cannot parse, and the
+    /// reader's own spelling of the rules it kept all survive.
     public func update(
         _ scope: Scope,
         projectRoot: URL?,
         _ change: (inout CodeSettingsFile) -> Void
     ) throws {
+        guard let url = url(for: scope, projectRoot: projectRoot) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
         let wasApproved = isApproved(scope, projectRoot: projectRoot)
-        var file = load(scope, projectRoot: projectRoot)
-        change(&file)
-        try save(file, to: scope, projectRoot: projectRoot)
+        var raw: [String: JSONValue] = [:]
+        var before = CodeSettingsFile()
+        if let data = try? Data(contentsOf: url) {
+            do {
+                before = try JSONDecoder().decode(CodeSettingsFile.self, from: data)
+                raw = try JSONDecoder().decode(JSONValue.self, from: data).objectValue ?? [:]
+            } catch {
+                throw CodeSettingsStoreError.unreadable(file: url.lastPathComponent, reason: error.localizedDescription)
+            }
+        }
+        var after = before
+        change(&after)
+        guard after != before else { return }
+
+        let merged = try Self.merging(after, over: before, into: raw)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(JSONValue.object(merged)).write(to: url, options: .atomic)
+        if scope == .local, let projectRoot {
+            ensureLocalFileIsIgnored(projectRoot: projectRoot)
+        }
         if wasApproved, scope != .user, let projectRoot {
             try approve(scope, projectRoot: projectRoot)
         }
+    }
+
+    /// `raw` with every key that differs between `before` and `after` set to
+    /// its new value, and every other key left exactly as it was.
+    static func merging(
+        _ after: CodeSettingsFile,
+        over before: CodeSettingsFile,
+        into raw: [String: JSONValue]
+    ) throws -> [String: JSONValue] {
+        let old = try objectJSON(before)
+        let new = try objectJSON(after)
+        var result = raw
+        for key in Set(old.keys).union(new.keys) where old[key] != new[key] {
+            switch key {
+            case "permissions", "sandbox", "agent", "git":
+                guard let section = new[key]?.objectValue else {
+                    result[key] = nil
+                    continue
+                }
+                var merged = raw[key]?.objectValue ?? [:]
+                let oldSection = old[key]?.objectValue ?? [:]
+                for field in Set(oldSection.keys).union(section.keys) where oldSection[field] != section[field] {
+                    if key == "permissions", ["allow", "ask", "deny"].contains(field) {
+                        merged[field] = mergingRules(section[field], into: merged[field])
+                    } else {
+                        merged[field] = section[field]
+                    }
+                }
+                result[key] = .object(merged)
+            default:
+                result[key] = new[key]
+            }
+        }
+        return result
+    }
+
+    /// The new rule list, keeping the reader's own spelling of every rule that
+    /// stays and every entry this version could not parse.
+    private static func mergingRules(_ new: JSONValue?, into raw: JSONValue?) -> JSONValue? {
+        let wanted = (new?.arrayValue ?? []).compactMap { $0.stringValue.flatMap(PermissionRule.init(parsing:)) }
+        var result: [JSONValue] = []
+        var kept = Set<PermissionRule>()
+        for entry in raw?.arrayValue ?? [] {
+            guard let text = entry.stringValue, let rule = PermissionRule(parsing: text) else {
+                result.append(entry)
+                continue
+            }
+            if wanted.contains(rule), kept.insert(rule).inserted {
+                result.append(entry)
+            }
+        }
+        for rule in wanted where kept.insert(rule).inserted {
+            result.append(.string(rule.description))
+        }
+        return result.isEmpty ? nil : .array(result)
+    }
+
+    private static func objectJSON(_ file: CodeSettingsFile) throws -> [String: JSONValue] {
+        try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(file)).objectValue ?? [:]
     }
 
     /// Adds one allow rule — what "Always allow" on an approval writes.

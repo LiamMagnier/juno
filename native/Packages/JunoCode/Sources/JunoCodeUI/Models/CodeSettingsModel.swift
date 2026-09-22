@@ -129,18 +129,30 @@ public final class CodeSettingsModel {
         scope == .user || projectRoot != nil
     }
 
+    /// Whether the window may write to a scope's file: it needs a project,
+    /// and a file that exists but cannot be read is left for the reader to
+    /// fix, because writing the window's empty copy of it would replace it.
+    public func canEdit(_ scope: CodeSettingsScope) -> Bool {
+        isAvailable(scope) && store.loadError(scope.storeScope, projectRoot: projectRoot) == nil
+    }
+
     public func update(_ scope: CodeSettingsScope, _ change: (inout CodeSettingsFile) -> Void) {
         guard isAvailable(scope) else { return }
+        var failure: String?
         do {
             try store.update(scope.storeScope, projectRoot: projectRoot, change)
         } catch {
-            problems.append("Could not save \(scope.detail): \(error.localizedDescription)")
+            failure = "Could not save \(scope.detail): \(error.localizedDescription)"
         }
+        // Reloaded first: reloading rebuilds `problems`, which used to wipe the
+        // failure a moment after it was reported.
         reload()
+        if let failure { problems.append(failure) }
     }
 
     public func savePersonalInstructions(_ text: String) {
         let url = store.userInstructionsURL()
+        var failure: String?
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -148,9 +160,10 @@ public final class CodeSettingsModel {
             )
             try text.write(to: url, atomically: true, encoding: .utf8)
         } catch {
-            problems.append("Could not save JUNO.md: \(error.localizedDescription)")
+            failure = "Could not save JUNO.md: \(error.localizedDescription)"
         }
         reload()
+        if let failure { problems.append(failure) }
     }
 
     // MARK: - Permission rules
