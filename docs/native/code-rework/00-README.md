@@ -117,19 +117,34 @@ Explore destinations (now Settings pages, or Chat's). About 15,800 lines out,
   window. Icons are blank in those renders because the icon catalog ships
   with the app, not the test bundle.
 
-## 4. Still open
+## 4. What was open, and where it landed
 
-- **Checkpoint rewind** of code *and* conversation to a turn (Claude Code's
-  Esc Esc). Per-file restore exists; turn snapshots do not.
-- **A model-written compaction summary.** The structural one is sound but
-  loses nuance on very long runs.
-- **Backend**: the agent proxy never records Code spend, and aborts after
-  240s regardless of activity (`src/app/api/agent/[...path]/route.ts`).
-- **Remote relay**: the Mac receives commands but never uploads its events,
-  so a phone watching a Mac session sees an empty transcript.
-- **Hooks** receive no JSON on stdin and cover four events; Claude-format
-  hooks that read tool input will not work.
-- **Session store scaling**: every session's events are decoded at launch.
-- **Screen-control permission UI**: the old inspector's Computer Use pane
-  (TCC status, screenshot preview) was removed with the inspector; starting
-  and stopping screen control lives in the toolbar menu and the stop banner.
+Each item was built on its own branch from the rebuild, reviewed, and merged
+onto the review fixes in `rework/integration`; each merge commit names its
+conflicts and how both sides were kept.
+
+- **Checkpoint rewind** (`rework/checkpoints`): every prompt and applied
+  steer opens a turn; the agent's file tools snapshot what they change;
+  Rewind on a message, esc esc or `/rewind` restores code, conversation or
+  both. A rewound transcript opens with a restart numbered past every
+  sequence the session used, so the store's summaries, the CLI and the
+  relay's cursors all carry on across it.
+- **A model-written compaction summary** (`rework/compaction`), with the
+  structural notes as its fallback, `/compact [what to keep]` and a divider
+  that opens onto the summary. Whichever writer runs, the reader's newest
+  folded message is quoted whole after the summary.
+- **Backend** (`rework/proxy`): the agent proxy bills every call from the
+  provider's own usage and has header, idle and ceiling deadlines instead of
+  a 240s total.
+- **Remote relay** (`rework/relay`): the Mac uploads its shared sessions'
+  lists and transcripts, claimed commands are leased, and a phone's commands
+  arrive as sent, held to the reader's remote ceiling.
+- **Hooks** (`rework/hooks`): Claude Code's events and JSON on stdin, trust
+  per repository hook, and Stop reaching a prompt's hooks.
+- **Session store scaling** (`rework/store`): launch reads session records
+  only; each transcript keeps a summary beside it.
+- **Screen-control permission UI** (`rework/screen`): the grants in Settings,
+  what the agent last saw in the banner, and screen input allowed without
+  asking only from the reader's own settings file.
+- **The release feed** (`rework/feed`) is served from the now-private
+  repository through signed asset URLs.
