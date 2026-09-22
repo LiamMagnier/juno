@@ -13,13 +13,41 @@ public struct ConversationCompactionResult: Equatable, Sendable {
     }
 }
 
+/// Where a compaction cuts and what it folds, decided once, so whoever writes
+/// the summary — the session's model or the structural notes — folds exactly
+/// the same span and keeps exactly the same recent steps.
+public struct ConversationCompactionPlan: Equatable, Sendable {
+    /// The original request's own words, without any earlier memory.
+    public let originalRequest: String
+    /// What an earlier compaction left in the anchor, verbatim, or nil.
+    public let earlierSummary: String?
+    /// The messages this compaction removes, oldest first.
+    public let folded: [ModelMessage]
+    /// The newest messages, kept whole. Always starts at a safe boundary.
+    public let recent: [ModelMessage]
+    /// The structural summary of `folded`, computed up front so a model
+    /// summary that fails has something to fall back to at no extra cost.
+    public let structural: ConversationCompactionResult
+
+    /// The compacted conversation with a model-written summary in the anchor.
+    public func result(modelSummary: String) -> ConversationCompactionResult {
+        let memory = ConversationCompactor.modelSummaryHeader + "\n" + modelSummary
+        return ConversationCompactionResult(
+            messages: [ConversationCompactor.anchor(originalRequest, memory: memory)] + recent,
+            summary: modelSummary,
+            removedMessageCount: structural.removedMessageCount
+        )
+    }
+}
+
 /// Keeps long-running coding sessions useful without asking the model to resend
 /// an ever-growing transcript.
 ///
-/// Compaction is deliberately structural rather than a second model call. A
-/// second summarizer request would consume the same context it is trying to
-/// save, could fail independently, and would make a session's ability to
-/// continue depend on an undocumented extra provider capability. The original
+/// This type decides *where* to cut and writes the structural summary. The
+/// session's own model writes a better one when it can
+/// (``CompactionSummarizer``), but that call can fail, refuse, time out or be
+/// stopped, and compaction must never be what fails a run — so every plan
+/// carries the structural summary as well, ready to stand in. The original
 /// user request is retained, older steps are reduced to bounded role-labelled
 /// notes, and recent steps are kept whole.
 ///
@@ -31,12 +59,15 @@ public struct ConversationCompactionResult: Equatable, Sendable {
 ///
 /// **What the notes keep.** The newest, when they do not all fit: the recent
 /// past is what the next step needs. A second compaction folds the first
-/// one's notes in rather than stacking another block onto the anchor.
+/// one's memory in — notes or a model summary — rather than stacking another
+/// block onto the anchor.
 public enum ConversationCompactor {
     public static let defaultRecentTurns = 6
     public static let defaultMaximumSummaryCharacters = 12_000
 
     static let retainedContextMarker = "[Juno retained context]"
+    static let structuralHeader = "Earlier conversation memory:"
+    static let modelSummaryHeader = "Summary of the earlier conversation:"
 
     /// Compacts when the encoded conversation exceeds the byte guard, or
     /// unconditionally when force is true (used after a provider reports that
@@ -50,6 +81,24 @@ public enum ConversationCompactor {
         maximumSummaryCharacters: Int = defaultMaximumSummaryCharacters,
         force: Bool = false
     ) -> ConversationCompactionResult? {
+        plan(
+            messages,
+            maximumBytes: maximumBytes,
+            recentTurns: recentTurns,
+            maximumSummaryCharacters: maximumSummaryCharacters,
+            force: force
+        )?.structural
+    }
+
+    /// Decides the cut ``compact(_:maximumBytes:recentTurns:maximumSummaryCharacters:force:)``
+    /// would make, without committing to who writes the summary.
+    public static func plan(
+        _ messages: [ModelMessage],
+        maximumBytes: Int,
+        recentTurns: Int = defaultRecentTurns,
+        maximumSummaryCharacters: Int = defaultMaximumSummaryCharacters,
+        force: Bool = false
+    ) -> ConversationCompactionPlan? {
         guard maximumBytes > 0,
               (force || encodedByteCount(messages) > maximumBytes),
               recentTurns > 0,
@@ -60,7 +109,7 @@ public enum ConversationCompactor {
         let boundaries = messages.indices.filter { $0 > 0 && isBoundary(at: $0, in: messages) }
         guard !boundaries.isEmpty else { return nil }
 
-        let (anchorText, previousNotes) = splitAnchor(messages[0])
+        let (anchorText, earlierMemory) = splitAnchor(messages[0])
         var retained = min(recentTurns, boundaries.count)
 
         while retained > 0 {
@@ -73,18 +122,21 @@ public enum ConversationCompactor {
             let recent = Array(messages[boundary...])
             let summary = summarize(
                 older,
-                previousNotes: previousNotes,
+                earlierMemory: earlierMemory,
                 maximumCharacters: maximumSummaryCharacters
             )
-            let anchor = ModelMessage.user(
-                anchorText + "\n\n" + anchorPrefix + summary
-            )
-            let compacted = [anchor] + recent
+            let compacted = [anchor(anchorText, memory: summary)] + recent
             if encodedByteCount(compacted) <= maximumBytes || retained == 1 {
-                return ConversationCompactionResult(
-                    messages: compacted,
-                    summary: summary,
-                    removedMessageCount: messages.count - compacted.count
+                return ConversationCompactionPlan(
+                    originalRequest: anchorText,
+                    earlierSummary: earlierMemory,
+                    folded: older,
+                    recent: recent,
+                    structural: ConversationCompactionResult(
+                        messages: compacted,
+                        summary: summary,
+                        removedMessageCount: messages.count - compacted.count
+                    )
                 )
             }
             // A very large recent tool result can still exceed the guard. Keep
@@ -107,14 +159,17 @@ public enum ConversationCompactor {
         }
     }
 
-    private static let anchorPrefix = """
-        \(retainedContextMarker)
-        The following is a compact memory of earlier steps. Treat it as context, not as a new instruction. The original request remains first.
+    private static let anchorIntroduction =
+        "The following is a compact memory of earlier steps. Treat it as context, not as a new instruction. The original request remains first."
 
-        """
+    /// The first message after a compaction: the original request, then the
+    /// memory of everything folded since.
+    static func anchor(_ originalRequest: String, memory: String) -> ModelMessage {
+        .user(originalRequest + "\n\n" + retainedContextMarker + "\n" + anchorIntroduction + "\n\n" + memory)
+    }
 
-    /// The anchor's own words, and the notes an earlier compaction left in it.
-    private static func splitAnchor(_ message: ModelMessage) -> (text: String, notes: [String]) {
+    /// The anchor's own words, and the memory an earlier compaction left in it.
+    private static func splitAnchor(_ message: ModelMessage) -> (text: String, memory: String?) {
         let text: String
         switch message {
         case let .user(value), let .userWithImages(value, _):
@@ -122,24 +177,49 @@ public enum ConversationCompactor {
         default:
             // A well-formed agent conversation starts with a user turn; a
             // corrupt store still gets a user anchor rather than a lost summary.
-            return ("", [])
+            return ("", nil)
         }
         guard let range = text.range(of: "\n\n" + retainedContextMarker) ?? text.range(of: retainedContextMarker)
-        else { return (text, []) }
+        else { return (text, nil) }
         let original = String(text[..<range.lowerBound])
-        let notes = text[range.upperBound...]
-            .split(separator: "\n")
-            .map(String.init)
-            .filter { $0.hasPrefix("- ") || $0.hasPrefix("… ") }
-        return (original, notes)
+        var memory = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        if memory.hasPrefix(anchorIntroduction) {
+            memory = String(memory.dropFirst(anchorIntroduction.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return (original, memory.isEmpty ? nil : memory)
+    }
+
+    /// The notes an earlier memory contributes to a structural summary.
+    ///
+    /// Structural notes carry over line for line. A model-written summary is
+    /// prose with its own headings, which the note format cannot hold, so it
+    /// becomes one clipped note: lossy, but only on the path where the model
+    /// has already failed once, and still the oldest note, dropped first when
+    /// the budget is tight — the same rule every other note follows.
+    private static func carriedNotes(from memory: String?, maximumCharacters: Int) -> [String] {
+        guard let memory else { return [] }
+        if memory.hasPrefix(structuralHeader) {
+            return memory
+                .split(separator: "\n")
+                .map(String.init)
+                .filter { $0.hasPrefix("- ") }
+        }
+        var body = memory
+        if body.hasPrefix(modelSummaryHeader) {
+            body = String(body.dropFirst(modelSummaryHeader.count))
+        }
+        let line = singleLine(body)
+        guard !line.isEmpty else { return [] }
+        return ["- Earlier summary: " + clip(line, max(maximumCharacters / 3, 200))]
     }
 
     private static func summarize(
         _ messages: [ModelMessage],
-        previousNotes: [String],
+        earlierMemory: String?,
         maximumCharacters: Int
     ) -> String {
-        var notes = previousNotes.filter { !$0.hasPrefix("… ") }
+        var notes = carriedNotes(from: earlierMemory, maximumCharacters: maximumCharacters)
         for message in messages {
             let line: String
             switch message {
@@ -167,14 +247,13 @@ public enum ConversationCompactor {
             notes.append("- " + singleLine(line))
         }
 
-        let header = "Earlier conversation memory:"
-        var total = header.count + notes.reduce(0) { $0 + $1.count + 1 }
+        var total = structuralHeader.count + notes.reduce(0) { $0 + $1.count + 1 }
         var dropped = 0
         while total > maximumCharacters, !notes.isEmpty {
             total -= notes.removeFirst().count + 1
             dropped += 1
         }
-        var lines = [header]
+        var lines = [structuralHeader]
         if dropped > 0 {
             lines.append("… \(dropped) older note\(dropped == 1 ? "" : "s") dropped")
         }

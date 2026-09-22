@@ -1029,6 +1029,9 @@ final class AgentOrchestratorTests: XCTestCase {
             configuration: AgentOrchestrator.Configuration(
                 contextWindowTokens: 100,
                 maximumConversationBytes: 16_384,
+                // The structural path on its own; ModelCompactionTests covers
+                // the model-written summary and its fallbacks.
+                compactionSummary: nil,
                 systemPrompt: "sys"
             ),
             modelID: "test-model",
