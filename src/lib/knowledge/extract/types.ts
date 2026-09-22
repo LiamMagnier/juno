@@ -112,7 +112,49 @@ export const EXTRACT_LIMITS = {
 
 /** Collapse the whitespace OOXML and PDF layout leave behind, without trimming meaning. */
 export function normalizeBlockText(text: string): string {
-  return text.replace(/[\t\f\v ]+/g, " ").replace(/ {2,}/g, " ").replace(/\s+$/gm, "").trim();
+  return stripUnstorableCharacters(text)
+    .replace(/[\t\f\v\u00a0]+/g, " ")
+    .replace(/ {2,}/g, " ")
+    .replace(/\s+$/gm, "")
+    .trim();
+}
+
+/**
+ * Characters Postgres will not store, removed before anything tries.
+ *
+ * THE CRASH THIS FIXES, VERBATIM FROM PRODUCTION:
+ *
+ *   invalid byte sequence for encoding "UTF8": 0x00
+ *   at prisma.knowledgeBlock.createMany()
+ *
+ * A Postgres `text` column cannot hold a NUL byte — not escaped, not encoded,
+ * at all — and a document extractor is exactly where NUL comes from. A PDF
+ * with a broken font map yields glyph ids rather than characters; an RTF
+ * `\'00` escape is a literal NUL; a mislabelled binary decoded as UTF-8 is
+ * full of them. Any one of those killed the whole `createMany`, so a single
+ * bad byte anywhere in a 200-page report meant NOT ONE block of it was
+ * stored, and the document came back as if nothing had been read.
+ *
+ * Stripped here, in the one funnel every extractor already passes through, so
+ * no extractor has to remember — the same reason the size ceilings live in
+ * `BlockCollector` rather than in nine separate modules.
+ *
+ * The lone surrogates matter for the same reason and are easy to miss: they
+ * are legal in a JavaScript string and illegal in UTF-8, so a text run cut
+ * between the halves of an emoji is rejected by the driver with a different
+ * message and the same outcome.
+ */
+export function stripUnstorableCharacters(text: string): string {
+  return (
+    text
+      // NUL and the C0 controls that are not whitespace. \t \n \r are kept:
+      // they are layout, and the normaliser above decides their fate.
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+      // Unpaired surrogates — legal in JS, not encodable as UTF-8.
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+      .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+  );
 }
 
 /**

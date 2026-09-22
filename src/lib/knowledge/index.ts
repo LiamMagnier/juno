@@ -171,76 +171,94 @@ async function persistExtractedText(input: {
     maxChars: ATTACHMENT_TEXT_STORE_MAX,
   });
   if (!assembled?.text) return;
+  // Blocks are sanitised on the way in, but this string is assembled from them
+  // and written to a second `text` column; the belt costs one call.
+  const { stripUnstorableCharacters } = await import("@/lib/knowledge/extract/types");
+  const storable = stripUnstorableCharacters(assembled.text);
+  if (!storable) return;
 
   await prisma.attachment.updateMany({
     where: { id: input.attachmentId, userId: input.userId },
-    data: { extractedText: assembled.text },
+    data: { extractedText: storable },
   });
   // The version row is the one a restore reads back, so it has to carry the
   // same text or restoring a file would quietly un-read it.
   await prisma.attachmentVersion
     .updateMany({
       where: { attachmentId: input.attachmentId, version: attachment.version },
-      data: { extractedText: assembled.text },
+      data: { extractedText: storable },
     })
     .catch(() => undefined);
 }
 
-/** How many files one turn will backfill before it gets on with the answer. */
-const BACKFILL_PER_TURN = 8;
+/** How many files one turn will read before it gets on with the answer. */
+const READ_PER_TURN = 8;
 
 /**
- * Fill in the extracted text of documents indexed BEFORE this existed.
+ * Read the attached files this turn actually needs, now that the turn exists.
  *
- * Without this the change would only ever reach files uploaded after it
- * shipped. Ingest runs once per set of bytes and is not going to run again —
- * a library full of PDFs indexed last month would keep arriving at the model
- * as a filename, and the only fix a user could find would be to delete each
- * file and upload it a second time.
+ * THIS IS WHERE READING MOVED TO. Nothing is extracted when a file is
+ * uploaded any more (`scheduleIngest` refuses a chat attachment outright), so
+ * the first turn that carries a document is the first time anything opens it.
+ * That ordering is the whole point: by the time this runs there is a question,
+ * a model, and a reason — none of which existed at upload, when the old
+ * pipeline was busy deciding the file was unreadable.
  *
- * So the first turn that carries such a file pays for it, once: the text is
- * assembled from blocks that already exist, written back to the row, and
- * patched into the in-memory attachments so THIS turn already has it rather
- * than the next one. Every later turn reads the column.
+ * It runs the same `extractDocument` ladder against the stored bytes and
+ * caches the result on the row, so a conversation pays for it once rather
+ * than on every turn.
  *
- * Bounded per turn and never fatal. This runs on the critical path of a
- * generation, and a slow or unreachable index must cost the answer nothing
- * more than the reading it could not supply.
+ * SKIPPED ENTIRELY WHEN THE MODEL GETS THE FILE ITSELF. Claude, Gemini and the
+ * Responses API receive the raw PDF and rasterise every page internally, which
+ * is strictly better than any text this could hand them — so extracting for
+ * them would be work done twice, and the worse copy would be the one in the
+ * prompt.
+ *
+ * Bounded and never fatal. This sits on the critical path of a generation, and
+ * a slow extractor must cost the answer nothing more than the reading it could
+ * not supply — the model still has `read_document` and `inspect_image`.
  */
-export async function backfillAttachmentText(
-  userId: string,
-  attachments: { id: string; kind: string; parserState: string; extractedText: string | null }[],
+export async function ensureAttachmentText(
+  attachments: {
+    id: string;
+    kind: string;
+    fileName: string;
+    mimeType: string;
+    storageKey: string;
+    size: number;
+    extractedText: string | null;
+  }[],
+  options: { skip?: (attachment: { mimeType: string; fileName: string }) => boolean } = {},
 ): Promise<void> {
   const pending = attachments
     .filter(
       (attachment) =>
         attachment.kind === "FILE" &&
         !attachment.extractedText &&
-        (attachment.parserState === "ready" || attachment.parserState === "degraded"),
+        !options.skip?.(attachment),
     )
-    .slice(0, BACKFILL_PER_TURN);
+    .slice(0, READ_PER_TURN);
   if (pending.length === 0) return;
 
-  const { documentForAttachment, readDocumentText } = await import("@/lib/knowledge/documents");
+  const [{ readAttachmentOnDemand }, { stripUnstorableCharacters }] = await Promise.all([
+    import("@/lib/knowledge/read-on-demand"),
+    import("@/lib/knowledge/extract/types"),
+  ]);
+
   await Promise.all(
     pending.map(async (attachment) => {
       try {
-        const document = await documentForAttachment(userId, attachment.id);
-        if (!document) return;
-        const assembled = await readDocumentText(userId, document.documentId, {
-          maxChars: ATTACHMENT_TEXT_STORE_MAX,
-        });
-        if (!assembled?.text) return;
-        // The row this turn is about to send, updated in place — the write
-        // below is for the turns after it.
-        attachment.extractedText = assembled.text;
-        await persistExtractedText({
-          userId,
-          attachmentId: attachment.id,
-          documentId: document.documentId,
-        });
+        const read = await readAttachmentOnDemand(attachment, { maxChars: ATTACHMENT_TEXT_STORE_MAX });
+        const text = read?.text ? stripUnstorableCharacters(read.text) : "";
+        if (!text) return;
+        // The row this turn is about to send, updated in place; the write below
+        // is so the next turn does not pay for the same read.
+        attachment.extractedText = text;
+        await prisma.attachment
+          .updateMany({ where: { id: attachment.id }, data: { extractedText: text } })
+          .catch(() => undefined);
       } catch (error) {
-        console.error("[knowledge] could not backfill attachment text", {
+        console.error("[knowledge] could not read an attachment for this turn", {
           attachmentId: attachment.id,
           message: error instanceof Error ? error.message : String(error),
         });
@@ -249,20 +267,29 @@ export async function backfillAttachmentText(
   );
 }
 
-/**
- * The upload routes' entry point: index this file, after the response.
- *
- * Both `/api/upload` and `/api/v1/attachments` call exactly this, for the same
- * reason they share `planAttachmentUpload` — two copies of "how does an upload
- * get indexed" means only one of them gets fixed. Scheduling lives here rather
- * than in the routes so neither of them can accidentally `await` it and make a
- * user watch a 200-page PDF parse before their file appears.
- *
- * `after()` and not a floating promise: a floating promise in a serverless
- * handler is killed the moment the response is flushed, which would leave the
- * document in `extracting` with nothing left running to move it on.
- */
 export function scheduleIngest(input: IngestInput): void {
+  /*
+   * A CHAT ATTACHMENT IS NOT INDEXED. THIS IS THE GATE.
+   *
+   * Eager extraction at upload was the root of a whole class of failure: a
+   * parser ran before anyone had asked anything, decided what the file
+   * contained, and its verdict stuck — a misjudged PDF was "couldn't read this
+   * file" permanently, and one NUL byte failed the insert for a 200-page
+   * report. Reading a chat attachment now happens when a question needs it
+   * (`ensureAttachmentText`), against the bytes, with the extractors called on
+   * demand. Nothing about a file is decided before it is asked about.
+   *
+   * A PROJECT file is genuinely different and keeps its index: a knowledge
+   * base exists to be searched across many documents at once, which is the one
+   * thing an index does better than reading, and filing a document there is an
+   * explicit request for exactly that.
+   *
+   * The rule lives here rather than at the five call sites because a caller
+   * that forgets it does not fail loudly — it silently re-creates the eager
+   * behaviour this was removed to stop.
+   */
+  if (!input.projectId) return;
+
   after(async () => {
     try {
       if (input.attachmentId) {

@@ -37,7 +37,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
 import { cn, formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -59,8 +58,6 @@ interface LibItem {
   parserState: string;
   parserVersion: string | null;
   deletedAt: string | null;
-  /** Structured-extraction state, or null when no extractor claims the format. */
-  knowledge?: (KnowledgeIndexState & { documentId?: string }) | null;
 }
 
 interface LibVersion {
@@ -518,13 +515,6 @@ function LibraryGridItem({
           <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground">
             {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
-          {item.knowledge?.documentId ? (
-            <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
-              <IndexStatus status={item.knowledge} className="mt-1 max-w-full hover:underline" />
-            </Link>
-          ) : (
-            <IndexStatus status={item.knowledge ?? null} className="mt-1 max-w-full" />
-          )}
         </div>
         {item.conversationId && (
           <Button
@@ -1073,13 +1063,6 @@ export default function LibraryPage() {
                           <span className="truncate">{item.mimeType}</span>
                         )}
                       </div>
-                      {item.knowledge?.documentId ? (
-                        <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
-                          <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
-                        </Link>
-                      ) : (
-                        <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
-                      )}
                     </div>
                   </div>
 

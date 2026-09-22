@@ -30,6 +30,9 @@ export const READ_DOCUMENT_TOOL_ID = "read_document";
 /** Registry id of the crop-and-magnify tool (`src/lib/agent/image.ts`). */
 export const INSPECT_IMAGE_TOOL_ID = "inspect_image";
 
+/** Registry id of the sandboxed Python tool (`src/lib/agent/code.ts`). */
+export const CODE_INTERPRETER_TOOL_ID = "code_interpreter";
+
 /** An explicit empty allowlist: no runtime tool at all. */
 export const NO_RUNTIME_TOOLS: readonly string[] = Object.freeze([]);
 
@@ -51,6 +54,15 @@ export interface RuntimeToolToggles {
    * ignore — which is a worse outcome than never offering it.
    */
   images?: boolean;
+  /**
+   * A file is attached AND a remote sandbox exists to run code against it.
+   *
+   * Both halves, and the second is a safety condition rather than a
+   * convenience: with no sandbox configured the only backend available is a
+   * child process on this host, which must never run model-written code. The
+   * tool is simply not offered instead.
+   */
+  code?: boolean;
 }
 
 /**
@@ -63,5 +75,6 @@ export function chatRuntimeToolAllowlist(toggles: RuntimeToolToggles): string[] 
   if (toggles.webSearch) allowed.push(BROWSER_TOOL_ID);
   if (toggles.documents) allowed.push(READ_DOCUMENT_TOOL_ID);
   if (toggles.images) allowed.push(INSPECT_IMAGE_TOOL_ID);
+  if (toggles.code) allowed.push(CODE_INTERPRETER_TOOL_ID);
   return allowed;
 }
