@@ -439,6 +439,25 @@ private actor DesktopQueuedCodeHost {
     }
 }
 
+/// One preferences value, readable and writable from the Remote actors.
+///
+/// `UserDefaults` is documented as thread-safe but not declared `Sendable`;
+/// this is the same narrow promise `UserDefaultsAuthActiveAccountHint` makes,
+/// scoped to a single key so nothing else in the defaults is reachable through
+/// it.
+private final class DesktopDefaultsBlob: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let key: String
+
+    init(defaults: UserDefaults, key: String) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    func read() -> Data? { defaults.data(forKey: key) }
+    func write(_ data: Data) { defaults.set(data, forKey: key) }
+}
+
 private extension NativeJSONValue {
     var stringValue: String? {
         guard case .string(let value) = self else { return nil }
@@ -535,6 +554,24 @@ final class DesktopCodeHostModel {
     /// Nil until then, which is why hosting cannot start before it is set.
     var remoteExecutorProvider: (@MainActor () -> (any CodeRemoteCommandExecuting)?)?
     private var queuedExecutor: DesktopQueuedCodeExecutor?
+    /// The workbench's remote bridge: what commands run through, and the
+    /// source of what the phone is shown. Nil until a workbench connects.
+    private var remoteBridge: WorkbenchRemoteBridge?
+    /// The return path — this Mac's session list and transcripts, uploaded
+    /// while hosting is on so a phone sees what its commands did. Alive only
+    /// alongside the claim loop, and for the same reason. It owns its store
+    /// observation, so it can be ended even after the workbench has gone.
+    private var sessionUploader: WorkbenchRemoteUploader?
+    /// The last uploader's shutdown, retraction included. The next one waits
+    /// it out, so switching Remote off and on cannot land the old "take these
+    /// off the phone" after the new list.
+    private var sessionUploaderShutdown: Task<Void, Never>?
+    /// Distinguishes the current uploader's reports from a stopped one's that
+    /// arrive late.
+    private var syncGeneration = 0
+    /// Why the phone is not getting this Mac's updates, when it is not. Nil
+    /// while uploads are landing or hosting is off.
+    private(set) var remoteSyncProblem: String?
 
     /// Whether this Mac will claim and execute queued remote work.
     ///
@@ -549,7 +586,9 @@ final class DesktopCodeHostModel {
         get { defaults.bool(forKey: Self.servesQueuedTasksKey) }
         set {
             defaults.set(newValue, forKey: Self.servesQueuedTasksKey)
-            syncRemoteHost()
+            // Switching it off here is "stop sharing this Mac": its sessions
+            // come off the phone, rather than staying there frozen.
+            syncRemoteHost(retracting: !newValue)
             // Re-register immediately rather than waiting for the next
             // heartbeat: until the relay knows, the phone still shows this Mac
             // as unavailable (or, worse, as available after it was switched
@@ -616,8 +655,9 @@ final class DesktopCodeHostModel {
     /// place that decides whether this Mac is listening — rather than three
     /// that can disagree, which is how a Mac ends up still serving after the
     /// account it was serving for signed out.
-    private func syncRemoteHost() {
+    private func syncRemoteHost(retracting: Bool = false) {
         let shouldServe = servesQueuedTasks && accountID != nil && deviceID != nil
+        syncSessionUploads(shouldServe: shouldServe, retracting: retracting)
         if shouldServe, remoteHost == nil {
             guard let accountID, let deviceID, let relay,
                 let executor = remoteExecutorProvider?()
@@ -626,7 +666,8 @@ final class DesktopCodeHostModel {
                 deviceID: deviceID,
                 accountID: accountID,
                 relay: relay,
-                executor: executor
+                executor: executor,
+                ledger: Self.commandLedger(defaults: defaults)
             )
             remoteHost = host
             Task { await host.activate() }
@@ -653,6 +694,72 @@ final class DesktopCodeHostModel {
             Task { await host.deactivate() }
         }
     }
+
+    /// Starts or stops the uploader to match the switch, exactly as the claim
+    /// loop is: a Mac that takes commands from a phone and never shows it what
+    /// they did is how the phone's transcript stayed empty.
+    private func syncSessionUploads(shouldServe: Bool, retracting: Bool) {
+        if shouldServe, sessionUploader == nil {
+            guard let accountID, let deviceID, let remoteClient, let bridge = remoteBridge else {
+                return
+            }
+            syncGeneration += 1
+            let generation = syncGeneration
+            let blob = DesktopDefaultsBlob(defaults: defaults, key: Self.syncStateKey)
+            let sync = CodeRemoteSessionSync(
+                deviceID: deviceID,
+                accountID: accountID,
+                source: bridge,
+                transport: remoteClient,
+                // Cursors survive a relaunch, so a restarted Mac resumes where
+                // the relay left off instead of re-uploading every transcript.
+                stateStore: CodeRemoteSyncDataStore(
+                    read: { blob.read() },
+                    write: { blob.write($0) }
+                ),
+                isEnabled: { [weak self] in
+                    await MainActor.run { self?.servesQueuedTasks ?? false }
+                },
+                onStatus: { [weak self] status in
+                    Task { @MainActor in self?.applySyncStatus(status, generation: generation) }
+                }
+            )
+            remoteSyncProblem = nil
+            sessionUploader = WorkbenchRemoteUploader(
+                sync: sync, bridge: bridge, after: sessionUploaderShutdown
+            )
+        } else if !shouldServe || remoteBridge == nil {
+            stopSessionUploads(retracting: retracting)
+        }
+    }
+
+    private func stopSessionUploads(retracting: Bool = false) {
+        guard let uploader = sessionUploader else { return }
+        sessionUploader = nil
+        syncGeneration += 1
+        remoteSyncProblem = nil
+        sessionUploaderShutdown = uploader.end(retracting: retracting)
+    }
+
+    private func applySyncStatus(_ status: CodeRemoteSessionSync.Status, generation: Int) {
+        guard generation == syncGeneration else { return }
+        switch status {
+        case .working:
+            remoteSyncProblem = nil
+        case .failing(let message), .stopped(let message):
+            remoteSyncProblem = message
+        }
+    }
+
+    /// Persisted so a command the relay hands back after a relaunch is
+    /// answered from what already happened rather than run a second time.
+    private static func commandLedger(defaults: UserDefaults) -> CodeRemoteCommandLedger {
+        let blob = DesktopDefaultsBlob(defaults: defaults, key: commandLedgerKey)
+        return CodeRemoteCommandLedger(read: { blob.read() }, write: { blob.write($0) })
+    }
+
+    private static let syncStateKey = "juno.code.remote.sessionSync"
+    private static let commandLedgerKey = "juno.code.remote.commandLedger"
 
     /// Matches the Windows client's `DEVICE_ID_KEY` so the two hosts describe
     /// the same idea with the same name.
@@ -726,6 +833,10 @@ final class DesktopCodeHostModel {
                     ?? "anthropic:claude-sonnet-5"
             }
         )
+        // An uploader reading a previous workbench would list sessions this
+        // one does not have; it restarts against the new bridge below.
+        stopSessionUploads()
+        remoteBridge = bridge
         let targetID = ExecutionTargetID(value: "desktop-local-host")
         let target = ExecutionTarget(
             id: targetID,
@@ -760,6 +871,7 @@ final class DesktopCodeHostModel {
     func disconnectWorkbench() {
         remoteExecutorProvider = nil
         queuedExecutor = nil
+        remoteBridge = nil
         syncRemoteHost()
     }
 
@@ -821,6 +933,7 @@ final class DesktopCodeHostModel {
             queuedHost = nil
             Task { await host.deactivate() }
         }
+        stopSessionUploads()
         accountID = nil
         deviceID = nil
         workspaces = []
@@ -927,6 +1040,10 @@ final class DesktopCodeHostModel {
             queuedHost = nil
             Task { await host.deactivate() }
         }
+        // The relay dropped this device's rows with it; there is nothing left
+        // to retract, and no saved cursor that could mean anything again.
+        stopSessionUploads()
+        defaults.removeObject(forKey: Self.syncStateKey)
         deviceID = nil
         defaults.removeObject(forKey: Self.deviceIDKey)
         defaults.set(true, forKey: Self.revokedKey)

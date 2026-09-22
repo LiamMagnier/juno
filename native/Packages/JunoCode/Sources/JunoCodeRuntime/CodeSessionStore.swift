@@ -3,6 +3,10 @@ import JunoCodeCore
 
 public enum SessionStoreError: Error, Equatable, Sendable {
     case sessionNotFound(id: String)
+    /// A caller-chosen id already names a session. Refused rather than
+    /// overwritten: an id arriving from another device must never be able to
+    /// replace a transcript that is already here.
+    case sessionAlreadyExists(id: String)
     case goalAlreadyExists(sessionID: String)
     case goalNotFound(sessionID: String)
     case persistenceFailed(message: String)
@@ -107,7 +111,11 @@ public actor CodeSessionStore {
     ///     notified and still readable by id — a hidden session that could not
     ///     be opened would be a session the reader could never inspect or
     ///     delete.
+    ///   - id: the session's identity, when the caller must choose it — a
+    ///     session a phone asked for is opened under the id the phone already
+    ///     shows. Every other caller lets the store mint one.
     public func createSession(
+        id: CodeSessionID = CodeSessionID(),
         workspaceID: WorkspaceID?,
         executionRootPath: String? = nil,
         workspaceName: String?,
@@ -117,8 +125,12 @@ public actor CodeSessionStore {
         parentSessionID: CodeSessionID? = nil
     ) throws -> CodeSession {
         try loadIfNeeded()
+        guard sessions[id] == nil else {
+            throw SessionStoreError.sessionAlreadyExists(id: id.value)
+        }
         let now = Date()
         let session = CodeSession(
+            id: id,
             workspaceID: workspaceID,
             executionRootPath: executionRootPath,
             parentSessionID: parentSessionID,
@@ -458,6 +470,18 @@ public actor CodeSessionStore {
     }
 
     // MARK: - Transcript summaries
+
+    /// The sequence the session's next event will get: one past the highest
+    /// it has used. The relay numbers what it uploads from this and counts its
+    /// cursor against it, so it must not be the line count — a rewound
+    /// transcript holds fewer lines than the numbers it has handed out, and a
+    /// cursor measured against the count would stop uploading until the
+    /// transcript grew past where it was before the cut. Read from the
+    /// summary, where `events(for:)` would decode the whole file.
+    public func nextSequence(for sessionID: CodeSessionID) async -> Int {
+        await transcriptSummary(for: sessionID)?.nextSequence ?? 0
+    }
+
 
     /// What a session's transcript amounts to, without decoding it; nil for a
     /// session this store does not have.

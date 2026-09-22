@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { serializeSessionCommand } from "@/lib/code-remote-sessions";
 import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
+import { ACKNOWLEDGEABLE_COMMAND, sweepExpiredCommandClaims } from "@/lib/code-session-command-lease";
 
 export const runtime = "nodejs";
 
@@ -28,12 +29,16 @@ async function ownedDevice(deviceId: string, userId: string) {
 }
 
 /// Host long-poll/claim. updateMany is the claim CAS so two app processes can
-/// never execute the same remote command.
+/// never execute the same remote command. A claim is a lease: before looking
+/// for work the poll re-queues this device's claims that were never
+/// acknowledged (or fails them once they are out of claims), so a Mac that
+/// slept mid-command gets the command back instead of leaving it stuck.
 export async function GET(req: Request, { params }: { params: Promise<{ deviceId: string }> }) {
   const { user, error } = await requireUser();
   if (!user) return error;
   const { deviceId } = await params;
   if (!(await ownedDevice(deviceId, user.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  await sweepExpiredCommandClaims(prisma, { userId: user.id, deviceId });
   const deadline = Date.now() + 25_000;
   for (;;) {
     const candidate = await prisma.codeSessionCommand.findFirst({
@@ -43,7 +48,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ deviceId
     if (candidate) {
       const claimed = await prisma.codeSessionCommand.updateMany({
         where: { id: candidate.id, userId: user.id, deviceId, status: "pending" },
-        data: { status: "claimed", claimedAt: new Date() },
+        data: { status: "claimed", claimedAt: new Date(), attempts: { increment: 1 } },
       });
       if (claimed.count) {
         const command = await prisma.codeSessionCommand.findUniqueOrThrow({ where: { id: candidate.id, userId: user.id } });
@@ -122,7 +127,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
   const parsed = ackSchema.safeParse(rawBody);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const updated = await prisma.codeSessionCommand.updateMany({
-    where: { id: parsed.data.commandId, userId: user.id, deviceId, status: "claimed" },
+    where: { id: parsed.data.commandId, userId: user.id, deviceId, ...ACKNOWLEDGEABLE_COMMAND },
     data: {
       status: parsed.data.status,
       result: parsed.data.result as Prisma.InputJsonValue | undefined,

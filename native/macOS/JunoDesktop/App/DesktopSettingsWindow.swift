@@ -462,6 +462,27 @@ struct DesktopCodeRemoteHostTile: View {
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
 
+                    // What leaves this Mac while the switch is on, said where
+                    // the switch is — the upload is the other half of the
+                    // consent, not a detail of it.
+                    Text(
+                        "Your phone also sees this Mac's recent sessions in those workspaces: "
+                            + "titles, status and transcripts, never file contents. A session "
+                            + "running above your remote limit can be followed and stopped there, "
+                            + "and its requests declined, but not continued or allowed. Turning "
+                            + "this off takes them off your phone."
+                    )
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    if let problem = host.remoteSyncProblem {
+                        Text("Your phone is not getting updates: \(problem)")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoDanger)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("juno.desktop.settings.remote-host-sync-problem")
+                    }
+
                     Button(role: .destructive) {
                         host.stopServingRemoteWork()
                     } label: {

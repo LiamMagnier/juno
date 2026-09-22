@@ -313,6 +313,17 @@ public enum CodeSessionCommandKind: String, Codable, CaseIterable, Sendable {
     case inspectDiff = "inspect_diff"
     case inspectFiles = "inspect_files"
     case inspectSubagents = "inspect_subagents"
+    /// The review verbs of the Changes panel, by the names the relay has always
+    /// carried them under. Absent here, every one of them was refused at the
+    /// protocol edge before the host could say whether it could do it.
+    case acceptChange = "accept_change"
+    case rejectChange = "reject_change"
+    case undoChange = "undo_change"
+    case deleteChange = "delete_change"
+    /// Changing a session's model, reasoning effort, mode or title — what the
+    /// phone's session menu sends. The host decides which of those it will
+    /// take from another device.
+    case updateSession = "update_session"
 }
 
 /// A command envelope may be delivered more than once. `idempotencyKey` is

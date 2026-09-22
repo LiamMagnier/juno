@@ -207,6 +207,10 @@ public struct UpdateGoalTool: CodeTool {
                 )
             case let .sessionNotFound(id):
                 throw ToolError.executionFailed(message: "Session '\(id)' was not found.")
+            case let .sessionAlreadyExists(id):
+                // Only session creation raises this; a goal update never
+                // creates one. Named anyway, so the switch stays exhaustive.
+                throw ToolError.executionFailed(message: "Session '\(id)' already exists.")
             case let .persistenceFailed(message):
                 throw ToolError.executionFailed(
                     message: "Could not persist the goal: \(message)"
