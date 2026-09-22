@@ -51,10 +51,12 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
    * The instruction bar is at the top of the summary card and the diff it
    * produces is in a collapsed panel below — so an instruction that worked
    * perfectly looked, from the reader's seat, like a toast and nothing else.
-   * Watching the PENDING count rather than the list length is what keeps this
-   * from firing on the ledger's first load (old applied edits are not waiting
-   * on anyone) or on an accept, which reduces the count and should leave the
-   * panel exactly as the user left it.
+   * Watching the PENDING count rather than the list length is what keeps a
+   * ledger full of old applied edits from opening the panel — they are not
+   * waiting on anyone — and what leaves the panel alone on an accept, which
+   * lowers the count. A pending edit found on load DOES open it, on purpose:
+   * a drafted change from a previous visit is still waiting for a decision,
+   * and a collapsed panel with "1 pending" in its corner is easy to miss.
    */
   const pendingCount = memory.edits.filter((edit) => edit.status === "pending").length;
   const lastPending = React.useRef(pendingCount);
