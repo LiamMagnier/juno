@@ -41,11 +41,11 @@ function walk(dir: string, out: string[] = []): string[] {
 
 test("every write of Message.activity goes through encryptJsonField", () => {
   // The chat route is the hot path (three writes: the private turn, the saved
-  // turn, and the research-partial turn); code-remote persists a Juno Code
+  // turn, and the research-partial turn); code-task-outcome persists a Juno Code
   // outcome; the import route ingests an uploaded package.
   for (const [file, expected] of [
     ["src/app/api/chat/route.ts", 3],
-    ["src/lib/code-remote.ts", 1],
+    ["src/lib/code-task-outcome.ts", 1],
     ["src/app/api/import/route.ts", 1],
   ] as const) {
     const text = source(file);
