@@ -305,14 +305,23 @@ public struct BackendCodeModelClient: AgentModelClient {
                         try await streamer.stream(bearer, for: accountID)
                     }
                     guard (200...299).contains(response.statusCode) else {
-                        let message = try await Self.errorMessage(from: response)
+                        let failure = try await Self.errorBody(from: response)
+                        let message = failure.message
                         let lowerMessage = message.lowercased()
                         if response.statusCode == 401 || response.statusCode == 403 {
                             throw AgentModelClientError.unauthorized
-                        } else if response.statusCode == 402 {
-                            // The Juno proxy's budget and usage-window wall.
+                        } else if response.statusCode == 402, failure.code == "QUOTA_EXCEEDED" {
+                            // The Juno proxy's budget and usage-window wall,
+                            // which it marks with this code. The proxy passes
+                            // a provider's own status through unchanged, so a
+                            // bare 402 is the provider's billing (DeepSeek's
+                            // "Insufficient Balance"), which another model can
+                            // still serve.
                             throw AgentModelClientError.planLimitReached(message: message)
-                        } else if lowerMessage.contains("quota") || lowerMessage.contains("exceeded your current quota") {
+                        } else if response.statusCode == 402
+                            || lowerMessage.contains("quota")
+                            || lowerMessage.contains("exceeded your current quota")
+                        {
                             throw AgentModelClientError.quotaExhausted(message: message)
                         } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
                             throw AgentModelClientError.rateLimited
@@ -437,27 +446,33 @@ public struct BackendCodeModelClient: AgentModelClient {
         }
     }
 
-    private static func errorMessage(from response: HTTPByteStreamResponse) async throws -> String {
+    /// What a failed response said, and the machine-readable `code` beside
+    /// it when there was one.
+    struct ErrorBody: Equatable {
+        let message: String
+        let code: String?
+    }
+
+    static func errorBody(from response: HTTPByteStreamResponse) async throws -> ErrorBody {
         var data = Data()
         for try await byte in response.bytes {
             guard data.count < 32 * 1_024 else { break }
             data.append(byte)
         }
         if let json = try? JSONDecoder().decode(JSONValue.self, from: data) {
-            if let obj = json.objectValue {
-                if let error = obj["error"]?["message"]?.stringValue ?? obj["error"]?.stringValue ?? obj["message"]?.stringValue {
-                    return error
-                }
-            } else if let array = json.arrayValue, let first = array.first?.objectValue {
-                if let error = first["error"]?["message"]?.stringValue ?? first["error"]?.stringValue ?? first["message"]?.stringValue {
-                    return error
-                }
+            let object = json.objectValue ?? json.arrayValue?.first?.objectValue
+            if let object,
+               let error = object["error"]?["message"]?.stringValue
+                ?? object["error"]?.stringValue
+                ?? object["message"]?.stringValue
+            {
+                return ErrorBody(message: error, code: object["code"]?.stringValue)
             }
         }
         if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            return text
+            return ErrorBody(message: text, code: nil)
         }
-        return "The model request failed (HTTP \(response.statusCode))."
+        return ErrorBody(message: "The model request failed (HTTP \(response.statusCode)).", code: nil)
     }
 }
 
