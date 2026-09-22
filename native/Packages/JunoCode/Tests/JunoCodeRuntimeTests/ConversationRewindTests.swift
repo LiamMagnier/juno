@@ -426,6 +426,80 @@ final class ConversationRewindTests: XCTestCase {
         XCTAssertEqual(toA.messages, [])
     }
 
+    /// A compaction during the last run folds earlier turns into the summary.
+    /// Rewinding to that run keeps the compacted history, cut short, so the
+    /// compaction stays in the transcript too: it is what carries the earlier
+    /// turns' recorded indexes into that history for the next rewind.
+    func testACompactionAfterTheCutStillPlacesTheTurnsItKept() async throws {
+        let original: [ModelMessage] = [
+            .user("A"), .assistant("a"),
+            .user("B"), .assistant("b"),
+            .user("C"), .assistant("c"),
+            .user("D"), .assistant("d"),
+        ]
+        // What compaction leaves: the first message as the anchor, carrying
+        // the summary of what it folded (a, B, b), then C and D whole.
+        let summary = "Earlier conversation memory: a, B, b"
+        let compacted: [ModelMessage] = [
+            .user("A\n\n\(summary)"),
+            .user("C"), .assistant("c"),
+            .user("D"), .assistant("d"),
+        ]
+        var prompts: [String: String] = [:]
+        for (text, index) in [("A", 0), ("B", 2), ("C", 4), ("D", 6)] {
+            prompts[text] = try await store.appendEvent(
+                sessionID: session.id,
+                payload: .userPrompt(UserPromptEvent(text: text, conversationIndex: index))
+            ).id
+            if text == "D" {
+                // Auto-compaction, during D's run.
+                try await store.appendEvent(
+                    sessionID: session.id,
+                    payload: .compaction(CompactionEvent(
+                        summary: summary,
+                        beforeMessageCount: original.count,
+                        afterMessageCount: compacted.count
+                    ))
+                )
+            }
+            try await store.appendEvent(
+                sessionID: session.id,
+                payload: .assistantMessage(AssistantMessageEvent(text: text.lowercased()))
+            )
+        }
+        try await store.saveConversation(sessionID: session.id, messages: compacted)
+
+        try await store.rewindConversation(sessionID: session.id, to: try XCTUnwrap(prompts["D"]))
+
+        let toD = await store.loadConversation(sessionID: session.id)
+        XCTAssertEqual(toD, Array(compacted[..<3]))
+        let kept = await store.events(for: session.id)
+        XCTAssertTrue(kept.contains {
+            if case .compaction = $0.payload { return true }
+            return false
+        }, "the compaction the kept history went through stays with it")
+
+        // C recorded index 4; the kept history has three messages. Only the
+        // compaction moves C to 1, where its message is.
+        let toC = try await store.rewindConversation(sessionID: session.id, to: try XCTUnwrap(prompts["C"]))
+        XCTAssertEqual(toC.messages, [compacted[0]])
+        let history = await store.loadConversation(sessionID: session.id)
+        XCTAssertEqual(history, [compacted[0]])
+
+        do {
+            _ = try await store.conversationRewindPlan(sessionID: session.id, to: try XCTUnwrap(prompts["B"]))
+            XCTFail("B was folded into the summary")
+        } catch {
+            XCTAssertEqual(error as? ConversationRewindError, .summarized)
+        }
+        let toA = try await store.rewindConversation(sessionID: session.id, to: try XCTUnwrap(prompts["A"]))
+        XCTAssertEqual(toA.messages, [])
+        XCTAssertFalse(toA.events.contains {
+            if case .compaction = $0.payload { return true }
+            return false
+        }, "with no history left there is no compaction to carry")
+    }
+
     func testTurnsRecordedBeforeRewindExistedAreMatchedByCount() throws {
         let conversation: [ModelMessage] = [.user("A"), .assistant("a"), .user("B"), .assistant("b")]
         let events = [

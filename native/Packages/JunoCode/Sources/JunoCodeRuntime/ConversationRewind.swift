@@ -57,7 +57,9 @@ public struct ConversationRewindPlan: Sendable {
 /// in the first message; the transcript records how many it removed, so an
 /// index recorded before a compaction is carried forward by exactly that
 /// count. A message folded into the summary has no index left to cut at, and
-/// its conversation cannot be rewound.
+/// its conversation cannot be rewound. A rewind keeps the compaction events
+/// the kept history went through, even ones recorded after the cut, so this
+/// arithmetic still holds for the next rewind.
 ///
 /// **Why the cut is always valid.** A turn's message is only ever appended
 /// once every tool call before it has its result — `ConversationIntegrity`'s
@@ -174,6 +176,23 @@ public enum ConversationRewind {
             ))
         } else {
             status = lastStatus ?? .idle
+        }
+
+        // A compaction after the cut still shapes what is kept: the messages
+        // kept are the compacted history, cut short. Every turn kept recorded
+        // its index before that compaction, and only the compaction event
+        // carries the index forward (`messageIndex`), so the events stay —
+        // after the kept turns, where they apply to all of them. Dropped with
+        // the cut turns, the next rewind to a kept turn would cut the history
+        // at an index the compaction had already moved. The quiet row they
+        // draw at the end of the thread is true: the model now reads those
+        // turns through the summary. A rewind to the very first message keeps
+        // no history, and so no compaction.
+        if index > 0 {
+            kept.append(contentsOf: events.filter { event in
+                guard event.sequence >= cut, case .compaction = event.payload else { return false }
+                return true
+            })
         }
 
         let goal = kept.lazy.reversed().compactMap { event -> SessionGoal? in
