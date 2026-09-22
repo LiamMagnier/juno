@@ -166,10 +166,10 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     public static let maxTurnsRange = 10...1_000
     public static let compactThresholdRange = 0.50...0.95
 
-    /// Applies `layers` lowest first.
+    /// Applies `layers` lowest first. The first is the reader's own file.
     public static func resolve(_ layers: [CodeSettingsFile]) -> ResolvedCodeSettings {
         var resolved = defaults
-        for layer in layers {
+        for (index, layer) in layers.enumerated() {
             if let permissions = layer.permissions {
                 resolved.rules = resolved.rules.merging(
                     PermissionRuleSet(
@@ -179,7 +179,15 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                     )
                 )
                 if let ceiling = permissions.remoteCeiling {
-                    resolved.remoteCeiling = ceiling
+                    // The remote ceiling is the one setting where the closest
+                    // file does not win. It caps what a task started from a
+                    // phone may do with nobody at this Mac, so only the
+                    // reader's own file may set it; a project's files, which
+                    // arrive with a clone or can be written by the agent, may
+                    // only lower it.
+                    resolved.remoteCeiling = index == 0
+                        ? ceiling
+                        : resolved.remoteCeiling.capped(at: ceiling)
                 }
             }
             if let env = layer.env {
