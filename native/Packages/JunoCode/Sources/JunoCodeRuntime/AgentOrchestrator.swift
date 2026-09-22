@@ -849,16 +849,20 @@ public actor AgentOrchestrator {
                         )
                     )
                 }
-                if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-                   lifecycle != .active
-                {
-                    // A model-authored pause, block, or completion is an
-                    // execution boundary, not merely metadata. Do not execute
-                    // later tool calls from the same model response or begin
-                    // another iteration after the goal has stopped.
-                    terminalGoalLifecycle = lifecycle
-                    break
-                }
+            }
+
+            // A model-authored pause, block, or completion — or the reader's —
+            // is an execution boundary, not merely metadata: no later wave ran
+            // (the scheduler's `shouldInterrupt` saw it) and no further
+            // iteration begins. It is read once every result is recorded, not
+            // between them. Everything in `executionResults` already ran, and
+            // stopping partway through recording told the model that calls
+            // which had written files or run commands were never executed, so
+            // a resumed session repeated them.
+            if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
+               lifecycle != .active
+            {
+                terminalGoalLifecycle = lifecycle
             }
 
             // Answer every call the batch did not reach before anything else

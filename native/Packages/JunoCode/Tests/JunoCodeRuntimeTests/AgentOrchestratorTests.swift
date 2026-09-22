@@ -622,6 +622,66 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertEqual(model.receivedRequests.count, 1)
     }
 
+    /// Every call in a batch that ran gets its real result, even when a later
+    /// wave paused the goal. Recording stopped at the first result read after
+    /// the pause, so calls that had written files were reported to the model as
+    /// never executed — and repeated on resume.
+    func testCallsThatRanBeforeAGoalPauseKeepTheirRealResults() async throws {
+        _ = try await store.createGoal(
+            sessionID: session.id,
+            objective: "Write then pause",
+            steps: ["Write both files"]
+        )
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [
+                    ("read", "read_file", ["path": "src/main.swift"]),
+                    ("write-a", "write_file", ["path": "src/a.swift", "content": "// a\n"]),
+                    ("write-b", "write_file", ["path": "src/b.swift", "content": "// b\n"]),
+                    ("pause", "update_goal", ["action": "set_lifecycle", "lifecycle": "paused"]),
+                    ("after-pause", "write_file", ["path": "src/c.swift", "content": "// c\n"]),
+                ],
+                text: ""
+            ),
+        ])
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(tools: registry.allTools + [UpdateGoalTool(store: store)]),
+            permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
+            store: store,
+            configuration: .init(systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+
+        try await orchestrator.submit(prompt: "Write two files, then pause")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.goal?.lifecycle, .paused)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("src/b.swift").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("src/c.swift").path))
+
+        let history = await store.loadConversation(sessionID: session.id)
+        var results: [String: String] = [:]
+        for message in history {
+            if case let .toolResult(id, content, _) = message { results[id] = content }
+        }
+        for id in ["read", "write-a", "write-b", "pause"] {
+            let content = try XCTUnwrap(results[id], "no result for \(id)")
+            XCTAssertNotEqual(content, ConversationIntegrity.notExecutedMessage, "\(id) ran but was reported as skipped")
+        }
+        XCTAssertTrue(results["read"]?.contains("let value = 1") == true)
+        XCTAssertEqual(results["after-pause"], ConversationIntegrity.notExecutedMessage)
+
+        let completed = await payloads().compactMap { payload -> RunCompletedEvent? in
+            if case let .runCompleted(event) = payload { return event }
+            return nil
+        }
+        XCTAssertEqual(completed.last?.filesChanged, 2, "both writes are counted")
+    }
+
     /// A cap below read_file's own budget cuts a read head-first and strips
     /// the fingerprint, instead of cutting the middle out under a header that
     /// still vouches for the whole file.
