@@ -10,14 +10,20 @@ import {
   createUpstreamAbort,
   isUpstreamTimeout,
   readLimitedRequestBody,
+  requestStreams,
+  upstreamTimeoutKind,
+  upstreamTimeoutsFor,
 } from "@/lib/agent-proxy";
 
-// Streaming needs the Node runtime and a generous ceiling.
+// Streaming needs the Node runtime. There is deliberately no `maxDuration`:
+// it is a Vercel-only directive that `next start` ignores (the chat route says
+// the same), and the value it used to carry — 300 — read as a limit this
+// process never had. How long an upstream call may run is decided by the three
+// deadlines in agent-proxy.ts; the only ceiling outside this process is nginx's
+// `proxy_read_timeout` (3600s between reads, deploy/nginx.conf.template).
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 const ANTHROPIC_BASE = "https://api.anthropic.com";
-const UPSTREAM_TIMEOUT_MS = 240_000;
 
 // Only the chat/messages endpoints may be proxied — never arbitrary provider paths.
 // "responses" is OpenAI-proper only: the pro/Codex Responses-only models live
@@ -157,7 +163,7 @@ export async function POST(
     headers["authorization"] = `Bearer ${key}`;
   }
 
-  const upstreamAbort = createUpstreamAbort(req.signal, UPSTREAM_TIMEOUT_MS);
+  const upstreamAbort = createUpstreamAbort(req.signal, upstreamTimeoutsFor(requestStreams(body)));
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -176,27 +182,33 @@ export async function POST(
     }
     return NextResponse.json({ error: "Upstream provider request failed." }, { status: 502 });
   }
+  upstreamAbort.headersReceived();
 
   // Stream the provider response back to the app untouched.
   const respHeaders = new Headers();
   const ct = upstream.headers.get("content-type");
   if (ct) respHeaders.set("content-type", ct);
   respHeaders.set("cache-control", "no-store");
-  // The timeout must remain armed while a streaming provider response is being
-  // consumed, but it should not leave a timer behind after a normal response.
-  // A tiny pass-through stream lets us clear it on close/error/cancel.
+  // The deadlines stay armed while a streaming provider response is being
+  // consumed — each read under the idle one, so every chunk resets it — and
+  // none is left behind after a normal response. A tiny pass-through stream
+  // lets us clear them on close/error/cancel.
   const bodyStream = upstream.body
     ? new ReadableStream<Uint8Array>({
         async start(controller) {
           const reader = upstream.body!.getReader();
           try {
             while (true) {
-              const { done, value } = await reader.read();
+              const { done, value } = await upstreamAbort.read(() => reader.read());
               if (done) break;
               if (value) controller.enqueue(value);
             }
             controller.close();
           } catch (error) {
+            const timeout = upstreamTimeoutKind(upstreamAbort.signal);
+            if (timeout) {
+              console.warn("[agent-proxy] upstream stream stopped by its deadline", { provider, timeout });
+            }
             controller.error(error);
           } finally {
             upstreamAbort.cancel();
@@ -204,13 +216,15 @@ export async function POST(
           }
         },
         async cancel(reason) {
-          upstreamAbort.cancel();
-          await upstream.body?.cancel(reason).catch(() => undefined);
+          // Abort the fetch rather than only disarming it: the reader above
+          // holds the body's lock, so `upstream.body.cancel()` rejects, and a
+          // provider nobody stopped goes on generating for nobody.
+          upstreamAbort.abort(reason ?? "client_closed");
         },
       })
     : null;
-  // A bodyless upstream response has no stream to clear the timeout from, so
-  // disarm it here — otherwise the timer and the `req.signal` listener stay
+  // A bodyless upstream response has no stream to clear the deadlines from, so
+  // disarm them here — otherwise the timers and the `req.signal` listener stay
   // alive for the full ceiling after the request has already been answered.
   if (!bodyStream) upstreamAbort.cancel();
   return new Response(bodyStream, { status: upstream.status, headers: respHeaders });
