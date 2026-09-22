@@ -16,6 +16,9 @@ public struct ComputerUseSnapshot: Sendable {
     public let accessibilityPermission: ComputerUsePermissionState
     public let displayBounds: CGRect?
     public let journal: [ComputerUseJournalEntry]
+    /// What the active session's agent last saw, or nil when nothing has been
+    /// captured since screen control started.
+    public let latestCapture: ComputerUseCapture?
 
     public init(
         isActive: Bool,
@@ -23,7 +26,8 @@ public struct ComputerUseSnapshot: Sendable {
         screenCapturePermission: ComputerUsePermissionState,
         accessibilityPermission: ComputerUsePermissionState,
         displayBounds: CGRect?,
-        journal: [ComputerUseJournalEntry]
+        journal: [ComputerUseJournalEntry],
+        latestCapture: ComputerUseCapture? = nil
     ) {
         self.isActive = isActive
         self.activeSessionID = activeSessionID
@@ -31,6 +35,14 @@ public struct ComputerUseSnapshot: Sendable {
         self.accessibilityPermission = accessibilityPermission
         self.displayBounds = displayBounds
         self.journal = journal
+        self.latestCapture = latestCapture
+    }
+
+    public var permissions: ComputerUsePermissionStatus {
+        ComputerUsePermissionStatus(
+            screenRecording: screenCapturePermission,
+            accessibility: accessibilityPermission
+        )
     }
 }
 
@@ -64,6 +76,10 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
     /// Only one driver operation may be in flight. The token, rather than a
     /// Boolean, prevents an older action's `defer` from clearing a newer one.
     private var inFlightActionID: UUID?
+    /// The last capture an action produced under the current grant. Kept so
+    /// the reader can see what the agent saw; cleared by every path that ends
+    /// the grant, so a screenshot never outlives the consent that took it.
+    private var latestCapture: ComputerUseCapture?
     private let now: @Sendable () -> Date
 
     public init(
@@ -98,7 +114,8 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
             screenCapturePermission: driver.screenCapturePermission(),
             accessibilityPermission: driver.accessibilityPermission(),
             displayBounds: bounds,
-            journal: journal
+            journal: journal,
+            latestCapture: latestCapture
         )
     }
 
@@ -131,6 +148,7 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
         state = .idle
         activationGeneration &+= 1
         lastActionAt = nil
+        latestCapture = nil
     }
 
     /// The kill switch: immediate, unconditional, and always available.
@@ -138,6 +156,7 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
         state = .idle
         activationGeneration &+= 1
         lastActionAt = nil
+        latestCapture = nil
     }
 
     public func displayBounds() async throws -> CGRect {
@@ -200,6 +219,7 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
             let before = try await driver.captureScreen()
             try requireActiveGrant(sessionID: sessionID, generation: generation)
             if case .screenshot = action {
+                keep(before, sessionID: sessionID)
                 record(action, sessionID: sessionID, succeeded: true, note: nil)
                 return (before, before)
             }
@@ -211,6 +231,7 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
             try requireActiveGrant(sessionID: sessionID, generation: generation)
             let after = try await driver.captureScreen()
             try requireActiveGrant(sessionID: sessionID, generation: generation)
+            keep(after, sessionID: sessionID)
             record(action, sessionID: sessionID, succeeded: true, note: nil)
             return (before, after)
         } catch {
@@ -256,6 +277,16 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
         guard bounds.contains(CGPoint(x: x, y: y)) else {
             throw ComputerUseError.coordinatesOutOfBounds
         }
+    }
+
+    /// Only after the grant has been re-proved: a capture that finished after
+    /// a stop belongs to no one and must not reappear in the window.
+    private func keep(_ imageData: Data, sessionID: CodeSessionID) {
+        latestCapture = ComputerUseCapture(
+            sessionID: sessionID,
+            imageData: imageData,
+            capturedAt: now()
+        )
     }
 
     private func record(

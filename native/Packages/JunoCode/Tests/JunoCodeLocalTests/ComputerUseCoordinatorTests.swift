@@ -80,6 +80,29 @@ private struct BlockingComputerUseDriver: ComputerUseDriving {
     }
 }
 
+/// Hands out a different image on every capture, so a test can tell the
+/// capture before an action from the one after it.
+private actor CaptureSequence {
+    private var next: UInt8 = 0
+
+    func take() -> Data {
+        next &+= 1
+        return Data([0xFF, 0xD8, next])
+    }
+}
+
+private struct SequencedCaptureDriver: ComputerUseDriving {
+    let captures: CaptureSequence
+
+    func screenCapturePermission() -> ComputerUsePermissionState { .granted }
+    func accessibilityPermission() -> ComputerUsePermissionState { .granted }
+    func displayBounds() async throws -> CGRect {
+        CGRect(x: 0, y: 0, width: 1_000, height: 800)
+    }
+    func captureScreen() async throws -> Data { await captures.take() }
+    func perform(_ action: ComputerUseActionKind) async throws {}
+}
+
 final class ComputerUseCoordinatorTests: XCTestCase {
     private let sessionID = CodeSessionID()
 
@@ -310,5 +333,87 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         snapshot = await coordinator.snapshot()
         XCTAssertFalse(snapshot.isActive)
         XCTAssertNil(snapshot.activeSessionID)
+    }
+
+    // MARK: - What the agent last saw
+
+    func testLatestCaptureFollowsTheAgentAndEndsWithTheGrant() async throws {
+        nonisolated(unsafe) var currentTime = Date(timeIntervalSince1970: 5_000)
+        let coordinator = ComputerUseCoordinator(
+            driver: SequencedCaptureDriver(captures: CaptureSequence()),
+            now: { currentTime }
+        )
+        var snapshot = await coordinator.snapshot()
+        XCTAssertNil(snapshot.latestCapture, "nothing is kept before screen control starts")
+
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        _ = try await coordinator.perform(.screenshot, sessionID: sessionID)
+        snapshot = await coordinator.snapshot()
+        XCTAssertEqual(snapshot.latestCapture?.imageData, Data([0xFF, 0xD8, 1]))
+        XCTAssertEqual(snapshot.latestCapture?.sessionID, sessionID)
+        XCTAssertEqual(snapshot.latestCapture?.capturedAt, currentTime)
+
+        // An action is bracketed by two captures; the reader is shown the
+        // screen as the action left it, not as it found it.
+        currentTime = currentTime.addingTimeInterval(1)
+        let captures = try await coordinator.perform(.click(x: 10, y: 10), sessionID: sessionID)
+        snapshot = await coordinator.snapshot()
+        XCTAssertEqual(captures.before, Data([0xFF, 0xD8, 2]))
+        XCTAssertEqual(snapshot.latestCapture?.imageData, captures.after)
+        XCTAssertEqual(snapshot.latestCapture?.capturedAt, currentTime)
+
+        await coordinator.emergencyStop()
+        snapshot = await coordinator.snapshot()
+        XCTAssertNil(snapshot.latestCapture, "the kill switch drops the capture with the grant")
+
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        currentTime = currentTime.addingTimeInterval(1)
+        _ = try await coordinator.perform(.screenshot, sessionID: sessionID)
+        await coordinator.deactivate(sessionID: sessionID)
+        snapshot = await coordinator.snapshot()
+        XCTAssertNil(snapshot.latestCapture, "leaving the session drops it too")
+    }
+
+    func testFailedActionDoesNotReplaceTheLatestCapture() async throws {
+        nonisolated(unsafe) var currentTime = Date(timeIntervalSince1970: 0)
+        var driver = FakeDriver()
+        driver.failsActions = true
+        let coordinator = ComputerUseCoordinator(driver: driver, now: { currentTime })
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        _ = try await coordinator.perform(.screenshot, sessionID: sessionID)
+        let kept = await coordinator.snapshot().latestCapture
+
+        currentTime = currentTime.addingTimeInterval(2)
+        do {
+            _ = try await coordinator.perform(.click(x: 10, y: 10), sessionID: sessionID)
+            XCTFail("expected driver failure")
+        } catch {}
+        let latest = await coordinator.snapshot().latestCapture
+        XCTAssertEqual(latest, kept)
+    }
+
+    func testCaptureThatFinishesAfterAStopIsNotKept() async throws {
+        let driverState = BlockingComputerUseDriverState()
+        let coordinator = ComputerUseCoordinator(
+            driver: BlockingComputerUseDriver(state: driverState)
+        )
+        let sessionID = self.sessionID
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+
+        let screenshot = Task {
+            try await coordinator.perform(.screenshot, sessionID: sessionID)
+        }
+        await driverState.waitForCaptureToStart()
+        await coordinator.emergencyStop()
+        await driverState.releaseCapture()
+
+        do {
+            _ = try await screenshot.value
+            XCTFail("expected the stopped capture to be refused")
+        } catch let error as ComputerUseError {
+            XCTAssertEqual(error, .notActive)
+        }
+        let latest = await coordinator.snapshot().latestCapture
+        XCTAssertNil(latest, "a screenshot must not outlive the consent that took it")
     }
 }
