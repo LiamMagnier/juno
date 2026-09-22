@@ -506,10 +506,8 @@ export function ComposerDictation({
               size="icon-sm"
               onClick={cancel}
               aria-label="Cancel dictation"
-              // 44px under a coarse pointer, as it was: the shared composer
-              // rung stops at 40, and this is one of the two controls a
-              // dictating thumb actually reaches for.
-              className={cn(composerIconButtonClass, "coarse:size-11")}
+              // 44px under a coarse pointer, the shared composer rung.
+              className={composerIconButtonClass}
             >
               {micError ? <MicOff className="size-4" /> : <ActionIcons.dismiss className="size-4" />}
             </Button>

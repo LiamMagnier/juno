@@ -54,7 +54,11 @@ const entry = join(root, "src/components/design/host/main.tsx");
  */
 function editorSources() {
   const roots = ["src/lib/design", "src/components/design"];
-  const found = [];
+  // Shared primitives the editor draws its own chrome with and that used to
+  // live inside src/components/design: the glyph swap moved to ui/ when its
+  // five copies became one, and a change to it has to restamp the bundle the
+  // way a change to its old design/ copy did.
+  const found = [...EDITOR_SHARED_SOURCES];
   const walk = (relative) => {
     for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) =>
       a.name.localeCompare(b.name)
@@ -67,6 +71,10 @@ function editorSources() {
   for (const relative of roots) walk(relative);
   return found;
 }
+
+/** Files outside the two editor roots whose classes and bytes the bundle
+ *  depends on. Scanned by Tailwind and hashed into the version with them. */
+const EDITOR_SHARED_SOURCES = ["src/components/ui/icon-swap.tsx"];
 
 function editorVersion() {
   const hash = createHash("sha256");
@@ -154,7 +162,15 @@ function build() {
   if (existsSync(tailwind)) {
     execFileSync(
       tailwind,
-      ["-i", cssEntry, "-o", join(outDir, "editor.css"), "--minify", "--content", "./src/components/design/**/*.{ts,tsx}"],
+      [
+        "-i",
+        cssEntry,
+        "-o",
+        join(outDir, "editor.css"),
+        "--minify",
+        "--content",
+        ["./src/components/design/**/*.{ts,tsx}", ...EDITOR_SHARED_SOURCES.map((file) => `./${file}`)].join(","),
+      ],
       { stdio: "inherit", cwd: root }
     );
   } else {

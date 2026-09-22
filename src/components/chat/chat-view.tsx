@@ -2575,7 +2575,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 // translate and `--motion-shift` cannot reach it, so the reduced
                 // tier needs its own fade or it gets the full 16px of travel.
                 animateDock &&
-                "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+                "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
               : // Leaving: absolute, so the chat reflows underneath while the
                 // exit plays — the same recipe the canvas beside it uses.
                 "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
@@ -2619,9 +2619,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           decelerates. The canvas had neither — it slid under the preference
           and left on the entrance curve, 40 lines from a panel on the same
           edge that did both right — and the two panels are open at once, so
-          the difference was visible side by side. `ease-out-expo` sits in
-          the entrance branch so the exit's curve does not depend on which
-          utility Tailwind emits last. */}
+          the difference was visible side by side. The entrance is the
+          drawer curve (`ease-drawer`), the code session's DOCK_ENTER: a
+          16px slide is short travel, and `ease-out-expo` made it read as a
+          lurch that then hung. It sits in the entrance branch so the exit's
+          curve does not depend on which utility Tailwind emits last. */}
       {(openArtifact ?? closingArtifact) && (
         <div
           style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
@@ -2629,7 +2631,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             "relative z-40 size-full bg-background @[50rem]/split:w-[var(--juno-canvas-width)] @[50rem]/split:min-w-[420px] @[50rem]/split:shrink-0 @[50rem]/split:border-l",
             canvas.resizing && "select-none transition-none",
             openArtifact
-              ? !canvas.resizing && "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+              ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
               : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "@[50rem]/split:relative"
           )}

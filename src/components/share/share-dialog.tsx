@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Link2, Link2Off } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -178,9 +178,10 @@ export function ShareDialog({
                   confirmation was a purely visual state change, so a screen
                   reader got no acknowledgement that anything had happened. */}
               <Button size="sm" onClick={copy} className="shrink-0">
-                {/* Copy ⇄ check in one box (GlyphSwap); the check keeps the
+                {/* Copy ⇄ check in one box (IconSwap); the check keeps the
                     button's own ink, since it sits on the accent fill. */}
-                <GlyphSwap
+                <IconSwap
+                  curve="spring"
                   swapped={copied}
                   from={<ActionIcons.copy className="size-4" aria-hidden />}
                   to={<StatusIcons.success className="size-4" aria-hidden />}

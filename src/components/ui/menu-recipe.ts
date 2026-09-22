@@ -104,9 +104,39 @@ export const menuRowClass =
  * ink is applied by whoever knows it applies: DropdownMenu's default variant
  * does, its destructive variant does not (its icons inherit the red), and
  * Select, the `+` menu and the landing nav all do.
+ *
+ * THE GLYPH LIGHTS WITH ITS ROW. Muted at rest, foreground while the row is
+ * highlighted (Radix stamps `data-highlighted` whether the pointer or the arrow
+ * keys put it there), while its submenu is open (`data-state=open` on a sub
+ * trigger), and under hover or keyboard focus for the hosts that are plain
+ * links and buttons rather than Radix items (the sidebar's More flyout, the
+ * landing nav). The contract's ink rule (ICONS_AND_MOTION.md §1.2): a chrome
+ * glyph takes the row's foreground when the row is live.
+ *
+ * The state is read off the ROW, not through `group-data-[…]/menu-item`: this
+ * class sits on the row itself, which is also the `group/menu-item`, and a
+ * group variant only matches a descendant of the group, never the group. So
+ * the variants are stacked after the descendant selector, which Tailwind 3
+ * compiles to `.row[data-highlighted] svg:not(…)`.
+ *
+ * The ink cross-fades on the token rungs (--dur-fast, --ease-out-soft), like
+ * the row's own fill. It is one arbitrary `transition` rather than the
+ * `duration-*` / `ease-*` utilities, which tailwindcss-animate also reads as
+ * ANIMATION timing. And it is written at ZERO specificity
+ * (`:where(.row) svg`) on purpose: a glyph with a hover articulation already
+ * fades its colour in its own list (`svg.icon[data-motion]`, globals.css), a
+ * glyph that states its own `transition-*` means it, and the sidebar
+ * flyout's folder mark cross-fades its two drawings on opacity
+ * (`.sidebar-motion-icon__glyph`). Any of those outranks this and keeps its
+ * list; only a glyph with no transition of its own picks it up.
  */
 export const menuGlyphInkClass =
-  "[&_svg:not([class*='text-']):not([class*='fill-'])]:text-muted-foreground";
+  "[&_svg:not([class*='text-']):not([class*='fill-'])]:text-muted-foreground " +
+  "[&_svg:not([class*='text-']):not([class*='fill-'])]:data-[highlighted]:text-foreground " +
+  "[&_svg:not([class*='text-']):not([class*='fill-'])]:data-[state=open]:text-foreground " +
+  "[&:not([data-radix-collection-item]):hover_svg:not([class*='text-']):not([class*='fill-'])]:text-foreground " +
+  "[&:not([data-radix-collection-item]):focus-visible_svg:not([class*='text-']):not([class*='fill-'])]:text-foreground " +
+  "[:where(&)_svg]:[transition:color_var(--dur-fast)_var(--ease-out-soft)]";
 
 /**
  * The section head inside a menu. Shares the row's left edge (px-2.5) so a

@@ -23,7 +23,7 @@ import type { WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
-import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import { IconSwapSet } from "@/components/ui/icon-swap";
 import { WorkList, workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
@@ -213,7 +213,7 @@ export default function AutomationPage() {
             onClick={() => void runNow()}
             className="gap-1.5"
           >
-            <GlyphSwap
+            <IconSwapSet
               glyphs={{ idle: Play, busy: Loader2 }}
               show={busy ? "busy" : "idle"}
               spinning="busy"

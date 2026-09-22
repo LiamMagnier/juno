@@ -7,7 +7,7 @@ import { ArrowRight, Pin, Plus } from "@/components/ui/icons";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -279,10 +279,10 @@ export default function AssistantsPage() {
                         assistant.isPinned && "text-primary hover:text-primary"
                       )}
                     >
-                      <GlyphSwap
-                        active={!!assistant.isPinned}
-                        off={<Pin className="size-3.5" />}
-                        on={<Pin weight="fill" className="size-3.5" />}
+                      <IconSwap
+                        swapped={!!assistant.isPinned}
+                        from={<Pin className="size-3.5" />}
+                        to={<Pin weight="fill" className="size-3.5" />}
                       />
                     </Button>
                     <Button

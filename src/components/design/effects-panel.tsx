@@ -45,7 +45,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
 import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
@@ -382,7 +382,7 @@ function PaintListSection({
                 disabled={readOnly}
                 onClick={() => setPaint(index, { ...paint, visible: hidden }, hidden ? `Show ${title.toLowerCase()}` : `Hide ${title.toLowerCase()}`)}
               >
-                <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
+                <IconSwap curve="spring" swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
               </IconButton>
               <IconButton
                 label={`Remove ${title.toLowerCase()} ${index + 1}`}
@@ -1021,7 +1021,7 @@ function EffectRow({
             disabled={disabled}
             onClick={() => onChange({ ...effect, visible: hidden }, hidden ? `Show ${label}` : `Hide ${label}`)}
           >
-            <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
+            <IconSwap curve="spring" swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
           </IconButton>
           {/* The labels used to say "down the stack" on the up arrow and "up the
               stack" on the down arrow. Both readings are defensible in the

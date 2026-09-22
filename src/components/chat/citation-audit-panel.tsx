@@ -29,7 +29,7 @@ import * as React from "react";
 // at this sentence in the text above" is drawn here and nowhere else.
 import { ChevronDown, Loader2, TextSearch } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import {
@@ -140,7 +140,8 @@ function SourceInspector({
             >
               {/* The copy glyph cross-fades to a check once the passage is on the
                   clipboard, so the receipt is where the press was. */}
-              <GlyphSwap
+              <IconSwap
+                curve="spring"
                 swapped={copied}
                 from={<ActionIcons.copy aria-hidden="true" className="size-3.5" />}
                 to={<StatusIcons.success aria-hidden="true" className="size-3.5 text-success-ink" />}

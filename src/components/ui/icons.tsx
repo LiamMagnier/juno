@@ -260,6 +260,9 @@ import { cn } from "@/lib/utils";
  * - `tilt` — a tool picked up: pen, magnifier, pin, microphone, wrench.
  * - `lift` — an object picked up off the page: copy, archive, trash, a stack.
  * - `pop` — a small spring swell for marks you set: star, sparkle, bookmark.
+ * - `parts` — Juno's own marks move one PART of the drawing instead of the
+ *   whole glyph: Chat's ball terminal pops out of the gap, Code's spark
+ *   twinkles, Design's circle slides back from the square.
  */
 export type IconMotion =
   | "nudge-r"
@@ -273,7 +276,8 @@ export type IconMotion =
   | "ccw"
   | "tilt"
   | "lift"
-  | "pop";
+  | "pop"
+  | "parts";
 
 export type { IconWeight };
 
@@ -379,11 +383,11 @@ function glyph(
 
 /** Chat: the logo's bubble as a line. Its `fill` weight is the logo itself —
  *  the solid bubble with the spark cut out — for the selected state. */
-export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "pop" });
+export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "parts" });
 /** Code: the spark between two chevrons, where `</>` puts a slash. */
-export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "pop" });
+export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "parts" });
 /** Design: a square in front of a circle, stacked like cut paper. */
-export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "lift" });
+export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "parts" });
 
 // ---------------------------------------------------------------------------
 // Direction & navigation

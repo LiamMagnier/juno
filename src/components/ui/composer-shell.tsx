@@ -202,9 +202,15 @@ export const composerMirrorClass = cn(
  * overflows, and it takes width from the widest item first, which is the long
  * truncatable label every time. The glyph and the chevron keep their own
  * `shrink-0`, so a squeezed chip loses letters, never its marks.
+ *
+ * Focus is the global 2px --ring outline at its 2px offset (globals.css
+ * `:focus-visible`, ICONS_AND_MOTION.md §2.2 rule 3), plus the accent fill.
+ * The inset ring it used to draw instead was for a control flush inside a
+ * clipping parent, and the controls row is neither: it sits 10px inside a
+ * surface that does not clip, so the outline has room on every side.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+  "group inline-flex h-8 min-w-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
 
 /* ————————————————————————————————————————————————————————————————————————
  * The field tier: armed marks and connector mentions, inside the draft
@@ -477,19 +483,20 @@ export const composerChevronClass =
   "size-3 shrink-0 opacity-70 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
 
 /**
- * A 32px flat icon button (`+`, mic, voice). Written against `<Button
+ * A 32px flat icon button (`+`, mic, voice), 44px under a coarse pointer — the
+ * touch minimum, met by the button itself. Written against `<Button
  * variant="ghost" size="icon-sm">`, whose hover raises a card — every
  * raised/pressed class is cancelled here so the button stays flat and only
  * the accent fill arrives.
+ *
+ * Focus is the global 2px --ring outline (globals.css `:focus-visible`), the
+ * same mark every other control draws. It used to be replaced by an inset
+ * ring, which exists for a control flush inside a clipping parent; the
+ * controls row sits 10px inside a composer surface that does not clip, so the
+ * outline's 2px offset has room and the one indicator is the house one.
  */
 export const composerIconButtonClass =
-  // `focus-visible:outline-none` beside the inset ring, not as well as it. An
-  // INSET ring exists for controls flush inside a clipping parent, where the
-  // global outline's 2px offset would be clipped away — it REPLACES the global
-  // outline (globals.css `:focus-visible`), it never joins it. Without this the
-  // focused `+` drew a 2px ring inside a 2px outline: two indicators, one
-  // control.
-  "size-8 shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
+  "size-8 shrink-0 rounded-control border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /**
  * @deprecated The rule between the chips and the send pair is gone: the row
@@ -681,7 +688,8 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               "bg-secondary text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
             : "bg-primary text-primary-foreground hover:bg-primary/90",
           "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
-          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10",
+          // 44px under a coarse pointer, the touch minimum; 32px on a mouse.
+          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
           className
         )}
         {...props}

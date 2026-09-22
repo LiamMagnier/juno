@@ -162,7 +162,7 @@ export function WebSearchBlock({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="aicss-ws-chevron relative ease-in-out before:absolute before:-inset-2 coarse:before:-inset-3.5 motion-reduce:transition-none"
+                    className="aicss-ws-chevron relative before:absolute before:-inset-2 coarse:before:-inset-3.5"
                     aria-label={open ? "Hide results" : "Show results"}
                     aria-expanded={open}
                     aria-controls={listId}

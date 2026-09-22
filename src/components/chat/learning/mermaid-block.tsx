@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
@@ -88,7 +88,8 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
               aria-label={copied ? "Copied" : "Copy diagram source"}
               className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
             >
-              <GlyphSwap
+              <IconSwap
+                curve="spring"
                 swapped={copied}
                 from={<ActionIcons.copy className="size-3.5" />}
                 to={<StatusIcons.success className="size-3.5 text-success-ink" />}

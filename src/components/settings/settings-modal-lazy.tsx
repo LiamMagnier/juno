@@ -1,5 +1,6 @@
 "use client";
 
+import { MotionConfig } from "framer-motion";
 import nextDynamic from "next/dynamic";
 
 /**
@@ -27,6 +28,18 @@ const SettingsModalImpl = nextDynamic(
   { ssr: false },
 );
 
+/**
+ * `MotionConfig reducedMotion="user"` here because the layout mounts this
+ * BESIDE `AppShell`, not inside it, so the shell's own MotionConfig never
+ * reached the modal, and any framer motion in it that does not ask
+ * `useReducedMotion()` itself ran at full travel for a reader who had asked
+ * the system for less. framer-motion is already in the shell's chunk, so the
+ * import costs this boundary nothing.
+ */
 export function SettingsModalLazy() {
-  return <SettingsModalImpl />;
+  return (
+    <MotionConfig reducedMotion="user">
+      <SettingsModalImpl />
+    </MotionConfig>
+  );
 }
