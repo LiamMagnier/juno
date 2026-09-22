@@ -9,7 +9,11 @@ import JunoDesignSystem
 /// to say no with a reason. The audit counted six approval implementations
 /// with a countdown, a risk chip and policy prose each; this is the whole of it.
 ///
-/// Keys: ⏎ allows, ⌘⏎ always allows, esc declines.
+/// Keys, while the card has focus: ⏎ allows, ⌘⏎ always allows, esc declines.
+/// None of them is a window-wide shortcut. ⌘⏎ is also the composer's send
+/// key, and as a key equivalent on the button it fired from anywhere in the
+/// window: a reader typing a steer who pressed it to send granted a standing
+/// rule instead, and their message went nowhere.
 struct StudioApprovalPrompt: View {
     let controller: SessionController
 
@@ -72,7 +76,9 @@ struct StudioApprovalPrompt: View {
                 )
 
             if request.risk == .destructive {
-                Text("This reaches outside the project, so Juno always asks.")
+                Text(Self.isFileTool(request.toolName)
+                    ? "This changes what Juno itself may do in this project, so Juno always asks."
+                    : "This reaches outside the project, so Juno always asks.")
                     .font(Studio.Font.meta)
                     .foregroundStyle(Studio.Ink.danger)
             }
@@ -133,9 +139,8 @@ struct StudioApprovalPrompt: View {
                         }
                     }
                     .buttonStyle(StudioSecondaryButtonStyle())
-                    .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityIdentifier("juno.code.approval.always")
-                    .help("Allow now, and save \(rule.description) to this project's personal settings (⌘↩)")
+                    .help("Allow now, and save \(rule.description) to this project's personal settings (⌘↩ while this card is selected)")
                 }
 
                 Button {
@@ -163,9 +168,13 @@ struct StudioApprovalPrompt: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onKeyPress(.return) {
+        .onKeyPress(.return, phases: .down) { press in
             guard !redirectFocused else { return .ignored }
-            Task { await controller.approve(request.id) }
+            if press.modifiers.contains(.command), request.suggestedRule != nil {
+                Task { await controller.approveAlways(request.id) }
+            } else {
+                Task { await controller.approve(request.id) }
+            }
             return .handled
         }
         .onKeyPress(.escape) {
@@ -174,6 +183,12 @@ struct StudioApprovalPrompt: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(copy.question) \(copy.subject)")
+    }
+
+    /// The file tools stay inside the project, so a destructive one is a
+    /// write to the project's policy files rather than a way out of it.
+    private static func isFileTool(_ name: String) -> Bool {
+        ["create_file", "write_file", "apply_patch", "delete_file", "move_file"].contains(name)
     }
 
     private func declineWithRedirect(_ request: ApprovalRequest) {
