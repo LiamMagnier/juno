@@ -327,10 +327,13 @@ function decodeBase64Url(segment: string): string {
  * is the one to believe. Observed for this repository's assets on 2026-09-22,
  * at release-assets.githubusercontent.com: a `jwt` whose `exp` is 30 minutes out
  * for the DMG and 5 for the small JSON and text assets, beside an Azure SAS `se`
- * 45 to 60 minutes out. The older objects.githubusercontent.com form was an S3
- * presign, `X-Amz-Date` plus `X-Amz-Expires` seconds. All three are read, and a
- * value that does not parse is dropped rather than trusted; the caller treats
- * "no expiry found" as the shortest lifetime GitHub was seen to issue.
+ * 43 to 59 minutes out. Only the SAS was enforced that day, since a URL first
+ * fetched after its JWT `exp` was still served, but nothing promises that stays
+ * true, so the earlier clock wins. The older objects.githubusercontent.com form
+ * was an S3 presign, `X-Amz-Date` plus `X-Amz-Expires` seconds. All three are
+ * read, and a value that does not parse is dropped rather than trusted; the
+ * caller treats "no expiry found" as the shortest lifetime GitHub was seen to
+ * issue.
  */
 export function signedUrlExpiry(raw: string): number | null {
   let params: URLSearchParams;
