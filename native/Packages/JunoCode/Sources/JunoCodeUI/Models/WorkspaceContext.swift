@@ -9,6 +9,10 @@ public final class WorkspaceContext: Sendable {
     public let record: WorkspaceRecord
     public let access: WorkspaceAccess
     public let checkpoints: CheckpointStore
+    /// What each of the reader's turns changed, for rewinding to one of them.
+    /// Fed only by the agent's file tools; `files` below stays the reader's
+    /// own, uncaptured path to the disk.
+    public let turnCheckpoints: TurnCheckpointStore
     public let files: FileOperationService
     public let index: WorkspaceIndexService
     public let executor: CommandExecutionService
@@ -65,6 +69,11 @@ public final class WorkspaceContext: Sendable {
             access: access
         )
         self.checkpoints = checkpoints
+        let turnCheckpoints = TurnCheckpointStore(
+            directoryURL: Self.turnCheckpointDirectory(storageRoot: storageRoot, workspaceID: record.id),
+            access: access
+        )
+        self.turnCheckpoints = turnCheckpoints
         let files = FileOperationService(access: access, checkpoints: checkpoints)
         self.files = files
         let index = WorkspaceIndexService(access: access)
@@ -115,7 +124,9 @@ public final class WorkspaceContext: Sendable {
         let computerUse = ComputerUseCoordinator(driver: SystemComputerUseDriver())
         self.computerUse = computerUse
         self.registry = ToolRegistry.standard(
-            files: files,
+            // The agent's writes, and only the agent's, are snapshotted into
+            // the turn that made them.
+            files: TurnCapturingFileOperations(base: files, turns: turnCheckpoints),
             index: index,
             executor: executor,
             git: git,
@@ -134,6 +145,14 @@ public final class WorkspaceContext: Sendable {
                 InspectEditorBufferTool(reader: AccessibilityEditorBufferReader.shared),
             ]
         )
+    }
+
+    /// Where a workspace's turn checkpoints live, so a session can be deleted
+    /// with its snapshots even when its folder can no longer be opened.
+    public static func turnCheckpointDirectory(storageRoot: URL, workspaceID: WorkspaceID) -> URL {
+        storageRoot
+            .appendingPathComponent("turn-checkpoints", isDirectory: true)
+            .appendingPathComponent(workspaceID.value, isDirectory: true)
     }
 
     /// Discovers only reader-approved MCP declarations when a Code orchestrator

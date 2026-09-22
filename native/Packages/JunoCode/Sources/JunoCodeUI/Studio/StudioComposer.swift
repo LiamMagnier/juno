@@ -10,7 +10,8 @@ import JunoDesignSystem
 /// workbench had four composers; this is the only one.
 ///
 /// Keys: ↩ sends (or ⌘↩, if the reader chose that), ⇧↩ breaks the line, ↑/↓
-/// and ↩ drive the `/` and `@` menus, esc closes them, ⌘V pastes a picture.
+/// and ↩ drive the `/` and `@` menus, esc closes them, ⌘V pastes a picture,
+/// and esc twice in an empty composer opens the rewind picker.
 struct StudioComposer<Leading: View, Trailing: View>: View {
     @Binding var text: String
     var placeholder: String
@@ -26,6 +27,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     var isRunning = false
     var send: () -> Void
     var stop: (() -> Void)?
+    /// Esc pressed twice quickly, in an empty composer. Nil where there is
+    /// nothing to rewind — the landing screen, or while a run is active.
+    var rewind: (() -> Void)?
     var focus: FocusState<Bool>.Binding?
     /// The field's accessibility identifier: the landing's and a thread's
     /// are different controls to a UI test.
@@ -39,6 +43,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     @State private var searchingQuery: String?
     @State private var isDropTargeted = false
     @State private var isChoosingImage = false
+    @State private var escapes = StudioDoublePress()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var preferences: StudioPreferences { .shared }
@@ -145,8 +150,20 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 return .handled
             }
             .onKeyPress(.escape) {
-                guard menuCount > 0 else { return .ignored }
-                text += " "
+                if menuCount > 0 {
+                    text += " "
+                    return .handled
+                }
+                guard let rewind, text.isEmpty, attachments.isEmpty else {
+                    escapes.reset()
+                    return .ignored
+                }
+                guard escapes.press() else {
+                    // The first press passes through, so esc keeps meaning
+                    // whatever else it means here.
+                    return .ignored
+                }
+                rewind()
                 return .handled
             }
             .onKeyPress(keys: ["v"], phases: .down) { press in
@@ -353,6 +370,30 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 Task { @MainActor in addAttachment?(attachment) }
             }
         }
+    }
+}
+
+/// Two presses of one key, close enough together to be one gesture: Claude
+/// Code's Esc Esc.
+struct StudioDoublePress {
+    /// Quick enough that a single press is never mistaken for the first half
+    /// of a pair the reader did not mean.
+    var interval: TimeInterval = 0.5
+    private var last: Date?
+
+    /// Records a press, and answers whether it completes a pair. A completed
+    /// pair starts over, so a third press is the first of the next pair.
+    mutating func press(at date: Date = Date()) -> Bool {
+        if let last, date.timeIntervalSince(last) < interval {
+            self.last = nil
+            return true
+        }
+        last = date
+        return false
+    }
+
+    mutating func reset() {
+        last = nil
     }
 }
 

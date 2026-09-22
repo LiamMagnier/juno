@@ -390,9 +390,12 @@ public final class SessionController {
     public private(set) var interactiveTerminalState: InteractiveTerminalState = .idle
     public private(set) var interactiveTerminalCommand: String?
     public var interactiveTerminal: [TerminalLine] { interactiveTerminalLog.lines }
-    /// Checkpoints recorded for this session. Per file, never per run — there is
-    /// no run-level snapshot to count.
+    /// Per-file checkpoints recorded for this session. Turn snapshots, which
+    /// back a rewind, live in the turn store and are not counted here.
     public private(set) var checkpointCount = 0
+    /// Bumped by every rewind that put a prompt back in the composer, so the
+    /// view holding the composer can hand it focus.
+    public private(set) var rewindGeneration = 0
     public private(set) var gitStatus: GitStatusSummary?
     public private(set) var gitHistory: [GitCommitInfo] = []
     public private(set) var managedWorktrees: [ManagedWorktree] = []
@@ -824,7 +827,10 @@ public final class SessionController {
             lifecycleHooks: lifecycleHooks,
             // Opt-in: a different lab's model answering under the reader's
             // chosen one is a surprise unless they asked for it.
-            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil
+            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
+            // In every mode, not only Code: an Ask turn changes no files, but
+            // it is still a turn a later rewind has to count past.
+            turnCheckpoints: context.turnCheckpoints
         )
     }
 
@@ -1939,6 +1945,190 @@ public final class SessionController {
         }
         await refreshWorkspacePanels()
         return .restored
+    }
+
+    // MARK: - Rewind
+
+    /// The reader's messages a rewind can return to, oldest first: every
+    /// prompt, and every steered or queued message a run took in.
+    public var rewindTurns: [ConversationTurn] {
+        ConversationRewind.turns(in: events)
+    }
+
+    /// Says why `/rewind` did nothing, when it could not open.
+    public func explainRewindUnavailable() {
+        transientError = isRunning ? RewindCopy.running : "There is nothing to rewind to yet."
+    }
+
+    /// How many files each turn changed, by turn, for the rewind picker. What
+    /// the turn itself did, not what a rewind to it would undo.
+    public func rewindFileCounts() async -> [String: Int] {
+        guard let context = live?.context else { return [:] }
+        let turns = await context.turnCheckpoints.turns(for: sessionID)
+        return Dictionary(
+            turns.map { ($0.id, $0.files.count) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// What rewinding to `turnID` would do, for the confirmation: which files
+    /// would change, which of them someone edited since, and which of the
+    /// three choices cannot be made and why.
+    public func rewindPreview(for turnID: String) async -> RewindPreview? {
+        guard let turn = rewindTurns.first(where: { $0.id == turnID }) else { return nil }
+        guard let live else {
+            return RewindPreview(
+                turn: turn,
+                files: [],
+                codeUnavailable: RewindCopy.preview,
+                conversationUnavailable: RewindCopy.preview
+            )
+        }
+        var conversationUnavailable: String?
+        do {
+            _ = try await live.store.conversationRewindPlan(sessionID: sessionID, to: turnID)
+        } catch {
+            conversationUnavailable = RewindCopy.message(for: error)
+        }
+        var files: [TurnRestoreFile] = []
+        var codeUnavailable: String?
+        if let context = live.context {
+            do {
+                files = try await context.turnCheckpoints.preview(
+                    sessionID: sessionID,
+                    toTurn: turnID
+                )
+            } catch {
+                codeUnavailable = RewindCopy.message(for: error)
+            }
+        } else {
+            codeUnavailable = RewindCopy.noProject
+        }
+        return RewindPreview(
+            turn: turn,
+            files: files,
+            codeUnavailable: codeUnavailable,
+            conversationUnavailable: conversationUnavailable
+        )
+    }
+
+    /// Rewinds the session to just before one of the reader's messages.
+    ///
+    /// Code: every file touched in that turn or a later one goes back to how
+    /// it was before the turn — created files removed, deleted ones recreated.
+    /// Conversation: the model's history and the transcript both end just
+    /// before the message, and the message goes back into the composer to be
+    /// edited and sent again.
+    ///
+    /// Refused while a run is active, since the run owns the history it is
+    /// appending to. A file edited after Juno last wrote it is never
+    /// overwritten on the first attempt: the result is `.diverged`, and
+    /// `force` is the reader's second, explicit answer — the same shape as
+    /// Restore Anyway on a single file.
+    @discardableResult
+    public func rewind(
+        to turnID: String,
+        restoring scope: RewindScope,
+        force: Bool = false
+    ) async -> RewindOutcome {
+        guard let live else { return .failed(message: RewindCopy.preview) }
+        // Both, because the recorded status trails the run by a hop.
+        if session.status.isActive {
+            return .failed(message: RewindCopy.running)
+        }
+        if let orchestrator, await orchestrator.isRunning {
+            return .failed(message: RewindCopy.running)
+        }
+        // Checked before a file moves: code and conversation together must not
+        // restore the files and only then find the conversation cannot follow.
+        if scope.restoresConversation {
+            do {
+                _ = try await live.store.conversationRewindPlan(sessionID: sessionID, to: turnID)
+            } catch {
+                return .failed(message: RewindCopy.message(for: error))
+            }
+        }
+
+        var restored: [WorkspacePath] = []
+        if scope.restoresCode {
+            guard let context = live.context else {
+                return .failed(message: RewindCopy.noProject)
+            }
+            do {
+                restored = try await context.turnCheckpoints.restore(
+                    sessionID: sessionID,
+                    toTurn: turnID,
+                    force: force
+                )
+            } catch let TurnCheckpointError.diverged(paths) {
+                return .diverged(paths: paths)
+            } catch {
+                return .failed(message: RewindCopy.message(for: error))
+            }
+        }
+
+        if scope.restoresConversation {
+            do {
+                let plan = try await live.store.rewindConversation(sessionID: sessionID, to: turnID)
+                if scope.restoresCode {
+                    // Their files are restored and their rows are gone; nothing
+                    // is left to rewind them by.
+                    await live.context?.turnCheckpoints.forgetTurns(sessionID: sessionID, from: turnID)
+                }
+                await reloadAfterRewind(live)
+                // Put back for editing. A draft already in the composer stays,
+                // after it: a rewind must not throw away what the reader typed.
+                let draft = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                composerText = draft.isEmpty ? plan.turn.text : plan.turn.text + "\n\n" + composerText
+                rewindGeneration += 1
+            } catch {
+                let reason = RewindCopy.message(for: error)
+                let message = restored.isEmpty
+                    ? "Could not rewind the conversation. \(reason)"
+                    : "Restored \(restored.count == 1 ? "1 file" : "\(restored.count) files"), but the conversation could not be rewound. \(reason)"
+                transientError = message
+                return .failed(message: message)
+            }
+        }
+
+        for path in restored {
+            await refreshTrackedLineStats(for: path.value)
+        }
+        await refreshWorkspacePanels()
+        transientError = nil
+        return .rewound(restoredPaths: restored.map(\.value))
+    }
+
+    /// Waits for the run in flight, if any, to finish. Test and shutdown
+    /// support, like the orchestrator's own `awaitCompletion`.
+    func awaitCurrentRun() async {
+        await orchestrator?.awaitCompletion()
+    }
+
+    /// Re-reads the session after its records were cut back.
+    ///
+    /// The orchestrator is let go rather than told: it holds the history it
+    /// last saw in memory, and the replacement built on the next send loads
+    /// the rewound one from the store.
+    private func reloadAfterRewind(_ live: Live) async {
+        await orchestrator?.release()
+        orchestrator = nil
+        orchestratorContract = nil
+        liveAssistantText = ""
+        // The next request reports the new size; the old number describes a
+        // history that no longer exists.
+        contextTokens = nil
+        lastOutputTokens = nil
+        runStartedAt = nil
+        events = await live.store.events(for: sessionID)
+        lastTestRun = nil
+        lastTestRunToolCallID = nil
+        rebuildTerminal()
+        subagentIndex.rebuild(from: events)
+        rebuildDerivedState()
+        if let current = try? await live.store.session(id: sessionID) {
+            session = current
+        }
     }
 
     /// Recomputes one tracked file's counts and review state from disk. A

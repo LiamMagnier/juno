@@ -701,7 +701,8 @@ public final class WorkbenchModel {
         }
     }
 
-    /// Stops one session, removes its checkpoints and erases its record.
+    /// Stops one session, removes its checkpoints — per file and per turn — and
+    /// erases its record.
     private func discard(_ session: CodeSession) async throws {
         let controller = controllers[session.id]
         if let controller {
@@ -712,12 +713,20 @@ public final class WorkbenchModel {
         if let workspaceID = session.workspaceID {
             if let context = contexts[workspaceID] {
                 try await context.checkpoints.removeCheckpoints(for: session.id)
+                try await context.turnCheckpoints.removeSession(session.id)
             } else {
                 try CheckpointStore.removePersistedCheckpoints(
                     for: session.id,
                     directoryURL: dependencies.storageRootURL
                         .appendingPathComponent("checkpoints")
                         .appendingPathComponent(workspaceID.value)
+                )
+                try TurnCheckpointStore.removePersisted(
+                    sessionID: session.id,
+                    directoryURL: WorkspaceContext.turnCheckpointDirectory(
+                        storageRoot: dependencies.storageRootURL,
+                        workspaceID: workspaceID
+                    )
                 )
             }
         }

@@ -6,9 +6,17 @@ import JunoDesignSystem
 
 /// The reader's message: a quiet bubble on the trailing side, so the eye can
 /// find the turn boundaries without reading.
-struct StudioUserMessage: View {
+///
+/// `action` hangs off the bubble's leading edge and is told whether the row is
+/// hovered, so a per-message action — Rewind — can stay out of sight until it
+/// is wanted. An overlay rather than a column beside the bubble: an action
+/// nobody can see must not take width from the message.
+struct StudioUserMessage<Action: View>: View {
     let text: String
     var caption: String?
+    @ViewBuilder var action: (_ isHovered: Bool) -> Action
+
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
@@ -23,6 +31,12 @@ struct StudioUserMessage: View {
                     RoundedRectangle(cornerRadius: Studio.Radius.card + 4, style: .continuous)
                         .fill(Studio.Surface.muted)
                 )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("You: \(text)")
+                .overlay(alignment: .leading) {
+                    action(hovering)
+                        .alignmentGuide(.leading) { $0[.trailing] + JunoSpace.tight }
+                }
                 // A reader's message is a turn marker, not a column: capped
                 // so a long prompt does not read as the agent's reply.
                 .frame(maxWidth: Studio.Metrics.measure * 0.78, alignment: .trailing)
@@ -35,8 +49,15 @@ struct StudioUserMessage: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 64)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You: \(text)")
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension StudioUserMessage where Action == EmptyView {
+    init(text: String, caption: String? = nil) {
+        self.init(text: text, caption: caption) { _ in EmptyView() }
     }
 }
 
