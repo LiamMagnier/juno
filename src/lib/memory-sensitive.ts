@@ -31,7 +31,9 @@
  * it will occasionally flag a fact that only looks sensitive. Both failure
  * modes are visible and reversible: a miss is a row on the memory page the user
  * can forget, and a false flag is a fact that was not stored and can be added
- * back by hand. That asymmetry is why the patterns lean inclusive.
+ * back by hand. That asymmetry is why the patterns lean inclusive — but only
+ * over words that cannot be read another way; see the note on TOPIC_RULES for
+ * what leaning inclusive over ordinary English cost the first version.
  */
 
 export const SENSITIVE_TOPICS = [
@@ -81,55 +83,55 @@ export const SENSITIVE_TOPIC_META: Record<
 };
 
 /**
- * The patterns, one bundle per topic.
+ * The patterns, one per topic.
  *
- * Two shapes are mixed on purpose. `markers` are words specific enough to
- * decide on their own ("chemotherapy" is not ambiguous). `subjects` are words
- * that only mean the topic when the sentence is ABOUT the user having or being
- * one — "insurance" is not health, "has health insurance" is — so they are
- * paired with `claims`, the verbs an extracted fact uses to attribute something
- * to its subject. The extractor writes third-person statements ("The user has
- * …", "The user is …"), which is what makes the pairing reliable enough to be
- * worth the precision it buys over a flat keyword list.
+ * WHOLE WORDS, EVERY INFLECTION SPELLED OUT. The first version of this file
+ * had two defects that a single probe exposed, and both are worth naming
+ * because both are easy to reintroduce:
+ *
+ *  1. It never matched a plural or a stem. Each pattern ended in `\b`, so
+ *     `migraine\b` cannot match "migraines", and stems written to catch a
+ *     family of words — `schizophreni`, `psychiatr`, `menopaus` — could match
+ *     no real word at all, because the letter after the stem is a word
+ *     character and `\b` needs a boundary there. Nine of nine plainly
+ *     sensitive facts in the probe went through. Every alternative below is
+ *     therefore a complete word with its inflections written out
+ *     (`migraines?`, `schizophreni(?:a|c)`), never a stem left open.
+ *
+ *  2. It flagged ordinary technical English. Eleven of twelve innocent facts
+ *     were refused — "race conditions" as ethnicity, "a progressive web app"
+ *     as politics, "the app came out last week" as sexuality, "broke the build"
+ *     as money, "lent a laptop" as religion, "gradient descent" and "a black
+ *     theme" as ethnicity. For a product whose users are largely developers
+ *     that is not a rounding error: it silently stops Juno learning what they
+ *     build. The words that did it — race, progressive, conservative, came
+ *     out, broke, lent, descent, faith, spiritual, operation, aids, PoC,
+ *     welfare, bare colour words — are gone or appear only inside a phrase
+ *     that cannot be read the other way ("came out as", "black heritage").
+ *     It also used to accept a vague "subject word" (clinic, doctor, heritage)
+ *     whenever the sentence contained a verb like "is" or "has", which every
+ *     extracted fact does; that mechanism is gone with them.
+ *
+ * What remains still leans inclusive where a word has no innocent reading
+ * worth protecting — "medication" is flagged in "a medication-reminder app" as
+ * well as in "takes medication", because a keyword cannot tell them apart and
+ * a miss is the failure the user cannot see. tests/memory-sensitive.test.ts
+ * pins both lists, so a change here that trades one kind of error for the
+ * other has to say so.
  */
-interface TopicRules {
-  markers: RegExp;
-  subjects?: RegExp;
-}
-
-/** The attribution verbs an extracted fact uses. Kept in one place so every
- *  topic's `subjects` test means the same thing by "the user has this". */
-const CLAIM =
-  /\b(is|isn['’]?t|are|was|am|identifies as|has|have|had|has been|was diagnosed|diagnosed|suffers|suffering|lives with|takes|taking|prescribed|treated|undergoing|recovering|practi[cs]es|practi[cs]ing|believes|follows|supports|votes?|voted|earns?|owes?|makes)\b/i;
-
-const TOPIC_RULES: Record<SensitiveTopic, TopicRules> = {
-  health: {
-    markers:
-      /\b(diagnos(?:is|ed|es)|chemotherapy|chemo|cancer|tumou?r|diabet(?:es|ic)|epilep(?:sy|tic)|asthma(?:tic)?|migraine|arthritis|fibromyalgia|endometriosis|hiv|aids|hepatitis|crohn['’]?s|colitis|lupus|ms|multiple sclerosis|parkinson['’]?s|alzheimer['’]?s|dementia|stroke|heart attack|cardiac|hypertension|cholesterol|thyroid|anaemia|anemia|depress(?:ion|ed)|anxiety|bipolar|schizophreni|ptsd|ocd|adhd|autis(?:m|tic)|asperger|dyslexi|eating disorder|anorexi|bulimi|addiction|alcoholi|sober|in recovery|rehab|therapy|therapist|psychiatr|counsell?ing|antidepressant|medication|medicated|prescription|prescribed|insulin|chronic (?:pain|illness|fatigue)|disab(?:led|ility)|wheelchair|surgery|operation|hospitali[sz]ed|pregnan(?:t|cy)|miscarriage|ivf|fertility|menopaus|allergic|allergy|immunocompromised|long covid)\b/i,
-    subjects: /\b(health|illness|ill|sick|condition|symptoms?|treatment|clinic|hospital|doctor|gp|appointment)\b/i,
-  },
-  ethnicity: {
-    markers:
-      /\b(race|racial|ethnicity|ethnic(?:ally)?|mixed[- ]race|biracial|people of colou?r|bipoc|indigenous|aboriginal|m[āa]ori|first nations|caste|immigrant|refugee|asylum seeker)\b/i,
-    subjects:
-      /\b(black|white|asian|south asian|east asian|hispanic|latino|latina|latinx|arab|romani|jewish|african|afro[- ]?\w+|caribbean|nationality|heritage|ancestry|descent)\b/i,
-  },
-  religion: {
-    markers:
-      /\b(religio(?:n|us)|faith|muslim|islam(?:ic)?|christian(?:ity)?|catholic|protestant|orthodox|evangelical|mormon|jehovah|jewish|juda(?:ism|ic)|hindu(?:ism)?|buddhis[tm]|sikh|jain|ba['’]?ha['’]?i|taoist|shinto|pagan|atheis[tm]|agnostic|spiritual(?:ity)?|church|mosque|synagogue|temple|gurdwara|ramadan|lent|shabbat|sabbath|kosher|halal|baptis[mt]|confirmation|bar mitzvah|prays?|prayer|scripture|bible|quran|qur['’]?an|torah)\b/i,
-  },
-  politics: {
-    markers:
-      /\b(politic(?:s|al|ally)|vot(?:e|ed|es|ing)|electorate|party member|conservative|labour party|liberal democrat|republican|democrat(?:ic party)?|socialist|communist|marxist|anarchist|libertarian|green party|left[- ]wing|right[- ]wing|far[- ](?:left|right)|progressive|maga|brexit|referendum|trade union|unionised|unionized|activis[tm]|protest(?:er|ing)|campaign(?:s|ed|ing) for)\b/i,
-  },
-  sexuality: {
-    markers:
-      /\b(sexual orientation|sexuality|gender identity|lgbtq?i?a?\+?|gay|lesbian|bisexual|pansexual|asexual|queer|transgender|trans (?:man|woman|person)|nonbinary|non[- ]binary|genderfluid|genderqueer|intersex|came out|coming out|pronouns are|they\/them|he\/him|she\/her|same[- ]sex|deadname)\b/i,
-  },
-  finances: {
-    markers:
-      /\b(salary|salaries|wage|income|earnings|net worth|savings|pension|inheritance|bankrupt(?:cy)?|insolven|debts?|in debt|overdraft|loan|mortgage|repossess|credit score|credit rating|foreclos|evict(?:ed|ion)|benefits claim|universal credit|food bank|broke|struggling financially|can['’]?t afford|financial (?:trouble|difficulty|hardship|situation))\b/i,
-  },
+const TOPIC_RULES: Record<SensitiveTopic, RegExp> = {
+  health:
+    /\b(?:diagnos(?:is|es|ed|e|ing)|chemo(?:therapy)?|cancers?|tumou?rs?|oncolog(?:y|ist)|diabet(?:es|ic|ics)|epilep(?:sy|tic)|asthma(?:tic)?|migraines?|arthritis|fibromyalgia|endometriosis|lupus|colitis|crohn['’]?s|hiv|hepatitis|multiple sclerosis|parkinson['’]?s|alzheimer['’]?s|dementia|heart (?:attack|condition|disease|failure)s?|cardiac|hypertension|high blood pressure|cholesterol|thyroid|an(?:a)?emi(?:a|c)|depress(?:ion|ed|ive)|anxiety|panic attacks?|bipolar|schizophreni(?:a|c)|ptsd|ocd|adhd|autis(?:m|tic)|asperger['’]?s|dyslexi(?:a|c)|dyspraxi(?:a|c)|eating disorders?|anorexi(?:a|c)|bulimi(?:a|c)|addict(?:ion|ions|ed)|alcoholi(?:c|sm)|sobriety|in recovery|rehab|therap(?:y|ies|ist|ists)|psychiatr(?:y|ist|ists|ic)|psychologists?|counsell?(?:ing|or|ors)|antidepressants?|medications?|medicated|prescriptions?|insulin|chronic (?:pain|illness|fatigue|condition|disease)|disab(?:led|ility|ilities)|wheelchairs?|surger(?:y|ies)|hospitali[sz](?:ed|ation)|pregnan(?:t|cy|cies)|miscarriages?|ivf|fertility|infertil(?:e|ity)|menopaus(?:e|al)|allerg(?:y|ies|ic)|immunocompromised|long covid)\b/i,
+  ethnicity:
+    /\b(?:racial(?:ly)?|racism|racist|ethnicity|ethnic(?:ally)?|mixed[- ]race|biracial|multiracial|people of colou?r|person of colou?r|bipoc|indigenous|aboriginal|m[āa]ori|first nations|native american|caste|immigrants?|immigrated|emigrated|refugees?|asylum seekers?|(?:black|white|asian|hispanic|latin[oax]|arab|jewish|romani|african|caribbean) (?:person|man|woman|people|heritage|background|descent|family|ancestry)|identif(?:y|ies) as (?:black|white|asian|hispanic|latin[oax]|arab|romani))\b/i,
+  religion:
+    /\b(?:religio(?:n|ns|us)|muslims?|islam(?:ic)?|christians?|christianity|catholics?|catholicism|protestants?|evangelicals?|mormons?|latter[- ]day saints|jehovah['’]?s witness(?:es)?|jews|jewish|judaism|hindus?|hinduism|buddhis(?:t|ts|m)|sikhs?|sikhism|jains?|jainism|bah[aá]['’]?[ií]s?|taois(?:t|m)|shinto|pagans?|paganism|wicca(?:ns?)?|atheis(?:t|ts|m)|agnostic(?:s|ism)?|spirituality|church(?:es)?|mosques?|synagogues?|gurdwaras?|ramadan|shabbat|sabbath|kosher|halal|baptis(?:m|ed|t|ts)|bar mitzvah|bat mitzvah|first communion|prays?|prayed|praying|prayers?|scriptures?|bible|quran|qur['’]?an|torah)\b/i,
+  politics:
+    /\b(?:politic(?:s|al|ally)|vot(?:e|ed|es|ing|er|ers)|electorate|party member(?:ship)?|conservative party|tor(?:y|ies)|labour party|liberal democrats?|lib dems?|republicans?|democrats?|democratic party|gop|socialis(?:t|ts|m)|communis(?:t|ts|m)|marxis(?:t|ts|m)|anarchis(?:t|ts|m)|libertarians?|green party|left[- ]wing|right[- ]wing|far[- ](?:left|right)|cent(?:re|er)[- ](?:left|right)|maga|brexit(?:eers?)?|remainers?|referendum|trade unions?|unioni[sz]ed|activis(?:t|ts|m)|protest(?:er|ers|ing|ed)|campaign(?:s|ed|ing)? for)\b/i,
+  sexuality:
+    /\b(?:sexual orientation|sexuality|gender identity|lgbt(?:q|qi|qia)?\+?|gay|lesbians?|bisexual|pansexual|asexual|queer|transgender|trans (?:man|woman|person|people)|non[- ]?binary|genderfluid|genderqueer|agender|intersex|pronouns are|they\/them|he\/him|she\/her|she\/they|he\/they|same[- ]sex|deadnam(?:e|ed|ing)|(?:came|coming) out as|out as (?:gay|lesbian|bi|trans|queer))\b/i,
+  finances:
+    /\b(?:salar(?:y|ies)|wages?|income|earnings|net worth|savings|pensions?|inheritance|bankrupt(?:cy)?|insolven(?:t|cy)|debts?|in debt|overdrafts?|loans?|mortgages?|repossess(?:ed|ion)|credit (?:score|rating)|foreclos(?:ed|ure)|evict(?:ed|ion)|benefits claim|universal credit|food banks?|struggling financially|financial(?:ly)? (?:trouble|difficult(?:y|ies)|hardship|struggl(?:e|es|ing)|situation)|can['’]?t afford|cannot afford|paycheck to paycheck)\b/i,
 };
 
 /**
@@ -143,15 +145,8 @@ const TOPIC_RULES: Record<SensitiveTopic, TopicRules> = {
  */
 export function sensitiveTopicOf(content: string): SensitiveTopic | null {
   if (!content) return null;
-  const hasClaim = CLAIM.test(content);
   for (const topic of SENSITIVE_TOPICS) {
-    const rules = TOPIC_RULES[topic];
-    if (rules.markers.test(content)) return topic;
-    // A subject word is only sensitive when the sentence attributes it to
-    // someone. "The user is researching diabetes care for a client" carries a
-    // marker and is caught above; "The user's team works in health tech" has a
-    // subject word and no claim about the user, and is not.
-    if (rules.subjects && hasClaim && rules.subjects.test(content)) return topic;
+    if (TOPIC_RULES[topic].test(content)) return topic;
   }
   return null;
 }
