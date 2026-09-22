@@ -112,7 +112,11 @@ public struct CodeSettingsStore: Sendable {
             for (scope, origin) in [(Scope.project, CodeSettingsLayer.Origin.project), (.local, .local)] {
                 layers.append(
                     CodeSettingsLayer(
-                        load(scope, projectRoot: projectRoot),
+                        // Without their allow rules for screen input, which
+                        // only the reader's own file may hold: approval lets
+                        // a project file widen what the agent does in the
+                        // project, and screen control acts on the whole Mac.
+                        load(scope, projectRoot: projectRoot).withoutScreenInputAllowances,
                         origin: origin,
                         isApproved: isApproved(scope, projectRoot: projectRoot)
                     )
@@ -155,8 +159,10 @@ public struct CodeSettingsStore: Sendable {
     public func awaitingApproval(projectRoot: URL?) -> [Scope] {
         guard let projectRoot else { return [] }
         return [Scope.project, .local].filter { scope in
+            // A screen-input allow rule is not counted: approving the file
+            // would not put it in force.
             !isApproved(scope, projectRoot: projectRoot)
-                && load(scope, projectRoot: projectRoot).loosensAnything
+                && load(scope, projectRoot: projectRoot).withoutScreenInputAllowances.loosensAnything
         }
     }
 
@@ -334,6 +340,26 @@ public struct CodeSettingsStore: Sendable {
             ensureLocalFileIsIgnored(projectRoot: projectRoot)
         }
         return url
+    }
+
+    /// Where an "Always allow" answer is saved. Ordinarily this project's
+    /// personal file: it is this reader's trust, not the team's. With no
+    /// project, and for screen input wherever it was given, the reader's own
+    /// file — no project file can allow screen input
+    /// (`CodeSettingsFile.withoutScreenInputAllowances`), and the screen it
+    /// acts on is the same whichever project asked.
+    public static func alwaysAllowScope(for rule: PermissionRule, projectRoot: URL?) -> Scope {
+        if rule.coversScreenInput || projectRoot == nil { return .user }
+        return .local
+    }
+
+    /// Saves an "Always allow" answer to the file `alwaysAllowScope` names.
+    public func rememberAllowRule(_ rule: PermissionRule, projectRoot: URL?) throws {
+        try addAllowRule(
+            rule,
+            scope: Self.alwaysAllowScope(for: rule, projectRoot: projectRoot),
+            projectRoot: projectRoot
+        )
     }
 
     /// `settings.local.json` is personal. A reader who commits it by accident

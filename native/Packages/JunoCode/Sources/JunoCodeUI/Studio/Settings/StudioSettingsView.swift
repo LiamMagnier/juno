@@ -74,6 +74,9 @@ public struct StudioSettingsView: View {
     /// The host's "let other devices use this Mac" control, which lives in the
     /// app because the model behind it does.
     let remoteHosting: AnyView?
+    /// Where the screen-control grants are read from: this Mac, except in a
+    /// snapshot or test that needs a particular answer.
+    let screenControlProbe: ComputerUsePermissionProbe
 
     @State private var section: StudioSettingsSection
     @State private var scope: CodeSettingsScope = .user
@@ -83,10 +86,12 @@ public struct StudioSettingsView: View {
     public init(
         workbench: WorkbenchModel?,
         initialSection: StudioSettingsSection = .general,
-        remoteHosting: AnyView? = nil
+        remoteHosting: AnyView? = nil,
+        screenControlProbe: ComputerUsePermissionProbe = .system
     ) {
         self.workbench = workbench
         self.remoteHosting = remoteHosting
+        self.screenControlProbe = screenControlProbe
         _section = State(initialValue: initialSection)
     }
 
@@ -167,6 +172,12 @@ public struct StudioSettingsView: View {
                 if scope == .user, let remoteHosting {
                     Section("This Mac as a host") { remoteHosting }
                 }
+                // Beside the host switch, and on the same terms: macOS grants
+                // belong to this Mac, not to any settings file, so the section
+                // shows with the reader's own scope rather than a project's.
+                if scope == .user {
+                    StudioScreenControlSettings(probe: screenControlProbe)
+                }
             case .environment: StudioEnvironmentSettings(scope: scope, settings: settings).disabled(locked)
             case .instructions: StudioInstructionsSettings(settings: settings)
             case .agent: StudioAgentSettings(scope: scope, settings: settings).disabled(locked)
@@ -232,7 +243,7 @@ struct StudioScopeSection: View {
                 }
             }
         } footer: {
-            Text("Rules add up across all three. For everything else, the most specific file wins, except that a project's files can only lower the remote limit, and apply their allow rules, environment and folders only once you approve them.")
+            Text("Rules add up across all three, though only All projects can let screen control act without asking. For everything else, the most specific file wins, except that a project's files can only lower the remote limit, and apply their allow rules, environment and folders only once you approve them.")
         }
     }
 }
@@ -447,7 +458,19 @@ struct StudioRuleListSection: View {
             }
             ForEach(rules, id: \.self) { rule in
                 HStack {
-                    Text(rule.description).font(Studio.Font.mono)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rule.description).font(Studio.Font.mono)
+                        // Still listed, because it is in the file, but a
+                        // project file cannot let screen control act unasked;
+                        // saying so beats a rule that silently does nothing.
+                        if list == .allow, scope != .user, rule.coversScreenInput {
+                            Text("Not applied. Only All projects can let screen control act without asking.")
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("juno.code.settings.rule.screen-input-ignored")
+                        }
+                    }
                     Spacer()
                     Button {
                         settings.removeRule(rule, from: list, in: scope)

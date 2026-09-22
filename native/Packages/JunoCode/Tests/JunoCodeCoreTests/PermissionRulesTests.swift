@@ -143,6 +143,42 @@ final class PermissionRulesTests: XCTestCase {
         XCTAssertEqual(ceiling(.fullAccess, .workspaceWrite, .fullAccess), .workspaceWrite)
     }
 
+    func testScreenInputRulesAreTheOnesThatDriveTheMouseAndKeyboard() {
+        for name in ComputerUseToolName.input {
+            XCTAssertTrue(PermissionRule(tool: name).coversScreenInput, name)
+        }
+        // Tool names match without regard to case, so the check does too.
+        XCTAssertTrue(PermissionRule(parsing: "Computer_Click")?.coversScreenInput == true)
+        XCTAssertTrue(PermissionRule(tool: "computer_type", specifier: "anything").coversScreenInput)
+        // Looking is a read, and other tools are other tools.
+        XCTAssertFalse(PermissionRule(tool: ComputerUseToolName.screenshot).coversScreenInput)
+        XCTAssertFalse(PermissionRule(tool: "Bash").coversScreenInput)
+        XCTAssertFalse(PermissionRule(tool: "mcp__computer").coversScreenInput)
+    }
+
+    func testAProjectLayerKeepsEverythingButItsScreenInputAllowances() throws {
+        let file = try JSONDecoder().decode(CodeSettingsFile.self, from: Data("""
+        {"permissions":{
+          "allow":["computer_click","computer_type","computer_press_key","computer_scroll",
+                   "computer_screenshot","Bash(npm test *)"],
+          "ask":["computer_scroll"],
+          "deny":["computer_type"]},
+         "env":{"A":"1"}}
+        """.utf8))
+        let layer = file.withoutScreenInputAllowances
+        XCTAssertEqual(
+            layer.permissions?.allow,
+            [PermissionRule(tool: "computer_screenshot"), PermissionRule(tool: "Bash", specifier: "npm test *")]
+        )
+        // Asking more and refusing are still the project's to say.
+        XCTAssertEqual(layer.permissions?.ask, [PermissionRule(tool: "computer_scroll")])
+        XCTAssertEqual(layer.permissions?.deny, [PermissionRule(tool: "computer_type")])
+        XCTAssertEqual(layer.env, ["A": "1"])
+
+        let plain = CodeSettingsFile(permissions: .init(allow: [PermissionRule(tool: "Edit")]))
+        XCTAssertEqual(plain.withoutScreenInputAllowances, plain)
+    }
+
     func testCappingNeverRaisesAuthority() {
         XCTAssertEqual(PermissionMode.fullAccess.capped(at: .askBeforeChanges), .askBeforeChanges)
         XCTAssertEqual(PermissionMode.readOnly.capped(at: .fullAccess), .readOnly)

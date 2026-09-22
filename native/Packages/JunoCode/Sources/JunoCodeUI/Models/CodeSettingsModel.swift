@@ -239,13 +239,9 @@ public final class CodeSettingsModel {
         return CodeSettingsStore().resolved(projectRoot: root).remoteCeiling
     }
 
-    /// Saves an "Always allow" answer to this project's personal file, where
-    /// an allow-list belongs: it is this reader's trust, not the team's.
+    /// Saves an "Always allow" answer where the store says it belongs: this
+    /// project's personal file, or the reader's own for screen input.
     public nonisolated static func rememberAllowRule(_ rule: PermissionRule, projectRoot: URL?) throws {
-        try CodeSettingsStore().addAllowRule(
-            rule,
-            scope: projectRoot == nil ? .user : .local,
-            projectRoot: projectRoot
-        )
+        try CodeSettingsStore().rememberAllowRule(rule, projectRoot: projectRoot)
     }
 }
