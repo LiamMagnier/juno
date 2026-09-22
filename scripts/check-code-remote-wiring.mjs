@@ -93,6 +93,17 @@ const remoteBrowser = read(
 const remoteClient = read(
   "native/Packages/JunoNativeKit/Sources/JunoCodeKit/NativeCodeRemoteClient.swift",
 );
+// The return path. The Mac claimed and acknowledged commands for months while
+// uploading nothing, so a phone's transcript of its own Mac stayed empty; these
+// pin the one uploader, its composition on the Mac, and the field spellings the
+// phone actually sends.
+const desktopHost = read("native/macOS/JunoDesktop/App/DesktopCodeHost.swift");
+const remoteBridge = read(
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchRemoteBridge.swift",
+);
+const remoteAdapter = read(
+  "native/Packages/JunoCode/Sources/JunoCodeBridge/RemoteCommandAdapter.swift",
+);
 
 const required = [
   // The live start path, end to end: one entry point that chooses a target,
@@ -126,6 +137,17 @@ const required = [
   [remoteClient, "public func eventStream("],
   [remoteBrowser, "public func respondToApproval("],
   [remoteBrowser, "public func send("],
+  // Uploads: the list and each session's events, from the Mac, while hosting is on.
+  [remoteClient, "public func putSessions("],
+  [remoteClient, "public func postEvents("],
+  [desktopHost, "CodeRemoteSessionSync("],
+  [desktopHost, "startRelayObservation"],
+  [remoteBridge, "CodeRemoteSyncSource"],
+  [remoteBridge, "CodeRelayEventProjection.relayEvents("],
+  // A phone's create_session and a remote prompt that leaves the draft alone.
+  [remoteAdapter, '"workspaceKey"'],
+  [remoteAdapter, '"prompt"'],
+  [remoteBridge, "deliverRemotePrompt("],
 ];
 
 const unmet = required.filter(([source, fragment]) => !source.includes(fragment));
