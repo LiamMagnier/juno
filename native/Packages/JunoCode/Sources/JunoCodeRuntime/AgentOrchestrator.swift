@@ -834,19 +834,16 @@ public actor AgentOrchestrator {
                         )
                     }
                 }
-                let bounded = OutputLimiter.applyKeepingEnds(
-                    OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
-                    to: execution.content
-                )
+                let bounded = boundedToolResult(execution)
                 if execution.images.isEmpty {
                     conversation.append(
-                        .toolResult(id: execution.callID, content: bounded.text, isError: execution.isError)
+                        .toolResult(id: execution.callID, content: bounded, isError: execution.isError)
                     )
                 } else {
                     conversation.append(
                         .toolResultWithImages(
                             id: execution.callID,
-                            content: bounded.text,
+                            content: bounded,
                             isError: execution.isError,
                             images: execution.images
                         )
@@ -904,6 +901,28 @@ public actor AgentOrchestrator {
 
     private var hasPendingSteer: Bool {
         pendingInstructions.contains { $0.event.kind == .steer }
+    }
+
+    /// A tool result within the configured cap.
+    ///
+    /// Command output keeps both ends, because the error a build prints last
+    /// is the part that matters. A read cannot be cut that way: its header
+    /// vouches for the lines and the fingerprint of what follows, so a cut
+    /// through the middle would hand over a base_sha256 for a file the model
+    /// never saw whole. read_file bounds itself well under the cap; when a
+    /// lower cap still has to cut one, it is cut head-first with the header
+    /// rewritten to match.
+    private func boundedToolResult(_ execution: ToolScheduler.ExecutionResult) -> String {
+        if execution.toolName == "read_file" {
+            return ReadFileTool.bounded(
+                execution.content,
+                maximumBytes: configuration.maximumToolResultBytes
+            )
+        }
+        return OutputLimiter.applyKeepingEnds(
+            OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
+            to: execution.content
+        ).text
     }
 
     /// Moves accepted instructions into model context in their durable event

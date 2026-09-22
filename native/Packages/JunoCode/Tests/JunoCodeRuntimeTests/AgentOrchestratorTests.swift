@@ -622,6 +622,42 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertEqual(model.receivedRequests.count, 1)
     }
 
+    /// A cap below read_file's own budget cuts a read head-first and strips
+    /// the fingerprint, instead of cutting the middle out under a header that
+    /// still vouches for the whole file.
+    func testAReadCutByTheResultCapCarriesNoFingerprint() async throws {
+        let source = (1...400).map { "let value\($0) = \($0) // padding padding padding" }.joined(separator: "\n") + "\n"
+        try source.write(to: workspaceURL.appendingPathComponent("src/long.swift"), atomically: true, encoding: .utf8)
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("read", "read_file", ["path": "src/long.swift"])], text: ""),
+            .text("Read it."),
+        ])
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: registry,
+            permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
+            store: store,
+            configuration: .init(maximumToolResultBytes: 4_096, systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+        try await orchestrator.submit(prompt: "Read the long file")
+        await orchestrator.awaitCompletion()
+
+        let second = try XCTUnwrap(model.receivedRequests.last)
+        let content = try XCTUnwrap(second.messages.lazy.compactMap { message -> String? in
+            if case let .toolResult("read", content, _) = message { return content }
+            return nil
+        }.first)
+        XCTAssertLessThanOrEqual(content.utf8.count, 4_096)
+        XCTAssertFalse(content.contains("\"base_sha256\":"))
+        XCTAssertFalse(content.contains(FileFingerprint(of: source).sha256))
+        XCTAssertTrue(content.hasPrefix("{"))
+        XCTAssertTrue(content.contains("\"truncated\":true"))
+        XCTAssertFalse(content.contains("bytes omitted"), "a read is never cut through the middle")
+    }
+
     func testModelFailureRetriesOnceThenFails() async throws {
         let model = ScriptedModelClient(steps: [
             .failure(AgentModelClientError.transport(message: "boom")),
