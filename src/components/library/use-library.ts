@@ -70,11 +70,19 @@ function itemFromUpload(attachment: ClientAttachment): LibraryItem {
   };
 }
 
-async function settleEach<T>(targets: T[], run: (target: T) => Promise<Response>) {
+/**
+ * Runs one request per target and sorts the targets by outcome. `done` says
+ * which responses count as success; by default, any 2xx.
+ */
+async function settleEach<T>(
+  targets: T[],
+  run: (target: T) => Promise<Response>,
+  done: (response: Response) => boolean = (response) => response.ok,
+) {
   const results = await Promise.allSettled(
     targets.map(async (target) => {
       const response = await run(target);
-      if (!response.ok) throw new Error(String(response.status));
+      if (!done(response)) throw new Error(String(response.status));
       return target;
     }),
   );
@@ -83,6 +91,9 @@ async function settleEach<T>(targets: T[], run: (target: T) => Promise<Response>
   results.forEach((result, index) => (result.status === "fulfilled" ? ok : failed).push(targets[index]));
   return { ok, failed };
 }
+
+/** Which list a row lives in on the server. */
+type LibraryHome = "library" | "deleted";
 
 /**
  * The Library's data and every change to it.
@@ -108,14 +119,29 @@ export function useLibrary(query: LibraryQuery) {
   // (an Undo pressed after the reader has searched for something else).
   const queryRef = React.useRef(query);
   queryRef.current = query;
-  const cursorRef = React.useRef(nextCursor);
-  cursorRef.current = nextCursor;
+  // The rows on screen, for the same callbacks: whether a row is already in
+  // the list decides whether putting it back or taking it out moves a count.
+  const itemsRef = React.useRef(items);
+  itemsRef.current = items;
   /** Bumped per request, so an answer to a query nobody is asking any more is dropped. */
   const generation = React.useRef(0);
+  /**
+   * The next page's cursor and the request whose answer it came from. A
+   * cursor is a position in ONE query's order: once a new query is out, the
+   * cursor on hand belongs to the list being replaced, and "Load more" sent
+   * with it would append a page of the new query from the old one's position.
+   */
+  const cursor = React.useRef<{ value: string | null; generation: number }>({ value: null, generation: 0 });
+  const loadingMoreRef = React.useRef(false);
   const controller = React.useRef<AbortController | null>(null);
   const lastDeletedView = React.useRef(query.deleted);
 
   const { q, kind, sort, deleted } = query;
+
+  const setCursor = React.useCallback((value: string | null, from: number) => {
+    cursor.current = { value, generation: from };
+    setNextCursor(value);
+  }, []);
 
   const reload = React.useCallback(async () => {
     const id = ++generation.current;
@@ -137,7 +163,7 @@ export function useLibrary(query: LibraryQuery) {
       const data = (await response.json()) as LibraryResponse;
       if (id !== generation.current) return;
       setItems(data.items ?? []);
-      setNextCursor(data.nextCursor ?? null);
+      setCursor(data.nextCursor ?? null, id);
       setCounts(data.counts ?? null);
       setTotal(data.total ?? null);
       if (data.storage) setStorage(data.storage);
@@ -147,7 +173,7 @@ export function useLibrary(query: LibraryQuery) {
     } finally {
       if (id === generation.current) setPending(false);
     }
-  }, [q, kind, sort, deleted]);
+  }, [q, kind, sort, deleted, setCursor]);
 
   React.useEffect(() => {
     void reload();
@@ -156,26 +182,29 @@ export function useLibrary(query: LibraryQuery) {
   React.useEffect(() => () => controller.current?.abort(), []);
 
   const loadMore = React.useCallback(async () => {
-    const cursor = cursorRef.current;
-    if (!cursor || loadingMore) return;
-    const id = generation.current;
+    const { value, generation: from } = cursor.current;
+    // A ref, not the `loadingMore` state: the scroll sentinel and the button
+    // can both ask in the same frame, before a re-render would say so.
+    if (!value || loadingMoreRef.current || from !== generation.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
-      const response = await fetch(requestUrl(queryRef.current, cursor));
+      const response = await fetch(requestUrl(queryRef.current, value));
       if (!response.ok) throw new Error(String(response.status));
       const data = (await response.json()) as LibraryResponse;
-      if (id !== generation.current) return;
+      if (from !== generation.current) return;
       setItems((previous) => {
         const seen = new Set((previous ?? []).map((item) => item.id));
         return [...(previous ?? []), ...(data.items ?? []).filter((item) => !seen.has(item.id))];
       });
-      setNextCursor(data.nextCursor ?? null);
+      setCursor(data.nextCursor ?? null, from);
     } catch {
-      if (id === generation.current) toast.error("Couldn’t load more files.");
+      if (from === generation.current) toast.error("Couldn’t load more files.");
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [loadingMore]);
+  }, [setCursor]);
 
   /** Counts follow the rows: the segmented control must never disagree with the list. */
   const adjustCounts = React.useCallback((rows: LibraryItem[], sign: 1 | -1) => {
@@ -195,33 +224,58 @@ export function useLibrary(query: LibraryQuery) {
     );
   }, []);
 
-  /** Take rows out of the list on screen. */
+  /**
+   * Take rows out of the list on screen. Only rows that are IN it move the
+   * counts: a rollback for a row that never reached this view, or an Undo for
+   * one this view's first page never held, has nothing to subtract.
+   */
   const removeRows = React.useCallback(
     (rows: LibraryItem[]) => {
-      const ids = new Set(rows.map((row) => row.id));
+      const onScreen = new Set((itemsRef.current ?? []).map((item) => item.id));
+      const present = rows.filter((row) => onScreen.has(row.id));
+      if (present.length === 0) return;
+      const ids = new Set(present.map((row) => row.id));
       setItems((previous) => previous?.filter((item) => !ids.has(item.id)) ?? previous);
-      adjustCounts(rows, -1);
+      adjustCounts(present, -1);
     },
     [adjustCounts],
   );
 
   /**
-   * Put rows back, if the reader is still looking at the view they belong to.
-   * `view` is where the rows live now: an Undo pressed from inside Recently
-   * deleted has nothing to put back into the list on screen.
+   * Put rows into the list on screen. The counts move for every row that was
+   * not already there, drawn or not: a row that sorts past the loaded pages is
+   * still one more file in this view.
    */
   const insertRows = React.useCallback(
-    (rows: LibraryItem[], view: "library" | "deleted") => {
+    (rows: LibraryItem[]) => {
       const current = queryRef.current;
-      if (current.deleted !== (view === "deleted")) return;
-      adjustCounts(rows, 1);
+      const onScreen = new Set((itemsRef.current ?? []).map((item) => item.id));
+      adjustCounts(
+        rows.filter((row) => !onScreen.has(row.id)),
+        1,
+      );
       const visible = rows.filter((row) => matchesView(row, current));
       if (visible.length === 0) return;
       setItems((previous) =>
-        previous ? insertSorted(previous, visible, current.sort, cursorRef.current !== null) : previous,
+        previous ? insertSorted(previous, visible, current.sort, cursor.current.value !== null) : previous,
       );
     },
     [adjustCounts],
+  );
+
+  /**
+   * Rows now live in `home` on the server. Into the list if that is the view
+   * on screen; out of it if the reader is looking at the other one, where
+   * they may still be drawn (an Undo pressed from inside Recently deleted
+   * must take the file out of that list, not leave it there restored).
+   */
+  const placeRows = React.useCallback(
+    (rows: LibraryItem[], home: LibraryHome) => {
+      if (rows.length === 0) return;
+      if (queryRef.current.deleted === (home === "deleted")) insertRows(rows);
+      else removeRows(rows);
+    },
+    [insertRows, removeRows],
   );
 
   /** Move files to Recently deleted, with Undo. */
@@ -238,12 +292,17 @@ export function useLibrary(query: LibraryQuery) {
       const undo = async () => {
         const { ok } = await settled;
         if (ok.length === 0) return;
-        insertRows(ok, "library");
-        const restored = await settleEach(ok, (target) =>
-          fetch(`/api/attachments/${target.id}/restore`, { method: "POST" }),
+        placeRows(ok, "library");
+        // 404 is "no deleted file with that id": restored already, from
+        // Recently deleted, while this Undo was still on offer. The file is
+        // where the reader asked for it, so that is not a failure to report.
+        const restored = await settleEach(
+          ok,
+          (target) => fetch(`/api/attachments/${target.id}/restore`, { method: "POST" }),
+          (response) => response.ok || response.status === 404,
         );
         if (restored.failed.length) {
-          removeRows(restored.failed);
+          placeRows(restored.failed, "deleted");
           toast.error("Couldn’t undo. The files are in Recently deleted.");
         }
       };
@@ -255,12 +314,12 @@ export function useLibrary(query: LibraryQuery) {
 
       void settled.then(({ ok, failed }) => {
         if (failed.length === 0) return;
-        insertRows(failed, "library");
+        placeRows(failed, "library");
         if (ok.length === 0) toast.dismiss(toastId);
         toast.error(failed.length === 1 ? "Couldn’t delete that file." : "Couldn’t delete some of those files.");
       });
     },
-    [insertRows, removeRows],
+    [placeRows, removeRows],
   );
 
   /** Bring files back from Recently deleted. */
@@ -272,13 +331,13 @@ export function useLibrary(query: LibraryQuery) {
         fetch(`/api/attachments/${target.id}/restore`, { method: "POST" }),
       );
       if (failed.length) {
-        insertRows(failed, "deleted");
+        placeRows(failed, "deleted");
         toast.error(failed.length === 1 ? "Couldn’t restore that file." : "Couldn’t restore some of those files.");
       }
       // The row leaving this list is visible; where it went is not.
       if (ok.length) toast.success("Restored to your library");
     },
-    [insertRows, removeRows],
+    [placeRows, removeRows],
   );
 
   /** Resolves true when the new name was saved. */
@@ -323,7 +382,7 @@ export function useLibrary(query: LibraryQuery) {
       );
       const current = queryRef.current;
       if (current.deleted) return false;
-      insertRows([item], "library");
+      insertRows([item]);
       return matchesView(item, current);
     },
     [insertRows],

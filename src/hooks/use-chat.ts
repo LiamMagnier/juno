@@ -1266,13 +1266,13 @@ export function useChat(opts: UseChatOptions) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantTempId
-              ? { ...m, streaming: false, error: true, progress: null, content: "Private chat only supports text chat right now because generated media is stored." }
+              ? { ...m, streaming: false, error: true, progress: null, content: "Incognito chats only support text right now, because generated media is stored." }
               : m.pending && m.role === "USER"
                 ? { ...m, pending: false }
                 : m
           )
         );
-        toast.error("Private chat only supports text chat right now.");
+        toast.error("Incognito chats only support text right now.");
         setStatus("idle");
         return { accepted: true };
       }

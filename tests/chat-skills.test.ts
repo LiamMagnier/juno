@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  CHAT_SKILL_REFUSAL_MESSAGES,
   CHAT_SKILL_TOOLS,
   applyChatSkill,
   chatSkillGrantLayer,
@@ -227,6 +229,35 @@ test("every refusal is a reason, and the version-level ones produce no text at a
     applied: false,
     reason: "consent_required",
   });
+});
+
+test("every refusal has a sentence the reader can be shown", () => {
+  for (const [reason, message] of Object.entries(CHAT_SKILL_REFUSAL_MESSAGES)) {
+    assert.match(message, /^[A-Z].*\.$/, reason);
+    assert.doesNotMatch(message, /[—–]/, reason);
+  }
+});
+
+test("a refused skill is said to the reader on both paths, once the stream is open", () => {
+  // The composer showed the skill armed, so a refusal that only reached the
+  // audit log left the reader believing it ran. Pinned on the source because
+  // both call sites sit inside stream bodies no unit test can reach.
+  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const privateBranch = route.slice(route.indexOf("if (input.privateMode) {"), route.indexOf("const durableFirstSubmission"));
+  const savedStream = route.slice(route.indexOf("const generate = async ("));
+  const refusalRow = (outcome: string) =>
+    new RegExp(
+      `if \\(${outcome} && !${outcome}\\.applied\\) \\{\\s*sendActivity\\(\\{\\s*kind: "warning",\\s*title: "Skill not applied",\\s*detail: CHAT_SKILL_REFUSAL_MESSAGES\\[${outcome}\\.reason\\],`
+    );
+
+  assert.match(privateBranch, refusalRow("privateSkill"));
+  assert.ok(
+    privateBranch.indexOf('title: "Skill not applied"') > privateBranch.indexOf("createSseSender(controller)"),
+    "the private row is sent inside the stream, not before it exists"
+  );
+  assert.match(savedStream, refusalRow("skillOutcome"));
+  // One row per turn: a path that sent it twice would read as two skills.
+  assert.equal(route.split('title: "Skill not applied"').length - 1, 2);
 });
 
 test("trust does not gate explicit invocation — the user typed the name", () => {

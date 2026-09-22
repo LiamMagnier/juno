@@ -41,14 +41,16 @@ function PaneStreamStatus({ writing }: { writing: boolean }) {
     return () => window.clearInterval(timer);
   }, [writing]);
 
-  let statusCopy = "Thinking about your request";
-  if (writing) statusCopy = "Writing the response";
-  else if (elapsedSec >= 600) statusCopy = "Still thinking deeply — safe to leave; the answer will be here when you return";
-  else if (elapsedSec >= 120) statusCopy = "Still thinking — working in the background";
+  // The same ladder as the chat reply's status line (message-item.tsx), so a
+  // pane and a thread say the same thing at the same point in a wait.
+  let statusCopy = "Thinking";
+  if (writing) statusCopy = "Writing";
+  else if (elapsedSec >= 600) statusCopy = "Still working. You can leave; the answer will be here.";
+  else if (elapsedSec >= 120) statusCopy = "Still thinking. This can take a few minutes.";
 
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      <ThinkingDots className="text-muted-foreground/65" />
+      <ThinkingDots className="text-muted-foreground" />
       {/* Plain muted text beside the dots — the dots are the one moving thing
           in this row, exactly as message-item.tsx renders the same row. The
           sentence breathed as well (status-glow, 2.8s) beside a 1.8s matrix:
@@ -204,7 +206,7 @@ export function ComparePane({
           run.status === "idle" && "opacity-0"
         )}
       >
-        <p className="min-w-0 truncate font-mono text-caption text-muted-foreground/70">
+        <p className="min-w-0 truncate font-mono text-caption text-muted-foreground">
           <ElapsedTime startedAt={run.startedAt} elapsedMs={run.elapsedMs} running={streaming} />
           {hasUsage && (
             <> · {formatTokens((run.promptTokens ?? 0) + (run.completionTokens ?? 0))} tokens</>

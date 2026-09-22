@@ -208,8 +208,12 @@ export function AnnouncementPopup() {
                     {announcement.title}
                   </DialogTitle>
                 </div>
+                {/* A tile here and not in the visual panel: this mark stands
+                    alone beside the title, where a bare 40px mark is the
+                    heaviest ink in the dialog. The panel is already its
+                    mark's container. */}
                 {announcement.provider && (
-                  <ProviderLogo provider={announcement.provider} className="size-10 shrink-0 border-0 shadow-none" />
+                  <ProviderLogo provider={announcement.provider} tile className="size-10" />
                 )}
               </div>
               <DialogDescription className="max-w-xl pt-4 text-body leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">

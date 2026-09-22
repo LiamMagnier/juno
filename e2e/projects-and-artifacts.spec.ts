@@ -11,7 +11,7 @@ test.describe("Projects, Automations and Library", () => {
       // (docs/design/TWO_PRODUCTS.md §2); the destination that came out of it
       // and is testable without a delegated run in the account is Automations.
       ["/automations", /automations/i],
-      ["/library", /files/i],
+      ["/library", /library/i],
     ] as const) {
       await page.goto(path);
       await expect(page).toHaveURL(new RegExp(path));

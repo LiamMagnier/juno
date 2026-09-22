@@ -26,6 +26,7 @@ import { skillSourceAnchor } from "@/components/skills/skill-source-group";
 import { SkillsLibraryView } from "@/components/skills/skills-library-view";
 import { UpdateSourceDialog } from "@/components/skills/update-source-dialog";
 import { useSkillLibrary } from "@/components/skills/use-skill-library";
+import { updateOutcomeMessage } from "@/components/skills/skill-library-model";
 import type { SkillImportOutcome, SkillImportPreview } from "@/components/skills/skills-transport";
 
 /**
@@ -96,6 +97,12 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
           : `${outcome.blocked} came in switched off because Juno’s safety check blocked them.`
         : null,
       outcome.skipped.length > 0 ? outcome.skipped[0].message : null,
+      // An import can join a repository the reader switched off, and then its
+      // new skills are as off as the rest: said here, because the composer
+      // will not offer them and nothing else would explain why.
+      count > 0 && outcome.source?.enabled === false
+        ? `${sourceLabel(outcome.source)} is switched off, so ${count === 1 ? "it won’t" : "they won’t"} show in chat until you turn it on.`
+        : null,
     ].filter((note): note is string => note !== null);
     if (count === 0) {
       toast.error("Nothing was installed.", { description: notes.join(" ") || undefined });
@@ -110,12 +117,9 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
     await reload();
     const landed = result.source?.id ?? updating?.id;
     if (landed) land(landed);
-    const count = result.updated.length + result.installed.length;
     const from = result.source ? sourceLabel(result.source) : updating ? sourceLabel(updating) : "GitHub";
-    toast.success(`Updated ${count} ${count === 1 ? "skill" : "skills"} from ${from}`, {
-      description:
-        result.skipped.length > 0 ? `${result.skipped.length} skipped: ${result.skipped[0].reason}` : undefined,
-    });
+    const message = updateOutcomeMessage(result, from);
+    (message.ok ? toast.success : toast.error)(message.title, { description: message.description });
   };
 
   const confirmRemove = async () => {

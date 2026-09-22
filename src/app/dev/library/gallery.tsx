@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
-import { LibraryDropOverlay } from "@/components/library/library-drop-zone";
+import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
 import { LibraryStorageCaption, LibraryToolbar } from "@/components/library/library-toolbar";
 import type {
   LibraryItem,
@@ -263,6 +263,36 @@ function ModelMenuFixture({ favorites, recent, value }: { favorites: ModelId[]; 
   );
 }
 
+/**
+ * The same hook the page uses, on a small target: drag files from the desktop
+ * over it to see the overlay come and go. Dropped names are listed, nothing is
+ * uploaded.
+ */
+function LiveDropZone() {
+  const [dropped, setDropped] = React.useState<string[]>([]);
+  const { dragging, handlers } = useFileDrop({ onFiles: (files) => setDropped(files.map((file) => file.name)) });
+  return (
+    <div
+      {...handlers}
+      data-testid="live-drop-zone"
+      data-dragging={dragging}
+      className="relative mt-6 h-48 overflow-hidden rounded-panel border border-border"
+    >
+      <div className="grid h-full grid-cols-2 gap-3 p-3">
+        {["One", "Two", "Three", "Four"].map((label) => (
+          <div key={label} className="grid place-items-center rounded-card bg-secondary text-caption text-muted-foreground">
+            {label}
+          </div>
+        ))}
+      </div>
+      <p className="sr-only" aria-live="polite">
+        {dropped.length ? `Dropped ${dropped.join(", ")}` : ""}
+      </p>
+      <LibraryDropOverlay open={dragging} />
+    </div>
+  );
+}
+
 export function LibraryGallery() {
   const library = useFixtureLibrary();
   const [query, setQuery] = React.useState("");
@@ -278,7 +308,7 @@ export function LibraryGallery() {
       <AppPage measure="wide" scroll={false} contentClassName="space-y-12">
         <div>
           <AppPageHeader
-            heading="Files"
+            heading="Library"
             lede="Everything you upload or share in chats."
             actions={
               <>
@@ -316,11 +346,12 @@ export function LibraryGallery() {
           <LibraryGrid {...library} />
         </Section>
 
-        <Section title="Drop overlay" note="Shown while files are held over the page. Depth-counted, so crossing between rows does not blink it.">
+        <Section title="Drop overlay" note="Shown while files are held over the page. It tracks which elements the drag is inside, so crossing between rows does not blink it.">
           <div className="relative h-[26rem] overflow-hidden">
             <LibraryList {...library} uploads={[]} />
             <LibraryDropOverlay open />
           </div>
+          <LiveDropZone />
         </Section>
 
         <Section title="Empty and loading" note="The first run, and the list's placeholder while the first page is out.">

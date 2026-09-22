@@ -8,6 +8,7 @@ export const SKILLS_GALLERY_VIEWS = [
   "choose",
   "dialog",
   "update",
+  "update-new",
   "detail",
   "detail-own",
   "detail-notices",

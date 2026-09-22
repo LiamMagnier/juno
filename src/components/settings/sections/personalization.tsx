@@ -49,9 +49,16 @@ export function PersonalizationSection() {
   );
 
   const [name, setName] = React.useState(user.name ?? "");
+  // The name last sent, so the unmount flush below does not send it again
+  // while the refresh that brings `user.name` up to date is still on its way.
+  const nameSent = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    nameSent.current = null;
+  }, [user.name]);
   const saveName = () => {
     const value = name.trim();
-    if (value === (user.name ?? "")) return;
+    if (value === (user.name ?? "") || value === nameSent.current) return;
+    nameSent.current = value;
     void saves.track("name", async () => {
       // Not through useSettingsSave: the name is a User column, not a
       // Settings one, and it is server-rendered into the bootstrap (sidebar,
@@ -62,6 +69,7 @@ export function PersonalizationSection() {
         body: JSON.stringify({ name: value }),
       }).catch(() => null);
       if (!res?.ok) {
+        if (nameSent.current === value) nameSent.current = null;
         toast.error("Couldn’t save your name.");
         return false;
       }
@@ -82,13 +90,31 @@ export function PersonalizationSection() {
     void saves.track("customInstructions", () => save({ customInstructions: instructions }));
   };
 
+  // A draft still being typed is saved when the section goes away, not only
+  // on blur. Escape, ⌘, or a navigation unmounts the section with the field
+  // still focused, and React never hears that field's blur (the browser fires
+  // it on a node already detached from the root), so the text was dropped.
+  // Each saver returns early when there is nothing new, so a field that did
+  // blur first is not saved twice.
+  const flushDrafts = React.useRef<() => void>(() => {});
+  React.useLayoutEffect(() => {
+    flushDrafts.current = () => {
+      saveName();
+      saveInstructions();
+    };
+  });
+  React.useEffect(() => {
+    const flush = flushDrafts;
+    return () => flush.current();
+  }, []);
+
   return (
     <>
       <SettingsGroup>
         <SettingRow
           label="What Juno calls you"
           htmlFor="personal-name"
-          description="Used in greetings, and shown on anything you share."
+          description="Used in greetings, and shown in the sidebar."
           wide
           status={saves.status("name")}
           control={

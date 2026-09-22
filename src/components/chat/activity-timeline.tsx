@@ -340,12 +340,10 @@ export function ActivityTimeline({
             <span
               key={copyKey}
               aria-hidden="true"
-              // A template string, not cn(): until `reading` is registered
-              // in utils.ts's tailwind-merge font-size group, cn() takes
-              // `text-reading` for a colour and drops it beside the ink.
-              className={`min-w-0 truncate text-reading duration-fast motion-safe:animate-fade-in ${
+              className={cn(
+                "min-w-0 truncate text-reading duration-fast motion-safe:animate-fade-in",
                 live.warning ? "text-warning" : "text-muted-foreground"
-              }`}
+              )}
             >
               {live.message}
               {!live.warning && liveSources && (

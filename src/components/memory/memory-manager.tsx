@@ -22,7 +22,7 @@ import { SummaryPanel } from "@/components/memory/summary-panel";
 import { useBackfill, type BackfillState } from "@/components/memory/use-backfill";
 import { useDeferredRemoval } from "@/components/memory/use-deferred-removal";
 import { useMemory, type MemoryState } from "@/components/memory/use-memory";
-import { useProjectOptions, type ProjectOption } from "@/components/memory/use-project-options";
+import { useProjectOptions, type ProjectOptions } from "@/components/memory/use-project-options";
 import {
   isRetired,
   memoriesInScope,
@@ -65,17 +65,15 @@ export function MemoryManager() {
     backgroundLearning: settings.memoryBackgroundLearning,
     onLearned: memory.reload,
   });
-  const [projectsWanted, setProjectsWanted] = React.useState(false);
-  const projects = useProjectOptions(projectsWanted);
-  const wantProjects = React.useCallback(() => setProjectsWanted(true), []);
+  const projects = useProjectOptions();
   const openMemorySettings = React.useCallback(() => openSettings("memory"), []);
 
   return (
     <MemoryManagerView
       memory={memory}
       backfill={backfill}
-      projects={projects}
-      onWantProjects={wantProjects}
+      projects={projects.projects}
+      onWantProjects={projects.load}
       onOpenSettings={openMemorySettings}
     />
   );
@@ -84,8 +82,9 @@ export function MemoryManager() {
 interface MemoryManagerViewProps {
   memory: MemoryState;
   backfill: BackfillState;
-  /** Projects a memory can move to; null until first asked for. */
-  projects: ProjectOption[] | null;
+  /** Projects a memory can move to; null until first asked for and loaded. */
+  projects: ProjectOptions;
+  /** Load the projects, when a row's menu first opens (and again after a failure). */
   onWantProjects: () => void;
   onOpenSettings: () => void;
   /** For the dev gallery: the recap's server half, without the server. */
@@ -164,6 +163,12 @@ export function MemoryManagerView({
   const removal = useDeferredRemoval((entry, kind) =>
     kind === "forget" ? memory.forgetMemory(entry, { silent: true }) : memory.deleteMemory(entry, { silent: true })
   );
+  // A reset has removed everything a waiting delete or forget would have, so
+  // they are dropped rather than sent after it (to rows that no longer exist)
+  // and their Undo leaves with them. A failed reset keeps them waiting.
+  const resetMemory = async () => {
+    if (await memory.resetMemory()) removal.discardAll();
+  };
 
   const scopes = React.useMemo(
     () => memoryScopes(memory.memories ?? [], memory.projectSummaries),
@@ -336,7 +341,12 @@ export function MemoryManagerView({
           }
         />
       ) : memory.memories === null ? (
-        <MemoryBodySkeleton />
+        // The skeleton is drawn for the eye and hidden from the reader; this
+        // says the same thing in words (loading.tsx does it with its own label).
+        <div role="status">
+          <span className="sr-only">Loading memory</span>
+          <MemoryBodySkeleton />
+        </div>
       ) : !anythingRemembered ? (
         <div className="motion-safe:animate-rise-in">
           <MemoryWelcome
@@ -416,7 +426,7 @@ export function MemoryManagerView({
         onOpenChange={setResetOpen}
         resetting={memory.resetting}
         onExport={memory.exportMemory}
-        onReset={memory.resetMemory}
+        onReset={resetMemory}
       />
       <ActivitySheet
         open={activityOpen}

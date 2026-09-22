@@ -515,6 +515,19 @@ measurement table is keyed to. Hover keeps the fill alone. A fill says the
 pointer is here; a bounded fill says this is where you are, and one of those
 is a property the other cannot have at any opacity.
 
+> **Superseded, September 2026: the edge is gone.** The selected row is now
+> a fill and nothing else. It read as the one outlined object in a column of
+> text, and neither reference draws one: Claude and ChatGPT mark the current
+> row with a fill alone. What this finding measured still stands (hover and
+> selection must not be one paint at two strengths), so the two states became
+> two tokens instead of an edge: `--sidebar-hover` (92.8% light, 13.5% dark)
+> and `--sidebar-selected` (89.8% light, 19% dark), each a colour of its own.
+> The light fill stops at 89.8% because the open account row's muted plan
+> line still measures 4.52:1 on it. `--sidebar-selected-border` is still
+> defined for the native token table and no row draws it. See
+> `.sidebar-row-selected` in globals.css and FLAT_UI.md §3.1 and §4. The
+> fixes to the three rows below still hold; each now gets the fill.
+
 Three rows never had it at all, which the fix surfaced rather than caused:
 
 - **The rail.** The travelling fill was gated on `active && !collapsed`, so at
@@ -632,8 +645,8 @@ rows are a fixed, always-mounted ladder eight pixels apart, so a fill sliding
 between them reads as one object moving. The list is a scroller: the row you
 left can be four hundred pixels up the column or unmounted entirely, and a
 fill flying that far — or vanishing mid-flight because its origin scrolled out
-of the well — is a projectile, not a correction. Same recipe, same edge, no
-travel.
+of the well — is a projectile, not a correction. Same recipe, no travel.
+(The recipe no longer has an edge; see the note under the P0 above.)
 
 ## 2e. The preview was a picture of a website — September 2026
 

@@ -331,6 +331,7 @@ function useFixtureMemory(initial: {
       setProjectSummaries([]);
       setEdits([]);
       setResetting(false);
+      return true;
     },
     exportMemory: () => toast.success("Memory exported."),
   };

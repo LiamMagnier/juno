@@ -65,9 +65,11 @@ export default function SkillPage() {
         versionsFailed={detail.versionsFailed}
         resources={detail.resources}
         projectName={detail.projectName}
+        installedFrom={detail.source}
         busy={detail.busy}
         actions={{
           onToggle: detail.setEnabled,
+          onEnableSource: () => void detail.setSourceEnabled(true),
           onUsageChange: detail.setUsage,
           onConsent: () => void detail.consent(),
           onRestore: (version) => void detail.restore(version),

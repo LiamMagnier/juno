@@ -656,7 +656,7 @@ export function ThoughtProcessPanel({
       : HEADER_LABEL.done;
 
   const summary = React.useMemo(() => toRunSummary(run, finishNote), [run, finishNote]);
-  const recapSentence = streaming ? (live?.message ?? "Thinking about your request") : summary;
+  const recapSentence = streaming ? (live?.message ?? "Thinking") : summary;
 
   const toolCalls = run.calls.filter((c) => !c.warn).length;
   const figureThird = run.sourceCount > 0 || toolCalls === 0
@@ -969,7 +969,7 @@ export function ThoughtProcessPanel({
                 <div
                   className={cn(
                     "truncate font-mono text-ui tabular-nums",
-                    money ? "text-foreground" : "text-muted-foreground/60",
+                    money ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
                   {money ?? "—"}
@@ -1046,7 +1046,7 @@ export function ThoughtProcessPanel({
                   className="sticky top-0 z-10 -mx-3 flex items-baseline justify-between gap-2 bg-card px-3 pb-1.5 pt-4 font-mono text-label text-muted-foreground"
                 >
                   <span>{PHASE_LABEL[section.key]}</span>
-                  <span className="tabular-nums text-muted-foreground/70">
+                  <span className="tabular-nums text-muted-foreground">
                     {plural(section.steps.length, "step")}
                   </span>
                 </h3>
@@ -1261,7 +1261,7 @@ function StepRow({
           ? "text-primary ring-2 ring-primary/35"
           : step.failed
             ? "text-warning"
-            : "text-muted-foreground/70",
+            : "text-muted-foreground/80",
         expanded && "ring-secondary",
       )}
     >

@@ -3,7 +3,8 @@
  *
  * TWO STEPS, ONE ROUTE. A body with no `paths` is a PREVIEW: it walks the
  * repository and returns what it found — each skill's name, its description,
- * what else its folder holds, which of its declarations Juno cannot carry.
+ * what else its folder holds, which of its declarations Juno cannot carry, and
+ * what the security scan makes of it.
  * A body with `paths` IMPORTS those. The split is not ceremony: a repository is
  * the unit of distribution here (see `docs/skills-audit.md` §1.4), so an import
  * is frequently a choice among twenty, and a reader who has not seen the
@@ -58,6 +59,7 @@ import {
   chooseImportSource,
   discoverySourceKey,
   githubSkillContract,
+  importSecurityStatus,
   partitionTools,
   serializeLibrarySkill,
   serializeSkillSource,
@@ -133,6 +135,12 @@ function previewOf(candidate: GithubSkillCandidate, notes: PreviewNotes) {
     /** Files beside the SKILL.md. Listed, never fetched, never executed. */
     companionFiles: candidate.companionFiles,
     url: candidate.provenance.url,
+    /**
+     * The scanner's verdict on this file as it would be installed, so the
+     * dialog leaves a blocked skill unticked. Advisory: the import scans again
+     * when it writes, and that verdict is the one the row keeps.
+     */
+    securityStatus: importSecurityStatus(candidate),
     ...notes,
   };
 }
@@ -277,8 +285,10 @@ export async function POST(req: Request) {
       skills: discovery.candidates.map((candidate) => previewOf(candidate, notes.get(candidate.path)!)),
       problems,
       // True when the walk found more than one page's worth. The client says so
-      // rather than presenting 100 of 160 as the whole repository.
+      // rather than presenting 100 of 160 as the whole repository, and `total`
+      // (every SKILL.md in scope, read or not) is the 160 it says.
       more: discovery.more,
+      total: discovery.paths.length,
       connected: token !== null,
       source: joins ? serializeSkillSource(joins) : null,
     });
@@ -356,7 +366,7 @@ export async function POST(req: Request) {
       continue;
     }
     if (created.blocked) blockedCount++;
-    imported.push(serializeLibrarySkill(created.skill));
+    imported.push(serializeLibrarySkill({ ...created.skill, requiresConsent: created.version.requiresConsent }));
   }
 
   // A source made for this import and then left empty (every skill skipped)

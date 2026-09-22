@@ -82,7 +82,7 @@ function patchOf(event: ClientActivityEvent): string | null {
 /**
  * What the run is doing right now, as a sentence about the run.
  *
- * The chat strip's `liveCopy` answers "Thinking about your request" for every
+ * The chat strip's `liveCopy` answers "Thinking" for every
  * Code row, because it recognises tool rows by a prefix Code never writes.
  * This is the Code answer: a command is running, a file is being read or
  * written, an approval is waited on. Null when the row is not one of those,

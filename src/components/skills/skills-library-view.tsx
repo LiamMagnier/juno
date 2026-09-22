@@ -282,9 +282,11 @@ export function SkillsLibraryView({
           ) : null}
 
           {library.truncated ? (
+            // Not "search to find the rest": the search filters this list in
+            // the browser, so a skill past the cap is past it for search too.
             <p className="mt-4 text-caption text-muted-foreground">
               Showing <span className="tabular-nums">{listedSkillCount(library)}</span> of{" "}
-              <span className="tabular-nums">{library.total}</span> skills. Search to find the rest.
+              <span className="tabular-nums">{library.total}</span> skills, the first by name.
             </p>
           ) : null}
         </>

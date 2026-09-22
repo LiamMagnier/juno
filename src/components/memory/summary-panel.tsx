@@ -28,7 +28,7 @@ import { relativeTime } from "@/components/memory/memory-time";
  * the panel's 20px ones.
  */
 
-/** Roughly how much prose shows before "Show more": about six lines of the reading column. */
+/** Roughly how much prose shows before "Read the whole summary": about six lines of the reading column. */
 const PREVIEW_CHARS = 520;
 
 interface SummaryPanelProps {
@@ -59,7 +59,7 @@ export function SummaryPanel({ summary, project, consolidating, onRebuild, onOpe
       used += section.body.length;
       count++;
     }
-    // A single short section left over is not worth a "Show more".
+    // A single short section left over is not worth a "Read the whole summary".
     const rest = sections.slice(count).reduce((total, section) => total + section.body.length, 0);
     return rest < 160 ? sections.length : count;
   }, [sections]);

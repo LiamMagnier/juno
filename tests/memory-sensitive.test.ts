@@ -449,8 +449,8 @@ test("no memory component is built and left unreachable", () => {
   const bodies = files.map((name) => src(`src/components/memory/${name}`));
   const orphans = files.filter((name) => {
     const stem = name.replace(/\.tsx$/, "");
-    // The manager is the folder's own entry point — it is imported by the page
-    // and by the settings section, not by its siblings.
+    // The manager is the folder's own entry point: it is imported by the page,
+    // not by its siblings.
     if (stem === "memory-manager") return false;
     return !bodies.some((body) => body.includes(`/memory/${stem}"`));
   });

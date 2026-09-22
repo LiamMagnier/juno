@@ -118,7 +118,13 @@ export function ModelCombobox({
 
   const choose = (row: Row) => {
     if (row.kind === "older") {
+      // The row disappears as it opens, so the highlight moves to the first
+      // model it revealed. Left to the fallback below, it landed on the
+      // list's first option (Auto) and scrolled the list back to the top,
+      // away from everything that had just appeared.
+      const revealed = models.find((m) => m.legacy && !selected.has(m.id) && canUseModel(plan, m.id));
       setShowOlder(true);
+      if (revealed) setActive(revealed.id);
       return;
     }
     if (row.kind === "header" || (row.kind === "model" && row.locked)) return;

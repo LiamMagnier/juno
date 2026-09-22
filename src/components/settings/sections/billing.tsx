@@ -19,6 +19,7 @@ import {
   formatEur,
   formatEurWhole,
   formatResetMoment,
+  useFormatLocale,
 } from "@/components/settings/format";
 import { PLANS } from "@/lib/plans";
 import { describeCapSource } from "@/lib/spend-ceiling";
@@ -58,6 +59,7 @@ export function BillingSection() {
   const { quota, spend, features } = useApp();
   const saves = useSaveStates();
   const plan = PLANS[quota.plan];
+  const formatAt = useFormatLocale();
   const windows = spend.windows;
   const unlimited = spend.budgetMicroUsd == null;
   const generating = quota.plan !== "FREE" && !spend.capDisabled;
@@ -132,7 +134,7 @@ export function BillingSection() {
             <p className="mt-2 text-ui text-muted-foreground">
               {plan.price > 0 ? (
                 <>
-                  <span className="tabular-nums text-foreground">{formatEurWhole(plan.price)}</span>{" "}
+                  <span className="tabular-nums text-foreground">{formatEurWhole(plan.price, formatAt)}</span>{" "}
                   <span>a month, excluding VAT.</span>
                 </>
               ) : (
@@ -142,7 +144,7 @@ export function BillingSection() {
                 <>
                   {" "}
                   <span>{spend.billing.cancelAtPeriodEnd ? "Access ends" : "Renews"}</span>{" "}
-                  <span>{formatDate(renewsAtMs)}</span>.
+                  <span>{formatDate(renewsAtMs, formatAt)}</span>.
                 </>
               )}
             </p>
@@ -186,8 +188,8 @@ export function BillingSection() {
                 label="This month"
                 description={
                   <>
-                    <span className="tabular-nums">{formatEur(remainingEur ?? 0)}</span> <span>left of</span>{" "}
-                    <span className="tabular-nums">{formatEur(budgetEur)}</span>
+                    <span className="tabular-nums">{formatEur(remainingEur ?? 0, formatAt)}</span> <span>left of</span>{" "}
+                    <span className="tabular-nums">{formatEur(budgetEur, formatAt)}</span>
                   </>
                 }
                 share={monthShare}
@@ -217,7 +219,7 @@ export function BillingSection() {
                   "Resetting now."
                 ) : (
                   <>
-                    <span>Resets</span> <span>{formatResetMoment(windows.weekly.resetsAtMs)}</span>
+                    <span>Resets</span> <span>{formatResetMoment(windows.weekly.resetsAtMs, formatAt)}</span>
                   </>
                 )
               }
@@ -273,6 +275,7 @@ function SpendCeilingRow({
   status: SaveState;
   onSave: (eur: number | null) => Promise<boolean>;
 }) {
+  const formatAt = useFormatLocale();
   const [draft, setDraft] = React.useState(storedCapEur == null ? "" : String(storedCapEur));
   const [saving, setSaving] = React.useState(false);
   React.useEffect(() => {
@@ -301,7 +304,7 @@ function SpendCeilingRow({
             <span>{sourceNote}.</span>{" "}
             {ceilingEur != null && (
               <>
-                <span>Juno stops at</span> <span className="tabular-nums">{formatEur(ceilingEur)}</span>{" "}
+                <span>Juno stops at</span> <span className="tabular-nums">{formatEur(ceilingEur, formatAt)}</span>{" "}
                 <span>this period. Leave the field empty to use the default; the lower of the two applies.</span>
               </>
             )}

@@ -25,7 +25,7 @@ import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { isRetired, type Memory } from "@/components/memory/memory-model";
 import { relativeTime, shortDate } from "@/components/memory/memory-time";
-import type { ProjectOption } from "@/components/memory/use-project-options";
+import type { ProjectOption, ProjectOptions } from "@/components/memory/use-project-options";
 import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 
 /*
@@ -60,11 +60,11 @@ interface EntryRowProps {
   highlighted?: boolean;
   /**
    * Arrive by unfolding rather than appearing: a row brought back by Undo, or
-   * one revealed by its section's "Show more". Everything else is simply there.
+   * one revealed by its section's "Show all". Everything else is simply there.
    */
   enter?: boolean;
   /** Projects for the "Move to" menu; null until loaded. */
-  projects: ProjectOption[] | null;
+  projects: ProjectOptions;
   /** Ask for the project list, the first time a menu opens. */
   onWantProjects: () => void;
   onEdit: (id: string, content: string) => Promise<boolean>;
@@ -371,19 +371,26 @@ function RowMenu({
   memory: Memory;
   busy: boolean;
   buttonRef: React.RefObject<HTMLButtonElement | null>;
-  projects: ProjectOption[] | null;
+  projects: ProjectOptions;
   onWantProjects: () => void;
   onEdit: () => void;
   onRemove: (memory: Memory, kind: RemovalKind) => void;
   onMove: (memory: Memory, project: ProjectOption | null) => void;
 }) {
   const [open, setOpen] = React.useState(false);
-  // Edit swaps this whole row for a field, trigger included, so the menu must
-  // not hand focus back to a button that no longer exists; the field has it.
-  const editing = React.useRef(false);
+  // Where focus goes when the menu closes. Edit swaps this whole row for a
+  // field, trigger included, and the field takes focus itself. Forget and
+  // Delete fold the row away, trigger included, so focus moves on to the
+  // neighbouring row: handed back to a button that is about to leave the page,
+  // it would fall to the document and send a keyboard reader to the top.
+  const closingFor = React.useRef<"edit" | "remove" | null>(null);
   const chatId = sourceChatId(memory);
   const forgettable = memory.status !== "suppressed";
-  const otherProjects = (projects ?? []).filter((project) => project.id !== memory.projectId);
+  const otherProjects = Array.isArray(projects) ? projects.filter((project) => project.id !== memory.projectId) : [];
+  const removeWith = (kind: RemovalKind) => {
+    closingFor.current = "remove";
+    onRemove(memory, kind);
+  };
 
   return (
     <DropdownMenu
@@ -403,6 +410,7 @@ function RowMenu({
               label="Memory options"
               title=""
               disabled={busy}
+              data-memory-row-menu=""
               // The verbs arrive with the pointer, keyboard focus or an open
               // menu; a column of dots on every fact was the loudest thing in
               // a list meant for reading. Always there on a touch screen.
@@ -418,13 +426,16 @@ function RowMenu({
         align="end"
         className={MENU_W_WIDE}
         onCloseAutoFocus={(event) => {
-          if (editing.current) event.preventDefault();
-          editing.current = false;
+          const reason = closingFor.current;
+          closingFor.current = null;
+          if (reason === null) return;
+          event.preventDefault();
+          if (reason === "remove") focusNeighbourRow(buttonRef.current);
         }}
       >
         <DropdownMenuItem
           onSelect={() => {
-            editing.current = true;
+            closingFor.current = "edit";
             onEdit();
           }}
         >
@@ -445,6 +456,10 @@ function RowMenu({
             )}
             {projects === null ? (
               <DropdownMenuItem disabled>Loading projects…</DropdownMenuItem>
+            ) : projects === "failed" ? (
+              // Said, not shown as "No other projects": the list is retried the
+              // next time this menu opens.
+              <DropdownMenuItem disabled>Couldn’t load your projects</DropdownMenuItem>
             ) : otherProjects.length === 0 ? (
               <DropdownMenuItem disabled>No other projects</DropdownMenuItem>
             ) : (
@@ -469,7 +484,7 @@ function RowMenu({
         )}
         <DropdownMenuSeparator />
         {forgettable && (
-          <DropdownMenuItem onSelect={() => onRemove(memory, "forget")} className="items-start">
+          <DropdownMenuItem onSelect={() => removeWith("forget")} className="items-start">
             <EyeOff className="mt-0.5" />
             <span className="flex min-w-0 flex-col">
               <span>Forget</span>
@@ -477,7 +492,7 @@ function RowMenu({
             </span>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem variant="destructive" onSelect={() => onRemove(memory, "delete")} className="items-start">
+        <DropdownMenuItem variant="destructive" onSelect={() => removeWith("delete")} className="items-start">
           <ActionIcons.delete className="mt-0.5" />
           <span className="flex min-w-0 flex-col">
             <span>Delete</span>
@@ -487,4 +502,22 @@ function RowMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/**
+ * After a row is removed from its own menu: focus the next row's menu button,
+ * or the previous one's at the end of the list, or the list's heading when the
+ * row was the last one there. Rows in any section count, so removing the last
+ * fact under one topic moves on to the first under the next.
+ */
+function focusNeighbourRow(from: HTMLElement | null) {
+  const row = from?.closest("li");
+  const list = row?.closest<HTMLElement>("[data-memory-list]");
+  if (!row || !list) return;
+  const buttons = [...list.querySelectorAll<HTMLElement>("[data-memory-row-menu]")].filter(
+    (button) => !button.hasAttribute("disabled")
+  );
+  const index = buttons.findIndex((button) => row.contains(button));
+  const next = index === -1 ? undefined : buttons[index + 1] ?? buttons[index - 1];
+  (next ?? list.querySelector<HTMLElement>("[data-memory-list-anchor]"))?.focus();
 }

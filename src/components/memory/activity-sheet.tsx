@@ -63,6 +63,9 @@ export function ActivitySheet({
       <SheetContent
         side="right"
         title="Memory activity"
+        // Modal at every width (focus trapped, the page scroll-locked), so the
+        // page behind is dimmed at every width too, not only on a phone.
+        scrim="always"
         className="flex w-[28rem] max-w-[92vw] flex-col"
         // Radix focuses the first control on open, which here is Close, and
         // its tooltip would open with it. The heading takes focus instead: a

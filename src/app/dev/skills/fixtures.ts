@@ -34,6 +34,7 @@ function skill(
     updatedAt: DAYS(3),
     sourceId: null,
     sourcePath: null,
+    requiresConsent: false,
     ...extra,
   };
 }
@@ -173,6 +174,7 @@ export const FIXTURE_PREVIEW: SkillImportPreview = {
   }),
   problems: [{ path: "skills/broken/SKILL.md", reason: "missing_frontmatter", message: "It has no frontmatter." }],
   more: false,
+  total: 13,
   connected: true,
 };
 
@@ -193,6 +195,7 @@ export const FIXTURE_UPDATE_CHECK: SkillSourceUpdateCheck = {
   ],
   added: [{ path: "skills/claude-api/SKILL.md", name: "Claude api", description: "" }],
   removed: [{ path: "skills/old-template/SKILL.md", name: "Old template", description: "", skillId: "sk_old" }],
+  more: false,
 };
 
 export const FIXTURE_DETAIL_SKILL: ClientWorkSkill = {

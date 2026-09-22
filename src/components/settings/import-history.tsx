@@ -131,7 +131,11 @@ export function ImportHistoryRow() {
         e.preventDefault();
         if (!busy) setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      // Only when the file leaves the row itself: moving between the row's own
+      // children fires dragleave too, and the highlight blinked at each one.
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
@@ -139,12 +143,14 @@ export function ImportHistoryRow() {
         if (file) start(file);
       }}
       // The row itself is the drop target, so there is no separate zone to
-      // aim at. It lights with the hover tone, spread past its edges by a
-      // shadow of the same colour so the highlight has a margin without the
-      // row's hairline moving.
+      // aim at. It lights with the hover tone on a layer of its own, reaching
+      // past the row's sides, that fades in: only opacity animates. The fill
+      // used to be the row's own background, rounded, with a spread shadow for
+      // the margin, and the rounding bent the group's hairline above the row
+      // at both ends even when nothing was being dragged.
       className={cn(
-        "rounded-control transition-[background-color,box-shadow] duration-fast ease-out-soft",
-        dragging && "bg-accent shadow-[0_0_0_0.75rem_hsl(var(--accent))]"
+        "relative isolate before:pointer-events-none before:absolute before:-inset-x-3 before:inset-y-0 before:-z-10 before:rounded-control before:bg-accent before:opacity-0 before:transition-opacity before:duration-fast before:ease-out-soft before:content-['']",
+        dragging && "before:opacity-100"
       )}
     >
       <SettingRow
@@ -245,6 +251,15 @@ export function ImportProgress({ phase, onRetry }: { phase: ImportPhase; onRetry
                 <Num n={phase.attachmentsImported} /> <span>{phase.attachmentsImported === 1 ? "file" : "files"}</span>{" "}
                 restored from{" "}
                 <span translate="no">{phase.providerLabel}</span>.
+                {/* What was left out, as the old card said: without it an
+                    export whose files were missing read as a complete import. */}
+                {phase.skipped + phase.attachmentsSkipped > 0 && (
+                  <>
+                    {" "}
+                    <Num n={phase.skipped + phase.attachmentsSkipped} />{" "}
+                    <span>already here or unavailable.</span>
+                  </>
+                )}
               </span>
             ) : (
               <span>Everything in that export is already here.</span>

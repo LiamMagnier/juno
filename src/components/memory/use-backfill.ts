@@ -85,6 +85,8 @@ export function useBackfill({
       setRunning(true);
       setTotal(remainingRef.current ?? 0);
       let learned = 0;
+      let read = 0;
+      let left: number | null = null;
       try {
         for (let batch = 0; batch < MAX_BATCHES; batch++) {
           if (cancelled.current) return;
@@ -95,6 +97,8 @@ export function useBackfill({
           }
           const data = (await res.json()) as { processedConversations: number; created: number; remaining: number };
           learned += data.created;
+          read += data.processedConversations;
+          left = data.remaining;
           setRemaining(data.remaining);
           // No chats processed with work still queued means no model answered;
           // stop rather than spin against an unavailable provider.
@@ -102,12 +106,21 @@ export function useBackfill({
         }
         if (cancelled.current) return;
         await onLearned();
-        if (learned > 0) {
-          toast.success("Finished reading your past chats.", {
-            description: learned === 1 ? "1 new memory" : `${learned} new memories`,
-          });
+        // "Finished" only when the queue is empty. A run that stopped at the
+        // batch cap, or because no model answered, says what is left instead:
+        // "nothing new was worth remembering" about chats nobody read was a
+        // claim the job had not earned.
+        const newMemories = learned === 1 ? "1 new memory." : `${learned} new memories.`;
+        if (left === 0 || left === null) {
+          if (learned > 0) toast.success("Finished reading your past chats.", { description: newMemories });
+          else toast.success("Finished reading your past chats. Nothing new was worth remembering.");
+        } else if (read === 0) {
+          toast.error("Couldn’t read your past chats right now. Try again in a little while.");
         } else {
-          toast.success("Finished reading your past chats. Nothing new was worth remembering.");
+          const unread = left === 1 ? "1 chat is still unread." : `${left} chats are still unread.`;
+          toast.success("Read some of your past chats.", {
+            description: learned > 0 ? `${newMemories} ${unread}` : `Nothing new so far. ${unread}`,
+          });
         }
       } catch (error) {
         if (!cancelled.current) {

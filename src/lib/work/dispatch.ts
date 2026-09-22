@@ -928,10 +928,11 @@ function refused(status: number, body: Record<string, unknown>, preflight: WorkC
  * and the chat tool gets it back from `createWorkSessionForUser`.
  *
  * `preflightOnly` answers every question up to and including the cost estimate
- * (plan, usage window, executor, model) and then stops before the rate limit
- * and before anything is written, so a caller can put the estimate in front of
- * a person first. Only the chat tool asks for it; the route never does, and a
- * preflight answer is never a response body anybody decodes.
+ * (plan, usage window, executor, model), adds an unlocked read of the
+ * concurrency cap, and then stops before the rate limit and before anything is
+ * written, so a caller can put the estimate in front of a person first. Only
+ * the chat tool asks for it; the route never does, and a preflight answer is
+ * never a response body anybody decodes.
  */
 export async function startWorkRunForUser(
   user: WorkDispatchUser,
@@ -1127,6 +1128,23 @@ export async function startWorkRunForUser(
   // been written or counted against the rate limit. This is where a caller that
   // shows the estimate before starting gets it.
   if (options.preflightOnly) {
+    // The concurrency cap as well, read without its lock. The transaction
+    // below is still what enforces it; this only keeps a caller from asking a
+    // person to approve a run the cap would refuse the moment they said yes,
+    // which for somebody with three tasks going is the common case, not a race.
+    const live = await prisma.workRun.count({
+      where: { userId: user.id, status: { in: [...WORK_LIVE_STATUSES] } },
+    });
+    if (live >= WORK_RUN_CONCURRENCY_CAP) {
+      return refused(
+        429,
+        {
+          error: "run_cap_exceeded",
+          message: `You already have ${live} runs in progress. Let one finish first.`,
+        },
+        preflight
+      );
+    }
     return { status: 200, body: { preflight }, run: null, preflight };
   }
   if (preflight.requiresConfirmation && !body.confirmExpensive) {

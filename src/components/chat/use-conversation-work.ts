@@ -128,6 +128,14 @@ export function useConversationWork(conversationId: string | null): Conversation
   // Read by `adopt`, which must stay a stable callback for the chat view's ref.
   const sessionIdRef = React.useRef<string | null>(null);
   sessionIdRef.current = sessionId;
+  /*
+   * Bumped by every `adopt`. A discovery answer is only applied when none
+   * happened while it was in flight: one that left before the task existed
+   * says this chat has no task (or only an older one), and landing after the
+   * stream's `work` frame it would take the new panel off the screen until the
+   * next poll put it back.
+   */
+  const adoptions = React.useRef(0);
 
   /*
    * The resume cursor, both halves, in a ref.
@@ -167,8 +175,9 @@ export function useConversationWork(conversationId: string | null): Conversation
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const discover = async () => {
+      const asked = adoptions.current;
       const result = await fetchWorkSessions({ conversationId, limit: 1 });
-      if (!cancelled && result.kind === "ok") {
+      if (!cancelled && result.kind === "ok" && asked === adoptions.current) {
         const newest = result.value[0] ?? null;
         // Only when it is genuinely a different task, and never a draft. Writing
         // the same row back every four seconds would re-render the panel — and
@@ -368,6 +377,7 @@ export function useConversationWork(conversationId: string | null): Conversation
     // events while the open stream carried on from its cursor, and the panel
     // would lose everything the run had said so far.
     if (sessionIdRef.current === next.id) return;
+    adoptions.current += 1;
     cursor.current = { runId: null, after: 0 };
     setEvents([]);
     setRun(null);

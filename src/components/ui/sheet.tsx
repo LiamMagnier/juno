@@ -7,7 +7,7 @@ import { DialogOverlay } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 /** A side sheet (Radix Dialog under the hood → focus trap + Escape + scroll lock).
- *  Used for the mobile navigation drawer. */
+ *  Used for the mobile navigation drawer and the Memory activity panel. */
 const Sheet = DialogPrimitive.Root;
 const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
@@ -20,16 +20,24 @@ const SheetClose = DialogPrimitive.Close;
  * --motion-shift the reduced-motion tier keeps the fade and drops the travel
  * — which tailwindcss-animate's slide-in-from-* could never do.
  *
- * The scrim carries `md:hidden` because the only mount site is app-shell's
- * mobile nav: unqualified, rotating a tablet with the drawer open dimmed the
- * whole page behind an invisible, still-focus-trapped panel.
+ * `scrim` says at which widths the backdrop is drawn. The default, "mobile",
+ * carries `md:hidden` for app-shell's nav drawer, which only exists below md:
+ * unqualified, rotating a tablet with the drawer open dimmed the whole page
+ * behind an invisible, still-focus-trapped panel. A sheet that opens at every
+ * width (the Memory activity panel) passes "always", because it is modal
+ * there too: focus is trapped, the page is scroll-locked, and a click on the
+ * page only closes the sheet. Without a scrim the page behind looks live.
  */
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: "left" | "right"; title?: string }
->(({ className, children, side = "left", title = "Navigation", ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    side?: "left" | "right";
+    title?: string;
+    scrim?: "mobile" | "always";
+  }
+>(({ className, children, side = "left", title = "Navigation", scrim = "mobile", ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogOverlay className="md:hidden" />
+    <DialogOverlay className={scrim === "mobile" ? "md:hidden" : undefined} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

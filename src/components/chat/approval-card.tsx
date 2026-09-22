@@ -313,7 +313,13 @@ export function ApprovalCard({
   // Presentation only: whether the argument list is unfolded. It used to be a
   // native <details>, whose open state the browser kept and which gives no
   // height to animate, so the list cut in and out under its caret.
-  const [detailOpen, setDetailOpen] = React.useState(false);
+  //
+  // Open from the start for a task raised by a turn that read outside content:
+  // the warning asks the reader to check the brief, and the brief is the whole
+  // of what they are approving, so it should not take a second press to see.
+  const [detailOpen, setDetailOpen] = React.useState(
+    () => isTaskHandoff(approval) && approval.derivedFromUntrusted && approval.status === "pending"
+  );
   // The server's answer replaces the streamed one once there is one, so the
   // status line and the pills reflect the receipt rather than what the chunk
   // said several seconds ago.

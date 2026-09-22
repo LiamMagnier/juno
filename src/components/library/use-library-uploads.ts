@@ -89,10 +89,14 @@ export function useLibraryUploads({ maxBytes, onUploaded }: LibraryUploadsOption
           onUploadedRef.current(attachment);
           return;
         }
+        // A refused type or an over-size file fails the same way every time. A
+        // full library is also a 413, but the row tells the reader to make
+        // room, and once they have, trying again is exactly what works.
+        const libraryFull = (body as { code?: unknown } | null)?.code === "LIBRARY_QUOTA_EXCEEDED";
         patch(localId, {
           status: "failed",
           error: failureMessage(xhr.status, body),
-          retryable: xhr.status !== 413 && xhr.status !== 415,
+          retryable: libraryFull || (xhr.status !== 413 && xhr.status !== 415),
         });
       };
       xhr.onerror = () => {

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import type { LibraryItem, LibraryVersion } from "@/components/library/library-types";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { formatBytes } from "@/lib/utils";
 
@@ -119,12 +120,20 @@ export function FileVersionsDialog({
 }) {
   const [versions, setVersions] = React.useState<LibraryVersion[]>([]);
   const [loading, setLoading] = React.useState(false);
+  /**
+   * The list failed to load. Its own state rather than a toast over an empty
+   * list: "No earlier versions" under a failed request told the reader a
+   * file with history had none.
+   */
+  const [failed, setFailed] = React.useState(false);
+  const [attempt, setAttempt] = React.useState(0);
   const [restoring, setRestoring] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     if (!item) return;
     let cancelled = false;
     setLoading(true);
+    setFailed(false);
     setVersions([]);
     fetch(`/api/attachments/${item.id}/versions`)
       .then(async (response) => {
@@ -135,7 +144,7 @@ export function FileVersionsDialog({
         if (!cancelled) setVersions(data.versions ?? []);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Couldn’t load this file’s versions.");
+        if (!cancelled) setFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -143,7 +152,7 @@ export function FileVersionsDialog({
     return () => {
       cancelled = true;
     };
-  }, [item]);
+  }, [item, attempt]);
 
   const restore = async (version: LibraryVersion) => {
     if (!item || version.current) return;
@@ -181,6 +190,19 @@ export function FileVersionsDialog({
                 </div>
               ))}
             </div>
+          ) : failed ? (
+            <EmptyState
+              size="panel"
+              tone="error"
+              icon={StatusIcons.error}
+              title="Couldn’t load the versions"
+              action={
+                <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
+                  Try again
+                </Button>
+              }
+            />
           ) : versions.length === 0 ? (
             <EmptyState
               size="panel"

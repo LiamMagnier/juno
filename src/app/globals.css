@@ -137,7 +137,7 @@
     --success-ink: 140 38% 33%;
 
     --warning: 40 57% 45%;
-    --warning-foreground: 40 57% 33%;
+    --warning-foreground: 40 57% 32%;
     --source: 187 62% 34%;
     /*
      * MEASURED AGAINST THE CODE BLOCK, NOT THE PAGE, and both of these used to
@@ -536,7 +536,7 @@
 
     --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
-    --destructive-ink: 11 51% 56%;
+    --destructive-ink: 11 51% 66%;
 
     --success: 140 33% 53%;
     /* Text ON the success fill. The 53% green is mid-tone, so the ink on it is
@@ -1423,10 +1423,11 @@
    * the only place a sidebar glyph says something the label does not.
    *
    * The articulation is NOT the sidebar's. A destination's mark moves the way
-   * that glyph moves everywhere — the plus turns, the gear turns, the library
-   * lifts, Juno's own Chat, Code and Design marks move a part of themselves —
-   * because the gesture is declared once on the glyph in icons.tsx and played
-   * by `svg.icon[data-motion]` above, in the sidebar as in a menu or a page.
+   * that glyph moves everywhere — the plus turns, the gear turns, the artifact
+   * stack lifts, Juno's own Chat, Code, Design and Library marks move a part
+   * of themselves — because the gesture is declared once on the glyph in
+   * icons.tsx and played by `svg.icon[data-motion]` above, in the sidebar as
+   * in a menu or a page.
    * The sidebar only SILENCES the defaults that are wrong in a navigation
    * column (sidebar-motion-icon.tsx: the folder and projects marks, whose
    * gesture is the morph below, the panel toggle, the overflow dots and a
@@ -1520,7 +1521,8 @@
    * the track, which means the mapping from pointer-x to value depends on
    * that width — and the painted knob has to use the same inset or the two
    * drift apart, worst at the ends, where the value you see and the value you
-   * set stop agreeing. 20px here, `THUMB = 20` there. They are one number.
+   * set stop agreeing. 28px here, `THUMB = 28` in reasoning-slider.tsx. They
+   * are one number.
    *
    * Height is the full control so the whole row is draggable rather than just
    * the pill; `appearance: none` on the thumb is required or WebKit ignores
@@ -1529,13 +1531,13 @@
   .effort-range::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 20px;
+    width: 28px;
     height: 100%;
     background: transparent;
     border: 0;
   }
   .effort-range::-moz-range-thumb {
-    width: 20px;
+    width: 28px;
     height: 100%;
     background: transparent;
     border: 0;
@@ -3718,29 +3720,6 @@
   body:has([data-print-document]) > :not(:has([data-print-document])) { display: none; }
   html:has([data-print-document]), body:has([data-print-document]) { height: auto; overflow: visible !important; }
 }
-
-/* The account page's activity graph: one square per day, sized by viewport
-   so a year fits the settings measure on desktop and scrolls on a phone. The
-   custom properties are read by the grid tracks AND the legend squares, so
-   the two can never drift apart. */
-@layer components {
-  .activity-heatmap {
-    --cell: 10px;
-    --gap: 3px;
-  }
-  @media (min-width: 640px) {
-    .activity-heatmap {
-      --cell: 11px;
-    }
-  }
-  .activity-heatmap .no-scrollbar {
-    scrollbar-width: none;
-  }
-  .activity-heatmap .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-}
-
 
 /*
  * ——— TIER C: THE DECORATIVE LOOPS, STOPPED ———

@@ -15,7 +15,7 @@ export default function NewAutomationLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading the automation editor">
-      <AppPageHeaderSkeleton ledeLines={2} headingWidth="w-48" />
+      <AppPageHeaderSkeleton nav ledeLines={2} headingWidth="w-48" />
       <WorkRowSkeletons count={4} height={64} className="space-y-3" />
     </AppPage>
   );

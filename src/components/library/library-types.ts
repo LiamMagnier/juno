@@ -137,7 +137,7 @@ export function kindLabel(item: { fileName: string; kind: LibraryItem["kind"] })
 /**
  * The server's orderings, restated for the one place the client has to place
  * a row itself: putting an item back after Undo, or a finished upload into a
- * list it did not come from. Must agree with `ORDER_BY` in the route.
+ * list it did not come from. Must agree with `ORDER_BY` in library-query.ts.
  */
 export function compareItems(sort: LibrarySort): (a: LibraryItem, b: LibraryItem) => number {
   switch (sort) {

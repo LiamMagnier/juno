@@ -10,7 +10,7 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
+  ChevronsUpDown,
   Pin,
   PinOff,
   Plus,
@@ -307,7 +307,6 @@ export function AppSidebar({
   const [needsYouOnly, setNeedsYouOnly] = React.useState(false);
   const [recentsLimit, setRecentsLimit] = React.useState(RECENTS_PAGE);
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const sentinelRef = React.useRef<HTMLDivElement>(null);
 
   const migratedLegacyStars = React.useRef(false);
 
@@ -383,11 +382,21 @@ export function AppSidebar({
     });
   };
 
-  // Infinite scroll for Recents: a sentinel at the foot of the list asks for
-  // the next page as it scrolls into the well.
+  /*
+   * Infinite scroll for Recent: a sentinel at the foot of the list asks for
+   * the next page as it scrolls into the well.
+   *
+   * The sentinel is held in STATE through a callback ref, so the observer
+   * follows the node itself. It used to read a ref in an effect keyed to
+   * `[mounted, collapsed]`, which only ever saw the first node: pressing
+   * Needs you unmounts Recent and its sentinel, pressing it again mounts a
+   * new one, and the observer went on watching the detached node, so the list
+   * stopped paging at whatever it had loaded. A list that first grows past a
+   * page after mount had no sentinel observed at all.
+   */
+  const [sentinel, setSentinel] = React.useState<HTMLDivElement | null>(null);
   React.useEffect(() => {
     const root = scrollRef.current;
-    const sentinel = sentinelRef.current;
     if (!root || !sentinel || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => {
@@ -397,7 +406,7 @@ export function AppSidebar({
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [mounted, collapsed]);
+  }, [sentinel]);
 
   /*
    * THE ROW YOU ARE ON STAYS VISIBLE.
@@ -410,13 +419,21 @@ export function AppSidebar({
    * was drawn correctly and off screen, and the column looked like it had
    * lost its selection rather than like it had scrolled.
    *
-   * `block: "nearest"` and an explicit in-view test before it, which is what
-   * keeps this from being the other failure — a panel that yanks itself
+   * The smallest scroll, and an explicit in-view test before it, which is
+   * what keeps this from being the other failure — a panel that yanks itself
    * around while you are reading it. A row already in the well is left
-   * exactly where it is; only a row outside it moves, and then by the
-   * smallest scroll that brings it in. Smooth, because this is a scroll
-   * nothing else is writing at the same time, and instant when the reader
-   * has asked the OS for less motion.
+   * exactly where it is; only a row outside it moves, and then only as far
+   * as brings it in. Smooth, because this is a scroll nothing else is
+   * writing at the same time, and instant when the reader has asked the OS
+   * for less motion.
+   *
+   * THE WELL SCROLLS AND NOTHING ELSE. This was `row.scrollIntoView`, which
+   * scrolls every clipping ancestor on both axes, and the shell's `<aside>`
+   * is one: it clips a column already laid out at full width while its own
+   * width unfolds from the rail. So expanding the panel with the open chat
+   * below the fold scrolled the frame 8px sideways to line the row's left
+   * edge up with it, and the whole column (collapse button, glyphs, avatar)
+   * lurched left mid-fold and snapped back as the frame reached full width.
    */
   React.useEffect(() => {
     if (collapsed || !mounted || !activeConversationId) return;
@@ -428,8 +445,13 @@ export function AppSidebar({
     if (!row) return;
     const rowBox = row.getBoundingClientRect();
     const rootBox = root.getBoundingClientRect();
-    if (rowBox.top >= rootBox.top && rowBox.bottom <= rootBox.bottom) return;
-    row.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    const above = rowBox.top - rootBox.top;
+    const below = rowBox.bottom - rootBox.bottom;
+    if (above >= 0 && below <= 0) return;
+    root.scrollTo({
+      top: root.scrollTop + (above < 0 ? above : below),
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
   }, [activeConversationId, collapsed, mounted, reduceMotion]);
 
   const sidebarProjects = React.useMemo(
@@ -655,6 +677,7 @@ export function AppSidebar({
     projects,
     onUpdate: updateConversation,
     onRemove: removeConversation,
+    onRestore: upsertConversation,
     onNavigate: () => setSidebarOpen(false),
     onRequestConfirm: setConfirm,
     onShare: setShareId,
@@ -904,21 +927,22 @@ export function AppSidebar({
               </motion.div>
             )}
           </AnimatePresence>
+          {/* The drawer's own close, drawn only below md. No tooltip: the
+              drawer's focus scope skips links when it opens, so this is the
+              control that takes focus, and a tooltip on it opened on every
+              open, measured mid-slide and left hanging over New chat. An X
+              needs no caption, and the button names itself for a screen
+              reader. */}
           {!collapsed && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="group size-8 shrink-0 md:hidden coarse:size-11"
-                  onClick={() => setSidebarOpen(false)}
-                  aria-label="Close menu"
-                >
-                  <SidebarMotionIcon kind="close" className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Close</TooltipContent>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="group size-8 shrink-0 md:hidden coarse:size-11"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close menu"
+            >
+              <SidebarMotionIcon kind="close" className="size-4" />
+            </Button>
           )}
         </motion.div>
 
@@ -1213,7 +1237,14 @@ export function AppSidebar({
                         isCollapsed={sectionCollapsed.projects}
                         onToggleCollapse={() => toggleSection("projects")}
                         action={
-                          <SectionAction label="New project" onClick={() => router.push("/projects?new=1")} always>
+                          <SectionAction
+                            label="New project"
+                            onClick={() => {
+                              setSidebarOpen(false);
+                              router.push("/projects?new=1");
+                            }}
+                            always
+                          >
                             <Plus className="size-3.5" />
                           </SectionAction>
                         }
@@ -1289,7 +1320,7 @@ export function AppSidebar({
                           />
                         ))}
                         {recents.length > recentsLimit && (
-                          <div ref={sentinelRef} className="flex justify-center py-2" aria-hidden>
+                          <div ref={setSentinel} className="flex justify-center py-2" aria-hidden>
                             <span className="skeleton h-2 w-16 rounded-full" />
                           </div>
                         )}
@@ -1382,11 +1413,13 @@ export function AppSidebar({
                       )}
                     </span>
                   </motion.span>
-                  {/* A state mark, not an action: it points where the menu
-                      opens and turns over while it is open. */}
-                  <ChevronUp
+                  {/* A state mark, not an action: the up-down caret says
+                      "this opens a menu" without claiming a direction, and
+                      it inks up while the menu is open rather than flipping,
+                      which read as the row itself turning over. */}
+                  <ChevronsUpDown
                     aria-hidden
-                    className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+                    className="size-3.5 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-data-[state=open]:text-foreground motion-reduce:transition-none"
                   />
                 </button>
               }
@@ -1454,6 +1487,7 @@ export function AppSidebar({
           open={archivedOpen}
           product={product}
           onOpenChange={setArchivedOpen}
+          onNavigate={() => setSidebarOpen(false)}
           onRestored={(c) => upsertConversation({ ...c, archivedAt: null })}
           onRequestConfirm={setConfirm}
         />
@@ -2174,6 +2208,8 @@ type RowSharedProps = {
   projects: { id: string; name: string }[];
   onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
   onRemove: (id: string) => void;
+  /** Puts a row back after an optimistic removal the server refused. */
+  onRestore: (c: ClientConversation) => void;
   onNavigate: () => void;
   onRequestConfirm: (c: ConfirmState) => void;
   onShare: (id: string) => void;
@@ -2190,6 +2226,7 @@ function ConversationRow({
   projects,
   onUpdate,
   onRemove,
+  onRestore,
   onNavigate,
   onRequestConfirm,
   onShare,
@@ -2237,8 +2274,11 @@ function ConversationRow({
       confirmLabel: isCodeSession ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
-        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" });
-        if (!res.ok) {
+        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" }).catch(() => null);
+        if (!res?.ok) {
+          // The row comes back: the chat still exists, and a list that went on
+          // leaving it out would say otherwise until the next reload.
+          onRestore(conversation);
           toast.error("Delete failed.");
           return;
         }
@@ -2402,7 +2442,12 @@ function ConversationRow({
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => router.push("/projects")}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onNavigate();
+                    router.push("/projects");
+                  }}
+                >
                   <Plus className="size-4" /> New project…
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
@@ -2663,6 +2708,7 @@ function ArchivedChatsDialog({
   open,
   product,
   onOpenChange,
+  onNavigate,
   onRestored,
   onRequestConfirm,
 }: {
@@ -2671,6 +2717,10 @@ function ArchivedChatsDialog({
    *  Code column's "Archived sessions" cannot answer with a year of chats. */
   product: ProductSurface;
   onOpenChange: (o: boolean) => void;
+  /** Opening a row leaves the panel the way a row in it does: on a phone the
+   *  dialog lives inside the drawer, and the drawer stayed open over the chat
+   *  it had just opened. */
+  onNavigate: () => void;
   onRestored: (c: ClientConversation) => void;
   onRequestConfirm: (c: ConfirmState) => void;
 }) {
@@ -2728,8 +2778,13 @@ function ArchivedChatsDialog({
       confirmLabel: isCode ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         setItems((prev) => prev?.filter((x) => x.id !== c.id) ?? prev);
-        const r = await fetch(`/api/conversations/${c.id}`, { method: "DELETE" });
-        if (!r.ok) toast.error("Delete failed.");
+        const r = await fetch(`/api/conversations/${c.id}`, { method: "DELETE" }).catch(() => null);
+        if (!r?.ok) {
+          // Back in the list, as a failed restore puts it back: it is still
+          // archived, and the list must not claim otherwise.
+          setItems((prev) => (prev ? [c, ...prev] : prev));
+          toast.error("Delete failed.");
+        }
       },
     });
   };
@@ -2742,13 +2797,13 @@ function ArchivedChatsDialog({
           <DialogDescription>
             {isCode
               ? "Archived sessions stay searchable. Restore one to bring it back to the list."
-              : "Archived chats stay searchable. Restore one to bring it back to Recents."}
+              : "Archived chats stay searchable. Restore one to bring it back to Recent."}
           </DialogDescription>
         </DialogHeader>
         <div className="-mx-1 max-h-[50vh] overflow-y-auto">
           {failed ? (
             <DialogListState icon={StatusIcons.error} tone="error">
-              Couldn’t load archived chats.
+              {isCode ? "Couldn’t load archived sessions." : "Couldn’t load archived chats."}
             </DialogListState>
           ) : items == null ? (
             <div className="space-y-0.5 px-1">
@@ -2777,6 +2832,7 @@ function ArchivedChatsDialog({
                     type="button"
                     onClick={() => {
                       onOpenChange(false);
+                      onNavigate();
                       router.push(`/chat/${c.id}`);
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2.5 text-left"

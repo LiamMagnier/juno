@@ -10,6 +10,7 @@ import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
+import { WorkStateNote } from "@/components/work/work-vocabulary";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 
 /**
@@ -105,11 +106,22 @@ export function DevicesView({
             }
           />
         ) : (
-          <WorkList>
-            {ordered.map((host) => (
-              <WorkHostRow key={host.id} host={host} />
-            ))}
-          </WorkList>
+          <>
+            {/* The rows stay (they are the last real answer) but say they
+                may be stale, as /permissions does: without this a Mac that
+                woke or went away since the last good poll looked current. */}
+            {failed && (
+              <WorkStateNote tone="warning" className="mb-3">
+                These are the last answers Juno got. The latest check failed, so a Mac may have woken or gone away
+                since.
+              </WorkStateNote>
+            )}
+            <WorkList>
+              {ordered.map((host) => (
+                <WorkHostRow key={host.id} host={host} />
+              ))}
+            </WorkList>
+          </>
         )}
         <p className="mt-4 text-ui text-muted-foreground">
           Some actions wait for you on every Mac, whatever it is allowed to do.{" "}

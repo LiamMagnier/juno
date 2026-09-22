@@ -33,16 +33,17 @@ export interface ChatSkillsState {
 /**
  * The library flattened into the order the composer lists it: your own skills
  * first, then each installed repository in the library's order. Only what chat
- * can actually use survives: a skill switched off, or one whose repository is
- * switched off, would be a row that arms a pill and is then refused.
+ * can actually use survives: a skill switched off, one whose repository is
+ * switched off, or one whose new version still waits for the reader to approve
+ * what it asks for, would be a row that arms a pill and is then refused.
  */
 export function chatSkillsFromLibrary(library: SkillLibrary): ChatSkill[] {
   const yours = library.yours
-    .filter((skill) => skillIsAvailable(skill, null))
+    .filter((skill) => skillIsAvailable(skill, null) && !skill.requiresConsent)
     .map((skill) => ({ ...skill, yours: true, sourceLabel: null, sourceOwner: null }));
   const installed = library.sources.flatMap((source) =>
     source.skills
-      .filter((skill) => skillIsAvailable(skill, source))
+      .filter((skill) => skillIsAvailable(skill, source) && !skill.requiresConsent)
       .map((skill) => ({ ...skill, yours: false, sourceLabel: sourceLabel(source), sourceOwner: source.owner }))
   );
   return [...yours, ...installed];

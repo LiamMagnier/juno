@@ -70,6 +70,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
   const [drafting, setDrafting] = React.useState<string | null>(null);
   const setJustApplied = onJustAppliedChange;
   const fieldRef = React.useRef<HTMLTextAreaElement>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion() ?? false;
 
   useComposerAutosize(fieldRef, value, { maxLines: 5 });
@@ -107,18 +108,46 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
   const pending = edits.filter((edit) => edit.status === "pending");
   const applied = edits.filter((edit) => edit.status === "applied" && justApplied.has(edit.id));
 
-  const accept = async (edit: MemoryEditRecord) => {
-    await onAccept(edit);
-    setJustApplied((prev) => new Map(prev).set(edit.id, Date.now()));
+  /*
+   * Apply, Discard and Undo each fold away the row their button sits in (and
+   * the button disables itself while it works), and a focused button that
+   * leaves the page drops a keyboard reader at the top of the document. The
+   * bar above is the dock's one fixed control, so focus returns there. Only
+   * after a keyboard press, read at the press since the button has lost focus
+   * by the time the work is done: after a tap, focusing a text field would
+   * raise a phone's keyboard unasked.
+   */
+  const pressedFromKeyboard = () => {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && !!rootRef.current?.contains(active) && active.matches(":focus-visible");
+  };
+  const returnFocus = (fromKeyboard: boolean) => {
+    if (!fromKeyboard || paused) return;
+    const active = document.activeElement;
+    // Unless the reader has already moved on somewhere else.
+    if (!active || active === document.body || rootRef.current?.contains(active)) fieldRef.current?.focus();
   };
 
+  const accept = async (edit: MemoryEditRecord) => {
+    const fromKeyboard = pressedFromKeyboard();
+    await onAccept(edit);
+    setJustApplied((prev) => new Map(prev).set(edit.id, Date.now()));
+    returnFocus(fromKeyboard);
+  };
+
+  const discard = async (edit: MemoryEditRecord) => {
+    const fromKeyboard = pressedFromKeyboard();
+    await onDiscard(edit.id);
+    returnFocus(fromKeyboard);
+  };
+
+  // The applied line needs no clearing here: a successful Undo turns the edit
+  // back to pending, which takes the line away, and a failed one leaves it
+  // applied with its Undo still in reach until the hold runs out.
   const undo = async (edit: MemoryEditRecord) => {
+    const fromKeyboard = pressedFromKeyboard();
     await onUndo(edit);
-    setJustApplied((prev) => {
-      const next = new Map(prev);
-      next.delete(edit.id);
-      return next;
-    });
+    returnFocus(fromKeyboard);
   };
 
   // Everything under the bar unfolds out of it and folds back into it: the
@@ -137,7 +166,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
   const busy = drafting !== null;
 
   return (
-    <div className={className}>
+    <div ref={rootRef} className={className}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -157,7 +186,12 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
             value={value}
             rows={1}
             maxLength={600}
-            disabled={paused || busy}
+            // Read-only while a draft is written, not disabled: a disabled
+            // field loses focus, and the reader typing the next instruction
+            // would find it gone.
+            disabled={paused}
+            readOnly={busy}
+            aria-busy={busy}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -214,7 +248,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
                   edit={edit}
                   busy={busyEditIds.has(edit.id)}
                   onAccept={() => void accept(edit)}
-                  onDiscard={() => void onDiscard(edit.id)}
+                  onDiscard={() => void discard(edit)}
                 />
               </motion.div>
             </div>
@@ -269,7 +303,7 @@ function ProposalCard({
   onDiscard: () => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-field border border-border bg-background" aria-label="Proposed change">
+    <div role="group" aria-label="Proposed change" className="overflow-hidden rounded-field border border-border bg-background">
       <div className="px-3.5 pb-2.5 pt-3">
         <p className="text-caption text-muted-foreground">
           <q>{edit.instruction}</q>

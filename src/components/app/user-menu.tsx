@@ -68,7 +68,7 @@ function MenuRow({
   );
   if (href) {
     return (
-      <DropdownMenuItem asChild>
+      <DropdownMenuItem asChild onSelect={onSelect}>
         <Link href={href} className="flex w-full items-center gap-2.5">
           {inner}
         </Link>
@@ -112,9 +112,16 @@ export function UserMenu({
   /** A caller-drawn trigger (the sidebar footer's account row). */
   trigger?: React.ReactNode;
 }) {
-  const { user, quota, features } = useApp();
+  const { user, quota, features, setSidebarOpen } = useApp();
   const plan = PLANS[quota.plan];
   const mod = useModifierKeyLabel();
+  /* Every row leaves the menu for somewhere else, so every row closes the
+     phone drawer this menu sits in, as a row in the column does. The drawer's
+     open state lives in the provider, above the routes, so a page reached
+     from here (Upgrade plan, Admin) otherwise opened underneath a drawer that
+     stayed open, and Settings and the shortcuts sheet opened over it. At a
+     desktop width the drawer is already shut and this does nothing. */
+  const leave = () => setSidebarOpen(false);
   // Offered only when a plan above this one can actually be bought: a tier
   // whose price is not configured has no checkout behind it (types/app.ts).
   const canUpgrade =
@@ -240,16 +247,22 @@ export function UserMenu({
             Settings on its Account section, one click from this Settings. */}
         <DropdownMenuGroup>
           <MenuRow
-            onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
+            onSelect={() => {
+              leave();
+              window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }));
+            }}
             icon={<AppIcons.settings className="size-4" />}
             label="Settings"
           />
-          {canUpgrade && <MenuRow href="/upgrade" icon={<Sparkles className="size-4" />} label="Upgrade plan" />}
+          {canUpgrade && (
+            <MenuRow href="/upgrade" onSelect={leave} icon={<Sparkles className="size-4" />} label="Upgrade plan" />
+          )}
           {features.isOwner && (
             <MenuRow
               href="/admin"
+              onSelect={leave}
               icon={<ShieldCheck className="size-4" />}
-              label="Admin Panel"
+              label="Admin panel"
             />
           )}
         </DropdownMenuGroup>
@@ -261,9 +274,17 @@ export function UserMenu({
             version, size and checksum, so the menu fetches nothing to offer
             it (the footer's download menu hit GitHub on first open). */}
         <DropdownMenuGroup>
-          <MenuRow href="/download" icon={<ActionIcons.download className="size-4" />} label="Get the apps" />
           <MenuRow
-            onSelect={() => window.dispatchEvent(new CustomEvent("juno:shortcuts"))}
+            href="/download"
+            onSelect={leave}
+            icon={<ActionIcons.download className="size-4" />}
+            label="Get the apps"
+          />
+          <MenuRow
+            onSelect={() => {
+              leave();
+              window.dispatchEvent(new CustomEvent("juno:shortcuts"));
+            }}
             icon={<Keyboard className="size-4" />}
             label="Keyboard shortcuts"
             shortcut={`${mod}/`}

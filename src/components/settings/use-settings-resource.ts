@@ -7,8 +7,19 @@ import * as React from "react";
  * on every switch (the pane keys them), so without this every visit to
  * Connectors, Devices or Plan & usage started from a skeleton again. Now a
  * return visit draws the last answer at once and refreshes it underneath.
+ *
+ * Every mounted reader of a URL hears each new answer, not just the one that
+ * set it: a write can settle after the section that made it has remounted
+ * (Connectors rolling a refused policy back, say), and the new mount has to
+ * show the rollback rather than the optimistic value it was drawn with.
  */
 const cache = new Map<string, unknown>();
+const listeners = new Map<string, Set<(value: unknown) => void>>();
+
+function publish(url: string, value: unknown) {
+  cache.set(url, value);
+  listeners.get(url)?.forEach((listener) => listener(value));
+}
 
 export interface SettingsResource<T> {
   /** The latest answer, the cached one while a refresh is in flight, or null before the first. */
@@ -33,13 +44,20 @@ export function useSettingsResource<T>(url: string, parse: (body: unknown) => T)
     parseRef.current = parse;
   }, [parse]);
 
-  const setData = React.useCallback(
-    (next: T) => {
-      cache.set(url, next);
-      setDataState(next);
-    },
-    [url]
-  );
+  React.useEffect(() => {
+    let readers = listeners.get(url);
+    if (!readers) {
+      readers = new Set();
+      listeners.set(url, readers);
+    }
+    const listener = (value: unknown) => setDataState(value as T);
+    readers.add(listener);
+    return () => {
+      readers.delete(listener);
+    };
+  }, [url]);
+
+  const setData = React.useCallback((next: T) => publish(url, next), [url]);
 
   const reload = React.useCallback(async () => {
     setError(false);

@@ -21,7 +21,7 @@ export const PERSONALITIES: readonly Personality[] = [
   {
     id: "default",
     label: "Default",
-    description: "Juno's natural voice — warm, clear, and adapts to the question.",
+    description: "Juno's natural voice: warm, clear, and adapted to the question.",
     systemPrompt: null,
   },
   {

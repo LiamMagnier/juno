@@ -675,8 +675,11 @@ export class WorkService {
       ),
       this.#optional(
         async () => {
+          // The route's ceiling, asked for by name: a server from before the
+          // default rose to 200 stops at 50, and a reader with two installed
+          // repositories lost the rest from this menu without being told.
           const { data } = await this.#request(
-            { path: '/api/work/skills?enabled=true', method: 'GET', schema: SkillListResponseSchema },
+            { path: '/api/work/skills?enabled=true&limit=200', method: 'GET', schema: SkillListResponseSchema },
             'your skills',
           );
           return data.skills.map(toWorkSkillRef);

@@ -53,19 +53,26 @@ export function useSkillLibrary() {
   const [error, setError] = React.useState<string | null>(null);
   const sequence = React.useRef(new Map<string, number>());
 
+  // Whether a library is on screen, read by `load` without depending on it.
+  const shown = React.useRef(false);
+
   const load = React.useCallback(async (): Promise<SkillLibrary | null> => {
     setError(null);
     const result = await fetchSkillLibrary();
     if (result.kind === "ok") {
+      shown.current = true;
       setLibrary(result.value);
       return result.value;
     }
-    setError(
-      skillsFailureMessage(
-        result,
-        "Couldn’t load your skills. The request failed, so this is not an empty library."
-      )
+    const message = skillsFailureMessage(
+      result,
+      "Couldn’t load your skills. The request failed, so this is not an empty library."
     );
+    setError(message);
+    // A re-read after an install or an update fails with the old list still on
+    // screen, where the page draws no error: said here, or the list would
+    // quietly go on showing what was there before the change.
+    if (shown.current) toast.error(skillsFailureMessage(result, "Couldn’t refresh your skills. The list may be out of date."));
     return null;
   }, []);
 

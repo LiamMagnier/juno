@@ -15,7 +15,7 @@ export default function NewSkillLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading the skill editor">
-      <AppPageHeaderSkeleton headingWidth="w-32" actions />
+      <AppPageHeaderSkeleton nav headingWidth="w-32" actions />
       <div className="space-y-6">
         <Skeleton className="h-10 w-full rounded-field" />
         <Skeleton className="h-10 w-full rounded-field" />

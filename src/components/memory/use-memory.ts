@@ -87,7 +87,8 @@ export interface MemoryState {
   deleteMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
   /** File a fact under one project, or (null) back under the whole account. */
   moveMemory: (memory: Memory, project: { id: string; name: string } | null) => Promise<boolean>;
-  resetMemory: () => Promise<void>;
+  /** Delete everything remembered, account-wide. Resolves true when the server did. */
+  resetMemory: () => Promise<boolean>;
   exportMemory: () => void;
 }
 
@@ -144,6 +145,12 @@ export function useMemory(): MemoryState {
     []
   );
 
+  // Whether a list has ever arrived. A refresh that fails after that (the
+  // reload behind an edit, a forget, a move) must not swap a page of rows the
+  // reader can see for "Couldn't load your memory. Nothing has been changed",
+  // which is false the moment the change it followed went through.
+  const loadedOnce = React.useRef(false);
+
   const reload = React.useCallback(async () => {
     try {
       const res = await fetch("/api/memory");
@@ -153,8 +160,10 @@ export function useMemory(): MemoryState {
       setSummary(data.summary ?? null);
       setProjectSummaries(data.projectSummaries ?? []);
       setLoadError(false);
+      loadedOnce.current = true;
     } catch {
-      setLoadError(true);
+      if (loadedOnce.current) toast.error("Couldn’t refresh your memory. Reload the page to see the latest.");
+      else setLoadError(true);
     }
   }, []);
 
@@ -455,6 +464,9 @@ export function useMemory(): MemoryState {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ forget: true }),
+          // The page's deferred removal can send this as the tab closes; a
+          // keepalive request outlives the page that started it.
+          keepalive: true,
         });
         if (!res.ok) throw new Error();
         await reload();
@@ -474,8 +486,10 @@ export function useMemory(): MemoryState {
     async (memory: Memory, opts?: { silent?: boolean }): Promise<boolean> => {
       mark(setBusyIds, memory.id, true);
       try {
-        const res = await fetch(`/api/memory/${memory.id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error();
+        const res = await fetch(`/api/memory/${memory.id}`, { method: "DELETE", keepalive: true });
+        // A 404 is the outcome asked for, not a failure: the row is already
+        // gone (a reset, another tab), and "Nothing was changed" would be false.
+        if (!res.ok && res.status !== 404) throw new Error();
         setMemories((prev) => (prev ?? []).filter((m) => m.id !== memory.id));
         // Deliberately says what delete does NOT do. Delete removes the row;
         // the chat it came from is still there, so a later backfill may learn
@@ -524,7 +538,7 @@ export function useMemory(): MemoryState {
     [mark, reload]
   );
 
-  const resetMemory = React.useCallback(async () => {
+  const resetMemory = React.useCallback(async (): Promise<boolean> => {
     setResetting(true);
     try {
       const res = await fetch("/api/memory", { method: "DELETE" });
@@ -534,8 +548,10 @@ export function useMemory(): MemoryState {
       setProjectSummaries([]);
       setEdits([]);
       toast.success("Memory reset. Juno starts fresh.");
+      return true;
     } catch {
       toast.error("Couldn’t reset memory. Nothing was deleted.");
+      return false;
     } finally {
       setResetting(false);
     }

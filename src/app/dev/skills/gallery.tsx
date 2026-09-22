@@ -13,6 +13,7 @@ import { SkillDetailView, type SkillUsage } from "@/components/skills/skill-deta
 import { SkillsLibraryView, type SkillsLibraryActions } from "@/components/skills/skills-library-view";
 import { RemoveSourceDialog } from "@/components/skills/skills-library-page";
 import { UpdateSourceFlow } from "@/components/skills/update-source-dialog";
+import { skillUsagePatch } from "@/components/skills/skill-library-model";
 import type { ClientWorkSkill, ClientWorkSkillVersion } from "@/lib/work/skills";
 import {
   FIXTURE_DETAIL_SKILL,
@@ -103,6 +104,19 @@ function View({ view }: { view: SkillsGalleryView }) {
           />
         </DialogFrame>
       );
+    case "update-new":
+      // Every installed skill matches (the server's `upToDate`), and the
+      // repository has grown: the new skills must still be offered.
+      return (
+        <DialogFrame>
+          <UpdateSourceFlow
+            source={FIXTURE_LIBRARY.sources[0]}
+            onDone={() => undefined}
+            onCancel={() => undefined}
+            initialCheck={{ ...FIXTURE_UPDATE_CHECK, upToDate: true, changed: [], removed: [], more: true }}
+          />
+        </DialogFrame>
+      );
     case "detail":
       return (
         <DetailFixture skill={FIXTURE_DETAIL_SKILL} version={FIXTURE_DETAIL_VERSION} versions={FIXTURE_DETAIL_VERSIONS} />
@@ -139,6 +153,7 @@ function View({ view }: { view: SkillsGalleryView }) {
             },
           }}
           versions={FIXTURE_DETAIL_VERSIONS}
+          installedFrom={{ ...FIXTURE_LIBRARY.sources[0], enabled: false }}
         />
       );
   }
@@ -242,6 +257,7 @@ function DetailFixture({
   resources = [],
   projectName = null,
   projectId = null,
+  installedFrom: initialSource = null,
 }: {
   skill: ClientWorkSkill;
   version: ClientWorkSkillVersion;
@@ -249,8 +265,10 @@ function DetailFixture({
   resources?: { attachmentId: string; fileName: string }[];
   projectName?: string | null;
   projectId?: string | null;
+  installedFrom?: LibrarySource | null;
 }) {
   const [skill, setSkill] = React.useState<ClientWorkSkill>({ ...initialSkill, projectId });
+  const [installedFrom, setInstalledFrom] = React.useState(initialSource);
   return (
     <SkillDetailView
       skill={skill}
@@ -259,15 +277,14 @@ function DetailFixture({
       versionsFailed={false}
       resources={resources}
       projectName={projectName}
+      installedFrom={installedFrom}
       busy={false}
       actions={{
         onToggle: (enabled) => setSkill({ ...skill, enabled }),
+        onEnableSource: () => setInstalledFrom((current) => (current ? { ...current, enabled: true } : current)),
+        // What `useSkillDetail.setUsage` writes.
         onUsageChange: (usage: SkillUsage) =>
-          setSkill({
-            ...skill,
-            autoSelect: usage === "auto",
-            trust: usage === "auto" ? "user_authored" : skill.trust,
-          }),
+          setSkill({ ...skill, ...skillUsagePatch(usage, skill, version.contract.provenance) }),
         onConsent: () => toast.success("Approved. The skill can run again."),
         onRestore: (n) => toast.message(`Would restore version ${n}`),
         onRetryVersions: () => undefined,

@@ -443,7 +443,7 @@ export function ComposerClarificationPopover({
                 placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
                 rows={3}
-                className="min-h-[4.5rem] resize-none border-0 bg-transparent p-0 text-body shadow-none focus-visible:ring-0"
+                className="min-h-[4.5rem] resize-none border-0 bg-transparent p-0 text-body shadow-none focus-visible:shadow-none focus-visible:ring-0"
               />
             ) : (
               <Input
@@ -453,7 +453,7 @@ export function ComposerClarificationPopover({
                 disabled={disabled}
                 placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
-                className="h-auto border-0 bg-transparent p-0 text-body shadow-none focus-visible:ring-0"
+                className="h-auto border-0 bg-transparent p-0 text-body shadow-none focus-visible:shadow-none focus-visible:ring-0"
               />
             )}
           </label>

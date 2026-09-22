@@ -89,7 +89,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
     {children}
     {/* No `!` on the size any more: the row's default is guarded on the
         absence of a `size-*`, so stating one here is simply obeyed. */}
-    <ChevronRight className="menu-item__chevron ml-auto size-3.5 text-muted-foreground/60" />
+    <ChevronRight className="menu-item__chevron ml-auto size-3.5 text-muted-foreground" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;

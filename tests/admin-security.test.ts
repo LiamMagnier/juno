@@ -22,7 +22,7 @@ test("the account menu derives Admin Panel visibility from the server bootstrap"
   assert.match(bootstrap, /features:\s*\{[\s\S]*?isOwner:\s*isOwnerEmail\(user\.email\)/);
   assert.match(menu, /features\.isOwner\s*&&\s*\(/);
   assert.match(menu, /href="\/admin"/);
-  assert.match(menu, /label="Admin Panel"/);
+  assert.match(menu, /label="Admin panel"/);
   assert.doesNotMatch(menu, /isOwnerEmail|OWNER_EMAILS/);
 });
 

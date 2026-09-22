@@ -190,3 +190,16 @@ test("WorkStatusPill drops the tooltip when the sentence is printed beside it", 
   const html = renderToStaticMarkup(WorkStatusPill({ status: "running", describe: false }));
   assert.ok(!/ title=/.test(html), "describe={false} must remove the title attribute, not blank it");
 });
+
+test("Personalization saves a draft still being typed when the section goes away", () => {
+  // Escape, ⌘, or a navigation unmounts the section with the field focused,
+  // and React never hears that field's blur, so custom instructions typed and
+  // then dismissed were dropped without a word. The savers run once more from
+  // an unmount cleanup; they return early when nothing changed.
+  const source = fs.readFileSync(
+    path.join(process.cwd(), "src/components/settings/sections/personalization.tsx"),
+    "utf8"
+  );
+  assert.ok(/flushDrafts\.current = \(\) => \{\s*saveName\(\);\s*saveInstructions\(\);/.test(source));
+  assert.ok(/return \(\) => flush\.current\(\);/.test(source), "the flush runs from an unmount cleanup");
+});

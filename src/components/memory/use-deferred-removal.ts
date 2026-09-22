@@ -3,6 +3,9 @@
 import * as React from "react";
 import { toast } from "sonner";
 import type { Memory } from "@/components/memory/memory-model";
+import { createRemovalQueue, type RemovalKind } from "@/components/memory/removal-queue";
+
+export type { RemovalKind } from "@/components/memory/removal-queue";
 
 /*
  * Delete and Forget with an Undo, on an API that has no undo.
@@ -17,11 +20,14 @@ import type { Memory } from "@/components/memory/memory-model";
  *
  * The window closes early in three places, and each sends what is pending
  * rather than dropping it: the toast is swiped or closed, the page unmounts
- * (a route change), or the tab is being hidden for good (`pagehide`, best
- * effort, since a request started during unload may not complete).
+ * (a route change), or the tab is hidden. Hidden, not only `pagehide`: the
+ * toast's timer pauses while the tab is in the background, so a removal made
+ * just before switching away would otherwise wait for as long as the tab does,
+ * and a backgrounded tab can be discarded (a phone reclaiming memory, the
+ * browser's memory saver) without `pagehide` ever firing. `visibilitychange`
+ * is the last event a page can count on. The requests go out with `keepalive`
+ * (see useMemory), so one started as the tab closes still reaches the server.
  */
-
-export type RemovalKind = "forget" | "delete";
 
 /** How long the Undo stays on offer. Sonner pauses it while hovered. */
 const UNDO_WINDOW_MS = 5000;
@@ -34,6 +40,11 @@ export interface DeferredRemoval {
   /** Rows just brought back by Undo, which re-enter rather than appear. */
   restoredIds: ReadonlySet<string>;
   remove: (memory: Memory, kind: RemovalKind) => void;
+  /**
+   * Drop every waiting removal without sending it, and take its Undo off the
+   * screen. For a reset, which has already removed everything they would.
+   */
+  discardAll: () => void;
 }
 
 export function useDeferredRemoval(
@@ -41,7 +52,7 @@ export function useDeferredRemoval(
 ): DeferredRemoval {
   const [hiddenIds, setHiddenIds] = React.useState<ReadonlySet<string>>(() => new Set());
   const [restoredIds, setRestoredIds] = React.useState<ReadonlySet<string>>(() => new Set());
-  const pending = React.useRef(new Map<string, { memory: Memory; kind: RemovalKind; toastId: string | number }>());
+  const [queue] = React.useState(() => createRemovalQueue<Memory>());
   const commitRef = React.useRef(commit);
   commitRef.current = commit;
 
@@ -57,33 +68,39 @@ export function useDeferredRemoval(
     []
   );
 
-  const flush = React.useCallback(
-    (id: string) => {
-      const entry = pending.current.get(id);
-      if (!entry) return;
-      pending.current.delete(id);
+  const send = React.useCallback(
+    (entry: { memory: Memory; kind: RemovalKind }) => {
       // The row stays hidden until the server has answered: a delete has
       // already dropped it from the list by then, a forget has reloaded it into
       // the retired trail, and a failure brings it back where it was (the
       // memory hook explains the failure in its own toast).
+      const id = entry.memory.id;
       void commitRef.current(entry.memory, entry.kind).finally(() => setMember(setHiddenIds, id, false));
     },
     [setMember]
   );
 
+  const flush = React.useCallback(
+    (id: string) => {
+      const entry = queue.take(id);
+      if (entry) send(entry);
+    },
+    [queue, send]
+  );
+
   const undo = React.useCallback(
     (id: string) => {
-      if (!pending.current.delete(id)) return;
+      if (!queue.cancel(id)) return;
       setMember(setHiddenIds, id, false);
       setMember(setRestoredIds, id, true);
       window.setTimeout(() => setMember(setRestoredIds, id, false), RESTORE_FLAG_MS);
     },
-    [setMember]
+    [queue, setMember]
   );
 
   const remove = React.useCallback(
     (memory: Memory, kind: RemovalKind) => {
-      if (pending.current.has(memory.id)) return;
+      if (queue.has(memory.id)) return;
       setMember(setHiddenIds, memory.id, true);
       const options = {
         duration: UNDO_WINDOW_MS,
@@ -97,25 +114,37 @@ export function useDeferredRemoval(
         kind === "forget"
           ? toast.success("Forgotten. Juno won’t learn this again.", options)
           : toast.success("Deleted. Juno may learn it again from the chat it came from.", options);
-      pending.current.set(memory.id, { memory, kind, toastId });
+      queue.add({ memory, kind, toastId });
     },
-    [flush, setMember, undo]
+    [flush, queue, setMember, undo]
   );
+
+  const discardAll = React.useCallback(() => {
+    const dropped = queue.discard();
+    for (const entry of dropped) toast.dismiss(entry.toastId);
+    if (dropped.length > 0) setHiddenIds(new Set());
+  }, [queue]);
 
   React.useEffect(() => {
     const flushAll = () => {
-      for (const [id, entry] of [...pending.current]) {
-        flush(id);
+      for (const entry of queue.takeAll()) {
+        send(entry);
         // An Undo left on screen after its window has closed would be a lie.
+        // The dismiss calls back into `flush`, which finds nothing left.
         toast.dismiss(entry.toastId);
       }
     };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushAll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", flushAll);
     return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", flushAll);
       flushAll();
     };
-  }, [flush]);
+  }, [queue, send]);
 
-  return { hiddenIds, restoredIds, remove };
+  return { hiddenIds, restoredIds, remove, discardAll };
 }

@@ -14,11 +14,15 @@ import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { normalizeSkillSlug } from "@/lib/work/skills";
 import { cn } from "@/lib/utils";
 import { SkillDialogContent, SkillDialogStep } from "@/components/skills/skill-dialog-shell";
 import { SkillSourceAvatar } from "@/components/skills/skill-source-avatar";
-import { POPULAR_SKILL_SOURCES, shortCommit } from "@/components/skills/skill-library-model";
+import {
+  POPULAR_SKILL_SOURCES,
+  renameProblems,
+  shortCommit,
+  type RenameProblem,
+} from "@/components/skills/skill-library-model";
 import {
   importSkills,
   previewSkillImport,
@@ -358,10 +362,8 @@ function ChooseStep({
         ? "indeterminate"
         : false;
 
-  const invalidRename = [...chosen].some((path) => {
-    const skill = skills.find((entry) => entry.path === path);
-    return skill?.slugTaken === true && normalizeSkillSlug(renames[path] ?? "") === null;
-  });
+  const problems = renameProblems(skills, chosen, renames);
+  const invalidRename = problems.size > 0;
   const count = chosen.size;
   const installedCount = skills.filter((skill) => skill.installed).length;
 
@@ -451,6 +453,7 @@ function ChooseStep({
               checked={chosen.has(skill.path)}
               onCheckedChange={(next) => toggle(skill.path, next)}
               rename={renames[skill.path] ?? ""}
+              renameProblem={problems.get(skill.path) ?? null}
               onRenameChange={(value) => onRenamesChange({ ...renames, [skill.path]: value })}
               detailsOpen={openDetails === skill.path}
               onDetailsChange={(next) => setOpenDetails(next ? skill.path : null)}
@@ -460,9 +463,17 @@ function ChooseStep({
         )}
         {discovery.problems.length > 0 ? <ProblemsRow problems={discovery.problems} /> : null}
         {discovery.more ? (
+          // Counted as files read (the ones that failed to parse too), against
+          // every SKILL.md the walk saw, so the cap is stated as the cap.
           <p className="px-5 py-3 text-caption text-muted-foreground sm:px-6">
-            Juno lists the first <span className="tabular-nums">{skills.length}</span> skills in a repository. To
-            reach the rest, paste a link to a folder inside it.
+            Juno read the first <span className="tabular-nums">{skills.length + discovery.problems.length}</span>
+            {discovery.total !== null ? (
+              <>
+                {" "}
+                of <span className="tabular-nums">{discovery.total}</span>
+              </>
+            ) : null}{" "}
+            skills in this repository. To reach the rest, paste a link to a folder inside it.
           </p>
         ) : null}
       </div>
@@ -499,11 +510,18 @@ function ChooseStep({
   );
 }
 
+const RENAME_PROBLEM_COPY: Record<RenameProblem, string> = {
+  invalid: "Use lowercase letters, numbers and dashes.",
+  taken: "That name is taken. Choose another.",
+  duplicate: "Another skill in this list is using that name.",
+};
+
 function CandidateRow({
   skill,
   checked,
   onCheckedChange,
   rename,
+  renameProblem,
   onRenameChange,
   detailsOpen,
   onDetailsChange,
@@ -513,6 +531,8 @@ function CandidateRow({
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   rename: string;
+  /** Why the new slash name cannot be sent as it is; see `renameProblems`. */
+  renameProblem: RenameProblem | null;
   onRenameChange: (value: string) => void;
   detailsOpen: boolean;
   onDetailsChange: (open: boolean) => void;
@@ -520,7 +540,7 @@ function CandidateRow({
 }) {
   const id = React.useId();
   const blocked = skill.securityStatus === "blocked";
-  const renameInvalid = checked && skill.slugTaken && normalizeSkillSlug(rename) === null;
+  const renameInvalid = renameProblem !== null;
   return (
     <div
       role="listitem"
@@ -584,8 +604,8 @@ function CandidateRow({
                 )}
               />
             </span>
-            {renameInvalid ? (
-              <span className="basis-full text-destructive">Use lowercase letters, numbers and dashes.</span>
+            {renameProblem ? (
+              <span className="basis-full text-destructive">{RENAME_PROBLEM_COPY[renameProblem]}</span>
             ) : null}
           </div>
         ) : null}
@@ -704,7 +724,10 @@ function ProblemsRow({ problems }: { problems: SkillImportPreview["problems"] })
         </span>
         <ChevronDown
           motion="none"
-          className={cn("size-3.5 transition-transform duration-base ease-in-out", open && "rotate-180")}
+          className={cn(
+            "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+            open && "rotate-180"
+          )}
           aria-hidden="true"
         />
       </button>
@@ -718,6 +741,12 @@ function ProblemsRow({ problems }: { problems: SkillImportPreview["problems"] })
               : {problem.message}
             </li>
           ))}
+          {/* The count above is the whole list, so the cut is said, not hidden. */}
+          {problems.length > 8 ? (
+            <li>
+              And <span className="tabular-nums">{problems.length - 8}</span> more.
+            </li>
+          ) : null}
         </ul>
       </Collapse>
     </div>

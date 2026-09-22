@@ -59,6 +59,7 @@ import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { useFileDrop } from "@/components/library/library-drop-zone";
 /**
  * Split: it renders only while a clarification is pending, which is a state
  * most messages never enter, and its render site is already guarded on
@@ -287,7 +288,11 @@ type SlashCommand = {
   icon?: IconComponent;
   /** Defined ⇒ the row is an on/off tool and renders its state. */
   on?: boolean;
-  /** Trailing note for a row that can't toggle right now ("not connected"). */
+  /**
+   * Trailing note: why a row can't toggle right now ("not connected"), or
+   * where a skill came from ("Yours", owner/repo). Drawn beside the "on"
+   * tick, not instead of it, so an armed skill keeps its source label.
+   */
   note?: string;
   /** Extra haystack for `includes` matching — connector labels ("Google
    *  Calendar") rarely share a prefix with their slug ("googlecalendar"). */
@@ -597,7 +602,7 @@ type ArmedMark = {
    */
   icon: React.ReactNode;
   label: string;
-  /** A derived fact — research depth, a task's approval mode. */
+  /** A derived fact: research depth, or that an armed skill is not trusted. */
   detail?: string;
   /** What `detail` means, in a sentence, on the mark's tooltip. */
   tooltip?: React.ReactNode;
@@ -844,7 +849,6 @@ export function Composer({
   const [clarificationAnswers, setClarificationAnswers] = React.useState<
     PreflightClarificationAnswer[]
   >([]);
-  const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<
@@ -959,6 +963,21 @@ export function Composer({
     },
     [addFiles, uploads.length, voiceActive, voiceCanSeeImages],
   );
+
+  /*
+   * Files dropped on the composer, through the Library's depth-counted hook
+   * (library-drop-zone.tsx). The boolean this replaced was set on dragover and
+   * cleared on every dragleave, and dragleave fires each time the pointer
+   * crosses into one of the composer's own children, so "Drop to attach"
+   * blinked at every chip and button edge. It also lit up for a dragged link
+   * or a text selection; the hook only answers a drag that carries files.
+   * Private mode and a deployment without storage refuse drops, the same two
+   * rules a paste and a file handed over by another surface keep.
+   */
+  const { dragging, handlers: fileDropHandlers } = useFileDrop({
+    onFiles: addComposerFiles,
+    enabled: features.storage && !privateMode,
+  });
 
   // Screen capture, resolved after mount so the server render and the first
   // paint agree on whether the row exists. iOS Safari and most mobile browsers
@@ -1098,6 +1117,18 @@ export function Composer({
     return () => window.removeEventListener("juno:composer-seed", seed);
   }, []);
 
+  // The other half of that conversation: the starter chips step aside while
+  // there is a draft (starter-chips.tsx). Typing reaches them as a native
+  // `input` event, but a seed, dictation or the clear after a send writes
+  // `text` without one, so the draft announces its emptiness here, once per
+  // flip rather than per keystroke. `/\S/` rather than `trim()` because it
+  // stops at the first non-space character instead of copying the whole
+  // draft, and a pasted curriculum is 50k of them.
+  const draftEmpty = !/\S/.test(text);
+  React.useEffect(() => {
+    window.dispatchEvent(new CustomEvent("juno:composer-draft", { detail: { empty: draftEmpty } }));
+  }, [draftEmpty]);
+
   // Files handed over by another surface — the document viewer's "ask about
   // this area" crop. Through the same door a drop or a paste uses, so the
   // private-mode, voice and storage rules apply to it unchanged.
@@ -1165,10 +1196,9 @@ export function Composer({
   });
 
   React.useEffect(() => {
-    if (privateMode) {
-      clear();
-      setDragging(false);
-    }
+    // The drop overlay clears itself: `useFileDrop` resets when private mode
+    // switches it off mid-drag.
+    if (privateMode) clear();
   }, [clear, privateMode]);
 
   React.useEffect(() => {
@@ -1613,7 +1643,9 @@ export function Composer({
        * The library arrives yours-first and then one repository at a time
        * (`chatSkillsFromLibrary`), so an unfiltered "/" already lists them by
        * source; the trailing note names it ("Yours", or owner/repo). The armed
-       * row gives the note up for its tick, as a toggled tool row does. The
+       * row keeps its note and adds the tick beside it: the armed row is the
+       * one the reader comes back to check, and it used to lose the only line
+       * saying which repository it came from at exactly that moment. The
        * repository also joins `match`, so "/anthropics" finds its skills.
        */
       ...(skillsAvailable
@@ -1625,12 +1657,7 @@ export function Composer({
             group: "skills" as const,
             icon: AppIcons.skills,
             on: skillSlug === entry.slug,
-            note:
-              skillSlug === entry.slug
-                ? undefined
-                : entry.yours
-                  ? YOURS_SOURCE_LABEL
-                  : (entry.sourceLabel ?? undefined),
+            note: entry.yours ? YOURS_SOURCE_LABEL : (entry.sourceLabel ?? undefined),
             match: `${entry.name.toLowerCase()} ${entry.description.toLowerCase()} ${(entry.sourceLabel ?? "").toLowerCase()}`,
             run: () => setSkillSlug((current) => (current === entry.slug ? null : entry.slug)),
           }))
@@ -3040,18 +3067,7 @@ export function Composer({
         onClose={(transcript, sendNow) => closeDictation(transcript, sendNow)}
       >
         <div
-          onDragOver={(e) => {
-            if (!features.storage || privateMode) return;
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            if (features.storage && !privateMode && e.dataTransfer.files.length)
-              addComposerFiles(e.dataTransfer.files);
-          }}
+          {...fileDropHandlers}
           // The cross-fade, `inert` and pointer handling all live in
           // DictationSwap; this wrapper only carries the drop target.
           className="w-full"
@@ -3415,21 +3431,30 @@ export function Composer({
                                   {item.hint}
                                 </span>
                               </span>
-                              {item.note ? (
-                                <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">
-                                  {item.note}
+                              {(item.note || item.on) && (
+                                // One trailing slot, note then tick, so an armed
+                                // skill keeps its source beside the mark. No
+                                // other row carries both: a row with a note
+                                // ("not connected") has no state to show.
+                                <span className="flex shrink-0 items-center gap-1.5">
+                                  {item.note && (
+                                    <span className="whitespace-nowrap text-caption text-muted-foreground">
+                                      {item.note}
+                                    </span>
+                                  )}
+                                  {item.on && (
+                                    // The same tick the + menu draws, for the same
+                                    // rows. These two surfaces are deliberately one
+                                    // vocabulary; they drifted once before, when one
+                                    // hand-rolled a track and the other rendered the
+                                    // real Switch, and the fix was to make them agree.
+                                    <StatusIcons.success
+                                      aria-hidden
+                                      className="size-3.5 shrink-0 text-primary"
+                                    />
+                                  )}
                                 </span>
-                              ) : item.on ? (
-                                // The same tick the + menu draws, for the same
-                                // rows. These two surfaces are deliberately one
-                                // vocabulary; they drifted once before, when one
-                                // hand-rolled a track and the other rendered the
-                                // real Switch, and the fix was to make them agree.
-                                <StatusIcons.success
-                                  aria-hidden
-                                  className="size-3.5 shrink-0 text-primary"
-                                />
-                              ) : null}
+                              )}
                             </div>
                           );
                         })}
