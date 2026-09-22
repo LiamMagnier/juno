@@ -8,7 +8,7 @@ import {
   reserveCodeMessage,
   resolveCodeUsageReservation,
 } from "@/lib/usage";
-import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 
 export const runtime = "nodejs";
@@ -18,6 +18,8 @@ const usageSchema = z.object({
   reservationId: z.string().min(1).max(100).optional(),
   promptTokens: z.number().int().min(0).max(10_000_000).optional(),
   completionTokens: z.number().int().min(0).max(10_000_000).optional(),
+  // Still accepted, because reporters still send it; nothing is priced from it
+  // here since the proxy bills the calls (see "record" below).
   model: z.string().trim().min(1).max(200).optional(),
 });
 
@@ -33,9 +35,16 @@ const usageSchema = z.object({
  *       the real ceiling on a run. 402 QUOTA_EXCEEDED blocks the turn.
  *
  *   { phase: "record", promptTokens, completionTokens, model }
- *     → adds the turn's real token counts to the period aggregate AND writes
- *       an ApiSpend ledger row (kind "code", source "app") so app usage counts
- *       against the budget windows and shows up in the admin spending view.
+ *     → settles the reservation and adds the turn's token counts to the
+ *       period aggregate. It does NOT write an ApiSpend row any more: every
+ *       call these tokens describe went through the provider proxy
+ *       (/api/agent/[...path]), which now bills each one from the provider's
+ *       own usage, cache reads and writes included. A reporter only exists for
+ *       backend-proxied providers (agent-core `usageReporterFor`), so there is
+ *       no turn that reaches this phase without having been billed there. A
+ *       second row here would charge the same tokens twice — from a client's
+ *       own count, at the unknown-model rate, since reporters send a bare
+ *       provider model id. The proxy's figure is the one to keep.
  *
  *   { phase: "refund" }
  *     → gives back a reserved message when a turn produced no billable work
@@ -65,10 +74,10 @@ export async function POST(req: NextRequest) {
       );
     }
     // The rolling windows, for the same reason the proxy checks them: this is
-    // the OTHER door into a Code turn — the desktop and native engines call
-    // their own provider and settle here — so gating one and not the other
-    // would leave the window enforced only for whoever happened to be on the
-    // web. Same 402 and same code, argued at the proxy.
+    // the OTHER door into a Code turn — an agent-core host asks here before a
+    // turn starts, then makes its calls through the proxy — so gating one and
+    // not the other would leave the window enforced at only one of them. Same
+    // 402 and same code, argued at the proxy.
     const windows = await checkUsageWindows(user.id, plan);
     if (!windows.allowed && windows.bound !== null) {
       return NextResponse.json(
@@ -109,17 +118,8 @@ export async function POST(req: NextRequest) {
     }
     if (resolution === "already_resolved") return NextResponse.json({ ok: true, alreadyResolved: true });
 
-    const promptTokens = body.promptTokens ?? 0;
-    const completionTokens = body.completionTokens ?? 0;
-    await recordTokens(user.id, promptTokens, completionTokens);
-    await recordSpend({
-      userId: user.id,
-      model: body.model ?? "unknown",
-      kind: "code",
-      source: "app",
-      promptTokens,
-      completionTokens,
-    });
+    // The spend itself was billed by the proxy, call by call; see the header.
+    await recordTokens(user.id, body.promptTokens ?? 0, body.completionTokens ?? 0);
     return NextResponse.json({ ok: true });
   }
 
