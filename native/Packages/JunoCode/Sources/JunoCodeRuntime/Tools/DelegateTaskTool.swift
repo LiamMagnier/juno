@@ -34,6 +34,17 @@ public struct DelegateTaskTool: CodeTool {
     /// delegation remains read-only, even if the model asks for writes.
     private let executionFactory: SubagentExecutionFactory?
     private let fallbackResolver: (any ModelFallbackResolver)?
+    /// The delegating session's standing permission rules, read as each
+    /// child starts.
+    ///
+    /// A child gets its own coordinator, and one created bare has no rules at
+    /// all: a `Read(.env)` deny that refused the parent's read did not stop a
+    /// read-only child the model asked to "read .env and report it", and the
+    /// child's answer carried the secret back. Every child now takes the
+    /// parent's whole current set. Deny beats ask beats allow, so the allow
+    /// rules that come with it weaken nothing, and every deny and ask rule
+    /// binds read-only and write-capable children alike.
+    private let parentRules: (@Sendable () async -> PermissionRuleSet)?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -64,7 +75,8 @@ public struct DelegateTaskTool: CodeTool {
         parentSystemPrompt: String,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
-        fallbackResolver: (any ModelFallbackResolver)? = nil
+        fallbackResolver: (any ModelFallbackResolver)? = nil,
+        parentRules: (@Sendable () async -> PermissionRuleSet)? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -77,6 +89,7 @@ public struct DelegateTaskTool: CodeTool {
         self.executionFactory = executionFactory
         self.controls = controls
         self.fallbackResolver = fallbackResolver
+        self.parentRules = parentRules
     }
 
     public let name = "delegate_task"
@@ -425,6 +438,9 @@ public struct DelegateTaskTool: CodeTool {
             sessionID: child.id,
             mode: environment.permissionMode
         )
+        if let parentRules {
+            await permissions.setRules(await parentRules())
+        }
         let childInstruction: String
         switch spec.mode {
         case .readOnly:
