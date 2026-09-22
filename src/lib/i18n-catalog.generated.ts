@@ -4946,10 +4946,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "work.connector.publish"
   },
   {
-    "id": "45073faf9711c351",
-    "source": "Voice mode accepts up to 4 images in one turn."
-  },
-  {
     "id": "4529950e3cce03a4",
     "source": "Cedar"
   },
@@ -5462,10 +5458,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "DeepSeek Flash"
   },
   {
-    "id": "4c0cf76dd350b84d",
-    "source": "Please look at the image context I just shared and respond naturally."
-  },
-  {
     "id": "4c15583ff6e2f485",
     "source": "GPT-5.6 Sol"
   },
@@ -5744,10 +5736,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5036b1a245b7e409",
     "source": "With a label + a download row"
-  },
-  {
-    "id": "504bae9c67587d1d",
-    "source": "Voice mode accepts images from your library only."
   },
   {
     "id": "505fe1151d095901",
@@ -8906,10 +8894,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open Skills"
   },
   {
-    "id": "7b0a3d74494a4f50",
-    "source": "Add photos"
-  },
-  {
     "id": "7b0cf86a58b43744",
     "source": "Ask before risky steps"
   },
@@ -9378,6 +9362,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A Code routine runs in the cloud, on a runner with the repository checked out. Running one on your own Mac is a session you start there."
   },
   {
+    "id": "81d1023527b24423",
+    "source": "Please use the context I just shared and respond naturally."
+  },
+  {
     "id": "81d27ef6d5033c3e",
     "source": "Weight"
   },
@@ -9840,6 +9828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "88ea7c6a0e24e28c",
     "source": "You're submitting a lot of requests — try again later."
+  },
+  {
+    "id": "88f1f50afba87999",
+    "source": "This voice provider can’t view images. Files still work."
   },
   {
     "id": "890892ed3349a7c8",
@@ -12836,10 +12828,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b10ee75613be6829",
     "source": "Your memory changed since this edit was drafted. Delete it and ask again."
-  },
-  {
-    "id": "b114f6a0eb4271b1",
-    "source": "Voice mode accepts image attachments only."
   },
   {
     "id": "b11fb1f593a8c9b7",
@@ -16816,10 +16804,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e4e376233b59688d",
     "source": "exchange_failed"
-  },
-  {
-    "id": "e4e77efdc37460b2",
-    "source": "Voice mode can receive images, but not document attachments yet."
   },
   {
     "id": "e5176a8cacaaa852",
