@@ -11,6 +11,7 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import { canInlineDocument, isPdfAttachment } from "@/lib/attachment-bytes";
 import {
   sendableToolImages,
   toDataUrl,
@@ -107,6 +108,45 @@ async function toOpenAIMessages(
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
+        } else if (isPdfAttachment(att) && !att.extractedText && vision && embedBinary) {
+          /*
+           * THE ONE PLACE LOCAL RASTERISATION IS THE RIGHT ANSWER.
+           *
+           * These are the OpenAI-compatible gateways — xAI, Mistral, DeepSeek,
+           * Moonshot and the rest. They are vision-capable but implement only
+           * `image_url`: no document part exists, so unlike Anthropic, Gemini
+           * and the Responses API there is no way to hand them the PDF and let
+           * them rasterise it themselves. A scanned document reached them as a
+           * bracketed apology and nothing else.
+           *
+           * Gated on `!att.extractedText` deliberately: when the text layer
+           * read, the text is cheaper, exact, and complete, and pictures of
+           * the pages would be paying several times over for a worse copy.
+           * This runs only for the file that has no text at all — which is
+           * precisely the scan that used to be unreadable here.
+           */
+          const { bytes } = await getObjectBytes(att.storageKey);
+          const { renderDocumentPages } = await import("@/lib/media/raster");
+          const pages = canInlineDocument(bytes.byteLength)
+            ? await renderDocumentPages({ bytes, maxPages: 4 })
+            : [];
+          if (pages.length) {
+            parts.push({
+              type: "text",
+              text: `[The PDF "${att.fileName}" has no text layer, so the first ${pages.length} page${pages.length === 1 ? "" : "s"} follow as images. Read them as the document itself. Use read_document or inspect_image for anything beyond them.]`,
+            });
+            for (const page of pages) {
+              parts.push({
+                type: "image_url",
+                image_url: { url: `data:${page.mimeType};base64,${Buffer.from(page.bytes).toString("base64")}` },
+              });
+            }
+          } else {
+            parts.push({
+              type: "text",
+              text: `[Attached file "${att.fileName}" (${att.mimeType}) — ${pdfAttachmentFallbackNote(att.parserState)}]`,
+            });
+          }
         } else if (att.extractedText) {
           parts.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: textBudget }) });
         } else {
