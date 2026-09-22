@@ -67,7 +67,7 @@ function liveCopy(
     if (latest?.kind === "search" && latest.title === "Searching the web" && latest.detail) {
       return { message: `Searching for “${truncate(latest.detail, 58)}”`, warning: false };
     }
-    return { message: "Researching your request", warning: false };
+    return { message: "Researching", warning: false };
   }
 
   if (latest?.kind === "tool" && latest.title.startsWith("Using ")) {
@@ -76,25 +76,22 @@ function liveCopy(
   }
 
   if (activeLabel === "Write") {
-    return { message: "Writing the response", warning: false };
+    return { message: "Writing", warning: false };
   }
 
-  // Progressive copy so a long silent reasoning stretch (Kimi, Claude Max, …)
-  // doesn't read as hung — and reminds people they can leave and come back.
+  // One word until the wait needs explaining. The later rungs keep a long
+  // silent reasoning stretch (Kimi, Claude Max, …) from reading as hung, and
+  // say that leaving is safe. The same three sentences as the transcript's
+  // own status line (message-item.tsx, StreamStatus), so the strip and the
+  // line never describe one wait in two voices.
   const elapsed = thinkMs ?? 0;
   if (elapsed >= 10 * 60_000) {
-    return {
-      message: "Still thinking deeply — safe to leave; the answer will be here when you return",
-      warning: false,
-    };
+    return { message: "Still working. You can leave; the answer will be here.", warning: false };
   }
   if (elapsed >= 2 * 60_000) {
-    return {
-      message: "Still thinking — working in the background",
-      warning: false,
-    };
+    return { message: "Still thinking. This can take a few minutes.", warning: false };
   }
-  return { message: "Thinking about your request", warning: false };
+  return { message: "Thinking", warning: false };
 }
 
 /**
@@ -104,7 +101,7 @@ function liveCopy(
  * strip communicates the useful contract instead — phase, current action and
  * elapsed time — while the full provider text remains one click away.
  *
- *   live    3×3 matrix  Thinking about your request · 4s
+ *   live    3×3 matrix  Thinking · 4s
  *   rest           THOUGHT PROCESS  4 searches · 9 sources      8.4s  ›
  *
  * The duration occupies the SAME node, slot and typeface in both states, so the
@@ -259,9 +256,9 @@ export function ActivityTimeline({
   // name now that the region has moved: a ticking text node is noise on every
   // path a reader takes through the strip.
   const label = streaming
-    ? "Open thought process — in progress"
+    ? "Open thought process, in progress"
     : [
-        hasReasoning ? `Open thought process — complete` : `Open run details — complete`,
+        hasReasoning ? "Open thought process, complete" : "Open run details, complete",
         run.elapsedMs === null ? null : formatSpan(run.elapsedMs),
       ]
         .filter(Boolean)
@@ -327,19 +324,28 @@ export function ActivityTimeline({
                 <span className="size-1.5 rounded-full bg-primary/70 ring-2 ring-primary/20" />
               </span>
             ) : (
-              <ThinkingDots className="text-muted-foreground/65" />
+              <ThinkingDots className="text-muted-foreground" />
             )}
-            {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep — a second
+            {/* PLAIN TEXT. This carried AIcss's `.aicss-shine` sweep, a second
                 looping thing beside the matrix, moving a valley of alpha
                 through a sentence the reader is trying to read. The matrix
-                already says "still here"; the sentence's job is to say WHAT. */}
+                already says "still here"; the sentence's job is to say WHAT.
+
+                At the reply's size and in muted ink, the same as the
+                transcript's status line: it was `text-body-lg` in foreground
+                ink, a size above the answer and a voice competing with it, so
+                the first token shrank the line and changed its colour. Keyed on
+                the copy, so a phase change fades in once and a clock tick does
+                not. */}
             <span
               key={copyKey}
               aria-hidden="true"
-              className={cn(
-                "min-w-0 truncate text-body-lg leading-6",
-                live.warning ? "text-warning" : "text-foreground/85"
-              )}
+              // A template string, not cn(): until `reading` is registered
+              // in utils.ts's tailwind-merge font-size group, cn() takes
+              // `text-reading` for a colour and drops it beside the ink.
+              className={`min-w-0 truncate text-reading duration-fast motion-safe:animate-fade-in ${
+                live.warning ? "text-warning" : "text-muted-foreground"
+              }`}
             >
               {live.message}
               {!live.warning && liveSources && (
@@ -368,7 +374,7 @@ export function ActivityTimeline({
             {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground">{formatSpan(run.elapsedMs)}</span>}
             {/* Ink only on hover. A caret is a state mark and does not travel
                 before it is pressed (ICONS_AND_MOTION.md §1.3). */}
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground motion-reduce:transition-none" aria-hidden="true" />
           </>
         )}
       </Pressable>

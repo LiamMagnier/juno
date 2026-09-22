@@ -12,7 +12,8 @@ import { resolveModel } from "@/lib/models";
 import { STAGGER, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
-import type { ClientArtifact, ClientMessage } from "@/types/chat";
+import { extensionOf } from "@/components/chat/file-preview";
+import type { ClientArtifact, ClientAttachment, ClientMessage } from "@/types/chat";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * WHAT THIS CONVERSATION MADE, AND WHAT IT USED TO MAKE IT.
@@ -70,6 +71,8 @@ type OutputTile = {
   preview: string | null;
   /** Generated media renders its own bytes rather than a source excerpt. */
   imageUrl?: string;
+  /** Generated media, which opens in the file viewer. */
+  attachment?: ClientAttachment;
   sortKey: string;
 };
 
@@ -80,6 +83,8 @@ type UsedRow = {
   /** The specific thing — a file name, a count, a memory's subject. Absent rows
    *  still render: "it happened" is the whole message for some of these. */
   detail?: string;
+  /** The files behind an Uploads row, each of which opens in the viewer. */
+  files?: ClientAttachment[];
 };
 
 /**
@@ -101,7 +106,7 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
     sortKey: a.updatedAt,
   }));
 
-  const uploads: string[] = [];
+  const uploads: ClientAttachment[] = [];
   /*
    * WHICH MODEL ACTUALLY ANSWERED, in order of first appearance.
    *
@@ -124,7 +129,7 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
   for (const m of messages) {
     for (const att of m.attachments) {
       if (m.role === "USER") {
-        uploads.push(att.fileName);
+        if (!uploads.some((u) => u.id === att.id)) uploads.push(att);
         continue;
       }
       // An assistant attachment is generated media — the only output that is
@@ -137,6 +142,7 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
           type: "SVG",
           preview: null,
           imageUrl: att.url,
+          attachment: att,
           sortKey: m.createdAt,
         });
       }
@@ -183,7 +189,8 @@ function readSession(artifacts: ClientArtifact[], messages: ClientMessage[]) {
       // "3 files" is what a person checking their own session wants, and a
       // list of three truncated names in a 120px column is what they get from
       // the alternative.
-      detail: uploads.length === 1 ? uploads[0] : `${uploads.length} files`,
+      detail: uploads.length === 1 ? uploads[0].fileName : `${uploads.length} files`,
+      files: uploads,
     });
   }
   if (searchTurns > 0 || searchSources.size > 0) {
@@ -219,11 +226,14 @@ export function SessionOutputs({
   artifacts,
   messages,
   onOpenArtifact,
+  onOpenAttachment,
   className,
 }: {
   artifacts: ClientArtifact[];
   messages: ClientMessage[];
   onOpenArtifact: (identifier: string) => void;
+  /** Open an uploaded file in the side viewer; without it the row only counts. */
+  onOpenAttachment?: (attachment: ClientAttachment) => void;
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -298,7 +308,12 @@ export function SessionOutputs({
                               setOpen(false);
                               onOpenArtifact(o.identifier!);
                             }
-                          : undefined
+                          : o.attachment && onOpenAttachment
+                            ? () => {
+                                setOpen(false);
+                                onOpenAttachment(o.attachment!);
+                              }
+                            : undefined
                       }
                     />
                   </li>
@@ -322,15 +337,44 @@ export function SessionOutputs({
                 {used.map((row, i) => (
                   <li
                     key={row.id}
-                    className="flex h-8 items-center gap-2.5 text-ui motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                    className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
                     // After the tiles, on the tight rung: rows are lighter
                     // than cards and follow them rather than racing them.
                     style={staggerDelay(i, "tight", Math.min(outputs.length, 8) * STAGGER.base)}
                   >
-                    <row.Glyph className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="shrink-0 text-foreground">{row.label}</span>
-                    {row.detail && (
-                      <span className="ml-auto min-w-0 truncate text-right text-muted-foreground">{row.detail}</span>
+                    <div className="flex h-8 items-center gap-2.5 text-ui">
+                      <row.Glyph className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="shrink-0 text-foreground">{row.label}</span>
+                      {row.detail && (
+                        <span className="ml-auto min-w-0 truncate text-right text-muted-foreground">{row.detail}</span>
+                      )}
+                    </div>
+                    {/* Each upload, openable — the file you are judging an
+                        answer against is one press from the answer. */}
+                    {row.files && onOpenAttachment && (
+                      <ul className="mb-1 ml-6 space-y-px">
+                        {row.files.slice(0, 8).map((file) => (
+                          <li key={file.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpen(false);
+                                onOpenAttachment(file);
+                              }}
+                              className="pressable flex h-7 w-full min-w-0 items-center gap-2 rounded-control px-1.5 text-left text-caption text-muted-foreground hover:bg-accent hover:text-foreground coarse:h-10"
+                            >
+                              <span className="grid h-4.5 min-w-8 shrink-0 place-items-center rounded-xs bg-secondary px-1 font-mono text-micro">
+                                {extensionOf(file)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{file.fileName}</span>
+                              <span className="shrink-0 font-mono text-micro opacity-70">Open</span>
+                            </button>
+                          </li>
+                        ))}
+                        {row.files.length > 8 && (
+                          <li className="px-1.5 py-1 font-mono text-micro text-muted-foreground">+{row.files.length - 8} more in the chat</li>
+                        )}
+                      </ul>
                     )}
                   </li>
                 ))}

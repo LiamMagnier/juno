@@ -46,6 +46,54 @@ private final class OverlappingModelClient: AgentModelClient, @unchecked Sendabl
     }
 }
 
+private actor ReadLog {
+    private(set) var paths: [String] = []
+
+    func record(_ path: String) {
+        paths.append(path)
+    }
+}
+
+/// A read tool that only records what it was asked to read.
+private struct RecordingReadTool: CodeTool {
+    let log: ReadLog
+    let name = "read_file"
+    let description = "Read a file."
+    let inputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["path": ["type": "string"]],
+        "required": ["path"],
+    ]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Read \(input["path"]?.stringValue ?? "?")" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await log.record(input["path"]?.stringValue ?? "")
+        return ToolResult(content: "SECRET=hunter2")
+    }
+}
+
+/// An edit tool that only records what it was asked to change.
+private struct RecordingEditTool: CodeTool {
+    let log: ReadLog
+    let name = "record_edit"
+    let description = "Edit a file."
+    let inputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["path": ["type": "string"]],
+        "required": ["path"],
+    ]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    func summary(input: JSONValue) -> String { "Edit \(input["path"]?.stringValue ?? "?")" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await log.record(input["path"]?.stringValue ?? "")
+        return ToolResult(content: "Edited.")
+    }
+}
+
 /// Delegation as the panel sees it: children that are children, agents that
 /// publish their whole life into the delegating transcript, and real bounded
 /// concurrency rather than a list that can only ever hold one row.
@@ -237,6 +285,102 @@ final class DelegateTaskToolTests: XCTestCase {
         XCTAssertTrue(result.content.contains("isolated worktree factory"))
         let children = await store.childSessions(of: parent.id)
         XCTAssertTrue(children.isEmpty)
+    }
+
+    /// The parent's deny rules bind its children. A child used to get a bare
+    /// coordinator, so a read the parent was refused could be delegated and
+    /// its contents carried back in the child's answer.
+    func testAChildAnswersToTheParentsDenyRules() async throws {
+        let parent = try await makeParent()
+        let log = ReadLog()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("read-env", "read_file", ["path": ".env"])], text: ""),
+            .text("I was not allowed to read it."),
+        ])
+        let deny = try XCTUnwrap(PermissionRule(parsing: "Read(.env)"))
+        let tool = DelegateTaskTool(
+            model: model,
+            registry: ToolRegistry(tools: [RecordingReadTool(log: log)]),
+            store: store,
+            workspaceID: WorkspaceID(value: "workspace"),
+            workspaceName: "workspace",
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            parentSystemPrompt: "You are Juno Code.",
+            parentRules: { PermissionRuleSet(deny: [deny]) }
+        )
+        let result = try await tool.execute(
+            input: ["task": "Read .env and report its contents."],
+            context: ToolContext(sessionID: parent.id, toolCallID: "call-env", emitOutput: { _, _ in })
+        )
+
+        let reads = await log.paths
+        XCTAssertEqual(reads, [], "the child read a file the parent's rules deny")
+        XCTAssertFalse(result.content.contains("hunter2"))
+        let children = await store.childSessions(of: parent.id)
+        let child = try XCTUnwrap(children.first)
+        let history = await store.loadConversation(sessionID: child.id)
+        XCTAssertTrue(history.contains {
+            if case let .toolResult("read-env", content, true) = $0 { return content.contains("Read(.env)") }
+            return false
+        })
+    }
+
+    /// A write-capable child that asks before an edit must show as waiting in
+    /// the parent's transcript, which is what brings its approval on screen,
+    /// and as working again once the reader answers.
+    func testAChildWaitingOnTheReaderSaysSoInTheParentsTranscript() async throws {
+        let parent = try await makeParent()
+        let log = ReadLog()
+        let controls = SubagentControlRegistry()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("edit", "record_edit", ["path": "src/a.swift"])], text: ""),
+            .text("Edited."),
+        ])
+        let tool = DelegateTaskTool(
+            model: model,
+            registry: ToolRegistry(tools: []),
+            store: store,
+            workspaceID: WorkspaceID(value: "workspace"),
+            workspaceName: "workspace",
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            parentSystemPrompt: "You are Juno Code.",
+            executionFactory: { request in
+                SubagentExecutionEnvironment(
+                    registry: ToolRegistry(tools: [RecordingEditTool(log: log)]),
+                    workspaceName: "isolated",
+                    executionRootPath: "/workspace/.juno/worktrees/agent",
+                    gitBranch: request.branch,
+                    permissionMode: .askBeforeChanges
+                )
+            },
+            controls: controls
+        )
+        let delegation = Task {
+            try await tool.execute(
+                input: ["task": "Make the edit.", "mode": "workspace_write"],
+                context: ToolContext(sessionID: parent.id, toolCallID: "call-edit", emitOutput: { _, _ in })
+            )
+        }
+
+        var waiting: SubagentUpdateEvent?
+        for _ in 0..<300 where waiting == nil {
+            try await Task.sleep(for: .milliseconds(10))
+            waiting = await subagentUpdates(in: parent.id).last { $0.status == .waitingForApproval }
+        }
+        let update = try XCTUnwrap(waiting, "the child never said it was waiting on the reader")
+        let childID = try XCTUnwrap(update.childSessionID)
+        let requests = await controls.pendingApprovals(for: childID)
+        let request = try XCTUnwrap(requests.first)
+        await controls.resolve(childSessionID: childID, approvalID: request.id, decision: .approved)
+
+        let result = try await delegation.value
+        XCTAssertFalse(result.isError, result.content)
+        let paths = await log.paths
+        XCTAssertEqual(paths, ["src/a.swift"])
+        let statuses = await subagentUpdates(in: parent.id).map(\.status)
+        XCTAssertEqual(statuses, [.queued, .preparing, .running, .waitingForApproval, .running, .completed])
     }
 
     func testAnEmptyCallIsRefused() async throws {

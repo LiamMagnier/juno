@@ -41,150 +41,87 @@ final class JunoDesktopLaunchUITests: XCTestCase {
     }
 
     func testPreviewCanLaunchDirectlyIntoCode() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "--juno-ui-preview",
-            "--juno-preview-tab", "code",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
+        let app = launchCode()
 
-        XCTAssertTrue(
-            app.textFields["juno.code.launch-prompt"]
-                .waitForExistence(timeout: 12)
-        )
-        // Ordinary SwiftUI menus are exposed as menu buttons on macOS.
-        XCTAssertTrue(app.menuButtons["juno.code.launch-target"].exists)
-        XCTAssertTrue(app.menuButtons["juno.code.launch-contract"].exists)
-        XCTAssertTrue(app.buttons["juno.code.launch-model"].exists)
-        // The first-turn composer deliberately merges dictation and realtime
-        // voice into one native split-menu. Active sessions still expose the
-        // two distinct controls because there is enough horizontal context to
-        // label both jobs without making the empty-state composer noisy.
-        // A `Menu(primaryAction:)` changed from menuButton to button in the
-        // macOS 27 accessibility bridge. The identifier is the stable contract;
-        // the platform's private element classification is not.
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.composer.voice"].exists
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.product-brand.code"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
-        XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
+        XCTAssertTrue(app.textFields["juno.code.launch-prompt"].waitForExistence(timeout: 12))
+        // Where the session runs, and how much it may do, sit beside the
+        // composer they configure — never in the toolbar.
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-target"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-project"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.composer.mode"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.composer.model"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.product-brand.code"].waitForExistence(timeout: 5))
+        // Always present, disabled without a session: a toolbar item that
+        // appears and disappears rebuilds the AppKit toolbar under the window.
+        XCTAssertTrue(app.buttons["juno.code.new-session"].exists)
         XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
+        XCTAssertTrue(app.buttons["juno.code.terminal.toggle"].exists)
+        XCTAssertFalse(app.buttons["juno.code.review.toggle"].isEnabled)
     }
 
-    func testCodeFullAccessMenuDismissesBeforeRelayout() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "--juno-ui-preview",
-            "--juno-preview-tab", "code",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
+    func testCodeModeMenuDismissesBeforeRelayout() {
+        let app = launchCode()
 
-        let contract = app.menuButtons["juno.code.launch-contract"]
-        XCTAssertTrue(contract.waitForExistence(timeout: 12))
-        contract.click()
+        let mode = app.descendants(matching: .any)["juno.code.composer.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 12))
+        mode.click()
 
-        let fullAccess = app.menuItems["Full access"]
+        let fullAccess = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH %@", "Full access")).firstMatch
         XCTAssertTrue(fullAccess.waitForExistence(timeout: 5))
         fullAccess.click()
 
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.launch-contract"]
-                .waitForExistence(timeout: 5)
-        )
+        XCTAssertTrue(mode.waitForExistence(timeout: 5))
         XCTAssertTrue(
             app.staticTexts
-                .matching(NSPredicate(format: "value CONTAINS[c] %@", "installs and pushes proceed"))
+                .matching(NSPredicate(format: "value CONTAINS[c] %@", "asks only to leave the project"))
                 .firstMatch
                 .waitForExistence(timeout: 5)
         )
     }
 
-    func testCodeLaunchIntentPopulatesTheRealComposer() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "--juno-ui-preview",
-            "--juno-preview-tab", "code",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
+    func testCodeLandingPromptEnablesSend() {
+        let app = launchCode()
 
-        let intent = app.descendants(matching: .any)[
-            "juno.code.launch-intent.explain-project"
-        ]
-        XCTAssertTrue(intent.waitForExistence(timeout: 12))
-        intent.click()
-
-        let composer = app.textFields["juno.code.launch-prompt"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            (composer.value as? String)?.contains("Explain the architecture") == true,
-            "An intent should fill the editable launch prompt instead of starting a dead-end flow."
-        )
+        let prompt = app.textFields["juno.code.launch-prompt"]
+        XCTAssertTrue(prompt.waitForExistence(timeout: 12))
+        let send = app.buttons["juno.code.composer.send"]
+        XCTAssertTrue(send.exists)
+        XCTAssertFalse(send.isEnabled, "An empty prompt must not be sendable.")
+        prompt.click()
+        prompt.typeText("Explain the architecture of this project")
+        XCTAssertTrue(send.isEnabled)
     }
 
     func testCodeSidebarUsesTheNativeSourceListBelowTheToolbar() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-ApplePersistenceIgnoreState", "YES",
-            "--juno-ui-preview",
-            "--juno-preview-tab", "code",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
+        let app = launchCode()
 
         let productSwitch = app.descendants(matching: .any)["Juno product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 12))
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.product-brand.code"].exists
-        )
-        // The column's head, top to bottom: the product switch in its strip,
-        // the brand row, the search field, then the first destination row.
-        let brandRow = app.descendants(matching: .any)["juno.code.brand-row"]
-        XCTAssertTrue(brandRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["juno.product-brand.code"].exists)
+        // Top to bottom: the product switch in its strip, the search field,
+        // then New session.
         let search = app.searchFields["juno.code.sidebar-search-field"]
-        XCTAssertTrue(search.exists)
-        let newTask = app.descendants(matching: .any)["juno.code.new-conversation"]
-        XCTAssertTrue(newTask.exists)
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let newSession = app.descendants(matching: .any)["juno.code.new-conversation"]
+        XCTAssertTrue(newSession.exists)
         XCTAssertLessThanOrEqual(
-            productSwitch.frame.maxY, brandRow.frame.minY + 1,
-            """
-            The Chat / Code switch belongs at the top of the sidebar, over the \
-            column it switches — above the brand row, not in the detail toolbar.
-            """
+            productSwitch.frame.maxY, search.frame.minY + 1,
+            "The Chat / Code switch belongs above the column it switches."
         )
         XCTAssertLessThanOrEqual(
-            brandRow.frame.maxY, search.frame.minY + 1,
-            "The search field sits under the brand row, not above the strip."
+            search.frame.maxY, newSession.frame.minY + 1,
+            "New session starts under the search field."
         )
-        XCTAssertLessThanOrEqual(
-            search.frame.maxY, newTask.frame.minY + 1,
-            "The destinations start under the search field."
-        )
-        XCTAssertFalse(app.buttons["juno.code.new-chat"].exists)
-        XCTAssertTrue(app.buttons["juno.code.sidebar-search"].exists)
+        XCTAssertTrue(app.buttons["juno.code.add-project"].exists)
+        XCTAssertTrue(app.buttons["juno.code.settings"].exists)
 
-        let projectMenu = app.menuButtons["juno.code.project-menu.ws-preview-juno"]
-        XCTAssertTrue(projectMenu.exists)
-        projectMenu.click()
+        let project = app.descendants(matching: .any)["juno.code.project.ws-preview-juno"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5))
+        project.rightClick()
+        let remove = app.menuItems["Remove from Juno…"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 3))
+        remove.click()
 
-        let deleteProject = app.menuItems["Delete Project…"]
-        XCTAssertTrue(deleteProject.waitForExistence(timeout: 3))
-        deleteProject.click()
-
-        // SwiftUI presents macOS alerts as document-modal sheets.
         let confirmation = app.sheets.firstMatch
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
         XCTAssertTrue(
@@ -193,54 +130,39 @@ final class JunoDesktopLaunchUITests: XCTestCase {
                 .firstMatch.exists
         )
         confirmation.buttons["Cancel"].click()
-
     }
 
-    func testCodeLocalSessionAndInspectorStayInteractive() {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "--juno-ui-preview",
-            "--juno-preview-tab", "code",
-            "--juno-preview-code-session",
-            "--juno-preview-inspector",
-            "--juno-preview-inspector-pane", "subagents",
-            "--juno-preview-size", "1240x800",
-        ]
-        app.launch()
-        openMainWindowIfNeeded(in: app)
+    func testCodeLocalSessionAndPanelStayInteractive() {
+        let app = launchCode(extra: ["--juno-preview-code-session"])
 
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
-        XCTAssertTrue(app.buttons["juno.code.composer.voice"].exists)
         XCTAssertTrue(app.buttons["juno.code.composer.dictate"].exists)
-        XCTAssertTrue(app.buttons["juno.code.preview.toggle"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
-        XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
-        XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.inspector.pane"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.subagents"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.goal.bar"]
-                .waitForExistence(timeout: 5)
-        )
+        let changes = app.buttons["juno.code.review.toggle"]
+        XCTAssertTrue(changes.waitForExistence(timeout: 5))
+        XCTAssertTrue(changes.isEnabled)
 
-        // Exercise the exact regression: closing and restoring the trailing
-        // Sub-agents rail while the transcript is live must neither crash nor
-        // leave the right pane detached from its toolbar control.
-        let inspectorToggle = app.buttons["juno.code.inspector.toggle"]
-        inspectorToggle.click()
-        XCTAssertFalse(app.descendants(matching: .any)["juno.code.subagents"].exists)
-        inspectorToggle.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.subagents"]
-                .waitForExistence(timeout: 5)
-        )
+        // Opening, closing and reopening the side panel while the thread is
+        // live must neither crash nor detach the pane from its control.
+        changes.click()
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.panel"].waitForExistence(timeout: 5))
+        changes.click()
+        XCTAssertFalse(app.descendants(matching: .any)["juno.code.panel"].waitForExistence(timeout: 1))
+        app.buttons["juno.code.terminal.toggle"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.panel"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.exists)
+    }
+
+    private func launchCode(extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "code",
+            "--juno-preview-size", "1240x800",
+        ] + extra
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+        return app
     }
 
     /// Work lands on its home, opens a task from the column, and comes back.
@@ -540,11 +462,8 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         assertColumnHeadBelowChrome(in: app, product: "chat")
 
         app.descendants(matching: .any)["juno.product-brand.code"].click()
-        // The filter row, not "Add project…": that button is the last row of
-        // the column and a `.sidebar` List does not build rows below the fold,
-        // so on an 800pt window it does not exist to be found.
         XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.sidebar-filter"].waitForExistence(timeout: 8),
+            app.descendants(matching: .any)["juno.code.new-conversation"].waitForExistence(timeout: 8),
             "Chat → Code"
         )
         assertColumnHeadBelowChrome(in: app, product: "code")

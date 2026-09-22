@@ -158,7 +158,7 @@ export default function AutomationPage() {
     setBusy(false);
     if (result.kind === "ok") {
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-      toast.success("Started. This run is extra — the automation still fires when it was going to.");
+      toast.success("Started. This run is extra, and the automation still fires when it was going to.");
       void loadRuns();
       return;
     }
@@ -304,7 +304,7 @@ export default function AutomationPage() {
             size="panel"
             icon={History}
             title="No runs yet"
-            description="It has not run yet. Fires that were skipped — a Mac that was away, a budget that was spent — appear here too, so this staying empty means nothing has fired at all."
+            description="It has not run yet. Skipped fires (a Mac that was away, a budget that was spent) appear here too, so an empty list means nothing has fired at all."
           />
         ) : (
           <WorkList>
@@ -363,7 +363,7 @@ export default function AutomationPage() {
             <DialogTitle>Delete “{schedule.name}”?</DialogTitle>
             <DialogDescription>
               Fires that have not started are cancelled. A run already under way carries on to the
-              end — deleting a schedule stops it starting anything new, and cannot reach into work
+              end: deleting a schedule stops it starting anything new, and cannot reach into work
               that has begun. The tasks it has already produced stay where they are.
             </DialogDescription>
           </DialogHeader>

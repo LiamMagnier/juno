@@ -242,7 +242,11 @@ function createRunArguments(source: string): string[] {
 }
 
 const DISPATCHERS = [
-  "../src/app/api/work/sessions/[id]/runs/route.ts",
+  // The runs route and the chat model's `start_task` share this one
+  // implementation, so it is where the run is built; the route only wraps it.
+  // First on purpose: it is the one dispatcher with no schedule to narrow
+  // against, and the `slice(1)` below relies on that.
+  "../src/lib/work/dispatch.ts",
   // The Run-now button and an `api` trigger's fire URL are ONE implementation
   // (see its own docblock), so the file that builds the run for both is where
   // the window has to be read and merged. Pointing this at the route instead

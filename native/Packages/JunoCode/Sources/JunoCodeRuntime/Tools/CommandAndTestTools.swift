@@ -125,7 +125,7 @@ public struct RunCommandTool: CodeTool {
             footer += "\n" + Self.changeSummary(report)
         }
 
-        let limited = OutputLimiter.apply(.commandOutput, to: collected)
+        let limited = OutputLimiter.applyKeepingEnds(.commandOutput, to: collected)
         return ToolResult(
             content: limited.text + footer,
             isError: !result.succeeded,

@@ -186,9 +186,8 @@
     --input: 44 12% 78%;
     --ring: 15 54% 46%;
 
-    /* The sidebar is an inset well cut into the page (two points below it), so
-       its frame carries `.surface-inset`'s recess and the active row is the one
-       raised object inside it. */
+    /* The sidebar is a flat panel a step below the page, painted by
+       `.app-sidebar-frame`; its rows mark state with fills, never a lift. */
     --sidebar: 46 22% 94.6%;
     --sidebar-foreground: 48 4% 30%;
     /* THE SEAM HAS TO BE THE STRONGEST HAIRLINE IN THE PRODUCT, not the
@@ -202,42 +201,35 @@
        because it divides the two largest planes in the app. */
     --sidebar-border: 44 14% 84.5%;
     --sidebar-accent: 46 20% 90.5%;
-    /* THE SELECTED ROW IS AN EDGE AROUND A WHISPER, and the split into two
-       tokens is what lets it be both at once.
+    /* THE TWO ROW STATES ARE TWO FILLS, ranked, and neither has an edge.
 
-       `--sidebar-accent` stays exactly where it is — the panel's general tonal
-       fill, which the product switch's track still draws with. What moves out
-       from under it is the two ROW STATES:
+       `--sidebar-accent` stays where it is: the panel's general tonal fill,
+       which the product switch's track draws with. The row states are their
+       own tokens:
 
          panel        94.6%
          hover        92.8%    -1.8    the pointer is here
-         selected     90.8%    -3.8    this is where you are
-         its edge     81.0%    -9.8 from the fill it bounds
+         selected     89.8%    -4.8    this is where you are
 
-       WHY THE FILL IS BARELY THERE. A selected row has to be findable, and the
-       obvious way to buy that is a heavier fill — a first pass took selection
-       eight points off the panel, which found it and also made a column of
-       quiet text rows look like it had a button parked in it. Chrome is
-       quieter than content; a sidebar that shouts about where you are is
-       reading over the thing you came to read.
+       The selected row used to be a lighter fill (90.8%) inside a hairline,
+       on the argument that boundedness is what hover can never have. It read
+       as the one outlined object in a column of text, and neither reference
+       draws it: Claude and ChatGPT mark the current row with a fill alone. So
+       the edge went and the fill came one rung deeper to carry the state by
+       itself. It stops at 89.8% on purpose: `--muted-foreground` still
+       measures 4.52:1 on it, and the open account row sets its plan line in
+       that ink. Any deeper and a caption on a selected row fails AA.
 
-       SO THE EDGE CARRIES THE STATE. A hairline is the one property hover does
-       not have at ANY strength, so selection does not have to out-shout hover
-       to be told apart from it — it only has to be BOUNDED. That is why the
-       edge is the part that got louder here: ten points off its own fill,
-       where the panel's seam is six, so the outline reads as a decision at a
-       glance while the fill inside it stays a tone.
+       Hover stays a whisper, enough to follow the pointer and not enough to
+       be mistaken for the row you are on.
 
-       AND WHY HOVER CAME DOWN rather than selection going up. The two used to
-       be `--sidebar-accent` at 60% and at 100% — 2.5 and 4.1 points below the
-       panel, so they sat 1.6 apart and were told apart by opacity alone. Hover
-       is its own colour now and a whisper by design: two points, enough to
-       follow the pointer and not enough to be mistaken for a bounded row.
-
-       The half-step of extra saturation (22% on a 22% panel, and 6% on dark)
-       is what keeps the fill warm paper rather than grey shadow. */
+       `--sidebar-selected-border` is no longer drawn by the row. It stays
+       defined because the native clients read the token table
+       (scripts/generate-design-tokens.ts). The half-step of extra saturation
+       (22% on a 22% panel, and 6% on dark) is what keeps the fill warm paper
+       rather than grey shadow. */
     --sidebar-hover: 46 20% 92.8%;
-    --sidebar-selected: 46 22% 90.8%;
+    --sidebar-selected: 46 22% 89.8%;
     --sidebar-selected-border: 43 16% 81%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
@@ -586,16 +578,17 @@
 
          panel         8.8%
          hover        13.5%    +4.7
-         selected     17.5%    +8.7
-         its edge     26.0%    +8.5 from the fill it bounds
+         selected     19.0%    +10.2
 
        Dark takes the bigger step in both: a fill lightening a near-black
        ground moves less per point of L than the same step darkens a near-white
-       one, and this panel is the deepest plane on screen. The RELATIONSHIP is
-       what is held constant across the two themes, not the numbers — a fill
-       you can just feel, inside an edge you can see. */
+       one, and this panel is the deepest plane on screen. With no edge to help
+       it, the selected fill went 1.5 points further than it used to; the
+       muted caption on an open account row still measures 5.6:1 on it. The
+       RELATIONSHIP is what is held constant across the two themes, not the
+       numbers: a hover you can just feel, and a selection you can find. */
     --sidebar-hover: 30 5% 13.5%;
-    --sidebar-selected: 32 6% 17.5%;
+    --sidebar-selected: 32 6% 19%;
     --sidebar-selected-border: 32 7% 26%;
 
     /*
@@ -777,7 +770,8 @@
    * separate: Chat's ball terminal pops out of the ring's gap (a message
    * leaving), Code's spark turns a quarter and swells (a twinkle — the spark is
    * four-fold, so it lands where it started), Design's circle slides back from
-   * the square in front of it (two layers parting). The trigger below sets
+   * the square in front of it (two layers parting), Library's leaning volume
+   * straightens and lifts (a book taken off the shelf). The trigger below sets
    * `--icon-on: 1` on the svg; the parts inherit it, so one trigger rule serves
    * both vocabularies and reduced motion leaves it at 0. Offsets are in the
    * drawing's own 256-unit space: 16 units is 1px at 16px.
@@ -800,6 +794,17 @@
   }
   svg.icon .juno-part--disc {
     translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -14px);
+  }
+  /* Six of the volume's thirteen degrees of lean, about its own centre, and a
+     16-unit lift (1px at 16px). The turn runs on the base rung with the lift,
+     not the slow rung the spark's quarter turn needs: a few degrees that
+     trailed the lift would read as a second gesture. */
+  svg.icon .juno-part--volume {
+    translate: 0 calc(var(--icon-on, 0) * -16px);
+    rotate: calc(var(--icon-on, 0) * 6deg);
+    transition:
+      translate var(--dur-base) var(--ease-out-back),
+      rotate var(--dur-base) var(--ease-out-back);
   }
 
   @media (hover: hover) and (prefers-reduced-motion: no-preference) {
@@ -1366,47 +1371,33 @@
   }
 
   /*
-   * THE SELECTED ROW IN THE SIDEBAR — one recipe, every list in the panel.
+   * THE SELECTED ROW IN THE SIDEBAR: one recipe, every list in the panel.
    *
-   * TWO PROPERTIES, AND THE EDGE IS THE ONE DOING THE WORK.
+   * A FILL, AND ONLY A FILL. `--sidebar-selected` is one rung past the hover
+   * (the rungs are in the token block at the top of this file), a colour of
+   * its own rather than a strength of the hover's, so the row you are on
+   * always outranks the one under the pointer.
    *
-   * The fill is `--sidebar-selected`: barely two points past the hover, and
-   * deliberately so. Chrome is quieter than content, and a selected row loud
-   * enough to be found by its fill alone is a button parked in a column of
-   * text. It is a colour of its own rather than a strength of the hover's
-   * (the rungs are in the token block at the top of this file), which is what
-   * lets it stay a tone without collapsing into the pointer's.
+   * It used to carry an inset hairline as well, on the argument that
+   * boundedness is the one property hover never has. In the column it read as
+   * the only outlined object among rows of text, a small button parked in the
+   * list, and neither reference draws one: Claude and ChatGPT mark the current
+   * row with a fill alone. The fill came one rung deeper instead.
    *
-   * The edge is `--sidebar-selected-border`, and it is what actually says
-   * "this is where you are". Boundedness is the one property hover does not
-   * have at ANY strength, so selection never has to out-shout it — which is
-   * why the edge is the half that got louder: ten points off its own fill,
-   * where the panel's seam is six. An outline reads as a decision at a glance;
-   * a wash reads as a smudge, however dark you make it.
-   *
-   * Drawn as an INSET box-shadow rather than a border: every row in this panel
-   * is a fixed height on `box-border`, and a real border would eat 2px of the
-   * 32px pitch the column's whole measurement table is keyed to. Inset also
-   * means it TRANSITIONS — the rows animate `box-shadow` alongside
-   * `background-color`, so moving from chat to chat the old row's edge fades
-   * out as the new one's fades in instead of both cutting.
-   *
-   * No shadow under it. This is a flat panel (docs/design/FLAT_UI.md §2.1) and
-   * the hairline is the lift; a raised row inside a recessed well is the Soft
-   * UI idiom the flat retune spent a release removing.
+   * No shadow either. This is a flat panel (docs/design/FLAT_UI.md §2.1); a
+   * raised row inside a recessed well is the Soft UI idiom the flat retune
+   * spent a release removing. Rows transition `background-color` only.
    */
   .sidebar-row-selected {
     background-color: hsl(var(--sidebar-selected));
-    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-selected-border));
   }
-  /* The same state on a trigger that owns its own `data-state` — the account
-     band, whose "selected" is its menu being open. A className cannot read
+  /* The same state on a trigger that owns its own `data-state`: the account
+     row, whose "selected" is its menu being open. A className cannot read
      Radix's attribute, and the alternative is an arbitrary
-     `data-[state=open]:shadow-[inset_0_0_0_1px_…]` written out at the call
-     site, which is the recipe copied rather than reused. */
+     `data-[state=open]:bg-…` written out at the call site, which is the
+     recipe copied rather than reused. */
   .sidebar-row-selected-on-open[data-state="open"] {
     background-color: hsl(var(--sidebar-selected));
-    box-shadow: inset 0 0 0 1px hsl(var(--sidebar-selected-border));
   }
 
   /*
@@ -2796,22 +2787,19 @@
        Newsreader on that variable, leaving the old line in place would have
        silently flipped every transcript to serif. */
     font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
-    /* The `body` rung (tailwind.config.ts), stated rather than inherited.
-       Nothing above the transcript sets a size, so the reply used to land on
-       the UA's 16px — on no rung of the ladder — beside a user bubble on
-       `text-body` at 15px: two speakers in one column, a pixel apart. The
-       headings and code below are in `em` and follow. A consumer that wants
-       another rung (`text-body-lg` on the report reader) still wins: this
-       block is in the components layer, utilities come after it. The move is
-       not transcript-only: every consumer of the shared Markdown component
-       that passes no size class — the inline artifact card's markdown
-       runtime, the canvas panel's preview, the work site preview, the
-       shared artifact viewer and the shared chat transcript — comes down
-       from the inherited 16px to this rung with it. Deliberate: none of
-       them was on a rung either, and a document surface that wants a
-       larger measure says so the way the report reader does. */
-    font-size: 0.9375rem;
-    line-height: 1.65;
+    /* The `reading` rung (tailwind.config.ts: 16px on 1.7), stated rather
+       than inherited, and the same rung `USER_BUBBLE_CLASS` sets, so the two
+       speakers in one column read at one size. It was the 15px `body` rung,
+       a size under the 16px Claude and ChatGPT set replies at, and a long
+       answer read small beside them. The headings and code below are in `em`
+       and follow. A consumer that wants another rung (`text-body-lg` on the
+       report reader) still wins: this block is in the components layer, and
+       utilities come after it. Every consumer of the shared Markdown
+       component that passes no size class moves with it: the inline artifact
+       card's markdown runtime, the canvas panel's preview, the work site
+       preview, the shared artifact viewer and the shared chat transcript. */
+    font-size: 1rem;
+    line-height: 1.7;
     word-break: break-word;
     /* 45–75ch is the readability band and the transcript runs about 104ch, so
        this is the smallest compliant move rather than a comfortable one. Applied
@@ -3258,6 +3246,91 @@
 .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(var(--code-number)); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
+
+/* ---- The document viewer: pdf.js's text layer, and find highlights ---------
+ *
+ * OUTSIDE @layer for the reason the highlight.js block above gives: these
+ * classes are stamped at runtime by pdf.js (`markedContent`, the spans it
+ * positions) and by the viewer (`selecting`, `endOfContent`), and Tailwind
+ * would tree-shake layered rules for them against the content glob.
+ *
+ * The text layer is pdf.js's own recipe (web/text_layer_builder.css, 6.x),
+ * reduced to what a read-only viewer uses: transparent glyphs set exactly over
+ * the canvas so the browser's selection, copy and find work on real text. Every
+ * size is `calc(var(--total-scale-factor) * …)`, which the page box sets — a
+ * zoom is one custom property, not a rebuild. */
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+/* The selection wash: the accent, as it is everywhere else in the product, at
+   the strength that reads through to the drawn glyphs underneath. */
+.textLayer ::selection {
+  background: hsl(var(--primary) / 0.28);
+}
+.textLayer br::selection {
+  background: transparent;
+}
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+/* Find-in-document (components/documents/find.ts). Warning-yellow for every
+   match, the accent for the one the find bar is on — the pair every reader's
+   find already uses, drawn in Juno's tokens. `color: inherit` keeps a text
+   layer's transparent glyphs transparent. */
+::highlight(juno-find) {
+  background-color: hsl(var(--warning) / 0.35);
+  color: inherit;
+}
+::highlight(juno-find-active) {
+  background-color: hsl(var(--primary) / 0.45);
+  color: inherit;
+}
 
 /* ---- Sonner's close chip, in Juno's material -------------------------------
  *

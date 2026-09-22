@@ -2,87 +2,174 @@
 
 import * as React from "react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
 import { openSettings } from "@/components/settings/settings-sections";
-import { SummaryCard } from "@/components/memory/summary-card";
-import { PrivacyStrip } from "@/components/memory/privacy-strip";
-import { EditsPanel } from "@/components/memory/edits-panel";
-import { EntryList } from "@/components/memory/entry-list";
-import { MemoryStats } from "@/components/memory/memory-stats";
+import { cn } from "@/lib/utils";
+import { ActivitySheet, type ActivityTab } from "@/components/memory/activity-sheet";
 import { ImportDialog } from "@/components/memory/import-dialog";
-import { MemoryToolbar, type MemoryView } from "@/components/memory/memory-toolbar";
-import { TopicsView } from "@/components/memory/topics-view";
-import { RecapView } from "@/components/memory/recap-view";
+import { MemoryFooter, ResetDialog } from "@/components/memory/memory-footer";
+import { MemoryHeader, MemoryHeaderActions } from "@/components/memory/memory-header";
+import { MemoryList, type MemorySort } from "@/components/memory/memory-list";
+import { BackfillNotice, PausedNotice, PolicyNotice } from "@/components/memory/memory-notices";
+import { MemoryBodySkeleton } from "@/components/memory/memory-skeleton";
+import { MemoryWelcome } from "@/components/memory/memory-welcome";
+import { PromptDock, type PromptDockHandle } from "@/components/memory/prompt-dock";
+import type { RecapExtras } from "@/components/memory/recap-view";
 import { ScopeBar } from "@/components/memory/scope-bar";
-import { useMemory } from "@/components/memory/use-memory";
+import { SummaryPanel } from "@/components/memory/summary-panel";
+import { useBackfill, type BackfillState } from "@/components/memory/use-backfill";
+import { useDeferredRemoval } from "@/components/memory/use-deferred-removal";
+import { useMemory, type MemoryState } from "@/components/memory/use-memory";
+import { useProjectOptions, type ProjectOption } from "@/components/memory/use-project-options";
 import {
-  groupMemoriesByTopic,
   isRetired,
   memoriesInScope,
   memoryScopes,
-  type Memory,
+  type MemoryEditRecord,
 } from "@/components/memory/memory-model";
-import { MEMORY_CATEGORIES, MEMORY_CATEGORY_META, isMemoryCategory } from "@/lib/memory-categories";
-import { staggerDelay } from "@/lib/motion";
+import type { RecapPeriod } from "@/lib/memory-recap";
 
-/**
- * The memory manager: what Juno knows, why it knows it, and every way to
+/*
+ * The memory page: what Juno knows, where it came from, and every way to
  * change it.
  *
- * ONE COMPONENT, TWO HOMES — the `/memory` page and the Memory section of
- * settings. `compact` is the difference, and it is a question of how much room
- * there is rather than how much the user is allowed to do: inside the settings
- * modal the summary and the privacy controls are the whole of it, because a
- * scrollable list of two hundred facts nested in a scrollable pane is not
- * usable at that size. The page gets the lot.
+ * ONE CALM COLUMN. The page used to stack seven bordered surfaces sixteen
+ * pixels apart (scope chips, a stats strip, the summary card, a "Manage edits"
+ * card, a toolbar with three views, a card per topic, a privacy strip), and
+ * none of them was the primary one. Now there is one raised surface, the
+ * summary with its prompt bar, and everything else is a list or quiet text:
  *
- * WHAT CHANGED. This used to render the summary and the privacy strip alone,
- * and post instructions to a route that did not exist. `EntryList` and
- * `EditsPanel` were finished components nothing imported. The whole of the
- * server's memory model — categories, provenance, supersession, confidence,
- * project scope — was reachable by API and invisible in the product. The
- * wiring lives in `useMemory`; this file is the composition.
+ *   header      the name, the one On/Off switch, a menu for the rare things
+ *   notices     memory is off / a policy refused / reading past chats
+ *   scope       only when a project has memory of its own
+ *   summary     prose that unfolds in place, the prompt bar at its foot, and
+ *               a drafted change right under the bar
+ *   list        every memory, by topic or by date, rows on hairlines
+ *   footer      what never reaches memory, and import, export, reset
+ *
+ * The edit history and the recap are one step aside, in the activity sheet.
+ *
+ * DATA AND PRESENTATION ARE SPLIT. `MemoryManager` owns the requests (the
+ * memory hook, the backfill job, the project list); `MemoryManagerView` is the
+ * whole page as a function of that state, which is what lets the dev gallery
+ * (src/app/dev/memory) render the real page from fixtures.
  */
-export function MemoryManager({ compact = false }: { compact?: boolean }) {
+
+export function MemoryManager() {
   const memory = useMemory();
-  const [view, setView] = React.useState<MemoryView>("topics");
+  const { settings } = useApp();
+  const backfill = useBackfill({
+    paused: memory.paused,
+    backgroundLearning: settings.memoryBackgroundLearning,
+    onLearned: memory.reload,
+  });
+  const [projectsWanted, setProjectsWanted] = React.useState(false);
+  const projects = useProjectOptions(projectsWanted);
+  const wantProjects = React.useCallback(() => setProjectsWanted(true), []);
+  const openMemorySettings = React.useCallback(() => openSettings("memory"), []);
+
+  return (
+    <MemoryManagerView
+      memory={memory}
+      backfill={backfill}
+      projects={projects}
+      onWantProjects={wantProjects}
+      onOpenSettings={openMemorySettings}
+    />
+  );
+}
+
+interface MemoryManagerViewProps {
+  memory: MemoryState;
+  backfill: BackfillState;
+  /** Projects a memory can move to; null until first asked for. */
+  projects: ProjectOption[] | null;
+  onWantProjects: () => void;
+  onOpenSettings: () => void;
+  /** For the dev gallery: the recap's server half, without the server. */
+  loadRecapExtras?: (days: RecapPeriod) => Promise<RecapExtras>;
+}
+
+const SORT_KEY = "juno.memory.sort";
+/** How long a row that a change just touched stays lit. */
+const HIGHLIGHT_MS = 1400;
+/** Below this many memories, unread history is worth a banner, not just a menu item. */
+const THIN_MEMORY = 12;
+
+/** The rows an edit rewrites in place (its adds arrive as new ids). */
+function updatedIds(edit: MemoryEditRecord, inverse = false): string[] {
+  return (inverse ? edit.inverse ?? [] : edit.operations).flatMap((op) => (op.op === "update" ? [op.id] : []));
+}
+
+export function MemoryManagerView({
+  memory,
+  backfill,
+  projects,
+  onWantProjects,
+  onOpenSettings,
+  loadRecapExtras,
+}: MemoryManagerViewProps) {
   const [query, setQuery] = React.useState("");
-  const [editsOpen, setEditsOpen] = React.useState(false);
-  const [importOpen, setImportOpen] = React.useState(false);
+  const [sort, setSort] = React.useState<MemorySort>("topic");
   /** The project the page is narrowed to, or null for everything. */
   const [scope, setScope] = React.useState<string | null>(null);
+  const [scopeSwitched, setScopeSwitched] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [resetOpen, setResetOpen] = React.useState(false);
+  const [activityOpen, setActivityOpen] = React.useState(false);
+  const [activityTab, setActivityTab] = React.useState<ActivityTab>("edits");
+  const [composing, setComposing] = React.useState(false);
+  // Tracked here rather than read off `memory.busy`, which is also true while
+  // an instruction drafts: the Rebuild button spins only for a rebuild.
+  const [rebuilding, setRebuilding] = React.useState(false);
+  const [highlightIds, setHighlightIds] = React.useState<ReadonlySet<string>>(() => new Set());
+  const [justApplied, setJustApplied] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  const dockRef = React.useRef<PromptDockHandle>(null);
 
-  // `/memory?project=<id>` — where the project page's "Manage memory" lands.
+  // `/memory?project=<id>` is where the project page's "Manage memory" lands.
   // Read off `location` rather than useSearchParams, which would ask for a
-  // Suspense boundary around a page that is otherwise plain (the projects
-  // page makes the same trade for `?new=1`). The settings modal's compact
-  // manager has no scope at all.
+  // Suspense boundary around a page that is otherwise plain.
   React.useEffect(() => {
-    if (compact || typeof window === "undefined") return;
     const requested = new URL(window.location.href).searchParams.get("project");
     if (requested) setScope(requested);
-  }, [compact]);
+    try {
+      const saved = window.localStorage.getItem(SORT_KEY);
+      if (saved === "topic" || saved === "newest") setSort(saved);
+    } catch {
+      // Storage unavailable: the default grouping is fine.
+    }
+  }, []);
 
   // Kept in the URL, so a narrowed page survives a reload and can be linked.
-  const changeScope = React.useCallback(
-    (next: string | null) => {
-      setScope(next);
-      if (compact || typeof window === "undefined") return;
-      const url = new URL(window.location.href);
-      if (next) url.searchParams.set("project", next);
-      else url.searchParams.delete("project");
-      window.history.replaceState(window.history.state, "", url.pathname + url.search);
-    },
-    [compact]
+  const changeScope = React.useCallback((next: string | null) => {
+    setScope(next);
+    setScopeSwitched(true);
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("project", next);
+    else url.searchParams.delete("project");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+  }, []);
+
+  const changeSort = React.useCallback((next: MemorySort) => {
+    setSort(next);
+    try {
+      window.localStorage.setItem(SORT_KEY, next);
+    } catch {
+      // A grouping that is not remembered is a small loss, not an error.
+    }
+  }, []);
+
+  const removal = useDeferredRemoval((entry, kind) =>
+    kind === "forget" ? memory.forgetMemory(entry, { silent: true }) : memory.deleteMemory(entry, { silent: true })
   );
 
   const scopes = React.useMemo(
     () => memoryScopes(memory.memories ?? [], memory.projectSummaries),
     [memory.memories, memory.projectSummaries]
   );
-  // A project the account has no memory for — deleted since, or a stale link —
+  // A project the account has no memory for (deleted since, or a stale link)
   // shows everything rather than an empty page that looks like data loss.
   const activeScope = scope && scopes.some((option) => option.id === scope) ? scope : null;
   const activeProject = activeScope
@@ -96,227 +183,254 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
     ? memory.projectSummaries.find((summary) => summary.projectId === activeScope) ?? null
     : null;
 
-  /*
-   * A drafted edit opens the queue that holds it.
-   *
-   * The instruction bar is at the top of the summary card and the diff it
-   * produces is in a collapsed panel below — so an instruction that worked
-   * perfectly looked, from the reader's seat, like a toast and nothing else.
-   * Watching the PENDING count rather than the list length is what keeps a
-   * ledger full of old applied edits from opening the panel — they are not
-   * waiting on anyone — and what leaves the panel alone on an accept, which
-   * lowers the count. A pending edit found on load DOES open it, on purpose:
-   * a drafted change from a previous visit is still waiting for a decision,
-   * and a collapsed panel with "1 pending" in its corner is easy to miss.
-   */
-  const pendingCount = memory.edits.filter((edit) => edit.status === "pending").length;
-  const lastPending = React.useRef(pendingCount);
-  React.useEffect(() => {
-    if (pendingCount > lastPending.current) setEditsOpen(true);
-    lastPending.current = pendingCount;
-  }, [pendingCount]);
-
-  const facts = React.useMemo(() => scopedMemories.filter((entry) => entry.kind === "FACT"), [scopedMemories]);
+  const facts = React.useMemo(
+    () => scopedMemories.filter((entry) => entry.kind === "FACT" && !removal.hiddenIds.has(entry.id)),
+    [scopedMemories, removal.hiddenIds]
+  );
+  // Account-wide, not in scope: a project with three facts in an account of
+  // three hundred is not a thin memory.
+  const accountActiveCount = React.useMemo(
+    () => (memory.memories ?? []).filter((entry) => entry.kind === "FACT" && !isRetired(entry)).length,
+    [memory.memories]
+  );
   const anythingRemembered =
     (memory.memories ?? []).some((entry) => entry.kind === "FACT") ||
     !!memory.summary ||
     memory.projectSummaries.length > 0;
+  const pendingCount = memory.edits.filter((edit) => edit.status === "pending").length;
 
-  // Matched against the fact, its topic label and its project name — a user
-  // searching "thesis" means the project as readily as the word, and a search
-  // that only reads `content` makes the scope chip look like a lie.
-  const visible = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return facts;
-    return facts.filter((entry) => haystack(entry).includes(needle));
-  }, [facts, query]);
+  /*
+   * CAUSE AND EFFECT. A change that lands somewhere the reader is not looking
+   * (an applied instruction rewrites three rows further down; a fact added from
+   * the list header files itself under a topic) lights the rows it touched for
+   * a moment. The marker is set before the change and read when the list
+   * arrives, so the flash lands on the rows as they are after it: new ids, and
+   * the ones an update rewrote in place.
+   */
+  const highlightMarker = React.useRef<{ before: Set<string>; updated: string[] } | null>(null);
+  React.useEffect(() => {
+    const marker = highlightMarker.current;
+    if (!marker || !memory.memories) return;
+    const ids = [
+      ...memory.memories.filter((entry) => !marker.before.has(entry.id)).map((entry) => entry.id),
+      ...marker.updated,
+    ];
+    if (ids.length === 0) return;
+    highlightMarker.current = null;
+    setHighlightIds(new Set(ids));
+  }, [memory.memories]);
+  React.useEffect(() => {
+    if (highlightIds.size === 0) return;
+    const timer = window.setTimeout(() => setHighlightIds(new Set()), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [highlightIds]);
 
-  const topics = React.useMemo(
-    () => groupMemoriesByTopic(visible, topicMetaFor, MEMORY_CATEGORIES),
-    [visible]
+  const withHighlight = React.useCallback(
+    async <T,>(updated: string[], run: () => Promise<T>): Promise<T> => {
+      const marker = { before: new Set((memory.memories ?? []).map((entry) => entry.id)), updated };
+      highlightMarker.current = marker;
+      try {
+        return await run();
+      } finally {
+        // A change that failed never delivers a list, and its marker must not
+        // wait for the next unrelated one. Long enough for a success to land.
+        window.setTimeout(() => {
+          if (highlightMarker.current === marker) highlightMarker.current = null;
+        }, 1500);
+      }
+    },
+    [memory.memories]
   );
 
-  const activeCount = React.useMemo(() => facts.filter((entry) => !isRetired(entry)).length, [facts]);
-  const retiredCount = facts.length - activeCount;
-  const filtered = query.trim().length > 0;
+  const acceptEdit = React.useCallback(
+    (edit: MemoryEditRecord) => withHighlight(updatedIds(edit), () => memory.acceptEdit(edit)),
+    [memory, withHighlight]
+  );
+  const undoEdit = React.useCallback(
+    (edit: MemoryEditRecord) => withHighlight(updatedIds(edit, true), () => memory.undoEdit(edit)),
+    [memory, withHighlight]
+  );
+  const addMemory = React.useCallback(
+    (content: string) => withHighlight([], () => memory.addMemory(content, activeScope)),
+    [activeScope, memory, withHighlight]
+  );
 
-  if (memory.loadError) {
-    return (
-      <EmptyState
-        tone="error"
-        size={compact ? "panel" : "page"}
-        icon={StatusIcons.error}
-        title="Couldn’t load your memory"
-        description="Check your connection and try again. Nothing has been changed."
-        action={
-          <Button variant="outline" size="sm" onClick={() => void memory.reload()}>
-            <ActionIcons.refresh className="size-4" aria-hidden="true" />
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
+  // "Tell Juno something" in the welcome unfolds the dock; focus follows it in.
+  React.useEffect(() => {
+    if (!composing) return;
+    const timer = window.setTimeout(() => dockRef.current?.focus(), 80);
+    return () => window.clearTimeout(timer);
+  }, [composing]);
 
-  if (memory.memories === null) {
-    return (
-      <div className="space-y-3" aria-hidden="true">
-        <Skeleton style={staggerDelay(0, "tight")} className="h-64 w-full rounded-card" />
-        <Skeleton style={staggerDelay(1, "tight")} className="h-20 w-full rounded-card" />
-        {!compact && <Skeleton style={staggerDelay(2, "tight")} className="h-48 w-full rounded-card" />}
-      </div>
-    );
-  }
+  const openActivity = (tab: ActivityTab) => {
+    setActivityTab(tab);
+    setActivityOpen(true);
+  };
+
+  const loaded = memory.memories !== null && !memory.loadError;
+  const offerBackfill =
+    loaded &&
+    anythingRemembered &&
+    !memory.paused &&
+    !backfill.dreaming &&
+    (backfill.remaining ?? 0) > 0 &&
+    accountActiveCount < THIN_MEMORY;
+
+  const dock = (
+    <PromptDock
+      ref={dockRef}
+      edits={memory.edits}
+      busyEditIds={memory.busyEditIds}
+      paused={memory.paused}
+      onInstruct={memory.instruct}
+      onAccept={acceptEdit}
+      onUndo={undoEdit}
+      onDiscard={memory.deleteEdit}
+      justApplied={justApplied}
+      onJustAppliedChange={setJustApplied}
+    />
+  );
 
   return (
-    <div className="space-y-4">
-      {!compact && <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />}
-
-      {!compact && (
-        <MemoryStats
-          activeCount={activeCount}
-          retiredCount={retiredCount}
-          paused={memory.paused}
-          onLearned={memory.reload}
-        />
-      )}
-
-      <SummaryCard
-        summary={activeScope ? projectSummary : memory.summary}
-        project={activeProject}
-        paused={memory.paused}
-        consolidating={memory.busy}
-        onRegenerate={() => void memory.regenerate({ projectId: activeScope })}
-        // The editor drafts account-wide changes, so it is offered only where
-        // the page is showing the account.
-        onInstruction={activeScope ? undefined : memory.instruct}
+    <div className="@container/memory">
+      <MemoryHeader
+        actions={
+          <MemoryHeaderActions
+            enabled={!memory.paused}
+            onEnabledChange={(on) => void memory.setPaused(!on)}
+            unread={backfill.remaining}
+            learning={backfill.running}
+            dreaming={backfill.dreaming}
+            onLearn={backfill.run}
+            onImport={() => setImportOpen(true)}
+            onExport={memory.exportMemory}
+            onSettings={onOpenSettings}
+            onActivity={() => openActivity("edits")}
+            onReset={() => setResetOpen(true)}
+            empty={!anythingRemembered}
+          />
+        }
       />
 
-      {memory.policyNotice && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="surface-inset flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card px-4 py-3 text-ui text-foreground motion-safe:animate-fade-in-up"
-        >
-          <StatusIcons.info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <p className="min-w-0 flex-1 text-muted-foreground">{memory.policyNotice}</p>
-          <Button variant="outline" size="sm" onClick={() => openSettings("memory")}>
-            Background processing
-          </Button>
+      <PausedNotice open={memory.paused} onTurnOn={() => void memory.setPaused(false)} />
+      <PolicyNotice message={memory.policyNotice} onOpenSettings={onOpenSettings} />
+      <BackfillNotice
+        running={backfill.running}
+        offer={offerBackfill}
+        remaining={backfill.remaining ?? 0}
+        total={backfill.total}
+        onRun={backfill.run}
+      />
+
+      {memory.loadError ? (
+        <EmptyState
+          tone="error"
+          icon={StatusIcons.error}
+          title="Couldn’t load your memory"
+          description="Check your connection and try again. Nothing has been changed."
+          action={
+            <Button variant="outline" size="sm" onClick={() => void memory.reload()}>
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
+              Try again
+            </Button>
+          }
+        />
+      ) : memory.memories === null ? (
+        <MemoryBodySkeleton />
+      ) : !anythingRemembered ? (
+        <div className="motion-safe:animate-rise-in">
+          <MemoryWelcome
+            paused={memory.paused}
+            unread={backfill.remaining}
+            learning={backfill.running}
+            onImport={() => setImportOpen(true)}
+            onLearn={backfill.run}
+            composing={composing || pendingCount > 0}
+            onCompose={() => setComposing(true)}
+          >
+            {dock}
+          </MemoryWelcome>
+        </div>
+      ) : (
+        // One entrance for the page body as the data lands; nothing inside it
+        // staggers. A scope switch re-plays a fade on the content it changed.
+        <div className="motion-safe:animate-rise-in">
+          <div className={cn(scopes.length > 1 && "mb-4")}>
+            <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />
+          </div>
+          <div key={activeScope ?? "account"} className={cn(scopeSwitched && "motion-safe:animate-fade-in")}>
+            <SummaryPanel
+              summary={activeScope ? projectSummary : memory.summary}
+              project={activeProject}
+              consolidating={rebuilding}
+              onRebuild={async () => {
+                setRebuilding(true);
+                await memory.regenerate({ projectId: activeScope });
+                setRebuilding(false);
+              }}
+              onOpenActivity={() => openActivity("edits")}
+            >
+              {/* The drafting model edits account-wide facts, so the bar is
+                  offered only where the page is showing the account. */}
+              {!activeScope && dock}
+            </SummaryPanel>
+
+            <div className="mt-10">
+              <MemoryList
+                facts={facts}
+                query={query}
+                onQueryChange={setQuery}
+                sort={sort}
+                onSortChange={changeSort}
+                paused={memory.paused}
+                project={activeProject}
+                busyIds={memory.busyIds}
+                highlightIds={highlightIds}
+                restoredIds={removal.restoredIds}
+                projects={projects}
+                onWantProjects={onWantProjects}
+                onAdd={addMemory}
+                onEdit={memory.editMemory}
+                onRemove={removal.remove}
+                onMove={(entry, project) => void memory.moveMemory(entry, project)}
+              />
+            </div>
+          </div>
         </div>
       )}
 
-      {/* The review queue sits directly under the composer that fills it —
-          an instruction drafted at the top of the card has its diff waiting
-          one element below, rather than at the bottom of a long page. */}
-      <EditsPanel
-        edits={memory.edits}
-        open={editsOpen}
-        onOpenChange={setEditsOpen}
-        busyIds={memory.busyEditIds}
-        onAccept={(edit) => void memory.acceptEdit(edit)}
-        onUndo={(edit) => void memory.undoEdit(edit)}
-        onDelete={(id) => void memory.deleteEdit(id)}
-      />
-
-      {!compact && (
-        <>
-          <MemoryToolbar
-            view={view}
-            onViewChange={setView}
-            query={query}
-            onQueryChange={setQuery}
-            topicCount={topics.length}
-            factCount={visible.length}
-            paused={memory.paused}
-            onAdd={(content) => memory.addMemory(content, activeScope)}
-            addPlaceholder={
-              activeProject ? `Something true of ${activeProject.name} — “We cite in APA”` : undefined
-            }
-          />
-
-          {view === "topics" ? (
-            <TopicsView
-              topics={topics}
-              busyIds={memory.busyIds}
-              paused={memory.paused}
-              filtered={filtered}
-              onEdit={memory.editMemory}
-              onForget={(entry) => void memory.forgetMemory(entry)}
-              onDelete={(entry) => void memory.deleteMemory(entry)}
-              onImport={() => setImportOpen(true)}
-            />
-          ) : view === "recap" ? (
-            <RecapView
-              // Every row in scope, suppressions included: "what Juno let go
-              // of" is built from the block-list's own dates, and a forget
-              // holds in every project.
-              memories={scopedMemories}
-              busyIds={memory.busyIds}
-              paused={memory.paused}
-              query={query}
-              onEdit={memory.editMemory}
-              onForget={(entry) => void memory.forgetMemory(entry)}
-              onDelete={(entry) => void memory.deleteMemory(entry)}
-            />
-          ) : (
-            <EntryList
-              memories={visible}
-              busyIds={memory.busyIds}
-              paused={memory.paused}
-              filtered={filtered}
-              onEdit={memory.editMemory}
-              onForget={(entry) => void memory.forgetMemory(entry)}
-              onDelete={(entry) => void memory.deleteMemory(entry)}
-            />
-          )}
-        </>
+      {loaded && (
+        <MemoryFooter
+          paused={memory.paused}
+          empty={!anythingRemembered}
+          onImport={() => setImportOpen(true)}
+          onExport={memory.exportMemory}
+          onReset={() => setResetOpen(true)}
+          onSettings={onOpenSettings}
+        />
       )}
 
-      <PrivacyStrip
-        paused={memory.paused}
-        onPausedChange={(next) => void memory.setPaused(next)}
-        onExport={memory.exportMemory}
-        onImport={() => setImportOpen(true)}
-        onReset={() => void memory.resetMemory()}
-        resetting={memory.resetting}
-        // Export and reset act on the whole account, whatever the page is
-        // narrowed to — so "empty" means nothing anywhere.
-        empty={!anythingRemembered}
-      />
-
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={memory.reload} />
+      <ResetDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        resetting={memory.resetting}
+        onExport={memory.exportMemory}
+        onReset={memory.resetMemory}
+      />
+      <ActivitySheet
+        open={activityOpen}
+        onOpenChange={setActivityOpen}
+        tab={activityTab}
+        onTabChange={setActivityTab}
+        edits={memory.edits}
+        busyEditIds={memory.busyEditIds}
+        memories={scopedMemories}
+        onAccept={acceptEdit}
+        onUndo={undoEdit}
+        onDelete={memory.deleteEdit}
+        loadRecapExtras={loadRecapExtras}
+      />
     </div>
   );
-}
-
-/** Everything a search should be able to find a fact by. */
-function haystack(entry: Memory): string {
-  return [
-    entry.content,
-    entry.projectName ?? "",
-    isMemoryCategory(entry.category) ? MEMORY_CATEGORY_META[entry.category].label : "",
-    entry.reason ?? "",
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-/**
- * Category id → the card's identity.
- *
- * Rows written before Memory v2 carry no category, and a row written by a
- * newer build could carry one this bundle has never heard of. Both land in the
- * same "Uncategorised" bucket with an honest description, rather than in a
- * card named after a raw enum value or in no card at all.
- */
-function topicMetaFor(category: string | null): { id: string; label: string; description: string } {
-  if (isMemoryCategory(category)) {
-    return { id: category, ...MEMORY_CATEGORY_META[category] };
-  }
-  return {
-    id: "uncategorised",
-    label: "Uncategorised",
-    description: "Facts Juno kept before it started filing them by subject.",
-  };
 }

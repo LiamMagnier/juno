@@ -49,4 +49,41 @@ public enum OutputLimiter {
         let truncated = String(text[..<end]) + limit.truncationNotice
         return LimitedOutput(text: truncated, wasTruncated: true, originalByteCount: byteCount)
     }
+
+    /// Keeps the beginning *and* the end, dropping the middle.
+    ///
+    /// For command output the end is usually the part that matters: a build
+    /// prints thousands of progress lines and then the one error, and a
+    /// head-only cut threw that error away. A quarter of the budget goes to the
+    /// head for context, the rest to the tail.
+    public static func applyKeepingEnds(_ limit: OutputLimit, to text: String) -> LimitedOutput {
+        let byteCount = text.utf8.count
+        guard byteCount > limit.maximumBytes else {
+            return LimitedOutput(text: text, wasTruncated: false, originalByteCount: byteCount)
+        }
+        let headBudget = limit.maximumBytes / 4
+        let tailBudget = limit.maximumBytes - headBudget
+
+        var used = 0
+        var headEnd = text.startIndex
+        for index in text.indices {
+            let characterBytes = text[index].utf8.count
+            if used + characterBytes > headBudget { break }
+            used += characterBytes
+            headEnd = text.index(after: index)
+        }
+        used = 0
+        var tailStart = text.endIndex
+        for index in text.indices.reversed() {
+            let characterBytes = text[index].utf8.count
+            if used + characterBytes > tailBudget || index < headEnd { break }
+            used += characterBytes
+            tailStart = index
+        }
+        let omitted = byteCount - text[..<headEnd].utf8.count - text[tailStart...].utf8.count
+        let joined = String(text[..<headEnd])
+            + "\n… [\(omitted) bytes omitted] …\n"
+            + String(text[tailStart...])
+        return LimitedOutput(text: joined, wasTruncated: true, originalByteCount: byteCount)
+    }
 }

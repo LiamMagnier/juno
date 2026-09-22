@@ -36,7 +36,7 @@ export default function ConnectionsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t load your connections"
-        description="The directory didn’t come back. Nothing has been disconnected — every tool you have linked still is."
+        description="The directory didn’t load. Nothing was disconnected, and every tool you linked is still linked."
         action={
           <>
             <Button size="sm" onClick={reset}>

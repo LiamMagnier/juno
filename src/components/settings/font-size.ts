@@ -51,3 +51,14 @@ export function writeFontSize(id: FontSizeId) {
   }
   applyFontSize(id);
 }
+
+/**
+ * The same choice applied before first paint, as an inline script for the
+ * root layout's <head>. `applyFontSize` runs from the shell after hydration,
+ * so a non-default size still flashes the default for the first frames;
+ * this closes that gap. Built from FONT_SIZES and KEY so the two cannot
+ * disagree about ids, pixel values or the storage key.
+ */
+export const FONT_SIZE_BOOT_SCRIPT = `try{var s=${JSON.stringify(
+  Object.fromEntries(FONT_SIZES.filter((s) => s.id !== "default").map((s) => [s.id, s.px]))
+)}[localStorage.getItem(${JSON.stringify(KEY)})];if(s)document.documentElement.style.fontSize=s+"px"}catch(e){}`;

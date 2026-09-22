@@ -259,7 +259,7 @@ export const AUDIT_COPY = {
   confidence: "Support",
   aboveBar: "at or above the 70% bar for an unqualified citation",
   betweenBars: "on topic, but below the 70% bar for an unqualified citation",
-  belowBars: "below the 40% floor — the passage is barely about this claim",
+  belowBars: "below the 40% floor: the passage is barely about this claim",
   savedCopy: "of the copy Juno saved",
   characters: "characters",
   capsSupportAt: "caps support at",

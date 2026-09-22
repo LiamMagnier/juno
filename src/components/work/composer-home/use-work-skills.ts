@@ -17,7 +17,7 @@ export interface WorkSkillsState {
  * refuses a disabled skill with `reason: "disabled"` — so a switched-off skill
  * in this menu would be a row that can be picked, writes its name into the
  * goal, and is then silently ignored by the run. The one place a disabled skill
- * should be visible is /work/skills, where it can be switched back on, and the
+ * should be visible is /skills, where it can be switched back on, and the
  * menu links there.
  *
  * Trust is deliberately not filtered on. It gates whether Juno may reach for a
@@ -37,7 +37,10 @@ export function useWorkSkills(): WorkSkillsState {
   const load = React.useCallback(async () => {
     setFailed(false);
     try {
-      const response = await fetch("/api/work/skills?enabled=true");
+      // `limit=200`, the route's ceiling, stated: left off, the route's default
+      // of 50 applied and an account with more enabled skills than that lost
+      // the rest from this list with nothing saying so.
+      const response = await fetch("/api/work/skills?enabled=true&limit=200");
       if (!response.ok) throw new Error("skills");
       const data = (await response.json()) as { skills?: ClientWorkSkill[] };
       setSkills(data.skills ?? []);

@@ -327,7 +327,7 @@ export default function ArtifactsPage() {
       if (!res.ok) throw new Error();
       setItems((prev) => prev?.filter((i) => i.id !== deleteTarget.id) ?? prev);
       setDeleteTarget(null);
-      toast.success("Artifact deleted");
+      toast.success("Artifact deleted.");
     } catch {
       toast.error("Couldn’t delete the artifact.");
     } finally {
@@ -389,9 +389,9 @@ export default function ArtifactsPage() {
                 one. The empty state's copy explains what it does; this one
                 cannot. It comes back the moment there is a list to act on. */}
             {!empty && (
-              <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+              <Button size="sm" variant="secondary" onClick={startDesign} loading={startingDesign} className="gap-1.5">
                 <AppIcons.design className="size-3.5" aria-hidden />
-                {startingDesign ? "Creating…" : "New design"}
+                New design
               </Button>
             )}
           </>
@@ -471,15 +471,15 @@ export default function ArtifactsPage() {
           className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
           title="Nothing here yet"
-          description="Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the Canvas and collects here."
+          description="Ask Juno to build a page, component, document or diagram, or to design a screen. It opens in the Canvas and collects here."
           action={
             <>
               <Button size="sm" onClick={() => router.push("/chat")}>
                 Start building
               </Button>
-              <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+              <Button size="sm" variant="secondary" onClick={startDesign} loading={startingDesign} className="gap-1.5">
                 <AppIcons.design className="size-3.5" aria-hidden />
-                {startingDesign ? "Creating…" : "New design"}
+                New design
               </Button>
             </>
           }
@@ -663,11 +663,11 @@ export default function ArtifactsPage() {
               maxLength={200}
             />
             <DialogFooter className="mt-4">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setRenameTarget(null)} disabled={renaming}>
+              <Button type="button" variant="ghost" onClick={() => setRenameTarget(null)} disabled={renaming}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={renaming || !renameValue.trim()}>
-                {renaming ? "Renaming…" : "Rename"}
+              <Button type="submit" loading={renaming} disabled={!renameValue.trim()}>
+                Rename
               </Button>
             </DialogFooter>
           </form>
@@ -684,11 +684,11 @@ export default function ArtifactsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="destructive" size="sm" onClick={submitDelete} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete"}
+            <Button variant="destructive" onClick={submitDelete} loading={deleting}>
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

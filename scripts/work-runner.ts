@@ -119,6 +119,8 @@ import {
   type SkillVersionRunReference,
 } from "@/lib/work/skills";
 import { scanSkillVersion } from "@/lib/work/skill-security";
+import { skillIsAvailable } from "@/lib/skills/library-contract";
+import { AVAILABLE_SKILL_WHERE } from "@/lib/skills/sources";
 import { getMemoryProfile } from "@/lib/memory";
 import { workMemoryContext, workMemoryEnabled } from "@/lib/work/memory-context";
 import type { Prisma } from "@prisma/client";
@@ -2203,12 +2205,20 @@ const SKILL_CANDIDATE_COLUMNS = {
  * reaches the account's whole library, because refusing a skill somebody asked
  * for by name over where they filed the task would teach them to keep every
  * skill at the account level, which empties the bundle out.
+ *
+ * Its source is consulted: a skill in a source the user switched off reaches
+ * `selectSkillBySlug` as disabled, exactly as if its own switch were off. An
+ * assistant is stored in the same table and is never found here.
  */
 async function skillFromInvocation(userId: string, slug: string): Promise<SkillSelection> {
-  const candidates = await prisma.workSkill.findMany({
-    where: { userId, slug, deletedAt: null },
-    select: SKILL_CANDIDATE_COLUMNS,
+  const rows = await prisma.workSkill.findMany({
+    where: { userId, slug, deletedAt: null, kind: "skill" },
+    select: { ...SKILL_CANDIDATE_COLUMNS, sourceId: true, source: { select: { enabled: true } } },
   });
+  const candidates = rows.map(({ sourceId, source, ...candidate }) => ({
+    ...candidate,
+    enabled: skillIsAvailable({ enabled: candidate.enabled, sourceId }, source),
+  }));
   return selectSkillBySlug(slug, candidates);
 }
 
@@ -2246,11 +2256,14 @@ async function skillForGoal(
     where: {
       userId,
       deletedAt: null,
-      enabled: true,
+      kind: "skill",
       autoSelect: true,
-      ...(projectId === null
-        ? { projectId: null }
-        : { OR: [{ projectId: null }, { projectId }] }),
+      // Switched on, and in a source that is switched on (or in none). Under
+      // AND because both clauses carry an OR of their own.
+      AND: [
+        AVAILABLE_SKILL_WHERE,
+        projectId === null ? { projectId: null } : { OR: [{ projectId: null }, { projectId }] },
+      ],
     },
     select: SKILL_CANDIDATE_COLUMNS,
     // Ordered so `take` keeps the same set on every run, rather than whichever

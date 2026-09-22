@@ -52,7 +52,7 @@ function read(relativePath) {
  * was the deleted sheet. The path a person actually uses today is
  * `NativeCodeModel.startTask(prompt:)`, which picks cloud or device and calls
  * `createCloudTask`/`createDeviceTask` on the client — and it is driven from
- * both apps: JunoMobileCodeView on iPhone and DesktopCodeStudio on the Mac.
+ * both apps: JunoMobileCodeView on iPhone and StudioLanding on the Mac.
  * The capability moved packages; it did not go away.
  *
  * So the assertions below follow the live surface. The WorkbenchModel entries
@@ -83,6 +83,10 @@ const desktopConfiguration = read(
   "native/macOS/JunoDesktop/App/JunoDesktopConfiguration.swift",
 );
 const sidebar = read("native/macOS/JunoDesktop/App/DesktopCodeStudio.swift");
+// The Mac's New session screen, where Cloud and Device runs start.
+const landing = read(
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Studio/StudioLanding.swift",
+);
 const remoteBrowser = read(
   "native/Packages/JunoNativeKit/Sources/JunoCodeKit/CodeRemoteBrowserModel.swift",
 );
@@ -98,7 +102,7 @@ const required = [
   [nativeCodeModel, "createCloudTask("],
   [nativeCodeModel, "createDeviceTask("],
   [mobileCode, "model.startTask(prompt:"],
-  [sidebar, "code.startTask(prompt:"],
+  [landing, "code.startTask(prompt:"],
   [model, "public func loadRemoteRepositories()"],
   [model, "public func loadRemoteDevices()"],
   [model, "public func startRemoteSession("],
@@ -115,7 +119,7 @@ const required = [
   [desktopWorkspace, "CodeRemoteTaskDetailView("],
   [desktopRoot, "remoteModel: remoteCodeModel"],
   [desktopConfiguration, "CodeRemoteBrowserModel("],
-  [sidebar, "matchingRemoteSessions"],
+  [sidebar, "remote.sessions.filter(matchesSearch)"],
   [sidebar, ".remote(deviceID: summary.deviceID, sessionID: summary.sessionID)"],
   [remoteBrowser, "public func watchEvents("],
   [remoteBrowser, "client.eventStream("],

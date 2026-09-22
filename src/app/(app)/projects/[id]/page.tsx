@@ -345,7 +345,7 @@ export default function ProjectDetailPage() {
       return;
     }
     setData((cur) => (cur ? { ...cur, project: { ...cur.project, starred: next } } : cur));
-    toast.success(next ? "Project starred!" : "Project unstarred.");
+    // No success toast: the star fills under the pointer, which is the receipt.
     window.dispatchEvent(new CustomEvent("starred:sync"));
     window.dispatchEvent(new CustomEvent("projects:sync"));
   };
@@ -418,7 +418,7 @@ export default function ProjectDetailPage() {
       return true;
     } catch {
       // Keep the dialog open and the draft intact so the user can retry.
-      toast.error("Couldn’t save — your text is still here. Check your connection and try again.");
+      toast.error("Couldn’t save. Your text is still here, so check your connection and try again.");
       return false;
     } finally {
       setSavingInstructions(false);
@@ -591,7 +591,7 @@ export default function ProjectDetailPage() {
           ),
         };
       });
-      toast.success(currentPinned ? "Chat unstarred." : "Chat starred!");
+      toast.success(currentPinned ? "Chat unstarred." : "Chat starred.");
     } else {
       toast.error("Couldn’t update chat.");
     }
@@ -744,8 +744,8 @@ export default function ProjectDetailPage() {
           onEditInstructions={() => setInstructionsOpen(true)}
           onRename={async (name) => {
             await patch({ name });
+            // Renamed in place, under the reader's eye; no toast.
             setData({ ...data, project: { ...data.project, name } });
-            toast.success("Project renamed.");
             window.dispatchEvent(new CustomEvent("projects:sync"));
           }}
           onDelete={() => setDeleteOpen(true)}
@@ -788,16 +788,28 @@ export default function ProjectDetailPage() {
           <div className="-mx-1 mb-6 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              {/* "Tasks", not "Work". The value stays `work` because `?tab=work`
+              {/* Tasks and Code are shown when they hold something, or when a
+                  link (`?tab=work`, `?tab=code`) has opened them. Every project
+                  used to carry five tabs from its first minute, two of them
+                  empty lists, so a new project opened as a form to fill in
+                  rather than a place to start; the chat that makes a task or a
+                  code session is on Overview, and the tab arrives with the
+                  first thing it has to list.
+
+                  "Tasks", not "Work". The value stays `work` because `?tab=work`
                   is a URL somebody can hold; the label says what the tab lists. */}
-              <TabsTrigger value="work">
-                Tasks
-                <TabCount value={workRuns.length} />
-              </TabsTrigger>
-              <TabsTrigger value="code">
-                Code
-                <TabCount value={codeSessions.length} />
-              </TabsTrigger>
+              {(workRuns.length > 0 || tab === "work") && (
+                <TabsTrigger value="work">
+                  Tasks
+                  <TabCount value={workRuns.length} />
+                </TabsTrigger>
+              )}
+              {(codeSessions.length > 0 || tab === "code") && (
+                <TabsTrigger value="code">
+                  Code
+                  <TabCount value={codeSessions.length} />
+                </TabsTrigger>
+              )}
               <TabsTrigger value="sources">
                 Sources
                 <TabCount value={sourceCount} />
@@ -1021,7 +1033,7 @@ export default function ProjectDetailPage() {
                     {instructions.length.toLocaleString()} chars
                     {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
                   </span>
-                  <span className="text-muted-foreground/80">Updated {timeAgo(data.project.updatedAt)}</span>
+                  <span className="text-muted-foreground">Updated {timeAgo(data.project.updatedAt)}</span>
                 </div>
               </Card>
 
@@ -1276,7 +1288,7 @@ export default function ProjectDetailPage() {
                 registered the fontSize keys — twMerge read it as a colour and evicted the
                 component's own text-muted-foreground. Both survive the merge now. */}
             <DialogDescription className="mt-1.5 text-body">
-              Prepended to every chat here — Juno reads this before your first message, alongside the
+              Prepended to every chat here. Juno reads this before your first message, alongside the
               referenced files.
             </DialogDescription>
           </DialogHeader>
@@ -1296,7 +1308,7 @@ export default function ProjectDetailPage() {
                   void saveInstructionsAndClose();
                 }
               }}
-              placeholder={"How should Juno behave? (role, tone, constraints…)\n\nPaste a full system prompt — headings, bullets and code fences all keep their shape."}
+              placeholder={"How should Juno behave? (role, tone, constraints…)\n\nPaste a full system prompt. Headings, bullets and code fences all keep their shape."}
               spellCheck={false}
               autoFocus
               aria-label="Project instructions"

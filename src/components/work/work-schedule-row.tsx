@@ -52,7 +52,7 @@ import { staggerDelay } from "@/lib/motion";
 function nextFireSentence(schedule: ClientWorkSchedule): string {
   if (schedule.nextRunAt === null) {
     return schedule.enabled
-      ? "Nothing on the clock — this one waits for an event."
+      ? "Nothing on the clock. This one waits for an event."
       : "Paused. Nothing on the clock either way.";
   }
   const when = new Date(schedule.nextRunAt);
@@ -152,7 +152,7 @@ export function WorkScheduleRow({
     setBusy(null);
     if (result.kind === "ok") {
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-      toast.success("Started. This run is extra — the schedule still fires when it was going to.");
+      toast.success("Started. This run is extra, and the schedule still fires when it was going to.");
       return;
     }
     toast.error(

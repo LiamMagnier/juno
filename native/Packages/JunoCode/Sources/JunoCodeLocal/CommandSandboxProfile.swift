@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeCore
 
 /// Environment-level containment for locally executed commands.
 ///
@@ -40,19 +41,28 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     public let allowsLocalhost: Bool
     /// Extra roots a command legitimately needs: caches, toolchains, temp.
     public let additionalWritablePaths: [String]
+    /// Whether the project's policy files are refused to commands.
+    ///
+    /// On for everything the agent runs. Off for the reader's own terminal:
+    /// they may edit those files in any editor anyway, and refusing their
+    /// `git pull` or `git checkout` because it updates a tracked
+    /// `.juno/settings.json` would protect nothing.
+    public let protectsPolicyFiles: Bool
 
     public init(
         workspaceRoot: URL,
         filesystem: FilesystemAccess = .readWrite,
         allowsNetwork: Bool = false,
         allowsLocalhost: Bool = false,
-        additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths
+        additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths,
+        protectsPolicyFiles: Bool = true
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
         self.allowsNetwork = allowsNetwork
         self.allowsLocalhost = allowsLocalhost
         self.additionalWritablePaths = additionalWritablePaths
+        self.protectsPolicyFiles = protectsPolicyFiles
     }
 
     /// Paths a real build cannot function without.
@@ -76,6 +86,24 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         "/dev/urandom",
         "/dev/random",
     ]
+
+    /// Package-manager and build caches under the home folder.
+    ///
+    /// `npm install`, `cargo build`, `swift build` and `pod install` all write
+    /// to a cache outside the project first; without these the first
+    /// dependency install of every session failed inside the sandbox, which
+    /// taught readers to turn containment off. Caches, not config: `~/.ssh`,
+    /// shell profiles and credentials stay unwritable.
+    public static var toolchainCachePaths: [String] {
+        let home = NSHomeDirectory()
+        return [
+            "/Library/Caches", "/.cache", "/.npm", "/.pnpm-store", "/Library/pnpm",
+            "/.yarn", "/.bun", "/.cargo/registry", "/.cargo/git", "/.rustup/tmp",
+            "/.gradle/caches", "/.m2/repository", "/go/pkg", "/.swiftpm",
+            "/Library/org.swift.swiftpm", "/Library/Developer/Xcode/DerivedData",
+            "/Library/Developer/CoreSimulator/Caches", "/.cocoapods", "/.deno",
+        ].map { home + $0 }
+    }
 
     /// The SBPL profile text.
     ///
@@ -103,6 +131,23 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         if filesystem == .readWrite {
             for path in ([workspaceRoot.path] + additionalWritablePaths).map(Self.resolved) {
                 lines.append("(allow file-write* (subpath \(Self.quote(path))))")
+            }
+            // The project's policy files, and Juno's folder itself, are not a
+            // command's to write, whatever the mode: a shell redirect would
+            // otherwise reach what the file tools ask about every time. Later
+            // rules win in SBPL, so these denies override the workspace grant.
+            // The folder is denied as an entry only, so worktrees and other
+            // files inside it stay writable while a swap of the whole folder
+            // does not. Both the path as named and as resolved are listed, in
+            // case either part of it is a link.
+            let protected = protectsPolicyFiles
+                ? WorkspacePolicyPaths.files + [WorkspacePolicyPaths.folder]
+                : []
+            for relative in protected {
+                let named = workspaceRoot.path + "/" + relative
+                for path in Set([Self.resolved(workspaceRoot.path) + "/" + relative, Self.resolved(named)]).sorted() {
+                    lines.append("(deny file-write* (literal \(Self.quote(path))))")
+                }
             }
             // ioctl on a tty is what makes interactive-ish tools work at all.
             lines.append("(allow file-ioctl (subpath \"/dev\"))")

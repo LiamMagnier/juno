@@ -109,6 +109,12 @@ const JunoRules: Readonly<Record<string, ActionRiskClass>> = {
   "apple-music:list_playlists": "read_only",
   "apple-music:recently_played": "read_only",
   "apple-music:add_to_playlist": "reversible_write",
+  // The chat model starting a background task (src/lib/chat/task-tool.ts). It
+  // only reaches the broker when a person must be asked (an estimate above the
+  // preflight bar, or outside content in the turn), and an external write is
+  // the class that asks under every policy short of `block` and is never
+  // offered as a standing approval.
+  "juno_work:start_task": "external_write",
 };
 
 const READ_VERBS = new Set([
@@ -370,11 +376,25 @@ export function actionPreviewDetail(args: Record<string, unknown>): Record<strin
 }
 
 export function actionPreview(input: {
+  /**
+   * Which connector is asking. Optional because the generic sentence needs
+   * only the label; given, it lets an action Juno itself owns be described in
+   * its own words rather than as a tool name.
+   */
+  connectorId?: string;
   connectorLabel: string;
   toolName: string;
   riskClass: ActionRiskClass;
   args: Record<string, unknown>;
 }): string {
+  // Keyed on the connector id, never the label: a linked account can carry any
+  // label, and a third-party tool must not be able to borrow this sentence.
+  if (input.connectorId === "juno_work" && input.toolName === "start_task") {
+    const title = typeof input.args.title === "string" ? input.args.title.trim().replace(/[.!?]+$/, "") : "";
+    const estimate = typeof input.args.estimate === "string" ? input.args.estimate.trim() : "";
+    const task = title ? `Start a background task: ${title}.` : "Start a background task.";
+    return estimate ? `${task} Estimated cost ${estimate}.` : task;
+  }
   const verb = input.toolName.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2");
   const suffix =
     input.riskClass === "unknown"

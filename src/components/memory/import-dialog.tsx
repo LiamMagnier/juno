@@ -4,7 +4,6 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -128,7 +127,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
       toast.success(
         created > 0
           ? `Imported ${created} ${created === 1 ? "fact" : "facts"} into Juno’s memory.`
-          : "Nothing new to import — Juno already knew all of that."
+          : "Nothing new to import. Juno already knew all of that."
       );
       onOpenChange(false);
     } catch (error) {
@@ -197,7 +196,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
                 Paste this into the assistant you’re coming from, in a new chat. It asks for everything it remembers,
                 written one fact per line so Juno can read it back.
               </p>
-              <pre className="surface-inset max-h-64 overflow-y-auto whitespace-pre-wrap rounded-field px-4 py-3 font-mono text-caption leading-relaxed text-foreground/90">
+              <pre className="surface-inset max-h-64 overflow-y-auto whitespace-pre-wrap rounded-field px-4 py-3 font-mono text-caption leading-relaxed text-foreground">
                 {MEMORY_IMPORT_PROMPT}
               </pre>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void copyPrompt()}>
@@ -214,7 +213,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
           {step === "paste" && (
             <div className="space-y-3">
               <label htmlFor="memory-import-text" className="text-ui text-muted-foreground">
-                Paste the whole answer here — the list, and anything around it. Juno picks out the facts. A Juno memory
+                Paste the whole answer here, list and all. Juno picks out the facts. A Juno memory
                 export (.json) works too.
               </label>
               <Textarea
@@ -245,7 +244,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
                   </span>
                 </label>
                 <p className="text-caption text-muted-foreground">
-                  Sensitive facts start unticked — tick them only if you want Juno to keep them.
+                  Sensitive facts start unticked. Tick them only if you want Juno to keep them.
                 </p>
               </div>
               <ul className="divide-y divide-border/50 overflow-hidden rounded-card border border-border/60">
@@ -316,7 +315,6 @@ function ReviewRow({
       style={staggerDelay(index, "tight")}
       className={cn(
         "flex items-start gap-3 px-4 py-3 motion-safe:animate-fade-in-up [animation-fill-mode:backwards]",
-        forgotten && "opacity-60"
       )}
     >
       <Checkbox
@@ -327,24 +325,43 @@ function ReviewRow({
         className="mt-0.5"
       />
       <label htmlFor={id} className={cn("min-w-0 flex-1", !forgotten && "cursor-pointer")}>
-        <span className={cn("block text-ui text-foreground/90", forgotten && "line-through")}>{candidate.content}</span>
+        <span
+          className={cn(
+            "block text-ui",
+            forgotten ? "text-muted-foreground line-through decoration-muted-foreground/40" : "text-foreground"
+          )}
+        >
+          {candidate.content}
+        </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <Badge variant="soft">{memoryCategoryLabel(candidate.category)}</Badge>
+          <Token>{memoryCategoryLabel(candidate.category)}</Token>
           {candidate.sensitive && (
-            <Badge variant="outline" className="gap-1 border-warning/40 bg-warning/10">
+            <Token className="bg-warning/15 text-foreground dark:bg-warning/10 dark:text-warning">
               <ShieldAlert className="size-3" aria-hidden="true" />
               {sensitiveTopicLabel(candidate.sensitive)}
-            </Badge>
+            </Token>
           )}
-          {candidate.status === "known" && <Badge variant="muted">Already remembered</Badge>}
-          {candidate.status === "forgotten" && <Badge variant="muted">You asked Juno to forget this</Badge>}
+          {candidate.status === "known" && <Token>Already remembered</Token>}
+          {candidate.status === "forgotten" && <Token>You asked Juno to forget this</Token>}
           {candidate.status === "secret" && (
-            <Badge variant="outline" className="gap-1 border-destructive/40 bg-destructive/10">
-              Looks like a password or key — never imported
-            </Badge>
+            <Token className="bg-destructive/10 text-destructive">Looks like a password or key, so it’s never imported</Token>
           )}
         </span>
       </label>
     </li>
+  );
+}
+
+/** A small sans token under a candidate: the same shape as the tokens on the page's rows. */
+function Token({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center gap-1 rounded-full bg-secondary px-2 text-caption font-medium text-muted-foreground",
+        className
+      )}
+    >
+      {children}
+    </span>
   );
 }

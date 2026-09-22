@@ -11,6 +11,12 @@ import {
   skillSlugFromName,
 } from "@/lib/work/skills";
 import { createSkillWithFirstVersion } from "@/lib/skills/store";
+import {
+  AVAILABLE_SKILL_WHERE,
+  UNAVAILABLE_SKILL_WHERE,
+  serializeLibrarySkill,
+  serializeSkillSource,
+} from "@/lib/skills/sources";
 import { ownsEverySkillResource } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
@@ -33,7 +39,12 @@ export async function GET(req: Request) {
       // question about that run has to be answerable after the user has tidied
       // their skill list.
       deletedAt: null,
-      ...(enabled !== undefined ? { enabled } : {}),
+      // Assistants live in this table too and have their own page and API.
+      kind: "skill",
+      // `enabled` asks whether chat and tasks may use a skill, which is its own
+      // switch AND its source's: the composer lists `?enabled=true`, and a
+      // source switched off has to take its skills out of that menu.
+      ...(enabled === true ? AVAILABLE_SKILL_WHERE : enabled === false ? UNAVAILABLE_SKILL_WHERE : {}),
       ...(autoSelect !== undefined ? { autoSelect } : {}),
       ...(trust ? { trust } : {}),
       ...(projectId ? { projectId } : {}),
@@ -42,7 +53,18 @@ export async function GET(req: Request) {
     take: limit,
   });
 
-  return NextResponse.json({ skills: skills.map(serializeSkill) });
+  // The sources these skills came from, so a menu can group them without a
+  // second request. Each skill also carries `sourceId` and `sourcePath`; the
+  // rest of its shape is `ClientWorkSkill` unchanged.
+  const sourceIds = [...new Set(skills.map((skill) => skill.sourceId).filter((id): id is string => !!id))];
+  const sources = sourceIds.length
+    ? await prisma.workSkillSource.findMany({ where: { userId: user.id, id: { in: sourceIds } } })
+    : [];
+
+  return NextResponse.json({
+    skills: skills.map(serializeLibrarySkill),
+    sources: sources.map(serializeSkillSource),
+  });
 }
 
 export async function POST(req: Request) {

@@ -1,7 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Markdown } from "@/components/chat/markdown";
+import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
+import { ChevronRight, Square } from "@/components/ui/icons";
 import { CHAT_COMPOSER_FIELD_ID } from "@/components/chat/composer";
 import { isTerminalStatus } from "@/lib/work/domain";
 import type { ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
@@ -23,10 +27,12 @@ import {
   WorkStatusPill,
   statusSentence,
 } from "@/components/work/work-vocabulary";
+import { ComposerIcons } from "@/lib/app-icons";
+import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
- * The delegated task, drawn inside the conversation that started it.
+ * The task the model started, drawn inside the conversation that started it.
  *
  * A router with two destinations, for the same reason `ResearchRunPanel` is one:
  * a run being WATCHED and a run being READ are two different products, and the
@@ -48,10 +54,16 @@ import { cn } from "@/lib/utils";
  * second answer to "how far has this got", and the two would drift on the first
  * day somebody fixed one of them.
  *
- * IT DOES NOT OWN THE RUN. Answering by typing, steering and stopping are the
- * composer's, because the composer is where a person types at a conversation —
+ * IT DOES NOT OWN THE RUN. Answering by typing and steering are the
+ * composer's, because the composer is where a person types at a conversation,
  * the same split `ResearchRunPanel` documents. The stream lives one level up in
  * `useConversationWork`, which is what keeps there being exactly one cursor.
+ *
+ * IT SAYS WHAT IT IS. Nobody pressed a "task" switch: the model decided this
+ * sentence was work to hand off, so the panel names itself (a quiet "Task"
+ * label and the title the task was given) and carries its own Stop. The
+ * composer's Stop still ends it too, but a reader who did not ask for a task
+ * should not have to guess that the send button is where it stops.
  *
  * ── Why this is a panel and the reading column is not ─────────────────────
  *
@@ -80,34 +92,120 @@ export function WorkRunPanel({
 }) {
   const { session, run } = work;
   const spoken = useSpokenTurns(work.events);
+  const reduce = useReducedMotion() ?? false;
+  const titleId = React.useId();
   if (session === null) return null;
 
   const finished = isTerminalStatus(session.status);
   const needsYou = work.questions.length > 0 || work.openApprovals.length > 0;
 
   return (
-    <section
-      aria-label="Task"
+    <motion.section
+      aria-labelledby={titleId}
+      // Fade and a 4px rise on the base rung: the panel arrives under the
+      // reply that announced it, so it rises into place rather than dropping
+      // in. Reduced motion keeps the fade and loses the travel.
+      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={transition.base}
       className={cn(
         // Flat: a fill and a hairline, no shadow. Nothing in the reading column
         // casts one (FLAT_UI §2).
-        "rounded-panel border border-border bg-card p-2 motion-safe:animate-rise-in",
+        "rounded-panel border border-border bg-card p-2",
         className
       )}
     >
-      <header className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 px-2 pb-2 pt-1">
-        <WorkStatusPill status={session.status} describe={false} />
-        <p className="min-w-0 flex-1 text-ui text-muted-foreground">
-          {statusSentence(session.status)}
-        </p>
+      <header className="flex items-start gap-3 px-2 pb-2 pt-1">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
+            <ComposerIcons.task motion="none" className="size-3.5" aria-hidden="true" />
+            Task
+          </p>
+          <h3 id={titleId} className="mt-1 line-clamp-2 text-body font-medium leading-snug text-foreground">
+            {session.title.trim() || session.goal}
+          </h3>
+          {/* Keyed on the status so a change re-enters with a short fade: the
+              one line in the header that moves on its own should say so. */}
+          <motion.div
+            key={session.status}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={transition.fast}
+            className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1"
+          >
+            <WorkStatusPill status={session.status} describe={false} />
+            <p className="min-w-0 text-ui text-muted-foreground">{statusSentence(session.status)}</p>
+          </motion.div>
+        </div>
+        <AnimatePresence initial={false}>
+          {!finished && work.steering !== null && (
+            <motion.div
+              key="stop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: transition.fast }}
+              exit={{ opacity: 0, transition: transition.exit }}
+              className="shrink-0"
+            >
+              <StopButton stop={work.steering.stop} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
-      {finished ? (
-        <TerminalRun session={session} run={run} work={work} spoken={spoken} />
-      ) : (
-        <LiveRun work={work} spoken={spoken} needsYou={needsYou} />
-      )}
-    </section>
+      {/* Live and finished are two different bodies (see above), so the swap
+          between them is a cross-fade: the old one leaves on the exit rung
+          before the new one arrives. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={finished ? "terminal" : "live"}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: transition.base }}
+          exit={{ opacity: 0, transition: transition.exit }}
+        >
+          {finished ? (
+            <TerminalRun session={session} run={run} work={work} spoken={spoken} />
+          ) : (
+            <LiveRun work={work} spoken={spoken} needsYou={needsYou} />
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </motion.section>
+  );
+}
+
+/**
+ * The panel's own Stop.
+ *
+ * It holds its spinner from the press until the task's status changes and
+ * the header drops the button, rather than until the request returns: the
+ * cancel lands a moment before the stream reports the new status, and a
+ * button that came back to life in that gap would read as a stop that did
+ * not take. A refusal (already said in a toast) gives the button back.
+ */
+function StopButton({ stop }: { stop: () => Promise<boolean> }) {
+  const [stopping, setStopping] = React.useState(false);
+  return (
+    <Button
+      type="button"
+      // Outlined rather than ghost: it sits in a header full of text, and a
+      // bare "Stop" there read as one more label rather than as the control.
+      variant="outline"
+      size="sm"
+      loading={stopping}
+      aria-label="Stop the task"
+      onClick={() => {
+        setStopping(true);
+        void stop().then((stopped) => {
+          if (!stopped) setStopping(false);
+        });
+      }}
+      className="gap-1.5"
+    >
+      {/* The composer's stop face, so the two controls that end this task
+          are recognisably the same verb. */}
+      <Square className="size-3 fill-current" aria-hidden="true" />
+      Stop
+    </Button>
   );
 }
 
@@ -129,14 +227,14 @@ function LiveRun({
 
       {work.plan.length > 0 && (
         <div className="px-2">
-          <h3 className="mb-2 flex items-baseline gap-2">
+          <h4 className="mb-2 flex items-baseline gap-2">
             <span className="text-ui font-medium text-foreground">Plan</span>
             {/* The tally rather than a percentage: "4/7" is a position in a list
                 somebody can see, and "57%" is a number they convert back. */}
             <span className="font-mono text-caption tabular-nums text-muted-foreground">
               {tally.done}/{tally.total}
             </span>
-          </h3>
+          </h4>
           <WorkProgressChecklist steps={work.plan} />
         </div>
       )}
@@ -293,19 +391,50 @@ function TerminalRun({
 /**
  * What the task said while it worked.
  *
- * Only the newest few. The whole of a long run's narration is the task's
- * transcript and belongs on the run, not folded into the middle of a chat the
- * reader is also holding a conversation in — this is the part that says what it
- * concluded, in the reading column's own type.
+ * The newest three in full, in the reading column's own type: that is the part
+ * that says what it concluded. Anything older folds behind one disclosure
+ * rather than going away, because this panel is the task's only home now (its
+ * old page redirects here), so a run's earlier narration has nowhere else to be
+ * read. Folded by default so a long run does not push the chat it sits in off
+ * the screen.
  */
 function RunWords({ spoken }: { spoken: ReturnType<typeof deriveTurns> }) {
+  const [showEarlier, setShowEarlier] = React.useState(false);
   const latest = spoken.slice(-3);
+  const earlier = spoken.slice(0, -3);
   if (latest.length === 0) return null;
   return (
-    <div className="space-y-3 px-2">
-      {latest.map((turn) => (
-        <Markdown key={turn.id} content={turn.text} className="text-body" />
-      ))}
+    <div className="px-2">
+      {earlier.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowEarlier((open) => !open)}
+            aria-expanded={showEarlier}
+            className="group -mx-1 flex items-center gap-1.5 rounded-control px-1 py-0.5 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:min-h-11"
+          >
+            <ChevronRight
+              className={cn(
+                "size-3 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                showEarlier && "rotate-90"
+              )}
+              aria-hidden="true"
+            />
+            Earlier updates
+            <span className="tabular-nums">{earlier.length}</span>
+          </button>
+          <Collapse open={showEarlier} innerClassName="space-y-3 pt-3">
+            {earlier.map((turn) => (
+              <Markdown key={turn.id} content={turn.text} className="text-body" />
+            ))}
+          </Collapse>
+        </>
+      )}
+      <div className={cn("space-y-3", earlier.length > 0 && "mt-3")}>
+        {latest.map((turn) => (
+          <Markdown key={turn.id} content={turn.text} className="text-body" />
+        ))}
+      </div>
     </div>
   );
 }

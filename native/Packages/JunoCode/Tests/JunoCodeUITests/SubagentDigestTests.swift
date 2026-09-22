@@ -205,24 +205,24 @@ final class SubagentDigestTests: XCTestCase {
         let expected: [SubagentStatus: String] = [
             .queued: "Queued",
             .preparing: "Starting",
-            .running: "Running",
-            .waitingForApproval: "Needs approval",
-            .completed: "Completed",
+            .running: "Working",
+            .waitingForApproval: "Needs you",
+            .completed: "Done",
             .failed: "Failed",
-            .cancelled: "Cancelled",
+            .cancelled: "Stopped",
             .interrupted: "Interrupted",
         ]
 
         for status in SubagentStatus.allCases {
             XCTAssertEqual(
-                SubagentFormatting.listLabel(status),
+                StudioSubagentFormat.label(status),
                 expected[status],
-                "the inspector row needs a short, stateful label for \(status.rawValue)"
+                "the thread's agent row needs a short, stateful label for \(status.rawValue)"
             )
             XCTAssertLessThanOrEqual(
-                SubagentFormatting.listLabel(status).count,
+                StudioSubagentFormat.label(status).count,
                 15,
-                "a list label should fit beside the role at the inspector minimum"
+                "a status label should fit beside the agent's title"
             )
         }
     }

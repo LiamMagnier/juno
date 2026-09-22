@@ -44,7 +44,7 @@ public final class FileOperationService: FileOperating, Sendable {
         content: String,
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult {
-        let url = try access.resolveForMutation(path)
+        let url = try resolveMutationTarget(path)
         guard !FileManager.default.fileExists(atPath: url.path) else {
             throw FileOperationError.alreadyExists(path: path.value)
         }
@@ -76,7 +76,7 @@ public final class FileOperationService: FileOperating, Sendable {
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult {
         try validateSize(content, path: path)
-        let url = try access.resolveForMutation(path)
+        let url = try resolveMutationTarget(path)
         let previous = FileManager.default.fileExists(atPath: url.path)
             ? try readText(at: url, path: path)
             : nil
@@ -117,7 +117,7 @@ public final class FileOperationService: FileOperating, Sendable {
         expectedBase: FileFingerprint?,
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult {
-        let url = try access.resolveForMutation(path)
+        let url = try resolveMutationTarget(path)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw FileOperationError.notFound(path: path.value)
         }
@@ -156,7 +156,7 @@ public final class FileOperationService: FileOperating, Sendable {
         _ path: WorkspacePath,
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult {
-        let url = try access.resolveForMutation(path)
+        let url = try resolveMutationTarget(path)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw FileOperationError.notFound(path: path.value)
         }
@@ -194,8 +194,8 @@ public final class FileOperationService: FileOperating, Sendable {
         to destination: WorkspacePath,
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult {
-        let sourceURL = try access.resolveForMutation(source)
-        let destinationURL = try access.resolveForMutation(destination)
+        let sourceURL = try resolveMutationTarget(source)
+        let destinationURL = try resolveMutationTarget(destination)
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             throw FileOperationError.notFound(path: source.value)
         }
@@ -243,6 +243,28 @@ public final class FileOperationService: FileOperating, Sendable {
     }
 
     // MARK: - Helpers
+
+    /// The containment-checked location for a mutation, refused when it is
+    /// one of the project's policy files reached under another name.
+    ///
+    /// The file tools ask before touching those files in every mode, but
+    /// they judge by the path the model wrote. A link inside the workspace
+    /// (`cfg` pointing at `.juno`) would make `cfg/settings.local.json` read
+    /// as an ordinary edit, so a target that resolves to a policy file has to
+    /// be named as one.
+    private func resolveMutationTarget(_ path: WorkspacePath) throws -> URL {
+        let url = try access.resolveForMutation(path)
+        if !WorkspacePolicyPaths.isProtected(path.value),
+           let actual = try? access.makeRelative(url),
+           WorkspacePolicyPaths.isProtected(actual.value)
+        {
+            throw FileOperationError.ioFailure(
+                path: path.value,
+                message: "This path leads to \(actual.value), one of the project's policy files. Name that file directly, so the change is reviewed as one."
+            )
+        }
+        return url
+    }
 
     private func readText(at url: URL, path: WorkspacePath) throws -> String {
         var isDirectory: ObjCBool = false

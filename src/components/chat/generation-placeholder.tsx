@@ -124,7 +124,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
           <span className="text-body text-muted-foreground motion-safe:animate-fade-in">
             {isVideo
               ? "Longer clips can take a couple of minutes."
-              : "Still working — detailed images can take a minute."}
+              : "Still working. Detailed images can take a minute."}
           </span>
         )}
       </div>

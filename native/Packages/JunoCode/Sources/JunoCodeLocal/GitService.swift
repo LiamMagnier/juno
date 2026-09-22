@@ -27,6 +27,57 @@ public struct GitPushPlan: Sendable, Equatable {
     public var displayTarget: String { "\(remote)/\(remoteBranch)" }
 }
 
+/// The checked-out branch, read from the repository's files rather than by
+/// running Git.
+///
+/// For the places that only need the name before anything is approved, such
+/// as the system prompt, which is built before the first request: running
+/// `git` there runs whatever the repository's own configuration or the
+/// command environment points it at, on opening the folder.
+public enum GitHeadReader {
+    /// The branch `HEAD` names, or nil when detached, not a repository, or
+    /// not a name Git itself would have written.
+    public static func branch(atRepositoryRoot root: URL) -> String? {
+        var gitDirectory = root.appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: gitDirectory.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+        if !isDirectory.boolValue {
+            // A linked worktree or submodule: `.git` is a file naming the
+            // real Git directory.
+            guard let pointer = smallText(at: gitDirectory),
+                  let line = pointer.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") })
+            else { return nil }
+            let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+            gitDirectory = path.hasPrefix("/")
+                ? URL(fileURLWithPath: path)
+                : root.appendingPathComponent(path)
+        }
+        guard let head = smallText(at: gitDirectory.appendingPathComponent("HEAD")) else { return nil }
+        let reference = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "ref: refs/heads/"
+        guard reference.hasPrefix(prefix) else { return nil }
+        let name = String(reference.dropFirst(prefix.count))
+        // The name lands in the system prompt. Git refuses whitespace and
+        // control characters in a ref, so a HEAD file holding them was not
+        // written by Git and is not repeated.
+        guard !name.isEmpty, name.count <= 255,
+              !name.unicodeScalars.contains(where: {
+                  CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+              })
+        else { return nil }
+        return name
+    }
+
+    private static func smallText(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4_096) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 public enum GitPublishError: Error, Equatable, Sendable {
     case detachedHead
     case noRemote

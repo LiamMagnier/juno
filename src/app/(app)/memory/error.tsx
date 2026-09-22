@@ -35,8 +35,8 @@ export default function MemoryError({
         <EmptyState
           tone="error"
           icon={StatusIcons.error}
-          title="Couldn’t load what Juno remembers"
-          description="The summary didn’t come back. Nothing has been forgotten — memory is unchanged and still in use in your chats."
+          title="Couldn’t load your memory"
+          description="Nothing has been forgotten. Memory is unchanged and still in use in your chats."
           action={
             <>
               <Button size="sm" onClick={reset}>

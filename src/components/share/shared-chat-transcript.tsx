@@ -1,8 +1,9 @@
 import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
-import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
+import { QuotedSelection } from "@/components/chat/quoted-selection";
+import { parseQuotedMessage } from "@/lib/quote-context";
 import { Markdown } from "@/components/chat/markdown";
 import { splitMessageContent, type ArtifactType } from "@/lib/message-content";
 import { runtimeFor } from "@/lib/artifact-runtime";
@@ -91,15 +92,25 @@ export function SharedChatTranscript({ messages, artifacts }: { messages: Shared
     <div className="space-y-6">
       {messages.map((m) =>
         m.role === "USER" ? (
-          <div key={m.id} className="flex justify-end">
-            <div className={cn(USER_BUBBLE_CLASS, "max-w-[85%]")}>
-              {m.content}
-            </div>
-          </div>
+          <SharedUserTurn key={m.id} content={m.content} />
         ) : (
           <AssistantMessage key={m.id} message={m} artifactsByIdentifier={artifactsByIdentifier} />
         )
       )}
+    </div>
+  );
+}
+
+/** A user turn, with a quoted selection drawn as the app draws it (message-item.tsx). */
+function SharedUserTurn({ content }: { content: string }) {
+  const quoted = parseQuotedMessage(content);
+  const text = quoted ? quoted.request : content;
+  return (
+    <div className="flex justify-end">
+      <div className="flex max-w-[85%] flex-col items-end">
+        {quoted && <QuotedSelection quote={quoted} standalone={!text} />}
+        {text && <div className={USER_BUBBLE_CLASS}>{text}</div>}
+      </div>
     </div>
   );
 }

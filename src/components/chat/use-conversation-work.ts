@@ -78,8 +78,12 @@ export interface ConversationWorkSteering {
   mode: DelegatedComposerMode;
   /** Resolves true only when the server took it; the draft clears only then. */
   send: (text: string) => Promise<boolean>;
-  /** Ends the attempt. Terminal — its progress is not kept. */
-  stop: () => void;
+  /**
+   * Ends the attempt. Terminal: its progress is not kept. Resolves true when
+   * the server took the cancel (the stream then carries the new status), and
+   * false after saying why it did not.
+   */
+  stop: () => Promise<boolean>;
 }
 
 export interface ConversationWork {
@@ -105,10 +109,11 @@ export interface ConversationWork {
   /** Answers a question with one of its own options, without typing. */
   answer: (questionId: string, text: string) => Promise<boolean>;
   /**
-   * Shows a task the composer has just dispatched, before the poll would find
-   * it. Without this the reader presses send and watches an empty transcript
-   * for up to four seconds — the one moment they are most certain something
-   * should have happened.
+   * Shows a task the model has just started from this chat (the stream's
+   * `work` frame), before the poll would find it. Without this the reply says
+   * "I started a task" and the transcript shows nothing for up to four
+   * seconds, which is the one moment the reader is most certain something
+   * should be there.
    */
   adopt: (session: ClientWorkSession) => void;
 }
@@ -120,6 +125,9 @@ export function useConversationWork(conversationId: string | null): Conversation
   const [busy, setBusy] = React.useState(false);
 
   const sessionId = session?.id ?? null;
+  // Read by `adopt`, which must stay a stable callback for the chat view's ref.
+  const sessionIdRef = React.useRef<string | null>(null);
+  sessionIdRef.current = sessionId;
 
   /*
    * The resume cursor, both halves, in a ref.
@@ -329,32 +337,37 @@ export function useConversationWork(conversationId: string | null): Conversation
       mode,
       send: (text: string) =>
         mode.kind === "answer" ? answer(mode.questionId, text) : steer(text),
-      stop: () => {
+      stop: async () => {
         // There IS a window where the panel is up and this is null: between
         // `adopt` putting the session on screen and the first SSE frame naming
         // the run. A press in it used to return silently, which on a control
         // labelled "Stop the task" reads as a stop that worked.
         if (run === null) {
           toast.error("This task hasn’t reported in yet, so there is nothing to stop. Try again in a moment.");
-          return;
+          return false;
         }
-        void controlWorkRun(run.id, "cancel").then((result) => {
-          if (result.kind === "ok") {
-            setRun(result.value);
-            window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-            return;
-          }
-          toast.error(
-            result.kind === "blocked"
-              ? result.explanation
-              : "Couldn’t reach Juno to stop that. The task is still going."
-          );
-        });
+        const result = await controlWorkRun(run.id, "cancel");
+        if (result.kind === "ok") {
+          setRun(result.value);
+          window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+          return true;
+        }
+        toast.error(
+          result.kind === "blocked"
+            ? result.explanation
+            : "Couldn’t reach Juno to stop that. The task is still going."
+        );
+        return false;
       },
     };
   }, [mode, sessionId, answer, steer, run]);
 
   const adopt = React.useCallback((next: ClientWorkSession) => {
+    // Already following it: the discovery poll found the row first, or a
+    // reconnected stream replayed the frame. Resetting here would clear the
+    // events while the open stream carried on from its cursor, and the panel
+    // would lose everything the run had said so far.
+    if (sessionIdRef.current === next.id) return;
     cursor.current = { runId: null, after: 0 };
     setEvents([]);
     setRun(null);

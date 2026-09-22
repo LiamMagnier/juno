@@ -176,12 +176,22 @@ export function AppPageHeader({
  * at every viewport with no second number to keep in step.
  */
 export function AppPageHeaderSkeleton({
+  nav = false,
   headingWidth = "w-56",
   lede = true,
   ledeLines = 1,
   actions = false,
   className,
 }: {
+  /**
+   * Whether the real header has its leading row. `true` for a back link (with
+   * or without an eyebrow beside it), `"eyebrow"` for an eyebrow alone, which
+   * is a shorter row. Off by default because most pages open on their name
+   * (see `AppPageHeader`). The row used to be drawn on every skeleton, so
+   * Library, Projects, Artifacts and Design, none of which has one, lifted
+   * their whole header 44px at the moment the page arrived.
+   */
+  nav?: boolean | "eyebrow";
   /** Roughly as wide as the real heading, so the shimmer isn't a full-bleed slab. */
   headingWidth?: string;
   lede?: boolean;
@@ -206,13 +216,19 @@ export function AppPageHeaderSkeleton({
     // aria-hidden, because the AppPage around it already carries
     // role="status" with a label: the region speaks once, not twice.
     <div className={cn("mb-6 border-b border-border pb-5", className)} aria-hidden="true">
-      <div className="mb-3 flex items-center gap-2">
-        {/* The back control is a `size="icon-sm"` Button: 32px, 40 on coarse.
-            The placeholder carries the coarse step too, or the nav row is 8px
-            short on every touch device. */}
-        <Skeleton className="size-8 shrink-0 coarse:size-10" />
-        <Skeleton className="h-3 w-16 rounded-xs" />
-      </div>
+      {nav && (
+        <div className="mb-3 flex items-center gap-2">
+          {/* The back control is a `size="icon-sm"` Button: 32px, 40 on coarse.
+              The placeholder carries the coarse step too, or the nav row is 8px
+              short on every touch device. */}
+          {nav !== "eyebrow" && <Skeleton className="size-8 shrink-0 coarse:size-10" />}
+          {/* The eyebrow's own `text-label` line box, so a row that holds only
+              the eyebrow is as tall as the real one. */}
+          <span className="flex h-[1.4em] items-center text-label">
+            <Skeleton className="h-3 w-16 rounded-xs" />
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
           <Skeleton className={cn("h-[1.15em] max-w-full text-page-title", headingWidth)} />

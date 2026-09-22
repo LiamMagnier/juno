@@ -50,7 +50,7 @@ export default function CodeRunsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t open Juno Code"
-        description="This screen failed to draw. Nothing was cancelled — any run already going is still going, on the machine it started on."
+        description="This screen failed to draw. Nothing was cancelled, and any run already going is still going on the machine it started on."
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

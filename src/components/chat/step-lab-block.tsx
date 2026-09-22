@@ -336,7 +336,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
           </div>
         </div>
       )}
-      <CaptionLine prompt="Switch tokens — watch the shape change" contentKey={`${selected}:${dim}`}>
+      <CaptionLine prompt="Switch tokens and watch the shape change" contentKey={`${selected}:${dim}`}>
         {dim != null && active && (
           <>
             &ldquo;{active.token}&rdquo; · d{dim} = <span className="text-foreground">{active.vector[dim]?.toFixed(3)}</span>
@@ -452,7 +452,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
           </>
         ) : (
           <>
-            &ldquo;{tokens[query]}&rdquo; attends most to &ldquo;{tokens[strongest]}&rdquo; — <span className="text-foreground">{Math.round((row[strongest] ?? 0) * 100)}%</span>
+            &ldquo;{tokens[query]}&rdquo; attends most to &ldquo;{tokens[strongest]}&rdquo; · <span className="text-foreground">{Math.round((row[strongest] ?? 0) * 100)}%</span>
           </>
         )}
       </CaptionLine>
@@ -509,7 +509,7 @@ const TRANSFORMER_STAGES = [
   {
     name: "Multi-head attention",
     role: "context exchange",
-    copy: "Tokens exchange information in parallel — each one queries the sequence for what matters to it and folds the answers into its own representation.",
+    copy: "Tokens exchange information in parallel. Each one queries the sequence for what matters to it and folds the answers into its own representation.",
   },
   {
     name: "Feed-forward network",
@@ -519,7 +519,7 @@ const TRANSFORMER_STAGES = [
   {
     name: "Norm + residuals",
     role: "signal stability",
-    copy: "Residual connections let the input bypass each block so nothing is lost, and normalization keeps activations in range — this is what makes very deep stacks trainable.",
+    copy: "Residual connections let the input bypass each block so nothing is lost, and normalization keeps activations in range. This is what makes very deep stacks trainable.",
   },
 ] as const;
 
@@ -687,7 +687,7 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
           {drawn != null ? (
             <>
               sampled <span className="text-foreground">&ldquo;{items[drawn].token}&rdquo;</span> · {Math.round(items[drawn].probability * 100)}% likely
-              {drawn !== 0 && " — not the top pick"}
+              {drawn !== 0 && ", not the top pick"}
             </>
           ) : focused != null && items[focused]?.note ? (
             items[focused].note
@@ -1046,7 +1046,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             Previous
           </button>
           <span aria-live="polite" className="sr-only">
-            Step {active + 1} of {steps.length} — {selected.title}
+            Step {active + 1} of {steps.length}: {selected.title}
           </span>
           {error && <Microcap className="text-micro text-muted-foreground normal-case">approximate</Microcap>}
           <button

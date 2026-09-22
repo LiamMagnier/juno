@@ -42,6 +42,11 @@ struct DesktopCodeActions {
     /// ⌘O: grant a folder as a project.
     var openFolder: () -> Void
     var createPullRequest: (() -> Void)?
+    /// ⌘.: stops the run on screen, or nil when nothing is running. A menu
+    /// command rather than a shortcut on the composer's Stop button, which
+    /// gives way to Send as soon as the draft has any text, taking ⌘. with it
+    /// in exactly the moment a reader typing a correction decides to stop.
+    var stop: (() -> Void)?
     var hasSession: Bool
 }
 
@@ -163,6 +168,11 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
+                Button("Stop") { codeActions?.stop?() }
+                    .keyboardShortcut(".", modifiers: [.command])
+                    .disabled(codeActions?.stop == nil)
+            }
+            Section {
                 Button("Previous Session") { codeActions?.previousSession() }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
                     .disabled(codeActions == nil)
@@ -171,13 +181,16 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
-                Button("Toggle Review") { codeActions?.toggleReview() }
+                Button("Changes") { codeActions?.toggleReview() }
                     .keyboardShortcut("r", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Console") { codeActions?.toggleConsole() }
+                // ⌥⌘C, not ⌥⌘T: ToolbarCommands above binds ⌥⌘T to Show/Hide
+                // Toolbar, and the View menu is matched first, so ⌥⌘T hid
+                // the Code window's toolbar instead of opening the terminal.
+                Button("Terminal") { codeActions?.toggleConsole() }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Context Rail") { codeActions?.toggleInspector() }
+                Button("Toggle Side Panel") { codeActions?.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
                 Button("Toggle Preview") { codeActions?.togglePreview() }

@@ -1,6 +1,7 @@
 import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
@@ -365,6 +366,13 @@ export type StreamChunk =
    * the answer to the exact action that was shown.
    */
   | { type: "approval"; approval: ClientActionApproval }
+  /**
+   * The model handed this request to a background task (`start_task`). The
+   * session is already created and its first run dispatched; the client adopts
+   * it so the task panel appears at once instead of on the next discovery
+   * poll. Sent at most once per generation.
+   */
+  | { type: "work"; session: ClientWorkSession }
   | { type: "sources"; sources: ClientSource[] }
   /** `part` mirrors LlmEvent's: the ordinal of the discrete summary part this
    *  delta belongs to, or absent when the provider streams unbroken prose. */
@@ -414,6 +422,8 @@ export interface ChatRequestBody {
   researchEffort?: "quick" | "standard" | "deep" | "max";
   reasoningEffort?: ReasoningEffort;
   generationId?: string;
+  /** The client can draw a task the model starts (see `workHandoff` in request.ts). */
+  workHandoff?: boolean;
   /** Durable creation surface for a newly saved conversation. */
   origin?: ChatOrigin;
   /** Paired idempotency keys, valid only on the first saved submission. */

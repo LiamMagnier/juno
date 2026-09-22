@@ -39,7 +39,7 @@ export default function ConversationError({
           tone="error"
           icon={StatusIcons.error}
           title="This conversation couldn’t load"
-          description="The thread didn’t come back. Nothing in it has been changed or deleted — reloading usually gets it."
+          description="The thread didn’t load. Nothing in it was changed or deleted, and trying again usually brings it back."
           action={
             <>
               <Button size="sm" onClick={reset} className="gap-1.5">

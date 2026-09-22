@@ -173,6 +173,18 @@ import {
   terminalFailureCode,
 } from "@/lib/chat/terminal-state";
 import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
+import {
+  START_TASK_TOOL_ID,
+  chatTaskToolEnabled,
+  createStartTaskTool,
+  isTaskApproval,
+  taskActivityTitle,
+  taskTitleFromArgs,
+} from "@/lib/chat/task-tool";
+import { cheapestWorkModel } from "@/lib/work/models";
+import { providerAdapterFor } from "@/lib/provider-routing";
+import { isGemini3OrLater } from "@/lib/gemini-core";
+import type { ClientActionApproval } from "@/lib/action-approval";
 import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail, StreamChunk } from "@/types/chat";
@@ -355,6 +367,11 @@ function cacheTokenFields(acc: GenerationAccumulator): {
  * the call STARTED, and that is the only instant about this row that anything
  * measures from.
  *
+ * `start_task` is the one tool that says what it did rather than "Using Juno":
+ * the row opens as "Starting a task", is retitled on completion to whether it
+ * started, and names the task, because that row is the only place in the reply
+ * that says a task exists.
+ *
  * A `result` whose `callId` has no open row is DROPPED, not turned into an
  * orphan row. An unpaired result is a bug in an adapter, and inventing a row
  * for it would hide that bug behind a plausible-looking panel entry.
@@ -372,10 +389,11 @@ function createToolActivity(
   return {
     open(effect) {
       const opened = enabled ? openToolDetail(effect, budget) : undefined;
+      const task = effect.name === START_TASK_TOOL_ID;
       const entry = sender.sendActivity({
         kind: "tool",
-        title: `Using ${effect.server}`,
-        detail: effect.name,
+        title: task ? taskActivityTitle("call") : `Using ${effect.server}`,
+        detail: (task && taskTitleFromArgs(effect.args)) || effect.name,
         ...(opened ? { tool: opened } : {}),
       });
       // Tracked even when detail is disabled, so a later `result` is still
@@ -386,7 +404,18 @@ function createToolActivity(
       const row = rows.get(effect.callId);
       if (!row) return;
       rows.delete(effect.callId);
-      if (!enabled) return;
+      // The task row's wording is not tool detail, so it is updated whether or
+      // not detail is enabled. Anthropic reports the arguments only here, which
+      // is why the title is read again.
+      const task = effect.name === START_TASK_TOOL_ID;
+      if (task) {
+        row.entry.title = taskActivityTitle("result", effect.ok);
+        row.entry.detail = taskTitleFromArgs(effect.args) ?? row.entry.detail;
+      }
+      if (!enabled) {
+        if (task) sender.send({ type: "activity", event: row.entry });
+        return;
+      }
       row.entry.tool = closeToolDetail(row.opened, effect, budget);
       sender.send({ type: "activity", event: row.entry });
     },
@@ -2178,6 +2207,34 @@ async function handleChat(req: Request) {
     // model only through the tool, and would otherwise arrive marked but
     // ungoverned.
     attachmentToolToggles.documents;
+  /*
+   * Whether the model may hand this request to a background task.
+   *
+   * The model decides whether to; this decides whether it can. The rule and
+   * the reason for each condition are on `chatTaskToolEnabled`. Decided before
+   * the prompt is built because the Tasks section rides the same flag: the
+   * section without the tool is an instruction to call something absent, and
+   * the tool without the section is a tool with no rules for when to use it.
+   */
+  const taskToolOn = chatTaskToolEnabled({
+    workHandoff: input.workHandoff,
+    privateMode: !!input.privateMode,
+    voiceMode: !!input.voiceMode,
+    regenerate: !!input.regenerate,
+    userMessageId,
+    researchActive,
+    artifactEdit: !!artifactEditTarget,
+    conversationKind: conversation.kind,
+    agenticTools: modelInfo.agenticTools,
+    functionToolsReachModel: !(
+      useWebSearch &&
+      providerAdapterFor(modelInfo, useProMode) === "gemini-native" &&
+      !isGemini3OrLater(modelInfo)
+    ),
+    skillPermits: narrowRuntimeToolsForSkill([START_TASK_TOOL_ID], appliedSkill).length > 0,
+    lockdown: !!settings?.lockdownMode,
+    planHasWorkModel: cheapestWorkModel(MODEL_LIST, plan) !== null,
+  });
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -2191,6 +2248,7 @@ async function handleChat(req: Request) {
     voiceMode: input.voiceMode,
     projectContext: promptContext,
     untrustedContent: untrustedContentInTurn,
+    taskHandoff: taskToolOn,
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
@@ -2811,6 +2869,48 @@ async function handleChat(req: Request) {
         generationController.abort();
       });
 
+      // One callback for every approval this turn raises, connector calls and
+      // task handoffs alike, so both pause the watchdog and reach the card the
+      // same way.
+      const requestApproval = (approval: ClientActionApproval) => {
+        // The tool loop is now blocked on a person, not the provider:
+        // stop the idle clock until the result event re-arms it.
+        stallWatchdog.pause();
+        const task = isTaskApproval(approval);
+        sendActivity({
+          kind: "tool",
+          title: task ? "Starting a task needs your approval" : `${approval.connectorLabel} needs approval`,
+          detail:
+            task && typeof approval.detail.title === "string" ? approval.detail.title : approval.preview,
+        });
+        send({ type: "approval", approval });
+      };
+      let taskAnnounced = false;
+      const taskTool =
+        taskToolOn && userMessageId
+          ? createStartTaskTool({
+              user,
+              conversation: { id: conversationId, projectId: conversation.projectId },
+              userMessageId,
+              userRequest: clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? "",
+              skillSlug: appliedSkill?.candidate.slug ?? null,
+              model: conversationModelId,
+              reasoningEffort: input.reasoningEffort,
+              attachmentIds: input.attachmentIds ?? [],
+              connectorIds: activeConnectors.map((connector) => connector.id),
+              untrustedContent: untrustedContentInTurn,
+              generationId,
+              onApprovalRequest: requestApproval,
+              // The panel appears as soon as the run exists rather than on the
+              // client's next discovery poll. Once per generation.
+              onStarted: (session) => {
+                if (taskAnnounced) return;
+                taskAnnounced = true;
+                send({ type: "work", session });
+              },
+            })
+          : null;
+
       try {
         const modelStream = researchNotice
           ? streamResearchNotice(researchNotice)
@@ -2868,18 +2968,10 @@ async function handleChat(req: Request) {
             // instead of asking twice and executing twice.
             sessionId: generationId,
             projectId: conversation.projectId,
-            onApprovalRequest: (approval) => {
-              // The tool loop is now blocked on a person, not the provider:
-              // stop the idle clock until the result event re-arms it.
-              stallWatchdog.pause();
-              sendActivity({
-                kind: "tool",
-                title: `${approval.connectorLabel} needs approval`,
-                detail: approval.preview,
-              });
-              send({ type: "approval", approval });
-            },
+            onApprovalRequest: requestApproval,
           },
+          // `start_task`, when this turn may carry it (`taskToolOn` above).
+          nativeTools: taskTool ? [taskTool] : undefined,
         });
         for await (const ev of modelStream) {
           stallWatchdog.touch();

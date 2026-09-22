@@ -175,7 +175,10 @@ test("the recap is given every row in scope, suppressions included", () => {
   // narrowed to one project now, and a forget holds in every project, so the
   // scoped slice keeps the block-list (memoriesInScope, tested in
   // memory-project.test.ts).
+  // The recap lives in the activity sheet; the manager hands the sheet the
+  // scoped slice and the sheet hands it on untouched.
   const manager = src("src/components/memory/memory-manager.tsx");
-  assert.match(manager, /<RecapView[\s\S]{0,400}memories=\{scopedMemories\}/);
+  assert.match(manager, /<ActivitySheet[\s\S]{0,600}memories=\{scopedMemories\}/);
   assert.match(manager, /memoriesInScope\(memory\.memories \?\? \[\], activeScope\)/);
+  assert.match(src("src/components/memory/activity-sheet.tsx"), /<RecapView[\s\S]{0,200}memories=\{memories\}/);
 });

@@ -95,13 +95,11 @@ type Product = {
  * spec's risks, and the web cannot take ⌘1–⌘3, which are browser tab
  * switching.)
  *
- * Where the third one went: the "+" menu of the chat composer, as "Do this as
- * a task" beside Deep research. You hand Juno an errand with a finish line
- * instead of opening a conversation, and that choice belongs where you write
- * the ask — not in the column you navigate with. The run it starts is drawn
- * inside the conversation that started it. The pill that briefly stood between
- * those two arrangements was navigation wearing a toggle's clothes, and it is
- * gone with the rest.
+ * Where the third one went: into the conversation. Whether an ask is a reply
+ * or a task with a finish line is the model's call, made per message, and the
+ * run it starts is drawn inside the conversation that started it. Neither a
+ * switcher segment nor a composer toggle asks the reader to choose up front;
+ * both were navigation wearing a control's clothes.
  */
 export const PRODUCTS = [
   { id: "chat", label: "Chat", href: "/chat", kind: "home", chord: "⌘⇧1", minPlan: "FREE" },
@@ -310,8 +308,10 @@ function Segment({
         "focus-visible:outline-offset-0 motion-reduce:active:scale-100",
         // 44px targets in the drawer, which is the only place this is touched.
         "coarse:h-11 coarse:w-12",
+        // A locked cell holds only a glyph, so its reduced ink stops at /80:
+        // below that a mark loses the 3:1 a meaningful graphic needs.
         locked
-          ? "text-muted-foreground/55 hover:text-muted-foreground"
+          ? "text-muted-foreground/80 hover:text-muted-foreground"
           : active
             ? "text-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
@@ -319,9 +319,9 @@ function Segment({
     >
       {active && (
         // A RAISED CELL, which is the segmented-control idiom and deliberately
-        // NOT the sidebar row's: a row is selected by a fill bounded by a
-        // hairline on the panel's ground, and a switch cell is selected by
-        // being lifted out of its own track (`bg-sidebar` on a
+        // NOT the sidebar row's: a row is selected by a deeper fill on the
+        // panel's ground, and a switch cell is selected by being lifted out
+        // of its own track (`bg-sidebar` on a
         // `bg-sidebar-accent/70` track). The two states look different because
         // they answer different questions — "which destination am I on" versus
         // "which half of this switch is down" — and drawing them the same way
@@ -360,9 +360,11 @@ function Segment({
           line at this rung (0.9px), so the mark gets lighter as well as
           smaller rather than being a shrunken nav icon.
 
-          Each mark makes its one gesture when its cell is hovered — the
-          bubble and the brackets tilt (sidebar-motion-icon.tsx) — and the
-          thumb is what travels when it is pressed. */}
+          Each mark makes its one gesture when its cell is hovered: they are
+          Juno's own marks, so a part of each moves rather than the whole
+          glyph (Chat's ball terminal pops out of the ring's gap, Code's spark
+          turns; ICONS_AND_MOTION.md §1.3). The thumb is what travels when it
+          is pressed. */}
       {locked ? (
         <Sparkles className="relative size-3.5 shrink-0" aria-hidden="true" />
       ) : (
@@ -407,13 +409,13 @@ function RailItem({
           // Always named at rail width: there is no visible label to read.
           aria-label={accessibleName(product, locked) ?? product.label}
           className={cn(
-            // A plain fill, no travelling thumb. The rows below this — Search,
-            // New chat, Library — mark themselves with exactly this fill; a
+            // A plain fill, no travelling thumb. The rows below this (New chat,
+            // Search, Library) mark themselves with exactly this fill; a
             // fill that glides between stacked rows above a stack of fills that
             // do not reads as a lift, not as a switch.
-            "group relative flex size-11 items-center justify-center rounded-control transition-[background-color,box-shadow,color] duration-fast ease-out-soft motion-reduce:transition-none",
+            "group relative flex size-11 items-center justify-center rounded-control transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
             locked
-              ? "text-muted-foreground/55 hover:bg-sidebar-hover hover:text-muted-foreground"
+              ? "text-muted-foreground/80 hover:bg-sidebar-hover hover:text-muted-foreground"
               : active
                 // The panel's one selected recipe, not a fill that resembles
                 // it. This was `bg-sidebar-accent` — the colour the rows under

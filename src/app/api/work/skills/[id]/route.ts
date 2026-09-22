@@ -4,10 +4,11 @@ import { requireUser } from "@/lib/code-remote";
 import {
   parseSkillContract,
   patchSkillSchema,
-  serializeSkill,
   serializeSkillVersion,
   trustPermitsAutoSelection,
 } from "@/lib/work/skills";
+import { removeSourceIfEmpty } from "@/lib/skills/store";
+import { serializeLibrarySkill, serializeSkillSource } from "@/lib/skills/sources";
 import { readSkillResources } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
@@ -55,8 +56,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ? await readSkillResources(user.id, parseSkillContract(version.contract).resourceAttachmentIds)
     : [];
 
+  // Where it was installed from, for the "from owner/repo" line and the
+  // source's own switch. Null for a skill written here.
+  const source = skill.sourceId
+    ? await prisma.workSkillSource.findFirst({ where: { id: skill.sourceId, userId: user.id } })
+    : null;
+
   return NextResponse.json({
-    skill: serializeSkill(skill),
+    // `ClientWorkSkill` plus `sourceId` and `sourcePath` (a `LibrarySkill`).
+    skill: serializeLibrarySkill(skill),
+    source: source ? serializeSkillSource(source) : null,
     // Null rather than a substitute when the pointer names a row that is not
     // there. Handing back the newest version instead would show the user
     // instructions they did not choose under the heading of the one they did.
@@ -129,7 +138,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     },
   });
 
-  return NextResponse.json({ skill: serializeSkill(skill) });
+  // A `LibrarySkill`, so the library can swap the row in place.
+  return NextResponse.json({ skill: serializeLibrarySkill(skill) });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -139,7 +149,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const skill = await prisma.workSkill.findFirst({
     where: { id, userId: user.id, deletedAt: null },
-    select: { id: true },
+    select: { id: true, sourceId: true },
   });
   if (!skill) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -153,6 +163,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     where: { id, userId: user.id, deletedAt: null },
     data: { deletedAt: new Date(), enabled: false, autoSelect: false },
   });
+
+  // The last skill out of a source takes the empty folder with it.
+  if (skill.sourceId) await removeSourceIfEmpty(user.id, skill.sourceId);
 
   return NextResponse.json({ ok: true });
 }

@@ -55,16 +55,52 @@ test("the kind does not follow you out of the conversation", () => {
   }
 });
 
+/** The source of one top-level function in the sidebar, up to the next one. */
+function sidebarFunction(name: string): string {
+  const start = SIDEBAR.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `app-sidebar.tsx defines ${name}`);
+  const next = SIDEBAR.indexOf("\nfunction ", start + 1);
+  return SIDEBAR.slice(start, next < 0 ? undefined : next);
+}
+
+/** Every string literal that contains `needle`, so a class list is checked
+ *  as a class list and not matched against a comment beside it. */
+function literalsWith(source: string, needle: string): string[] {
+  return [...source.matchAll(/"([^"\n]*)"/g)].map((m) => m[1]).filter((s) => s.includes(needle));
+}
+
 test("the Needs you toggle is a full touch target in the phone drawer", () => {
   /*
-   * The sidebar IS the phone drawer — AppShell renders AppSidebar inside
-   * SheetContent — and this fold's header is the only interactive control the
-   * triage rework added. Every other pressable row in the file grows on a
-   * coarse pointer; at its resting `h-6` this one would be half the size of
-   * everything around it under the same thumb.
+   * The sidebar IS the phone drawer (AppShell renders AppSidebar inside
+   * SheetContent), and this fold's header is a control, not a label. It wears
+   * a section heading's 28px geometry on a fine pointer; under a thumb it has
+   * to grow to the 44px every other row in the drawer guarantees.
+   *
+   * Read from the toggle's own class list. The old assertion searched the
+   * whole element's source, so it passed on the text "h-6" in a comment while
+   * the class had long been h-7.
    */
-  const fold = SIDEBAR.slice(SIDEBAR.indexOf("function NeedsYouFold"));
-  const pressable = fold.slice(0, fold.indexOf("</Pressable>"));
-  assert.ok(pressable.includes("h-6"), "the resting geometry is still the date folds'");
-  assert.ok(pressable.includes("coarse:h-11"), "but a coarse pointer gets the panel's 44px target");
+  const [toggle] = literalsWith(sidebarFunction("NeedsYouFold"), "coarse:h-11");
+  assert.ok(toggle, "the toggle declares a coarse-pointer height");
+  const classes = toggle.split(/\s+/);
+  assert.ok(classes.includes("h-7"), "at rest it has a section heading's height");
+  assert.ok(classes.includes("coarse:h-11"), "a coarse pointer gets the panel's 44px target");
+});
+
+test("More holds only what earns no row of its own", () => {
+  /*
+   * The owner's request: Permissions out of More. Its Macs moved to Settings
+   * (Devices) and the /permissions routes stay for the palette and old links.
+   * Connections is reachable from Settings and the composer's "+", and Pull
+   * requests became a top-level Code row, so neither may drift back in.
+   */
+  const more = sidebarFunction("MoreFlyout");
+  const hrefs = [...more.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, ["/connections", "/assistants", "/skills", "/automations"]);
+  assert.ok(!more.includes('"/permissions"'), "Permissions is not in More");
+  assert.ok(more.includes("Archived chats") && more.includes("Archived sessions"), "Archived stays in both products");
+
+  const codeStart = SIDEBAR.indexOf("Code's three destinations");
+  const code = SIDEBAR.slice(codeStart, SIDEBAR.indexOf("] as const)", codeStart));
+  assert.ok(code.includes('href: "/code/pulls"'), "Pull requests is a top-level Code row");
 });

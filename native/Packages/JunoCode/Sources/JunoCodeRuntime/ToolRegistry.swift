@@ -57,6 +57,7 @@ public struct ToolRegistry: Sendable {
         if let webSearch {
             tools.append(WebSearchTool(service: webSearch))
         }
+        tools.append(WebFetchTool())
         tools.append(contentsOf: additionalTools)
         return ToolRegistry(tools: tools)
     }
@@ -118,7 +119,8 @@ public struct ToolRegistry: Sendable {
             actionDigest: digest,
             risk: risk,
             summary: tool.summary(input: input),
-            approvalPolicy: tool.approvalPolicy
+            approvalPolicy: tool.approvalPolicy,
+            subject: ToolRuleSubjects.subject(toolName: toolName, input: input)
         )
         switch outcome {
         case .allowed:

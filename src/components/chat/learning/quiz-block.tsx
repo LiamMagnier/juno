@@ -127,7 +127,7 @@ export function QuizInteraction({
           <Microcap className="text-primary">Recap</Microcap>
           <BlockLead>
             You got <span className="text-primary">{score}</span> of {total} correct
-            {perfect ? " — nothing missed." : "."}
+            {perfect ? ". Nothing missed." : "."}
           </BlockLead>
         </div>
         <ol className="flex flex-col divide-y divide-border/30">
@@ -267,7 +267,7 @@ export function QuizInteraction({
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-t border-border/50 pt-3">
             <p className="min-w-0 flex-1 basis-64 text-body leading-6 text-muted-foreground">
               <span className={cn("font-sans text-body font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
-                {isCorrect ? "Correct —" : "Not quite —"}
+                {isCorrect ? "Correct:" : "Not quite:"}
               </span>{" "}
               {explanation ?? (isCorrect ? "well spotted." : `the answer is ${LETTERS[correctIndex] ?? correctIndex + 1}.`)}
             </p>

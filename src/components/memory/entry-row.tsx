@@ -3,297 +3,488 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { EyeOff, FolderLock, Loader2, MessageSquare, ShieldAlert } from "@/components/ui/icons";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
+import { EyeOff, Folder, FolderLock, MessageSquare, MessagesSquare, ShieldAlert } from "@/components/ui/icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import {
-  MEMORY_CATEGORY_META,
-  MEMORY_STATUS_META,
-  confidenceLabel,
-  isMemoryCategory,
-  isMemoryStatus,
-  memoryCategoryLabel,
-} from "@/lib/memory-categories";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
+import { MENU_W, MENU_W_WIDE } from "@/components/ui/menu-recipe";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { MEMORY_STATUS_META, isMemoryStatus } from "@/lib/memory-categories";
 import { sensitiveTopicLabel } from "@/lib/memory-sensitive";
 import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { isRetired, type Memory } from "@/components/memory/memory-model";
+import { relativeTime, shortDate } from "@/components/memory/memory-time";
+import type { ProjectOption } from "@/components/memory/use-project-options";
+import type { RemovalKind } from "@/components/memory/use-deferred-removal";
 
 /*
- * One remembered fact, as a row.
+ * One remembered fact: a line of text, one muted line about it, and a menu.
  *
- * Lifted out of `entry-list.tsx` because the topics view needs the same row and
- * a second copy of it is how the two surfaces would drift — one gaining the
- * sensitive chip, the other keeping the old provenance line, with nothing to
- * notice the difference. Everything a row can do (rewrite, forget, delete) and
- * everything it says about itself (category, scope, confidence, status,
- * sensitivity, where it came from, when it was last used) lives here.
+ * WHAT THE ROW STOPPED SAYING. It used to carry up to six badges (topic,
+ * sensitivity, project, confidence, status, "not in use"), a provenance line
+ * and an italic reason, so a one-line fact could stand four lines tall and the
+ * list read as a database. The topic is the section the row sits in; the
+ * confidence was on every row, so it distinguished none of them; "not in use"
+ * repeated a paused banner on every line. What is left is what a reader acts
+ * on: where the fact came from and when, plus the two tokens that change what
+ * the fact MEANS (a sensitive subject, a project boundary).
  *
- * THE ROW IS A PRESENCE ELEMENT. Deleting one used to be a splice: the row
- * vanished and every row beneath it jumped up a notch, in one frame, with no
- * indication that the thing that left was the thing you pressed. It now
- * closes its own grid track on the way out, so the gap closing IS the
- * confirmation — which matters more here than on most lists, because the
- * control next to it ("forget") is destructive in a different way and the two
- * have to feel different.
+ * EDITING IS CLICKING THE TEXT. The sentence becomes a field in place, the same
+ * size and at the same spot, so the thing being corrected never moves. The
+ * menu carries everything else, including Edit for keyboard users.
+ *
+ * THE ROW IS A PRESENCE ELEMENT. It has no entrance when it is simply rendered
+ * (a list loading, a search clearing), because it has not arrived from
+ * anywhere. It animates on the way OUT, closing its own grid track so the rows
+ * beneath close the gap in the same move, and on the way back IN when an Undo
+ * restores it, which is the same move reversed.
  */
 
 interface EntryRowProps {
   memory: Memory;
   busy: boolean;
-  /** Memory paused: the row still edits, but says its facts are not in use. */
-  paused?: boolean;
+  /** Draw the project token. Off when the whole page is already that project. */
+  showProject: boolean;
+  /** A change just landed on this row: flash it once so the eye finds it. */
+  highlighted?: boolean;
+  /**
+   * Arrive by unfolding rather than appearing: a row brought back by Undo, or
+   * one revealed by its section's "Show more". Everything else is simply there.
+   */
+  enter?: boolean;
+  /** Projects for the "Move to" menu; null until loaded. */
+  projects: ProjectOption[] | null;
+  /** Ask for the project list, the first time a menu opens. */
+  onWantProjects: () => void;
   onEdit: (id: string, content: string) => Promise<boolean>;
-  onForget: (memory: Memory) => void;
-  onDelete: (memory: Memory) => void;
+  onRemove: (memory: Memory, kind: RemovalKind) => void;
+  onMove: (memory: Memory, project: ProjectOption | null) => void;
 }
 
-export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDelete }: EntryRowProps) {
+export function EntryRow({
+  memory,
+  busy,
+  showProject,
+  highlighted = false,
+  enter = false,
+  projects,
+  onWantProjects,
+  onEdit,
+  onRemove,
+  onMove,
+}: EntryRowProps) {
   const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(memory.content);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const editButtonRef = React.useRef<HTMLButtonElement>(null);
-  const wasEditing = React.useRef(false);
   const reduceMotion = useReducedMotion() ?? false;
-
-  // A fact rewritten elsewhere (an applied instruction, another tab) must not
-  // leave this row's draft holding the old sentence the next time it opens.
-  React.useEffect(() => {
-    if (!editing) setDraft(memory.content);
-  }, [editing, memory.content]);
-
-  // The row swaps its text for an input, which destroys the focused element —
-  // hand focus to whichever control took its place so keyboard users aren't
-  // dropped back to the top of the document.
-  React.useEffect(() => {
-    if (editing) {
-      wasEditing.current = true;
-      const timer = setTimeout(() => inputRef.current?.focus(), 60);
-      return () => clearTimeout(timer);
-    }
-    if (wasEditing.current) editButtonRef.current?.focus();
-    wasEditing.current = false;
-  }, [editing]);
-
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const next = draft.trim();
-    if (!next || next === memory.content) {
-      setEditing(false);
-      return;
-    }
-    if (await onEdit(memory.id, next)) setEditing(false);
-    else inputRef.current?.focus();
-  };
-
+  const menuButtonRef = React.useRef<HTMLButtonElement>(null);
   const retired = isRetired(memory);
-  const statusMeta = isMemoryStatus(memory.status) ? MEMORY_STATUS_META[memory.status] : null;
-  const categoryMeta = isMemoryCategory(memory.category) ? MEMORY_CATEGORY_META[memory.category] : null;
+
+  const closed = reduceMotion ? { opacity: 0 } : { opacity: 0, gridTemplateRows: "0fr" };
+  const variants = {
+    closed,
+    // The resting state seeds the track in framer's own units: read back from
+    // the DOM it would be the resolved pixel height, which does not
+    // interpolate with "0fr" and would hold the row open until the last frame.
+    open: { opacity: 1, gridTemplateRows: "1fr", transition: transition.symmetric },
+    // The list passes `instant` through its AnimatePresence when rows leave
+    // because the reader searched or re-sorted: filtering is immediate, and
+    // only a removal the reader asked for plays the fold.
+    exit: (instant: boolean | undefined) =>
+      instant ? { opacity: 0, transition: { duration: 0 } } : { ...closed, transition: transition.exit },
+  };
 
   return (
     <motion.li
-      layout={!reduceMotion}
-      // No entrance (`initial={false}`): a row that is merely being rendered
-      // (the list loaded, a topic opened) has not arrived from anywhere, and
-      // animating it in would make every scroll into a performance. Only the
-      // EXIT is animated, because leaving is the one thing the user caused.
-      //
-      // The exit closes the row's own track (grid-template-rows 1fr to 0fr,
-      // ICONS_AND_MOTION §2.2 rules 6 and 8) rather than tweening `height`,
-      // so the row needs no measured height and the rows beneath it close the
-      // gap in the same move. Under reduced motion it only fades. The resting
-      // `animate` seeds the track in framer's own units: read back from the
-      // DOM it is the resolved pixel height ("84px"), which does not mix with
-      // "0fr" and would hold the row open until the exit's last frame.
-      initial={false}
-      animate={{ gridTemplateRows: "1fr" }}
-      exit={reduceMotion ? { opacity: 0, transition: transition.exit } : { opacity: 0, gridTemplateRows: "0fr", transition: transition.exit }}
-      className={cn(
-        "group/fact grid grid-rows-[1fr] transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
-        retired && "opacity-70"
-      )}
+      variants={variants}
+      initial={enter ? "closed" : false}
+      animate="open"
+      exit="exit"
+      // The hairline between rows is drawn inset to the text column, not by
+      // the list's border: the row itself bleeds 12px either side so its hover
+      // fill has room around the text, and a border would bleed with it.
+      className="relative grid grid-rows-[1fr] before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-border/70 first:before:hidden"
     >
-      {/* The clip lives on the track's only item and the padding one level
-          in: padding cannot shrink below itself, so a padded item would stop
-          the track closing short of zero. */}
+      {/* The clip lives on the track's only item and the padding one level in:
+          padding cannot shrink below itself, so a padded item would stop the
+          track closing short of zero. */}
       <div className="min-h-0 overflow-hidden">
-        <div className="px-4 py-3">
-          {editing ? (
-            <form onSubmit={save} className="flex items-center gap-1.5">
-              <Input
-                ref={inputRef}
-                value={draft}
-                maxLength={500}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setDraft(memory.content);
-                    setEditing(false);
-                  }
-                }}
-                aria-label="Edit this memory"
-                className="h-9"
-              />
-              <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory" title="Save">
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
-              </Button>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Cancel editing"
-                title="Cancel"
+        {editing ? (
+          <RowEditor
+            memory={memory}
+            busy={busy}
+            onSave={async (next) => {
+              if (next === memory.content || (await onEdit(memory.id, next))) {
+                setEditing(false);
+                // The field that had focus is gone; the row's menu button is
+                // the nearest control that is still there.
+                requestAnimationFrame(() => menuButtonRef.current?.focus());
+                return true;
+              }
+              return false;
+            }}
+            onCancel={() => {
+              setEditing(false);
+              requestAnimationFrame(() => menuButtonRef.current?.focus());
+            }}
+          />
+        ) : (
+          <div
+            // Keyed on the highlight so a second change to the same row replays it.
+            key={highlighted ? "flash" : "rest"}
+            className={cn(
+              "group/row flex items-start gap-2 px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/50 motion-reduce:transition-none",
+              highlighted && "animate-cite-flash [animation-duration:var(--dur-emphasis)]"
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              <p
+                // Clicking the sentence edits it, unless the click ended a text
+                // selection: a reader copying a fact is not asking to rewrite it.
                 onClick={() => {
-                  setDraft(memory.content);
-                  setEditing(false);
+                  if (busy || window.getSelection()?.toString()) return;
+                  setEditing(true);
                 }}
-              >
-                <ActionIcons.dismiss className="size-3.5" />
-              </Button>
-            </form>
-          ) : (
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <p className={cn("text-ui text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
-                  {memory.content}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <Badge variant="soft" title={categoryMeta?.description}>
-                    {memoryCategoryLabel(memory.category)}
-                  </Badge>
-                  {memory.sensitive && (
-                    // Warning-tinted rather than soft: this chip is the one that
-                    // says "you may not have meant to keep this", and it has to
-                    // out-rank the category chip beside it to do that job.
-                    <Badge
-                      variant="outline"
-                      className="gap-1 border-warning/40 bg-warning/10"
-                      title="A sensitive subject. Juno only learns these on its own when you turn the topic on in Settings → Memory."
-                    >
-                      <ShieldAlert className="size-3" aria-hidden="true" />
-                      {sensitiveTopicLabel(memory.sensitive)}
-                    </Badge>
-                  )}
-                  {memory.projectId && (
-                    <Badge variant="outline" className="gap-1" title="Only chats in this project can see this memory.">
-                      <FolderLock className="size-3" aria-hidden="true" />
-                      {memory.projectName ?? "One project"}
-                    </Badge>
-                  )}
-                  <Badge variant="muted" title="How Juno came to believe this.">
-                    {confidenceLabel(memory.confidence)}
-                  </Badge>
-                  {statusMeta && memory.status !== "active" && (
-                    <Badge variant="outline" title={statusMeta.description}>
-                      {statusMeta.label}
-                    </Badge>
-                  )}
-                  {paused && !retired && (
-                    <Badge variant="muted" title="Memory is paused, so nothing here reaches a conversation.">
-                      Not in use
-                    </Badge>
-                  )}
-                </div>
-                <ProvenanceLine memory={memory} />
-                {memory.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{memory.reason}</p>}
-              </div>
-              {/* The row's verbs arrive with the pointer (or focus, or a coarse
-                  pointer, or a delete in flight) — a column of three glyphs on
-                  every fact was the loudest thing in a list meant for reading. */}
-              <div
                 className={cn(
-                  "flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/fact:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
-                  busy ? "opacity-100" : "opacity-0"
+                  "cursor-text text-pretty text-ui text-foreground",
+                  retired && "text-muted-foreground line-through decoration-muted-foreground/40"
                 )}
               >
-                <Button
-                  ref={editButtonRef}
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Edit: ${memory.content}`}
-                  title="Edit"
-                  className="text-muted-foreground"
-                  onClick={() => setEditing(true)}
-                  disabled={busy}
-                >
-                  <ActionIcons.edit className="size-3.5" />
-                </Button>
-                {memory.status !== "suppressed" && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Forget: ${memory.content}`}
-                    title="Stop using this, and never learn it again."
-                    className="text-muted-foreground"
-                    onClick={() => onForget(memory)}
-                    disabled={busy}
-                  >
-                    <EyeOff className="size-3.5" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="danger-hover text-muted-foreground"
-                  aria-label={`Delete: ${memory.content}`}
-                  title="Delete"
-                  onClick={() => onDelete(memory)}
-                  disabled={busy}
-                >
-                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
-                </Button>
-              </div>
+                {memory.content}
+              </p>
+              <RowMeta memory={memory} showProject={showProject} />
             </div>
-          )}
-        </div>
+            <RowMenu
+              memory={memory}
+              busy={busy}
+              buttonRef={menuButtonRef}
+              projects={projects}
+              onWantProjects={onWantProjects}
+              onEdit={() => setEditing(true)}
+              onRemove={onRemove}
+              onMove={onMove}
+            />
+          </div>
+        )}
       </div>
     </motion.li>
   );
 }
 
-/** Where a fact came from, when it arrived, and when it was last leaned on. */
-function ProvenanceLine({ memory }: { memory: Memory }) {
-  const learnedFrom = (() => {
-    if (memory.sourceRef === "manual") return "You added this";
-    if (memory.sourceRef === "edit") return "From an edit you made";
-    if (memory.sourceRef === "forget") return "From a fact you forgot";
-    if (memory.sourceRef === "import") return "Imported from another assistant";
-    if (memory.source === "MANUAL") return "You told Juno";
-    return null;
-  })();
+/** The field a fact becomes while it is being corrected. */
+function RowEditor({
+  memory,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  memory: Memory;
+  busy: boolean;
+  onSave: (content: string) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = React.useState(memory.content);
+  const fieldRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Grows with the sentence instead of scrolling it sideways, the way the
+  // one-line input it replaced clipped any fact longer than the row. It snaps
+  // rather than tweening: the field opens at its full height and only changes
+  // when a line wraps under the reader's own typing.
+  React.useLayoutEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [draft]);
+
+  React.useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, []);
+
+  const save = async () => {
+    const next = draft.trim();
+    if (!next) return;
+    if (!(await onSave(next))) fieldRef.current?.focus();
+  };
 
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-      {learnedFrom ? (
-        <span>{learnedFrom}</span>
-      ) : memory.sourceRef ? (
-        <Link
-          href={`/chat/${memory.sourceRef}`}
-          className="inline-flex items-center gap-1.5 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+    <form
+      className="px-3 py-1.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <textarea
+        ref={fieldRef}
+        value={draft}
+        rows={1}
+        maxLength={500}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          // A fact is one sentence, so Enter saves; Shift+Enter still breaks
+          // a line for the rare one that needs it.
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void save();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        aria-label="Edit this memory"
+        // The field's text sits exactly where the sentence did: the negative
+        // margin cancels the padding that gives the field its edge, out to the
+        // row's own edges (the list bleeds the rows 12px past the column).
+        className="-mx-3 block w-[calc(100%+1.5rem)] resize-none overflow-hidden rounded-field border border-input bg-background px-3 py-2 text-ui text-foreground outline-none transition-colors duration-fast ease-out-soft focus-visible:border-foreground/60"
+      />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <p className="text-caption text-muted-foreground">Enter to save, Esc to cancel</p>
+        <div className="flex items-center gap-1.5">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" loading={busy} disabled={!draft.trim()}>
+            Save
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+/** Where a fact came from, in words; null for a fact learned from a chat. */
+function learnedFrom(memory: Memory): string | null {
+  if (memory.sourceRef === "manual") return "You added this";
+  if (memory.sourceRef === "edit") return "From an edit you made";
+  if (memory.sourceRef === "forget") return "From a fact you forgot";
+  if (memory.sourceRef === "import") return "Imported from another assistant";
+  if (memory.source === "MANUAL") return "You told Juno";
+  return null;
+}
+
+/** A fact learned from a conversation carries its id; the other sources are words. */
+function sourceChatId(memory: Memory): string | null {
+  return learnedFrom(memory) === null && memory.sourceRef ? memory.sourceRef : null;
+}
+
+/**
+ * The one line under a fact. Sans, muted, separated by middots, with the two
+ * tokens that change what the fact means at the end of it. The retired status
+ * leads, because on a retired row it is the first thing a reader needs.
+ */
+function RowMeta({ memory, showProject }: { memory: Memory; showProject: boolean }) {
+  const words = learnedFrom(memory);
+  const chatId = sourceChatId(memory);
+  const status = isRetired(memory) && isMemoryStatus(memory.status) ? MEMORY_STATUS_META[memory.status] : null;
+
+  const parts: React.ReactNode[] = [];
+  if (status) {
+    parts.push(
+      <span key="status" title={memory.reason ?? status.description} className="font-medium">
+        {status.label}
+      </span>
+    );
+  }
+  parts.push(
+    words ? (
+      <span key="source">{words}</span>
+    ) : chatId ? (
+      // A link that reads as metadata until it is pointed at: the whole of the
+      // "why does Juno think this" question is one click from here.
+      <Link
+        key="source"
+        href={`/chat/${chatId}`}
+        className="rounded-xs underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
+      >
+        From a chat
+      </Link>
+    ) : (
+      <span key="source">From your chats</span>
+    )
+  );
+  parts.push(<span key="when">{relativeTime(memory.createdAt)}</span>);
+  if (memory.expiresAt && !status) {
+    parts.push(
+      <span key="expires">
+        <span>Until</span> <span>{shortDate(memory.expiresAt)}</span>
+      </span>
+    );
+  }
+
+  return (
+    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted-foreground">
+      {parts.map((part, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span aria-hidden="true">·</span>}
+          {part}
+        </React.Fragment>
+      ))}
+      {memory.sensitive && (
+        // Warm-tinted: this is the token that says "you may not have meant to
+        // keep this", so it has to out-rank the words beside it.
+        <span
+          title="A sensitive subject. Juno only learns these on its own when you allow the topic in Settings."
+          className="ml-0.5 inline-flex h-[1.125rem] items-center gap-1 rounded-full bg-warning/15 px-1.5 font-medium text-foreground dark:bg-warning/10 dark:text-warning"
         >
-          <MessageSquare className="size-3" aria-hidden="true" />
-          Remembered from a chat
-        </Link>
-      ) : (
-        <span>Remembered from your chats</span>
+          <ShieldAlert className="size-3" aria-hidden="true" />
+          {sensitiveTopicLabel(memory.sensitive)}
+        </span>
       )}
-      <span aria-hidden="true">·</span>
-      <span>{timeAgo(memory.createdAt)}</span>
-      {memory.lastUsedAt && (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>used {timeAgo(memory.lastUsedAt)}</span>
-        </>
+      {showProject && memory.projectId && (
+        <span
+          title="Only chats in this project use this memory."
+          className="ml-0.5 inline-flex h-[1.125rem] max-w-[14rem] items-center gap-1 rounded-full bg-secondary px-1.5 font-medium text-muted-foreground"
+        >
+          <FolderLock className="size-3 shrink-0" aria-hidden="true" />
+          <span translate="no" className="truncate">
+            {memory.projectName ?? "One project"}
+          </span>
+        </span>
       )}
-      {memory.expiresAt && (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>expires {new Date(memory.expiresAt).toLocaleDateString()}</span>
-        </>
-      )}
-    </p>
+    </div>
+  );
+}
+
+function RowMenu({
+  memory,
+  busy,
+  buttonRef,
+  projects,
+  onWantProjects,
+  onEdit,
+  onRemove,
+  onMove,
+}: {
+  memory: Memory;
+  busy: boolean;
+  buttonRef: React.RefObject<HTMLButtonElement | null>;
+  projects: ProjectOption[] | null;
+  onWantProjects: () => void;
+  onEdit: () => void;
+  onRemove: (memory: Memory, kind: RemovalKind) => void;
+  onMove: (memory: Memory, project: ProjectOption | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  // Edit swaps this whole row for a field, trigger included, so the menu must
+  // not hand focus back to a button that no longer exists; the field has it.
+  const editing = React.useRef(false);
+  const chatId = sourceChatId(memory);
+  const forgettable = memory.status !== "suppressed";
+  const otherProjects = (projects ?? []).filter((project) => project.id !== memory.projectId);
+
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) onWantProjects();
+      }}
+    >
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <IconButton
+              ref={buttonRef}
+              variant="ghost"
+              size="sm"
+              label="Memory options"
+              title=""
+              disabled={busy}
+              // The verbs arrive with the pointer, keyboard focus or an open
+              // menu; a column of dots on every fact was the loudest thing in
+              // a list meant for reading. Always there on a touch screen.
+              className="-my-1 opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+            >
+              <ActionIcons.more className="size-4" />
+            </IconButton>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>Options</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        className={MENU_W_WIDE}
+        onCloseAutoFocus={(event) => {
+          if (editing.current) event.preventDefault();
+          editing.current = false;
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={() => {
+            editing.current = true;
+            onEdit();
+          }}
+        >
+          <ActionIcons.edit />
+          Edit
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <FolderLock />
+            Move to project
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className={MENU_W}>
+            {memory.projectId && (
+              <DropdownMenuItem onSelect={() => onMove(memory, null)}>
+                <MessagesSquare />
+                All chats
+              </DropdownMenuItem>
+            )}
+            {projects === null ? (
+              <DropdownMenuItem disabled>Loading projects…</DropdownMenuItem>
+            ) : otherProjects.length === 0 ? (
+              <DropdownMenuItem disabled>No other projects</DropdownMenuItem>
+            ) : (
+              otherProjects.map((project) => (
+                <DropdownMenuItem key={project.id} onSelect={() => onMove(memory, project)}>
+                  <Folder />
+                  <span translate="no" className="truncate">
+                    {project.name}
+                  </span>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {chatId && (
+          <DropdownMenuItem asChild>
+            <Link href={`/chat/${chatId}`}>
+              <MessageSquare />
+              Open source chat
+            </Link>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        {forgettable && (
+          <DropdownMenuItem onSelect={() => onRemove(memory, "forget")} className="items-start">
+            <EyeOff className="mt-0.5" />
+            <span className="flex min-w-0 flex-col">
+              <span>Forget</span>
+              <span className="text-caption text-muted-foreground">Juno won’t learn this again</span>
+            </span>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem variant="destructive" onSelect={() => onRemove(memory, "delete")} className="items-start">
+          <ActionIcons.delete className="mt-0.5" />
+          <span className="flex min-w-0 flex-col">
+            <span>Delete</span>
+            <span className="text-caption text-muted-foreground">Juno may learn it again from its chat</span>
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -12,6 +12,20 @@ private func workspacePath(from input: JSONValue, field: String = "path") throws
     }
 }
 
+/// A mutation's risk, raised to destructive when it would touch one of the
+/// project's policy files.
+///
+/// Destructive is what makes the existing machinery hold the line: every mode
+/// asks, an allow rule never silences it, and no "Always allow" is offered.
+/// Without it, a write to `.juno/settings.local.json` was an ordinary edit
+/// that Auto-edit made unasked.
+private func policyRisk(_ base: ActionRisk, _ input: JSONValue, fields: [String] = ["path"]) -> ActionRisk {
+    let touchesPolicy = fields.contains { field in
+        input[field]?.stringValue.map(WorkspacePolicyPaths.isProtected) ?? false
+    }
+    return touchesPolicy ? .destructive : base
+}
+
 /// Reads the optional `base_sha256` argument, rejecting anything that is not a
 /// SHA-256 digest.
 ///
@@ -55,11 +69,39 @@ public struct ReadFileTool: CodeTool {
         bytes you were not shown is not a base you can safely overwrite from. \
         Edit a truncated file with apply_patch, which matches an exact block \
         rather than replacing the file.
+
+        Long files return their first \(ReadFileTool.defaultLineLimit) lines, \
+        or as many whole lines as fit in \(ReadFileTool.maximumContentBytes / 1_024) KB. \
+        Pass "offset" (1-based first line) and "limit" (line count) to read \
+        another window; the header's "first_line", "last_line" and \
+        "total_lines" say where you are. A windowed read is partial, so it \
+        carries no "base_sha256" either.
         """
+
+    /// Lines returned when the caller does not ask for a window. Enough for
+    /// almost every source file whole; a generated file or a log is paged
+    /// instead of landing in the context window in one piece.
+    static let defaultLineLimit = 2_000
+
+    /// The most content one read returns, in bytes.
+    ///
+    /// Well under the orchestrator's tool-result cap
+    /// (`AgentOrchestrator.Configuration.maximumToolResultBytes`) so that cap
+    /// never has to cut a read. It cuts the middle out of what it is given,
+    /// and a read cut there would still carry the whole file's `base_sha256`
+    /// and a `last_line` it never showed: a full overwrite from it would
+    /// silently delete the missing middle, and paging from `last_line + 1`
+    /// would skip it for good.
+    static let maximumContentBytes = 100 * 1_024
+
     public var inputSchema: JSONValue {
         [
             "type": "object",
-            "properties": ["path": ["type": "string", "description": "Workspace-relative file path"]],
+            "properties": [
+                "path": ["type": "string", "description": "Workspace-relative file path"],
+                "offset": ["type": "integer", "description": "1-based line to start from"],
+                "limit": ["type": "integer", "description": "Number of lines to return"],
+            ],
             "required": ["path"],
         ]
     }
@@ -73,7 +115,153 @@ public struct ReadFileTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let path = try workspacePath(from: input)
         let result = try await files.read(path, limit: .fileRead)
-        return ToolResult(content: ReadFileTool.render(result))
+        let offset = input["offset"]?.intValue
+        let limit = input["limit"]?.intValue
+        return ToolResult(content: ReadFileTool.render(result, offset: offset, limit: limit))
+    }
+
+    /// The read, narrowed to a window of lines when one was asked for, or when
+    /// the file is longer than the default line count or the byte budget.
+    static func render(_ result: FileReadResult, offset: Int?, limit: Int?) -> String {
+        // Split the way `lineCount` was counted. `String.split(separator:)`
+        // compares Characters, and "\r\n" is one grapheme that is not "\n",
+        // so a CRLF file read as a single line: never paged, and past its
+        // "end" at offset 2. `splitLines` splits on the "\n" code unit, keeps
+        // each "\r", and does not count a trailing newline as a line.
+        let lines = DiffEngine.splitLines(result.content)
+        let total = lines.count
+        let fitsWhole = result.content.utf8.count <= maximumContentBytes
+        if offset == nil, limit == nil, total <= defaultLineLimit, fitsWhole {
+            return renderWhole(result)
+        }
+        // An empty file has no window to take; it is its own whole read.
+        guard total > 0 else { return renderWhole(result) }
+        let start = max(1, offset ?? 1)
+        let count = max(1, limit ?? defaultLineLimit)
+        guard start <= total else {
+            return "{\"path\":\(quoted(result.path.value)),\"total_lines\":\(total),\"note\":\"offset is past the end of the file\"}\n"
+        }
+        let requestedEnd = count > total - start ? total : start + count - 1
+
+        // Whole lines only, up to the byte budget, so `last_line` is exactly
+        // the last line shown and the next offset loses nothing.
+        var used = 0
+        var end = start - 1
+        for number in start...requestedEnd {
+            let cost = lines[number - 1].utf8.count + (number > start ? 1 : 0)
+            if used + cost > maximumContentBytes { break }
+            used += cost
+            end = number
+        }
+        if start == 1, end == total, !result.wasTruncated {
+            // The window is the whole file. Return it as one, trailing newline
+            // included, so the content shown is exactly what base_sha256 covers.
+            return renderWhole(result)
+        }
+
+        let window: String
+        let note: String?
+        if end < start {
+            // One line longer than the whole budget — minified code, a data
+            // blob. Its head is shown rather than nothing, or paging could
+            // never get past it.
+            window = prefix(of: lines[start - 1], fittingBytes: maximumContentBytes)
+            end = start
+            note = "line \(start) is longer than \(maximumContentBytes / 1_024) KB; only its first \(window.utf8.count) bytes are shown"
+                + (end < total ? "; pass offset \(end + 1) to continue" : "")
+        } else {
+            window = lines[(start - 1)..<end].joined(separator: "\n")
+            if end < total {
+                note = "partial read; pass offset \(end + 1) to continue"
+            } else if result.wasTruncated {
+                note = "the file is larger than read_file returns; lines past this point cannot be paged"
+            } else {
+                note = nil
+            }
+        }
+        // A window is never the whole file, so it never carries a base.
+        var header: [String] = [
+            "\"path\":\(quoted(result.path.value))",
+            "\"first_line\":\(start)",
+            "\"last_line\":\(end)",
+            "\"total_lines\":\(total)",
+            "\"truncated\":true",
+        ]
+        if let note {
+            header.append("\"note\":\(quoted(note))")
+        }
+        return "{\(header.joined(separator: ","))}\n" + window
+    }
+
+    /// The whole read, within the same byte budget as a window: a file over
+    /// the budget is returned as its first window instead.
+    static func render(_ result: FileReadResult) -> String {
+        render(result, offset: nil, limit: nil)
+    }
+
+    /// Makes a read that something other than this tool must cut safe to
+    /// show.
+    ///
+    /// The tool keeps every read under ``maximumContentBytes``, so this only
+    /// runs when a caller's cap is set lower than that. The cut keeps the head,
+    /// so the lines shown stay contiguous, and the header is rewritten: no
+    /// `base_sha256`, since a digest of a file the model was not shown whole
+    /// is not a base to overwrite from, `truncated` set, and `last_line` and
+    /// the next offset recomputed from what survived.
+    static func bounded(_ rendered: String, maximumBytes: Int) -> String {
+        guard rendered.utf8.count > maximumBytes else { return rendered }
+        guard let newline = rendered.firstIndex(of: "\n"),
+              var fields = (try? JSONSerialization.jsonObject(
+                  with: Data(rendered[..<newline].utf8)
+              )) as? [String: Any]
+        else {
+            return OutputLimiter.apply(OutputLimit(maximumBytes: maximumBytes), to: rendered).text
+        }
+        let firstLine = fields["first_line"] as? Int ?? 1
+        fields["base_sha256"] = nil
+        fields["truncated"] = true
+        fields["first_line"] = firstLine
+        fields["last_line"] = nil
+        fields["note"] = "cut by the tool-result limit; no base_sha256 is issued for a partial read"
+        let provisional = (try? JSONSerialization.data(
+            withJSONObject: fields,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )) ?? Data()
+        // Room for the header as it will finally read, with a last line and
+        // a continuation offset that are at most a few digits longer.
+        let bodyBudget = max(0, maximumBytes - provisional.count - 64)
+        let body = String(rendered[rendered.index(after: newline)...])
+        let kept = prefix(of: body, fittingBytes: bodyBudget)
+        // Counted in code units: "\r\n" is one Character, not a "\n".
+        let lastNewline = kept.utf8.lastIndex(of: UInt8(ascii: "\n"))
+        let completeLines = kept.utf8.reduce(0) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
+        if completeLines > 0 {
+            let lastLine = firstLine + completeLines - 1
+            fields["last_line"] = lastLine
+            fields["note"] = "cut by the tool-result limit; no base_sha256 is issued for a partial read; pass offset \(lastLine + 1) to continue"
+        }
+        let header = (try? JSONSerialization.data(
+            withJSONObject: fields,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )).flatMap { String(data: $0, encoding: .utf8) } ?? "{\"truncated\":true}"
+        // Only whole lines, so the continuation offset repeats nothing and
+        // skips nothing.
+        let shown = lastNewline.map { String(decoding: kept.utf8[..<$0], as: UTF8.self) } ?? kept
+        return header + "\n" + shown
+    }
+
+    /// The longest prefix of `text` within `bytes` UTF-8 bytes, never cutting
+    /// a character.
+    private static func prefix(of text: String, fittingBytes bytes: Int) -> String {
+        var used = 0
+        var end = text.startIndex
+        for index in text.indices {
+            let size = text[index].utf8.count
+            if used + size > bytes { break }
+            used += size
+            end = text.index(after: index)
+        }
+        return String(text[..<end])
     }
 
     /// The machine-readable read contract: one line of JSON, a newline, then
@@ -85,7 +273,7 @@ public struct ReadFileTool: CodeTool {
     /// benefit. The header is a single line and the content starts after the
     /// first newline, so the split is unambiguous even when the file itself
     /// begins with `{`.
-    static func render(_ result: FileReadResult) -> String {
+    private static func renderWhole(_ result: FileReadResult) -> String {
         var header: [String] = [
             "\"path\":\(quoted(result.path.value))",
             "\"bytes\":\(result.byteCount)",
@@ -152,7 +340,7 @@ public struct CreateFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Create \(input["path"]?.stringValue ?? "?")"
@@ -202,7 +390,7 @@ public struct WriteFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Write \(input["path"]?.stringValue ?? "?")"
@@ -253,7 +441,7 @@ public struct ApplyPatchTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Edit \(input["path"]?.stringValue ?? "?")"
@@ -309,7 +497,7 @@ public struct DeleteFileTool: CodeTool {
     /// revertible, and a session the user set to full access is one that may
     /// refactor files away. Escaping the folder is `destructive` and still asks;
     /// `WorkspaceAccess` is what keeps `path` inside it.
-    public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.critical, input) }
 
     public func summary(input: JSONValue) -> String {
         "Delete \(input["path"]?.stringValue ?? "?")"
@@ -345,7 +533,7 @@ public struct MoveFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input, fields: ["from", "to"]) }
 
     public func summary(input: JSONValue) -> String {
         "Move \(input["from"]?.stringValue ?? "?") → \(input["to"]?.stringValue ?? "?")"

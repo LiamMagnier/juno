@@ -23,6 +23,8 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { applyChatSkill, type ChatSkillCapabilities, type ChatSkillOutcome } from "@/lib/chat/skills";
+import { skillIsAvailable } from "@/lib/skills/library-contract";
+import { scanSkillVersion } from "@/lib/work/skill-security";
 import { parseRequestedTools, parseSkillContract, type SkillCandidate } from "@/lib/work/skills";
 
 /**
@@ -37,7 +39,11 @@ import { parseRequestedTools, parseSkillContract, type SkillCandidate } from "@/
  * `deletedAt: null` is part of the lookup and not a filter afterwards. A
  * soft-deleted skill's rows survive because a run from last month references
  * one of its versions; invoking it by name should say it does not exist,
- * because to the user it does not.
+ * because to the user it does not. `kind: "skill"` likewise: an assistant
+ * shares the table and its slug, and is not something a slash invokes.
+ *
+ * A skill whose source is switched off reaches `selectSkillBySlug` as
+ * disabled, so it is refused with the same reason as its own switch.
  */
 export async function loadChatSkill(input: {
   userId: string;
@@ -47,7 +53,7 @@ export async function loadChatSkill(input: {
   capabilities: ChatSkillCapabilities;
 }): Promise<ChatSkillOutcome> {
   const row = await prisma.workSkill.findFirst({
-    where: { userId: input.userId, slug: input.slug, deletedAt: null },
+    where: { userId: input.userId, slug: input.slug, deletedAt: null, kind: "skill" },
     select: {
       id: true,
       slug: true,
@@ -58,6 +64,8 @@ export async function loadChatSkill(input: {
       autoSelect: true,
       currentVersion: true,
       projectId: true,
+      sourceId: true,
+      source: { select: { enabled: true } },
     },
   });
   if (!row) {
@@ -75,7 +83,7 @@ export async function loadChatSkill(input: {
     slug: row.slug,
     name: row.name,
     description: row.description,
-    enabled: row.enabled,
+    enabled: skillIsAvailable(row, row.source),
     trust: row.trust,
     autoSelect: row.autoSelect,
     currentVersion: row.currentVersion,
@@ -85,7 +93,7 @@ export async function loadChatSkill(input: {
   // The version is read only once the head row exists, so a disabled skill
   // costs one query rather than two. `selectSkillBySlug` will refuse it below
   // either way; this just does not pay for the refusal twice.
-  const version = row.enabled
+  const version = candidate.enabled
     ? await prisma.workSkillVersion.findUnique({
         where: { skillId_version: { skillId: row.id, version: row.currentVersion } },
         select: {
@@ -99,19 +107,40 @@ export async function loadChatSkill(input: {
       })
     : null;
 
+  const contract = version ? parseSkillContract(version.contract) : null;
+  const requestedTools = version ? parseRequestedTools(version.requestedTools) : [];
+
+  // A version from before the scanner existed still reads `pending`. It is
+  // scanned here, as the Work runner scans it at its own boundary, rather than
+  // either refused (every such skill would stop working in chat) or let
+  // through unread (which is what used to happen). The verdict is not written
+  // back: this runs in private mode too, which leaves no trace, and the runner
+  // or the next edit persists it.
+  const securityStatus =
+    version && contract && version.securityStatus === "pending"
+      ? scanSkillVersion({
+          name: row.name,
+          description: row.description,
+          instructions: version.instructions,
+          requestedTools,
+          contract,
+        }).status
+      : version?.securityStatus;
+
   return applyChatSkill({
     slug: input.slug,
     candidates: [candidate],
-    version: version
-      ? {
-          version: version.version,
-          instructions: version.instructions,
-          contract: parseSkillContract(version.contract),
-          requestedTools: parseRequestedTools(version.requestedTools),
-          securityStatus: version.securityStatus,
-          requiresConsent: version.requiresConsent,
-        }
-      : null,
+    version:
+      version && contract && securityStatus
+        ? {
+            version: version.version,
+            instructions: version.instructions,
+            contract,
+            requestedTools,
+            securityStatus,
+            requiresConsent: version.requiresConsent,
+          }
+        : null,
     capabilities: input.capabilities,
     wrapUntrusted,
   });

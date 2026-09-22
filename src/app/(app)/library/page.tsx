@@ -1,658 +1,169 @@
 "use client";
 
 import * as React from "react";
-import { FilePreview } from "@/components/chat/file-preview";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  History,
-  LayoutGrid,
-  List as ListIcon,
-  MessageCircle,
-  Search,
-  type IconComponent,
-} from "@/components/ui/icons";
+import { ArrowLeft, Search, Upload } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MENU_W } from "@/components/ui/menu-recipe";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card } from "@/components/ui/card";
-import { Pressable } from "@/components/ui/pressable";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { cn, formatBytes } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-
-interface LibItem {
-  id: string;
-  kind: "IMAGE" | "FILE";
-  fileName: string;
-  mimeType: string;
-  size: number;
-  url: string;
-  createdAt: string;
-  conversationId: string | null;
-  version: number;
-  versionCount: number;
-  origin: string;
-  parserState: string;
-  parserVersion: string | null;
-  deletedAt: string | null;
-}
-
-interface LibVersion {
-  version: number;
-  current: boolean;
-  origin: string;
-  fileName: string;
-  mimeType: string;
-  size: number;
-  parserState: string;
-  createdAt: string;
-  url: string;
-}
-
-type LibraryFilter = "all" | LibItem["kind"];
-type LibraryView = "list" | "grid";
-type LibrarySort = "newest" | "oldest" | "name" | "size";
+import { useApp } from "@/components/app/app-provider";
+import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
+import { FileVersionsDialog, RenameFileDialog } from "@/components/library/library-dialogs";
+import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
+import { LibraryStorageCaption, LibraryToolbar, LibraryToolbarSkeleton } from "@/components/library/library-toolbar";
+import type { LibraryItem, LibraryKind, LibrarySort, LibraryView } from "@/components/library/library-types";
+import { useLibrary } from "@/components/library/use-library";
+import { useLibraryUploads } from "@/components/library/use-library-uploads";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { PLANS } from "@/lib/plans";
+import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 
 const LIBRARY_VIEW_STORAGE_KEY = "juno-library-view";
 
-const TABS: { key: LibraryFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "IMAGE", label: "Images" },
-  { key: "FILE", label: "Files" },
-];
+/** Long enough to let a word finish, short enough to feel like it answered the typing. */
+const SEARCH_DEBOUNCE_MS = 200;
 
-const SORTS: { key: LibrarySort; label: string }[] = [
-  { key: "newest", label: "Newest first" },
-  { key: "oldest", label: "Oldest first" },
-  { key: "name", label: "Name" },
-  { key: "size", label: "Largest first" },
-];
+/** How long the first page's rows take to be dealt out; after it, rows simply appear. */
+const REVEAL_MS = 600;
 
-/** Checkbox · name · type · size · added · actions. The row and its header
- *  share one template so the columns line up without a table.
- *
- *  Stepped on the CONTENT COLUMN (`page`), not the window. The six-track
- *  template reserves 476px of fixed columns, and keyed to `md:` it arrived at
- *  a 768px WINDOW — where, with the sidebar in flow, the column is 704 and the
- *  name gets 172px, 116 after its thumbnail. Worse, the name column SHRANK as
- *  the window grew: 1023 (sidebar floating, column 911) gave it ~411px; 1024
- *  (sidebar pushing, column 720) gave it 172. The sixth track now waits for a
- *  64rem column; the five-track step keeps its 640, which inside the shell was
- *  never a window number to begin with. Every per-cell `hidden`/`block` gate
- *  below rides the same two queries, or a cell lands in the wrong track. */
-const browserGrid =
-  "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-3 @[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] @5xl/page:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
-
-/**
- * The house row: flat at rest, a tonal fill under the pointer. The 1px border
- * is transparent so the selected state (a fill WITH an edge — PREMIUM_AUDIT
- * §2d) can arrive without the row changing size.
- */
-const rowClass =
-  "group/row rounded-control border border-transparent px-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
-
-function typeLabel(item: LibItem) {
-  const extension = item.fileName.includes(".") ? item.fileName.split(".").pop()?.trim() : "";
-  if (extension && extension.length <= 8) return extension.toUpperCase();
-  return item.kind === "IMAGE" ? "Image" : "File";
-}
-
-function countFor(items: LibItem[], filter: LibraryFilter) {
-  return filter === "all" ? items.length : items.filter((item) => item.kind === filter).length;
-}
-
-function compare(sort: LibrarySort): (a: LibItem, b: LibItem) => number {
-  switch (sort) {
-    case "oldest":
-      return (a, b) => a.createdAt.localeCompare(b.createdAt);
-    case "name":
-      return (a, b) => a.fileName.localeCompare(b.fileName, undefined, { sensitivity: "base", numeric: true });
-    case "size":
-      return (a, b) => b.size - a.size;
-    default:
-      return (a, b) => b.createdAt.localeCompare(a.createdAt);
-  }
-}
-
-/** The two view modes, as the segmented control's options. */
-const VIEW_OPTIONS = [
-  { value: "list" as const, label: "List", icon: <ListIcon className="size-3.5" /> },
-  { value: "grid" as const, label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
-];
-
-/**
- * The shared Checkbox, stopped from reaching whatever it sits on: a grid tile's
- * thumbnail link and a list row both have their own click.
- */
-function SelectCheck({
-  checked,
-  onClick,
-  label,
-  className,
-}: {
-  /** `"mixed"` for a select-all standing over a partially selected set. */
-  checked: boolean | "mixed";
-  onClick: () => void;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <Checkbox
-      checked={checked === "mixed" ? "indeterminate" : checked}
-      onCheckedChange={onClick}
-      onClick={(event) => event.stopPropagation()}
-      aria-label={label}
-      className={className}
-    />
-  );
-}
-
-function ItemPreview({ item }: { item: LibItem }) {
-  const preview = (
-    <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
-  );
-  // An inset well for the thumbnail, so the picture reads as set into the row
-  // rather than pasted on it.
-  const className = "group/preview surface-inset relative size-11 shrink-0 overflow-hidden rounded-field";
-  return item.deletedAt ? (
-    <div className={className} aria-label={`${item.fileName} is deleted`}>{preview}</div>
-  ) : (
-    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className={className}>
-      {preview}
-    </a>
-  );
-}
-
-/**
- * One trailing row action. The glyph's hover gesture is its own — the pencil
- * tilts, the bin lifts, the restore arrow turns back (`data-motion` in
- * icons.tsx). This used to add a second, hand-rolled translate/rotate per
- * action on top of that, and the two stacked into one lurch.
- */
-function ItemAction({
-  icon: Icon,
-  label,
-  onClick,
-  tone,
-}: {
-  icon: IconComponent;
-  label: string;
-  onClick: () => void;
-  tone?: "danger";
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={label}
-      title={label}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onClick();
-      }}
-      className={cn("text-muted-foreground", tone === "danger" ? "danger-hover" : "hover:text-foreground")}
-    >
-      <Icon className="size-4" />
-    </Button>
-  );
-}
-
-function DownloadAction({ item }: { item: LibItem }) {
-  if (item.deletedAt) return null;
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      asChild
-      className="text-muted-foreground hover:text-foreground"
-    >
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        download={item.fileName}
-        aria-label={`Download ${item.fileName}`}
-        title="Download"
-      >
-        <ActionIcons.download className="size-4" />
-      </a>
-    </Button>
-  );
-}
-
-function VersionsDialog({
-  item,
-  open,
-  onOpenChange,
-  onRestored,
-}: {
-  item: LibItem | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onRestored: () => void;
-}) {
-  const [versions, setVersions] = React.useState<LibVersion[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [restoring, setRestoring] = React.useState<number | null>(null);
-
+function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = React.useState(value);
   React.useEffect(() => {
-    if (!open || !item) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/attachments/${item.id}/versions`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error();
-        return (await response.json()) as { versions?: LibVersion[] };
-      })
-      .then((data) => {
-        if (!cancelled) setVersions(data.versions ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error("Couldn’t load file versions.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, item]);
-
-  const restore = async (version: LibVersion) => {
-    if (!item || version.current) return;
-    setRestoring(version.version);
-    try {
-      const response = await fetch(`/api/attachments/${item.id}/versions/${version.version}/restore`, { method: "POST" });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "Couldn’t restore that version.");
-      toast.success(`Restored version ${version.version}.`);
-      onOpenChange(false);
-      onRestored();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Couldn’t restore that version.");
-    } finally {
-      setRestoring(null);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>File versions</DialogTitle>
-          <DialogDescription>{item?.fileName ?? ""} — prior bytes remain recoverable.</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-72 space-y-2 overflow-y-auto">
-          {loading ? (
-            // A skeleton in the shape of the rows, not the word "Loading".
-            <div className="space-y-2" role="status" aria-label="Loading versions">
-              {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-14 rounded-field" style={staggerDelay(i, "tight")} />
-              ))}
-            </div>
-          ) : versions.length === 0 ? (
-            <EmptyState size="panel" icon={History} title="No saved versions yet" description="Re-uploading this file keeps the bytes it replaces." />
-          ) : (
-            versions.map((version) => (
-              <div key={version.version} className="surface-inset flex items-center gap-3 rounded-field px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-ui font-medium">
-                    v{version.version} {version.current ? "· current" : ""}
-                  </p>
-                  <p className="truncate font-mono text-caption tabular-nums text-muted-foreground">
-                    {version.fileName} · {formatBytes(version.size)} · {timeAgo(version.createdAt)}
-                  </p>
-                </div>
-                {!version.current && (
-                  <Button size="sm" variant="secondary" onClick={() => restore(version)} disabled={restoring !== null}>
-                    {restoring === version.version ? "Restoring…" : "Restore"}
-                  </Button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+    const timer = window.setTimeout(() => setSettled(value), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
 }
 
-function MobileItemMenu({
-  item,
-  onRename,
-  onDelete,
-  onRestore,
-  onVersions,
-  triggerClassName,
-  triggerVariant,
-}: {
-  item: LibItem;
-  onRename: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
-  onVersions: () => void;
-  triggerClassName?: string;
-  /** `secondary` when the trigger floats over a thumbnail and needs its own plate. */
-  triggerVariant?: "ghost" | "secondary";
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant={triggerVariant ?? "ghost"}
-          size="icon-sm"
-          aria-label={`Actions for ${item.fileName}`}
-          title="More actions"
-          className={cn("text-muted-foreground", triggerClassName ?? "@[40rem]/page:hidden")}
-        >
-          <ActionIcons.more className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className={MENU_W}>
-        {item.deletedAt ? (
-          <DropdownMenuItem onSelect={onRestore}>
-            <ActionIcons.restore /> Restore
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem onSelect={onRename}>
-            <ActionIcons.edit /> Rename
-          </DropdownMenuItem>
-        )}
-        {item.versionCount > 0 && <DropdownMenuItem onSelect={onVersions}><History /> Versions</DropdownMenuItem>}
-        {!item.deletedAt && (
-          <DropdownMenuItem asChild>
-            <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
-              <ActionIcons.download /> Download
-            </a>
-          </DropdownMenuItem>
-        )}
-        {item.conversationId && (
-          <DropdownMenuItem asChild>
-            <Link href={`/chat/${item.conversationId}`}>
-              <MessageCircle /> Open source chat
-            </Link>
-          </DropdownMenuItem>
-        )}
-        {!item.deletedAt && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDelete} variant="destructive">
-              <ActionIcons.delete /> Delete
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function GridItemPreview({ item }: { item: LibItem }) {
-  // `sizes` can only speak in window widths, so it says the one true thing it
-  // can: below 640 there is no sidebar and a tile is half the window; above it
-  // the tile grid steps on the content column (3-up from 40rem, 4-up from
-  // 64rem, a `max-w-5xl` page), which caps a tile near 320px however wide the
-  // window is. The old `33vw`/`25vw` rungs were keyed to a 1024 WINDOW and
-  // fetched a 480px image for a 156px tile.
-  const preview = <FilePreview item={item} className="size-full" sizes="(max-width: 639px) 50vw, 20rem" />;
-  return item.deletedAt ? (
-    <div className="group/preview block size-full" aria-label={`${item.fileName} is deleted`}>{preview}</div>
-  ) : (
-    // This link FILLS a well that clips at rounded-field, so an outline drawn
-    // 2px outside it is cut away entirely and focus would be invisible. Inset
-    // ring, radius matched to the clip.
-    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:rounded-field focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-      {preview}
-    </a>
-  );
-}
-
-function LibraryGridItem({
-  item,
-  index,
-  selected,
-  onToggleSelect,
-  onRename,
-  onDelete,
-  onRestore,
-  onVersions,
-}: {
-  item: LibItem;
-  index: number;
-  selected: boolean;
-  onToggleSelect: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
-  onVersions: () => void;
-}) {
-  return (
-    <Card
-      variant="interactive"
-      role="listitem"
-      aria-label={item.fileName}
-      style={staggerDelay(index, "base")}
-      className={cn(
-        // Tonal hover comes from the interactive variant: the tile takes a shade, it does not lift.
-        "group/card flex min-w-0 flex-col p-3 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
-        // Selection is a border, not a second shadow: the raised tile keeps its
-        // own depth and the hairline turns to ink.
-        selected && "border-foreground/40 hover:border-foreground/40"
-      )}
-    >
-      {/* The thumbnail sits on an inset well — recessed into the raised tile and
-          struck from the same centre: the tile is `rounded-card` (16) with `p-3`
-          (12), so the well is 16 − 12 = 4. It said `rounded-field` (12) under a
-          comment claiming "16 − 12 ≈ field 12", which is not what 16 − 12 is —
-          the well's corners were three times rounder than the geometry allows
-          and the tile stopped reading as a frame around a picture. */}
-      <div className="surface-inset relative aspect-square overflow-hidden rounded-sm">
-        <GridItemPreview item={item} />
-        <div
-          className={cn(
-            "absolute left-2 top-2 z-10 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 coarse:opacity-100",
-            !selected && "opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100"
-          )}
-        >
-          <SelectCheck
-            checked={selected}
-            onClick={onToggleSelect}
-            label={selected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
-            className="shadow-pop"
-          />
-        </div>
-        <MobileItemMenu
-          item={item}
-          onRename={onRename}
-          onDelete={onDelete}
-          onRestore={onRestore}
-          onVersions={onVersions}
-          triggerVariant="secondary"
-          triggerClassName="absolute right-2 top-2 z-10 opacity-0 transition-opacity duration-fast ease-out-soft group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
-        />
-      </div>
-
-      <div className="flex min-w-0 items-start gap-2 pt-3">
-        <div className="min-w-0 flex-1">
-          {item.deletedAt ? (
-            <p className="block truncate text-ui font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
-              {item.fileName}
-            </p>
-          ) : (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={item.fileName}
-              className="block truncate text-ui font-medium underline-offset-4 hover:underline"
-            >
-              {item.fileName}
-            </a>
-          )}
-          <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground">
-            {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
-          </p>
-        </div>
-        {item.conversationId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            asChild
-            className="-mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <Link
-              href={`/chat/${item.conversationId}`}
-              aria-label={`Open source chat for ${item.fileName}`}
-              title="Open source chat"
-            >
-              <MessageCircle className="size-3.5" />
-            </Link>
-          </Button>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-function LoadingBrowser({ view }: { view: LibraryView }) {
-  if (view === "grid") {
-    return (
-      <div
-        className="mt-5 grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @5xl/page:grid-cols-4"
-        aria-label="Loading files"
-      >
-        {[...Array(8)].map((_, index) => (
-          <Card
-            key={index}
-            className="p-3 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(index, "base")}
-          >
-            {/* Same 4px as the real well it stands in for, so the skeleton does
-                not resolve into a differently-shaped tile. */}
-            <Skeleton className="aspect-square rounded-sm" />
-            <Skeleton className="mt-3 h-3 w-3/4 rounded-xs" />
-            <Skeleton className="mt-2 h-2.5 w-1/2 rounded-xs" />
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="surface-inset mt-5 rounded-card p-1.5" aria-label="Loading files">
-      <div className={cn(browserGrid, "h-9 px-3")}>
-        <Skeleton className="size-4.5 rounded-xs" />
-        <Skeleton className="h-2.5 w-16 rounded-xs" />
-      </div>
-      {[...Array(6)].map((_, index) => (
-        <div key={index} className={cn(browserGrid, "min-h-[68px] px-3")}>
-          <Skeleton className="size-4.5 rounded-xs" style={staggerDelay(index, "tight")} />
-          <span className="flex items-center gap-3">
-            <Skeleton className="size-11 shrink-0 rounded-field" style={staggerDelay(index, "tight")} />
-            <span className="min-w-0 flex-1 space-y-2">
-              <Skeleton className="block h-3 w-32 max-w-full rounded-xs" />
-              <Skeleton className="block h-2.5 w-20 rounded-xs" />
-            </span>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
+/**
+ * /library: every file and image the reader has uploaded or shared in chat.
+ *
+ * The page is the composition; the parts live in `components/library`, where
+ * the list, the dialogs and the drop overlay are presentational and the two
+ * hooks own the data (`useLibrary`) and the uploads (`useLibraryUploads`).
+ * That split is also what lets `/dev/library` draw every state of this page
+ * from fixtures.
+ */
 export default function LibraryPage() {
-  const [items, setItems] = React.useState<LibItem[] | null>(null);
-  const [error, setError] = React.useState(false);
-  const [tab, setTab] = React.useState<LibraryFilter>("all");
+  const { quota } = useApp();
   const [query, setQuery] = React.useState("");
+  const q = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS);
+  const [kind, setKind] = React.useState<LibraryKind>("all");
   const [sort, setSort] = React.useState<LibrarySort>("newest");
   const [view, setView] = React.useState<LibraryView>("list");
-  const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [renameTarget, setRenameTarget] = React.useState<LibItem | null>(null);
-  const [renameValue, setRenameValue] = React.useState("");
-  const [deleteTargets, setDeleteTargets] = React.useState<LibItem[] | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [showDeleted, setShowDeleted] = React.useState(false);
-  const [versionsTarget, setVersionsTarget] = React.useState<LibItem | null>(null);
-  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [deletedView, setDeletedView] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
+  const [renameTarget, setRenameTarget] = React.useState<LibraryItem | null>(null);
+  const [versionsTarget, setVersionsTarget] = React.useState<LibraryItem | null>(null);
+  const fileInput = React.useRef<HTMLInputElement>(null);
 
-  const load = React.useCallback(async (append = false, cursor: string | null = null) => {
-    setError(false);
-    if (append) setLoadingMore(true);
-    try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (showDeleted) params.set("includeDeleted", "true");
-      if (cursor) params.set("cursor", cursor);
-      const response = await fetch(`/api/library?${params.toString()}`);
-      if (!response.ok) throw new Error();
-      const data = await response.json();
-      setItems((previous) => (append ? [...(previous ?? []), ...(data.items ?? [])] : data.items ?? []));
-      setNextCursor(data.nextCursor ?? null);
-    } catch {
-      setError(true);
-      if (!append) setItems([]);
-    } finally {
-      if (append) setLoadingMore(false);
+  const library = useLibrary({ q, kind, sort, deleted: deletedView });
+
+  const clearFilters = React.useCallback(() => {
+    setQuery("");
+    setKind("all");
+  }, []);
+
+  const maxBytes = PLANS[quota.plan].maxUploadMb * 1024 * 1024;
+  const { addUploaded } = library;
+  const uploads = useLibraryUploads({
+    maxBytes,
+    onUploaded: React.useCallback(
+      (attachment) => {
+        if (addUploaded(attachment)) return;
+        // In the library, but not in the list on screen: say where it went
+        // instead of letting a successful upload look like a lost one.
+        toast.message("Uploaded. Your filters are hiding it.", {
+          action: {
+            label: "Show",
+            onClick: () => {
+              setDeletedView(false);
+              clearFilters();
+            },
+          },
+        });
+      },
+      [addUploaded, clearFilters],
+    ),
+  });
+
+  const { dragging, handlers } = useFileDrop({ onFiles: uploads.add, enabled: !deletedView });
+
+  // Deal the first page out; after that rows appear as they arrive. A search
+  // result replacing another is a swap, not a reveal.
+  const [revealed, setRevealed] = React.useState(false);
+  React.useEffect(() => {
+    if (library.items === null) {
+      setRevealed(false);
+      return;
     }
-  }, [showDeleted]);
-
-  React.useEffect(() => {
-    setNextCursor(null);
-    load();
-  }, [load]);
+    if (revealed) return;
+    const timer = window.setTimeout(() => setRevealed(true), REVEAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [library.items, revealed]);
 
   React.useEffect(() => {
     try {
-      const savedView = window.localStorage.getItem(LIBRARY_VIEW_STORAGE_KEY);
-      if (savedView === "list" || savedView === "grid") setView(savedView);
+      const saved = window.localStorage.getItem(LIBRARY_VIEW_STORAGE_KEY);
+      if (saved === "list" || saved === "grid") setView(saved);
     } catch {
       // Storage can be unavailable in hardened browsing modes; list remains the safe default.
     }
   }, []);
 
-  const libraryItems = items ?? [];
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filtered = libraryItems
-    .filter(
-      (item) =>
-        (tab === "all" || item.kind === tab) &&
-        (!normalizedQuery ||
-          item.fileName.toLocaleLowerCase().includes(normalizedQuery) ||
-          item.mimeType.toLocaleLowerCase().includes(normalizedQuery))
-    )
-    .sort(compare(sort));
-  const loading = items === null;
-  const libraryEmpty = !loading && libraryItems.length === 0;
-  const noResults = !loading && !libraryEmpty && filtered.length === 0;
-  const selectedItems = libraryItems.filter((item) => selected.has(item.id));
-  const allSelected = filtered.length > 0 && filtered.every((item) => selected.has(item.id));
-  const someSelected = !allSelected && filtered.some((item) => selected.has(item.id));
-  const totalSize = libraryItems.reduce((sum, item) => sum + item.size, 0);
+  const changeView = (next: LibraryView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(LIBRARY_VIEW_STORAGE_KEY, next);
+    } catch {
+      // The in-memory preference still works when local storage is unavailable.
+    }
+  };
+
+  const switchView = (deleted: boolean) => {
+    setSelected(new Set());
+    setDeletedView(deleted);
+  };
+
+  // Loading more as the end of the list comes into view. The button under it
+  // stays as the fallback, and as the thing a keyboard reaches.
+  const sentinel = React.useRef<HTMLDivElement>(null);
+  const { hasMore, loadMore } = library;
+  React.useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
+
+  const items = library.items ?? [];
+  const pendingUploads = deletedView ? [] : uploads.uploads;
+  const loading = library.items === null && !library.error;
+  const filtered = q.length > 0 || kind !== "all";
+  const libraryEmpty = !loading && library.total === 0 && pendingUploads.length === 0;
+  const noResults = !loading && !libraryEmpty && items.length === 0 && pendingUploads.length === 0;
+
+  const selectedItems = items.filter((item) => selected.has(item.id));
+  const allSelected = items.length > 0 && items.every((item) => selected.has(item.id));
+
+  // Rows that left the list (deleted, restored, filtered away) leave the selection too.
+  React.useEffect(() => {
+    if (!library.items) return;
+    setSelected((previous) => {
+      if (previous.size === 0) return previous;
+      const present = new Set(library.items?.map((item) => item.id));
+      const next = new Set([...previous].filter((id) => present.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [library.items]);
 
   const toggleSelect = (id: string) =>
     setSelected((previous) => {
@@ -662,560 +173,223 @@ export default function LibraryPage() {
       return next;
     });
 
-  const clearSelection = () => setSelected(new Set());
+  const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(items.map((item) => item.id)));
 
-  const toggleSelectAll = () =>
-    setSelected((previous) => {
-      const next = new Set(previous);
-      filtered.forEach((item) => {
-        if (allSelected) next.delete(item.id);
-        else next.add(item.id);
-      });
-      return next;
-    });
-
-  const clearFilters = () => {
-    setTab("all");
-    setQuery("");
+  const browserProps = {
+    items,
+    uploads: pendingUploads,
+    selected,
+    deletedView,
+    stagger: !revealed,
+    onToggleSelect: toggleSelect,
+    onRename: setRenameTarget,
+    onDelete: (item: LibraryItem) => library.deleteItems([item]),
+    onRestore: (item: LibraryItem) => void library.restoreItems([item]),
+    onVersions: setVersionsTarget,
+    onRetryUpload: uploads.retry,
+    onDismissUpload: uploads.dismiss,
   };
 
-  const changeView = (nextView: LibraryView) => {
-    setView(nextView);
-    try {
-      window.localStorage.setItem(LIBRARY_VIEW_STORAGE_KEY, nextView);
-    } catch {
-      // The in-memory preference still works when local storage is unavailable.
-    }
-  };
-
-  const openRename = (item: LibItem) => {
-    setRenameValue(item.fileName);
-    setRenameTarget(item);
-  };
-
-  const doRename = async () => {
-    if (!renameTarget) return;
-    const name = renameValue.trim();
-    if (!name || name === renameTarget.fileName) {
-      setRenameTarget(null);
-      return;
-    }
-    setBusy(true);
-    try {
-      const response = await fetch(`/api/attachments/${renameTarget.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: name }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "Couldn’t rename.");
-      setItems(
-        (previous) =>
-          previous?.map((item) =>
-            item.id === renameTarget.id ? { ...item, fileName: data.fileName ?? name } : item
-          ) ?? previous
-      );
-      toast.success("Renamed.");
-      setRenameTarget(null);
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Couldn’t rename.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doDelete = async () => {
-    if (!deleteTargets || deleteTargets.length === 0) return;
-    const ids = deleteTargets.map((target) => target.id);
-    setBusy(true);
-    const results = await Promise.allSettled(
-      ids.map((id) =>
-        fetch(`/api/attachments/${id}`, { method: "DELETE" }).then((response) => {
-          if (!response.ok) throw new Error();
-          return id;
-        })
-      )
-    );
-    const okIds = new Set(results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
-    setItems((previous) => previous?.filter((item) => !okIds.has(item.id)) ?? previous);
-    setSelected((previous) => {
-      const next = new Set(previous);
-      okIds.forEach((id) => next.delete(id));
-      return next;
-    });
-    const failed = ids.length - okIds.size;
-    if (failed) toast.error(`${failed} ${failed === 1 ? "item" : "items"} couldn’t be deleted.`);
-    else toast.success(`Deleted ${okIds.size} ${okIds.size === 1 ? "item" : "items"}.`);
-    setBusy(false);
-    setDeleteTargets(null);
-  };
-
-  const restoreItems = async (targets: LibItem[]) => {
-    if (targets.length === 0) return;
-    setBusy(true);
-    const results = await Promise.allSettled(
-      targets.map((target) =>
-        fetch(`/api/attachments/${target.id}/restore`, { method: "POST" }).then((response) => {
-          if (!response.ok) throw new Error();
-          return target.id;
-        }),
-      ),
-    );
-    const restored = new Set(results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
-    setItems((previous) => previous?.filter((item) => !restored.has(item.id)) ?? previous);
-    const failed = targets.length - restored.size;
-    if (failed) toast.error(`${failed} ${failed === 1 ? "item" : "items"} couldn’t be restored.`);
-    else toast.success(`Restored ${restored.size} ${restored.size === 1 ? "item" : "items"}.`);
-    setSelected((previous) => {
-      const next = new Set(previous);
-      restored.forEach((id) => next.delete(id));
-      return next;
-    });
-    setBusy(false);
-  };
+  const openPicker = () => fileInput.current?.click();
 
   return (
-    <AppPage measure="wide">
-      {/* "Recently deleted" is a MODE, not a filter, so it has to be legible in
-          the heading. */}
-      <AppPageHeader
-        /*
-         * THE NAV ROW AND THE HEADING SAY THE SAME WORD NOW, and the eyebrow
-         * that was standing between them is gone.
-         *
-         * It read "Library" over "Your files", reached from a sidebar row
-         * marked Library — so the page carried two names for one place and
-         * spent a line of chrome above its own title restating the one you had
-         * just clicked. Every other top-level destination (Work, Projects,
-         * Artifacts, Settings) opens with its own name; this was the exception,
-         * and the eyebrow was how it got away with it.
-         */
-        heading={showDeleted ? "Recently deleted" : "Library"}
-        lede={
-          showDeleted
-            ? "Files you delete land here and stay recoverable."
-            : "Images and documents shared across your conversations."
-        }
-        actions={
-          <>
-            {/* Only the byte total up here. The item count used to sit beside
-                it, 24px above the "All" segment in the toolbar, which prints
-                the same `libraryItems.length` — one integer on two adjacent
-                surfaces, and the segment's copy is the better one because it
-                is attached to the control that changes it. load() asks for
-                100 at a time, so until the cursor is spent the byte total is
-                a partial sum that must not be presented as a total. And
-                `!libraryEmpty`: a storage total for nothing stored is a
-                measurement of nothing, stated after the heading and the empty
-                state below have already said so. */}
-            {!loading && !error && !libraryEmpty && !nextCursor && (
-              <p className="hidden font-mono text-caption tabular-nums text-muted-foreground sm:block">
-                {formatBytes(totalSize)}
-              </p>
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setSelected(new Set());
-                setShowDeleted((value) => !value);
-              }}
-              className="shrink-0"
-            >
-              {/* Two destinations, two glyphs: the bin for the place deleted
-                  files go, the back arrow for leaving it. One anticlockwise
-                  arrow for both said "restore", which neither button does. */}
-              {showDeleted ? <ArrowLeft className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
-              {showDeleted ? "Back to library" : "Recently deleted"}
-            </Button>
-          </>
-        }
-      />
-
-      {/*
-        ONLY ONCE THERE IS SOMETHING TO FILTER — the same rule the Projects page
-        already applies to its own toolbar, and for the same reason it gives:
-        rendered unconditionally this put a live "Search files" box, three
-        filter tabs each reading 0, a sort menu and a view toggle — six controls
-        — directly above "Your library is empty". Every one of them acts on a
-        list that does not exist, and the three zeroes state the emptiness a
-        second and third time under a heading that has already said it.
-
-        `libraryEmpty` is the WHOLE library, not the filtered view, so a search
-        that happens to match nothing keeps its toolbar: that reader needs the
-        box they typed into in order to clear it. `noResults` is the state for
-        that, and it is handled below.
-      */}
-      {!error && !libraryEmpty && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
-            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <label htmlFor="library-search" className="sr-only">Search files</label>
-            <Input
-              id="library-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search files"
-              className={cn("pl-9", query && "pr-10")}
-            />
-            {query && (
-              <div className="absolute inset-y-0 right-1 flex items-center">
-                <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search" title="Clear search">
-                  <ActionIcons.dismiss className="size-3.5" />
-                </Pressable>
-              </div>
-            )}
-          </div>
-
-          <SegmentedControl<LibraryFilter>
-            value={tab}
-            onChange={setTab}
-            ariaLabel="Filter files"
-            className="h-9 w-fit max-w-full shrink-0"
-            options={TABS.map((filter) => ({
-              value: filter.key,
-              label: filter.label,
-              count: countFor(libraryItems, filter.key),
-            }))}
-          />
-
-          <Select value={sort} onValueChange={(value) => setSort(value as LibrarySort)}>
-            <SelectTrigger className="w-40 shrink-0" aria-label="Sort files">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORTS.map((option) => (
-                <SelectItem key={option.key} value={option.key}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="ml-auto flex items-center gap-2">
-            {!loading && filtered.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleSelectAll}
-                className={cn("shrink-0 text-muted-foreground", view === "list" && "@[40rem]/page:hidden")}
-              >
-                {allSelected ? "Clear visible" : "Select"}
+    // The drop zone is the whole content column, and the overlay is pinned to
+    // it rather than to the scrolling page, so it covers what is on screen
+    // however far down the list the reader is.
+    <div className="relative h-full" {...handlers}>
+      <AppPage measure="wide">
+        <AppPageHeader
+          // Recently deleted is a MODE, not a filter, so it has to be legible
+          // in the heading.
+          heading={deletedView ? "Recently deleted" : "Files"}
+          lede={deletedView ? "Files you delete land here and can be restored." : "Everything you upload or share in chats."}
+          actions={
+            deletedView ? (
+              <Button variant="secondary" size="sm" onClick={() => switchView(false)}>
+                <ArrowLeft className="size-3.5" />
+                Back to files
               </Button>
-            )}
-            <SegmentedControl
-              value={view}
-              onChange={changeView}
-              options={VIEW_OPTIONS}
-              ariaLabel="File view"
-              className="h-9 shrink-0"
-            />
-          </div>
-        </div>
-      )}
+            ) : (
+              <>
+                {library.storage && !libraryEmpty && (
+                  <LibraryStorageCaption storage={library.storage} className="hidden @[40rem]/page:block" />
+                )}
+                <Button variant="secondary" size="sm" onClick={() => switchView(true)}>
+                  <ActionIcons.delete className="size-3.5" />
+                  Recently deleted
+                </Button>
+                <Button size="sm" onClick={openPicker}>
+                  <Upload className="size-3.5" />
+                  Upload
+                </Button>
+              </>
+            )
+          }
+        />
 
-      {error ? (
-        <EmptyState
-          tone="error"
-          className="mt-6"
-          icon={StatusIcons.error}
-          title="Couldn’t load your library"
-          description="Check your connection and try once more."
-          action={
-            <Button variant="secondary" size="sm" onClick={() => load()}>
-              <ActionIcons.refresh className="size-4" aria-hidden="true" />
-              Try again
-            </Button>
-          }
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          accept={ACCEPT_ATTRIBUTE}
+          onChange={(event) => {
+            if (event.target.files?.length) uploads.add(event.target.files);
+            // Cleared so choosing the same file again still fires a change.
+            event.target.value = "";
+          }}
         />
-      ) : loading ? (
-        <LoadingBrowser view={view} />
-      ) : libraryEmpty && showDeleted ? (
-        // An empty TRASH is not an empty library. No description: the header's
-        // lede, ~180px above on this same screen, already says where deleted
-        // files land, and this used to print that sentence a second time.
-        <EmptyState
-          className="mt-6"
-          icon={AppIcons.library}
-          title="Nothing in Recently deleted"
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              onClick={() => {
-                setSelected(new Set());
-                setShowDeleted(false);
-              }}
-            >
-              Back to library
+
+        {/* Only once there is something to filter: six controls acting on a
+            list that does not exist would state the emptiness three more
+            times above the empty state. A search that matched nothing keeps
+            its toolbar, because the reader needs the box to clear it. */}
+        {loading ? (
+          <LibraryToolbarSkeleton />
+        ) : (
+          !library.error &&
+          !libraryEmpty && (
+            <LibraryToolbar
+              query={query}
+              onQueryChange={setQuery}
+              // From the first keystroke, not only once the request leaves:
+              // the debounce is part of the wait.
+              searching={library.pending || query.trim() !== q}
+              kind={kind}
+              onKindChange={setKind}
+              counts={library.counts}
+              sort={sort}
+              onSortChange={setSort}
+              view={view}
+              onViewChange={changeView}
+              selectToggle={view === "grid" && items.length > 0 ? { allSelected, onToggle: toggleSelectAll } : undefined}
+            />
+          )
+        )}
+
+        <div className="mt-5">
+          {library.error ? (
+            <EmptyState
+              tone="error"
+              icon={StatusIcons.error}
+              title="Couldn’t load your files"
+              description="Check your connection and try again."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => void library.reload()}>
+                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
+                  Try again
+                </Button>
+              }
+            />
+          ) : loading ? (
+            <LibraryBrowserSkeleton view={view} />
+          ) : libraryEmpty && deletedView ? (
+            <EmptyState
+              icon={ActionIcons.delete}
+              title="Nothing in Recently deleted"
+              action={
+                <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => switchView(false)}>
+                  Back to files
+                </Button>
+              }
+            />
+          ) : libraryEmpty ? (
+            <EmptyState
+              icon={AppIcons.library}
+              title="No files yet"
+              description="Upload files here, or drop them anywhere on this page. Files you share in chats are kept here too."
+              action={
+                <>
+                  <Button size="sm" onClick={openPicker}>
+                    <Upload className="size-3.5" />
+                    Upload files
+                  </Button>
+                  <Button variant="ghost" size="sm" asChild className="text-muted-foreground">
+                    <Link href="/chat">Go to chat</Link>
+                  </Button>
+                </>
+              }
+            />
+          ) : noResults ? (
+            <EmptyState
+              size="panel"
+              icon={Search}
+              title="No matching files"
+              description={filtered ? "Try another name, or clear the filter." : undefined}
+              action={
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : view === "grid" ? (
+            <LibraryGrid {...browserProps} />
+          ) : (
+            <LibraryList {...browserProps} onToggleAll={toggleSelectAll} />
+          )}
+        </div>
+
+        {library.hasMore && !loading && !library.error && (
+          <div ref={sentinel} className="mt-5 flex justify-center">
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void library.loadMore()} loading={library.loadingMore}>
+              Load more
             </Button>
-          }
-        />
-      ) : libraryEmpty ? (
-        <EmptyState
-          className="mt-6"
-          icon={AppIcons.library}
-          title="Your library is empty"
-          description="Files and images you share with Juno will appear here automatically."
-          action={
-            <Button variant="secondary" size="sm" asChild>
-              <Link href="/chat">Go to chat</Link>
-            </Button>
-          }
-        />
-      ) : noResults ? (
-        <EmptyState
-          className="mt-6"
-          size="panel"
-          icon={Search}
-          title="No matching files"
-          description="Try another search or remove the current filter."
-          action={
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-              Clear filters
-            </Button>
-          }
-        />
-      ) : view === "grid" ? (
-        <section className="mt-5" aria-label="Files grid">
+          </div>
+        )}
+
+        {selectedItems.length > 0 && (
+          // The bulk bar floats at the bottom of the scroll region while the list
+          // runs past it, and docks under the list when it does not.
           <div
-            role="list"
-            aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}
-            className="grid grid-cols-2 gap-3 @[40rem]/page:grid-cols-3 @[40rem]/page:gap-4 @5xl/page:grid-cols-4"
+            className="surface-float sticky bottom-4 z-toolbar mt-5 flex min-h-12 flex-wrap items-center gap-2 rounded-card py-2 pl-4 pr-2 motion-safe:animate-rise-in"
+            aria-live="polite"
           >
-            {filtered.map((item, i) => (
-              <LibraryGridItem
-                key={item.id}
-                item={item}
-                index={i}
-                selected={selected.has(item.id)}
-                onToggleSelect={() => toggleSelect(item.id)}
-                onRename={() => openRename(item)}
-                onDelete={() => setDeleteTargets([item])}
-                onRestore={() => void restoreItems([item])}
-                onVersions={() => setVersionsTarget(item)}
-              />
-            ))}
+            <span className="text-ui font-medium tabular-nums text-foreground">
+              <span>{selectedItems.length}</span> selected
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              {selectedItems.length === 1 && !deletedView && (
+                <Button variant="ghost" size="sm" onClick={() => setRenameTarget(selectedItems[0])}>
+                  <ActionIcons.edit className="size-3.5" />
+                  Rename
+                </Button>
+              )}
+              {deletedView ? (
+                <Button variant="secondary" size="sm" onClick={() => void library.restoreItems(selectedItems)}>
+                  <ActionIcons.restore className="size-3.5" />
+                  Restore
+                </Button>
+              ) : (
+                <Button variant="destructive-outline" size="sm" onClick={() => library.deleteItems(selectedItems)}>
+                  <ActionIcons.delete className="size-3.5" />
+                  Delete
+                </Button>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" onClick={() => setSelected(new Set())} aria-label="Clear selection">
+                    <ActionIcons.dismiss className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Clear selection</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-        </section>
-      ) : (
-        // Rows inside an inset well: the browser is recessed into the page and
-        // each row lifts out of it on hover; a selected row stays lifted.
-        <section className="surface-inset mt-5 rounded-card p-1.5" aria-label="Files">
-          <div className={cn(browserGrid, "h-9 px-3 font-mono text-caption text-muted-foreground")}>
-            <SelectCheck
-              checked={allSelected ? true : someSelected ? "mixed" : false}
-              onClick={toggleSelectAll}
-              label={allSelected ? "Deselect all visible files" : "Select all visible files"}
-            />
-            <span>Name</span>
-            <span className="hidden @[40rem]/page:block">Type</span>
-            <span className="hidden @5xl/page:block">Size</span>
-            <span className="hidden @[40rem]/page:block">Added</span>
-            <span className="sr-only">Actions</span>
-          </div>
+        )}
 
-          <div role="list" aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}>
-            {filtered.map((item, i) => {
-              const isSelected = selected.has(item.id);
-              return (
-                <article
-                  key={item.id}
-                  role="listitem"
-                  aria-label={item.fileName}
-                  style={staggerDelay(i, "tight")}
-                  className={cn(
-                    browserGrid,
-                    rowClass,
-                    "min-h-[68px] motion-safe:animate-rise-in [animation-fill-mode:backwards]",
-                    // Selected is a fill WITH an edge; hover is the fill
-                    // alone (PREMIUM_AUDIT §2d). It was a raised card — a
-                    // shadow in the flow, which the flat retune retired.
-                    isSelected && "border-border bg-accent hover:border-border"
-                  )}
-                >
-                  <SelectCheck
-                    checked={isSelected}
-                    onClick={() => toggleSelect(item.id)}
-                    label={isSelected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
-                  />
+        <RenameFileDialog
+          item={renameTarget}
+          onOpenChange={(open) => !open && setRenameTarget(null)}
+          onRename={library.renameItem}
+        />
+        <FileVersionsDialog
+          item={versionsTarget}
+          onOpenChange={(open) => !open && setVersionsTarget(null)}
+          onRestored={() => void library.reload()}
+        />
+      </AppPage>
 
-                  <div className="flex min-w-0 items-center gap-3 py-2.5">
-                    <ItemPreview item={item} />
-                    <div className="min-w-0">
-                      {item.deletedAt ? (
-                        <p className="block truncate text-ui font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
-                          {item.fileName}
-                        </p>
-                      ) : (
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate text-ui font-medium text-foreground underline-offset-4 hover:underline"
-                          title={item.fileName}
-                        >
-                          {item.fileName}
-                        </a>
-                      )}
-                      <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground @[40rem]/page:hidden">
-                        {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
-                      </p>
-                      <div className="mt-0.5 hidden min-h-4 items-center font-mono text-caption text-muted-foreground @[40rem]/page:flex">
-                        {item.conversationId ? (
-                          <Link
-                            href={`/chat/${item.conversationId}`}
-                            className="inline-flex items-center gap-1.5 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
-                          >
-                            <MessageCircle className="size-3" />
-                            Open source chat
-                          </Link>
-                        ) : (
-                          <span className="truncate">{item.mimeType}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <span className="hidden font-mono text-caption text-muted-foreground @[40rem]/page:block">{typeLabel(item)}</span>
-                  <span className="hidden font-mono text-caption tabular-nums text-muted-foreground @5xl/page:block">{formatBytes(item.size)}</span>
-                  <time
-                    dateTime={item.createdAt}
-                    title={new Date(item.createdAt).toLocaleString()}
-                    className="hidden font-mono text-caption tabular-nums text-muted-foreground @[40rem]/page:block"
-                  >
-                    {timeAgo(item.createdAt)}
-                  </time>
-
-                  <div className="hidden items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/row:opacity-100 @[40rem]/page:flex coarse:opacity-100">
-                    <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} />
-                    {item.versionCount > 0 && (
-                      <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
-                    )}
-                    <DownloadAction item={item} />
-                    <ItemAction
-                      icon={showDeleted ? ActionIcons.restore : ActionIcons.delete}
-                      label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
-                      tone={showDeleted ? undefined : "danger"}
-                      onClick={() => (showDeleted ? void restoreItems([item]) : setDeleteTargets([item]))}
-                    />
-                  </div>
-                  <MobileItemMenu
-                    item={item}
-                    onRename={() => openRename(item)}
-                    onDelete={() => setDeleteTargets([item])}
-                    onRestore={() => void restoreItems([item])}
-                    onVersions={() => setVersionsTarget(item)}
-                  />
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {nextCursor && !loading && !error && (
-        <div className="mt-5 flex justify-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => load(true, nextCursor)}
-            disabled={loadingMore}
-          >
-            {loadingMore ? "Loading…" : "Load more files"}
-          </Button>
-        </div>
-      )}
-
-      {selectedItems.length > 0 && (
-        // The bulk bar floats at the bottom of the scroll region while the list
-        // runs past it, and docks under the list when it does not.
-        <div
-          className="surface-float sticky bottom-4 z-toolbar mt-5 flex min-h-12 flex-wrap items-center gap-2 rounded-card px-3 py-2 motion-safe:animate-rise-in"
-          aria-live="polite"
-        >
-          <span className="font-mono text-caption tabular-nums text-muted-foreground">
-            {selectedItems.length} selected
-          </span>
-          <div className="ml-auto flex items-center gap-1">
-            {selectedItems.length === 1 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => openRename(selectedItems[0])}
-              >
-                <ActionIcons.edit className="size-3.5" />
-                <span className="hidden sm:inline">Rename</span>
-              </Button>
-            )}
-            <Button
-              variant={showDeleted ? "secondary" : "destructive-outline"}
-              size="sm"
-              onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
-            >
-              {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
-              <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
-            </Button>
-            <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection" title="Clear selection">
-              <ActionIcons.dismiss className="size-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Rename file</DialogTitle>
-            <DialogDescription>Give this file a clearer name.</DialogDescription>
-          </DialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(event) => setRenameValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") doRename();
-            }}
-            autoFocus
-            aria-label="File name"
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenameTarget(null)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button onClick={doRename} disabled={busy || !renameValue.trim()}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <VersionsDialog
-        item={versionsTarget}
-        open={!!versionsTarget}
-        onOpenChange={(open) => !open && setVersionsTarget(null)}
-        onRestored={() => void load()}
-      />
-
-      <Dialog open={!!deleteTargets} onOpenChange={(open) => !open && setDeleteTargets(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete {deleteTargets?.length === 1 ? "this file" : `${deleteTargets?.length} files`}?</DialogTitle>
-            <DialogDescription>
-              This moves {deleteTargets?.length === 1 ? "it" : "them"} to Recently deleted. You can restore the original bytes later.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTargets(null)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={doDelete} disabled={busy}>
-              {busy ? "Deleting…" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </AppPage>
+      <LibraryDropOverlay open={dragging} />
+    </div>
   );
 }

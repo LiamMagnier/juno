@@ -71,27 +71,26 @@ final class JunoDesktopCodeScreenshotUITests: XCTestCase {
     func testNewTaskScreen() {
         let app = launch([])
         XCTAssertTrue(app.textFields["juno.code.launch-prompt"].waitForExistence(timeout: 12))
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.starter-tasks"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.draft-context"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-contract"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-model"].exists)
-        save("01-new-task")
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-project"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.launch-target"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.composer.mode"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.composer.model"].exists)
+        save("01-new-session")
     }
 
-    func testThreadWithWorkedForGroupsAndRail() {
+    func testThreadWithWorkedForGroupsAndPanel() {
         let app = launch([
             "--juno-preview-code-session",
             "--juno-code-preview-scenario", "transcript",
-            "--juno-preview-inspector",
         ])
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.code.transcript.work-log"]
                 .firstMatch.waitForExistence(timeout: 8)
         )
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.inspector.pane"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.environment.changes"].exists)
-        save("02-thread-rail")
+        app.buttons["juno.code.review.toggle"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.panel"].waitForExistence(timeout: 5))
+        save("02-thread-panel")
 
         // Open the work log so the grouped rows are on screen.
         let log = app.descendants(matching: .any)["juno.code.transcript.work-log"].firstMatch
@@ -103,7 +102,6 @@ final class JunoDesktopCodeScreenshotUITests: XCTestCase {
         let app = launch([
             "--juno-preview-code-session",
             "--juno-code-preview-scenario", "approval",
-            "--juno-preview-inspector",
         ])
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
         XCTAssertTrue(app.buttons["juno.code.approval.approve"].waitForExistence(timeout: 8))
@@ -116,11 +114,11 @@ final class JunoDesktopCodeScreenshotUITests: XCTestCase {
             "--juno-code-preview-scenario", "diffs",
         ])
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
-        let review = app.buttons["juno.code.thread.rail.review"]
+        let review = app.buttons["juno.code.review.toggle"]
         XCTAssertTrue(review.waitForExistence(timeout: 8))
         review.click()
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.review.pane"].waitForExistence(timeout: 8))
-        save("05-review-pane")
+        XCTAssertTrue(app.descendants(matching: .any)["juno.code.panel"].waitForExistence(timeout: 8))
+        save("05-changes-panel")
     }
 
     /// The Chat column with a destination row selected *and the list holding
@@ -140,7 +138,6 @@ final class JunoDesktopCodeScreenshotUITests: XCTestCase {
         let app = launch([
             "--juno-preview-code-session",
             "--juno-code-preview-scenario", "streaming",
-            "--juno-preview-inspector",
         ])
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
         save("06-streaming-subagents")

@@ -292,6 +292,14 @@ public enum CodeThinkingWire {
     /// Sonnet 5 defaults on; Opus 4.7/4.8 default off. Fable, Mythos and Opus
     /// 5.5 are always-on and reject `disabled` outright, which is why they must
     /// not be listed here.
+    /// True for the models that run adaptive thinking when `thinking` is
+    /// omitted, so `{"type": "adaptive"}` with no effort asks for exactly what
+    /// omission would: Fable, Mythos, and Opus 5 / 5.5.
+    static func thinksWhenOmitted(_ providerModelID: String) -> Bool {
+        let id = providerModelID.lowercased()
+        return id.contains("fable") || id.contains("mythos") || id.contains("opus-5")
+    }
+
     static func adaptiveDefaultsOn(_ providerModelID: String) -> Bool {
         let id = providerModelID.lowercased()
         if id.contains("fable") || id.contains("mythos") { return false }
