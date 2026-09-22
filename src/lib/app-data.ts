@@ -127,6 +127,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // is TEXT[], so an id written by a newer build (or by hand) must grant
     // nothing here rather than render as a switch this build cannot name.
     memorySensitiveTopics: normalizeSensitiveTopics(settings?.memorySensitiveTopics),
+    memoryBackgroundLearning: settings?.memoryBackgroundLearning ?? true,
     // Read through the normalizer rather than cast: the column is TEXT, and a
     // value this build does not recognise must show as the safe mode rather
     // than as a blank control the user cannot reason about.

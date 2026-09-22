@@ -4,6 +4,7 @@ import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, ShieldAlert } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RollingNumber } from "@/components/ui/micro";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -40,6 +41,8 @@ interface TopicsViewProps {
   onEdit: (id: string, content: string) => Promise<boolean>;
   onForget: (memory: Memory) => void;
   onDelete: (memory: Memory) => void;
+  /** Offered on the empty state — the moment a newcomer most needs it. */
+  onImport?: () => void;
 }
 
 export function TopicsView({
@@ -50,6 +53,7 @@ export function TopicsView({
   onEdit,
   onForget,
   onDelete,
+  onImport,
 }: TopicsViewProps) {
   const [openId, setOpenId] = React.useState<string | null>(null);
   const reduceMotion = useReducedMotion() ?? false;
@@ -74,7 +78,14 @@ export function TopicsView({
         size="panel"
         icon={MemoryIcons.topic}
         title="No topics yet"
-        description="Juno files what it learns by subject — identity, preferences, the way you work. Chat for a while, or add something yourself."
+        description="Juno files what it learns by subject — identity, preferences, the way you work. Chat for a while, add something yourself, or bring what another assistant already knows."
+        action={
+          onImport && !paused ? (
+            <Button variant="outline" size="sm" onClick={onImport}>
+              Import from ChatGPT or Claude
+            </Button>
+          ) : undefined
+        }
       />
     );
   }

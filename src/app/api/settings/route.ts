@@ -30,6 +30,8 @@ const schema = z.object({
   // unrecognised value stored here would be a permission nobody granted and
   // nothing can revoke from the UI. Deduplicated on write below.
   memorySensitiveTopics: z.array(z.enum(SENSITIVE_TOPICS)).max(SENSITIVE_TOPICS.length).optional(),
+  // Whether the memory dreamer may read older conversations on its own.
+  memoryBackgroundLearning: z.boolean().optional(),
   // Where background work (memory extraction, titles, planning, moderation)
   // may be sent. Validated against the union rather than accepted as free text,
   // so an unknown value cannot be stored and later read as permission to cross
@@ -83,6 +85,7 @@ export async function GET() {
       // web does — a client that assumed "all on" would show memory keeping
       // things the server refuses to keep.
       memorySensitiveTopics: true,
+      memoryBackgroundLearning: true,
       // Exposed so macOS and iOS show the same policy the web does, rather
       // than each client assuming a default.
       backgroundProviderMode: true,
@@ -147,6 +150,9 @@ export async function PATCH(req: Request) {
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),
       ...(d.memorySensitiveTopics !== undefined
         ? { memorySensitiveTopics: [...new Set(d.memorySensitiveTopics)] }
+        : {}),
+      ...(d.memoryBackgroundLearning !== undefined
+        ? { memoryBackgroundLearning: d.memoryBackgroundLearning }
         : {}),
       ...(d.backgroundProviderMode !== undefined
         ? { backgroundProviderMode: d.backgroundProviderMode }

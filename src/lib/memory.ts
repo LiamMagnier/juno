@@ -18,9 +18,13 @@ import {
 } from "@/lib/background-provider-policy";
 import {
   DEFAULT_MEMORY_TOKEN_BUDGET,
+  factsCoveredByForget,
+  memoryForgetActivity,
+  normalizeFact,
   memoryUpdateActivity,
   planFactIngestion,
   selectMemoriesForContext,
+  summaryPredatesForget,
   type LifecycleEntry,
   type MemoryUpdateActivity,
   type RetrievalResult,
@@ -32,6 +36,8 @@ import {
   normalizeSensitiveTopics,
   type SensitiveTopic,
 } from "@/lib/memory-sensitive";
+import { MEMORY_CONTENT_LIMIT, normalizeStatement } from "@/lib/memory-suppression";
+import { CODING_MEMORY_CATEGORIES, selectCodingMemories } from "@/lib/code-memory-prompt";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
 // through, deliberately: a second way of turning usage into money is how an
@@ -471,6 +477,122 @@ export async function getSuppressions(userId: string): Promise<string[]> {
     select: { content: true },
   });
   return rows.map((r) => r.content);
+}
+
+/**
+ * When the account last asked Juno to forget something, or null if never.
+ *
+ * Read on every chat turn that has a summary, so it is one indexed lookup —
+ * `@@index([userId, kind])` narrows to the account's suppressions, which are a
+ * handful of rows, and only the newest timestamp is selected.
+ */
+export async function newestSuppressionAt(userId: string): Promise<Date | null> {
+  const row = await prisma.memoryEntry.findFirst({
+    where: { userId, kind: "SUPPRESSION" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  return row?.createdAt ?? null;
+}
+
+export interface ForgetOutcome {
+  /** The statements recorded as suppressions (new ones only). */
+  statements: string[];
+  /** Active facts retired because a statement covered them. */
+  retired: number;
+}
+
+/**
+ * Forget, from inside a conversation.
+ *
+ * The same act as the memory page's Forget, reached by saying so: every active
+ * fact a statement covers is retired (kept, marked `suppressed`, with a reason —
+ * the trail survives), and the statement is written to the block-list so the
+ * extractor cannot relearn it from the chat it came from. What counts as
+ * "covered" is the block-list's own rule, via `factsCoveredByForget`.
+ *
+ * A statement that matches no stored fact is still recorded. The thing to
+ * forget may only ever have existed in the consolidated summary's prose, and
+ * the suppression is exactly what keeps the next consolidation from writing it
+ * again — skipping it would make "forget that" depend on an implementation
+ * detail the user cannot see.
+ *
+ * One transaction, so a forget is never half-applied: retiring the facts
+ * without the suppression would let the next backfill bring them straight back.
+ */
+export async function forgetStatements(
+  userId: string,
+  statements: readonly string[],
+  opts: {
+    /** Where the forget was asked for, for the row's provenance. */
+    conversationId?: string | null;
+    /** Receives the chat-timeline receipt; never called when nothing was recorded. */
+    onActivity?: (event: MemoryUpdateActivity) => void;
+  } = {}
+): Promise<ForgetOutcome> {
+  const cleaned = [
+    ...new Map(
+      statements
+        .map((statement) => statement.trim().slice(0, MEMORY_CONTENT_LIMIT))
+        .filter((statement) => normalizeStatement(statement))
+        .map((statement) => [normalizeStatement(statement), statement] as const)
+    ).values(),
+  ].slice(0, 8);
+  if (cleaned.length === 0) return { statements: [], retired: 0 };
+
+  const rows = await prisma.memoryEntry.findMany({
+    where: { userId },
+    select: { id: true, content: true, kind: true, status: true },
+  });
+  const existingSuppressions = new Set(
+    rows.filter((row) => row.kind === "SUPPRESSION").map((row) => normalizeStatement(row.content))
+  );
+
+  const retireIds = new Set<string>();
+  for (const statement of cleaned) {
+    for (const id of factsCoveredByForget(statement, rows)) retireIds.add(id);
+  }
+  // A statement already on the block-list needs no second row — and writing
+  // one would move `newestSuppressionAt` forward for nothing, benching a summary
+  // that was already rebuilt without it.
+  const fresh = cleaned.filter((statement) => !existingSuppressions.has(normalizeStatement(statement)));
+  if (fresh.length === 0 && retireIds.size === 0) return { statements: [], retired: 0 };
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.memoryEntry.updateMany({
+      where: { userId, id: { in: [...retireIds] }, status: "active" },
+      data: {
+        status: "suppressed",
+        reason: "You asked Juno to forget this in a conversation.",
+        supersededById: null,
+      },
+    }),
+    ...fresh.map((statement) =>
+      prisma.memoryEntry.create({
+        data: {
+          userId,
+          content: statement,
+          source: "MANUAL",
+          kind: "SUPPRESSION",
+          sourceRef: opts.conversationId ?? "forget",
+          category: "suppression",
+          confidence: 1,
+          // The column holds the LIFECYCLE's comparable form on every row,
+          // suppressions included — that is what the page's Forget and the
+          // applied edit both write. The order-preserving form above is only
+          // for comparing statements in memory.
+          normalized: normalizeFact(statement),
+          lastVerifiedAt: now,
+        },
+      })
+    ),
+  ]);
+
+  const outcome = { statements: fresh.length > 0 ? fresh : cleaned, retired: retireIds.size };
+  const activity = memoryForgetActivity(outcome);
+  if (activity) opts.onActivity?.(activity);
+  return outcome;
 }
 
 /** The columns the lifecycle rules need to judge an existing entry. */
@@ -1186,7 +1308,16 @@ export async function getMemoryProfile(
   const projectId = opts.projectId ?? null;
   const isolate = opts.isolateProjectMemory ?? (projectId !== null);
   const now = new Date();
-  const summary = isolate ? null : await getMemorySummary(userId);
+  const [storedSummary, forgottenAt] = isolate
+    ? [null, null]
+    : await Promise.all([getMemorySummary(userId), newestSuppressionAt(userId)]);
+  // A summary written before the newest "forget" still says the forgotten
+  // thing, in prose, and would be injected whole — so it sits this turn out and
+  // the ranked facts, which already exclude everything retired, stand in. The
+  // next consolidation rewrites it without the forgotten content and it comes
+  // back. See `summaryPredatesForget` for how this used to leak.
+  const summary =
+    storedSummary && !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) ? storedSummary : null;
 
   const scopeCondition = isolate && projectId
     ? { projectId }
@@ -1255,6 +1386,52 @@ export async function getMemoryProfile(
     usedTokens: result.usedTokens,
     droppedForBudget: result.droppedForBudget,
   };
+}
+
+/**
+ * The narrow slice of memory a Juno Code run is shown — see
+ * src/lib/code-memory-prompt.ts for why it is narrow.
+ *
+ * Lexical ranking only, deliberately: `getMemoryProfile` may embed the query,
+ * and here the query is the task text, which would be one more copy of the
+ * user's code request sent to an embeddings provider at the moment they
+ * pressed Run. The candidates are a few dozen short preferences; token overlap
+ * and recency rank them well enough, and the task text stays where it is.
+ *
+ * Empty when memory is paused. `lastUsedAt` is stamped on what was shown, for
+ * the same reason chat stamps it: "used" on the memory page has to mean used.
+ */
+export async function getCodingMemory(userId: string, query: string): Promise<string[]> {
+  try {
+    const [settings, rows] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } }),
+      prisma.memoryEntry.findMany({
+        where: {
+          userId,
+          kind: "FACT",
+          status: "active",
+          projectId: null,
+          category: { in: [...CODING_MEMORY_CATEGORIES] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: LIFECYCLE_SELECT,
+      }),
+    ]);
+    if (settings?.memoryEnabled === false) return [];
+    const selected = selectCodingMemories(rows, { query });
+    if (selected.length > 0) {
+      await prisma.memoryEntry
+        .updateMany({ where: { userId, id: { in: selected.map((m) => m.id) } }, data: { lastUsedAt: new Date() } })
+        .catch(() => {});
+    }
+    return selected.map((m) => m.content);
+  } catch (error) {
+    // A Code run without its background is a Code run; one that fails to
+    // start because memory could not be read is a bug.
+    console.error("[memory] coding memory unavailable:", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1513,11 +1690,30 @@ export async function consolidateWithFallback(
  * showing "updated Nd ago" long after new chats had added facts.)
  */
 export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
-  const [count, summary] = await Promise.all([
+  const now = new Date();
+  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
+    newestSuppressionAt(userId),
+    // The newest moment a temporary fact stopped being true. Indexed on
+    // (userId, expiresAt).
+    prisma.memoryEntry.findFirst({
+      where: { userId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      orderBy: { expiresAt: "desc" },
+      select: { expiresAt: true },
+    }),
   ]);
-  const changed = !summary || summary.entryCount !== count;
+  // The count alone missed every change that retires a row rather than
+  // removing it. A forget leaves the row, marked `suppressed`, so the summary
+  // still quoting the forgotten fact was never rebuilt; an expiry leaves it
+  // marked `expired`, so "flying to Berlin this week" sat in the summary's
+  // "top of mind" long after the week was over.
+  const expiredSince = !!summary && !!lastExpiry?.expiresAt && lastExpiry.expiresAt > summary.updatedAt;
+  const changed =
+    !summary ||
+    summary.entryCount !== count ||
+    summaryPredatesForget(summary.updatedAt, forgottenAt) ||
+    expiredSince;
   // Don't rebuild more than once every few minutes, so rapid-fire messages that
   // each distill a fact don't each trigger a full consolidation.
   const MIN_INTERVAL_MS = 5 * 60 * 1000;

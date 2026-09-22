@@ -914,3 +914,78 @@ export function memoryUpdateActivity(
     url: "/memory",
   };
 }
+
+// ---------------------------------------------------------------------------
+// Forgetting
+// ---------------------------------------------------------------------------
+
+/**
+ * Is the consolidated summary older than the account's newest "forget"?
+ *
+ * THE BUG THIS NAMES. Forgetting a fact retires its row and writes a
+ * suppression — and changes nothing about the summary, which was written
+ * before the forget and still says it, in prose, and is injected whole into
+ * every conversation. `maybeConsolidate` rebuilt only when the COUNT of facts
+ * changed, and forgetting does not change it (the row stays, marked
+ * `suppressed`), so "forget where I work" held on the memory page and not in
+ * the next chat, for as long as it took some unrelated fact to arrive.
+ *
+ * A summary this returns true for is not injected at all — the ranked facts
+ * stand in for it, and they already exclude everything retired — until the
+ * next consolidation rewrites it without the forgotten content. Strictly
+ * greater-than: a summary built in the same instant as the suppression was
+ * built with it in hand.
+ */
+export function summaryPredatesForget(summaryUpdatedAt: Date, newestSuppressionAt: Date | null): boolean {
+  return newestSuppressionAt !== null && newestSuppressionAt.getTime() > summaryUpdatedAt.getTime();
+}
+
+/**
+ * The active facts a "forget" statement covers.
+ *
+ * The matching rule is the block-list's own (`findSuppression`, containment in
+ * both directions over normalized text) rather than anything looser, so what a
+ * forget retires NOW and what the suppression it writes refuses LATER are the
+ * same set by construction. A looser match here would retire a fact the
+ * block-list then lets the extractor relearn next week — the exact "I told it
+ * to forget and it came back" the suppression layer exists to prevent.
+ */
+export function factsCoveredByForget(
+  statement: string,
+  entries: readonly { id: string; content: string; kind: string; status: string }[]
+): string[] {
+  if (!normalizeFact(statement)) return [];
+  return entries
+    .filter(
+      (entry) =>
+        entry.kind === "FACT" && entry.status === "active" && findSuppression(entry.content, [statement]) !== null
+    )
+    .map((entry) => entry.id);
+}
+
+/**
+ * The receipt a forget leaves in the chat timeline.
+ *
+ * Sent whenever a statement was recorded, even when it matched no stored fact:
+ * the thing to forget may only ever have lived in the summary's prose, and the
+ * suppression written for it is still the part that keeps it from coming back.
+ * "Nothing matched, so nothing to report" would tell the user their request
+ * was ignored when it was not.
+ */
+export function memoryForgetActivity(outcome: {
+  statements: readonly string[];
+  retired: number;
+}): MemoryUpdateActivity | null {
+  const first = outcome.statements[0];
+  if (!first) return null;
+  const parts = [
+    first.length > RECEIPT_MAX_CHARS_PER_ENTRY
+      ? `${first.slice(0, RECEIPT_MAX_CHARS_PER_ENTRY - 1).trimEnd()}…`
+      : first,
+  ];
+  if (outcome.statements.length > 1) parts.push(`+${outcome.statements.length - 1} more`);
+  if (outcome.retired > 0) {
+    parts.push(`${outcome.retired} remembered ${outcome.retired === 1 ? "fact" : "facts"} retired`);
+  }
+  return { kind: "context", title: "Forgotten", detail: parts.join(" · "), url: "/memory" };
+}

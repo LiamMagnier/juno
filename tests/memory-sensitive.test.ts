@@ -69,17 +69,97 @@ test("an ordinary durable fact is not sensitive", () => {
   }
 });
 
-test("a subject word needs a claim about the user before it counts", () => {
-  // "health" as a field of work is not a health fact about the person.
+test("a field of work is not a fact about the person", () => {
+  // The first version accepted a vague "subject word" (clinic, doctor,
+  // heritage) whenever the sentence had a verb like "is" — which every
+  // extracted fact has. Markers only, now.
   assert.equal(sensitiveTopicOf("Their team builds software for health clinics."), null);
-  // The same word, attributed, is.
-  assert.equal(sensitiveTopicOf("The user is sick with a chronic condition."), "health");
+  assert.equal(sensitiveTopicOf("The user is building a doctor appointment app."), null);
+  assert.equal(sensitiveTopicOf("The user has a chronic condition."), "health");
+});
+
+/*
+ * The two lists below are the classifier's contract, and they exist because
+ * the first version failed BOTH at once: 9 of 9 plainly sensitive facts went
+ * through (every pattern ended in `\b`, so no plural and no open stem could
+ * ever match), and 11 of 12 innocent facts were refused — most of them ordinary
+ * developer English. A change to TOPIC_RULES that trades one error for the
+ * other now has to say so here.
+ */
+const MUST_FLAG: [string, string][] = [
+  // Plurals and stems — the words the first version could never match.
+  ["The user gets migraines.", "health"],
+  ["The user has food allergies.", "health"],
+  ["The user had two surgeries last year.", "health"],
+  ["The user has schizophrenia.", "health"],
+  ["The user sees a psychiatrist.", "health"],
+  ["The user has dyslexia.", "health"],
+  ["The user is going through menopause.", "health"],
+  ["The user takes medications daily.", "health"],
+  ["The user is in therapy for anxiety.", "health"],
+  ["The user has two mortgages.", "finances"],
+  ["The user earns a salary of 60k.", "finances"],
+  ["The user came out as gay last year.", "sexuality"],
+  ["The user is a practising Muslim.", "religion"],
+  ["The user emigrated from Brazil as a refugee.", "ethnicity"],
+  ["The user is of Black Caribbean heritage.", "ethnicity"],
+  ["The user is a Labour Party member.", "politics"],
+];
+
+const MUST_NOT_FLAG = [
+  // Developer English the first version refused to remember.
+  "The user writes race-condition-free code.",
+  "The user is building a progressive web app.",
+  "The user's app came out last week.",
+  "The user's new release comes out on Friday.",
+  "The user broke the build yesterday.",
+  "The user is implementing gradient descent.",
+  "The user built a PoC for the payments API.",
+  "The user's editor theme is black.",
+  "The user prefers white backgrounds and black text.",
+  "The user takes a conservative approach to refactoring.",
+  "The user is making the spiritual successor to a 90s game.",
+  // Everyday English.
+  "The user lent their laptop to a colleague.",
+  "The user is training for a race.",
+  "The user uses visual aids in talks.",
+  "The user manages the operations team.",
+  "The user has faith in test-driven development.",
+  "The user works at a heritage railway.",
+  "The user is a Temple University alumnus.",
+];
+
+for (const [fact, topic] of MUST_FLAG) {
+  test(`flags ${topic}: ${fact}`, () => {
+    assert.equal(sensitiveTopicOf(fact), topic);
+  });
+}
+
+for (const fact of MUST_NOT_FLAG) {
+  test(`does not flag: ${fact}`, () => {
+    assert.equal(sensitiveTopicOf(fact), null);
+  });
+}
+
+test("no pattern ends in an open stem that no real word can complete", () => {
+  /*
+   * The structural form of bug 1. A marker like `psychiatr` followed by `\b`
+   * matches nothing, ever, because the next letter of any real word is a word
+   * character. Every alternative must be a complete word or end in an
+   * explicit inflection group. Checked against the source so a new open stem
+   * fails here before it silently fails in production.
+   */
+  const source = readFileSync(new URL("../src/lib/memory-sensitive.ts", import.meta.url), "utf8");
+  const block = source.slice(source.indexOf("const TOPIC_RULES"), source.indexOf("export function sensitiveTopicOf"));
+  for (const stem of ["schizophreni|", "psychiatr|", "dyslexi|", "menopaus|", "anorexi|", "bulimi|", "alcoholi|", "insolven|", "foreclos|"]) {
+    assert.equal(block.includes(stem), false, `open stem ${stem} can never match a word`);
+  }
 });
 
 test("a marker fires even when the sentence attributes nothing", () => {
-  // The precision rule above applies to `subjects` only — a word like
-  // "chemotherapy" has no innocent reading worth preserving, and a gate that
-  // waited for a verb would miss "Chemotherapy, weekly, Tuesdays."
+  // Markers need no verb: "chemotherapy" has no innocent reading worth
+  // preserving, and a gate that waited for "the user has…" would miss the
+  // terse note an extractor sometimes writes.
   assert.equal(sensitiveTopicOf("Chemotherapy, weekly, on Tuesdays."), "health");
 });
 

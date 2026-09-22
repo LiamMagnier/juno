@@ -31,6 +31,59 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Does this push touch anything the macOS jobs build?
+  #
+  # macOS runner minutes count 10x against the account's included Actions
+  # minutes, and the three macOS jobs below ran on EVERY push to main and every
+  # PR update — including the web-only majority — which is what spent the whole
+  # monthly allowance in September 2026. They now run only when native code, the
+  # contracts the Swift is generated from, the native scripts, or this workflow
+  # changed. The Linux contract/design jobs are cheap and keep running on
+  # everything, because a web change (globals.css, the OpenAPI document) is
+  # exactly what makes the generated Swift drift.
+  #
+  # Anything this job cannot decide — a manual dispatch, a first push with no
+  # `before`, a diff that fails — answers "yes": skipping a gate by accident is
+  # worse than paying for one.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Native changes?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.diff.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -u
+          case "$EVENT" in
+            push) base="$BEFORE" ;;
+            pull_request) base="$PR_BASE" ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! files="$(git diff --name-only "$base" "$HEAD_SHA" 2>/dev/null)"; then
+            echo "Cannot diff ($EVENT, base='${base}') — running the macOS jobs to be safe."
+            echo "native=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -qE '^(native/|contracts/|scripts/native|\.github/workflows/native\.yml$)'; then
+            echo "native=true" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "$files" | grep -E '^(native/|contracts/|scripts/native|\.github/workflows/native\.yml$)' | head -20
+          else
+            echo "native=false" >> "$GITHUB_OUTPUT"
+            echo "No native, contract or native-workflow changes — skipping the macOS jobs."
+          fi
+
+  # ---------------------------------------------------------------------------
   # The generated Swift contract must match the canonical OpenAPI document.
   # Runs on Linux because it is pure Node — no Xcode needed.
   # ---------------------------------------------------------------------------
@@ -109,6 +162,8 @@ jobs:
   # running on an older OS is the whole bug; matching them is the fix.
   # ---------------------------------------------------------------------------
   packages:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     name: Swift packages
     runs-on: macos-26
     # JunoNativeKit can finish compiling and then leave xctest parked forever on
@@ -150,6 +205,8 @@ jobs:
   # failure path.
   # ---------------------------------------------------------------------------
   macos-app:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     name: macOS app
     runs-on: macos-26
     # Observed max 17m25s, so 30 would leave under a 2x margin.
@@ -236,6 +293,8 @@ jobs:
   # and a shared-package change must not break the phone.
   # ---------------------------------------------------------------------------
   ios-app:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     name: iOS app
     runs-on: macos-26
     # Observed 6m25s–11m15s.

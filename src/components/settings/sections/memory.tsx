@@ -47,6 +47,19 @@ export function MemorySection() {
           }
         />
         <SettingRow
+          label="Learn from past chats in the background"
+          htmlFor="memory-background-learning"
+          description="Between your sessions, Juno reads older conversations it hasn’t learned from yet, a few at a time and within your usage limits. New chats are always learned from as you go."
+          control={
+            <Switch
+              id="memory-background-learning"
+              checked={settings.memoryBackgroundLearning}
+              disabled={!settings.memoryEnabled}
+              onCheckedChange={(v) => void save({ memoryBackgroundLearning: v })}
+            />
+          }
+        />
+        <SettingRow
           label="Background processing"
           description="Which providers may read your chats to build memory, titles and summaries — work you never see."
           control={

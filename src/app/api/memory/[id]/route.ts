@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { embedMemoryEntries, getSuppressions } from "@/lib/memory";
+import { consolidateWithFallback, embedMemoryEntries, getSuppressions } from "@/lib/memory";
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -16,6 +16,25 @@ import { factFields } from "@/lib/memory-lifecycle";
  * to make "I deleted that" feel like a lie. Forget retires the row AND writes a
  * suppression, which blocks the statement from ever being extracted again.
  */
+
+/**
+ * Rebuild the summary once the response has gone.
+ *
+ * The consolidated summary quotes facts in prose and is injected into every
+ * conversation, so a fact rewritten, forgotten or deleted here lived on in it
+ * until something unrelated happened to trigger a rebuild. A forget is already
+ * safe without this — `getMemoryProfile` benches a summary older than the newest
+ * suppression — but an edit and a delete leave no such marker, and the reader
+ * who corrected "Lisbon" to "Porto" expects the next chat to say Porto.
+ *
+ * `after()`, not awaited: consolidation is an LLM call of up to 45 seconds, and
+ * a row's pencil or bin must not wait on it. Best effort, like every other
+ * consolidation — a failure leaves the previous summary, and the next chat turn's
+ * `maybeConsolidate` tries again.
+ */
+function refreshSummaryLater(userId: string) {
+  after(() => consolidateWithFallback(userId).then(() => undefined, () => undefined));
+}
 
 const schema = z
   .object({
@@ -63,6 +82,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         },
       }),
     ]);
+    refreshSummaryLater(user.id);
     return NextResponse.json({ ok: true, status: "suppressed" });
   }
 
@@ -130,7 +150,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       lastVerifiedAt: new Date(),
     },
   });
-  if (rewritten) await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
+  if (rewritten) {
+    await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
+    refreshSummaryLater(user.id);
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -151,5 +174,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     }),
     prisma.memoryEntry.delete({ where: { id, userId: user.id } }),
   ]);
+  refreshSummaryLater(user.id);
   return NextResponse.json({ ok: true });
 }
