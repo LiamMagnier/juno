@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 
 /**
  * A refusal this module authored — "Only project owners can manage members."
@@ -33,7 +33,21 @@ export interface ProjectMemberInfo {
  * Returns null if the user has no access.
  */
 export async function getProjectRole(userId: string, projectId: string): Promise<ProjectRole | null> {
-  const project = await prisma.project.findUnique({
+  /*
+   * `prismaUnguarded`, and this is the case the escape hatch exists for: the
+   * question being asked is "who owns this project?", so scoping the lookup to
+   * the asker would answer it only when the asker is the owner — which is the
+   * one case this function does not need help with. A collaborator's row lives
+   * in ProjectMember, read guarded below on its compound unique.
+   *
+   * It is a fix, not a waiver. The ownership guard THROWS in development
+   * (src/lib/db.ts), so this line was a 500 on every project route that checks
+   * access — the project page included, which meant it could not be opened at
+   * all on a dev machine. In production the guard only logs, so the same
+   * defect was invisible there and permanent here: nobody could open the page
+   * they were being asked to work on.
+   */
+  const project = await prismaUnguarded.project.findUnique({
     where: { id: projectId },
     select: { userId: true },
   });
@@ -78,7 +92,10 @@ export async function listProjectMembers(userId: string, projectId: string): Pro
   if (!allowed) throw new ProjectCollaborationError("Unauthorized to view project members.");
 
   const [project, members] = await Promise.all([
-    prisma.project.findUnique({
+    // Unguarded for the reason getProjectRole above is, and one line later:
+    // the caller has just been authorized against this project, and the row
+    // being read is the project itself — which a VIEWER does not own.
+    prismaUnguarded.project.findUnique({
       where: { id: projectId },
       include: { user: { select: { id: true, name: true, email: true, image: true } } },
     }),
@@ -149,7 +166,9 @@ export async function addProjectMember(
     throw new ProjectCollaborationError("User not found.");
   }
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  // The OWNER check ran at the top of this function; this reads the project it
+  // authorized against, to compare the target user with its owner.
+  const project = await prismaUnguarded.project.findUnique({ where: { id: projectId } });
   if (!project) throw new ProjectCollaborationError("Project not found.");
   if (targetUser.id === project.userId) {
     throw new ProjectCollaborationError("Cannot add project owner as a member.");
