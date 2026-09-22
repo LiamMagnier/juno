@@ -21,8 +21,8 @@ public extension CodeSessionStore {
     /// Returns the durable local transcript through the same cursor semantics
     /// that the relay and future CLI use. This is read-only: the local store
     /// remains authoritative for event persistence during the migration.
-    func protocolEvents(after cursor: CodeSessionEventCursor) -> [CodeSessionEventEnvelope] {
-        events(for: cursor.sessionID)
+    func protocolEvents(after cursor: CodeSessionEventCursor) async -> [CodeSessionEventEnvelope] {
+        await events(for: cursor.sessionID)
             .map(CodeSessionStoreProtocolAdapter.envelope)
             .filter { $0.sequence > cursor.afterSequence }
     }

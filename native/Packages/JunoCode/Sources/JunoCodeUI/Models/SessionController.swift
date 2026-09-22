@@ -492,6 +492,13 @@ public final class SessionController {
     public let review = ReviewModel()
 
     private var storeObserver: UUID?
+    /// The `attach()` under way, which a second caller waits for rather than
+    /// starting another alongside it.
+    private var attaching: Task<Void, Never>?
+    /// This session's events the store delivered while `attach()` was reading
+    /// the transcript, held back until the read is installed; nil at any other
+    /// time. See `restore(_:)`.
+    private var eventsDeliveredWhileRestoring: [SessionEvent]?
 
     /// Whether this controller is currently observing the session store.
     ///
@@ -1034,28 +1041,64 @@ public final class SessionController {
 
     // MARK: - Lifecycle
 
-    /// Loads the persisted transcript and wires live observation. Idempotent.
+    /// Loads the persisted transcript and wires live observation. Idempotent,
+    /// and a call made while another is still loading waits for that one: the
+    /// window and the remote bridge can open the same session at once, and
+    /// each is handed a controller it will read the transcript from.
     /// A preview controller is already fully seeded, so this is a no-op there.
     public func attach() async {
         guard let live else { return }
+        if let attaching {
+            await attaching.value
+            return
+        }
         guard storeObserver == nil else { return }
+        let restoring = Task { await self.restore(live) }
+        attaching = restoring
+        await restoring.value
+    }
+
+    private func restore(_ live: Live) async {
         let sessionID = self.sessionID
+        // Observe before reading, so nothing appended in between goes unseen,
+        // and hold back what arrives until the read is installed. The store
+        // reads a transcript off its actor, so appends carry on while it does
+        // — a turn still streaming in this session keeps writing — and their
+        // notifications reach the main actor before the read does. Applied as
+        // they came they would be overwritten by the read, which stops at the
+        // length the transcript had when it began: a reply, a finished tool
+        // call or a changed file gone from the thread until the next visit,
+        // and a sequence a thin client following these events would skip.
+        eventsDeliveredWhileRestoring = []
         storeObserver = await live.store.addObserver { [weak self] update in
             Task { @MainActor [weak self] in
                 self?.apply(update, own: sessionID)
             }
         }
         let restored = await live.store.events(for: sessionID)
+        let delivered = eventsDeliveredWhileRestoring ?? []
+        eventsDeliveredWhileRestoring = nil
         events = restored
         rebuildTerminal()
         subagentIndex.rebuild(from: events)
         rebuildDerivedState()
+        // What was appended between observing and reading is in both; the
+        // rest came after the read and is applied as though it arrived now.
+        let restoredIDs = Set(restored.map(\.id))
+        for event in delivered where !restoredIDs.contains(event.id) {
+            events.append(event)
+            integrate(event)
+        }
         if let current = try? await live.store.session(id: sessionID) {
             session = current
         }
         pendingApprovals = await live.permissions.pendingApprovals
         await refreshWorkspacePanels()
         await refreshComputerUse()
+        // Cleared here rather than by the caller once it resumes, so a detach
+        // and a fresh attach queued ahead of that resumption start a new load
+        // instead of waiting on this finished one.
+        attaching = nil
     }
 
     public func detach() async {
@@ -1067,6 +1110,22 @@ public final class SessionController {
             await live.store.removeObserver(token)
             storeObserver = nil
         }
+    }
+
+    /// Lets go of the decoded transcript while nothing is showing it.
+    ///
+    /// Only a detached controller lets go, and it loses nothing by it: its
+    /// events stopped following the store when it detached, and `attach()`
+    /// reads the whole record again rather than trusting them. What survives is
+    /// what the transcript cannot rebuild — the draft, attachments, review
+    /// state and pending approvals. A preview controller has no store to read
+    /// back from, so it keeps its fixture.
+    public func releaseTranscript() {
+        guard live != nil, storeObserver == nil, attaching == nil, !events.isEmpty else { return }
+        events = []
+        rebuildTerminal()
+        subagentIndex.rebuild(from: events)
+        rebuildDerivedState()
     }
 
     // MARK: - Agent actions
@@ -3038,6 +3097,10 @@ public final class SessionController {
                 runStartedAt = nil
             }
         case let .eventAppended(event) where event.sessionID == sessionID:
+            guard eventsDeliveredWhileRestoring == nil else {
+                eventsDeliveredWhileRestoring?.append(event)
+                return
+            }
             events.append(event)
             integrate(event)
         // A sub-agent's own step. It belongs to a different session's transcript
