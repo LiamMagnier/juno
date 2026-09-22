@@ -230,6 +230,9 @@ public final class WorkbenchModel {
     private let workspaceDirectory: WorkspaceDirectory
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
     private var controllers: [CodeSessionID: SessionController] = [:]
+    /// The sessions opened most recently, newest last. See
+    /// `retainTranscripts(opening:)`.
+    private var recentlyOpened: [CodeSessionID] = []
     private var storeObserver: UUID?
     #if DEBUG
     /// True only for the local `--juno-code-ui-preview` harness, which seeds
@@ -341,6 +344,7 @@ public final class WorkbenchModel {
         case let .sessionRemoved(id):
             sessions.removeAll { $0.id == id }
             controllers.removeValue(forKey: id)
+            recentlyOpened.removeAll { $0 == id }
             if selectedSessionID == id {
                 // Never a sub-agent: falling back onto a delegated session would
                 // put the window on a transcript with no sidebar row to leave it
@@ -498,12 +502,10 @@ public final class WorkbenchModel {
     }
 
     /// Lines added, lines removed and files touched over a session's whole
-    /// record, for the sessions column's finished rows.
+    /// record, for a row that wants to say how much a session changed.
     ///
-    /// Read from the transcript on demand and cached against the session's
-    /// `updatedAt`, so a column of two hundred sessions costs one event read per
-    /// row the reader actually scrolls to, and none for a row that has not
-    /// changed since it was last read.
+    /// Read from the store's transcript summary, so a column of two hundred
+    /// sessions costs no transcript reads at all.
     public struct DiffStat: Equatable, Sendable {
         public let added: Int
         public let removed: Int
@@ -511,43 +513,42 @@ public final class WorkbenchModel {
         public var isEmpty: Bool { files == 0 }
     }
 
-    private var diffStats: [CodeSessionID: (updatedAt: Date, stat: DiffStat)] = [:]
-
     public func diffStat(for sessionID: CodeSessionID) async -> DiffStat? {
-        guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
-        if let cached = diffStats[sessionID], cached.updatedAt == session.updatedAt {
-            return cached.stat
-        }
-        let events: [SessionEvent]
+        guard sessions.contains(where: { $0.id == sessionID }) else { return nil }
         #if DEBUG
+        // Preview fixtures never reach the store; their transcript is the
+        // fixture controller's.
         if isPreview {
-            events = previewController(for: sessionID)?.events ?? []
-        } else {
-            events = await sessionStore.events(for: sessionID)
-        }
-        #else
-        events = await sessionStore.events(for: sessionID)
-        #endif
-        var added = 0
-        var removed = 0
-        var files: Set<String> = []
-        for event in events {
-            if case let .fileChanged(change) = event.payload {
-                added += change.linesAdded
-                removed += change.linesRemoved
-                files.insert(change.path.value)
+            var added = 0
+            var removed = 0
+            var files: Set<String> = []
+            for event in previewController(for: sessionID)?.events ?? [] {
+                if case let .fileChanged(change) = event.payload {
+                    added += change.linesAdded
+                    removed += change.linesRemoved
+                    files.insert(change.path.value)
+                }
             }
+            return DiffStat(added: added, removed: removed, files: files.count)
         }
-        let stat = DiffStat(added: added, removed: removed, files: files.count)
-        diffStats[sessionID] = (session.updatedAt, stat)
-        return stat
+        #endif
+        guard let summary = await sessionStore.transcriptSummary(for: sessionID) else {
+            return nil
+        }
+        return DiffStat(
+            added: summary.linesAdded,
+            removed: summary.linesRemoved,
+            files: summary.filesChanged
+        )
     }
 
     /// Returns the durable transcript sequence without constructing or attaching
     /// a presentation controller. Hosts use this for inventory summaries, so a
-    /// CLI session listing cannot wake screen capture or other UI-only work.
+    /// CLI session listing cannot wake screen capture or other UI-only work —
+    /// and, read from the transcript summary, cannot decode every transcript
+    /// on the Mac to count them either.
     public func eventCount(for sessionID: CodeSessionID) async -> Int {
-        await sessionStore.events(for: sessionID).count
+        await sessionStore.transcriptSummary(for: sessionID)?.eventCount ?? 0
     }
 
     /// The live controller for a session, created on first use.
@@ -571,6 +572,7 @@ public final class WorkbenchModel {
             // `attach()` guards on `storeObserver == nil`, so this is free when the
             // controller is already attached and a full re-read when it is not.
             await existing.attach()
+            retainTranscripts(opening: sessionID)
             return existing
         }
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
@@ -631,7 +633,40 @@ public final class WorkbenchModel {
         controllers[sessionID] = controller
         await controller.attach()
         await controller.reconcileModelCapabilities()
+        retainTranscripts(opening: sessionID)
         return controller
+    }
+
+    /// How many recently opened sessions keep their decoded transcript while
+    /// the reader is elsewhere.
+    static let retainedTranscriptCount = 3
+
+    /// Keeps the transcripts of the sessions opened last and lets go of the
+    /// rest.
+    ///
+    /// Controllers are cached for the life of the model — a draft, a review
+    /// comment or a running turn must survive the reader looking elsewhere —
+    /// and each held its whole decoded transcript for as long, so visiting a
+    /// hundred long sessions kept a hundred transcripts in memory. A detached
+    /// controller re-reads its transcript from the store when it is attached
+    /// again, so the copy it holds serves nobody once it is off screen.
+    ///
+    /// More than one is kept because "off screen" lags "detached": the window
+    /// detaches the session it is leaving before the next one has loaded and
+    /// goes on drawing it until then, while the remote bridge or a device run
+    /// may open sessions of their own in the meantime. Releasing the outgoing
+    /// session there would blank its thread in the middle of the switch.
+    private func retainTranscripts(opening sessionID: CodeSessionID) {
+        recentlyOpened.removeAll { $0 == sessionID }
+        recentlyOpened.append(sessionID)
+        if recentlyOpened.count > Self.retainedTranscriptCount {
+            recentlyOpened.removeFirst(recentlyOpened.count - Self.retainedTranscriptCount)
+        }
+        for (id, controller) in controllers where !recentlyOpened.contains(id) {
+            // A no-op for a controller that is still attached: whatever is
+            // showing it keeps what it shows.
+            controller.releaseTranscript()
+        }
     }
 
     /// Replaces the signed-in account's model manifest and immediately revokes
@@ -654,6 +689,7 @@ public final class WorkbenchModel {
     public func shutdown() async {
         let currentControllers = Array(controllers.values)
         controllers.removeAll()
+        recentlyOpened.removeAll()
         for controller in currentControllers {
             await controller.stop()
             await controller.detach()
@@ -662,6 +698,9 @@ public final class WorkbenchModel {
             await sessionStore.removeObserver(storeObserver)
             self.storeObserver = nil
         }
+        // Stopping appends the runs' last events; writing their summaries now
+        // spares the next launch catching them up from the transcripts.
+        await sessionStore.saveTranscriptSummaries()
         contexts.removeAll()
         selectedSessionID = nil
     }
@@ -724,6 +763,7 @@ public final class WorkbenchModel {
         try await sessionStore.deleteSession(id: session.id)
         await controller?.detach()
         controllers.removeValue(forKey: session.id)
+        recentlyOpened.removeAll { $0 == session.id }
     }
 
     // MARK: - Derived lists

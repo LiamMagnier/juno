@@ -188,6 +188,93 @@ final class WorkbenchModelTests: XCTestCase {
         })
     }
 
+    /// A thin client's session list and a row's diff stat are read from the
+    /// store's transcript summary, not by decoding transcripts to count them.
+    func testEventCountAndDiffStatComeFromTheTranscriptSummary() async throws {
+        let created = await model.createSession(
+            workspaceID: nil,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )
+        let session = try XCTUnwrap(created)
+        let store = model.sessionStore
+        try await store.appendEvent(
+            sessionID: session.id,
+            payload: .userPrompt(UserPromptEvent(text: "Split the view"))
+        )
+        for (path, added, removed) in [("A.swift", 4, 1), ("B.swift", 2, 2), ("A.swift", 1, 0)] {
+            try await store.appendEvent(
+                sessionID: session.id,
+                payload: .fileChanged(
+                    FileChangedEvent(
+                        path: try WorkspacePath(path),
+                        kind: .modified,
+                        linesAdded: added,
+                        linesRemoved: removed,
+                        checkpointID: nil
+                    )
+                )
+            )
+        }
+
+        let count = await model.eventCount(for: session.id)
+        XCTAssertEqual(count, 5)
+        let stat = await model.diffStat(for: session.id)
+        XCTAssertEqual(stat, WorkbenchModel.DiffStat(added: 7, removed: 3, files: 2))
+
+        // Shutting down writes the summaries, so a relaunch answers the same
+        // without reading a transcript to find out.
+        await model.shutdown()
+        let relaunched = WorkbenchModel(dependencies: model.dependencies)
+        await relaunched.bootstrap()
+        let relaunchedCount = await relaunched.eventCount(for: session.id)
+        XCTAssertEqual(relaunchedCount, 5)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: baseURL
+                .appendingPathComponent("storage/sessions-store/sessions")
+                .appendingPathComponent(session.id.value)
+                .appendingPathComponent("summary.json")
+                .path
+        ))
+    }
+
+    /// Visiting session after session must not keep every transcript decoded:
+    /// a controller the reader has left, and that nothing else is showing,
+    /// lets go of its events and reads them back when it is opened again.
+    func testLeavingSessionsLetsGoOfTheirTranscripts() async throws {
+        var controllers: [SessionController] = []
+        for index in 0..<5 {
+            let created = await model.createSession(
+                workspaceID: nil,
+                configuration: AgentConfiguration(modelID: "test-model")
+            )
+            let session = try XCTUnwrap(created)
+            // As the window does: detach the session being left, then open the
+            // next. The second one stays attached, as if another window
+            // were showing it.
+            if let previous = controllers.last, index - 1 != 1 {
+                await previous.detach()
+            }
+            let resolved = await model.controller(for: session.id)
+            controllers.append(try XCTUnwrap(resolved))
+        }
+
+        let released = controllers.map(\.events.isEmpty)
+        XCTAssertEqual(
+            released,
+            [true, false, false, false, false],
+            "the first was left and is not recent; the second is still on screen elsewhere; the last three are recent"
+        )
+
+        await controllers[4].detach()
+        let reopened = await model.controller(for: controllers[0].sessionID)
+        XCTAssertIdentical(reopened, controllers[0], "released, not discarded")
+        let restored = controllers[0].events
+        XCTAssertTrue(restored.contains {
+            if case .sessionCreated = $0.payload { return true }
+            return false
+        })
+    }
+
     func testSystemPromptIncludesBoundedRepositoryInstructions() async throws {
         let oversizedInstructions =
             "Use the project formatter.\n"

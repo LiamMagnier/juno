@@ -1046,6 +1046,22 @@ public final class SessionController {
         }
     }
 
+    /// Lets go of the decoded transcript while nothing is showing it.
+    ///
+    /// Only a detached controller lets go, and it loses nothing by it: its
+    /// events stopped following the store when it detached, and `attach()`
+    /// reads the whole record again rather than trusting them. What survives is
+    /// what the transcript cannot rebuild — the draft, attachments, review
+    /// state and pending approvals. A preview controller has no store to read
+    /// back from, so it keeps its fixture.
+    public func releaseTranscript() {
+        guard live != nil, storeObserver == nil, !events.isEmpty else { return }
+        events = []
+        rebuildTerminal()
+        subagentIndex.rebuild(from: events)
+        rebuildDerivedState()
+    }
+
     // MARK: - Agent actions
 
     public func send() async {
