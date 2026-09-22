@@ -110,6 +110,14 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
         return lowered == toolName.lowercased()
     }
 
+    /// Whether this rule names a tool that clicks, types, presses keys or
+    /// scrolls on the reader's Mac. Only the reader's own settings file may
+    /// allow one of those without asking; see
+    /// `CodeSettingsFile.withoutScreenInputAllowances`.
+    public var coversScreenInput: Bool {
+        ComputerUseToolName.input.contains { covers(toolName: $0) }
+    }
+
     /// Whether this rule matches one invocation. A rule without a specifier
     /// matches every invocation of the tools it covers.
     func matches(toolName: String, subject: PermissionRuleSubject?) -> Bool {

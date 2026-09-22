@@ -1491,7 +1491,9 @@ public final class SessionController {
     /// every later session in this project.
     ///
     /// The rule goes to `.juno/settings.local.json`: it is this reader's trust,
-    /// not the team's, and it stays out of Git. It is also applied to the live
+    /// not the team's, and it stays out of Git. A rule for screen input goes
+    /// to `~/.juno/settings.json` instead, the only file that may hold one
+    /// (`CodeSettingsStore.alwaysAllowScope`). It is also applied to the live
     /// coordinator first, so a second identical call in the same batch does
     /// not ask again while the file is being written.
     public func approveAlways(_ approvalID: String) async {

@@ -131,6 +131,34 @@ final class StudioSnapshotTests: XCTestCase {
         }
     }
 
+    /// A project's shared allow list holding a screen-input rule, which the
+    /// session never applies, beside one it does.
+    func testRenderProjectAllowListWithScreenInputRule() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-studio-rules-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: project.appendingPathComponent(".juno"),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data(#"{"permissions":{"allow":["Bash(npm test *)","computer_click"]}}"#.utf8)
+            .write(to: project.appendingPathComponent(".juno/settings.json"))
+        let settings = CodeSettingsModel(
+            store: CodeSettingsStore(userDirectory: root.appendingPathComponent("home/.juno"))
+        )
+        settings.selectProject(project)
+        for dark in [false, true] {
+            try await render(
+                Form { StudioRuleListSection(list: .allow, scope: .project, settings: settings) }
+                    .formStyle(.grouped),
+                size: CGSize(width: 680, height: 260),
+                dark: dark,
+                name: "settings-project-allow-screen-input-\(dark ? "dark" : "light")"
+            )
+        }
+    }
+
     /// Every state of the banner at the top of a session, and the capture it
     /// opens to.
     func testRenderScreenControlBanner() async throws {

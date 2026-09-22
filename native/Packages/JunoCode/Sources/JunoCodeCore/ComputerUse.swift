@@ -100,6 +100,23 @@ public struct ComputerUseCapture: Equatable, Sendable {
     }
 }
 
+/// The agent's screen-control tools, by the names the model calls them.
+///
+/// In Core rather than beside the tools because the settings layer needs
+/// them too: which file may allow a tool without asking depends on whether
+/// the tool drives the mouse and keyboard.
+public enum ComputerUseToolName {
+    public static let screenshot = "computer_screenshot"
+    public static let click = "computer_click"
+    public static let type = "computer_type"
+    public static let pressKey = "computer_press_key"
+    public static let scroll = "computer_scroll"
+
+    /// The tools that act on the reader's Mac. A screenshot is not one of
+    /// them: looking is a read, and never asks.
+    public static let input: Set<String> = [click, type, pressKey, scroll]
+}
+
 public enum ComputerUseActionKind: Hashable, Codable, Sendable {
     case screenshot
     case click(x: Double, y: Double)

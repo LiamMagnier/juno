@@ -224,7 +224,7 @@ struct StudioScopeSection: View {
                 }
             }
         } footer: {
-            Text("Rules add up across all three. For everything else, the most specific file wins.")
+            Text("Rules add up across all three, though only All projects can let screen control act without asking. For everything else, the most specific file wins.")
         }
     }
 }
@@ -424,7 +424,19 @@ struct StudioRuleListSection: View {
             }
             ForEach(rules, id: \.self) { rule in
                 HStack {
-                    Text(rule.description).font(Studio.Font.mono)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rule.description).font(Studio.Font.mono)
+                        // Still listed, because it is in the file, but a
+                        // project file cannot let screen control act unasked;
+                        // saying so beats a rule that silently does nothing.
+                        if list == .allow, scope != .user, rule.coversScreenInput {
+                            Text("Not applied. Only All projects can let screen control act without asking.")
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("juno.code.settings.rule.screen-input-ignored")
+                        }
+                    }
                     Spacer()
                     Button {
                         settings.removeRule(rule, from: list, in: scope)

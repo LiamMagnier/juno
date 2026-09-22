@@ -78,12 +78,14 @@ public struct CodeSettingsStore: Sendable {
         userDirectory.appendingPathComponent("JUNO.md")
     }
 
-    /// Every layer applied, lowest first.
+    /// Every layer applied, lowest first. The two files inside the project
+    /// apply without their allow rules for screen input, which only the
+    /// reader's own file may hold.
     public func resolved(projectRoot: URL?) -> ResolvedCodeSettings {
         var layers = [load(.user, projectRoot: nil)]
         if projectRoot != nil {
-            layers.append(load(.project, projectRoot: projectRoot))
-            layers.append(load(.local, projectRoot: projectRoot))
+            layers.append(load(.project, projectRoot: projectRoot).withoutScreenInputAllowances)
+            layers.append(load(.local, projectRoot: projectRoot).withoutScreenInputAllowances)
         }
         return ResolvedCodeSettings.resolve(layers)
     }
@@ -124,6 +126,26 @@ public struct CodeSettingsStore: Sendable {
             permissions.allow = allow
             file.permissions = permissions
         }
+    }
+
+    /// Where an "Always allow" answer is saved. Ordinarily this project's
+    /// personal file: it is this reader's trust, not the team's. With no
+    /// project, and for screen input wherever it was given, the reader's own
+    /// file — no project file can allow screen input
+    /// (`CodeSettingsFile.withoutScreenInputAllowances`), and the screen it
+    /// acts on is the same whichever project asked.
+    public static func alwaysAllowScope(for rule: PermissionRule, projectRoot: URL?) -> Scope {
+        if rule.coversScreenInput || projectRoot == nil { return .user }
+        return .local
+    }
+
+    /// Saves an "Always allow" answer to the file `alwaysAllowScope` names.
+    public func rememberAllowRule(_ rule: PermissionRule, projectRoot: URL?) throws {
+        try addAllowRule(
+            rule,
+            scope: Self.alwaysAllowScope(for: rule, projectRoot: projectRoot),
+            projectRoot: projectRoot
+        )
     }
 
     /// `settings.local.json` is personal. A reader who commits it by accident

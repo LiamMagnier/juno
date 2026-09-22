@@ -12,7 +12,9 @@ import Foundation
 ///
 /// Every field is optional so a file says only what it means to change. Lists
 /// (permission rules) accumulate across files; everything else is decided by
-/// the closest file that sets it.
+/// the closest file that sets it. The one exception is screen input: only the
+/// reader's own file, the first, may allow it without asking
+/// (`withoutScreenInputAllowances`).
 public struct CodeSettingsFile: Codable, Equatable, Sendable {
     public var permissions: Permissions?
     /// Variables every command the agent runs receives. Never a place for
@@ -128,6 +130,31 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
             self.coAuthorTrailer = coAuthorTrailer
             self.branchPrefix = branchPrefix
         }
+    }
+}
+
+public extension CodeSettingsFile {
+    /// This file as a layer inside a project may apply it: without any allow
+    /// rule that would let screen control click, type, press keys or scroll
+    /// unasked.
+    ///
+    /// Screen control acts on the reader's whole Mac, not on the project, so
+    /// letting it act without asking is the reader's own decision, and
+    /// `~/.juno/settings.json` is the one file no repository can supply. Both
+    /// project files can arrive with a clone: the shared one is meant to, and
+    /// the ignore line Juno adds for `settings.local.json` keeps the reader's
+    /// own out of Git but cannot stop a repository shipping one. A rule in
+    /// either would silence every click prompt the moment the reader started
+    /// screen control, while the reader believed each click still asked.
+    ///
+    /// Ask and deny rules stay: they can only make screen control ask more.
+    var withoutScreenInputAllowances: CodeSettingsFile {
+        guard let allow = permissions?.allow, allow.contains(where: \.coversScreenInput) else {
+            return self
+        }
+        var file = self
+        file.permissions?.allow = allow.filter { !$0.coversScreenInput }
+        return file
     }
 }
 

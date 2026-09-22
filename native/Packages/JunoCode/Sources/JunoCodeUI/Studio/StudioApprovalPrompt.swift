@@ -135,7 +135,13 @@ struct StudioApprovalPrompt: View {
                     .buttonStyle(StudioSecondaryButtonStyle())
                     .keyboardShortcut(.return, modifiers: .command)
                     .accessibilityIdentifier("juno.code.approval.always")
-                    .help("Allow now, and save \(rule.description) to this project's personal settings (⌘↩)")
+                    // Said where it goes, because for screen input that is
+                    // every project, not this one: no project file may allow it.
+                    .help(
+                        rule.coversScreenInput
+                            ? "Allow now, and save \(rule.description) to your settings for all projects (⌘↩)"
+                            : "Allow now, and save \(rule.description) to this project's personal settings (⌘↩)"
+                    )
                 }
 
                 Button {

@@ -384,10 +384,14 @@ enum StudioCaptureImage {
 ///
 /// Every claim in the copy is one the code keeps. Screenshots are `read`
 /// actions and never ask; clicks, typing, key presses and scrolls are
-/// `critical`, which asks in every mode but Full access, and an Always allow
-/// rule silences them like any other tool. The copy says so rather than
-/// promising "always asks", which would be false in exactly the mode where a
-/// reader most needs it to be true.
+/// `critical`, which asks in every mode but Full access, and an allow rule
+/// silences them — but only one in `~/.juno/settings.json`, which is where
+/// Always allow saves it: rules from a project's files are dropped before
+/// they reach the session (`CodeSettingsFile.withoutScreenInputAllowances`).
+/// The copy says so rather than promising "always asks", which would be
+/// false in exactly the mode where a reader most needs it to be true, and
+/// names the one place a standing yes can live: the All projects allow list,
+/// on the same page as this section.
 struct StudioScreenControlSettings: View {
     let probe: ComputerUsePermissionProbe
 
@@ -402,7 +406,7 @@ struct StudioScreenControlSettings: View {
 
     var body: some View {
         Section {
-            Text("Lets Juno see your main display and use the mouse and keyboard, in a session where you choose Start Screen Control from the More menu. Screenshots never ask. Each click, keystroke and scroll asks first, unless the session has Full access or you chose Always allow for it.")
+            Text("Lets Juno see your main display and use the mouse and keyboard, in a session where you choose Start Screen Control from the More menu. Screenshots never ask. Each click, keystroke and scroll asks first, unless the session has Full access or you allowed it for all projects, as Always allow does. A project's own settings files cannot turn these questions off.")
                 .font(Studio.Font.meta)
                 .foregroundStyle(Studio.Ink.secondary)
                 .fixedSize(horizontal: false, vertical: true)
