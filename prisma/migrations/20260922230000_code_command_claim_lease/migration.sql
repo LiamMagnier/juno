@@ -1,0 +1,14 @@
+-- How many times a host has claimed a Code session command.
+--
+-- A command the Mac claimed but never acknowledged — it slept, lost its
+-- network or quit mid-command — stayed "claimed" forever: nothing handed it
+-- out again and nothing failed it. A claim is now a lease: the host's long
+-- poll re-queues this device's claims older than two minutes, and fails them
+-- instead once they have been claimed COMMAND_MAX_CLAIMS times (see
+-- src/lib/code-session-command-lease.ts). This column is what bounds that.
+--
+-- Expand-only (docs/JUNO.md §20.2b): one defaulted column the running release
+-- never selects. Existing rows start at 0; a command stuck "claimed" before
+-- this shipped is older than the re-queue window, so its host's next poll
+-- fails it with a reason instead of running an old prompt.
+ALTER TABLE "CodeSessionCommand" ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0;

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { sessionCommandRateLimit } from "@/lib/code-session-command-route";
+import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import {
   TRANSCRIPT_POLICIES,
   deviceIsOnline,
@@ -106,15 +107,31 @@ async function enqueueMutation(
   if (parsed.data.expectedVersion && parsed.data.expectedVersion !== session.snapshotVersion) {
     return NextResponse.json({ error: "version_conflict", currentVersion: session.snapshotVersion }, { status: 409 });
   }
-  const payload = kind === "delete"
-    ? { confirmation: true, expectedVersion: parsed.data.expectedVersion }
-    : { title: parsed.data.title, pinned: parsed.data.pinned, archived: parsed.data.archived, expectedVersion: parsed.data.expectedVersion };
-  const command = await prisma.codeSessionCommand.upsert({
+  // Named for what the Mac does with them. A bare `patch` or `delete` reads as
+  // a change-review verb on the commands route; this route means the session
+  // itself, and says so.
+  const command = kind === "delete"
+    ? { kind: "delete_session", payload: { confirmation: true, expectedVersion: parsed.data.expectedVersion } }
+    : canonicalSessionCommand("patch", {
+        title: parsed.data.title,
+        pinned: parsed.data.pinned,
+        archived: parsed.data.archived,
+        expectedVersion: parsed.data.expectedVersion,
+      });
+  const stored = await prisma.codeSessionCommand.upsert({
     where: { userId_idempotencyKey: { userId: user.id, idempotencyKey: parsed.data.idempotencyKey } },
-    create: { userId: user.id, deviceId, remoteSessionId: session.id, sessionId, kind, payload, idempotencyKey: parsed.data.idempotencyKey },
+    create: {
+      userId: user.id,
+      deviceId,
+      remoteSessionId: session.id,
+      sessionId,
+      kind: command.kind,
+      payload: command.payload as Prisma.InputJsonValue,
+      idempotencyKey: parsed.data.idempotencyKey,
+    },
     update: {},
   });
-  return NextResponse.json({ commandId: command.id, status: command.status }, { status: command.status === "pending" ? 202 : 200 });
+  return NextResponse.json({ commandId: stored.id, status: stored.status }, { status: stored.status === "pending" ? 202 : 200 });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ deviceId: string; sessionId: string }> }) {

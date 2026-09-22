@@ -1757,6 +1757,10 @@ model CodeSessionCommand {
   createdAt       DateTime  @default(now())
   claimedAt       DateTime?
   completedAt     DateTime?
+  // How many times a host has claimed this command. A claim is a lease: one
+  // never acknowledged goes back to `pending` when it runs out, and after
+  // COMMAND_MAX_CLAIMS it is failed instead (src/lib/code-session-command-lease.ts).
+  attempts        Int       @default(0)
 
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   device        CodeDevice        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
