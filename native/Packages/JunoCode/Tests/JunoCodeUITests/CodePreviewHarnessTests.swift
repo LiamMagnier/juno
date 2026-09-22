@@ -517,6 +517,7 @@ final class CodePreviewHarnessTests: XCTestCase {
                 case .runCompleted: payloadKinds.insert("runCompleted")
                 case .compaction: payloadKinds.insert("compaction")
                 case .transcriptRewound: payloadKinds.insert("transcriptRewound")
+                case .hookActivity: payloadKinds.insert("hookActivity")
                 }
             }
             sawRunningTool = sawRunningTool || !startedTools.subtracting(completedTools).isEmpty
@@ -572,7 +573,7 @@ final class CodePreviewHarnessTests: XCTestCase {
                      "toolProposed", "toolStarted", "toolOutput", "toolCompleted",
                      "approvalRequested", "approvalResolved", "fileChanged",
                      "testRunCompleted", "subagentUpdated", "errorOccurred",
-                     "runCompleted"] {
+                     "hookActivity", "runCompleted"] {
             XCTAssertTrue(payloadKinds.contains(kind), "no fixture renders \(kind)")
         }
     }

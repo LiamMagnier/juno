@@ -49,6 +49,7 @@ public struct StudioSessionView: View {
             || !controller.pendingAttachments.isEmpty)
             && controller.isAgentTransportConfigured
             && !controller.isCompacting
+            && !controller.isSubmitting
     }
 
     private var placeholder: String {
@@ -127,6 +128,7 @@ public struct StudioSessionView: View {
             commandUnavailableReason: unavailableReason,
             canSend: canSend,
             isRunning: isBusy,
+            isSending: controller.isSubmitting,
             send: { Task { await controller.send() } },
             stop: { Task { await controller.stop() } },
             rewind: openRewindPicker,

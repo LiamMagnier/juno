@@ -81,6 +81,31 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
         timeoutSeconds: Double,
         outputLimit: OutputLimit
     ) -> AsyncThrowingStream<CommandEvent, Error> {
+        stream(
+            commandLine,
+            timeoutSeconds: timeoutSeconds,
+            outputLimit: outputLimit,
+            standardInput: nil,
+            additionalEnvironment: [:]
+        )
+    }
+
+    /// Runs a command that reads its input from standard input — a hook,
+    /// which is handed its event as JSON — with a few variables of its own.
+    ///
+    /// - Parameters:
+    ///   - standardInput: Written to the command and then closed, so a reader
+    ///     of stdin sees end-of-file. Nil connects stdin to /dev/null, as for
+    ///     every agent command.
+    ///   - additionalEnvironment: Set after the reader's own variables, so a
+    ///     settings file cannot redirect a hook's project folder.
+    public func stream(
+        _ commandLine: String,
+        timeoutSeconds: Double,
+        outputLimit: OutputLimit,
+        standardInput: Data?,
+        additionalEnvironment: [String: String]
+    ) -> AsyncThrowingStream<CommandEvent, Error> {
         AsyncThrowingStream { continuation in
             // Defense in depth: the runtime checks the classifier before
             // proposing the command; refuse forbidden commands here too.
@@ -107,13 +132,21 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             where name != "PWD" && name != "HOME" {
                 environment[name] = value
             }
+            for (name, value) in additionalEnvironment {
+                environment[name] = value
+            }
             process.environment = environment
 
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
-            process.standardInput = FileHandle.nullDevice
+            let stdinPipe = standardInput.map { _ in Pipe() }
+            if let stdinPipe {
+                process.standardInput = stdinPipe
+            } else {
+                process.standardInput = FileHandle.nullDevice
+            }
 
             let state = ExecutionState(limitBytes: outputLimit.maximumBytes)
             let startedAt = DispatchTime.now()
@@ -192,11 +225,51 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
                 // Unblock the drain readers before finishing.
                 try? stdoutPipe.fileHandleForWriting.close()
                 try? stderrPipe.fileHandleForWriting.close()
+                try? stdinPipe?.fileHandleForWriting.close()
                 continuation.finish(
                     throwing: CommandExecutionError.launchFailed(
                         message: String(describing: error)
                     )
                 )
+                return
+            }
+
+            // Written off the caller's thread: a payload larger than the pipe
+            // buffer blocks until the command reads it, and a command that
+            // never reads it blocks the writer until the command exits or its
+            // timeout kills it.
+            if let stdinPipe, let standardInput {
+                let handle = stdinPipe.fileHandleForWriting
+                DispatchQueue.global(qos: .userInitiated).async {
+                    Self.writeAll(standardInput, to: handle.fileDescriptor)
+                    try? handle.close()
+                }
+            }
+        }
+    }
+
+    /// Writes every byte it can, stopping quietly when the reader goes away.
+    ///
+    /// A hook that exits without reading its input closes the pipe, and a
+    /// plain write to a closed pipe raises SIGPIPE, whose default action
+    /// would take the whole app down with it. The descriptor is told not to
+    /// signal, so that case becomes an EPIPE error, which simply ends the
+    /// write.
+    private static func writeAll(_ data: Data, to descriptor: Int32) {
+        _ = fcntl(descriptor, F_SETNOSIGPIPE, 1)
+        data.withUnsafeBytes { buffer in
+            guard var pointer = buffer.baseAddress else { return }
+            var remaining = buffer.count
+            while remaining > 0 {
+                let written = Darwin.write(descriptor, pointer, remaining)
+                if written > 0 {
+                    pointer += written
+                    remaining -= written
+                } else if written < 0, errno == EINTR {
+                    continue
+                } else {
+                    return
+                }
             }
         }
     }

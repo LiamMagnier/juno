@@ -32,6 +32,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     var commandUnavailableReason: (CodeSlashCommand) -> String? = { _ in nil }
     var canSend: Bool
     var isRunning = false
+    /// The draft is on its way — its hooks are deciding on it — and stays in
+    /// the field until it is delivered. Stop is the one thing to offer then.
+    var isSending = false
     var send: () -> Void
     var stop: (() -> Void)?
     /// Esc pressed twice quickly, in an empty composer. Nil where there is
@@ -228,7 +231,10 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        if isRunning, let stop, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, attachments.isEmpty {
+        if let stop,
+           isSending
+            || (isRunning && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+        {
             Button(action: stop) {
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                     .fill(Studio.Surface.canvas)

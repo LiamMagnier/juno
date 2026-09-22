@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 import JunoCodeCore
+import JunoCodeLocal
 import JunoDesignSystem
 @testable import JunoCodeUI
 
@@ -237,6 +238,50 @@ final class StudioSnapshotTests: XCTestCase {
                 name: "settings-\(section.rawValue)"
             )
         }
+    }
+
+    /// The hooks section of Tools & MCP, with a project's hooks allowed, one
+    /// edited since, and one of the reader's own.
+    func testRenderHooksSettings() async throws {
+        func hook(_ event: HookLifecycleEvent, _ command: String, matcher: String? = nil, file: HookConfigurationFile) -> HookDefinition {
+            HookDefinition(
+                event: event,
+                matcher: HookMatcher(pattern: matcher),
+                command: command,
+                source: file.source,
+                path: file.path,
+                trust: file.trust
+            )
+        }
+        let guardHook = hook(.preToolUse, "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-rm.sh", matcher: "Bash", file: .claudeProject)
+        let format = hook(.postToolUse, "jq -r .tool_input.file_path | xargs swift-format -i", matcher: "Edit|Write", file: .claudeProject)
+        let context = hook(.sessionStart, "git status --short", file: .junoProject)
+        let notify = hook(.notification, "~/bin/notify \"Juno needs you\"", file: .junoUser)
+        let hooks = HookDiscoveryResult(hooks: [notify, guardHook, format, context])
+        let policy = HookExecutionPolicy(allowedHookIDs: [guardHook.id, format.id], allowUntrustedHooks: true)
+        for dark in [false, true] {
+            try await render(
+                Form {
+                    StudioHooksSettings(hooks: hooks, policy: policy, setAllowed: { _ in })
+                }
+                .formStyle(.grouped),
+                size: CGSize(width: 720, height: 760),
+                dark: dark,
+                name: "settings-hooks-\(dark ? "dark" : "light")"
+            )
+        }
+        // A project that switches its own hooks off: the reader's still run.
+        let projectOff = HookDiscoveryResult(hooks: [notify], disabledBy: HookConfigurationFile.claudeLocal.path)
+        XCTAssertFalse(projectOff.disablesReaderHooks)
+        try await render(
+            Form {
+                StudioHooksSettings(hooks: projectOff, policy: policy, setAllowed: { _ in })
+            }
+            .formStyle(.grouped),
+            size: CGSize(width: 720, height: 360),
+            dark: false,
+            name: "settings-hooks-project-off"
+        )
     }
 
     // MARK: - Rendering

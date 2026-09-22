@@ -78,9 +78,12 @@ public struct PermissionRule: Hashable, Codable, Sendable, CustomStringConvertib
     /// Tool families the friendly names stand for.
     static let families: [String: Set<String>] = [
         // Git's own tools are shell commands with a narrower surface, so a
-        // rule about `git commit` reads the same whichever tool runs it.
-        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit"],
-        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit"],
+        // rule about `git commit` reads the same whichever tool runs it. A
+        // repository hook is a shell command too, asked about as one: the
+        // reader's rule about `npm run lint` means the same when a hook runs
+        // it.
+        "bash": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
+        "shell": ["run_command", "run_tests", "git_status", "git_diff", "git_log", "git_commit", "hook"],
         "read": ["read_file", "list_directory", "find_files", "glob", "grep"],
         "edit": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],
         "write": ["create_file", "write_file", "apply_patch", "multi_edit", "delete_file", "move_file"],

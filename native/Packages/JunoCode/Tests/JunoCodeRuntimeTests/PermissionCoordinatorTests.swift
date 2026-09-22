@@ -230,6 +230,53 @@ final class PermissionCoordinatorTests: XCTestCase {
         }
     }
 
+    func testAStoppedRunRaisesNoNewApproval() async {
+        // `stop()` cancels the run, then denies what is pending. A call that
+        // reaches authorization after that must not leave a request waiting
+        // on the reader for a run they ended.
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        let asked = expectation(description: "no approval is requested")
+        asked.isInverted = true
+        await coordinator.addObserver { update in
+            if case .requested = update { asked.fulfill() }
+        }
+        let digest = Self.digest("late")
+        let late = Task {
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            return await coordinator.authorize(
+                toolName: "write_file",
+                actionDigest: digest,
+                risk: .write,
+                summary: "Write after stop"
+            )
+        }
+        late.cancel()
+        await fulfillment(of: [asked], timeout: 0.5)
+        let pending = await coordinator.pendingApprovals
+        XCTAssertTrue(pending.isEmpty)
+        // Releases a request a regression would have left waiting, so the
+        // failure is reported instead of hanging the suite.
+        await coordinator.denyAll()
+        guard case let .denied(reason) = await late.value else {
+            return XCTFail("a cancelled run must be refused, not asked about")
+        }
+        XCTAssertEqual(reason, "The run was stopped.")
+
+        // A call the mode lets through is not a prompt, and stays unaffected.
+        let allowed = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await coordinator.authorize(
+                toolName: "read_file",
+                actionDigest: digest,
+                risk: .read,
+                summary: "Read"
+            )
+        }.value
+        XCTAssertEqual(allowed, .allowed)
+    }
+
     func testExpirySweepDeniesStaleApprovals() async {
         let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
         let requested = expectation(description: "approval requested")

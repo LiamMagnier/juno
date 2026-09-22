@@ -740,6 +740,9 @@ public final class WorkbenchModel {
         recentlyOpened.removeAll()
         for controller in currentControllers {
             await controller.stop()
+            // The workbench is discarded when the reader signs out, which is
+            // the moment Claude Code's `SessionEnd` calls `logout`.
+            await controller.endHookSession(reason: "logout")
             await controller.detach()
         }
         if let storeObserver {
@@ -798,6 +801,9 @@ public final class WorkbenchModel {
         let controller = controllers[session.id]
         if let controller {
             await controller.stop()
+            // Before the record is erased, so the `transcript_path` a
+            // `SessionEnd` hook is given still points at the transcript.
+            await controller.endHookSession(reason: "other")
         }
         // A projectless session never took a checkpoint — checkpoints are
         // snapshots of a working tree — so there is nothing to remove.

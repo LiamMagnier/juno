@@ -161,6 +161,9 @@ public struct StudioThreadView: View {
             StudioErrorRow(message: message, retry: isLastError(item) ? { Task { await controller.retryLastTurn() } } : nil)
         case let .compaction(id, event):
             StudioCompactionDivider(event: event, isExpanded: binding(id))
+        case let .hook(_, event):
+            StudioHookRow(event: event)
+                .accessibilityIdentifier("juno.code.transcript.hook")
         case let .modeChange(_, text):
             StudioDividerCaption(text: text)
         case let .summary(_, run, turn):

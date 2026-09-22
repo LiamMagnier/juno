@@ -916,11 +916,19 @@ public actor CodeSessionStore {
         return goal
     }
 
-    private func sessionDirectory(_ id: CodeSessionID) -> URL {
+    /// The session's transcript on disk, when one has been written — what a
+    /// hook receives as `transcript_path`. Nonisolated because it is only a
+    /// path: a hook that reads it reads the file, not this actor's memory.
+    public nonisolated func transcriptURL(for id: CodeSessionID) -> URL? {
+        let url = eventsURL(id)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private nonisolated func sessionDirectory(_ id: CodeSessionID) -> URL {
         directoryURL.appendingPathComponent("sessions").appendingPathComponent(id.value)
     }
 
-    private func eventsURL(_ id: CodeSessionID) -> URL {
+    private nonisolated func eventsURL(_ id: CodeSessionID) -> URL {
         sessionDirectory(id).appendingPathComponent("events.jsonl")
     }
 

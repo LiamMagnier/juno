@@ -133,6 +133,28 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(permissions["remoteCeiling"] as? String, "sometimes")
     }
 
+    /// The same file holds the reader's hooks, which Juno reads through
+    /// `HookConfigurationParser` rather than the settings model. "Always
+    /// allow" or a Settings toggle writing that file must leave them, and the
+    /// switch that turns them off, exactly as the reader wrote them.
+    func testAnEditKeepsTheFilesHooks() throws {
+        let url = try XCTUnwrap(store.url(for: .local, projectRoot: project))
+        let hooks = #"{"PreToolUse":[{"matcher":"Bash|Edit","hooks":[{"type":"command","command":"./.claude/hooks/guard.sh","timeout":30}]}],"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}"#
+        try write(#"{"disableAllHooks":false,"hooks":"# + hooks + #","permissions":{"deny":["Read(.env)"]}}"#, .local)
+
+        try store.addAllowRule(PermissionRule(tool: "Bash", specifier: "npm test *"), scope: .local, projectRoot: project)
+        try store.update(.local, projectRoot: project) { $0.instructions = "Be brief." }
+
+        let written = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url)).objectValue
+        XCTAssertEqual(written?["hooks"], try JSONDecoder().decode(JSONValue.self, from: Data(hooks.utf8)))
+        XCTAssertEqual(written?["disableAllHooks"], .bool(false))
+        XCTAssertEqual(written?["instructions"], .string("Be brief."))
+        XCTAssertEqual(
+            written?["permissions"]?.objectValue?["allow"],
+            .array([.string("Bash(npm test *)")])
+        )
+    }
+
     // MARK: - Keeping the personal file out of Git
 
     private var ignoreList: String {

@@ -45,6 +45,11 @@ public struct DelegateTaskTool: CodeTool {
     /// rules that come with it weaken nothing, and every deny and ask rule
     /// binds read-only and write-capable children alike.
     private let parentRules: (@Sendable () async -> PermissionRuleSet)?
+    /// The parent session's hooks. Each child gets the sub-agent view of them
+    /// — its tool calls are vetted by the same `PreToolUse` guards, and its
+    /// finish runs `SubagentStop` — so delegating is never a way around a
+    /// project's hooks.
+    private let lifecycleHooks: (any AgentLifecycleHooks)?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -76,7 +81,8 @@ public struct DelegateTaskTool: CodeTool {
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
         fallbackResolver: (any ModelFallbackResolver)? = nil,
-        parentRules: (@Sendable () async -> PermissionRuleSet)? = nil
+        parentRules: (@Sendable () async -> PermissionRuleSet)? = nil,
+        lifecycleHooks: (any AgentLifecycleHooks)? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -90,6 +96,7 @@ public struct DelegateTaskTool: CodeTool {
         self.controls = controls
         self.fallbackResolver = fallbackResolver
         self.parentRules = parentRules
+        self.lifecycleHooks = lifecycleHooks
     }
 
     public let name = "delegate_task"
@@ -466,6 +473,9 @@ public struct DelegateTaskTool: CodeTool {
             ),
             modelID: childModelID,
             reasoningEffort: childReasoningEffort,
+            lifecycleHooks: lifecycleHooks?.subagentHooks(
+                executionRootPath: environment.executionRootPath
+            ),
             fallbackResolver: fallbackResolver
         )
         await controls?.register(

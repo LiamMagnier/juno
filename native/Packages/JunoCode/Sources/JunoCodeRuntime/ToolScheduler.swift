@@ -13,6 +13,9 @@ public actor ToolScheduler {
         public let isError: Bool
         public let images: [ModelImage]
         public let sideEffects: [SessionEventPayload]
+        /// A hook answered `"continue": false` around this call, so the run
+        /// ends once the batch is answered.
+        public let haltReason: String?
 
         public init(
             callID: String,
@@ -21,7 +24,8 @@ public actor ToolScheduler {
             content: String,
             isError: Bool,
             images: [ModelImage] = [],
-            sideEffects: [SessionEventPayload] = []
+            sideEffects: [SessionEventPayload] = [],
+            haltReason: String? = nil
         ) {
             self.callID = callID
             self.toolName = toolName
@@ -30,6 +34,7 @@ public actor ToolScheduler {
             self.isError = isError
             self.images = images
             self.sideEffects = sideEffects
+            self.haltReason = haltReason
         }
     }
 
@@ -159,16 +164,47 @@ public actor ToolScheduler {
         let startedAt = Date()
         let hookInvocation = AgentToolHookInvocation(
             sessionID: sessionID,
+            toolCallID: id,
             toolName: name,
             input: input
         )
 
+        var hookPermission: AgentHookPermission?
         if let lifecycleHooks {
-            switch await lifecycleHooks.beforeTool(hookInvocation) {
-            case .allow:
-                break
-            case let .deny(reason):
-                let message = "Action blocked by hook: \(reason)"
+            let response = await lifecycleHooks.beforeTool(hookInvocation)
+            // Stop can land while a `PreToolUse` hook runs. The hook is killed,
+            // and a killed hook reads as a non-blocking failure, so without
+            // this the call would go on: in Full access to run the tool, and
+            // in a mode that asks to raise a new prompt for a run the reader
+            // has just stopped — one `stop()` would then sit waiting on.
+            guard !Task.isCancelled else {
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolCompleted(
+                        ToolCompletedEvent(
+                            toolCallID: id,
+                            status: .cancelled,
+                            resultSummary: "Stopped before it ran.",
+                            durationSeconds: Date().timeIntervalSince(startedAt)
+                        )
+                    )
+                )
+                return ExecutionResult(
+                    callID: id,
+                    toolName: name,
+                    input: input,
+                    content: ConversationIntegrity.notExecutedMessage,
+                    isError: true
+                )
+            }
+            await record(response.notices, sessionID: sessionID, store: store)
+            // `"continue": false` outranks every other answer, as it does in
+            // Claude Code: the call does not run and neither does the rest
+            // of the turn.
+            if let reason = response.haltReason ?? response.blockReason {
+                let message = response.haltReason != nil
+                    ? "Action not run: a hook ended the run. \(reason)"
+                    : "Action blocked by hook: \(reason)"
                 _ = try? await store.appendEvent(
                     sessionID: sessionID,
                     payload: .toolCompleted(
@@ -185,16 +221,19 @@ public actor ToolScheduler {
                     toolName: name,
                     input: input,
                     content: message,
-                    isError: true
+                    isError: true,
+                    haltReason: response.haltReason
                 )
             }
+            hookPermission = response.permission
         }
 
         do {
             try await registry.authorizeInvocation(
                 toolName: name,
                 input: input,
-                permissions: permissions
+                permissions: permissions,
+                hookPermission: hookPermission
             )
         } catch {
             let reason = deniedReason(from: error)
@@ -261,11 +300,6 @@ public actor ToolScheduler {
                         )
                     )
                 )
-                await lifecycleHooks?.afterTool(
-                    hookInvocation,
-                    succeeded: false,
-                    summary: message
-                )
                 return ExecutionResult(
                     callID: id,
                     toolName: name,
@@ -291,20 +325,34 @@ public actor ToolScheduler {
                     )
                 )
             )
-            await lifecycleHooks?.afterTool(
+            // PostToolUse runs for a call that ran and answered, as in Claude
+            // Code; a call that threw never produced a result to look at.
+            // What a post hook says reaches the model with the result, since
+            // the tool has already happened and cannot be taken back.
+            let after = await lifecycleHooks?.afterTool(
                 hookInvocation,
                 succeeded: !result.isError,
-                summary: firstLineResult
+                content: result.content
+            ) ?? .empty
+            await record(after.notices, sessionID: sessionID, store: store)
+            var notes: [String] = []
+            if let reason = after.blockReason {
+                notes.append("PostToolUse hook feedback:\n" + reason)
+            }
+            let content = AgentHookContext.appending(
+                after.context,
+                to: ([result.content] + notes).joined(separator: "\n\n")
             )
 
             return ExecutionResult(
                 callID: id,
                 toolName: name,
                 input: input,
-                content: result.content,
+                content: content,
                 isError: result.isError,
                 images: result.images,
-                sideEffects: result.sideEffects
+                sideEffects: result.sideEffects,
+                haltReason: after.haltReason
             )
         } catch {
             let message = String(describing: error)
@@ -319,11 +367,6 @@ public actor ToolScheduler {
                     )
                 )
             )
-            await lifecycleHooks?.afterTool(
-                hookInvocation,
-                succeeded: false,
-                summary: message
-            )
             return ExecutionResult(
                 callID: id,
                 toolName: name,
@@ -331,6 +374,17 @@ public actor ToolScheduler {
                 content: "Tool execution failed: \(message)",
                 isError: true
             )
+        }
+    }
+
+    /// Writes what hooks asked the thread to show, where they ran.
+    static func record(
+        _ notices: [HookActivityEvent],
+        sessionID: CodeSessionID,
+        store: CodeSessionStore
+    ) async {
+        for notice in notices {
+            _ = try? await store.appendEvent(sessionID: sessionID, payload: .hookActivity(notice))
         }
     }
 

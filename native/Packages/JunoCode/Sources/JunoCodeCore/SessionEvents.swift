@@ -53,6 +53,9 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// The reader rewound the session, and the transcript restarts here. Only
     /// ever the first event of a transcript; see ``TranscriptRewoundEvent``.
     case transcriptRewound(TranscriptRewoundEvent)
+    /// A project hook changed the course of the run or failed, so the thread
+    /// can say which hook it was and why.
+    case hookActivity(HookActivityEvent)
 
     /// Whether this event replaces everything before it in the stream, so a
     /// reader keeping its place by sequence drops what it holds and rebuilds
@@ -632,6 +635,60 @@ public struct CompactionEvent: Hashable, Codable, Sendable {
     /// `12 → 5 messages`.
     public var messageCountSummary: String {
         "\(beforeMessageCount) → \(afterMessageCount) messages"
+    }
+}
+
+/// A hook did something the reader is owed an explanation for.
+///
+/// Only the moments that change what happens are recorded: a hook that
+/// blocked a tool or a prompt, told the agent something after a tool ran, kept
+/// the agent going when it meant to stop, ended the run, or failed. A hook
+/// that ran and had nothing to say leaves no trace in the thread — hooks are
+/// meant to be invisible until they matter.
+public struct HookActivityEvent: Hashable, Codable, Sendable {
+    public enum Outcome: String, Codable, CaseIterable, Sendable {
+        /// Stopped a tool call before it ran, or a prompt before it was sent.
+        case blocked
+        /// Sent the agent a note about a tool call that already ran.
+        case feedback
+        /// Asked the agent to keep working when it was about to stop.
+        case continued
+        /// Ended the run (`"continue": false`).
+        case stopped
+        /// Exited with an error or timed out. The run carried on.
+        case failed
+        /// A message the hook asked to show the reader (`systemMessage`).
+        case message
+    }
+
+    /// The lifecycle event, in the names hooks are configured with
+    /// (`PreToolUse`, `UserPromptSubmit`, `Stop`…).
+    public let hookEvent: String
+    /// A short name for the hook — its script, or the start of its command.
+    /// Empty when the runtime itself is speaking about hooks.
+    public let hookName: String
+    public let outcome: Outcome
+    /// The hook's reason, or its error output, bounded.
+    public let message: String
+    /// The tool call a `PreToolUse` or `PostToolUse` hook was about.
+    public let toolCallID: String?
+    /// What was blocked when it is not a tool call: the prompt's text.
+    public let subject: String?
+
+    public init(
+        hookEvent: String,
+        hookName: String,
+        outcome: Outcome,
+        message: String,
+        toolCallID: String? = nil,
+        subject: String? = nil
+    ) {
+        self.hookEvent = hookEvent
+        self.hookName = hookName
+        self.outcome = outcome
+        self.message = message
+        self.toolCallID = toolCallID
+        self.subject = subject
     }
 }
 

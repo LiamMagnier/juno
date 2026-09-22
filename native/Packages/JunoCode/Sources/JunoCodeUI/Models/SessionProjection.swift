@@ -273,6 +273,12 @@ public final class SessionProjection {
             // transcript and says nothing about what the agent is doing.
             closeActiveGroup(status: .completed)
 
+        case .hookActivity:
+            // A hook's note is its own row beside the work it was about. It
+            // leaves the group open: a blocked call is one step of the
+            // stretch it happened in, not the end of it.
+            break
+
         case let .approvalRequested(request):
             closeActiveGroup(status: .completed)
             executionState = .awaitingApproval(

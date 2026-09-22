@@ -354,6 +354,72 @@ struct StudioDecisionRow: View {
     }
 }
 
+/// What a project hook did, once and quietly: "Blocked by hook
+/// .claude/hooks/guard.sh", with the hook's own reason beneath.
+///
+/// Neutral ink on purpose. A hook doing its job is not an error, and coral is
+/// kept for work in flight and for the reader being needed; even a failed
+/// hook left the run going, so it reads as a note rather than an alarm.
+struct StudioHookRow: View {
+    let event: HookActivityEvent
+
+    private var title: String {
+        switch event.outcome {
+        case .blocked:
+            event.hookEvent == "UserPromptSubmit" ? "Not sent. Blocked by hook" : "Blocked by hook"
+        case .feedback: "Note from hook"
+        case .continued: "Kept working at a hook's request"
+        case .stopped: event.hookName.isEmpty ? "Stopped" : "Stopped by hook"
+        case .failed: "Hook failed"
+        case .message: "Hook"
+        }
+    }
+
+    private var icon: JunoIcon {
+        switch event.outcome {
+        case .blocked: .circleSlash
+        case .feedback, .message: .message
+        case .continued: .rotateCcw
+        case .stopped: .circleStop
+        case .failed: .triangleAlert
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(icon, size: 11)
+                    .foregroundStyle(Studio.Ink.tertiary)
+                    .frame(width: 11)
+                Text(title)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                if !event.hookName.isEmpty {
+                    Text(event.hookName)
+                        .font(Studio.Font.mono)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            if !event.message.isEmpty {
+                Text(event.message)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.tertiary)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+                    .padding(.leading, 11 + JunoSpace.tight)
+            }
+        }
+        .padding(.leading, 17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            [title, event.hookName, event.message].filter { !$0.isEmpty }.joined(separator: ": ")
+        )
+    }
+}
+
 /// The agent's plan, at its latest state.
 struct StudioPlanCard: View {
     let goal: SessionGoal

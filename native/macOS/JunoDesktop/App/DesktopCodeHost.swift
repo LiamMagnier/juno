@@ -316,6 +316,16 @@ private actor DesktopQueuedCodeHost {
                     "detail": .string(compaction.messageCountSummary),
                 ]
             )
+        case .hookActivity(let activity):
+            // A status line, as the other quiet rows are: a phone watching
+            // the task learns a hook stepped in and why, in one line.
+            .init(
+                kind: "status",
+                payload: [
+                    "status": .string("\(activity.hookEvent) hook \(activity.outcome.rawValue)"),
+                    "detail": .string(activity.message),
+                ]
+            )
         case .assistantMessage(let message):
             .init(kind: "text", payload: ["text": .string(message.text)])
         case .reasoningSummary(let reasoning):

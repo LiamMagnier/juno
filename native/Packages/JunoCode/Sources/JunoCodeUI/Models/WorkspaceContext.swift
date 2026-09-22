@@ -37,6 +37,10 @@ public final class WorkspaceContext: Sendable {
     /// Discovered during context construction so hooks are available to the
     /// first agent turn even when the reader never opens the Repository pane.
     public let hookDiscoveryResult: HookDiscoveryResult
+    /// The folder of the reader's own `settings.json`, whose hooks run in every
+    /// project. Nil leaves them out, for a test that must not pick up the
+    /// hooks of whoever runs it.
+    public let userSettingsDirectory: URL?
     /// Optional authenticated web search, shared with isolated sub-agent
     /// contexts as a read-only capability.
     public let webSearch: (any CodeWebSearching)?
@@ -47,12 +51,14 @@ public final class WorkspaceContext: Sendable {
         access: WorkspaceAccess,
         storageRoot: URL,
         additionalWritablePaths: [String] = [],
-        webSearch: (any CodeWebSearching)? = nil
+        webSearch: (any CodeWebSearching)? = nil,
+        userSettingsDirectory: URL? = CodeSettingsStore.defaultUserDirectory
     ) {
         self.record = record
         self.access = access
         self.storageRoot = storageRoot
         self.webSearch = webSearch
+        self.userSettingsDirectory = userSettingsDirectory
         self.hookPolicyStore = HookPolicyStore(
             storageRoot: storageRoot,
             workspaceID: record.id
@@ -61,7 +67,10 @@ public final class WorkspaceContext: Sendable {
             storageRoot: storageRoot,
             workspaceID: record.id
         )
-        self.hookDiscoveryResult = HookDiscovery(access: access).discover()
+        self.hookDiscoveryResult = HookDiscovery(
+            access: access,
+            userSettingsDirectory: userSettingsDirectory
+        ).discover()
         let checkpoints = CheckpointStore(
             directoryURL: storageRoot
                 .appendingPathComponent("checkpoints")
@@ -175,6 +184,28 @@ public final class WorkspaceContext: Sendable {
         }
     }
 
+    /// Allows or revokes this project's hooks, as the reader decided.
+    ///
+    /// Allowing records the IDs of exactly the repository hooks discovered
+    /// now. An ID is a digest of the entry — its file, event, matcher and
+    /// command — so an entry added or edited later, by a collaborator or by
+    /// the agent, is a new hook that waits to be allowed. What the command
+    /// runs is not in the digest: a script can change under an unchanged
+    /// entry. That is why an allowed hook still asks before each run wherever
+    /// the permission mode asks before a command (`HookExecutionPolicy`).
+    @discardableResult
+    public func setRepositoryHooksAllowed(
+        _ allowed: Bool,
+        discovered: HookDiscoveryResult
+    ) throws -> HookExecutionPolicy {
+        let policy = HookExecutionPolicy(
+            allowedHookIDs: allowed ? Set(discovered.repositoryHooks.map(\.id)) : [],
+            allowUntrustedHooks: allowed
+        )
+        try hookPolicyStore.save(policy)
+        return policy
+    }
+
     /// Builds a short-lived context rooted in a Juno-created worktree. The
     /// worktree path is validated against the original grant before it becomes
     /// a capability, and Git's shared administrative directory is the only
@@ -212,7 +243,8 @@ public final class WorkspaceContext: Sendable {
             additionalWritablePaths: [
                 access.rootURL.appendingPathComponent(".git").path,
             ],
-            webSearch: webSearch
+            webSearch: webSearch,
+            userSettingsDirectory: userSettingsDirectory
         )
     }
 
