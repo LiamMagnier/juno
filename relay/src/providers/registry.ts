@@ -1,16 +1,21 @@
 import type { VoiceProviderId } from "../protocol.js";
 import { GeminiLiveSession } from "./gemini-live.js";
+import { GptLiveSession } from "./gpt-live.js";
 import { MinimaxComposedSession } from "./minimax-composed.js";
 import { MockVoiceSession } from "./mock.js";
 import { OpenAiShapedRealtimeSession, type RealtimeDialect } from "./openai-realtime.js";
 import type { VoiceProviderFactory, VoiceSessionSeed } from "./types.js";
 import { requiredEnv } from "./types.js";
 
+/**
+ * The previous generation, kept reachable rather than deleted: pin
+ * RELAY_OPENAI_MODEL to a `gpt-realtime*` id and the openai provider speaks
+ * this dialect again. GPT-Live-1 is a different protocol on a different URL,
+ * so the model id is what chooses between them.
+ */
 const openaiDialect: RealtimeDialect = {
   provider: "openai",
   url: () => {
-    // gpt-realtime-2.1 (2026-07-06): better recognition/noise handling and
-    // optional reasoning in speech-to-speech; same audio pricing as 2.
     const model = process.env.RELAY_OPENAI_MODEL || "gpt-realtime-2.1";
     return `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
   },
@@ -59,41 +64,83 @@ const qwenDialect: RealtimeDialect = {
   }),
 };
 
+/** True while RELAY_OPENAI_MODEL pins the provider back to the Realtime API. */
+function openaiUsesLegacyRealtime(): boolean {
+  return (process.env.RELAY_OPENAI_MODEL || "").startsWith("gpt-realtime");
+}
+
 export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   openai: {
     id: "openai",
-    capabilities: { videoInput: true, screenInput: false, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
-    // gpt-realtime-2.1, USD/1M tokens, verified 2026-07-16 against
-    // developers.openai.com/api/docs/pricing. `tokens` takes precedence, so the
-    // $/sec rates below are display-only here — a response that omits the token
-    // detail objects falls back to its measured totals, not to duration.
+    capabilities: {
+      videoInput: true,
+      screenInput: false,
+      trueS2S: true,
+      needsClientTranscript: false,
+      thinkingChoice: true,
+      maxSessionSec: 60 * 60,
+    },
+    // GPT-Live-1 publishes $0.05 per minute for the VOICE LAYER, with the
+    // backend delegation model billed separately — so this estimate covers the
+    // voice layer alone and reads low on a session that delegates heavily. It
+    // is charged against input seconds because the mic runs for the whole call
+    // while output audio is intermittent: input duration is the closest thing
+    // the relay measures to wall-clock conversation. The legacy Realtime
+    // dialect carries its own token table, which takes precedence when pinned.
     pricing: {
-      audioInPerSec: 0.0192 / 60,
-      audioOutPerSec: 0.0768 / 60,
-      tokens: { audioIn: 32, audioInCached: 0.4, textIn: 4, textInCached: 0.4, audioOut: 64, textOut: 24 },
+      audioInPerSec: 0.05 / 60,
+      audioOutPerSec: 0,
     },
     available: () => !!process.env.OPENAI_API_KEY,
-    create: () => new OpenAiShapedRealtimeSession(openaiDialect),
+    create: ({ thinking }) =>
+      openaiUsesLegacyRealtime()
+        ? new OpenAiShapedRealtimeSession(openaiDialect)
+        : new GptLiveSession({ thinking }),
   },
   gemini: {
     id: "gemini",
     // 15-min audio cap is per provider session; resumption stretches the
     // connection, so surface the documented ceiling to the client.
-    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 15 * 60 },
+    capabilities: {
+      videoInput: true,
+      screenInput: true,
+      trueS2S: true,
+      needsClientTranscript: false,
+      thinkingChoice: true,
+      maxSessionSec: 15 * 60,
+    },
+    // Both 3.8 Live and 3.8 Live Extended Thinking publish these per-minute
+    // audio rates. Extended Thinking bills its reasoning inside output tokens,
+    // so its real cost per minute of conversation runs several times above what
+    // a duration estimate can show.
     pricing: { audioInPerSec: 0.005 / 60, audioOutPerSec: 0.018 / 60 },
     available: () => !!(process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY),
-    create: () => new GeminiLiveSession(),
+    create: ({ thinking }) => new GeminiLiveSession({ thinking }),
   },
   qwen: {
     id: "qwen",
-    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 120 * 60 },
+    capabilities: {
+      videoInput: true,
+      screenInput: true,
+      trueS2S: true,
+      needsClientTranscript: false,
+      thinkingChoice: false,
+      maxSessionSec: 120 * 60,
+    },
     pricing: { audioInPerSec: 0.00189 / 60, audioOutPerSec: 0.0133 / 60 },
     available: () => !!process.env.DASHSCOPE_API_KEY,
     create: () => new OpenAiShapedRealtimeSession(qwenDialect),
   },
   minimax: {
     id: "minimax",
-    capabilities: { videoInput: false, screenInput: false, trueS2S: false, needsClientTranscript: true, maxSessionSec: 120 * 60 },
+    capabilities: {
+      videoInput: false,
+      screenInput: false,
+      trueS2S: false,
+      needsClientTranscript: true,
+      thinkingChoice: false,
+      maxSessionSec: 120 * 60,
+    },
     // Cost is dominated by TTS characters; reported via extraCostUsd instead.
     pricing: { audioInPerSec: 0, audioOutPerSec: 0 },
     available: () => !!process.env.MINIMAX_API_KEY,
@@ -101,7 +148,14 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   },
   mock: {
     id: "mock",
-    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
+    capabilities: {
+      videoInput: true,
+      screenInput: true,
+      trueS2S: true,
+      needsClientTranscript: false,
+      thinkingChoice: false,
+      maxSessionSec: 60 * 60,
+    },
     pricing: { audioInPerSec: 0, audioOutPerSec: 0 },
     available: () => process.env.RELAY_ENABLE_MOCK === "1",
     create: () => new MockVoiceSession(),

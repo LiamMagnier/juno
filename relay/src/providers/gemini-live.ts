@@ -32,7 +32,23 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private suppressAssistantOutput = false;
   private userTranscriptPending = false;
   private setupResolve: (() => void) | null = null;
-  private model = process.env.RELAY_GEMINI_MODEL || "gemini-3.1-flash-live-preview";
+  private readonly thinking: boolean;
+  private readonly model: string;
+
+  /**
+   * Thinking is a MODEL here, not a parameter. Gemini 3.8 Live answers at
+   * conversational latency; Extended Thinking is turn-based and reasons while
+   * it speaks, narrating over the pause instead of leaving one. Both publish
+   * the same per-minute audio rate, but Extended Thinking bills its reasoning
+   * as output tokens, so a minute of it costs several times more than the
+   * duration-based estimate below suggests.
+   */
+  constructor(options: { thinking?: boolean } = {}) {
+    this.thinking = options.thinking === true;
+    this.model = this.thinking
+      ? process.env.RELAY_GEMINI_THINKING_MODEL || "gemini-3.8-live-extended-thinking"
+      : process.env.RELAY_GEMINI_MODEL || "gemini-3.8-live";
+  }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.seed = seed;

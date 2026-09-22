@@ -17,6 +17,10 @@ const voiceHook = readFileSync(new URL("../src/hooks/use-realtime-voice.ts", imp
 const chatView = readFileSync(new URL("../src/components/chat/chat-view.tsx", import.meta.url), "utf8");
 const chatComposer = readFileSync(new URL("../src/components/chat/composer.tsx", import.meta.url), "utf8");
 const geminiLive = readFileSync(new URL("../relay/src/providers/gemini-live.ts", import.meta.url), "utf8");
+const gptLive = readFileSync(new URL("../relay/src/providers/gpt-live.ts", import.meta.url), "utf8");
+const relayRegistry = readFileSync(new URL("../relay/src/providers/registry.ts", import.meta.url), "utf8");
+const relaySession = readFileSync(new URL("../relay/src/session.ts", import.meta.url), "utf8");
+const voiceBar = readFileSync(new URL("../src/components/voice/realtime-voice.tsx", import.meta.url), "utf8");
 
 test("voice relay verifier resolves ws from the standalone relay package", () => {
   assert.match(relayVerifier, /createRequire\(new URL\(["']\.\.\/relay\/package\.json["']/);
@@ -128,4 +132,29 @@ test("a Gemini setup the Live API closes on reports the server's reason", () => 
   assert.match(geminiLive, /ws\.on\("error", onSetupError\)/);
   assert.match(geminiLive, /refused the session setup for model/);
   assert.match(geminiLive, /RELAY_GEMINI_MODEL/);
+});
+
+test("voice runs the current live models, with thinking as the model choice it is", () => {
+  // Gemini exposes reasoning as a SEPARATE MODEL, not a parameter, so the
+  // switch has to pick an id — a thinkingConfig field would silently do nothing.
+  assert.match(geminiLive, /"gemini-3\.8-live"/);
+  assert.match(geminiLive, /"gemini-3\.8-live-extended-thinking"/);
+  assert.doesNotMatch(geminiLive, /gemini-3\.1-flash-live-preview/);
+  // GPT-Live-1 is a different protocol on a different URL: a session.start
+  // handshake, not the Realtime session.update the qwen dialect still uses.
+  assert.match(gptLive, /wss:\/\/api\.openai\.com\/v1\/live\/sessions/);
+  assert.match(gptLive, /"session\.start"/);
+  assert.match(gptLive, /"session\.input_audio\.append"/);
+  assert.match(gptLive, /"session\.output_audio\.delta"/);
+  assert.match(relayRegistry, /new GptLiveSession\(\{ thinking \}\)/);
+});
+
+test("a provider with no reasoning variant is never told it has one", () => {
+  // The relay reports the EFFECTIVE state, so a client asking for thinking on
+  // MiniMax is answered with the truth rather than its own request echoed.
+  assert.match(relaySession, /const effectiveThinking = thinking && factory\.capabilities\.thinkingChoice/);
+  assert.match(relaySession, /thinking: effectiveThinking/);
+  assert.match(relayRegistry, /thinkingChoice: false/);
+  // And the row only exists where the choice does.
+  assert.match(voiceBar, /voice\.capabilities\?\.thinkingChoice && \(/);
 });

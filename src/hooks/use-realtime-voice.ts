@@ -210,6 +210,7 @@ async function attachmentToJpegBase64(attachment: ClientAttachment): Promise<str
 export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {}) {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
   const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "qwen");
+  const [thinking, setThinkingState] = React.useState(false);
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
@@ -251,6 +252,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const capsRef = React.useRef<ProviderCapabilities | null>(null);
   /** The provider the relay last confirmed, readable from stable callbacks. */
   const liveProviderRef = React.useRef<VoiceProviderId | null>(null);
+  /**
+   * Whether the caller asked for the reasoning variant. It is a model choice
+   * on the relay, not a per-turn parameter, so it rides every session.start
+   * and survives reconnects — and the relay answers with what it could give,
+   * which is what `thinking` below reports.
+   */
+  const thinkingRef = React.useRef(false);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -688,6 +696,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         case "session.ready":
           capsRef.current = msg.capabilities;
           liveProviderRef.current = msg.provider;
+          thinkingRef.current = msg.thinking;
+          setThinkingState(msg.thinking);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -841,6 +851,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
             JSON.stringify({
               type: "session.start",
               provider: target,
+              thinking: thinkingRef.current,
               history: boundVoiceHistory([...historyRef.current, ...voiceHistory]),
             } satisfies VoiceClientMessage)
           );
@@ -892,9 +903,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   );
   startRef.current = start;
 
-  const switchProvider = React.useCallback(
-    (next: VoiceProviderId) => {
-      if (next === provider) return;
+  /**
+   * Re-open the call on a different provider, a different reasoning variant,
+   * or both. Thinking is a model on the relay, not a knob on a running
+   * session, so turning it on costs the same teardown a provider switch does —
+   * and goes through the same one here rather than a second copy of it.
+   */
+  const switchTo = React.useCallback(
+    (next: VoiceProviderId, nextThinking: boolean) => {
+      if (next === provider && nextThinking === thinkingRef.current) return;
       providerEpochRef.current += 1;
       // A stream belongs to the provider that accepted it. Stop it before a
       // switch so a provider without screen support never leaves an invisible
@@ -911,15 +928,30 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setCapabilities(null);
       capsRef.current = null;
       liveProviderRef.current = null;
+      // Optimistic only until session.ready lands: the relay reports the state
+      // it could actually give, and that is what finally sticks.
+      thinkingRef.current = nextThinking;
+      setThinkingState(nextThinking);
       if (statusRef.current === "live") {
         statusRef.current = "connecting";
         setStatus("connecting");
-        send({ type: "session.switch", provider: next });
+        send({ type: "session.switch", provider: next, thinking: nextThinking });
       } else {
         void start(next);
       }
     },
     [flushPlayback, provider, sealTranscript, stopScreenShare, start]
+  );
+
+  const switchProvider = React.useCallback(
+    (next: VoiceProviderId) => switchTo(next, thinkingRef.current),
+    [switchTo]
+  );
+
+  /** Ask for the reasoning variant of whichever provider is live. */
+  const setThinking = React.useCallback(
+    (next: boolean) => switchTo(provider, next),
+    [provider, switchTo]
   );
 
   const interrupt = React.useCallback(() => {
@@ -1159,6 +1191,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   return {
     status,
     provider,
+    thinking,
     availability,
     capabilities,
     transcript,
@@ -1176,6 +1209,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     start,
     end,
     switchProvider,
+    setThinking,
     interrupt,
     sendText,
     sendTurn,
