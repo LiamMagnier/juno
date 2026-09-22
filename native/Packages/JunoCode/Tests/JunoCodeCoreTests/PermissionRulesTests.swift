@@ -118,6 +118,25 @@ final class PermissionRulesTests: XCTestCase {
         XCTAssertEqual(resolved.instructions, ["Be brief.", "Use tabs."])
     }
 
+    /// A project's files arrive with a clone and can be written by the agent,
+    /// so they may lower the remote ceiling but never raise it past the
+    /// reader's own.
+    func testOnlyTheReadersOwnFileCanRaiseTheRemoteCeiling() {
+        func ceiling(_ user: PermissionMode?, _ project: PermissionMode?, _ local: PermissionMode? = nil) -> PermissionMode {
+            ResolvedCodeSettings.resolve([
+                CodeSettingsFile(permissions: .init(remoteCeiling: user)),
+                CodeSettingsFile(permissions: .init(remoteCeiling: project)),
+                CodeSettingsFile(permissions: .init(remoteCeiling: local)),
+            ]).remoteCeiling
+        }
+        XCTAssertEqual(ceiling(.readOnly, .fullAccess), .readOnly)
+        XCTAssertEqual(ceiling(nil, .fullAccess), ResolvedCodeSettings.defaults.remoteCeiling)
+        XCTAssertEqual(ceiling(nil, nil, .fullAccess), ResolvedCodeSettings.defaults.remoteCeiling)
+        XCTAssertEqual(ceiling(.fullAccess, nil), .fullAccess)
+        XCTAssertEqual(ceiling(.fullAccess, .workspaceWrite), .workspaceWrite, "a project may still lower it")
+        XCTAssertEqual(ceiling(.fullAccess, .workspaceWrite, .fullAccess), .workspaceWrite)
+    }
+
     func testCappingNeverRaisesAuthority() {
         XCTAssertEqual(PermissionMode.fullAccess.capped(at: .askBeforeChanges), .askBeforeChanges)
         XCTAssertEqual(PermissionMode.readOnly.capped(at: .fullAccess), .readOnly)

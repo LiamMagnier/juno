@@ -359,8 +359,12 @@ struct StudioPermissionsSettings: View {
         }
         if scope == .user {
             Section {
+                // Shows and edits the value the reader's own file holds. The
+                // resolved value folds in the selected project's files, which
+                // can only lower it, so reading it here showed a ceiling this
+                // picker could not change and snapped back after every edit.
                 Picker("Sessions started from another device", selection: Binding(
-                    get: { StudioMode(behavior: .code, permission: settings.resolved.remoteCeiling) },
+                    get: { StudioMode(behavior: .code, permission: userCeiling) },
                     set: { mode in
                         settings.update(.user) { file in
                             var permissions = file.permissions ?? CodeSettingsFile.Permissions()
@@ -374,9 +378,20 @@ struct StudioPermissionsSettings: View {
             } header: {
                 Text("Remote")
             } footer: {
-                Text("A task your phone or another computer starts on this Mac runs with no one watching. It never gets more than this, whatever it asks for.")
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text("A task your phone or another computer starts on this Mac runs with no one watching. It never gets more than this, whatever it asks for. A project's own settings can lower it, never raise it.")
+                    if settings.projectRoot != nil,
+                       settings.resolved.remoteCeiling.authorityRank < userCeiling.authorityRank
+                    {
+                        Text("This project lowers it to \(StudioMode(behavior: .code, permission: settings.resolved.remoteCeiling).title.lowercased()).")
+                    }
+                }
             }
         }
+    }
+
+    private var userCeiling: PermissionMode {
+        settings.user.permissions?.remoteCeiling ?? ResolvedCodeSettings.defaults.remoteCeiling
     }
 
     private func ruleExample(_ rule: String, _ meaning: String) -> some View {
