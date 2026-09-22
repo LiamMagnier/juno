@@ -989,7 +989,7 @@ struct StudioKeyboardSettings: View {
     private let groups: [(String, [(String, String)])] = [
         ("Sessions", [
             ("New session", "⌘N"), ("Open folder", "⌘O"), ("Commands", "⌘K"),
-            ("Stop", "⌘."), ("Changes", "⌥⌘R"), ("Terminal", "⌥⌘T"), ("Side panel", "⌥⌘I"),
+            ("Stop", "⌘."), ("Changes", "⌥⌘R"), ("Terminal", "⌥⌘C"), ("Side panel", "⌥⌘I"),
         ]),
         ("Composer", [
             ("Send", "↩"), ("New line", "⇧↩"), ("Mode: plan · ask · auto-edit · full", "⌥⌘1–4"),
