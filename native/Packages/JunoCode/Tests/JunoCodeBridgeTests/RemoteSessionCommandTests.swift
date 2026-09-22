@@ -226,10 +226,9 @@ final class RemoteSessionCommandTests: XCTestCase {
         XCTAssertTrue(calls.isEmpty)
     }
 
-    /// Stopping and answering what the Mac itself asked stay possible: the
-    /// ceiling limits what a phone can start, not whether it can halt work or
-    /// reply to a question it was asked.
-    func testStopAndApprovalsStillReachASessionAboveTheCeiling() async throws {
+    /// Stopping and declining stay possible: the ceiling limits what a phone
+    /// can make happen, not whether it can halt work or say no.
+    func testStopAndDeclineStillReachASessionAboveTheCeiling() async throws {
         let host = Host(modes: ["s-1": .fullAccess], ceiling: .askBeforeChanges)
         let adapter = RemoteCommandAdapter(bridge: host)
 
@@ -240,6 +239,41 @@ final class RemoteSessionCommandTests: XCTestCase {
 
         let calls = await host.calls
         XCTAssertEqual(calls, ["stop", "approval(a-1,false)"])
+    }
+
+    /// What a full-access session still asks about is its critical actions — a
+    /// force push, a destructive command. Allowing one from the phone would
+    /// run it with nobody at the Mac, which is what the ceiling is there to
+    /// prevent. The phone is told why, and the request stays open at the Mac.
+    func testAllowingIsRefusedForASessionAboveTheCeiling() async throws {
+        let host = Host(modes: ["s-1": .fullAccess], ceiling: .askBeforeChanges)
+        let adapter = RemoteCommandAdapter(bridge: host)
+
+        do {
+            _ = try await adapter.execute(command(
+                "approval_decision", payload: ["requestId": .string("a-1"), "approved": .bool(true)]
+            ))
+            XCTFail("a phone must not allow what a session above the ceiling asks")
+        } catch let error as CodeRemoteCommandError {
+            guard case .aboveRemoteCeiling = error else {
+                return XCTFail("expected the ceiling refusal, got \(error)")
+            }
+        }
+        let calls = await host.calls
+        XCTAssertTrue(calls.isEmpty, "the request is left for the Mac to answer")
+    }
+
+    func testAllowingStillWorksWithinTheCeiling() async throws {
+        let host = Host(modes: ["s-1": .askBeforeChanges], ceiling: .askBeforeChanges)
+        let adapter = RemoteCommandAdapter(bridge: host)
+
+        let result = try await adapter.execute(command(
+            "approval_decision", payload: ["approvalId": .string("a-2"), "approved": .bool(true)]
+        ))
+
+        XCTAssertEqual(result["resolved"], .bool(true))
+        let calls = await host.calls
+        XCTAssertEqual(calls, ["approval(a-2,true)"])
     }
 
     // MARK: - The phone's session menu

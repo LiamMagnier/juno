@@ -468,8 +468,9 @@ struct DesktopCodeRemoteHostTile: View {
                     Text(
                         "Your phone also sees this Mac's recent sessions in those workspaces: "
                             + "titles, status and transcripts, never file contents. A session "
-                            + "running above your remote limit can be followed there but not "
-                            + "continued. Turning this off takes them off your phone."
+                            + "running above your remote limit can be followed and stopped there, "
+                            + "and its requests declined, but not continued or allowed. Turning "
+                            + "this off takes them off your phone."
                     )
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)

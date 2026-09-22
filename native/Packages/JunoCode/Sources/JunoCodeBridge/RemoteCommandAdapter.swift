@@ -405,12 +405,17 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
             return ["sessionId": .string(id)]
 
         case .approvalDecision:
-            // Not gated on the session's mode: answering an approval the Mac
-            // itself raised is the one remote action that cannot exceed local
-            // authority, because the local session decided what to ask.
             guard let approved = validated.firstBool(["approved", "approve"]) else {
                 throw CodeRemoteCommandError.missingField("approved")
             }
+            // Declining is always open: it can only take authority away. Allowing
+            // is held to the ceiling like any other act. A session above it was
+            // opened at the desk with more autonomy than the reader lets another
+            // device use, so what it still asks about — in full access, only the
+            // critical actions — is what the reader kept for the desk. Before
+            // the Mac listed its sessions a phone never saw those requests; now
+            // it does, and "allow" would run them with nobody there.
+            if approved { try await requireWithinCeiling(validated.sessionID) }
             try await bridge.resolveApproval(
                 sessionID: validated.sessionID,
                 approvalID: try validated.string(oneOf: ["approvalId", "requestId", "approvalID"]),
@@ -657,18 +662,27 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
     /// full access with nobody there — more than the ceiling promises anything
     /// sent from another device.
     private func authorize(_ command: ValidatedRemoteCommand) async throws {
-        guard let current = await bridge.permissionMode(forSession: command.sessionID) else {
-            return
+        guard let current = try await requireWithinCeiling(command.sessionID) else { return }
+        _ = try requestedMode(command, ceiling: current)
+    }
+
+    /// Refuses when the session runs above the reader's remote ceiling, and
+    /// returns the mode it runs in; nil for a session this host does not know,
+    /// which the call that acts on it then refuses.
+    @discardableResult
+    private func requireWithinCeiling(_ sessionID: String) async throws -> PermissionMode? {
+        guard let current = await bridge.permissionMode(forSession: sessionID) else {
+            return nil
         }
         if let limits = bridge as? any CodeRemoteCeilingProviding,
-            let ceiling = await limits.remoteCeiling(forSession: command.sessionID),
+            let ceiling = await limits.remoteCeiling(forSession: sessionID),
             current.authorityRank > ceiling.authorityRank
         {
             throw CodeRemoteCommandError.aboveRemoteCeiling(
                 session: current.readerName, ceiling: ceiling.readerName
             )
         }
-        _ = try requestedMode(command, ceiling: current)
+        return current
     }
 
     private func requestedMode(

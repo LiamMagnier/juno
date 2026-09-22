@@ -157,6 +157,27 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
 
     // MARK: - The ceiling
 
+    func testAllowingARequestInASessionAboveTheCeilingIsRefused() async throws {
+        let shared = try await sharedWorkspace()
+        let session = try await newSession(in: shared.id, mode: .fullAccess)
+        let bridge = makeBridge(shared: [shared.id.value], ceiling: .askBeforeChanges)
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+
+        do {
+            _ = try await adapter.execute(
+                CodeRemoteCommand(
+                    id: "c-2", sessionID: session.id.value, kind: "approval_decision",
+                    payload: ["requestId": .string("a-1"), "approved": .bool(true)], status: "claimed"
+                )
+            )
+            XCTFail("a phone must not allow what a full-access session asks at the desk")
+        } catch let error as CodeRemoteCommandError {
+            guard case .aboveRemoteCeiling = error else {
+                return XCTFail("expected the ceiling refusal, got \(error)")
+            }
+        }
+    }
+
     func testASessionAboveTheReadersCeilingRefusesThePhone() async throws {
         let shared = try await sharedWorkspace()
         let session = try await newSession(in: shared.id, mode: .fullAccess)
