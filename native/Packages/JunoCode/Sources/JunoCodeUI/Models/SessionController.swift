@@ -1715,25 +1715,42 @@ public final class SessionController {
     /// the redirect, then cleared them and its file references from the draft;
     /// and when delivery failed, the "send it again" message pointed at a
     /// composer already restored to the draft, with the redirect gone.
+    ///
+    /// The redirect is handed over before the decline, not after. Answering
+    /// the call is what lets the run reach its next boundary, where a steer is
+    /// applied, and accepting a steer now waits on its prompt hooks: sent
+    /// second, it could lose that race, so the model's next request carried
+    /// the refusal without the reader's instruction and acted on its own
+    /// idea of what to do instead. Accepted first, it waits for the declined
+    /// call's answer and goes out beside it.
     public func deny(_ approvalID: String, redirect: String) async {
         let text = redirect.trimmingCharacters(in: .whitespacesAndNewlines)
-        await deny(approvalID)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            await deny(approvalID)
+            return
+        }
         guard let live else {
+            await deny(approvalID)
             #if DEBUG
             previewInstruction(text, kind: .steer)
             #endif
             return
         }
+        var failure: String?
         do {
             try await deliver(prompt: text, modelPrompt: text, images: [], kind: .steer, live: live)
         } catch OrchestratorError.promptBlocked {
             // A prompt hook vets a redirect like any steer. Its row in the
             // thread says why; the text is kept here to be revised.
-            transientError = "Declined. A hook stopped this from reaching Juno: “\(text)”."
+            failure = "Declined. A hook stopped this from reaching Juno: “\(text)”."
         } catch {
             // Kept where the reader can see it and send it again.
-            transientError = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+            failure = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+        }
+        // Declined whatever became of the redirect: the reader said no.
+        await deny(approvalID)
+        if let failure {
+            transientError = failure
         }
     }
 
