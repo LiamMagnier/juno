@@ -6,7 +6,7 @@ import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
 import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
-import { isAcceptedMime } from "@/lib/uploads";
+import { isAcceptedUpload } from "@/lib/uploads";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   if (!(file instanceof File)) return NextResponse.json({ error: "No file provided." }, { status: 400 });
 
   const mime = file.type || "application/octet-stream";
-  if (!isAcceptedMime(mime)) {
+  if (!isAcceptedUpload(file.name || "file", mime)) {
     return NextResponse.json({ error: `Unsupported file type: ${mime || "unknown"}.` }, { status: 415 });
   }
 

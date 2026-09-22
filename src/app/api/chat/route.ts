@@ -140,6 +140,7 @@ import {
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
 import { backfillAttachmentText } from "@/lib/knowledge";
+import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import {
@@ -150,7 +151,10 @@ import {
   type EntitlementRejection,
 } from "@/lib/chat/entitlements";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
-import { composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { appendSkillBlock, composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { loadChatSkill } from "@/lib/chat/skill-runtime";
+import { narrowRuntimeToolsForSkill, withheldCapabilityCount } from "@/lib/chat/skills";
+import { recordWorkAudit } from "@/lib/work/audit";
 import { chatBodySchema } from "@/lib/chat/request";
 import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
@@ -903,6 +907,30 @@ async function handleChat(req: Request) {
     const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
     const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
     const useProMode = !!input.proMode && supportsProMode(modelInfo);
+    /*
+     * A skill applies here too.
+     *
+     * Private mode persists nothing, and a skill is the user's own stored
+     * instructions rather than anything that leaves the account — so the reason
+     * private mode refuses canvas edits and regenerates (both need a row) does
+     * not reach this. The one thing that differs is the grant: this branch has
+     * no connectors, no canvas and no attachment tools, so a skill asking for
+     * any of them is told it did not get them, which is true.
+     */
+    const privateSkill = input.skillSlug
+      ? await loadChatSkill({
+          userId: user.id,
+          slug: input.skillSlug,
+          capabilities: {
+            webSearch: useWebSearch,
+            canvas: false,
+            documents: false,
+            images: false,
+            connectors: [],
+          },
+        })
+      : null;
+    const privateSkillBlock = privateSkill?.applied ? privateSkill.application : null;
     const baseSystemSections = buildSystemPromptSections({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
@@ -914,8 +942,11 @@ async function handleChat(req: Request) {
       voiceMode: input.voiceMode,
       projectContext: "",
       // Private mode still reaches provider-side web search, whose results are
-      // outside content like any other.
-      untrustedContent: useWebSearch,
+      // outside content like any other — and an unvouched-for skill's
+      // instructions go into the prompt inside the same envelope, so the rule
+      // that reads those markers has to be present whenever one did. Markers
+      // with no rule look like a boundary and are not one.
+      untrustedContent: useWebSearch || !!privateSkillBlock?.untrusted,
     });
     const baseSystem = baseSystemSections.variable
       ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
@@ -923,7 +954,10 @@ async function handleChat(req: Request) {
     // Same composition the saved path uses. The two used to be hand-written
     // expressions that happened to agree.
     const system = withRegenerateInstruction(
-      composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false }),
+      appendSkillBlock(
+        composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false }),
+        privateSkillBlock
+      ),
       input
     );
     const generationId = input.generationId ?? crypto.randomUUID();
@@ -1893,11 +1927,24 @@ async function handleChat(req: Request) {
         policy: await loadBackgroundProviderPolicy(user.id, settings),
         conversationProvider: modelInfo.provider,
       });
+      /*
+       * A file whose BYTES this model receives is never listed as unreadable.
+       *
+       * Both notes below instruct the model not to describe the file's
+       * contents. On Claude, Gemini and the Responses API the adapter has
+       * inlined the PDF itself — pages and all — so that instruction lands on
+       * a model that is looking straight at the document, and the user is told
+       * "I cannot read this" about something the model can read perfectly.
+       * That is the best case in the product being reported as the worst.
+       */
+      const modelSeesDocument = providerReceivesDocumentBytes(modelInfo, !!input.proMode);
+      const needsTextToBeRead = (attachment: (typeof directAttachments)[number]) =>
+        !(modelSeesDocument && isPdfAttachment(attachment));
       const pendingFiles = directAttachments
-        .filter((attachment) => isAttachmentParserPending(attachment.parserState))
+        .filter((attachment) => isAttachmentParserPending(attachment.parserState) && needsTextToBeRead(attachment))
         .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
       const unavailableFiles = directAttachments
-        .filter((attachment) => isAttachmentParserUnavailable(attachment.parserState))
+        .filter((attachment) => isAttachmentParserUnavailable(attachment.parserState) && needsTextToBeRead(attachment))
         .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
       if (retrieved || pendingFiles.length > 0 || unavailableFiles.length > 0) {
         attachmentKnowledge = {
@@ -1949,11 +1996,15 @@ async function handleChat(req: Request) {
    * a tool call it must then be told to ignore.
    */
   const attachmentToolToggles = {
-    documents: allAttachments.some(
-      (attachment) =>
-        attachment.kind === "FILE" &&
-        (attachment.parserState === "ready" || attachment.parserState === "degraded"),
-    ),
+    /*
+     * ANY attached file, not only an indexed one — and the change matters most
+     * for the files that look least promising. `read_document` now falls back
+     * to reading the bytes when the index has nothing (see
+     * `knowledge/read-on-demand.ts`), so a PDF the indexer marked `failed` is
+     * exactly the document the tool exists to rescue. Gating on `ready` meant
+     * the rescue was withheld from every file that needed rescuing.
+     */
+    documents: allAttachments.some((attachment) => attachment.kind === "FILE"),
     images:
       modelInfo.vision &&
       allAttachments.some(
@@ -1993,6 +2044,89 @@ async function handleChat(req: Request) {
   // exclude "canvas", and a legacy native build that explicitly sends false.
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
     && workspacePermits(workspaceConfig, "canvas");
+  /*
+   * ── The skill this message was sent under ─────────────────────────────────
+   *
+   * Resolved before the system prompt is built, because whether it was
+   * enveloped decides `untrustedContentInTurn` below, and that in turn decides
+   * both whether the untrusted-content rule is in the prompt and whether this
+   * turn may write durable memory. Neither is a special case for skills — an
+   * imported skill is outside content like a fetched page or a connector
+   * result, and it reaches the model through the same envelope.
+   *
+   * The grant handed to it is what this turn actually has, computed from the
+   * decisions immediately above rather than from the request: a skill asking
+   * for web search on a turn where the plan, the model or the workspace said no
+   * is told it did not get it.
+   *
+   * A refusal is not an error. The message still has to be answered, so a skill
+   * that is switched off, blocked by the scanner or awaiting consent simply
+   * does not apply and the reason is recorded — the composer already showed the
+   * reader which skill was armed, and failing the generation would charge them
+   * for a sentence they never got.
+   */
+  const skillOutcome = input.skillSlug
+    ? await loadChatSkill({
+        userId: user.id,
+        slug: input.skillSlug,
+        projectId: conversation.projectId,
+        capabilities: {
+          webSearch: useWebSearch,
+          canvas: canvasOn,
+          documents: attachmentToolToggles.documents,
+          images: attachmentToolToggles.images,
+          connectors: activeConnectors.map((connector) => connector.id),
+        },
+      })
+    : null;
+  const appliedSkill = skillOutcome?.applied ? skillOutcome.application : null;
+  if (skillOutcome) {
+    /*
+     * Logged, not awaited.
+     *
+     * `recordWorkAudit` never throws and this is the security log rather than
+     * the transcript, so nothing downstream depends on the write — awaiting it
+     * would put a database round trip in front of the first token for a row
+     * nobody reads until something has gone wrong.
+     *
+     * `untrusted` is the fact that cannot be recovered afterwards:
+     * `WorkSkill.trust` is a column the user can change, so reading it back
+     * later would rewrite the history of every turn that used the skill. Which
+     * VERSION ran is recorded for the same reason — the instructions are
+     * editable and the row is not.
+     *
+     * The private branch deliberately writes nothing here. A slug is not
+     * content, but private mode's promise is that the turn leaves no trace, and
+     * a row saying which skill ran and when is a trace.
+     */
+    void recordWorkAudit({
+      userId: user.id,
+      kind: "skill_applied",
+      // From the precise origin, never from the `client: web | app` billing
+      // tag — that tag cannot tell a Mac from a phone, and an audit row is the
+      // wrong place to guess. Windows has no value in `WORK_ACTORS` and is not
+      // given one here: the vocabulary is mirrored to the native clients
+      // through `contracts/work/juno-work-v1.json`, so inventing a member would
+      // be a contract change smuggled in as a log line.
+      actor:
+        input.origin === "main_ios"
+          ? "ios"
+          : input.origin === "main_macos" || input.origin === "quick_macos"
+            ? "macos"
+            : "web",
+      severity: skillOutcome.applied ? "info" : "warning",
+      detail: skillOutcome.applied
+        ? {
+            skillId: skillOutcome.application.candidate.id,
+            skillSlug: skillOutcome.application.candidate.slug,
+            skillVersion: skillOutcome.application.version,
+            untrusted: skillOutcome.application.untrusted,
+            withheldCount: withheldCapabilityCount(skillOutcome.application.resolved),
+            generationId: durableGenerationId ?? input.generationId ?? undefined,
+          }
+        : { skillSlug: input.skillSlug, outcome: skillOutcome.reason },
+    });
+  }
   // Any of these can put text Juno did not author into context: a connector
   // tool result, provider-side web search, a fetched research page, a project
   // file, a retrieved passage, or an attachment's extracted text. (Deep
@@ -2007,6 +2141,11 @@ async function handleChat(req: Request) {
     !!attachmentKnowledge ||
     projectReferenceFiles !== "" ||
     historyCarriesAttachmentText ||
+    // An imported skill's instructions are a stranger's text inside the
+    // envelope. Without the rule that reads the markers they are markers and
+    // nothing else, and the turn would stay eligible to write durable memory
+    // from text Juno did not author.
+    !!appliedSkill?.untrusted ||
     // `read_document` writes the same envelope from inside a tool round, so
     // the rule that reads the markers has to be on whenever the tool is — a
     // document whose text never made it onto the attachment row reaches the
@@ -2034,14 +2173,17 @@ async function handleChat(req: Request) {
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
   const system = withRegenerateInstruction(
-    composeSystemPrompt({
-      base: baseSystem,
-      webSearch: useWebSearch,
-      documentTool: attachmentToolToggles.documents,
-      imageTool: attachmentToolToggles.images,
-      targetedArtifactEditPrompt,
-      canvasOn,
-    }),
+    appendSkillBlock(
+      composeSystemPrompt({
+        base: baseSystem,
+        webSearch: useWebSearch,
+        documentTool: attachmentToolToggles.documents,
+        imageTool: attachmentToolToggles.images,
+        targetedArtifactEditPrompt,
+        canvasOn,
+      }),
+      appliedSkill
+    ),
     input
   );
   const conversationId = conversation.id;
@@ -2665,10 +2807,19 @@ async function handleChat(req: Request) {
           // the tool reads always arrives under a rule that governs it. The
           // two attachment tools ride the attachments this turn is carrying —
           // see `attachmentToolToggles`.
-          allowedTools: chatRuntimeToolAllowlist({
-            webSearch: useWebSearch,
-            ...attachmentToolToggles,
-          }),
+          // A skill narrows this list and can never widen it: the filter runs
+          // over what the turn already had. A skill that declares no tools —
+          // the common shape, since `allowed-tools` is experimental in the spec
+          // and most authors omit it — narrows nothing, because a skill is not
+          // a way to take capabilities away from a conversation the reader
+          // configured. See `narrowRuntimeToolsForSkill`.
+          allowedTools: narrowRuntimeToolsForSkill(
+            chatRuntimeToolAllowlist({
+              webSearch: useWebSearch,
+              ...attachmentToolToggles,
+            }),
+            appliedSkill
+          ),
           dynamicContext: buildDynamicContext(),
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,

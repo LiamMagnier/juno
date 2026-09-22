@@ -159,9 +159,15 @@ test("streamChat never forwards an absent allowlist to the registry", () => {
   const llm = readFileSync(new URL("../src/lib/llm.ts", import.meta.url), "utf8");
   assert.match(llm, /allowedToolIds: opts\.allowedTools \?\? \[\.\.\.NO_RUNTIME_TOOLS\]/);
   const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  // The allowlist is still built from the turn's own toggles and is still
+  // always an array. It is now wrapped by the skill narrowing, which filters
+  // this list and can only ever return a subset of it — so the property this
+  // test exists for ("the route never forwards `undefined`") is unchanged, and
+  // the shape is pinned in a way that would notice the wrapper being swapped
+  // for something that computes the list itself.
   assert.match(
     route,
-    /allowedTools: chatRuntimeToolAllowlist\(\{\s*webSearch: useWebSearch,\s*\.\.\.attachmentToolToggles,\s*\}\)/,
+    /allowedTools: narrowRuntimeToolsForSkill\(\s*chatRuntimeToolAllowlist\(\{\s*webSearch: useWebSearch,\s*\.\.\.attachmentToolToggles,\s*\}\),\s*appliedSkill,?\s*\)/,
   );
 });
 

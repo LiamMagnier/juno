@@ -1,4 +1,5 @@
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
 import { REASONING_TIERS, clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import { googleNativeBaseUrl, normalizeProviderKey, providerApiKey } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
@@ -79,19 +80,28 @@ export async function toGeminiContents(
               },
             });
           }
-        } else if (att.mimeType === "application/pdf") {
+        } else if (isPdfAttachment(att)) {
           if (!embedBinary && att.extractedText) {
             parts.push({ text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true, maxChars: attachmentTextMaxChars }) });
           } else if (!embedBinary) {
             parts.push({ text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
             const { bytes } = await fetchBytes(att.storageKey);
-            parts.push({
-              inlineData: {
-                mimeType: "application/pdf",
-                data: Buffer.from(bytes).toString("base64"),
-              },
-            });
+            // See the same guard in the Anthropic adapter: an oversized inline
+            // document fails the turn, not just the file.
+            if (canInlineDocument(bytes.byteLength)) {
+              parts.push({
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: Buffer.from(bytes).toString("base64"),
+                },
+              });
+            } else {
+              if (att.extractedText) {
+                parts.push({ text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
+              }
+              parts.push({ text: oversizeDocumentNote(att.fileName, bytes.byteLength, !!att.extractedText) });
+            }
           }
         } else if (att.extractedText) {
           parts.push({ text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });

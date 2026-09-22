@@ -1,4 +1,11 @@
-import { attachmentKind, isAcceptedMime, isTextExtractable, sanitizeFileName, sniffImageMime } from "@/lib/uploads";
+import {
+  attachmentKind,
+  isAcceptedUpload,
+  isTextExtractable,
+  sanitizeFileName,
+  sniffDocumentMime,
+  sniffImageMime,
+} from "@/lib/uploads";
 
 /**
  * The decision of what an uploaded file *is* and how it may be stored.
@@ -47,7 +54,7 @@ export function planAttachmentUpload(input: {
 }): { ok: true; plan: AttachmentUploadPlan } | { ok: false; error: AttachmentUploadRejection } {
   const declaredMime = input.declaredMime || "application/octet-stream";
 
-  if (!isAcceptedMime(declaredMime)) {
+  if (!isAcceptedUpload(input.fileName || "file", declaredMime)) {
     return {
       ok: false,
       error: {
@@ -92,6 +99,20 @@ export function planAttachmentUpload(input: {
     storedMime = sniffed;
     kind = "IMAGE";
     contentDisposition = undefined;
+  }
+
+  /*
+   * A sender that said nothing gets its file identified from the bytes.
+   *
+   * Upgrade only, and only from `application/octet-stream`: a caller that
+   * declared a specific type is believed, and the stored content type stays
+   * octet-stream either way so nothing becomes servable inline. What this
+   * buys is the raw-bytes path in the adapters and the MIME arm of
+   * `selectExtractor`, both of which a mislabelled PDF was missing.
+   */
+  if (storedMime === "application/octet-stream") {
+    const sniffed = sniffDocumentMime(input.bytes);
+    if (sniffed) storedMime = sniffed;
   }
 
   let extractedText: string | null = null;
