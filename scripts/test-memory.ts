@@ -23,6 +23,9 @@
  *  12. per-project summaries: each project distils its own facts and chats,
  *      a project chat reads that summary and no other memory, the account
  *      summary no longer reads project chats, and nothing survives lost access
+ *  13. re-reading history: newest-first reading judged by when things were
+ *      said, old processing-order data repaired by the re-judge pass, and a
+ *      re-read after a reader upgrade that never re-learns what a reset erased
  *
  * Requires NODE_OPTIONS=--conditions=react-server (set by the npm script) so
  * the `server-only` guard inside the lib import chain resolves to a no-op.
@@ -38,6 +41,8 @@ import {
   getMemoryProfile,
   getProjectMemorySummary,
   pendingBackfill,
+  queueRereads,
+  reconcileMemoryTimeline,
   saveCandidates,
   type MemoryEmbedder,
   type UtilityLlm,
@@ -576,6 +581,148 @@ async function main() {
       "deleting the project deletes its summary",
       (await prisma.projectMemorySummary.count({ where: { userId: pu } })) === 0
     );
+
+    // ------------------------------------------------------------------
+    // 13. Re-reading history
+    // ------------------------------------------------------------------
+    console.log("\n13. Re-reading history, judged by when things were said");
+    // An extractor that returns what each message marks as a fact, verbatim.
+    const markerExtractor: UtilityLlm = async ({ userMsg }) =>
+      JSON.stringify({
+        facts: [...userMsg.matchAll(/fact:([^|\n]+)/g)].map((m) => m[1].trim()),
+        digest: "A chat",
+      });
+    const days = (n: number) => new Date(Date.now() - n * 86_400_000);
+    async function chat(userId: string, title: string, at: Date, texts: string[]) {
+      const convo = await prisma.conversation.create({
+        data: { userId, title, createdAt: at, lastMessageAt: new Date(at.getTime() + texts.length * 60_000) },
+      });
+      for (const [i, text] of texts.entries()) {
+        await prisma.message.create({
+          data: { conversationId: convo.id, role: "USER", content: text, createdAt: new Date(at.getTime() + (i + 1) * 60_000) },
+        });
+      }
+      return convo;
+    }
+
+    // Newest first, as "Learn from past chats" reads: Porto (said later) is
+    // read before Lisbon (said earlier) — and must still be what is believed.
+    const hu = await extraUser("history");
+    await chat(hu, "Old flat", days(200), ["I live in Lisbon. fact:The user lives in Lisbon."]);
+    await chat(hu, "New flat", days(90), ["We moved. fact:The user lives in Porto."]);
+    await chat(hu, "Trip", days(60), ["Off to Berlin this week. fact:The user is flying to Berlin this week."]);
+    let guard = 0;
+    while ((await pendingBackfill(hu)).length > 0 && guard++ < 10) {
+      await backfillMemories({ userId: hu, maxConversations: 3, llm: markerExtractor });
+    }
+    const status = async (userId: string, content: string) =>
+      (await prisma.memoryEntry.findFirst({ where: { userId, content }, select: { status: true } }))?.status;
+    check("reading newest-first, the city said later is the one believed", (await status(hu, "The user lives in Porto.")) === "active");
+    check("…and the one said earlier is history, not a rival", (await status(hu, "The user lives in Lisbon.")) === "superseded");
+    check(
+      "a trip mentioned two months ago is over when read today",
+      (await status(hu, "The user is flying to Berlin this week.")) === "expired"
+    );
+    const dated = await prisma.memoryEntry.findFirst({
+      where: { userId: hu, content: "The user lives in Lisbon." },
+      select: { observedAt: true, createdAt: true },
+    });
+    check(
+      "each fact carries when it was said, not when it was read",
+      !!dated?.observedAt && dated.createdAt.getTime() - dated.observedAt.getTime() > 150 * 86_400_000
+    );
+
+    // Data the old rules wrote — judged in reading order, undated — repaired.
+    const ru = await extraUser("repair");
+    const madridChat = await chat(ru, "Old", days(300), ["I live in Madrid."]);
+    const sevilleChat = await chat(ru, "New", days(30), ["I live in Seville now."]);
+    const tripChat = await chat(ru, "Trip", days(70), ["Flying to Rome this week."]);
+    const msgOf = async (conversationId: string) =>
+      (await prisma.message.findFirst({ where: { conversationId }, select: { id: true } }))!.id;
+    const seville = await prisma.memoryEntry.create({
+      data: {
+        userId: ru, content: "The user lives in Seville.", kind: "FACT", source: "AUTO", status: "superseded",
+        category: "identity", confidence: 0.7, sourceRef: sevilleChat.id, sourceMessageId: await msgOf(sevilleChat.id),
+      },
+    });
+    const madrid = await prisma.memoryEntry.create({
+      data: {
+        userId: ru, content: "The user lives in Madrid.", kind: "FACT", source: "AUTO", status: "active",
+        category: "identity", confidence: 0.7, sourceRef: madridChat.id, sourceMessageId: await msgOf(madridChat.id),
+      },
+    });
+    await prisma.memoryEntry.update({ where: { id: seville.id, userId: ru }, data: { supersededById: madrid.id } });
+    const rome = await prisma.memoryEntry.create({
+      data: {
+        userId: ru, content: "The user is flying to Rome this week.", kind: "FACT", source: "AUTO", status: "active",
+        category: "temporary", confidence: 0.55, expiresAt: days(-25), sourceRef: tripChat.id,
+        sourceMessageId: await msgOf(tripChat.id),
+      },
+    });
+    const typed = await prisma.memoryEntry.create({
+      data: { userId: ru, content: "The user's name is Alex.", kind: "FACT", source: "MANUAL", status: "active", category: "identity", confidence: 0.9 },
+    });
+    const repaired = await reconcileMemoryTimeline(ru);
+    check("undated rows are dated from their source messages", repaired.dated === 3, String(repaired.dated));
+    check("the city said later is believed again", (await status(ru, "The user lives in Seville.")) === "active");
+    const madridNow = await prisma.memoryEntry.findFirst({
+      where: { id: madrid.id, userId: ru },
+      select: { status: true, supersededById: true, reason: true },
+    });
+    check(
+      "…and the one said earlier is marked replaced by it, with the reason",
+      madridNow?.status === "superseded" && madridNow.supersededById === seville.id && /re-read your chats/.test(madridNow.reason ?? "")
+    );
+    check("a trip dated from when it was mentioned is over", (await status(ru, "The user is flying to Rome this week.")) === "expired");
+    check("a fact the user typed is never touched", (await status(ru, "The user's name is Alex.")) === "active");
+    const again = await reconcileMemoryTimeline(ru);
+    check("a repaired timeline needs no second pass", again.changed === 0 && again.dated === 0, JSON.stringify(again));
+    void rome;
+    void typed;
+
+    // A reader upgrade re-reads history — but never from before a reset.
+    const xu = await extraUser("reread");
+    const convo = await chat(xu, "Long chat", days(20), [
+      "I work at Initech. fact:The user works at Initech.",
+    ]);
+    // The user reset memory ten days ago, then kept chatting in the same chat.
+    await prisma.message.create({
+      data: { conversationId: convo.id, role: "USER", content: "I love jazz. fact:The user likes jazz.", createdAt: days(2) },
+    });
+    await prisma.conversation.update({ where: { id: convo.id, userId: xu }, data: { lastMessageAt: days(2) } });
+    await prisma.memoryEntry.create({
+      data: { userId: xu, content: "The user likes jazz.", kind: "FACT", source: "AUTO", status: "active", category: "preferences", createdAt: days(3) },
+    });
+    // Distilled by the version-1 reader: a digest to show for it, read to the end.
+    await prisma.conversationMemory.create({
+      data: { userId: xu, conversationId: convo.id, processedAt: days(2), digest: "Jazz", factCount: 1, extractorVersion: 1 },
+    });
+    // A chat the reset marked read and nothing has distilled since.
+    const erased = await chat(xu, "Erased", days(15), ["fact:The user has a secret hobby."]);
+    await prisma.conversationMemory.create({
+      data: { userId: xu, conversationId: erased.id, processedAt: days(10), extractorVersion: 1 },
+    });
+    const queued = await queueRereads(xu, 5);
+    check("a chat an older reader distilled is queued to be read again", queued === 1, String(queued));
+    // `days()` is evaluated again here, a few milliseconds later than when the
+    // rows were written — so times are compared to the second.
+    const near = (a: Date | undefined, b: Date) => !!a && Math.abs(a.getTime() - b.getTime()) < 5_000;
+    const marks = await prisma.conversationMemory.findFirst({ where: { conversationId: convo.id, userId: xu } });
+    check(
+      "…from the oldest thing still remembered, not from the start",
+      near(marks?.processedAt, days(3)) && marks?.extractorVersion === 2
+    );
+    const erasedMark = await prisma.conversationMemory.findFirst({ where: { conversationId: erased.id, userId: xu } });
+    check(
+      "a chat the reset marked read is never re-read",
+      erasedMark?.extractorVersion === 1 && near(erasedMark.processedAt, days(10))
+    );
+    guard = 0;
+    while ((await pendingBackfill(xu)).includes(convo.id) && guard++ < 5) {
+      await extractConversationMemory({ userId: xu, conversationId: convo.id, llm: markerExtractor });
+    }
+    check("the re-read never re-learns what was said before the reset", !(await factExists(xu, "Initech")));
+    check("…and nothing from the erased chat", !(await factExists(xu, "secret hobby")));
   } finally {
     await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
     for (const id of extraUsers) await prisma.user.delete({ where: { id } }).catch(() => {});

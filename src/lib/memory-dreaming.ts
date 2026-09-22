@@ -43,6 +43,13 @@ export const DREAM_CONVERSATIONS_PER_ACCOUNT = 2;
  * is a model call, so this bounds them the way the line above bounds reading.
  */
 export const DREAM_PROJECT_SUMMARIES_PER_ACCOUNT = 3;
+/**
+ * Chats an older reader distilled, queued per account per tick once nothing
+ * new is left to read (queueRereads). Small, because a re-read is a whole
+ * chat's worth of model calls and there is no hurry: the facts it recovers
+ * were missing yesterday too.
+ */
+export const DREAM_REREADS_PER_ACCOUNT = 2;
 
 export type DreamSkipReason = "memory_off" | "background_learning_off" | "active" | "over_budget";
 

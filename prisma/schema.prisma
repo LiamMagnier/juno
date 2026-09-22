@@ -978,6 +978,14 @@ model MemoryEntry {
   expiresAt       DateTime?
   lastUsedAt      DateTime?
   lastVerifiedAt  DateTime?
+  // When the person SAID it — the source message's time — as opposed to
+  // createdAt, when Juno wrote it down. Minutes apart for a fact learned in
+  // the chat it came from; months apart for one learned by re-reading history.
+  // Every judgement about time (which of two facts is newer, when a temporary
+  // one stops being true, how fresh a fact is) reads this. Null on rows
+  // written before it existed; readers fall back to createdAt, and the
+  // re-judge pass recovers it from sourceMessageId as it goes.
+  observedAt      DateTime?
   // The entry that replaced this one. Supersession keeps the trail instead of
   // deleting the older belief.
   supersededById  String?
@@ -1056,6 +1064,11 @@ model ConversationMemory {
   processedAt    DateTime // high-water mark: messages createdAt <= this are extracted
   digest         String?  @db.Text // one-line memory digest of the chat
   factCount      Int      @default(0) // facts extracted from this chat so far
+  // Which version of the reader distilled it (EXTRACTOR_VERSION in
+  // src/lib/memory-extraction.ts). When the reader improves, history read by
+  // an older one is worth reading again — the dreamer does, and this is how it
+  // knows which. Existing rows were read by version 1.
+  extractorVersion Int      @default(1)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -16,11 +16,13 @@
  * chats worth reading twice.
  *
  *   1  everything before versioning.
- *   2  "Already known" lists only facts in the chat's own scope. Version 1
- *      listed the newest facts from anywhere, so a project chat was told it
- *      already knew another project's notes and skipped them — and a plain
- *      chat skipped anything a project had heard first. Re-reading with v2
- *      recovers exactly those facts.
+ *   2  "Already known" lists only facts Juno currently believes, in the
+ *      chat's own scope. Version 1 listed the newest facts from anywhere, in
+ *      any state: a project chat was told it already knew another project's
+ *      notes and skipped them, a plain chat skipped anything a project had
+ *      heard first, and a fact Juno had stopped believing ("lives in Madrid",
+ *      before the year in Valencia) was skipped when the user said it again.
+ *      Re-reading with v2 recovers exactly those facts.
  */
 export const EXTRACTOR_VERSION = 2;
 

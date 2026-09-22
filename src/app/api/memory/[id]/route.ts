@@ -153,6 +153,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             // lexical rather than semantically wrong.
             embedding: [],
             embeddingModel: null,
+            // Rewritten now, so said now.
+            observedAt: new Date(),
             ...(body.category === undefined ? { category: fields.category } : {}),
           }
         : {}),

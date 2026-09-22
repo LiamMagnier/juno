@@ -65,7 +65,7 @@ async function liveReader(): Promise<BenchReader> {
 const pct = (n: number) => `${(n * 100).toFixed(1).padStart(5)}%`;
 
 function row(label: string, s: BenchSummary): string {
-  return `${label.padEnd(34)} ${pct(s.recall)}  ${pct(s.stale)}  ${String(s.forgotten).padStart(9)}  ${pct(s.precision)}  ${pct(s.retrieval)}  ${String(s.leaks).padStart(5)}`;
+  return `${label.padEnd(44)} ${pct(s.recall)}  ${pct(s.stale)}  ${String(s.forgotten).padStart(9)}  ${pct(s.precision)}  ${pct(s.retrieval)}  ${String(s.leaks).padStart(5)}`;
 }
 
 async function main() {
@@ -92,11 +92,24 @@ async function main() {
       `Memory recall benchmark — ${live ? "LIVE (a real model reads the chats)" : "offline (recorded reader)"}` +
         ` · ${MEMORY_BENCH_SCENARIOS.length} histories · ${facts} facts · ${probes} questions\n`
     );
-    console.log(`${"".padEnd(34)} recall   stale  forgotten  precision  retrieval  leaks`);
+    // The rules as they were before this work cannot be re-run — they are
+    // gone — so "before" is the recorded measurement, printed beside the run.
+    const recorded = JSON.parse(readFileSync(RECORD_PATH, "utf8")) as {
+      baseline?: { recordedAt: string; results: Record<string, Partial<Record<BenchSetting, BenchSummary>>> };
+    };
+    const before = recorded.baseline;
+    console.log(`${"".padEnd(44)} recall   stale  forgotten  precision  retrieval  leaks`);
     for (const setting of BENCH_SETTINGS) {
+      if (before && !live) {
+        for (const [name, bySetting] of Object.entries(before.results)) {
+          const summary = bySetting[setting];
+          if (summary) console.log(row(`${setting.padEnd(8)} before: ${name}`, summary));
+        }
+      }
       for (const name of Object.keys(results)) console.log(row(`${setting.padEnd(8)} ${name}`, results[name][setting]));
       console.log("");
     }
+    if (before && !live) console.log(`"before" rows: recorded ${before.recordedAt}, on the rules as they were then.`);
     console.log("recall/precision/retrieval: higher is better · stale/forgotten/leaks: lower is better");
   }
 

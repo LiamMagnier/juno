@@ -205,7 +205,7 @@ test("a project fact changes the project's summary, not the account's", () => {
 
 test("the extractor is shown only this scope's facts as 'already known'", () => {
   const memory = src("src/lib/memory.ts");
-  assert.match(memory, /where: \{ userId: opts\.userId, kind: "FACT", projectId: convo\.projectId \?\? null \}/);
+  assert.match(memory, /userId: opts\.userId,\s+kind: "FACT",\s+status: "active",\s+projectId: convo\.projectId \?\? null,/);
 });
 
 test("a project summary is built from that project only, and sealed at rest", () => {

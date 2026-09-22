@@ -132,6 +132,7 @@ export async function POST(req: Request) {
                   confidence: fields.confidence,
                   normalized: fields.normalized,
                   expiresAt: op.suppress ? null : fields.expiresAt,
+                  observedAt: new Date(),
                   lastVerifiedAt: new Date(),
                 },
                 select: { id: true },
@@ -171,6 +172,7 @@ export async function POST(req: Request) {
                   // lexical rather than semantically wrong.
                   embedding: [],
                   embeddingModel: null,
+                  observedAt: new Date(),
                   lastVerifiedAt: new Date(),
                 },
               });

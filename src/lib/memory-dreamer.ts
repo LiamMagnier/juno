@@ -7,11 +7,15 @@ import {
   maybeConsolidate,
   maybeConsolidateProject,
   projectsWithMemory,
+  queueRereads,
+  reconcileMemoryTimeline,
   sweepExpiredMemories,
 } from "@/lib/memory";
+import { EXTRACTOR_VERSION } from "@/lib/memory-extraction";
 import {
   DREAM_CONVERSATIONS_PER_ACCOUNT,
   DREAM_PROJECT_SUMMARIES_PER_ACCOUNT,
+  DREAM_REREADS_PER_ACCOUNT,
   dreamEligibility,
   type DreamSkipReason,
 } from "@/lib/memory-dreaming";
@@ -25,7 +29,8 @@ import { getUserPlan } from "@/lib/usage";
 
 /**
  * Accounts with history the dreamer could read: at least one conversation not
- * yet distilled up to its last message, memory on, background learning on.
+ * yet distilled up to its last message — or distilled by an older reader and
+ * worth reading again (see queueRereads) — memory on, background learning on.
  *
  * The ONE query here that looks across accounts, so it is the one that uses
  * `prismaUnguarded` — the same choice the import-recovery sweeper makes — and
@@ -46,7 +51,11 @@ export async function findAccountsToDream(limit: number): Promise<string[]> {
     FROM "Conversation" c
     LEFT JOIN "ConversationMemory" m ON m."conversationId" = c."id"
     LEFT JOIN "Settings" s ON s."userId" = c."userId"
-    WHERE (m."id" IS NULL OR c."lastMessageAt" > m."processedAt")
+    WHERE (
+        m."id" IS NULL
+        OR c."lastMessageAt" > m."processedAt"
+        OR (m."extractorVersion" < ${EXTRACTOR_VERSION} AND (m."digest" IS NOT NULL OR m."factCount" > 0))
+      )
       AND COALESCE(s."memoryEnabled", true) = true
       AND COALESCE(s."memoryBackgroundLearning", true) = true
     GROUP BY c."userId"
@@ -63,6 +72,10 @@ export interface DreamOutcome {
   created: number;
   remaining: number;
   expired: number;
+  /** Chats an older reader distilled, queued to be read again. */
+  rereadQueued: number;
+  /** Beliefs the re-judge pass corrected. */
+  rejudged: number;
 }
 
 /**
@@ -87,6 +100,8 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
     created: 0,
     remaining: 0,
     expired: 0,
+    rereadQueued: 0,
+    rejudged: 0,
   };
 
   const [settings, lastActive] = await Promise.all([
@@ -120,12 +135,26 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
   outcome.created = pass.created;
   outcome.remaining = pass.remaining;
 
+  // Nothing new left to read: read again what an older reader read, a couple
+  // of chats at a time. They are picked up by the next tick's pass, so the
+  // re-reading is paced like the reading.
+  if (pass.remaining === 0) {
+    outcome.rereadQueued = await queueRereads(userId, DREAM_REREADS_PER_ACCOUNT);
+  }
+
+  // Judge the timeline again: history read this pass may have been said
+  // before or after what is already believed, and rows written before times
+  // were recorded are dated from their messages as the pass goes.
+  if (pass.processedConversations > 0 || outcome.expired > 0) {
+    outcome.rejudged = (await reconcileMemoryTimeline(userId, now).catch(() => ({ changed: 0 }))).changed;
+  }
+
   // New facts, or expiries, mean the summary is out of date. maybeConsolidate
   // carries its own throttle and its own "did anything change" test, so this
   // is safe to call on every productive pass. `null` provider: there is no
   // conversation behind a dream, so the account's own default model decides
   // what `same_provider` means — the rule consolidateMemories documents.
-  if (outcome.created > 0 || outcome.expired > 0) {
+  if (outcome.created > 0 || outcome.expired > 0 || outcome.rejudged > 0) {
     await maybeConsolidate(userId, null).catch(() => {});
     // History distilled from a project's chats lands in that project, so its
     // summary is the one that moved. Bounded — each rebuild is a model call —

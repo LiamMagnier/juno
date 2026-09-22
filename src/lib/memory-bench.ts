@@ -18,7 +18,7 @@
  * a real model. The database half is a small in-memory store that applies
  * each ingestion plan the way `saveCandidates` does.
  *
- * TWO WAYS OF READING, because they are two different products:
+ * THREE SETTINGS, because they are three different situations:
  *
  *   live      each chat distilled as it happens, in order — the chat turn's
  *             after-hook.
@@ -26,6 +26,12 @@
  *             is how "Learn from past chats" and the background dreamer read
  *             it (`pendingBackfill` orders by last message, descending). Any
  *             forgets the person made are already in place.
+ *   repair    history that WAS read newest-first by the old rules — every
+ *             conflict judged in reading order, every temporary fact dated
+ *             from the reading — which is what existing accounts have stored
+ *             today. With the re-judge pass on, the time each fact was said is
+ *             recovered from its source message, as the database half does,
+ *             and the timeline is judged again.
  *
  * WHAT IT SCORES, at the scenario's "now":
  *
@@ -49,6 +55,7 @@ import {
   factsCoveredByForget,
   normalizeFact,
   planFactIngestion,
+  planTimelineReconciliation,
   selectMemoriesForContext,
   significantTokens,
   type LifecycleEntry,
@@ -116,26 +123,33 @@ export interface BenchScenario {
 // Configuration
 // ---------------------------------------------------------------------------
 
-export type BenchSetting = "live" | "re-read";
+export type BenchSetting = "live" | "re-read" | "repair";
 
 export interface BenchConfig {
   /**
    * Which stored facts the reader is told it already knows: the newest from
-   * any scope (extractor v1), or only the chat's own scope (v2).
+   * any scope in any state (extractor v1), or only what is believed in the
+   * chat's own scope (v2).
    */
   knownScope: "any" | "same";
+  /** Hand ingestion the time each fact was said, rather than letting it assume "now". */
+  timeAware: boolean;
+  /** Run the re-judge pass (planTimelineReconciliation) once reading is done. */
+  rejudge: boolean;
 }
 
-export const BENCH_SETTINGS: readonly BenchSetting[] = ["live", "re-read"];
+export const BENCH_SETTINGS: readonly BenchSetting[] = ["live", "re-read", "repair"];
 
 /**
- * The pipelines a run compares, oldest first. Each row is the previous one
- * plus one change, so the report attributes every movement in a number to the
- * change that caused it.
+ * The pipelines a run compares. The last is what the product runs; the one
+ * before it isolates the re-judge pass's share. What the code did BEFORE this
+ * work cannot be re-run — those rules are gone — so it is not a row here but a
+ * recorded measurement (tests/fixtures/memory-recall-record.json, `baseline`),
+ * which the report prints beside these.
  */
 export const BENCH_CONFIGS: Record<string, BenchConfig> = {
-  "before (reader v1)": { knownScope: "any" },
-  "+ scoped reader (v2)": { knownScope: "same" },
+  "judged by when it was said": { knownScope: "same", timeAware: true, rejudge: false },
+  "+ re-judge pass (the product)": { knownScope: "same", timeAware: true, rejudge: true },
 };
 
 /** The model seam: the extraction prompt in, the raw answer out. */
@@ -217,6 +231,8 @@ interface Store {
   entries: LifecycleEntry[];
   suppressions: string[];
   seq: number;
+  /** When each row's fact was really said — what its source message's time gives the database half. */
+  saidAt: Map<string, Date>;
 }
 
 function turnTime(conversation: BenchConversation, index: number): Date {
@@ -231,13 +247,23 @@ function endOf(conversation: BenchConversation): Date {
 async function readConversation(
   store: Store,
   conversation: BenchConversation,
-  config: BenchConfig,
+  config: Pick<BenchConfig, "knownScope" | "timeAware">,
   reader: BenchReader,
   now: Date
 ): Promise<void> {
+  // A chunk's facts are dated by its last message — the one the row's
+  // sourceMessageId points at, since the reader returns facts for the chunk
+  // rather than per message.
+  const saidAt = turnTime(conversation, conversation.turns.length - 1);
   const scope = conversation.projectId ?? null;
+  // The reader's "Already known": v1 listed every fact from any scope in any
+  // state; v2 lists only what is believed, in the chat's own scope.
   const known = store.entries
-    .filter((entry) => entry.kind === "FACT" && (config.knownScope === "any" || (entry.projectId ?? null) === scope))
+    .filter((entry) =>
+      config.knownScope === "any"
+        ? entry.kind === "FACT"
+        : believes(entry, now) && (entry.projectId ?? null) === scope
+    )
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .slice(0, EXTRACTION_KNOWN_FACTS)
     .map((entry) => entry.content);
@@ -251,19 +277,37 @@ async function readConversation(
 
   for (const fact of parsed.facts) {
     const plan = planFactIngestion(
-      { content: fact, source: "AUTO", projectId: scope },
+      { content: fact, source: "AUTO", projectId: scope, ...(config.timeAware ? { observedAt: saidAt } : {}) },
       { entries: store.entries, suppressions: store.suppressions, now, allowedSensitiveTopics: [] }
     );
     if (plan.action === "skip") continue;
+    // Mirrors saveCandidates, write for write.
+    const supersede = (entryId: string, byId: string) => {
+      const older = store.entries.find((entry) => entry.id === entryId);
+      // `saveCandidates` supersedes only a row that is still active.
+      if (older && older.status === "active") {
+        older.status = "superseded";
+        older.supersededById = byId;
+      }
+    };
     if (plan.action === "refresh") {
       const known = store.entries.find((entry) => entry.id === plan.entryId);
-      if (known && plan.revive) known.status = "active";
-      if (known && plan.expiresAt !== undefined) known.expiresAt = plan.expiresAt;
+      if (!known) continue;
+      if (plan.revive) known.status = "active";
+      if (plan.expiresAt !== undefined) known.expiresAt = plan.expiresAt;
+      if (plan.observedAt) known.observedAt = plan.observedAt;
+      if (saidAt.getTime() > (store.saidAt.get(known.id)?.getTime() ?? 0)) store.saidAt.set(known.id, saidAt);
+      if (plan.reinstate) {
+        known.status = "active";
+        known.supersededById = null;
+      }
+      if (plan.supersedes) supersede(plan.supersedes.entryId, known.id);
       continue;
     }
     store.seq += 1;
+    const id = `bench-${store.seq}`;
     store.entries.push({
-      id: `bench-${store.seq}`,
+      id,
       content: plan.content,
       normalized: plan.normalized,
       category: plan.category,
@@ -274,12 +318,22 @@ async function readConversation(
       status: plan.status,
       expiresAt: plan.expiresAt,
       createdAt: now,
+      observedAt: config.timeAware ? plan.observedAt : null,
+      supersededById: plan.supersededById ?? null,
     });
-    if (plan.supersedes) {
-      const older = store.entries.find((entry) => entry.id === plan.supersedes!.entryId);
-      // `saveCandidates` supersedes only a row that is still active.
-      if (older && older.status === "active") older.status = "superseded";
-    }
+    store.saidAt.set(id, saidAt);
+    if (plan.supersedes) supersede(plan.supersedes.entryId, id);
+  }
+}
+
+/** The re-judge pass, applied the way reconcileMemoryTimeline applies it. */
+function rejudge(store: Store, now: Date): void {
+  for (const change of planTimelineReconciliation(store.entries, { now })) {
+    const entry = store.entries.find((row) => row.id === change.id);
+    if (!entry) continue;
+    entry.status = change.status;
+    if (change.supersededById !== undefined) entry.supersededById = change.supersededById;
+    if (change.expiresAt) entry.expiresAt = change.expiresAt;
   }
 }
 
@@ -325,7 +379,7 @@ export async function runScenario(
   scenario: BenchScenario,
   opts: { setting: BenchSetting; config: BenchConfig; reader: BenchReader }
 ): Promise<ScenarioScore> {
-  const store: Store = { entries: [], suppressions: [], seq: 0 };
+  const store: Store = { entries: [], suppressions: [], seq: 0, saidAt: new Map() };
   const now = new Date(scenario.now);
 
   if (opts.setting === "live") {
@@ -337,11 +391,23 @@ export async function runScenario(
       if (event.conversation) await readConversation(store, event.conversation, opts.config, opts.reader, event.at);
       else if (event.statement) forget(store, event.statement);
     }
+    if (opts.config.rejudge) rejudge(store, now);
   } else {
     for (const f of scenario.forgets ?? []) forget(store, f.statement);
     const newestFirst = [...scenario.conversations].sort((a, b) => endOf(b).getTime() - endOf(a).getTime());
+    // "repair" reads the way the old rules did: no times handed to
+    // ingestion, so every judgement is made in reading order.
+    const readWith = opts.setting === "repair" ? { ...opts.config, timeAware: false } : opts.config;
     for (const conversation of newestFirst) {
-      await readConversation(store, conversation, opts.config, opts.reader, now);
+      await readConversation(store, conversation, readWith, opts.reader, now);
+    }
+    if (opts.config.rejudge) {
+      if (opts.setting === "repair") {
+        // What the database half does before judging: recover when each row
+        // was said from its source message.
+        for (const entry of store.entries) entry.observedAt = store.saidAt.get(entry.id) ?? entry.observedAt ?? null;
+      }
+      rejudge(store, now);
     }
   }
 

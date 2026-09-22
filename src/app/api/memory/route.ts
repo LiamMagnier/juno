@@ -137,6 +137,9 @@ export async function POST(req: Request) {
           confidence: fields.confidence,
           normalized: fields.normalized,
           expiresAt: fields.expiresAt,
+          // Typed now, so said now — what ingestion and the re-judge pass
+          // compare against when something newer or older arrives.
+          observedAt: new Date(),
           lastVerifiedAt: new Date(),
         },
         select: MEMORY_ENTRY_SELECT,

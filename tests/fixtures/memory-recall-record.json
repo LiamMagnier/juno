@@ -45,40 +45,56 @@
   "current": {
     "recordedAt": "2026-09-22",
     "results": {
-      "before (reader v1)": {
+      "judged by when it was said": {
         "live": {
-          "recall": 0.95,
-          "stale": 0.42857142857142855,
+          "recall": 1,
+          "stale": 0.2857142857142857,
           "forgotten": 0,
-          "precision": 0.9620253164556962,
-          "retrieval": 0.6818181818181818,
-          "leaks": 2
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1
         },
         "re-read": {
-          "recall": 0.925,
-          "stale": 1,
+          "recall": 1,
+          "stale": 0.2857142857142857,
           "forgotten": 0,
-          "precision": 0.9135802469135802,
-          "retrieval": 0.7727272727272727,
-          "leaks": 6
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1
+        },
+        "repair": {
+          "recall": 0.975,
+          "stale": 0.8571428571428571,
+          "forgotten": 0,
+          "precision": 0.9285714285714286,
+          "retrieval": 0.8636363636363636,
+          "leaks": 5
         }
       },
-      "+ scoped reader (v2)": {
+      "+ re-judge pass (the product)": {
         "live": {
-          "recall": 0.975,
-          "stale": 0.42857142857142855,
+          "recall": 1,
+          "stale": 0.2857142857142857,
           "forgotten": 0,
-          "precision": 0.9629629629629629,
-          "retrieval": 0.7727272727272727,
-          "leaks": 2
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1
         },
         "re-read": {
-          "recall": 0.95,
-          "stale": 1,
+          "recall": 1,
+          "stale": 0.2857142857142857,
           "forgotten": 0,
-          "precision": 0.9156626506024096,
+          "precision": 0.975609756097561,
           "retrieval": 0.8181818181818182,
-          "leaks": 6
+          "leaks": 1
+        },
+        "repair": {
+          "recall": 1,
+          "stale": 0.2857142857142857,
+          "forgotten": 0,
+          "precision": 0.975609756097561,
+          "retrieval": 0.8181818181818182,
+          "leaks": 1
         }
       }
     }

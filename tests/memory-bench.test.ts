@@ -53,12 +53,14 @@ test("a fresh offline run matches the recorded numbers exactly", async () => {
   assert.deepEqual(await freshRun(), record.current.results);
 });
 
-test("the newest pipeline never does worse than the baseline measured before the work", async () => {
+test("the newest pipeline never does worse than the baseline measured before the work", () => {
   const baselineBest = (setting: string, pick: (s: BenchSummary) => number, better: "higher" | "lower") => {
     const values = Object.values(record.baseline.results).map((r) => pick(r[setting]));
     return better === "higher" ? Math.max(...values) : Math.min(...values);
   };
   for (const setting of BENCH_SETTINGS) {
+    // "repair" did not exist to measure before the work: nothing repaired.
+    if (!Object.values(record.baseline.results).some((r) => r[setting])) continue;
     const now = record.current.results[newest][setting];
     assert.ok(now.recall >= baselineBest(setting, (s) => s.recall, "higher"), `${setting}: recall fell`);
     assert.ok(now.retrieval >= baselineBest(setting, (s) => s.retrieval, "higher"), `${setting}: retrieval fell`);

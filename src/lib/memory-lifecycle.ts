@@ -268,8 +268,25 @@ export interface LifecycleEntry {
   status: string;
   expiresAt: Date | null;
   createdAt: Date;
+  /**
+   * When the person SAID it — the message's time — as opposed to `createdAt`,
+   * when Juno wrote the row down. The two are minutes apart for a fact learned
+   * during a chat and months apart for one learned by re-reading history, and
+   * every judgement about time (which of two conflicting facts is newer, when a
+   * temporary one stops being true, how fresh a fact is for ranking) has to use
+   * this one. Absent on rows written before it existed: `observedAtOf` falls
+   * back to `createdAt`, which for those rows was the best guess anyway.
+   */
+  observedAt?: Date | null;
+  /** The row that replaced this one, when it was replaced. */
+  supersededById?: string | null;
   /** Vector-space marker (never the vector). Absent on pre-semantic rows. */
   embeddingModel?: string | null;
+}
+
+/** When a fact was said, as well as it is known. */
+export function observedAtOf(entry: { observedAt?: Date | null; createdAt: Date }): Date {
+  return entry.observedAt ?? entry.createdAt;
 }
 
 export interface FactCandidate {
@@ -328,10 +345,30 @@ export interface ExclusiveSlot {
   value: string;
 }
 
+/**
+ * Whether the words before a slot's phrase make it the USER's attribute.
+ *
+ * "The user lives in Rotterdam" is where the user lives. "The user's sister
+ * lives in Utrecht" is where their sister lives — and read as the user's, it
+ * replaced the user's city with hers. The recall benchmark found that one.
+ *
+ * So the subject has to be the user ("The user", "User", or a pronoun for
+ * them, or nothing at all in the extractor's clipped "Lives in Porto."), and
+ * no possessive may hand the sentence to someone else on the way to the verb.
+ * A possessive that IS the attribute is fine: in "The user's name is Sam" the
+ * phrase starts at "name is", so nothing stands between the possessive and it.
+ */
+function aboutTheUser(prefix: string): boolean {
+  const subject = prefix.trim();
+  if (!subject) return true;
+  if (!/^(?:(?:the\s+)?user\b|(?:they|he|she)\b)/i.test(subject)) return false;
+  return !/(?:['’]s|s['’])\s+\w|\b(?:their|his|her|my|our)\s+\w/i.test(subject);
+}
+
 export function exclusiveSlot(content: string): ExclusiveSlot | null {
   for (const candidate of EXCLUSIVE_SLOTS) {
     const match = candidate.pattern.exec(content);
-    if (match?.[1]?.trim()) {
+    if (match?.[1]?.trim() && aboutTheUser(content.slice(0, match.index))) {
       return { slot: candidate.slot, noun: candidate.noun, value: match[1].trim() };
     }
   }
@@ -385,9 +422,10 @@ export function findContradiction(
 }
 
 /**
- * How much more confident a *stored* fact must be for it to survive a newer
- * conflicting one of the same kind. Without a margin, 0.70 vs 0.69 would flip
- * the outcome, which is noise deciding what the user is.
+ * How much more confident one fact must be than a conflicting one of the same
+ * kind to win on confidence rather than on which was said last. Without a
+ * margin, 0.70 vs 0.69 would flip the outcome, which is noise deciding what the
+ * user is.
  */
 const CONFIDENCE_MARGIN = 0.2;
 
@@ -397,6 +435,12 @@ export interface ContradictionOutcome {
   winner: "incoming" | "existing";
   /** Stored on the losing row and shown on the memory page. */
   reason: string;
+  /**
+   * Why the loser lost. "older" is the one that is not a conflict at all: the
+   * losing statement was simply said BEFORE the winning one, so it is history
+   * ("superseded"), not a claim Juno declined ("contradicted").
+   */
+  basis: "rank" | "confidence" | "older" | "newer";
 }
 
 /**
@@ -407,26 +451,53 @@ export interface ContradictionOutcome {
  * recent the inference is. That direction is deliberate — the opposite lets one
  * sloppy extraction quietly rewrite something the user stated on purpose. Only
  * when both sides carry the same kind of evidence does recency decide, and even
- * then a markedly more confident stored fact holds.
+ * then a markedly more confident fact holds.
+ *
+ * RECENCY IS WHEN IT WAS SAID, NOT WHEN IT WAS READ. This used to assume the
+ * incoming fact was the newer one, which is true of a chat distilled as it
+ * happens and false of history re-read afterwards — and "Learn from past chats"
+ * and the dreamer read history NEWEST CHAT FIRST. So re-reading a year of chats
+ * handed every conflict to the oldest statement: the user's old city replaced
+ * the new one, the old employer the new one. Given both sides' observation
+ * times, the rule is the same whichever order the two arrive in — which is
+ * what makes re-reading history safe to do at all. Without them it keeps the
+ * old assumption, which is right for a live chat.
+ *
+ * The confidence rule is symmetric for the same reason: a markedly more
+ * confident fact wins whether it was stored first or read first.
  */
 export function resolveContradiction(
-  existing: { source: "AUTO" | "MANUAL"; confidence: number },
-  incoming: { source: "AUTO" | "MANUAL"; confidence: number },
+  existing: { source: "AUTO" | "MANUAL"; confidence: number; observedAt?: Date },
+  incoming: { source: "AUTO" | "MANUAL"; confidence: number; observedAt?: Date },
   noun = "this"
 ): ContradictionOutcome {
   const existingRank = SOURCE_RANK[existing.source];
   const incomingRank = SOURCE_RANK[incoming.source];
 
   if (incomingRank > existingRank) {
-    return { winner: "incoming", reason: `You said this yourself, so it replaced what Juno had inferred about ${noun}.` };
+    return {
+      winner: "incoming",
+      basis: "rank",
+      reason: `You said this yourself, so it replaced what Juno had inferred about ${noun}.`,
+    };
   }
   if (incomingRank < existingRank) {
-    return { winner: "existing", reason: `Not used: it conflicts with what you told Juno about ${noun}.` };
+    return { winner: "existing", basis: "rank", reason: `Not used: it conflicts with what you told Juno about ${noun}.` };
   }
   if (existing.confidence - incoming.confidence >= CONFIDENCE_MARGIN) {
-    return { winner: "existing", reason: `Not used: Juno is more confident in what it already knew about ${noun}.` };
+    return {
+      winner: "existing",
+      basis: "confidence",
+      reason: `Not used: Juno is more confident in what it already knew about ${noun}.`,
+    };
   }
-  return { winner: "incoming", reason: `Replaced by something newer you said about ${noun}.` };
+  if (incoming.confidence - existing.confidence >= CONFIDENCE_MARGIN) {
+    return { winner: "incoming", basis: "confidence", reason: `Replaced by something you said more clearly about ${noun}.` };
+  }
+  if (existing.observedAt && incoming.observedAt && incoming.observedAt.getTime() < existing.observedAt.getTime()) {
+    return { winner: "existing", basis: "older", reason: `Replaced by something newer you said about ${noun}.` };
+  }
+  return { winner: "incoming", basis: "newer", reason: `Replaced by something newer you said about ${noun}.` };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,7 +545,21 @@ export type IngestionPlan =
    * Already known. Refreshes `lastVerifiedAt` instead of adding a row; a
    * restated temporary fact also gets its clock and status wound back.
    */
-  | { action: "refresh"; entryId: string; revive: boolean; expiresAt: Date | null }
+  | {
+      action: "refresh";
+      entryId: string;
+      revive: boolean;
+      expiresAt: Date | null;
+      /** Set when this saying is newer than the row's — the row's time moves up to it. */
+      observedAt?: Date;
+      /**
+       * Set when a fact Juno had stopped believing is said again, later than
+       * what replaced it: it is believed again, and `supersedes` names the row
+       * it takes back from.
+       */
+      reinstate?: { reason: string };
+      supersedes?: { entryId: string; reason: string };
+    }
   /** New belief. `supersedes` is set when it displaces an older one. */
   | {
       action: "create";
@@ -483,9 +568,19 @@ export type IngestionPlan =
       category: MemoryCategory;
       confidence: number;
       expiresAt: Date | null;
-      status: "active" | "contradicted";
+      /**
+       * active — believed. contradicted — lost a conflict it should have won
+       * on its own terms. superseded — said BEFORE the fact that now holds its
+       * place (history, read late). expired — a temporary fact whose moment
+       * had already passed by the time it was read.
+       */
+      status: "active" | "contradicted" | "superseded" | "expired";
+      /** When it was said. */
+      observedAt: Date;
       /** Set when this new row wins a conflict — the loser is annotated, not removed. */
       supersedes?: { entryId: string; reason: string };
+      /** Set on a row created already replaced: the row that holds its place. */
+      supersededById?: string;
       /** Set when this row LOST a conflict: stored, explained, never injected. */
       reason?: string;
     };
@@ -499,7 +594,17 @@ export type IngestionPlan =
  * with itself.
  */
 export function planFactIngestion(
-  candidate: { content: string; source: "AUTO" | "MANUAL"; projectId?: string | null },
+  candidate: {
+    content: string;
+    source: "AUTO" | "MANUAL";
+    projectId?: string | null;
+    /**
+     * When the person said it. Defaults to `now` — right for a fact learned
+     * during the chat it came from, wrong for one read out of history, which
+     * is why the re-reading paths always pass the message's own time.
+     */
+    observedAt?: Date;
+  },
   context: {
     entries: readonly LifecycleEntry[];
     suppressions: readonly string[];
@@ -540,21 +645,89 @@ export function planFactIngestion(
 
   const { category, confidence } = classifyFact(content, { source: candidate.source });
   const normalized = normalizeFact(content);
-  const expiresAt = expiresAtFor(category, context.now);
+  // A temporary fact's clock starts when it was SAID. Started when it was read,
+  // "flying to Berlin this week", re-read a month later, was a fresh month-long
+  // belief about a trip that was already over.
+  const observedAt = candidate.observedAt ?? context.now;
+  const expiresAt = expiresAtFor(category, observedAt);
+  const alreadyOver = expiresAt !== null && expiresAt.getTime() <= context.now.getTime();
+  const incoming = { source: candidate.source, confidence, observedAt };
 
   const duplicate = findDuplicate(candidate, context.entries);
   if (duplicate) {
-    // A temporary fact restated is a temporary fact still true — put it back in
-    // circulation rather than leaving a retired row the user keeps re-teaching.
-    const revive = duplicate.status === "expired";
-    return { action: "refresh", entryId: duplicate.id, revive, expiresAt: revive ? expiresAt : duplicate.expiresAt };
+    const newer = observedAt.getTime() > observedAtOf(duplicate).getTime();
+    const refresh = {
+      action: "refresh" as const,
+      entryId: duplicate.id,
+      ...(newer ? { observedAt } : {}),
+    };
+    if (duplicate.status === "active") {
+      return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
+    }
+    if (duplicate.status === "expired") {
+      // A temporary fact restated is a temporary fact still true — put it back
+      // in circulation rather than leaving a retired row the user keeps
+      // re-teaching. Unless the restating is itself old news.
+      return alreadyOver
+        ? { ...refresh, revive: false, expiresAt: duplicate.expiresAt }
+        : { ...refresh, revive: true, expiresAt };
+    }
+    /*
+     * Said again, about a fact Juno had stopped believing — "I live in Madrid
+     * again". A restatement used to refresh the retired row and leave it
+     * retired, so moving back home never registered: the row that replaced
+     * it stayed believed forever. Now the restatement competes with whatever
+     * holds the slot today, by the same rule as any conflict — and when it
+     * wins, it is believed again.
+     */
+    if (alreadyOver) return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
+    const rival = findContradiction(candidate, context.entries);
+    if (!rival) {
+      return {
+        ...refresh,
+        revive: false,
+        expiresAt,
+        reinstate: { reason: "You said this again, so Juno believes it again." },
+      };
+    }
+    const outcome = resolveContradiction(
+      { source: rival.entry.source, confidence: rival.entry.confidence, observedAt: observedAtOf(rival.entry) },
+      incoming,
+      rival.noun
+    );
+    if (outcome.winner === "incoming") {
+      return {
+        ...refresh,
+        revive: false,
+        expiresAt,
+        reinstate: { reason: `You said this again, more recently than what had replaced it.` },
+        supersedes: { entryId: rival.entry.id, reason: outcome.reason },
+      };
+    }
+    return { ...refresh, revive: false, expiresAt: duplicate.expiresAt };
+  }
+
+  // History, read late: true for a while, and that while has passed. Kept —
+  // the recap shows what expired — but it displaces nothing.
+  if (alreadyOver) {
+    return {
+      action: "create",
+      content,
+      normalized,
+      category,
+      confidence,
+      expiresAt,
+      observedAt,
+      status: "expired",
+      reason: "This was only true for a while, and that while has passed.",
+    };
   }
 
   const conflict = findContradiction(candidate, context.entries);
   if (conflict) {
     const outcome = resolveContradiction(
-      { source: conflict.entry.source, confidence: conflict.entry.confidence },
-      { source: candidate.source, confidence },
+      { source: conflict.entry.source, confidence: conflict.entry.confidence, observedAt: observedAtOf(conflict.entry) },
+      incoming,
       conflict.noun
     );
     if (outcome.winner === "incoming") {
@@ -565,8 +738,26 @@ export function planFactIngestion(
         category,
         confidence,
         expiresAt,
+        observedAt,
         status: "active",
         supersedes: { entryId: conflict.entry.id, reason: outcome.reason },
+      };
+    }
+    if (outcome.basis === "older") {
+      // Not a conflict Juno declined: an earlier state of things, read after
+      // the later one. Stored as what it is — replaced — pointing at the row
+      // that replaced it, so the memory page's "replaced by" trail is whole.
+      return {
+        action: "create",
+        content,
+        normalized,
+        category,
+        confidence,
+        expiresAt,
+        observedAt,
+        status: "superseded",
+        supersededById: conflict.entry.id,
+        reason: outcome.reason,
       };
     }
     return {
@@ -576,12 +767,145 @@ export function planFactIngestion(
       category,
       confidence,
       expiresAt,
+      observedAt,
       status: "contradicted",
       reason: outcome.reason,
     };
   }
 
-  return { action: "create", content, normalized, category, confidence, expiresAt, status: "active" };
+  return { action: "create", content, normalized, category, confidence, expiresAt, observedAt, status: "active" };
+}
+
+// ---------------------------------------------------------------------------
+// Re-judging — the pass that re-reads the timeline
+// ---------------------------------------------------------------------------
+
+export interface TimelineChange {
+  id: string;
+  status: "active" | "superseded" | "expired";
+  supersededById?: string | null;
+  /** Set when a temporary fact's clock is re-started from when it was said. */
+  expiresAt?: Date;
+  reason: string;
+}
+
+/**
+ * THE RE-JUDGE PASS: what each single-valued attribute should say, decided
+ * over the whole timeline instead of one fact at a time.
+ *
+ * Ingestion judges a conflict when a fact ARRIVES, against what is stored at
+ * that moment. That is right when facts arrive in the order they were said,
+ * and it was wrong for every account whose history was read any other way:
+ * "Learn from past chats" and the dreamer read newest chat first, and until
+ * ingestion learned observation times, each older statement it met replaced
+ * the newer one. Those decisions are in the database now, and ingestion alone
+ * never revisits them. This does.
+ *
+ * For each scope and each single-valued slot (where you live, where you work,
+ * what you are called…), the rows Juno believes or has replaced are replayed
+ * in the order they were SAID, through `resolveContradiction` — the rule
+ * ingestion uses — and whatever survives is what should be believed. The plan
+ * is the difference: rows to believe again, and rows to mark replaced.
+ *
+ * CONSERVATIVE on purpose, like every judgement in this file:
+ *   - only the single-valued slots, where "two values cannot both be true" is
+ *     known rather than guessed;
+ *   - a fact the user typed themselves is never changed — it can win (rank
+ *     says it does) but it is never retired or reinstated by this pass;
+ *   - a row already replaced stays pointed at whatever replaced it, even when
+ *     that is no longer the winner — the trail is history, not a claim;
+ *   - forgotten, expired and contradicted rows are not candidates at all.
+ *
+ * It also re-dates temporary facts. A trip mentioned in August and first read
+ * in September was given a month from September; with the time it was said
+ * known, its month is counted from August — and if that month is over, it is
+ * over now.
+ */
+export function planTimelineReconciliation(
+  entries: readonly LifecycleEntry[],
+  opts: { now: Date }
+): TimelineChange[] {
+  const groups = new Map<string, { entry: LifecycleEntry; value: string; noun: string }[]>();
+  for (const entry of entries) {
+    if (entry.kind !== "FACT") continue;
+    if (entry.status !== "active" && entry.status !== "superseded") continue;
+    // A typed fact takes part only while believed: one the user retired by
+    // hand is theirs to bring back, not this pass's.
+    if (entry.source === "MANUAL" && entry.status !== "active") continue;
+    const slot = exclusiveSlot(entry.content);
+    if (!slot) continue;
+    const key = `${entry.projectId ?? ""}\u0000${slot.slot}`;
+    const members = groups.get(key) ?? [];
+    members.push({ entry, value: normalizeFact(slot.value), noun: slot.noun });
+    groups.set(key, members);
+  }
+
+  const changes: TimelineChange[] = [];
+
+  for (const entry of entries) {
+    if (entry.kind !== "FACT" || entry.status !== "active" || entry.category !== "temporary") continue;
+    if (!entry.observedAt || !entry.expiresAt) continue;
+    const due = expiresAtFor("temporary", entry.observedAt);
+    // Only ever earlier: a restated temporary fact's clock was re-started on
+    // purpose, and its observedAt moved up with it.
+    if (!due || due.getTime() >= entry.expiresAt.getTime() - 60_000) continue;
+    const over = due.getTime() <= opts.now.getTime();
+    changes.push({
+      id: entry.id,
+      status: over ? "expired" : "active",
+      expiresAt: due,
+      reason: over
+        ? "This was only true for a while, and that while has passed."
+        : "Juno re-read your chats: this is counted from when you said it.",
+    });
+  }
+
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const ordered = [...members].sort(
+      (a, b) =>
+        observedAtOf(a.entry).getTime() - observedAtOf(b.entry).getTime() ||
+        a.entry.createdAt.getTime() - b.entry.createdAt.getTime()
+    );
+    let holder = ordered[0];
+    for (const next of ordered.slice(1)) {
+      if (next.value === holder.value) {
+        holder = next; // the same thing said again: the latest saying carries it
+        continue;
+      }
+      const outcome = resolveContradiction(
+        { source: holder.entry.source, confidence: holder.entry.confidence, observedAt: observedAtOf(holder.entry) },
+        { source: next.entry.source, confidence: next.entry.confidence, observedAt: observedAtOf(next.entry) },
+        next.noun
+      );
+      if (outcome.winner === "incoming") holder = next;
+    }
+
+    // Prefer a row that is already believed to carry the winning value, so a
+    // group that is already right produces no writes at all.
+    const carrier =
+      members.find((m) => m.value === holder.value && m.entry.status === "active") ?? holder;
+    for (const member of members) {
+      if (member.entry.source === "MANUAL") continue;
+      const wins = member.value === holder.value;
+      if (wins && member.entry.status !== "active" && member.entry.id === carrier.entry.id) {
+        changes.push({
+          id: member.entry.id,
+          status: "active",
+          supersededById: null,
+          reason: `Juno re-read your chats: this is the latest thing you said about ${member.noun}.`,
+        });
+      } else if (!wins && member.entry.status === "active") {
+        changes.push({
+          id: member.entry.id,
+          status: "superseded",
+          supersededById: carrier.entry.id,
+          reason: `Juno re-read your chats: you said something newer about ${member.noun}.`,
+        });
+      }
+    }
+  }
+  return changes;
 }
 
 // ---------------------------------------------------------------------------
@@ -781,7 +1105,7 @@ export function selectMemoriesForContext(
       id: entry.id,
       lexical,
       cosine,
-      createdAt: entry.createdAt,
+      createdAt: observedAtOf(entry),
     });
   }
 
@@ -794,7 +1118,9 @@ export function selectMemoriesForContext(
 
   const eligible = weighed.map((w) => {
     const relevance = fused ? fused.get(w.id) ?? 0 : w.lexical;
-    const ageDays = Math.max(0, (now.getTime() - w.entry.createdAt.getTime()) / 86_400_000);
+    // Fresh means recently SAID. A fact re-read out of last year's chats was
+    // written down today and is still a year old.
+    const ageDays = Math.max(0, (now.getTime() - observedAtOf(w.entry).getTime()) / 86_400_000);
     const recency = Math.pow(0.5, ageDays / RECENCY_HALF_LIFE_DAYS);
     const categoryWeight = isMemoryCategory(w.entry.category) ? MEMORY_CATEGORY_WEIGHT[w.entry.category] : 0.04;
     // A fact scoped to the project you are working in is on-topic by
@@ -805,7 +1131,7 @@ export function selectMemoriesForContext(
     return { entry: w.entry, score, tokens: w.tokens };
   });
 
-  eligible.sort((a, b) => b.score - a.score || b.entry.createdAt.getTime() - a.entry.createdAt.getTime());
+  eligible.sort((a, b) => b.score - a.score || observedAtOf(b.entry).getTime() - observedAtOf(a.entry).getTime());
 
   const selected: SelectedMemory[] = [];
   let usedTokens = 0;
