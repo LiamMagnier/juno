@@ -110,13 +110,13 @@ public extension View {
 
 public extension View {
     /// Makes a `.sidebar`-style `List` resolve its selection to the web's
-    /// `--sidebar-accent` instead of to Juno's coral.
+    /// `--sidebar-selected` instead of to Juno's coral.
     ///
     /// macOS draws the focused selection of a source list in the **app's accent**,
     /// and Juno's accent asset is coral — so every selected row came out as a
     /// full-width saturated coral bar, which is nothing like the web shell, where
-    /// the active row is `bg-sidebar-accent`: a warm grey barely a step off the
-    /// column. Coral on the web is spent on *one* primary action, never on a whole
+    /// the active row is `.sidebar-row-selected`: warm paper picked out of warm
+    /// paper, a clear step off the column and bounded by a hairline. Coral on the web is spent on *one* primary action, never on a whole
     /// row.
     ///
     /// This is a tint, not a hand-drawn highlight, and that distinction is the
@@ -154,7 +154,7 @@ public extension View {
     ///
     /// The `List` keeps drawing the selection itself, so arrow keys,
     /// type-select and the focus ring all keep working; only the colour the
-    /// reader sees is Juno's — the web's `--sidebar-accent`, in both states,
+    /// reader sees is Juno's — the web's `--sidebar-selected`, in both states,
     /// the way the web draws it. Apply this to every selectable row of a
     /// `.sidebar` list alongside ``junoSidebarRowInk()``.
     func junoSidebarRowSelection(_ selected: Bool) -> some View {
@@ -170,9 +170,9 @@ public extension View {
     /// A selected, focused row is *emphasised*: the platform pushes a white
     /// foreground style into the row so a label stays legible on a saturated
     /// accent. That is right for coral and catastrophic for the warm grey
-    /// ``junoSidebarSelectionTint()`` installs — white on `--sidebar-accent` is
-    /// invisible. The web says the same thing in one class: the active row is
-    /// `bg-sidebar-accent text-foreground`, not inverted text.
+    /// ``junoSidebarSelectionTint()`` installs — white on `--sidebar-selected`
+    /// is invisible. The web says the same thing in one class: the active row is
+    /// `.sidebar-row-selected text-foreground`, not inverted text.
     ///
     /// An explicit colour set *inside* the row wins over the emphasis style the
     /// row container pushes in, which is why this cannot live on the `List`

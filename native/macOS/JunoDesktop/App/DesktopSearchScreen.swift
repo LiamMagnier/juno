@@ -173,7 +173,7 @@ struct DesktopSearchScreen: View {
         // arrow keys, type-select and the focus ring all keep working. Without
         // it macOS resolves a focused selection to the app's accent, and a
         // full-width coral bar is nothing like the web, where a selected row is
-        // `--sidebar-accent`: a warm grey barely a step off the ground.
+        // `--sidebar-selected`: warm paper picked out of the column it sits in.
         .junoSidebarSelectionTint()
         // The canvas behind the rows is the page's, so the list does not paint a
         // second, cooler background inside a warm window.

@@ -230,6 +230,13 @@ export function ProductSwitch({
      * is the words, and only because at two segments they are redundant with
      * the marks; the accessible name still carries them, and so does the
      * tooltip, which is the one place a label is worth its pixels.
+     *
+     * THE TRACK STAYS ON `--sidebar-accent`, the panel's general tonal fill,
+     * and does NOT follow the rows onto `--sidebar-hover`. A track is a
+     * GROUND, not a state: its cells sit inside it, so a track painted in the
+     * colour a row uses for hover would leave every segment looking
+     * permanently hovered. The two row states moved out from under this token;
+     * this did not, and this is what it is for.
      */
     <nav aria-label="Juno products" className="flex shrink-0 items-center rounded-control bg-sidebar-accent/70 p-0.5">
       {PRODUCTS.map((product) => (
@@ -386,12 +393,17 @@ function RailItem({
             // New chat, Library — mark themselves with exactly this fill; a
             // fill that glides between stacked rows above a stack of fills that
             // do not reads as a lift, not as a switch.
-            "group relative flex size-11 items-center justify-center rounded-control transition-colors duration-fast ease-out-soft",
+            "group relative flex size-11 items-center justify-center rounded-control transition-[background-color,box-shadow,color] duration-fast ease-out-soft motion-reduce:transition-none",
             locked
-              ? "text-muted-foreground/55 hover:bg-sidebar-accent hover:text-muted-foreground"
+              ? "text-muted-foreground/55 hover:bg-sidebar-hover hover:text-muted-foreground"
               : active
-                ? "bg-sidebar-accent text-foreground"
-                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground",
+                // The panel's one selected recipe, not a fill that resembles
+                // it. This was `bg-sidebar-accent` — the colour the rows under
+                // it used for HOVER — so at the rail the open product and a
+                // hovered destination were the same paint, which is the exact
+                // confusion the two-colour retune exists to end.
+                ? "sidebar-row-selected text-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-hover hover:text-foreground",
           )}
         >
           {/* Byte-identical to NavRow's glyph box, so the rail is one optical

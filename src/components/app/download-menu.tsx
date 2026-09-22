@@ -74,25 +74,25 @@ export function DownloadMenu({ className }: { className?: string }) {
               aria-label="Download the app"
               className={cn(
                 "pressable inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-                // sidebar-accent, not muted: this sits in the sidebar footer
+                // sidebar-hover, not muted: this sits in the sidebar footer
                 // directly beside the account row, which fills with
-                // `hover:bg-sidebar-accent`. Two adjacent controls in one 2px-gap
+                // `hover:bg-sidebar-hover`. Two adjacent controls in one 2px-gap
                 // cluster answering the pointer with two different fills is the
                 // most visible way a footer stops reading as one object — and on
-                // the dark theme --muted (9.5%) sat below --sidebar-accent (11%),
+                // the dark theme --muted (9.5%) sat below the panel's hover fill,
                 // so this one also lifted less than its neighbour.
                 //
                 // No transition-* utility beside `.pressable`: that class ships a
                 // transition covering colour AND transform, and a later
                 // transition-colors replaces the whole shorthand, so the press dip
                 // this button opted into by wearing `.pressable` never animated.
-                "hover:bg-sidebar-accent hover:text-foreground",
+                "hover:bg-sidebar-hover hover:text-foreground",
                 // No forked focus ring either. The global `:focus-visible` rule is
                 // authoritative (button.tsx's header note explains why: a
                 // ring-offset paints a SOLID named colour into the gap, so this one
                 // wore a sidebar-coloured halo whenever the drawer floated it over
                 // a popover instead).
-                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground coarse:size-11",
+                "data-[state=open]:bg-sidebar-hover data-[state=open]:text-foreground coarse:size-11",
                 className,
               )}
             >
