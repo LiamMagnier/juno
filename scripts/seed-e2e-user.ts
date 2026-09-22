@@ -7,6 +7,7 @@ import { hashPassword } from "../src/lib/password";
 import { encryptMessageText } from "../src/lib/message-crypto";
 
 const EMAIL = "e2e@juno.test";
+const SHOWROOM_SHARE_TOKEN = "e2e-showroom-share-token";
 const PASSWORD = "E2E-Test-Password-2026!";
 
 const prisma = new PrismaClient();
@@ -127,11 +128,14 @@ async function seedShowroom(userId: string) {
     },
   });
 
+  // At least 16 characters: `findActiveShare` (src/lib/share.ts) rejects
+  // anything shorter before it reaches the database, so the old 12-character
+  // "e2e-showroom" token 404'd and this share never rendered at all.
   const share = await prisma.share.upsert({
-    where: { token: "e2e-showroom" },
+    where: { token: SHOWROOM_SHARE_TOKEN },
     update: { conversationId: conversation.id, revokedAt: null, title: "Showroom tour" },
     create: {
-      token: "e2e-showroom",
+      token: SHOWROOM_SHARE_TOKEN,
       userId,
       kind: "CHAT",
       conversationId: conversation.id,

@@ -184,13 +184,13 @@ type SidebarProject = {
 const LEGACY_STARRED_KEY = "starredProjects";
 const RECENTS_PAGE = 40;
 
-/* Recents is NOT here any more: its date folds are its headings now, so there
-   is no "Recents" row left to collapse. The orphaned
-   `juno:sidebar:recents:collapsed` key is harmless — a reader who had the
-   section folded simply finds their chats back. */
+/* Recent is one section again, folded like the two above it. Its key is the
+   one the old "Recents" section used, so a reader who folded it back then
+   finds it the way they left it. */
 const SECTION_KEYS = {
   projects: "juno:sidebar:projects:collapsed",
   pinned: "juno:sidebar:starred:collapsed",
+  recents: "juno:sidebar:recents:collapsed",
 } as const;
 
 type SectionKey = keyof typeof SECTION_KEYS;
@@ -205,24 +205,6 @@ type SectionKey = keyof typeof SECTION_KEYS;
  * names, which is the failure both of those modules exist to prevent.
  */
 type RowSignal = { tone: StatusTone; label: string; meaning: string };
-
-/** Recents fall into ChatGPT's four buckets, in this order. */
-const RECENTS_GROUPS = ["Today", "Yesterday", "Previous 7 days", "Older"] as const;
-type RecentsGroup = (typeof RECENTS_GROUPS)[number];
-
-/** Which bucket a chat's last activity falls in, by the LOCAL calendar day —
- *  "yesterday" is the reader's yesterday, not a rolling 24 hours. */
-function recentsGroupOf(iso: string, now: Date): RecentsGroup {
-  const stamp = new Date(iso).getTime();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const day = 86_400_000;
-  // An unparsable date (or a clock skewed into the future) lands in Today
-  // rather than vanishing into Older.
-  if (Number.isNaN(stamp) || stamp >= startOfToday) return "Today";
-  if (stamp >= startOfToday - day) return "Yesterday";
-  if (stamp >= startOfToday - 7 * day) return "Previous 7 days";
-  return "Older";
-}
 
 /**
  * The row kebab, once. `coarse:opacity-100` is not polish: reveal-on-hover is
@@ -276,6 +258,7 @@ export function AppSidebar({
   const [sectionCollapsed, setSectionCollapsed] = React.useState<Record<SectionKey, boolean>>({
     projects: false,
     pinned: false,
+    recents: false,
   });
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
@@ -346,7 +329,7 @@ export function AppSidebar({
     setMounted(true);
     loadProjects();
     try {
-      const next: Record<SectionKey, boolean> = { projects: false, pinned: false };
+      const next: Record<SectionKey, boolean> = { projects: false, pinned: false, recents: false };
       for (const key of Object.keys(SECTION_KEYS) as SectionKey[]) {
         const raw = localStorage.getItem(SECTION_KEYS[key]);
         if (raw) next[key] = JSON.parse(raw) === true;
@@ -617,21 +600,9 @@ export function AppSidebar({
     () => live.filter((c) => !c.pinned && !needsYouIds.has(c.id)),
     [live, needsYouIds]
   );
-  // The page in view, bucketed by day. Grouped AFTER the slice so the
-  // infinite-scroll page size still counts chats, not groups; a group with
-  // nothing in the page is simply not drawn.
-  const groupedRecents = React.useMemo(() => {
-    const now = new Date();
-    const buckets = new Map<RecentsGroup, ClientConversation[]>();
-    for (const c of recents.slice(0, recentsLimit)) {
-      const group = recentsGroupOf(c.lastMessageAt || c.createdAt, now);
-      buckets.set(group, [...(buckets.get(group) ?? []), c]);
-    }
-    return RECENTS_GROUPS.flatMap((group) => {
-      const rows = buckets.get(group);
-      return rows ? [{ group, rows }] : [];
-    });
-  }, [recents, recentsLimit]);
+  // The page in view. The list is already newest-first, so order carries the
+  // recency the date folds used to spell out in four headings.
+  const visibleRecents = React.useMemo(() => recents.slice(0, recentsLimit), [recents, recentsLimit]);
 
   /*
    * Answer the last question and the filter lets go of the panel.
@@ -1195,46 +1166,34 @@ export function AppSidebar({
                       </Section>
                     )}
 
-                    {/* THE FOLDS ARE THE HEADERS. There is no "Recents"
-                        section wrapper any more: a `text-xs` sentence-case
-                        header immediately followed by a `font-mono` "Today"
-                        caption one rung below it put two headings over one
-                        list, a rung apart in two families, so neither read as
-                        the structure. Sans captions under the mono caps
-                        eyebrows above them can no longer be confused for one
-                        another. Grouping, paging and the sentinel are
-                        untouched. */}
+                    {/* ONE LIST, ONE HEADING: "Recent", drawn by the same
+                        `Section` as Pinned projects and Pinned chats above it,
+                        so the three read as one family and fold the same way.
+                        It was four date folds — Today, Yesterday, Previous 7
+                        days, Older — which put up to four headings into the
+                        busiest part of the column to say what the order of the
+                        rows already says: the newest is at the top. */}
                     {needsYouOnly ? null : recents.length > 0 ? (
-                      <div className="mt-6 first:mt-0">
-                        {groupedRecents.map(({ group, rows }) => (
-                          <div key={group} className="pt-6 first:pt-0">
-                            {/* Same heading as Projects and Pinned above — see the note in
-                                `Section` — and the same INSET. This is a second
-                                implementation of that heading, so it has to be moved by
-                                hand every time the other one moves; it has now been left
-                                behind twice (once at `px-2` against a 40px edge, once at
-                                `pl-8` against 44), which is the argument for the two
-                                becoming one the next time either is touched. */}
-                            <p className="flex h-7 items-center pl-2 pr-2 text-ui font-medium text-muted-foreground">
-                              {group}
-                            </p>
-                            {rows.map((c) => (
-                              <ConversationRow
-                                key={c.id}
-                                conversation={c}
-                                active={c.id === activeConversationId}
-                                signal={rowSignals.get(c.id)}
-                                {...rowProps}
-                              />
-                            ))}
-                          </div>
+                      <Section
+                        label="Recent"
+                        isCollapsed={sectionCollapsed.recents}
+                        onToggleCollapse={() => toggleSection("recents")}
+                      >
+                        {visibleRecents.map((c) => (
+                          <ConversationRow
+                            key={c.id}
+                            conversation={c}
+                            active={c.id === activeConversationId}
+                            signal={rowSignals.get(c.id)}
+                            {...rowProps}
+                          />
                         ))}
                         {recents.length > recentsLimit && (
                           <div ref={sentinelRef} className="flex justify-center py-2" aria-hidden>
                             <span className="skeleton h-2 w-16 rounded-full" />
                           </div>
                         )}
-                      </div>
+                      </Section>
                     ) : (
                       live.length === 0 &&
                       // Projects are not drawn in the Code column, so a starred
