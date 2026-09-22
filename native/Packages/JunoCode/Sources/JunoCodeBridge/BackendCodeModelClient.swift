@@ -97,7 +97,7 @@ public struct CodeModelProviderResolver: Sendable {
         if lowered == "haiku" {
             return CodeModelRoute(
                 providerID: "anthropic",
-                providerModelID: "claude-haiku-4-5-20251001",
+                providerModelID: "claude-haiku-4-5",
                 wireProtocol: .anthropicMessages
             )
         }
