@@ -123,6 +123,14 @@ function parseJsonMemories(input: string): string[] | null {
     // Juno's export includes the block-list; a suppression is a thing the user
     // asked to FORGET, and importing it as a fact would invert it.
     if (record.kind === "SUPPRESSION") continue;
+    // It also carries what Juno STOPPED believing — replaced, contradicted,
+    // forgotten, expired — and facts scoped to one project. Importing either
+    // as a current, account-wide belief undoes the decision the row records:
+    // into a fresh account, where the matching suppression does not exist
+    // yet, a fact the user had asked to forget came straight back ticked, and
+    // one project's notes would reach every chat.
+    if (typeof record.status === "string" && record.status !== "active") continue;
+    if (typeof record.projectId === "string" && record.projectId) continue;
     const value = record.content ?? record.text ?? record.memory;
     if (typeof value === "string") out.push(value);
   }

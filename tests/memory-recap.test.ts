@@ -169,8 +169,13 @@ test("the recap route accepts only the offered periods, and only reads", () => {
   assert.equal(/\.(create|update|upsert|delete)(Many)?\(/.test(body), false);
 });
 
-test("the recap is given every row, suppressions included", () => {
+test("the recap is given every row in scope, suppressions included", () => {
   // "What Juno let go of" is dated by suppressions; a recap handed only facts
-  // would silently report that nothing was ever forgotten.
-  assert.match(src("src/components/memory/memory-manager.tsx"), /<RecapView[\s\S]{0,300}memories=\{memory\.memories\}/);
+  // would silently report that nothing was ever forgotten. The page can be
+  // narrowed to one project now, and a forget holds in every project, so the
+  // scoped slice keeps the block-list (memoriesInScope, tested in
+  // memory-project.test.ts).
+  const manager = src("src/components/memory/memory-manager.tsx");
+  assert.match(manager, /<RecapView[\s\S]{0,400}memories=\{scopedMemories\}/);
+  assert.match(manager, /memoriesInScope\(memory\.memories \?\? \[\], activeScope\)/);
 });

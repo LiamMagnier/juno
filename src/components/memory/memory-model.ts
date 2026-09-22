@@ -53,8 +53,19 @@ export interface SummaryData {
   entryCount: number;
 }
 
+/**
+ * One project's own summary — what that project's chats read in place of the
+ * account's. Chats filed in a project read their memory in isolation, so each
+ * project has a summary of its own, built only from what was learned there.
+ */
+export interface ProjectSummaryData extends SummaryData {
+  projectId: string;
+  projectName: string;
+}
+
 export type Operation =
-  | { op: "add"; content: string; suppress?: boolean }
+  /** `projectId` is only ever set by an Undo, restoring a fact to its project. */
+  | { op: "add"; content: string; suppress?: boolean; projectId?: string | null }
   | { op: "update"; id: string; before: string; content: string }
   | { op: "remove"; id: string; before: string };
 
@@ -207,7 +218,11 @@ export interface SummarySection {
   body: string;
 }
 
-export function parseSummarySections(markdown: string): SummarySection[] {
+export function parseSummarySections(
+  markdown: string,
+  /** What to call text before the first heading — a project's summary is not "about you". */
+  preambleTitle = "About you"
+): SummarySection[] {
   const sections: { title: string; body: string[] }[] = [];
   const preamble: string[] = [];
   let current: { title: string; body: string[] } | null = null;
@@ -226,12 +241,96 @@ export function parseSummarySections(markdown: string): SummarySection[] {
 
   const out: SummarySection[] = [];
   const pre = preamble.join("\n").trim();
-  if (pre) out.push({ title: "About you", body: pre });
+  if (pre) out.push({ title: preambleTitle, body: pre });
   for (const s of sections) {
     const body = s.body.join("\n").trim();
     if (body) out.push({ title: s.title, body });
   }
   return out;
+}
+
+/**
+ * The opening of a summary as one plain sentence or two — for a place that has
+ * room for a glimpse and not for Markdown, like the project page's rail.
+ *
+ * The first section only: it is the one the summariser is told to lead with
+ * ("Purpose & context" for a project), and a glimpse stitched from every
+ * section reads as a list of non-sequiturs. Emphasis, links and list markers
+ * are dropped rather than rendered — the glimpse is set in one small face.
+ */
+export function summaryExcerpt(markdown: string, maxChars = 240): string {
+  const first = parseSummarySections(markdown, "")[0];
+  if (!first) return "";
+  const plain = first.body
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= maxChars) return plain;
+  const cut = plain.slice(0, maxChars - 1);
+  const atWord = cut.lastIndexOf(" ");
+  return `${(atWord > maxChars * 0.6 ? cut.slice(0, atWord) : cut).trimEnd()}…`;
+}
+
+// ---------------------------------------------------------------------------
+// Scope — the whole account, or one project
+// ---------------------------------------------------------------------------
+
+/** A slice of memory the page can narrow to. `id: null` is everything. */
+export interface MemoryScopeOption {
+  id: string | null;
+  label: string;
+  /** Facts Juno currently believes in this scope — retired ones are not counted. */
+  count: number;
+}
+
+/**
+ * Everything, then every project Juno has memory for — most-remembered first.
+ *
+ * A project earns a chip by having a summary or any fact at all, retired ones
+ * included: a project whose every fact was superseded is exactly the one a
+ * reader goes looking for to see why. Projects with nothing remembered are left
+ * out; a chip that opens onto an empty page is a promise the page breaks.
+ */
+export function memoryScopes(
+  memories: readonly Memory[],
+  projectSummaries: readonly ProjectSummaryData[]
+): MemoryScopeOption[] {
+  const byProject = new Map<string, MemoryScopeOption>();
+  let total = 0;
+  for (const memory of memories) {
+    if (memory.kind !== "FACT") continue;
+    const active = !isRetired(memory);
+    if (active) total++;
+    if (!memory.projectId) continue;
+    const scope = byProject.get(memory.projectId) ?? {
+      id: memory.projectId,
+      label: memory.projectName ?? "Untitled project",
+      count: 0,
+    };
+    if (active) scope.count++;
+    byProject.set(memory.projectId, scope);
+  }
+  for (const summary of projectSummaries) {
+    if (!byProject.has(summary.projectId)) {
+      byProject.set(summary.projectId, { id: summary.projectId, label: summary.projectName, count: 0 });
+    }
+  }
+  const projects = [...byProject.values()].sort(
+    (a, b) => b.count - a.count || a.label.localeCompare(b.label)
+  );
+  return [{ id: null, label: "Everything", count: total }, ...projects];
+}
+
+/**
+ * The rows a scope shows. Everything is everything; a project is its own facts
+ * plus the block-list, because a "forget" is account-wide by design — it holds
+ * in every project, so a project's recap is right to list it.
+ */
+export function memoriesInScope(memories: readonly Memory[], scope: string | null): Memory[] {
+  if (scope === null) return [...memories];
+  return memories.filter((memory) => memory.kind === "SUPPRESSION" || memory.projectId === scope);
 }
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import {
   extractConversationMemory,
   loadBackgroundProviderPolicy,
   maybeConsolidate,
+  maybeConsolidateProject,
 } from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
@@ -1837,7 +1838,7 @@ async function handleChat(req: Request) {
   const latestUserMessage = [...baseHistory].reverse().find((m) => m.role === "USER")?.content;
   const memoryProfile = memoryEnabled
     ? await getMemoryProfile(user.id, { projectId: conversation.projectId, query: latestUserMessage })
-    : { summary: null, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
+    : { summary: null, summaryScope: "account" as const, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
 
   // Project context: instructions + reference file contents injected into the system prompt.
   //
@@ -2184,6 +2185,7 @@ async function handleChat(req: Request) {
     responseLanguage: settings?.responseLanguage ?? "auto",
     memories: memoryProfile.recent,
     memorySummary: memoryProfile.summary ?? undefined,
+    memoryScope: memoryProfile.summaryScope,
     memoryEnabled,
     canvas: canvasOn,
     voiceMode: input.voiceMode,
@@ -3505,6 +3507,11 @@ async function handleChat(req: Request) {
       // `cheapModel` — the background worker itself — which under that policy
       // amounted to asking the worker whether it was allowed to do the work.
       await maybeConsolidate(user.id, modelInfo.provider).catch(() => {});
+      // A project chat's facts are that project's, and so is the summary they
+      // feed — the one this chat reads next turn in place of the account's.
+      if (conversation.projectId) {
+        await maybeConsolidateProject(user.id, conversation.projectId, modelInfo.provider).catch(() => {});
+      }
     }
 
     /*

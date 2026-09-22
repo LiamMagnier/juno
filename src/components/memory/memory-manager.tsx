@@ -15,8 +15,15 @@ import { ImportDialog } from "@/components/memory/import-dialog";
 import { MemoryToolbar, type MemoryView } from "@/components/memory/memory-toolbar";
 import { TopicsView } from "@/components/memory/topics-view";
 import { RecapView } from "@/components/memory/recap-view";
+import { ScopeBar } from "@/components/memory/scope-bar";
 import { useMemory } from "@/components/memory/use-memory";
-import { groupMemoriesByTopic, isRetired, type Memory } from "@/components/memory/memory-model";
+import {
+  groupMemoriesByTopic,
+  isRetired,
+  memoriesInScope,
+  memoryScopes,
+  type Memory,
+} from "@/components/memory/memory-model";
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_META, isMemoryCategory } from "@/lib/memory-categories";
 import { staggerDelay } from "@/lib/motion";
 
@@ -44,6 +51,50 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
   const [query, setQuery] = React.useState("");
   const [editsOpen, setEditsOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
+  /** The project the page is narrowed to, or null for everything. */
+  const [scope, setScope] = React.useState<string | null>(null);
+
+  // `/memory?project=<id>` — where the project page's "Manage memory" lands.
+  // Read off `location` rather than useSearchParams, which would ask for a
+  // Suspense boundary around a page that is otherwise plain (the projects
+  // page makes the same trade for `?new=1`). The settings modal's compact
+  // manager has no scope at all.
+  React.useEffect(() => {
+    if (compact || typeof window === "undefined") return;
+    const requested = new URL(window.location.href).searchParams.get("project");
+    if (requested) setScope(requested);
+  }, [compact]);
+
+  // Kept in the URL, so a narrowed page survives a reload and can be linked.
+  const changeScope = React.useCallback(
+    (next: string | null) => {
+      setScope(next);
+      if (compact || typeof window === "undefined") return;
+      const url = new URL(window.location.href);
+      if (next) url.searchParams.set("project", next);
+      else url.searchParams.delete("project");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    },
+    [compact]
+  );
+
+  const scopes = React.useMemo(
+    () => memoryScopes(memory.memories ?? [], memory.projectSummaries),
+    [memory.memories, memory.projectSummaries]
+  );
+  // A project the account has no memory for — deleted since, or a stale link —
+  // shows everything rather than an empty page that looks like data loss.
+  const activeScope = scope && scopes.some((option) => option.id === scope) ? scope : null;
+  const activeProject = activeScope
+    ? { id: activeScope, name: scopes.find((option) => option.id === activeScope)?.label ?? "This project" }
+    : null;
+  const scopedMemories = React.useMemo(
+    () => memoriesInScope(memory.memories ?? [], activeScope),
+    [memory.memories, activeScope]
+  );
+  const projectSummary = activeScope
+    ? memory.projectSummaries.find((summary) => summary.projectId === activeScope) ?? null
+    : null;
 
   /*
    * A drafted edit opens the queue that holds it.
@@ -65,10 +116,11 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
     lastPending.current = pendingCount;
   }, [pendingCount]);
 
-  const facts = React.useMemo(
-    () => (memory.memories ?? []).filter((entry) => entry.kind === "FACT"),
-    [memory.memories]
-  );
+  const facts = React.useMemo(() => scopedMemories.filter((entry) => entry.kind === "FACT"), [scopedMemories]);
+  const anythingRemembered =
+    (memory.memories ?? []).some((entry) => entry.kind === "FACT") ||
+    !!memory.summary ||
+    memory.projectSummaries.length > 0;
 
   // Matched against the fact, its topic label and its project name — a user
   // searching "thesis" means the project as readily as the word, and a search
@@ -118,6 +170,8 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="space-y-4">
+      {!compact && <ScopeBar scopes={scopes} value={activeScope} onChange={changeScope} />}
+
       {!compact && (
         <MemoryStats
           activeCount={activeCount}
@@ -128,11 +182,14 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
       )}
 
       <SummaryCard
-        summary={memory.summary}
+        summary={activeScope ? projectSummary : memory.summary}
+        project={activeProject}
         paused={memory.paused}
         consolidating={memory.busy}
-        onRegenerate={() => void memory.regenerate()}
-        onInstruction={memory.instruct}
+        onRegenerate={() => void memory.regenerate({ projectId: activeScope })}
+        // The editor drafts account-wide changes, so it is offered only where
+        // the page is showing the account.
+        onInstruction={activeScope ? undefined : memory.instruct}
       />
 
       {memory.policyNotice && (
@@ -172,7 +229,10 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
             topicCount={topics.length}
             factCount={visible.length}
             paused={memory.paused}
-            onAdd={memory.addMemory}
+            onAdd={(content) => memory.addMemory(content, activeScope)}
+            addPlaceholder={
+              activeProject ? `Something true of ${activeProject.name} — “We cite in APA”` : undefined
+            }
           />
 
           {view === "topics" ? (
@@ -188,9 +248,10 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
             />
           ) : view === "recap" ? (
             <RecapView
-              // Every row, suppressions included: "what Juno let go of" is
-              // built from the block-list's own dates.
-              memories={memory.memories}
+              // Every row in scope, suppressions included: "what Juno let go
+              // of" is built from the block-list's own dates, and a forget
+              // holds in every project.
+              memories={scopedMemories}
               busyIds={memory.busyIds}
               paused={memory.paused}
               query={query}
@@ -219,7 +280,9 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
         onImport={() => setImportOpen(true)}
         onReset={() => void memory.resetMemory()}
         resetting={memory.resetting}
-        empty={facts.length === 0 && !memory.summary}
+        // Export and reset act on the whole account, whatever the page is
+        // narrowed to — so "empty" means nothing anywhere.
+        empty={!anythingRemembered}
       />
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={memory.reload} />

@@ -2,9 +2,16 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
-import { backfillMemories, maybeConsolidate, sweepExpiredMemories } from "@/lib/memory";
+import {
+  backfillMemories,
+  maybeConsolidate,
+  maybeConsolidateProject,
+  projectsWithMemory,
+  sweepExpiredMemories,
+} from "@/lib/memory";
 import {
   DREAM_CONVERSATIONS_PER_ACCOUNT,
+  DREAM_PROJECT_SUMMARIES_PER_ACCOUNT,
   dreamEligibility,
   type DreamSkipReason,
 } from "@/lib/memory-dreaming";
@@ -120,6 +127,13 @@ export async function dreamForAccount(userId: string, now: Date = new Date()): P
   // what `same_provider` means — the rule consolidateMemories documents.
   if (outcome.created > 0 || outcome.expired > 0) {
     await maybeConsolidate(userId, null).catch(() => {});
+    // History distilled from a project's chats lands in that project, so its
+    // summary is the one that moved. Bounded — each rebuild is a model call —
+    // and each project runs the same "did anything change" test first, so an
+    // untouched project costs four indexed reads and no call.
+    for (const projectId of await projectsWithMemory(userId, DREAM_PROJECT_SUMMARIES_PER_ACCOUNT)) {
+      await maybeConsolidateProject(userId, projectId, null).catch(() => {});
+    }
   }
   return outcome;
 }

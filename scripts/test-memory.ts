@@ -20,6 +20,9 @@
  *      switch and already-distilled history; an active account is skipped
  *  10. Code is shown coding facts only — never identity or a sensitive fact
  *  11. imports are MANUAL; an AUTO sensitive fact is refused until opted in
+ *  12. per-project summaries: each project distils its own facts and chats,
+ *      a project chat reads that summary and no other memory, the account
+ *      summary no longer reads project chats, and nothing survives lost access
  *
  * Requires NODE_OPTIONS=--conditions=react-server (set by the npm script) so
  * the `server-only` guard inside the lib import chain resolves to a no-op.
@@ -28,15 +31,18 @@ import { prisma } from "../src/lib/prisma";
 import {
   backfillMemories,
   consolidateMemories,
+  consolidateProjectMemory,
   extractConversationMemory,
   forgetStatements,
   getCodingMemory,
   getMemoryProfile,
+  getProjectMemorySummary,
   pendingBackfill,
   saveCandidates,
   type MemoryEmbedder,
   type UtilityLlm,
 } from "../src/lib/memory";
+import { isEncryptedMessageText } from "../src/lib/message-crypto";
 import { dreamForAccount, findAccountsToDream } from "../src/lib/memory-dreamer";
 import { encryptField } from "../src/lib/field-crypto";
 import type { MemoryUpdateActivity } from "../src/lib/memory-lifecycle";
@@ -445,6 +451,131 @@ async function main() {
     await prisma.settings.update({ where: { userId: iu }, data: { memorySensitiveTopics: ["health"] } });
     const admitted = await saveCandidates(iu, ["The user was diagnosed with diabetes."], "chat-b", { source: "AUTO" });
     check("…and admitted once the topic is opted in", admitted.created === 1);
+
+    // ------------------------------------------------------------------
+    // 12. Per-project summaries stay inside their project
+    // ------------------------------------------------------------------
+    console.log("\n12. Per-project summaries stay inside their project");
+    const pu = await extraUser("project");
+    const thesis = await prisma.project.create({
+      data: { userId: pu, name: "Thesis", instructions: "Help me write my thesis on urban heat islands." },
+    });
+    const pantry = await prisma.project.create({ data: { userId: pu, name: "Pantry" } });
+    const projectFact = (projectId: string, content: string) =>
+      prisma.memoryEntry.create({
+        data: { userId: pu, content, kind: "FACT", source: "AUTO", status: "active", category: "projects", projectId },
+      });
+    await rawFact(pu, "The user prefers short answers.");
+    await projectFact(thesis.id, "The thesis uses APA citations.");
+    await projectFact(thesis.id, "The thesis defense is in December.");
+    await projectFact(pantry.id, "Pantry stores its data in Postgres.");
+    const thesisChat = await prisma.conversation.create({ data: { userId: pu, title: "Methods", projectId: thesis.id } });
+    const plainChat = await prisma.conversation.create({ data: { userId: pu, title: "Groceries" } });
+    await prisma.conversationMemory.createMany({
+      data: [
+        { userId: pu, conversationId: thesisChat.id, processedAt: new Date(), digest: "Restructuring the methodology chapter" },
+        { userId: pu, conversationId: plainChat.id, processedAt: new Date(), digest: "Planning the weekly shop" },
+      ],
+    });
+
+    let projectPrompt = "";
+    const projectConsolidator: UtilityLlm = async ({ userMsg }) => {
+      projectPrompt = userMsg;
+      return "## Purpose & context\nA thesis on urban heat islands, cited in APA.";
+    };
+    const built = await consolidateProjectMemory({ userId: pu, projectId: thesis.id, llm: projectConsolidator });
+    check("a project summary is built", built.status === "updated", built.status);
+    check(
+      "…from the project's own facts and chats",
+      projectPrompt.includes("The thesis uses APA citations.") &&
+        projectPrompt.includes("The thesis defense is in December.") &&
+        projectPrompt.includes("Restructuring the methodology chapter")
+    );
+    check(
+      "…and nothing from the account, another project or another chat",
+      !projectPrompt.includes("short answers") &&
+        !projectPrompt.includes("Postgres") &&
+        !projectPrompt.includes("weekly shop")
+    );
+    const sealedRow = await prisma.projectMemorySummary.findUnique({
+      where: { userId_projectId: { userId: pu, projectId: thesis.id } },
+    });
+    check("the summary is sealed at rest", !!sealedRow && isEncryptedMessageText(sealedRow.content), sealedRow?.content.slice(0, 10));
+    check(
+      "…and reads back in cleartext",
+      !!(await getProjectMemorySummary(pu, thesis.id))?.content.includes("urban heat islands")
+    );
+
+    let accountPrompt = "";
+    await consolidateMemories({
+      userId: pu,
+      llm: async ({ userMsg }) => {
+        accountPrompt = userMsg;
+        return "## Preferences\nShort answers.";
+      },
+    });
+    check(
+      "the account summary reads ordinary chats but not a project's",
+      accountPrompt.includes("Planning the weekly shop") && !accountPrompt.includes("methodology chapter"),
+      accountPrompt.slice(0, 300)
+    );
+    check("…nor a project's facts", !accountPrompt.includes("APA") && !accountPrompt.includes("Postgres"));
+
+    const inThesis = await getMemoryProfile(pu, { projectId: thesis.id, query: "citations" });
+    check(
+      "a project chat opens with its project's summary",
+      inThesis.summaryScope === "project" && !!inThesis.summary?.includes("urban heat islands")
+    );
+    check(
+      "…and none of the account's memory or another project's",
+      !(inThesis.summary ?? "").includes("Short answers") &&
+        !inThesis.recent.some((fact) => /short answers|Postgres/.test(fact))
+    );
+    check("facts its summary already says are not repeated as notes", !inThesis.recent.some((fact) => fact.includes("APA")));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await projectFact(thesis.id, "The thesis advisor is Dr. Rahman.");
+    const later = await getMemoryProfile(pu, { projectId: thesis.id, query: "advisor" });
+    check("a fact newer than the summary rides as a note", later.recent.some((fact) => fact.includes("Dr. Rahman")));
+    const outside = await getMemoryProfile(pu, { query: "citations advisor Postgres" });
+    check(
+      "an ordinary chat reads the account's summary and no project's facts",
+      outside.summaryScope === "account" &&
+        !!outside.summary?.includes("Short answers") &&
+        !outside.recent.some((fact) => /APA|Rahman|Postgres/.test(fact))
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await forgetStatements(pu, ["The thesis uses APA citations."]);
+    const projectAfterForget = await getMemoryProfile(pu, { projectId: thesis.id, query: "citations" });
+    check("a forget benches the project's summary written before it", projectAfterForget.summary === null);
+    const rebuilt = await consolidateProjectMemory({ userId: pu, projectId: thesis.id, llm: projectConsolidator });
+    const rebuiltFacts = projectPrompt.split("FACTS (oldest to newest):")[1] ?? "";
+    check(
+      "…and the rebuild is told to leave the forgotten fact out",
+      rebuilt.status === "updated" &&
+        projectPrompt.startsWith("SUPPRESSED (never include any of this):\n- The thesis uses APA citations.") &&
+        !rebuiltFacts.includes("APA")
+    );
+
+    // Someone who lost access to a project keeps their facts from it, but a
+    // summary is something a chat reads — so there is nothing to build.
+    const former = await extraUser("project-former-member");
+    await prisma.memoryEntry.create({
+      data: { userId: former, content: "The former member's thesis note.", kind: "FACT", source: "AUTO", status: "active", projectId: thesis.id },
+    });
+    const denied = await consolidateProjectMemory({ userId: former, projectId: thesis.id, llm: projectConsolidator });
+    check(
+      "no access to the project, no summary of it",
+      denied.status === "empty" &&
+        (await prisma.projectMemorySummary.count({ where: { userId: former } })) === 0
+    );
+
+    await prisma.project.delete({ where: { id: thesis.id, userId: pu } });
+    check(
+      "deleting the project deletes its summary",
+      (await prisma.projectMemorySummary.count({ where: { userId: pu } })) === 0
+    );
   } finally {
     await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
     for (const id of extraUsers) await prisma.user.delete({ where: { id } }).catch(() => {});

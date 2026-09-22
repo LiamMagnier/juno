@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { consolidateWithFallback, embedMemoryEntries, getSuppressions } from "@/lib/memory";
+import { embedMemoryEntries, getSuppressions, refreshSummaries } from "@/lib/memory";
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -18,22 +18,29 @@ import { factFields } from "@/lib/memory-lifecycle";
  */
 
 /**
- * Rebuild the summary once the response has gone.
+ * Rebuild the summaries a change touched, once the response has gone.
  *
- * The consolidated summary quotes facts in prose and is injected into every
- * conversation, so a fact rewritten, forgotten or deleted here lived on in it
- * until something unrelated happened to trigger a rebuild. A forget is already
- * safe without this — `getMemoryProfile` benches a summary older than the newest
- * suppression — but an edit and a delete leave no such marker, and the reader
- * who corrected "Lisbon" to "Porto" expects the next chat to say Porto.
+ * A consolidated summary quotes facts in prose and is injected into every
+ * conversation of its scope, so a fact rewritten, forgotten or deleted here
+ * lived on in it until something unrelated happened to trigger a rebuild. A
+ * forget is already safe without this — `getMemoryProfile` benches a summary
+ * older than the newest suppression — but an edit and a delete leave no such
+ * marker, and the reader who corrected "Lisbon" to "Porto" expects the next
+ * chat to say Porto.
+ *
+ * SCOPES, not "the summary". `null` is the account's; a project id is that
+ * project's own. A fact scoped to a project lives in that project's summary
+ * and nowhere else, and moving a fact between scopes changes both — the one it
+ * left still quotes it until rebuilt, which for a fact moved INTO a project is
+ * the leak the move was made to stop.
  *
  * `after()`, not awaited: consolidation is an LLM call of up to 45 seconds, and
  * a row's pencil or bin must not wait on it. Best effort, like every other
- * consolidation — a failure leaves the previous summary, and the next chat turn's
- * `maybeConsolidate` tries again.
+ * consolidation — a failure leaves the previous summary, and the next chat
+ * turn's `maybeConsolidate` / `maybeConsolidateProject` tries again.
  */
-function refreshSummaryLater(userId: string) {
-  after(() => consolidateWithFallback(userId).then(() => undefined, () => undefined));
+function refreshSummariesLater(userId: string, scopes: (string | null)[]) {
+  after(() => refreshSummaries(userId, scopes).then(() => undefined, () => undefined));
 }
 
 const schema = z
@@ -82,7 +89,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         },
       }),
     ]);
-    refreshSummaryLater(user.id);
+    // The row's own scope, and the account's: a forget is account-wide, so the
+    // suppression it writes benches the account summary too until rebuilt.
+    refreshSummariesLater(user.id, [null, existing.projectId]);
     return NextResponse.json({ ok: true, status: "suppressed" });
   }
 
@@ -152,7 +161,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (rewritten) {
     await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
-    refreshSummaryLater(user.id);
+  }
+  const moved = body.projectId !== undefined && (body.projectId ?? null) !== existing.projectId;
+  if (rewritten || moved) {
+    refreshSummariesLater(user.id, [existing.projectId, moved ? body.projectId ?? null : existing.projectId]);
   }
   return NextResponse.json({ ok: true });
 }
@@ -174,6 +186,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     }),
     prisma.memoryEntry.delete({ where: { id, userId: user.id } }),
   ]);
-  refreshSummaryLater(user.id);
+  refreshSummariesLater(user.id, [existing.projectId]);
   return NextResponse.json({ ok: true });
 }

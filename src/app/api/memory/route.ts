@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { embedMemoryEntries, getMemorySummary, getSuppressions, sweepExpiredMemories } from "@/lib/memory";
+import {
+  embedMemoryEntries,
+  getMemorySummary,
+  getSuppressions,
+  listProjectMemorySummaries,
+  sweepExpiredMemories,
+} from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -22,23 +28,34 @@ export async function GET(req: Request) {
     console.error("[memory] expiry sweep failed:", error instanceof Error ? error.message : error);
   });
 
-  const [memories, summary] = await Promise.all([
+  const [memories, summary, projectSummaries] = await Promise.all([
     prisma.memoryEntry.findMany({
       where: { userId: user.id, ...(q ? { content: { contains: q, mode: "insensitive" } } : {}) },
       orderBy: { createdAt: "desc" },
       select: MEMORY_ENTRY_SELECT,
     }),
     getMemorySummary(user.id),
+    listProjectMemorySummaries(user.id),
   ]);
   return NextResponse.json({
     memories: memories.map(serializeMemoryEntry),
     summary: summary
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,
+    // Each project's own summary. Separate from `summary` on purpose: that one
+    // is what every ordinary chat reads, these are what one project's chats
+    // read instead, and the page shows them as the different things they are.
+    projectSummaries: projectSummaries.map((s) => ({
+      projectId: s.projectId,
+      projectName: s.projectName,
+      content: s.content,
+      updatedAt: s.updatedAt.toISOString(),
+      entryCount: s.entryCount,
+    })),
   });
 }
 
-// Reset memory: remove every saved fact and the consolidated summary, and mark
+// Reset memory: remove every saved fact and every consolidated summary, and mark
 // all conversations as processed — "permanently erased" must mean the backfill
 // won't quietly re-learn everything from old chats.
 export async function DELETE() {
@@ -49,6 +66,10 @@ export async function DELETE() {
   await prisma.$transaction([
     prisma.memoryEntry.deleteMany({ where: { userId: user.id } }),
     prisma.memorySummary.deleteMany({ where: { userId: user.id } }),
+    // Every project's summary too. Each is a distillation of facts this reset
+    // is erasing; a "start fresh" that left them would keep quoting those
+    // facts, in prose, to every chat in every project.
+    prisma.projectMemorySummary.deleteMany({ where: { userId: user.id } }),
     // The edit ledger goes with the facts it edited: a "start fresh" that keeps
     // a queue of Undo-able operations against deleted rows keeps nothing useful
     // and re-surfaces content the user just erased.

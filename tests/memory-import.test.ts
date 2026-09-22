@@ -93,6 +93,24 @@ test("a Juno export round-trips, and its block-list is not imported as facts", (
   assert.deepEqual(parseImportedMemories(exported), ["The user likes tea.", "The user speaks French."]);
 });
 
+test("a Juno export's retired and project-scoped facts are not imported as current beliefs", () => {
+  const exported = JSON.stringify({
+    exportedAt: "2026-09-22T00:00:00Z",
+    summary: null,
+    memories: [
+      { content: "The user likes tea.", kind: "FACT", status: "active", projectId: null },
+      // Forgotten — its suppression row travels too, but into a fresh account
+      // nothing would have marked this candidate as forgotten.
+      { content: "The user works at Acme.", kind: "FACT", status: "suppressed", projectId: null },
+      { content: "The user lives in Lisbon.", kind: "FACT", status: "superseded", projectId: null },
+      { content: "The user is in Berlin this week.", kind: "FACT", status: "expired", projectId: null },
+      // Only ever true inside one project.
+      { content: "The thesis uses APA citations.", kind: "FACT", status: "active", projectId: "proj_thesis" },
+    ],
+  });
+  assert.deepEqual(parseImportedMemories(exported), ["The user likes tea."]);
+});
+
 test("a plain JSON array of strings or {text} objects works", () => {
   assert.deepEqual(parseImportedMemories('["The user likes tea.", {"text": "The user owns a bike."}]'), [
     "The user likes tea.",

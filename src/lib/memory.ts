@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
@@ -23,8 +23,10 @@ import {
   normalizeFact,
   memoryUpdateActivity,
   planFactIngestion,
+  coveredBySummary,
   selectMemoriesForContext,
   summaryPredatesForget,
+  summaryRebuildDecision,
   type LifecycleEntry,
   type MemoryUpdateActivity,
   type RetrievalResult,
@@ -37,6 +39,12 @@ import {
   type SensitiveTopic,
 } from "@/lib/memory-sensitive";
 import { MEMORY_CONTENT_LIMIT, normalizeStatement } from "@/lib/memory-suppression";
+import {
+  budgetProjectFacts,
+  projectConsolidationPrompt,
+  projectSummaryIsEmpty,
+} from "@/lib/memory-project-summary";
+import { checkProjectAccess } from "@/lib/project-collaboration";
 import { CODING_MEMORY_CATEGORIES, selectCodingMemories } from "@/lib/code-memory-prompt";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
@@ -1040,8 +1048,15 @@ export async function extractConversationMemory(opts: {
   if (current.length) chunks.push(current);
 
   const [recentFacts, suppressions, allowedSensitiveTopics] = await Promise.all([
+    // "Already known" means known IN THIS SCOPE — the one the facts below will
+    // be saved into, and the one duplicate detection compares against
+    // (`findDuplicate` matches on scope exactly). This listed the newest facts
+    // from anywhere, so a project chat's extractor was shown another project's
+    // notes as known — a cross-project leak into the prompt, and a recall bug:
+    // told it already knew "uses pnpm", the model skipped it, and the project
+    // that had just heard it never learned it.
     prisma.memoryEntry.findMany({
-      where: { userId: opts.userId, kind: "FACT" },
+      where: { userId: opts.userId, kind: "FACT", projectId: convo.projectId ?? null },
       orderBy: { createdAt: "desc" },
       take: 40,
       select: { content: true },
@@ -1185,6 +1200,11 @@ export async function getMemorySummary(userId: string): Promise<MemorySummary | 
 
 export interface MemoryProfile {
   summary: string | null;
+  /**
+   * Whose summary `summary` is: the account's, or — for a chat reading in
+   * project isolation — that project's own. The prompt names it accordingly.
+   */
+  summaryScope: "account" | "project";
   /** The selected facts, as the system prompt wants them. */
   recent: string[];
   /**
@@ -1279,12 +1299,13 @@ async function semanticEvidenceFor(opts: {
 /**
  * What to inject into the model context, and a receipt for it.
  *
- * The summary carries the account's settled, globally-scoped memory. On top of
- * it go individual entries the summary cannot represent: facts newer than the
- * last consolidation, and every fact scoped to the project this chat belongs
- * to — those are deliberately excluded from the summary (see
- * gatherMemorySources), because a summary is account-wide and project memory
- * must not be.
+ * TWO SHAPES, by scope. An ordinary chat gets the account's summary — its
+ * settled, account-wide memory — plus the individual facts it cannot yet
+ * represent. A chat filed in a project reads in isolation (the default
+ * whenever a projectId is given): only that project's facts, and that
+ * project's OWN summary (ProjectMemorySummary), never the account's. Either
+ * way a fact rides as a note of its own exactly when its summary does not
+ * already say it — see `coveredBySummary`.
  *
  * Selection is ranked against the current message — semantically when vectors
  * exist for both sides, lexically otherwise — and bounded by a token budget,
@@ -1308,14 +1329,21 @@ export async function getMemoryProfile(
   const projectId = opts.projectId ?? null;
   const isolate = opts.isolateProjectMemory ?? (projectId !== null);
   const now = new Date();
-  const [storedSummary, forgottenAt] = isolate
-    ? [null, null]
-    : await Promise.all([getMemorySummary(userId), newestSuppressionAt(userId)]);
+  // The scope the injected summary speaks for: this project's when the chat
+  // reads in isolation, the account's otherwise. Never the account's inside a
+  // project — that is the isolation.
+  const summaryScope = isolate && projectId ? projectId : null;
+  const [storedSummary, forgottenAt] = await Promise.all([
+    summaryScope ? getProjectMemorySummary(userId, summaryScope) : getMemorySummary(userId),
+    newestSuppressionAt(userId),
+  ]);
   // A summary written before the newest "forget" still says the forgotten
   // thing, in prose, and would be injected whole — so it sits this turn out and
   // the ranked facts, which already exclude everything retired, stand in. The
   // next consolidation rewrites it without the forgotten content and it comes
-  // back. See `summaryPredatesForget` for how this used to leak.
+  // back. See `summaryPredatesForget` for how this used to leak. A forget is
+  // account-wide, so it benches a project's summary exactly as it does the
+  // account's.
   const summary =
     storedSummary && !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) ? storedSummary : null;
 
@@ -1342,10 +1370,9 @@ export async function getMemoryProfile(
   });
 
   // Facts already represented in the summary would otherwise be said twice.
-  // Project-scoped facts are never in it, so they always stay.
-  const candidates = rows.filter(
-    (row) => row.projectId !== null || !summary || row.createdAt > summary.updatedAt
-  );
+  // Only facts of the summary's own scope can be in it — a project fact is
+  // never in the account's summary — so everything else always stays.
+  const candidates = rows.filter((row) => !coveredBySummary(row, summary, summaryScope));
 
   const query = opts.query?.trim();
   const semantic =
@@ -1381,6 +1408,7 @@ export async function getMemoryProfile(
 
   return {
     summary: summary?.content ?? null,
+    summaryScope: summaryScope ? "project" : "account",
     recent: result.selected.map((m) => m.content),
     used: result.selected,
     usedTokens: result.usedTokens,
@@ -1484,8 +1512,13 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
       orderBy: { createdAt: "asc" },
       select: { content: true, createdAt: true, kind: true, status: true, projectId: true, expiresAt: true },
     }),
+    // Digests of chats OUTSIDE projects only. A project chat's digest is part
+    // of that project's memory and goes into that project's summary; here it
+    // put "reworking the thesis methodology" into the "top of mind" of every
+    // unrelated chat — the one path project memory still had out of its
+    // project after its facts were scoped.
     prisma.conversationMemory.findMany({
-      where: { userId, digest: { not: null } },
+      where: { userId, digest: { not: null }, conversation: { projectId: null } },
       orderBy: { updatedAt: "desc" },
       take: 40,
       select: { digest: true },
@@ -1642,7 +1675,12 @@ Rules:
   if (!result) return { status: "failed", transient };
 
   const content = result;
-  const factCount = await prisma.memoryEntry.count({ where: { userId: opts.userId, kind: "FACT" } });
+  // Account-wide facts only: the count is what `maybeConsolidate` compares to
+  // decide the summary is stale, and a fact learned in a project changes that
+  // project's summary, never this one.
+  const factCount = await prisma.memoryEntry.count({
+    where: { userId: opts.userId, kind: "FACT", projectId: null },
+  });
   const sealed = encryptField(content);
   await prisma.memorySummary.upsert({
     where: { userId: opts.userId },
@@ -1682,47 +1720,258 @@ export async function consolidateWithFallback(
 }
 
 /**
- * Background consolidation: regenerate the summary whenever the stored fact
- * count actually changed, so it refreshes as soon as new chats add memories —
+ * Background consolidation: regenerate the summary whenever what it was built
+ * from actually changed, so it refreshes as soon as new chats add memories —
  * throttled to at most once every few minutes so a burst of messages doesn't
  * rebuild it each time. Cheap no-op otherwise — safe to call after every
- * exchange. (Previously gated on a 12h staleness window, which left the summary
- * showing "updated Nd ago" long after new chats had added facts.)
+ * exchange. The rule itself, shared with every project's summary, is
+ * `summaryRebuildDecision`.
+ *
+ * Account-wide facts only. A fact learned inside a project is that project's
+ * business (maybeConsolidateProject); counting it here rebuilt the account
+ * summary — an LLM call — for a change it would never contain.
  */
 export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
   const now = new Date();
   const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
-    prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
+    prisma.memoryEntry.count({ where: { userId, kind: "FACT", projectId: null } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
     newestSuppressionAt(userId),
     // The newest moment a temporary fact stopped being true. Indexed on
     // (userId, expiresAt).
     prisma.memoryEntry.findFirst({
-      where: { userId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      where: { userId, kind: "FACT", projectId: null, expiresAt: { not: null, lte: now } },
       orderBy: { expiresAt: "desc" },
       select: { expiresAt: true },
     }),
   ]);
-  // The count alone missed every change that retires a row rather than
-  // removing it. A forget leaves the row, marked `suppressed`, so the summary
-  // still quoting the forgotten fact was never rebuilt; an expiry leaves it
-  // marked `expired`, so "flying to Berlin this week" sat in the summary's
-  // "top of mind" long after the week was over.
-  const expiredSince = !!summary && !!lastExpiry?.expiresAt && lastExpiry.expiresAt > summary.updatedAt;
-  const changed =
-    !summary ||
-    summary.entryCount !== count ||
-    summaryPredatesForget(summary.updatedAt, forgottenAt) ||
-    expiredSince;
-  // Don't rebuild more than once every few minutes, so rapid-fire messages that
-  // each distill a fact don't each trigger a full consolidation.
-  const MIN_INTERVAL_MS = 5 * 60 * 1000;
-  const recentlyBuilt = summary != null && Date.now() - summary.updatedAt.getTime() < MIN_INTERVAL_MS;
-  if (!changed || recentlyBuilt) return;
-  if (count > 0) {
-    // The CONVERSATION's provider, not the background model's — see
-    // consolidateMemories. Passing the model that is about to do the work would
-    // make `same_provider` a tautology.
-    await consolidateMemories({ userId, conversationProvider }).catch(() => {});
+  const decision = summaryRebuildDecision({
+    summary,
+    factCount: count,
+    newestSuppressionAt: forgottenAt,
+    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    now,
+  });
+  if (decision !== "rebuild") return;
+  // The CONVERSATION's provider, not the background model's — see
+  // consolidateMemories. Passing the model that is about to do the work would
+  // make `same_provider` a tautology.
+  await consolidateMemories({ userId, conversationProvider }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Project summaries — the same distillation, one project at a time
+// ---------------------------------------------------------------------------
+
+/** One person's summary of one project, decrypted. */
+export async function getProjectMemorySummary(userId: string, projectId: string): Promise<MemorySummary | null> {
+  const row = await prisma.projectMemorySummary.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+    select: { content: true, updatedAt: true, entryCount: true },
+  });
+  return row ? { ...row, content: decryptField(row.content) } : null;
+}
+
+export interface ProjectMemorySummaryView extends MemorySummary {
+  projectId: string;
+  projectName: string;
+}
+
+/** Every project summary this person has, most recently rebuilt first. */
+export async function listProjectMemorySummaries(userId: string): Promise<ProjectMemorySummaryView[]> {
+  const rows = await prisma.projectMemorySummary.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      projectId: true,
+      content: true,
+      updatedAt: true,
+      entryCount: true,
+      project: { select: { name: true } },
+    },
+  });
+  return rows.map((row) => ({
+    projectId: row.projectId,
+    projectName: row.project.name,
+    content: decryptField(row.content),
+    updatedAt: row.updatedAt,
+    entryCount: row.entryCount,
+  }));
+}
+
+/**
+ * Regenerate one project's summary from what was learned in it.
+ *
+ * The account summary's machinery, narrowed to a project: its facts, its
+ * chats' digests, its name — and every suppression, because a forget is
+ * account-wide. Same policy-checked provider walk, same encryption at rest,
+ * same outcome union, so a caller can tell "nothing to summarise" from "the
+ * policy refused" from "the models failed". See src/lib/memory-project-summary.ts
+ * for what the model is shown and why.
+ *
+ * Access is re-checked here rather than trusted: someone removed from a shared
+ * project keeps their facts from it (they are theirs), but a summary is
+ * something a chat reads, and they can no longer chat there — so there is
+ * nothing to build, and whatever was built before is removed.
+ */
+export async function consolidateProjectMemory(opts: {
+  userId: string;
+  projectId: string;
+  policy?: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  onDecision?: (record: BackgroundProcessingRecord) => void;
+  llm?: UtilityLlm;
+}): Promise<ConsolidationOutcome> {
+  const { userId, projectId } = opts;
+  const removeSummary = () => prisma.projectMemorySummary.deleteMany({ where: { userId, projectId } });
+
+  const { allowed } = await checkProjectAccess(userId, projectId, "VIEWER");
+  if (!allowed) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const now = new Date();
+  const [project, factRows, suppressions, digestRows] = await Promise.all([
+    // Unguarded, one line after `checkProjectAccess` allowed this reader: a
+    // member reads a project they do not own, and the guard would refuse the
+    // owner-scoped query they cannot make. The same choice listProjectMembers
+    // documents.
+    prismaUnguarded.project.findUnique({ where: { id: projectId }, select: { name: true, instructions: true } }),
+    prisma.memoryEntry.findMany({
+      where: {
+        userId,
+        projectId,
+        kind: "FACT",
+        status: "active",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      orderBy: { createdAt: "asc" },
+      select: { content: true, createdAt: true },
+    }),
+    getSuppressions(userId),
+    prisma.conversationMemory.findMany({
+      where: { userId, digest: { not: null }, conversation: { projectId } },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: { digest: true },
+    }),
+  ]);
+  if (!project) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const sources = {
+    projectName: project.name,
+    instructions: project.instructions,
+    facts: budgetProjectFacts(factRows),
+    digests: digestRows.map((row) => row.digest!).filter(Boolean),
+    suppressions,
+  };
+  if (projectSummaryIsEmpty(sources)) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const { system, userMsg } = projectConsolidationPrompt(sources);
+  const conversationProvider = opts.conversationProvider ?? (await accountBackgroundProvider(userId));
+  const { result, transient, deniedByPolicy, deniedReason, mode } = await runUtilityPrompt({
+    system,
+    userMsg,
+    maxTokens: 1000,
+    label: "memory/consolidate-project",
+    parse: (text) => (text.trim() ? text.trim() : null),
+    userId,
+    policy: opts.policy ?? (await loadBackgroundProviderPolicy(userId)),
+    conversationProvider,
+    purpose: "memory_consolidation",
+    onDecision: opts.onDecision,
+    llm: opts.llm,
+  });
+
+  if (deniedByPolicy) {
+    return { status: "denied", reason: deniedReason, mode: mode ?? DEFAULT_BACKGROUND_PROVIDER_MODE };
+  }
+  // As for the account: a failure leaves the previous summary in place.
+  if (!result) return { status: "failed", transient };
+
+  const content = result;
+  // Every FACT in the project, whatever its status — the change detector
+  // `maybeConsolidateProject` compares against, exactly as for the account.
+  const factCount = await prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } });
+  const sealed = encryptField(content);
+  await prisma.projectMemorySummary.upsert({
+    where: { userId_projectId: { userId, projectId } },
+    create: { userId, projectId, content: sealed, entryCount: factCount },
+    update: { content: sealed, entryCount: factCount },
+  });
+  return { status: "updated", content };
+}
+
+/**
+ * Rebuild one project's summary if — and only if — something it was built
+ * from changed: the account rule (`summaryRebuildDecision`) over the
+ * project's own facts. Safe to call after every turn in the project.
+ */
+export async function maybeConsolidateProject(
+  userId: string,
+  projectId: string,
+  conversationProvider: string | null
+): Promise<void> {
+  const now = new Date();
+  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
+    prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } }),
+    prisma.projectMemorySummary.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+      select: { entryCount: true, updatedAt: true },
+    }),
+    newestSuppressionAt(userId),
+    prisma.memoryEntry.findFirst({
+      where: { userId, projectId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      orderBy: { expiresAt: "desc" },
+      select: { expiresAt: true },
+    }),
+  ]);
+  const decision = summaryRebuildDecision({
+    summary,
+    factCount: count,
+    newestSuppressionAt: forgottenAt,
+    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    now,
+  });
+  if (decision !== "rebuild") return;
+  await consolidateProjectMemory({ userId, projectId, conversationProvider }).catch(() => {});
+}
+
+/**
+ * The projects whose summaries may be out of date, for the dreamer: every
+ * project this person has facts in, newest activity first. The staleness test
+ * itself is `maybeConsolidateProject`'s, run per project.
+ */
+export async function projectsWithMemory(userId: string, limit: number): Promise<string[]> {
+  const rows = await prisma.memoryEntry.groupBy({
+    by: ["projectId"],
+    where: { userId, kind: "FACT", projectId: { not: null } },
+    _max: { updatedAt: true },
+    orderBy: { _max: { updatedAt: "desc" } },
+    take: limit,
+  });
+  return rows.map((row) => row.projectId).filter((id): id is string => id !== null);
+}
+
+/**
+ * Rebuild the summaries a change touched, after the response has gone.
+ *
+ * `null` is the account's own summary; any other value is a project's. A row
+ * edited, forgotten, deleted or moved between scopes changes what the summary
+ * of every scope it was ever in should say, and until rebuilt that summary
+ * quotes the old version in prose — the account's to every chat, a project's
+ * to every chat in that project.
+ */
+export async function refreshSummaries(userId: string, scopes: Iterable<string | null>): Promise<void> {
+  for (const scope of new Set(scopes)) {
+    if (scope === null) await consolidateWithFallback(userId).catch(() => {});
+    else await consolidateProjectMemory({ userId, projectId: scope }).catch(() => {});
   }
 }

@@ -37,6 +37,12 @@ export const DREAM_IDLE_MINUTES = 10;
 export const DREAM_ACCOUNTS_PER_TICK = 5;
 /** Conversations distilled per account per tick (two chunks each, see backfillMemories). */
 export const DREAM_CONVERSATIONS_PER_ACCOUNT = 2;
+/**
+ * Project summaries checked per account per productive tick — the projects
+ * with the most recent memory activity first. Each one that turns out stale
+ * is a model call, so this bounds them the way the line above bounds reading.
+ */
+export const DREAM_PROJECT_SUMMARIES_PER_ACCOUNT = 3;
 
 export type DreamSkipReason = "memory_off" | "background_learning_off" | "active" | "over_budget";
 

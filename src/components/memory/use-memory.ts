@@ -14,6 +14,7 @@ import {
   type Memory,
   type MemoryEditRecord,
   type Operation,
+  type ProjectSummaryData,
   type SummaryData,
 } from "@/components/memory/memory-model";
 
@@ -50,6 +51,8 @@ export interface MemoryState {
   /** null while the first load is in flight; [] is a genuinely empty account. */
   memories: Memory[] | null;
   summary: SummaryData | null;
+  /** Each project's own summary — what that project's chats read instead of `summary`. */
+  projectSummaries: ProjectSummaryData[];
   edits: MemoryEditRecord[];
   loadError: boolean;
   /** A background model is drafting, consolidating, or applying. */
@@ -64,13 +67,15 @@ export interface MemoryState {
   resetting: boolean;
   reload: () => Promise<void>;
   setPaused: (paused: boolean) => Promise<void>;
-  regenerate: (opts?: { silent?: boolean }) => Promise<void>;
+  /** Rebuild the account's summary, or — given a `projectId` — that project's. */
+  regenerate: (opts?: { silent?: boolean; projectId?: string | null }) => Promise<void>;
   /** Draft an instruction into a reviewable edit. Resolves true when drafted. */
   instruct: (instruction: string) => Promise<boolean>;
   acceptEdit: (edit: MemoryEditRecord) => Promise<void>;
   undoEdit: (edit: MemoryEditRecord) => Promise<void>;
   deleteEdit: (id: string) => Promise<void>;
-  addMemory: (content: string) => Promise<boolean>;
+  /** Save a fact by hand — account-wide, or scoped to one project. */
+  addMemory: (content: string, projectId?: string | null) => Promise<boolean>;
   editMemory: (id: string, content: string) => Promise<boolean>;
   forgetMemory: (memory: Memory) => Promise<void>;
   deleteMemory: (memory: Memory) => Promise<void>;
@@ -82,6 +87,7 @@ export interface MemoryState {
 interface MemoryListResponse {
   memories?: Memory[];
   summary?: SummaryData | null;
+  projectSummaries?: ProjectSummaryData[];
   inverse?: Operation[];
 }
 
@@ -107,6 +113,7 @@ export function useMemory(): MemoryState {
 
   const [memories, setMemories] = React.useState<Memory[] | null>(null);
   const [summary, setSummary] = React.useState<SummaryData | null>(null);
+  const [projectSummaries, setProjectSummaries] = React.useState<ProjectSummaryData[]>([]);
   const [edits, setEdits] = React.useState<MemoryEditRecord[]>([]);
   const [loadError, setLoadError] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -136,6 +143,7 @@ export function useMemory(): MemoryState {
       const data = (await res.json()) as MemoryListResponse;
       setMemories(data.memories ?? []);
       setSummary(data.summary ?? null);
+      setProjectSummaries(data.projectSummaries ?? []);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -184,10 +192,16 @@ export function useMemory(): MemoryState {
   );
 
   const regenerate = React.useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; projectId?: string | null }) => {
       setBusy(true);
       try {
-        const res = await fetch("/api/memory/consolidate", { method: "POST" });
+        // Both routes answer with the same contract (a 409 carrying
+        // `background_policy_denied`, a 502 carrying the reason), so one path
+        // handles either summary.
+        const res = await fetch(
+          opts?.projectId ? `/api/projects/${encodeURIComponent(opts.projectId)}/memory` : "/api/memory/consolidate",
+          { method: "POST" }
+        );
         if (!res.ok) {
           const { message, code } = await readRefusal(res);
           if (code === "background_policy_denied") {
@@ -198,7 +212,11 @@ export function useMemory(): MemoryState {
         }
         setPolicyNotice(null);
         await reload();
-        if (!opts?.silent) toast.success("Summary rebuilt from your chats and projects.");
+        if (!opts?.silent) {
+          toast.success(
+            opts?.projectId ? "Summary rebuilt from this project’s chats." : "Summary rebuilt from your chats and projects."
+          );
+        }
       } catch (error) {
         if (!opts?.silent) toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
       } finally {
@@ -370,12 +388,12 @@ export function useMemory(): MemoryState {
   }, []);
 
   const addMemory = React.useCallback(
-    async (content: string): Promise<boolean> => {
+    async (content: string, projectId?: string | null): Promise<boolean> => {
       try {
         const res = await fetch("/api/memory", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(projectId ? { content, projectId } : { content }),
         });
         if (!res.ok) {
           const { message } = await readRefusal(res);
@@ -383,7 +401,7 @@ export function useMemory(): MemoryState {
         }
         const { memory } = (await res.json()) as { memory: Memory };
         setMemories((prev) => [memory, ...(prev ?? [])]);
-        toast.success("Added to memory.");
+        toast.success(projectId ? "Added to this project’s memory." : "Added to memory.");
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
@@ -470,6 +488,7 @@ export function useMemory(): MemoryState {
       if (!res.ok) throw new Error();
       setMemories([]);
       setSummary(null);
+      setProjectSummaries([]);
       setEdits([]);
       toast.success("Memory cleared — Juno starts fresh.");
     } catch {
@@ -480,7 +499,7 @@ export function useMemory(): MemoryState {
   }, []);
 
   const exportMemory = React.useCallback(() => {
-    const payload = { exportedAt: new Date().toISOString(), summary, memories };
+    const payload = { exportedAt: new Date().toISOString(), summary, projectSummaries, memories };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -489,11 +508,12 @@ export function useMemory(): MemoryState {
     anchor.click();
     URL.revokeObjectURL(url);
     toast.success("Memory exported.");
-  }, [memories, summary]);
+  }, [memories, projectSummaries, summary]);
 
   return {
     memories,
     summary,
+    projectSummaries,
     edits,
     loadError,
     busy,

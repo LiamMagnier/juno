@@ -16,6 +16,13 @@ export interface SystemPromptOptions {
   memories?: string[];
   /** Consolidated, deduped memory profile (Markdown). Preferred over `memories`. */
   memorySummary?: string;
+  /**
+   * Whose memory this is. A chat filed in a project reads only that project's
+   * memory, and the headings say so — a model told it is looking at
+   * "what you know about this user" would take one project's notes for the
+   * whole person.
+   */
+  memoryScope?: "account" | "project";
   memoryEnabled: boolean;
   canvas: boolean;
   voiceMode?: boolean;
@@ -276,13 +283,18 @@ Unlike saving, say so in your reply, briefly — "Done, I've forgotten that." �
   const variable: string[] = [];
 
   if (opts.memoryEnabled) {
+    const project = opts.memoryScope === "project";
     if (opts.memorySummary && opts.memorySummary.trim()) {
-      variable.push(`# What you already know about this user\n${opts.memorySummary.trim()}`);
+      variable.push(
+        `# ${project ? "What you already know from this project's chats" : "What you already know about this user"}\n${opts.memorySummary.trim()}`
+      );
       if (opts.memories && opts.memories.length > 0) {
         variable.push(`# Recent notes (newer than the summary)\n${opts.memories.map((m) => `- ${m}`).join("\n")}`);
       }
     } else if (opts.memories && opts.memories.length > 0) {
-      variable.push(`# What you already remember about this user\n${opts.memories.map((m) => `- ${m}`).join("\n")}`);
+      variable.push(
+        `# ${project ? "What you already remember from this project's chats" : "What you already remember about this user"}\n${opts.memories.map((m) => `- ${m}`).join("\n")}`
+      );
     }
   }
 

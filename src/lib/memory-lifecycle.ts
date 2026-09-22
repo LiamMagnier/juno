@@ -940,6 +940,75 @@ export function summaryPredatesForget(summaryUpdatedAt: Date, newestSuppressionA
   return newestSuppressionAt !== null && newestSuppressionAt.getTime() > summaryUpdatedAt.getTime();
 }
 
+/** How often, at most, one summary is rebuilt — a burst of turns is one rebuild. */
+export const SUMMARY_MIN_REBUILD_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * What to do about one stored summary after a turn: nothing, rebuild it, or
+ * wait out the throttle.
+ *
+ * ONE RULE FOR EVERY SUMMARY. The account summary and each project's summary
+ * go stale in exactly the same ways, and the account's rule took three bugs to
+ * get right — so the project summaries share it rather than re-deriving it:
+ *
+ *   - the fact COUNT changed (something was learned or deleted);
+ *   - the newest "forget" is newer than the summary, which still says the
+ *     forgotten thing in prose (see `summaryPredatesForget`) — a forget
+ *     leaves its row in place, so the count alone never noticed;
+ *   - a temporary fact EXPIRED after the summary was written, which likewise
+ *     leaves its row and so the count, while "flying to Berlin this week" sat
+ *     in the summary long after the week was over.
+ *
+ * `factCount` counts every FACT row in the summary's own scope, whatever its
+ * status — it is the change detector, not the input. A scope with no facts at
+ * all is left alone: a summary there was built from chat digests by hand, and
+ * deleting facts is already followed by an explicit rebuild (the per-row
+ * routes), which removes the summary when nothing at all is left.
+ */
+export function summaryRebuildDecision(input: {
+  summary: { entryCount: number; updatedAt: Date } | null;
+  factCount: number;
+  newestSuppressionAt: Date | null;
+  /** The newest `expiresAt` in scope that is already in the past, if any. */
+  newestExpiryAt: Date | null;
+  now: Date;
+  minIntervalMs?: number;
+}): "fresh" | "rebuild" | "throttled" {
+  const { summary, factCount, now } = input;
+  if (factCount === 0) return "fresh";
+  const expiredSince =
+    !!summary && !!input.newestExpiryAt && input.newestExpiryAt.getTime() > summary.updatedAt.getTime();
+  const changed =
+    !summary ||
+    summary.entryCount !== factCount ||
+    summaryPredatesForget(summary.updatedAt, input.newestSuppressionAt) ||
+    expiredSince;
+  if (!changed) return "fresh";
+  const minInterval = input.minIntervalMs ?? SUMMARY_MIN_REBUILD_INTERVAL_MS;
+  if (summary && now.getTime() - summary.updatedAt.getTime() < minInterval) return "throttled";
+  return "rebuild";
+}
+
+/**
+ * Is this fact already said by the summary it would be injected beside?
+ *
+ * A summary speaks for ONE scope — the account's summary for account-wide
+ * facts, a project's summary for that project's — and only for facts that
+ * existed when it was written. Anything else is news to it and has to be
+ * injected as a note of its own, or it is not in context at all.
+ */
+export function coveredBySummary(
+  row: { projectId: string | null; createdAt: Date },
+  summary: { updatedAt: Date } | null,
+  summaryScope: string | null
+): boolean {
+  return (
+    summary !== null &&
+    (row.projectId ?? null) === summaryScope &&
+    row.createdAt.getTime() <= summary.updatedAt.getTime()
+  );
+}
+
 /**
  * The active facts a "forget" statement covers.
  *

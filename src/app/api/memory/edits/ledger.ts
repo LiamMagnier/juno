@@ -15,7 +15,12 @@ import { MEMORY_EDIT_LEDGER_CAP } from "@/components/memory/memory-model";
 /** Mirrors the apply route's opSchema — an edit stored here must be replayable
  *  there verbatim, so the two shapes are deliberately identical. */
 export const ledgerOperationSchema = z.union([
-  z.object({ op: z.literal("add"), content: z.string().trim().min(1).max(500), suppress: z.boolean().optional() }),
+  z.object({
+    op: z.literal("add"),
+    content: z.string().trim().min(1).max(500),
+    suppress: z.boolean().optional(),
+    projectId: z.string().min(1).nullish(),
+  }),
   z.object({
     op: z.literal("update"),
     id: z.string().min(1),
