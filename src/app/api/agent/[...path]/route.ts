@@ -4,15 +4,18 @@ import { isTerminalTaskStatus, taskTokenAuth } from "@/lib/code-remote";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
-import { checkBudget, checkUsageWindows, budgetExceededMessage } from "@/lib/spend";
+import { checkBudget, checkUsageWindows, budgetExceededMessage, recordSpend } from "@/lib/spend";
 import { windowLimitMessage } from "@/lib/spend-ceiling";
 import {
   createUpstreamAbort,
+  inspectAgentRequest,
   isUpstreamTimeout,
+  providerWire,
   readLimitedRequestBody,
-  requestStreams,
+  relayUpstreamBody,
   upstreamTimeoutKind,
   upstreamTimeoutsFor,
+  usageMeterFor,
 } from "@/lib/agent-proxy";
 
 // Streaming needs the Node runtime. There is deliberately no `maxDuration`:
@@ -42,6 +45,31 @@ function isAllowedPath(kind: "anthropic" | "openai", provider: Provider, forward
  * signed-in session, inject the server-side provider key, forward to the real
  * provider, and stream the response straight back — so the app reuses its
  * existing request-building and SSE parsing, and the user never pastes a key.
+ *
+ * BILLING. Every call is charged here, from the usage the provider itself
+ * reports in the response, as one ApiSpend row of kind "code". This is the one
+ * place that can: every request on Juno's provider keys from a Code engine
+ * passes through it, and nothing else sees what the provider said it cost. The
+ * callers, and why none of them is charged a second time:
+ *
+ *  - The Mac app (`BackendCodeModelClient`, native bearer): Code sessions, their
+ *    sub-agents, device-queued tasks and Work runs hosted on the Mac. It never
+ *    reported usage anywhere, and a Mac-hosted Work run finishes with no usage
+ *    attached, so `recordWorkRunSpend` bills it nothing. Those Work calls land
+ *    here as "code": nothing in a request says which product made it.
+ *  - The Cloud Code runner (`scripts/cloud-code-runner.mjs`, `cct_` bearer): it
+ *    passes no usage reporter, and cloud tasks keep no cost of their own.
+ *  - agent-core's `BackendUsageReporter` hosts (the Electron agent host and the
+ *    agent-core socket server, session cookie; neither is configured by a live
+ *    client in this repository today): they settle each turn through
+ *    `/api/agent/usage`, which therefore no longer writes a ledger row — see
+ *    that route. Skipping the charge here on a caller-chosen signal (a header,
+ *    or cookie auth) instead would let any signed-in account use this proxy as
+ *    unmetered provider access, since the budget gates above read only the
+ *    ledger.
+ *
+ * Voice never comes through here: the relay speaks to its providers directly
+ * and reports through `/api/voice/spend`.
  */
 export async function POST(
   req: NextRequest,
@@ -68,8 +96,8 @@ export async function POST(
   }
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // This proxy carries real provider spend (Juno Code agent loops, voice and
-  // utility calls), so it obeys the same plan budget as /api/chat — otherwise
+  // This proxy carries real provider spend (Juno Code agent loops, and Work
+  // runs hosted on a Mac), so it obeys the same plan budget as /api/chat — otherwise
   // app usage would be unlimited and invisible to plan limits. The generous
   // burst limit accommodates multi-iteration agent turns.
   const plan = await getUserPlan(user.id);
@@ -137,7 +165,7 @@ export async function POST(
   if (!base) return NextResponse.json({ error: "No base URL for provider." }, { status: 502 });
   const target = `${base.replace(/\/+$/, "")}/${forwardPath}`;
 
-  // Forward the app's provider-native body verbatim, swapping in the real key.
+  // Forward the app's provider-native body, swapping in the real key.
   // Read it with a limit: req.text() otherwise buffers an unbounded request in
   // the Node worker before the provider ever sees it.
   const bodyResult = await readLimitedRequestBody(req);
@@ -152,7 +180,13 @@ export async function POST(
       { status: bodyResult.reason === "too_large" ? 413 : 400 },
     );
   }
-  const body = bodyResult.body;
+  // What billing needs from the body, read once here — and, for a streamed
+  // Chat Completions call that did not ask for it, the one change the proxy
+  // makes: switching on the final usage chunk. Everything else is forwarded as
+  // the client sent it.
+  const wire = providerWire(def.kind, forwardPath);
+  if (!wire) return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });
+  const request = inspectAgentRequest(wire, bodyResult.body);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (def.kind === "anthropic") {
     headers["x-api-key"] = key;
@@ -163,13 +197,13 @@ export async function POST(
     headers["authorization"] = `Bearer ${key}`;
   }
 
-  const upstreamAbort = createUpstreamAbort(req.signal, upstreamTimeoutsFor(requestStreams(body)));
+  const upstreamAbort = createUpstreamAbort(req.signal, upstreamTimeoutsFor(request.streamed));
   let upstream: Response;
   try {
     upstream = await fetch(target, {
       method: "POST",
       headers,
-      body,
+      body: request.body,
       signal: upstreamAbort.signal,
     });
   } catch {
@@ -189,43 +223,48 @@ export async function POST(
   const ct = upstream.headers.get("content-type");
   if (ct) respHeaders.set("content-type", ct);
   respHeaders.set("cache-control", "no-store");
-  // The deadlines stay armed while a streaming provider response is being
-  // consumed — each read under the idle one, so every chunk resets it — and
-  // none is left behind after a normal response. A tiny pass-through stream
-  // lets us clear them on close/error/cancel.
-  const bodyStream = upstream.body
-    ? new ReadableStream<Uint8Array>({
-        async start(controller) {
-          const reader = upstream.body!.getReader();
-          try {
-            while (true) {
-              const { done, value } = await upstreamAbort.read(() => reader.read());
-              if (done) break;
-              if (value) controller.enqueue(value);
-            }
-            controller.close();
-          } catch (error) {
-            const timeout = upstreamTimeoutKind(upstreamAbort.signal);
-            if (timeout) {
-              console.warn("[agent-proxy] upstream stream stopped by its deadline", { provider, timeout });
-            }
-            controller.error(error);
-          } finally {
-            upstreamAbort.cancel();
-            reader.releaseLock();
-          }
-        },
-        async cancel(reason) {
-          // Abort the fetch rather than only disarming it: the reader above
-          // holds the body's lock, so `upstream.body.cancel()` rejects, and a
-          // provider nobody stopped goes on generating for nobody.
-          upstreamAbort.abort(reason ?? "client_closed");
-        },
-      })
-    : null;
+
   // A bodyless upstream response has no stream to clear the deadlines from, so
   // disarm them here — otherwise the timers and the `req.signal` listener stay
   // alive for the full ceiling after the request has already been answered.
-  if (!bodyStream) upstreamAbort.cancel();
+  if (!upstream.body) {
+    upstreamAbort.cancel();
+    return new Response(null, { status: upstream.status, headers: respHeaders });
+  }
+
+  const meter = usageMeterFor(wire, upstream, request.fastRequested);
+  // The Juno catalog id, `<provider>:<provider model>`, so `resolveModel`
+  // finds the model's real rates; a bare provider id would be priced at the
+  // unknown-model fallback.
+  const spendModel = `${provider}:${request.model ?? "unknown"}`;
+  const userId = user.id;
+  // The runner is Juno's own server-side execution, the bucket a cloud Work
+  // run's spend lands in too; every other caller of this proxy is an app.
+  const source = authorization?.startsWith("Bearer cct_") ? "web" : "app";
+  const bodyStream = relayUpstreamBody({
+    body: upstream.body,
+    abort: upstreamAbort,
+    observe: meter ? (chunk) => meter.observe(chunk) : undefined,
+    onEnd: (outcome) => {
+      const timeout = upstreamTimeoutKind(upstreamAbort.signal);
+      if (timeout) {
+        console.warn("[agent-proxy] upstream stream stopped by its deadline", { provider, timeout });
+      }
+      // Billed on every ending, a client that left halfway included: the
+      // provider charged for what it produced whether or not anyone read it.
+      // Only what it REPORTED is billed. A stream cut before any usage arrived
+      // (OpenAI sends it last) is not guessed at.
+      const usage = meter?.finish();
+      if (!usage) return;
+      if (outcome !== "completed") {
+        console.info("[agent-proxy] billing a stream that did not complete", { provider, outcome });
+      }
+      // Not awaited: the ledger write happens after the client has its last
+      // byte, never in front of it. `recordSpend` catches its own failures.
+      void recordSpend({ userId, model: spendModel, kind: "code", source, ...usage }).catch(
+        () => undefined,
+      );
+    },
+  });
   return new Response(bodyStream, { status: upstream.status, headers: respHeaders });
 }
