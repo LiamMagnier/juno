@@ -229,7 +229,9 @@ public struct BackendCodeModelClient: AgentModelClient {
             let streamer = self.streamer
             let accountID = self.accountID
             let resolver = self.resolver
-            let maxTokens = self.maxTokens
+            // A request may ask for less than the client allows, never more.
+            let maxTokens = request.maximumOutputTokens.map { max(1, min($0, self.maxTokens)) }
+                ?? self.maxTokens
             let timeouts = self.timeouts
             let relay = Task {
                 do {

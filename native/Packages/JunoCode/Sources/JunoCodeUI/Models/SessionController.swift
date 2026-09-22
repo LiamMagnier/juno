@@ -471,6 +471,15 @@ public final class SessionController {
     public internal(set) var contextTokens: Int?
     /// The last turn's completion size, for the same reason.
     public internal(set) var lastOutputTokens: Int?
+    /// Every model call made for this session since it was opened — agent
+    /// turns and compaction summaries alike — as the provider billed them.
+    /// Held in memory, like the two figures above.
+    public internal(set) var sessionUsage = ModelUsageTotals()
+    /// True while the conversation is being compacted: a `/compact` the
+    /// reader asked for, or the model writing a summary mid-run.
+    public var isCompacting: Bool { isCompactingOnRequest || isWritingCompactionSummary }
+    private var isCompactingOnRequest = false
+    private var isWritingCompactionSummary = false
     public private(set) var computerUseActive = false
     public private(set) var computerUseScreenPermission: ComputerUsePermissionState =
         .notDetermined
@@ -657,9 +666,12 @@ public final class SessionController {
         }
         // Never swap an orchestrator out mid-run: it owns the run task and the
         // approval observer for the turn in flight, and the replacement would
-        // know about neither.
-        if let orchestrator, await orchestrator.isRunning {
-            return orchestrator
+        // know about neither. Nor mid-compaction: the replacement would load
+        // the history the fold is about to overwrite.
+        if let orchestrator {
+            let running = await orchestrator.isRunning
+            let compacting = await orchestrator.isCompacting
+            if running || compacting { return orchestrator }
         }
         await orchestrator?.release()
         let next = await makeOrchestrator(contract, live: live)
@@ -672,6 +684,16 @@ public final class SessionController {
             Task { @MainActor [weak self] in
                 if let context { self?.contextTokens = context }
                 if let output { self?.lastOutputTokens = output }
+            }
+        }
+        await next.observeCallUsage { [weak self] usage in
+            Task { @MainActor [weak self] in
+                self?.sessionUsage.record(usage)
+            }
+        }
+        await next.observeCompaction { [weak self] writing in
+            Task { @MainActor [weak self] in
+                self?.isWritingCompactionSummary = writing
             }
         }
         orchestrator = next
@@ -2970,23 +2992,32 @@ public final class SessionController {
 
     // MARK: - Compaction
 
-    /// `/compact`: folds older turns into a bounded summary now.
+    /// `/compact [focus]`: folds older turns into a summary now.
     ///
+    /// The session's model writes the summary, told to give `focus` priority
+    /// when the reader typed one; the structural notes stand in if it cannot.
     /// Refused mid-run — the orchestrator owns the conversation while it is
     /// appending to it — and explained when there is nothing to fold, so the
     /// command never silently does nothing.
-    public func compactConversation() async {
+    public func compactConversation(focus: String? = nil) async {
         transientError = nil
+        let focus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let live else {
             #if DEBUG
             appendPreviewEvent(
                 .compaction(
                     CompactionEvent(
-                        summary: "Older turns were folded into a summary.",
+                        summary: """
+                            **Requests and intent.** Fold the two spacing scales into one.
+
+                            **Current work.** Both files read from the shared scale.
+                            """,
                         beforeMessageCount: max(2, events.count),
                         afterMessageCount: 2,
                         beforeTokens: contextTokens,
-                        requestedByUser: true
+                        requestedByUser: true,
+                        summarySource: .model,
+                        focus: focus?.isEmpty == false ? focus : nil
                     )
                 )
             )
@@ -2997,8 +3028,11 @@ public final class SessionController {
             transientError = "Juno is still working. Compaction happens between turns; try again once this one ends."
             return
         }
+        guard !isCompacting else { return }
+        isCompactingOnRequest = true
+        defer { isCompactingOnRequest = false }
         let orchestrator = await currentOrchestrator(live)
-        if await orchestrator.compactNow() == nil {
+        if await orchestrator.compactNow(focus: focus) == nil {
             transientError = "There is not enough conversation to compact yet."
         }
     }

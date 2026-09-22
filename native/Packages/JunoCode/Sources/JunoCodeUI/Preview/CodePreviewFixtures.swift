@@ -396,7 +396,16 @@ enum CodePreviewData {
             builder.fileChanged("Sources/JunoCodeUI/Views/Inspector/InspectorView.swift", .modified, 6, 11)
             builder.assistant("Both files now read from the shared scale. The inspector's local constants are gone.")
             builder.compaction(
-                "Earlier turns: the reader asked for one spacing scale; two overlapping scales were found and folded.",
+                """
+                **Requests and intent.** One spacing scale for the whole Code surface; \
+                "no new tokens unless a value is genuinely missing".
+
+                **Files and code.** `Sources/JunoCodeUI/Theme/JunoCodeTheme.swift` held a \
+                second, overlapping scale; `Views/Inspector/InspectorView.swift` read from it.
+
+                **Current work.** Both files now read from the shared scale. \
+                **Next step:** run the test suite.
+                """,
                 before: 11, after: 5
             )
             builder.testRun("swift test", passed: true, tests: 179, failures: 0, duration: 42.8)
@@ -878,7 +887,10 @@ enum CodePreviewData {
                 beforeMessageCount: before,
                 afterMessageCount: after,
                 beforeTokens: 91_000,
-                requestedByUser: false
+                requestedByUser: false,
+                summarySource: .model,
+                summaryInputTokens: 38_400,
+                summaryOutputTokens: 612
             )))
         }
 

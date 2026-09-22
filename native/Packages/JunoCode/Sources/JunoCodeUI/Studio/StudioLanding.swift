@@ -168,6 +168,7 @@ public struct StudioLanding: View {
                         attachments: attachments,
                         addAttachment: isRemote ? nil : { attachments.append($0) },
                         removeAttachment: { id in attachments.removeAll { $0.id == id } },
+                        slashCommands: CodeSlashCommandLibrary.builtIn.excludingActions(),
                         searchFiles: fileSearch,
                         chooseFile: { entry in
                             if !entry.isDirectory, !fileReferences.contains(entry.path) {
@@ -178,6 +179,7 @@ public struct StudioLanding: View {
                             if let behavior = command.behavior {
                                 mode = StudioMode(behavior: behavior, permission: mode.permission)
                             }
+                            return true
                         },
                         canSend: canSend,
                         send: send,

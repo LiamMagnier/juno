@@ -147,8 +147,8 @@ public struct StudioThreadView: View {
             StudioTestsRow(run: run)
         case let .error(_, message):
             StudioErrorRow(message: message, retry: isLastError(item) ? { Task { await controller.retryLastTurn() } } : nil)
-        case let .compaction(_, event):
-            StudioDividerCaption(text: event.requestedByUser ? "Context compacted" : "Context compacted automatically")
+        case let .compaction(id, event):
+            StudioCompactionDivider(event: event, isExpanded: binding(id))
         case let .modeChange(_, text):
             StudioDividerCaption(text: text)
         case let .summary(_, run, turn):
@@ -210,6 +210,12 @@ struct StudioThreadTail: View {
                 Text("Stopping…")
                     .font(Studio.Font.label)
                     .foregroundStyle(Studio.Ink.tertiary)
+            } else if controller.isCompacting {
+                // Said in its own words because it can take a while, and a run
+                // that sits on "Working" with nothing appearing looks stuck.
+                JunoShimmerText("Compacting the conversation", font: Studio.Font.label, active: true)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("juno.code.transcript.compacting")
             } else if showsWorkingLine {
                 HStack(spacing: JunoSpace.snug) {
                     JunoShimmerText(activity, font: Studio.Font.label, active: true)

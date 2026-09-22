@@ -486,7 +486,104 @@ struct StudioErrorRow: View {
     }
 }
 
-/// A centred caption between two hairlines: context compacted, mode changed.
+/// Where the model's context was folded: one quiet divider, the summary
+/// behind it.
+///
+/// The thread itself loses nothing — every turn is still on screen; only what
+/// the model is sent shrank — so the summary is not something to read in
+/// passing. It is there for the moment a reader wonders what the agent still
+/// remembers, which is exactly when a run starts acting as if it forgot.
+struct StudioCompactionDivider: View {
+    let event: CompactionEvent
+    @Binding var isExpanded: Bool
+
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Button {
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: JunoSpace.cozy) {
+                    Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+                    HStack(spacing: JunoSpace.tight) {
+                        Text("Context compacted")
+                            .font(Studio.Font.meta)
+                            .foregroundStyle(hovering || isExpanded ? Studio.Ink.secondary : Studio.Ink.tertiary)
+                        JunoIconView(.chevronRight, size: 9)
+                            .foregroundStyle(Studio.Ink.tertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .opacity(hovering || isExpanded ? 1 : 0.55)
+                    }
+                    .fixedSize()
+                    Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+                }
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(isExpanded ? "Hide the summary" : "Show what Juno kept of the earlier conversation")
+            .accessibilityLabel("Context compacted")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier("juno.code.transcript.compaction")
+
+            if isExpanded {
+                detail
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text(origin + " · " + event.messageCountSummary)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.tertiary)
+            if let focus = event.focus {
+                Text("Keeping: \(focus)")
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .textSelection(.enabled)
+            }
+            JunoMarkdownText(event.summary)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+                .lineSpacing(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(JunoSpace.cozy)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.transcript.compaction.summary")
+    }
+
+    /// Who wrote the summary and why, in the reader's terms.
+    private var origin: String {
+        switch event.summarySource {
+        case .model:
+            return event.requestedByUser
+                ? "Summarised by the model at your request"
+                : "Summarised by the model as the context filled"
+        case .structural:
+            if let reason = event.fallbackReason {
+                return "Kept as notes because \(reason)"
+            }
+            return event.requestedByUser
+                ? "Kept as notes at your request"
+                : "Kept as notes as the context filled"
+        }
+    }
+}
+
+/// A centred caption between two hairlines: a mode or model change.
 struct StudioDividerCaption: View {
     let text: String
 

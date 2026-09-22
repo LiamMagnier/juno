@@ -503,6 +503,16 @@ public struct ErrorEvent: Hashable, Codable, Sendable {
 /// suddenly forgets an early instruction is otherwise inexplicable — and so a
 /// `/compact` the reader asked for has something to show for itself.
 public struct CompactionEvent: Hashable, Codable, Sendable {
+    /// Who wrote the summary.
+    public enum SummarySource: String, Hashable, Codable, Sendable {
+        /// The session's own model, asked to summarise the folded turns.
+        case model
+        /// Juno's bounded role-labelled notes: the fallback whenever the model
+        /// could not be asked, did not answer in time, or answered with
+        /// something that was not a summary.
+        case structural
+    }
+
     /// The bounded summary older turns were reduced to.
     public let summary: String
     /// Model messages before and after the fold.
@@ -513,19 +523,62 @@ public struct CompactionEvent: Hashable, Codable, Sendable {
     /// Whether the reader asked for it (`/compact`) or the runtime did it on its
     /// own ahead of a provider limit.
     public let requestedByUser: Bool
+    public let summarySource: SummarySource
+    /// What the reader asked the summary to keep (`/compact keep the API
+    /// decisions`), verbatim.
+    public let focus: String?
+    /// Why the model's summary was not used, when it was asked for one and the
+    /// structural summary stood in. A sentence fragment: "it took too long".
+    public let fallbackReason: String?
+    /// What the summarising call was billed for, when one was made and the
+    /// provider reported it. Recorded here because it is the one model call
+    /// that no turn in the transcript accounts for.
+    public let summaryInputTokens: Int?
+    public let summaryOutputTokens: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case summary, beforeMessageCount, afterMessageCount, beforeTokens, requestedByUser
+        case summarySource, focus, fallbackReason, summaryInputTokens, summaryOutputTokens
+    }
 
     public init(
         summary: String,
         beforeMessageCount: Int,
         afterMessageCount: Int,
         beforeTokens: Int? = nil,
-        requestedByUser: Bool = false
+        requestedByUser: Bool = false,
+        summarySource: SummarySource = .structural,
+        focus: String? = nil,
+        fallbackReason: String? = nil,
+        summaryInputTokens: Int? = nil,
+        summaryOutputTokens: Int? = nil
     ) {
         self.summary = summary
         self.beforeMessageCount = beforeMessageCount
         self.afterMessageCount = afterMessageCount
         self.beforeTokens = beforeTokens
         self.requestedByUser = requestedByUser
+        self.summarySource = summarySource
+        self.focus = focus
+        self.fallbackReason = fallbackReason
+        self.summaryInputTokens = summaryInputTokens
+        self.summaryOutputTokens = summaryOutputTokens
+    }
+
+    /// Transcripts written before the model could summarise carry none of the
+    /// newer fields, and every summary in them was structural.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        summary = try values.decode(String.self, forKey: .summary)
+        beforeMessageCount = try values.decode(Int.self, forKey: .beforeMessageCount)
+        afterMessageCount = try values.decode(Int.self, forKey: .afterMessageCount)
+        beforeTokens = try values.decodeIfPresent(Int.self, forKey: .beforeTokens)
+        requestedByUser = try values.decodeIfPresent(Bool.self, forKey: .requestedByUser) ?? false
+        summarySource = try values.decodeIfPresent(SummarySource.self, forKey: .summarySource) ?? .structural
+        focus = try values.decodeIfPresent(String.self, forKey: .focus)
+        fallbackReason = try values.decodeIfPresent(String.self, forKey: .fallbackReason)
+        summaryInputTokens = try values.decodeIfPresent(Int.self, forKey: .summaryInputTokens)
+        summaryOutputTokens = try values.decodeIfPresent(Int.self, forKey: .summaryOutputTokens)
     }
 
     /// `12 → 5 messages`.

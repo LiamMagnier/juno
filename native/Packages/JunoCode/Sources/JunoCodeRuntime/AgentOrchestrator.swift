@@ -37,6 +37,9 @@ public actor AgentOrchestrator {
         /// A provider-independent safety net for models that do not report
         /// usage, or whose manifest has no context-window metadata.
         public var maximumConversationBytes: Int
+        /// How the session's own model is asked to write compaction summaries,
+        /// or nil to write the structural summary alone.
+        public var compactionSummary: CompactionSummarizer.Limits?
         public var systemPrompt: String
 
         public init(
@@ -47,8 +50,10 @@ public actor AgentOrchestrator {
             contextWindowTokens: Int? = nil,
             contextCompactionTriggerFraction: Double = 0.80,
             maximumConversationBytes: Int = 4 * 1_024 * 1_024,
+            compactionSummary: CompactionSummarizer.Limits? = .standard,
             systemPrompt: String
         ) {
+            self.compactionSummary = compactionSummary
             self.maximumIterations = maximumIterations
             self.maximumToolResultBytes = maximumToolResultBytes
             self.maximumToolImageBytes = maximumToolImageBytes
@@ -97,6 +102,28 @@ public actor AgentOrchestrator {
     private var contextTokens: Int?
     private var lastOutputTokens: Int?
     private var usageObserver: (@Sendable (Int?, Int?) -> Void)?
+    /// Every call this orchestrator made, turns and compaction summaries alike.
+    public private(set) var usageTotals = ModelUsageTotals()
+    private var callUsageObserver: (@Sendable (ModelCallUsage) -> Void)?
+
+    /// True while a compaction is being written, from the first decision to
+    /// the adopted result. A new run waits for it: the fold replaces the very
+    /// history a prompt would be appended to.
+    public private(set) var isCompacting = false
+    private var compactionWaiters: [CheckedContinuation<Void, Never>] = []
+    /// The model summary in flight, so Stop can reach one that a `/compact`
+    /// between runs started — no run task exists to cancel then.
+    private var summaryTask: Task<CompactionSummarizer.Attempt, Never>?
+    private var compactionObserver: (@Sendable (Bool) -> Void)?
+    /// Successful model turns since the last compaction. Starts at the
+    /// threshold so the first compaction of a session may use the model.
+    private var modelTurnsSinceCompaction = AgentOrchestrator.minimumTurnsBetweenModelSummaries
+    /// A compaction this soon after the last one writes structural notes
+    /// rather than asking the model again. A window that refills within a
+    /// turn or two is dominated by its newest steps, which no summary can
+    /// shrink, and a summarising call per step would double the cost of every
+    /// step while freeing nothing.
+    static let minimumTurnsBetweenModelSummaries = 2
 
     public init(
         sessionID: CodeSessionID,
@@ -156,6 +183,28 @@ public actor AgentOrchestrator {
         }
     }
 
+    /// Observes each model call's billed usage once, when the call ends.
+    ///
+    /// Separate from ``observeUsage(_:)`` because the two answer different
+    /// questions: that one is the size of the context now, this one is what
+    /// the session has spent — and a compaction summary adds to the second
+    /// without saying anything about the first.
+    public func observeCallUsage(_ observer: (@Sendable (ModelCallUsage) -> Void)?) {
+        callUsageObserver = observer
+    }
+
+    /// Observes when the model is writing a compaction summary, so the surface
+    /// can say why nothing else is happening for a while.
+    public func observeCompaction(_ observer: (@Sendable (Bool) -> Void)?) {
+        compactionObserver = observer
+    }
+
+    private func recordCall(_ usage: ModelCallUsage) {
+        guard usage.inputTokens != nil || usage.outputTokens != nil else { return }
+        usageTotals.record(usage)
+        callUsageObserver?(usage)
+    }
+
     /// Releases the observer this orchestrator holds on the shared permission
     /// coordinator.
     ///
@@ -171,6 +220,8 @@ public actor AgentOrchestrator {
         }
         liveTextObserver = nil
         usageObserver = nil
+        callUsageObserver = nil
+        compactionObserver = nil
     }
 
     /// Publishes the turn's text so far, at most twenty times a second.
@@ -196,6 +247,9 @@ public actor AgentOrchestrator {
         modelPrompt: String? = nil,
         images: [ModelImage] = []
     ) async throws {
+        // A `/compact` still being written would replace the history this
+        // prompt is about to join; the prompt goes in after the fold instead.
+        await waitForCompaction()
         guard runTask == nil else {
             throw OrchestratorError.sessionAlreadyRunning
         }
@@ -283,7 +337,12 @@ public actor AgentOrchestrator {
     /// Requests an immediate stop: cancels the loop and denies every pending
     /// approval so suspended tools resume with a denial and exit.
     public func stop() async {
-        guard let task = runTask else { return }
+        guard let task = runTask else {
+            // Between runs the only work Stop can reach is a `/compact`
+            // waiting on the model; stopping it keeps the structural summary.
+            summaryTask?.cancel()
+            return
+        }
         try? await store.setStatus(id: sessionID, status: .stopping)
         task.cancel()
         await permissions.denyAll()
@@ -413,6 +472,9 @@ public actor AgentOrchestrator {
             _ = await applyPendingInstructions(includeQueued: false)
 
             await compactConversationIfNeeded()
+            // A stop that arrived while the summary was being written ends
+            // the run here rather than after one more request.
+            if Task.isCancelled { continue }
 
             var turnText = ""
             var turnReasoningSummary = ""
@@ -461,8 +523,19 @@ public actor AgentOrchestrator {
                 pendingSegment = ""
                 toolCalls.removeAll()
                 stopReason = nil
+                // This call's own usage, per field, newest wins; summed into
+                // the session's totals once the call ends, however it ends.
+                var callInputTokens: Int?
+                var callOutputTokens: Int?
 
                 do {
+                    defer {
+                        recordCall(ModelCallUsage(
+                            purpose: .turn,
+                            inputTokens: callInputTokens,
+                            outputTokens: callOutputTokens
+                        ))
+                    }
                     for try await event in model.streamTurn(request) {
                         if Task.isCancelled { break }
                         switch event {
@@ -502,9 +575,11 @@ public actor AgentOrchestrator {
                             // conversation once per turn and race past the window.
                             if let inputTokens {
                                 contextTokens = inputTokens
+                                callInputTokens = inputTokens
                             }
                             if let outputTokens {
                                 lastOutputTokens = outputTokens
+                                callOutputTokens = outputTokens
                             }
                             usageObserver?(contextTokens, lastOutputTokens)
                         case let .turnCompleted(reason):
@@ -638,6 +713,7 @@ public actor AgentOrchestrator {
             // through the top-of-loop cancellation branch instead of
             // mistaking it for a completed turn.
             if Task.isCancelled { continue }
+            modelTurnsSinceCompaction += 1
             // Images are intentionally one-turn context. Once a successful
             // model turn has consumed them, retain only the redacted tool
             // result so subsequent turns do not resend screenshots.
@@ -989,50 +1065,176 @@ public actor AgentOrchestrator {
         } else {
             contextSizedMaximum = nil
         }
-        let result = ConversationCompactor.compact(
+        guard let plan = ConversationCompactor.plan(
             conversation,
             maximumBytes: contextSizedMaximum ?? configuration.maximumConversationBytes,
             force: tokenTrigger
+        ) else { return }
+        isCompacting = true
+        defer { finishCompacting() }
+        await fold(
+            plan,
+            focus: nil,
+            requestedByUser: false,
+            allowModel: modelTurnsSinceCompaction >= Self.minimumTurnsBetweenModelSummaries
         )
-        guard let result else { return }
-        await adopt(result, requestedByUser: false)
     }
 
     /// Folds the conversation down now, at the reader's request.
     ///
     /// The runtime already compacts on its own ahead of a provider limit; this
     /// is the `/compact` the reader types when they know the early turns are
-    /// no longer worth carrying. Refused mid-run — the conversation is being
-    /// appended to by the loop that owns it — and answered with nil when there
-    /// is nothing safe to fold (a single turn has no "older" half).
-    public func compactNow() async -> CompactionEvent? {
-        guard runTask == nil else { return nil }
+    /// no longer worth carrying, with `focus` saying what the summary should
+    /// keep. Refused mid-run — the conversation is being appended to by the
+    /// loop that owns it — and answered with nil when there is nothing safe to
+    /// fold (a single turn has no "older" half).
+    public func compactNow(focus: String? = nil) async -> CompactionEvent? {
+        guard runTask == nil, !isCompacting else { return nil }
+        // Set before the first suspension, so a prompt sent meanwhile waits
+        // for the fold instead of joining the history it is about to replace.
+        isCompacting = true
+        defer { finishCompacting() }
         if !restored {
             try? await prepare()
         }
-        guard let result = ConversationCompactor.compact(
+        guard let plan = ConversationCompactor.plan(
             conversation,
             maximumBytes: configuration.maximumConversationBytes,
             force: true
         ) else { return nil }
-        return await adopt(result, requestedByUser: true)
+        // The reader asked, so the model is asked too, however recently the
+        // last compaction ran.
+        return await fold(plan, focus: focus, requestedByUser: true, allowModel: true)
+    }
+
+    private func finishCompacting() {
+        isCompacting = false
+        let waiters = compactionWaiters
+        compactionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func waitForCompaction() async {
+        while isCompacting {
+            await withCheckedContinuation { compactionWaiters.append($0) }
+        }
+    }
+
+    /// The configured summary limits, with the transcript sized to this
+    /// model's window when it is known: about half the window at four
+    /// characters a token, which leaves the instructions, the earlier summary
+    /// and the reply their room.
+    private var summaryLimits: CompactionSummarizer.Limits? {
+        guard var limits = configuration.compactionSummary else { return nil }
+        if let window = configuration.contextWindowTokens, window > 0 {
+            limits.maximumTranscriptCharacters = min(
+                limits.maximumTranscriptCharacters,
+                max(16_000, window * 2)
+            )
+        }
+        return limits
+    }
+
+    private struct CompactionOutcome {
+        let result: ConversationCompactionResult
+        let source: CompactionEvent.SummarySource
+        let fallbackReason: String?
+        let usage: ModelCallUsage?
+    }
+
+    /// Writes the summary for `plan` — the model's when it is configured,
+    /// allowed and answers with one, the structural notes otherwise — and
+    /// installs the result.
+    @discardableResult
+    private func fold(
+        _ plan: ConversationCompactionPlan,
+        focus: String?,
+        requestedByUser: Bool,
+        allowModel: Bool
+    ) async -> CompactionEvent? {
+        let planned = conversation.count
+        let outcome = await summarize(plan, focus: focus, allowModel: allowModel)
+        // Nothing appends to the history while it is being folded: a new run
+        // waits for the fold and a steer waits for the next boundary. Should
+        // that ever stop holding, installing this result would silently drop
+        // whatever arrived, so the fold is skipped and the next boundary
+        // plans again from the history as it now is.
+        guard conversation.count == planned else { return nil }
+        return await adopt(outcome, requestedByUser: requestedByUser, focus: focus)
+    }
+
+    private func summarize(
+        _ plan: ConversationCompactionPlan,
+        focus: String?,
+        allowModel: Bool
+    ) async -> CompactionOutcome {
+        guard allowModel, let limits = summaryLimits else {
+            return CompactionOutcome(result: plan.structural, source: .structural, fallbackReason: nil, usage: nil)
+        }
+        compactionObserver?(true)
+        let model = self.model
+        let sessionID = self.sessionID
+        let modelID = activeModelID
+        // Its own task so Stop can reach it between runs; inside a run the
+        // cancellation handler carries the run's own stop through to it.
+        let task = Task {
+            await CompactionSummarizer.summarize(
+                plan: plan,
+                focus: focus,
+                model: model,
+                sessionID: sessionID,
+                modelID: modelID,
+                limits: limits
+            )
+        }
+        summaryTask = task
+        let attempt = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        summaryTask = nil
+        compactionObserver?(false)
+        // Billed whether or not the summary was usable.
+        recordCall(attempt.usage)
+        if let summary = attempt.summary {
+            return CompactionOutcome(
+                result: plan.result(modelSummary: summary),
+                source: .model,
+                fallbackReason: nil,
+                usage: attempt.usage
+            )
+        }
+        return CompactionOutcome(
+            result: plan.structural,
+            source: .structural,
+            fallbackReason: attempt.failure?.reason,
+            usage: attempt.usage
+        )
     }
 
     /// Installs a compaction result and records it in the transcript.
-    @discardableResult
     private func adopt(
-        _ result: ConversationCompactionResult,
-        requestedByUser: Bool
+        _ outcome: CompactionOutcome,
+        requestedByUser: Bool,
+        focus: String?
     ) async -> CompactionEvent {
         let before = conversation.count
+        let trimmedFocus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
         let event = CompactionEvent(
-            summary: result.summary,
+            summary: outcome.result.summary,
             beforeMessageCount: before,
-            afterMessageCount: result.messages.count,
+            afterMessageCount: outcome.result.messages.count,
             beforeTokens: contextTokens,
-            requestedByUser: requestedByUser
+            requestedByUser: requestedByUser,
+            summarySource: outcome.source,
+            focus: trimmedFocus?.isEmpty == false ? trimmedFocus : nil,
+            fallbackReason: outcome.fallbackReason,
+            summaryInputTokens: outcome.usage?.inputTokens,
+            summaryOutputTokens: outcome.usage?.outputTokens
         )
-        conversation = result.messages
+        conversation = outcome.result.messages
+        modelTurnsSinceCompaction = 0
         // The next request will report a new prompt size. Keeping the old
         // number visible would make the UI claim the compacted request is still
         // at the pre-compaction limit.

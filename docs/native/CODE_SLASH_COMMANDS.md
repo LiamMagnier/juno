@@ -63,15 +63,42 @@ Review the diff against our conventions. Quote the lines you are describing.
 - A command's `behavior` is applied as a default the reader can still override.
   It never changes the permission mode — that contract stays theirs.
 
+## Session verbs
+
+A few built-ins are verbs on the session rather than prompts, and put nothing
+in the composer. A workspace file of the same name turns the verb back into an
+ordinary prompt: a repository may not silently take over a session action.
+
+- **`/compact [what to keep]`** summarises the conversation so far to free up
+  context. The session's own model writes the summary — requests and intent,
+  key decisions, files and code by path, errors and fixes, open tasks, the
+  current work and the next step — giving priority to whatever the reader typed
+  after the name. If the model cannot (an error, a refusal, an empty or
+  truncated reply, 90 seconds without an answer, or Stop), Juno keeps its
+  structural notes instead; compaction never fails. Notes written after an
+  earlier model summary carry that summary whole, ahead of the notes. The
+  newest steps stay verbatim and every tool call keeps its result. The model
+  reads tool output as tool output, escaped inside its own element, so a file
+  or page that says "User: …" cannot become a request in the summary. The
+  thread shows one divider, *Context compacted*, that opens onto the summary.
+- Choosing `/compact` from the menu runs it at once. Typing past the name —
+  `/compact keep the parser decisions` — hides the menu, and Return or Send runs
+  the verb with that focus instead of sending the line to the model.
+- While a run is working the row is dimmed with the reason, and a typed
+  `/compact …` is refused with an explanation and left in the field.
+- The landing composer has no session yet, so it offers no verbs.
+
 ## Implementation
 
 | Piece | File |
 | --- | --- |
-| Command, parsing, library, token rule | `JunoCodeUI/Models/SlashCommands.swift` |
-| The menu | `JunoCodeUI/Views/SlashCommandMenu.swift` |
-| Composer integration | `JunoCodeUI/Views/Composer.swift` |
+| Command, parsing, library, token rule, typed verbs | `JunoCodeUI/Models/SlashCommands.swift` |
+| The menu and composer integration | `JunoCodeUI/Studio/StudioComposer.swift` |
+| Verb availability and dispatch | `JunoCodeUI/Studio/StudioSessionView.swift` |
+| The model-written summary | `JunoCodeRuntime/CompactionSummarizer.swift` |
+| Where compaction cuts, and the structural fallback | `JunoCodeRuntime/ConversationCompactor.swift` |
 | Workspace discovery | `WorkspaceContext.slashCommands()` |
-| Tests | `JunoCodeUITests/SlashCommandTests.swift` (25) |
+| Tests | `JunoCodeUITests/SlashCommandTests.swift`, `JunoCodeRuntimeTests/CompactionSummarizerTests.swift`, `JunoCodeRuntimeTests/ModelCompactionTests.swift` |
 
 The menu is an `.overlay`, never a `.popover`: a popover over a
 `NavigationSplitView` negotiates its own size against the window, and an
