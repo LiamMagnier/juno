@@ -9,7 +9,7 @@ import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useSplitPane } from "@/hooks/use-split-pane";
-import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { useRealtimeVoice, type VoiceTurnResult } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
@@ -67,6 +67,7 @@ import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
 import { cleanForSpeech } from "@/lib/message-content";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
+import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
 import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
@@ -117,6 +118,30 @@ const THOUGHT_WIDTH_KEY = "juno:thought-width";
 // request) so the model keeps context without any server-side copy.
 const FORK_STORAGE_KEY = "juno:fork";
 type ForkPayload = { title: string; messages: ClientMessage[] };
+
+/** "a.pdf", "a.pdf and b.docx", "a.pdf, b.docx and c.txt". */
+function listFileNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Say what stopped the turn. A refusal the caller cannot act on is the same
+ * as no message at all, so each branch names the thing to change.
+ */
+function voiceTurnRefusalMessage(result: VoiceTurnResult): string {
+  if (result.message) return result.message;
+  switch (result.refusal) {
+    case "no-vision":
+      return "This voice provider can\u2019t view images. Switch to OpenAI, Gemini, or Qwen.";
+    case "not-live":
+      return "The voice session ended before that turn could be sent.";
+    case "empty":
+      return "Nothing to send.";
+    default:
+      return "Voice could not send that turn.";
+  }
+}
 
 function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT"; content: string }[] {
   return messages
@@ -1380,22 +1405,32 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         toast.error("Voice is still connecting. Try again in a moment.");
         return { accepted: false };
       }
-      if (attachments.some((attachment) => attachment.kind !== "IMAGE")) {
-        toast.error("Voice mode can receive images, but not document attachments yet.");
-        return { accepted: false };
-      }
-      if (attachments.length > 4) {
-        toast.error("Voice mode accepts up to 4 images in one turn.");
+      if (attachments.length > VOICE_ATTACHMENT_LIMIT) {
+        toast.error(`Voice mode accepts up to ${VOICE_ATTACHMENT_LIMIT} attachments in one turn.`);
         return { accepted: false };
       }
       voiceTurnSendingRef.current = true;
       setVoiceTurnSending(true);
       try {
-        const accepted = await realtimeVoice.sendTurn(text, attachments);
-        if (!accepted) {
-          toast.error(attachments.length ? "This voice provider can’t view images. Switch to OpenAI, Gemini, or Qwen." : "Voice could not send that turn.");
+        const result = await realtimeVoice.sendTurn(text, attachments);
+        if (!result.accepted) {
+          toast.error(voiceTurnRefusalMessage(result));
+          return { accepted: false };
         }
-        return { accepted };
+        // The turn went, but a file whose text was not ready went with it as a
+        // named gap rather than as content. The model is told; so is the
+        // reader, who would otherwise take the answer for a reading of it.
+        if (result.pendingFiles?.length) {
+          toast.warning(
+            `${listFileNames(result.pendingFiles)} ${result.pendingFiles.length === 1 ? "is" : "are"} still being indexed — Juno answered without the text.`
+          );
+        }
+        if (result.unavailableFiles?.length) {
+          toast.warning(
+            `Juno could not read ${listFileNames(result.unavailableFiles)}. The answer does not draw on ${result.unavailableFiles.length === 1 ? "it" : "them"}.`
+          );
+        }
+        return { accepted: true };
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Voice could not send that turn.");
         return { accepted: false };
@@ -1972,6 +2007,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onClearQuote={() => setComposerQuote(null)}
       privateMode={privateMode}
       voiceActive={voiceOpen}
+      voiceCanSeeImages={realtimeVoice.capabilities?.videoInput ?? true}
       sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
       placeholder={
         privateMode
