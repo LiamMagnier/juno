@@ -142,6 +142,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stopped by user."
   },
   {
+    "id": "0118df7a78b4d4a7",
+    "source": "Sexual orientation and gender identity."
+  },
+  {
     "id": "0128de630fc5ac2b",
     "source": "11. Modification des CGU/CGV"
   },
@@ -498,10 +502,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "— the top five come back whether or not any of them answers the question, so a retrieval miss is indistinguishable from the document not containing the answer. The model cannot tell which happened unless you tell it."
   },
   {
-    "id": "060c0aa44f18aa52",
-    "source": "Restrictions only narrow tools available during generation in this project context."
-  },
-  {
     "id": "0615570f9ea13694",
     "source": "Claude"
   },
@@ -622,6 +622,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Environments"
   },
   {
+    "id": "0744c66bf4512525",
+    "source": "Juno could not turn that skill's name into something you can type after a slash."
+  },
+  {
     "id": "07548c2c6511d4d1",
     "source": "Expand"
   },
@@ -728,6 +732,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0878ef4911217cd0",
     "source": "The trigger configuration is not an object."
+  },
+  {
+    "id": "08846fb1adf09efa",
+    "source": "Add a file to this project"
   },
   {
     "id": "0899a536b7ffa272",
@@ -842,6 +850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A small sample first, so you can check the approach"
   },
   {
+    "id": "09a99fd737044e2d",
+    "source": "A sensitive subject. Juno only learns these on its own when you turn the topic on in Settings → Memory."
+  },
+  {
     "id": "09b4ce7f5db22680",
     "source": "files_not_saved"
   },
@@ -868,10 +880,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
-  },
-  {
-    "id": "0a36fe0ee95bb60e",
-    "source": "Restrict tools in this project"
   },
   {
     "id": "0a3d235eafb0e5ba",
@@ -1114,10 +1122,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Something calls it"
   },
   {
-    "id": "0d9e907710f7117c",
-    "source": "Most capable Opus — complex agentic coding and hard tasks."
-  },
-  {
     "id": "0da0f835d4286207",
     "source": "Transformers scale well with data and compute, though attention is quadratic in sequence length."
   },
@@ -1204,6 +1208,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0e91610117029a62",
     "source": "Refresh"
+  },
+  {
+    "id": "0e95f5a3666031d6",
+    "source": "SKILL.md"
   },
   {
     "id": "0ea4a789bb8cdcad",
@@ -1658,6 +1666,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Not placed yet"
   },
   {
+    "id": "1474a37d882aee28",
+    "source": "Juno is reading your older conversations a couple at a time. You can leave this page — it picks up where it left off."
+  },
+  {
     "id": "147d5d0b108f1f40",
     "source": "Nothing is saved until this is a whole http:// or https:// link."
   },
@@ -1732,6 +1744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1523bdab74280db9",
     "source": "This workbook could not be opened for preview. The download is unaffected."
+  },
+  {
+    "id": "155b1af205f464f5",
+    "source": "Clear the search"
   },
   {
     "id": "155dadd0eec15b38",
@@ -1894,6 +1910,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Why “what button is in the top right?” works"
   },
   {
+    "id": "1818702d1832794b",
+    "source": "A prompt Juno follows in every chat, task and code session filed here."
+  },
+  {
     "id": "181eb8e9fc26d1e4",
     "source": "Shown in the sidebar and on anything you share."
   },
@@ -1996,6 +2016,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "19766ed6ccb2f4a3",
     "source": "Cancel"
+  },
+  {
+    "id": "1981d07aa2381f58",
+    "source": "A skill is a folder with a SKILL.md in it — the format Claude and Codex both read. Paste a repository and Juno will show you what is in it before anything is saved."
   },
   {
     "id": "1991957cb024f8d4",
@@ -2198,6 +2222,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "When it runs"
   },
   {
+    "id": "1bdc72fc4dc5542d",
+    "source": "Anything imported here starts"
+  },
+  {
     "id": "1be97e47f34db3e8",
     "source": "The Free plan doesn't include any messages."
   },
@@ -2288,10 +2316,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1ce93dacbcf499b5",
     "source": "chars"
-  },
-  {
-    "id": "1d07e9e39d6d1a28",
-    "source": "Automatically updated"
   },
   {
     "id": "1d1701f1add57bd3",
@@ -2934,10 +2958,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Show fewer"
   },
   {
-    "id": "257cb429cd84223b",
-    "source": "Add a prompt Juno follows in every chat in this project."
-  },
-  {
     "id": "258b0c879d53dc77",
     "source": "headingPath"
   },
@@ -3012,6 +3032,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "264ec3cda37fa95f",
     "source": "quiz · multi-question + recap"
+  },
+  {
+    "id": "2657bbefbd0bbf84",
+    "source": "Juno files what it learns by subject — identity, preferences, the way you work. Chat for a while, or add something yourself."
   },
   {
     "id": "2659201d6f866751",
@@ -3118,6 +3142,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Composer + menu"
   },
   {
+    "id": "27bb4ae8d823ec71",
+    "source": "Everything in this topic has been retired. The trail is below."
+  },
+  {
     "id": "27bb784df5d8b07a",
     "source": "The one saturated colour in the interface."
   },
@@ -3128,6 +3156,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "27d46d9b43a83cf6",
     "source": "Dernière mise à jour : 5 juillet 2026."
+  },
+  {
+    "id": "27efb7274c777c8a",
+    "source": "Read it"
   },
   {
     "id": "280213f51e5f7c57",
@@ -3288,6 +3320,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "299fa61e71d0f12c",
     "source": "This moves"
+  },
+  {
+    "id": "29a390f9237e3c84",
+    "source": "Clear all"
   },
   {
     "id": "29a40861bafe31e7",
@@ -3506,10 +3542,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "attachments_not_saved"
   },
   {
-    "id": "2c83c00f0e83b39c",
-    "source": "Add file"
-  },
-  {
     "id": "2c938047bc75f4d9",
     "source": "Invalid name."
   },
@@ -3528,6 +3560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2cba68fa497a9d0d",
     "source": "Onyx"
+  },
+  {
+    "id": "2cc1c371db104eb5",
+    "source": "unread"
   },
   {
     "id": "2cc34d8d6f7cf22a",
@@ -3596,6 +3632,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2daa249619b1adaa",
     "source": "This automation is already running. Let it finish before starting another."
+  },
+  {
+    "id": "2dacd6df4cb29909",
+    "source": "Sensitive subjects"
   },
   {
     "id": "2db54f592d548729",
@@ -3672,6 +3712,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2ea6c582c69d2ad1",
     "source": "Couldn’t reach Apple Music to verify the authorization. Please try again."
+  },
+  {
+    "id": "2eaf1f9c10efbdbe",
+    "source": "Looking…"
   },
   {
     "id": "2ebc802a70c6e52c",
@@ -3782,8 +3826,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "version_conflict"
   },
   {
+    "id": "30701beb833bfdba",
+    "source": "What Juno is called here, and which model answers by default."
+  },
+  {
     "id": "308acd244a4ee06b",
     "source": "Search or start a chat"
+  },
+  {
+    "id": "30a64216eaeac5d3",
+    "source": "View all"
   },
   {
     "id": "30bf7b9b9540d4e1",
@@ -3892,6 +3944,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "32084eeb5890aeae",
     "source": "High-volume, low-latency, cost-sensitive tier."
+  },
+  {
+    "id": "321f179c80ba93ea",
+    "source": "Imported"
   },
   {
     "id": "3236aeec43e563ca",
@@ -4142,6 +4198,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Generating"
   },
   {
+    "id": "360f84035942243c",
+    "source": "left"
+  },
+  {
     "id": "36159af16ea00411",
     "source": "Certains de ces sous-traitants peuvent traiter des données en dehors de l'Union européenne ; ces transferts sont encadrés par des garanties appropriées (clauses contractuelles types de la Commission européenne ou mécanismes d'adéquation équivalents)."
   },
@@ -4330,6 +4390,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "plus"
   },
   {
+    "id": "383efa96431be7e4",
+    "source": "Import from GitHub"
+  },
+  {
     "id": "3840d9d29421c46c",
     "source": "Default model"
   },
@@ -4492,10 +4556,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3a5ecca188c0579c",
     "source": "Updated"
-  },
-  {
-    "id": "3a6170c5480d43f6",
-    "source": "No instructions yet"
   },
   {
     "id": "3a7ea53231d3d39b",
@@ -4758,6 +4818,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Partly supported"
   },
   {
+    "id": "3e617690c7fc68f4",
+    "source": "Loading the skill importer"
+  },
+  {
     "id": "3e64d2ee5b43b4a7",
     "source": "Juno package"
   },
@@ -4820,6 +4884,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3f47e769ddc94935",
     "source": "Into a new saved chat"
+  },
+  {
+    "id": "3f776b79e8e0dc3a",
+    "source": "Nothing has been imported. Your existing skills are untouched."
   },
   {
     "id": "3f7f42e069fb5035",
@@ -4904,10 +4972,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "405ba7d9f632df66",
     "source": "Step Lab has no valid steps."
-  },
-  {
-    "id": "4084515733777d0c",
-    "source": "No memories yet"
   },
   {
     "id": "4087309c8126aad8",
@@ -5286,6 +5350,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Simple plans, metered honestly."
   },
   {
+    "id": "45ba3dc4c6ffcf60",
+    "source": "Added to memory."
+  },
+  {
     "id": "45c19322f7b9337e",
     "source": "Centre"
   },
@@ -5510,6 +5578,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your Mac pauses and prompts for approval before applying high-impact changes or terminal commands."
   },
   {
+    "id": "48d2e21549ca4f54",
+    "source": "to reach your private repositories and to stop GitHub rate-limiting the read."
+  },
+  {
     "id": "48e6f00bc1d91905",
     "source": "Back to roadmap"
   },
@@ -5666,6 +5738,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "no diff"
   },
   {
+    "id": "4aa62b1ed493f3d4",
+    "source": "You have imported a lot of skills in the last hour. Try again shortly."
+  },
+  {
     "id": "4aaa79ac974d00a3",
     "source": "Restrict assistant tools"
   },
@@ -5692,10 +5768,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4af4573056e6e5d2",
     "source": "Sources needed"
-  },
-  {
-    "id": "4afb85b15e63eb1e",
-    "source": "Nothing specific yet"
   },
   {
     "id": "4b1b8aa3608a26da",
@@ -6134,6 +6206,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skip and research as written"
   },
   {
+    "id": "50ea913bcd3b9df8",
+    "source": "asks for"
+  },
+  {
     "id": "51035b5b67dca0d1",
     "source": "Filter by type"
   },
@@ -6236,6 +6312,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "526811f8fad9f20a",
     "source": "Delete all conversations?"
+  },
+  {
+    "id": "5268167da8283240",
+    "source": "Reading your past chats"
   },
   {
     "id": "526e0087cc3f254d",
@@ -6410,6 +6490,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Executes Python code in a secure, isolated sandbox or microVM container. Supports pandas, numpy, matplotlib, data analytics, chart generation, and file manipulation."
   },
   {
+    "id": "552bec2d8cb5e39b",
+    "source": "Built from your conversations, kept by subject, and yours to correct."
+  },
+  {
     "id": "552d6551626689db",
     "source": "Large chip"
   },
@@ -6436,6 +6520,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "556f61a9c980c38e",
     "source": "memory/extract"
+  },
+  {
+    "id": "55898449eb74fb2e",
+    "source": "Health"
   },
   {
     "id": "55af16e99c58ef6c",
@@ -6934,6 +7022,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Prioritizing the strongest sources"
   },
   {
+    "id": "5ccc2e8715d7a17c",
+    "source": "Money"
+  },
+  {
     "id": "5cdaf86ba3219832",
     "source": "Edit this memory"
   },
@@ -7206,6 +7298,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Asked you a question"
   },
   {
+    "id": "600a3bac51373843",
+    "source": "Nothing matches that"
+  },
+  {
     "id": "6026719f081a8f34",
     "source": "Toggle theme"
   },
@@ -7288,6 +7384,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6105d6cc76af4003",
     "source": "image"
+  },
+  {
+    "id": "610b5ebb34ffb697",
+    "source": "Summary rebuilt from your chats and projects."
   },
   {
     "id": "610b7468ce69872f",
@@ -7418,10 +7518,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "not checked"
   },
   {
-    "id": "62910eabf758959c",
-    "source": "Sources ("
-  },
-  {
     "id": "62a2fed3d6e08c44",
     "source": "pending"
   },
@@ -7480,6 +7576,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "634de114775082f0",
     "source": "Attachments"
+  },
+  {
+    "id": "6353de988bb15f61",
+    "source": "untrusted"
   },
   {
     "id": "63565c0485fec4f7",
@@ -7670,12 +7770,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Colour burn"
   },
   {
-    "id": "65f213772b9c5334",
-    "source": "Delete layer"
+    "id": "65e817eec8cd71ed",
+    "source": "owner/repo"
   },
   {
-    "id": "65f31f8caeb8f292",
-    "source": "Facts appear here as you chat."
+    "id": "65f213772b9c5334",
+    "source": "Delete layer"
   },
   {
     "id": "65f4c0abb9366471",
@@ -8358,6 +8458,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Page rendering"
   },
   {
+    "id": "6dd44328773065fc",
+    "source": "Choose all"
+  },
+  {
     "id": "6df1bb18a59ab97d",
     "source": "Skill"
   },
@@ -8570,6 +8674,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Diff copied"
   },
   {
+    "id": "6fe05039630fe9c1",
+    "source": "Couldn’t load your skills."
+  },
+  {
     "id": "6fe0661c82d10d34",
     "source": "Radius"
   },
@@ -8650,6 +8758,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Password-reset email is not configured."
   },
   {
+    "id": "70a5cc6292024819",
+    "source": "Choose a skill"
+  },
+  {
     "id": "70b555bc384552dc",
     "source": "7. Usage acceptable"
   },
@@ -8688,6 +8800,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "71485adbdbd04ccf",
     "source": "Content-Disposition: attachment"
+  },
+  {
+    "id": "7159ba3e72058887",
+    "source": "Look inside"
   },
   {
     "id": "7159eea8d3dbd077",
@@ -8874,6 +8990,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ". Select a line to leave a note on it."
   },
   {
+    "id": "73a92bba21c82c72",
+    "source": "Memory settings"
+  },
+  {
     "id": "73bcfe98830b53a1",
     "source": "Notion"
   },
@@ -9058,8 +9178,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Project not found"
   },
   {
+    "id": "7598b7a790b18f1a",
+    "source": "Faith, practice, and philosophical convictions."
+  },
+  {
     "id": "75b27e813dcc792f",
     "source": "pl-8"
+  },
+  {
+    "id": "75c374cb4cf3cb2d",
+    "source": "memories"
   },
   {
     "id": "75c3abd151e8a885",
@@ -9178,12 +9306,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Calendar name; omit to search every calendar."
   },
   {
+    "id": "7786cbd8833d2da9",
+    "source": "A fact you add yourself is always kept, whatever these say — this controls what Juno writes down without being asked."
+  },
+  {
     "id": "7799d0e988de4937",
     "source": "Show only these"
   },
   {
     "id": "77a283d69258c2ae",
     "source": "Density"
+  },
+  {
+    "id": "77a83877291068f6",
+    "source": "A new memory"
   },
   {
     "id": "77bfdd7fa84dfa6d",
@@ -9312,6 +9448,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "792ce42eac02defa",
     "source": "Save instructions"
+  },
+  {
+    "id": "793ce3ddd3ac21fa",
+    "source": "Narrow what Juno may reach for while answering here."
   },
   {
     "id": "793d4cea694104e2",
@@ -9502,12 +9642,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Connected tools ready"
   },
   {
+    "id": "7bad6c96a4682b11",
+    "source": "Couldn’t delete that. Nothing was changed."
+  },
+  {
     "id": "7bcbc959ca368aa3",
     "source": "too_large"
   },
   {
     "id": "7bd01dcb63a36223",
     "source": "under Outputs."
+  },
+  {
+    "id": "7c0b74b78d343e1e",
+    "source": "Conditions, diagnoses, medication, therapy, disability and pregnancy."
   },
   {
     "id": "7c0daaf8653572af",
@@ -9926,10 +10074,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "An Apple ID and app-specific password are required."
   },
   {
-    "id": "80ddeff4f8dead1e",
-    "source": "Distilled from your conversations and preferences to make answers relevant and personalized."
-  },
-  {
     "id": "81051fb14d7f2b99",
     "source": "moved_to_automations"
   },
@@ -9944,6 +10088,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "814af25a0e16cdb4",
     "source": "Nothing running on it right now."
+  },
+  {
+    "id": "815fda2f08fc156a",
+    "source": "Pausing keeps everything below but stops Juno using it or adding to it. Incognito chats are never remembered, and sensitive subjects are never learned unless you ask. Resetting permanently erases every saved fact and the summary."
   },
   {
     "id": "816913b64fb0c9ca",
@@ -10298,6 +10446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Current popups"
   },
   {
+    "id": "8637eee131c463bd",
+    "source": "Racial or ethnic background, and national origin."
+  },
+  {
     "id": "863858bbe82aa25c",
     "source": "“a calm mountain lake at dawn”"
   },
@@ -10320,6 +10472,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "867afc0fdded8dfd",
     "source": "Invalid Step Lab schema."
+  },
+  {
+    "id": "868536863434bf56",
+    "source": ", a link to a repository, or a link to a folder or a"
   },
   {
     "id": "868d16703db4cee3",
@@ -10410,6 +10566,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Give this file a clearer name."
   },
   {
+    "id": "87b8b0086a4c5112",
+    "source": "Change image"
+  },
+  {
     "id": "87bf2bc08589f0bd",
     "source": "Voice"
   },
@@ -10454,6 +10614,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Right"
   },
   {
+    "id": "883369a9792800c9",
+    "source": ". Juno will not reach for it on its own, and its instructions reach the model inside the untrusted-content markers — where they may shape how a task is done and nothing else. You can say you trust it on its own page, once you have read it."
+  },
+  {
     "id": "883fe00ca04fe9d9",
     "source": "Loading skills"
   },
@@ -10492,10 +10656,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "894c814561bb7cc1",
     "source": "Could not load project members."
-  },
-  {
-    "id": "894cc9f0cca010a1",
-    "source": "Couldn’t update memory preference."
   },
   {
     "id": "894ebd77b5928f9f",
@@ -10604,6 +10764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8b47045eb7b8ca42",
     "source": "cancelled"
+  },
+  {
+    "id": "8b519899a6674d8b",
+    "source": "Don’t use this skill for this message"
   },
   {
     "id": "8b64e0946531f61c",
@@ -10754,6 +10918,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Events"
   },
   {
+    "id": "8d171acf86f13a6c",
+    "source": "None of the chosen skills are in that repository at that commit any more. Preview it again to see what is there now."
+  },
+  {
     "id": "8d31b433c5ed43ba",
     "source": "GPT Pro"
   },
@@ -10776,6 +10944,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8d59829c1e15afe1",
     "source": "Usage"
+  },
+  {
+    "id": "8d675b8016ab9c08",
+    "source": "Try a shorter word, or clear the filters to see everything Juno remembers."
   },
   {
     "id": "8d68fea41a847e34",
@@ -10860,6 +11032,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8e920ae7d06bef0e",
     "source": "tool_calls"
+  },
+  {
+    "id": "8eca032f4b4db8e6",
+    "source": "Search what Juno remembers"
   },
   {
     "id": "8ed2810d86254208",
@@ -10982,6 +11158,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Interactions"
   },
   {
+    "id": "908f2b4ff203e9f1",
+    "source": "All facts"
+  },
+  {
     "id": "90a0c00f7933cf77",
     "source": "Recently deleted"
   },
@@ -11062,6 +11242,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Unknown phase."
   },
   {
+    "id": "919917a05d73be68",
+    "source": "and could not be read:"
+  },
+  {
     "id": "919e16f5a2dcb14b",
     "source": "Add from library"
   },
@@ -11092,6 +11276,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "920e413c7d411b61",
     "source": "Status"
+  },
+  {
+    "id": "92114e3e22d5e19d",
+    "source": "Uncategorised"
   },
   {
     "id": "922380fddc62df50",
@@ -11306,12 +11494,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "File is too large (max 100 MB)."
   },
   {
-    "id": "94ba122360a3aa85",
-    "source": "Save task defaults"
-  },
-  {
     "id": "94c116ee118a7299",
     "source": "Analytics"
+  },
+  {
+    "id": "94cadc2b16455fef",
+    "source": "nothing_to_import"
   },
   {
     "id": "94ce9f4fdf624443",
@@ -11352,6 +11540,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "953c6910972b5e12",
     "source": "portswigger.net/web-security/jwt"
+  },
+  {
+    "id": "953d2725d2723a8b",
+    "source": "Political views"
   },
   {
     "id": "95413c48c022649a",
@@ -11452,6 +11644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "961a6062ba1ba2d8",
     "source": "Stripe"
+  },
+  {
+    "id": "96267b22aef49791",
+    "source": "Search what Juno remembers…"
   },
   {
     "id": "964863cd44cc97be",
@@ -11990,6 +12186,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Getting ready"
   },
   {
+    "id": "9c53c074d7ac6a27",
+    "source": "skill"
+  },
+  {
     "id": "9c80215feda714d7",
     "source": "The plan appears here once Juno has worked out what to look up."
   },
@@ -12290,6 +12490,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "DeepSeek Pro"
   },
   {
+    "id": "a011420d0946b7d8",
+    "source": "Something durable about you — “I prefer metric units”"
+  },
+  {
     "id": "a0298af63f4314d1",
     "source": "An example names a tool the version does not declare."
   },
@@ -12324,6 +12528,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a072bee2d58866a7",
     "source": "1. Create a free project at"
+  },
+  {
+    "id": "a075e70bb5d4be1f",
+    "source": "Religion and beliefs"
   },
   {
     "id": "a08226576294f61d",
@@ -12422,6 +12630,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Components"
   },
   {
+    "id": "a157d36a739191c1",
+    "source": "named"
+  },
+  {
     "id": "a172cedcae47474b",
     "source": "app"
   },
@@ -12448,10 +12660,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a1a5936d3b0f8a69",
     "source": "Max"
-  },
-  {
-    "id": "a1ad224b95210491",
-    "source": "Pausing stops Juno from saving or using memories. Private chats are never remembered. Resetting permanently erases every saved fact and the summary."
   },
   {
     "id": "a1b62373f3261ae7",
@@ -12514,6 +12722,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "are near-identical vectors and completely different contracts. Cosine similarity also has no notion of"
   },
   {
+    "id": "a257481c7eaee138",
+    "source": "Couldn’t forget that. Nothing was changed."
+  },
+  {
     "id": "a25bad1f4e431731",
     "source": "Your device"
   },
@@ -12570,6 +12782,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "SwiftUI view"
   },
   {
+    "id": "a31e4ded95f92652",
+    "source": "Change undone."
+  },
+  {
     "id": "a32789d2b53dc704",
     "source": "Current session"
   },
@@ -12590,8 +12806,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You're generating a lot — give it a minute."
   },
   {
-    "id": "a38776bc6077b18d",
-    "source": "Juno saves durable facts from your chats here."
+    "id": "a37405d7f134b70d",
+    "source": "Write or import a skill"
   },
   {
     "id": "a39a7ffad4a3013f",
@@ -12784,6 +13000,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a589f59a2f9e9d79",
     "source": "The exact words from the page that support the claim."
+  },
+  {
+    "id": "a5980ce7915856ee",
+    "source": "What Juno has learned"
   },
   {
     "id": "a5986e5e04f8f27f",
@@ -13018,6 +13238,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "not chosen yet"
   },
   {
+    "id": "a891ceee53bcb3c2",
+    "source": "No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget — it drafts the change here as a diff, and nothing is written until you accept it. Applied edits keep an Undo."
+  },
+  {
     "id": "a89ee82d1dfe8d5f",
     "source": "GPT-5.3 Codex"
   },
@@ -13102,6 +13326,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Go live"
   },
   {
+    "id": "a9f71bc2404c9193",
+    "source": "Retired"
+  },
+  {
     "id": "aa0a618a2a19334c",
     "source": "Next question →"
   },
@@ -13120,6 +13348,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "aa4e7a0c5489c8db",
     "source": "The language Juno's own buttons and menus are in."
+  },
+  {
+    "id": "aa5fa2dbeb10157e",
+    "source": "Juno never learns these on its own. Turn one on and it will remember that subject like any other — you can turn it back off at any time, and anything already learned stays listed below until you forget it."
   },
   {
     "id": "aa62e5da889a9ce7",
@@ -13278,6 +13510,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· shared"
   },
   {
+    "id": "abded57fa7d986f2",
+    "source": "Sexuality and gender"
+  },
+  {
     "id": "abe358a77ecb81b4",
     "source": ", since parsing the same PDF twice ought to give the same answer; and debuggability. When a parser is wrong you get a stack trace. When a model is wrong you get a plausible paragraph."
   },
@@ -13372,6 +13608,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ad1fb9ec0cb3c7a4",
     "source": "Automations"
+  },
+  {
+    "id": "ad3100aaba26cb12",
+    "source": "invalid_source"
   },
   {
     "id": "ad3f2bed086bea04",
@@ -13558,6 +13798,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "An http(s) URL from a search result."
   },
   {
+    "id": "af88baeb41854594",
+    "source": "Memory is paused, so nothing here reaches a conversation."
+  },
+  {
     "id": "af8a897d2feb975e",
     "source": "Conversation options"
   },
@@ -13666,6 +13910,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Loading design"
   },
   {
+    "id": "b0e6cbefaf121ae2",
+    "source": "Couldn’t remove that from the history."
+  },
+  {
     "id": "b0ecb7199745628a",
     "source": "Realtime voice is not configured."
   },
@@ -13728,6 +13976,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b1c52ee3677debeb",
     "source": "Start session"
+  },
+  {
+    "id": "b1d6b91b67c2afa5",
+    "source": "at"
   },
   {
     "id": "b1ed18d341ca874e",
@@ -13800,6 +14052,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b31cd9d9a130907d",
     "source": "(Réglages → Compte) efface votre compte et vos conversations. Vous pouvez également supprimer chaque conversation individuellement."
+  },
+  {
+    "id": "b31edef31f5bf921",
+    "source": "The importer couldn’t open"
   },
   {
     "id": "b327acc8dc1f1726",
@@ -13884,6 +14140,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b3f7f4016185c383",
     "source": "In the cloud"
+  },
+  {
+    "id": "b3f9d2207f238145",
+    "source": "Use a skill"
   },
   {
     "id": "b3fd592930178bac",
@@ -13986,6 +14246,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No console output yet."
   },
   {
+    "id": "b4b6e76a82b0aa95",
+    "source": "Learn from past chats"
+  },
+  {
     "id": "b4d86aa32a3e4683",
     "source": "Starting task"
   },
@@ -14086,6 +14350,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing has been created. Your existing skills are untouched."
   },
   {
+    "id": "b63b99f6383ba713",
+    "source": "was"
+  },
+  {
     "id": "b64ac05f17e64d03",
     "source": "Live"
   },
@@ -14108,10 +14376,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b6c3e6cd47b10099",
     "source": "This file could not be opened as an archive. The download beside it is unaffected."
-  },
-  {
-    "id": "b6d07d9432ce35fb",
-    "source": "Reusable instructions with a name. Type a slash and the name in a task, or let Juno reach for one itself — only ever for a skill you have said you trust."
   },
   {
     "id": "b6d42ac2bd053a21",
@@ -14340,10 +14604,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b9e64085b9c18d2b",
     "source": "AIcss blocks"
-  },
-  {
-    "id": "b9e9d6be1bcf2f85",
-    "source": "How can I help you today?"
   },
   {
     "id": "b9ed0a1cab1a21fb",
@@ -14654,6 +14914,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Archived"
   },
   {
+    "id": "bdb99db30e0e4f8e",
+    "source": "Income, debt, savings and financial circumstances."
+  },
+  {
     "id": "bdc090ec61e3fcfc",
     "source": "Reload"
   },
@@ -14792,6 +15056,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bfd402b2f6f38125",
     "source": "Sign in"
+  },
+  {
+    "id": "bfd6a9152415fb51",
+    "source": "Race and ethnicity"
   },
   {
     "id": "bfdbd4c5fd05dbcd",
@@ -15202,10 +15470,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "tokens"
   },
   {
-    "id": "c5251c356cf03ce9",
-    "source": "Save assistant defaults"
-  },
-  {
     "id": "c5276e27afba47df",
     "source": "Customize"
   },
@@ -15276,6 +15540,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c5d0453e23e49add",
     "source": "Start building"
+  },
+  {
+    "id": "c5fbee20962c3d93",
+    "source": "Previous-generation Opus, superseded by Opus 5.5."
   },
   {
     "id": "c5fd95376298d09b",
@@ -15614,6 +15882,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t open your library"
   },
   {
+    "id": "ca37495c3ae212a7",
+    "source": "Durable facts Juno picks up from your chats land here, across every project."
+  },
+  {
     "id": "ca381c1e76e681b6",
     "source": "Open settings"
   },
@@ -15660,6 +15932,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cab94aba84f97f7f",
     "source": "Typography"
+  },
+  {
+    "id": "caca8d0d3ff3985d",
+    "source": "Deleted. Juno may learn it again from the chat it came from."
   },
   {
     "id": "cadfaac7241e3651",
@@ -15722,20 +15998,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "unknown_run_kind"
   },
   {
-    "id": "cb6d66bd52cb1d38",
-    "source": "No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget — changes apply right away and show up here, with Undo if you change your mind."
-  },
-  {
     "id": "cb77087dda57fe8b",
     "source": "Queued — starting a cloud machine (this can take a moment). Anything you add now goes in with the first instruction."
   },
   {
     "id": "cb904bad6967ce58",
     "source": "Qwen's volume tier — text, image and video in, a 1M window, and a 256K thinking budget."
-  },
-  {
-    "id": "cb922b5840ae9d83",
-    "source": "No files yet"
   },
   {
     "id": "cba7bd2ef879034f",
@@ -15924,10 +16192,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cdcb95f683e340a6",
     "source": "Refuse every connector action, including ones that only read. This overrides the choice above and every approval you have already given, until you turn it off."
-  },
-  {
-    "id": "cdd76c132832f1ce",
-    "source": "Add PDFs, documents, or data to ground answers."
   },
   {
     "id": "cde4eb3cc3d18df7",
@@ -16630,6 +16894,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous fast vision-language model, superseded by Qwen3.6 Flash."
   },
   {
+    "id": "d693a3a72448be6a",
+    "source": "Every chat read"
+  },
+  {
     "id": "d696a35bdd1883da",
     "source": "Profile"
   },
@@ -16986,6 +17254,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno has drafted this from the steps it actually took. Change anything you like — it is saved exactly as it reads here, and nothing runs until you ask for it by name."
   },
   {
+    "id": "da7acac1968393b3",
+    "source": "Remove image"
+  },
+  {
     "id": "da9a0582f56be69d",
     "source": "Inspected image"
   },
@@ -17330,10 +17602,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cron"
   },
   {
-    "id": "dda77d1be6f43efc",
-    "source": "Memory consolidated."
-  },
-  {
     "id": "ddaba6a7bad4de54",
     "source": "Runs at once"
   },
@@ -17470,6 +17738,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No usable sources came back for this plan."
   },
   {
+    "id": "df655d1da9c40141",
+    "source": "Anthropic's most capable Opus — powerful model for complex work."
+  },
+  {
     "id": "df9b882aef17c7e0",
     "source": "Unsaved changes · saves as v"
   },
@@ -17488,6 +17760,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dfd40d20ba96c876",
     "source": "The runner stopped reporting and did not post a final status. It was most likely cancelled, killed, or ran out of memory."
+  },
+  {
+    "id": "dfdae16c6cfb9d5d",
+    "source": "Reusable instructions with a name. Type a slash and the name in any chat or task, or let Juno reach for one itself — only ever for a skill you have said you trust."
   },
   {
     "id": "dfe8b2f0de26bb87",
@@ -17690,6 +17966,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Chats aren't saved, added to memory, or used to train models."
   },
   {
+    "id": "e22820fcf5cd90e3",
+    "source": "Topics"
+  },
+  {
     "id": "e2641093476bbd11",
     "source": "Investigate"
   },
@@ -17708,6 +17988,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e27ba483910567cf",
     "source": "How Juno behaves in this project"
+  },
+  {
+    "id": "e280c86f2b05c6f2",
+    "source": "No topics yet"
   },
   {
     "id": "e28411a3404d21f9",
@@ -17818,6 +18102,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "layers"
   },
   {
+    "id": "e3c260f121aa8382",
+    "source": "chats"
+  },
+  {
     "id": "e3c4b39d6d501347",
     "source": "Shared"
   },
@@ -17852,6 +18140,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e40fd7d26aca5771",
     "source": "owasp.org/www-project-nodejs-goat"
+  },
+  {
+    "id": "e41fde11f5630959",
+    "source": "Party affiliation, voting, and political convictions."
   },
   {
     "id": "e43895bda2722bbe",
@@ -17962,6 +18254,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing changed after your last instruction. Switch to Everything to see earlier turns."
   },
   {
+    "id": "e5c557a8f88f10ef",
+    "source": "Not in use"
+  },
+  {
     "id": "e5c690f21870541e",
     "source": "This conversation isn’t here"
   },
@@ -17976,6 +18272,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e5f15e5edd196b18",
     "source": "validation_failed"
+  },
+  {
+    "id": "e6013976091bc369",
+    "source": ", and more than Juno lists in one pass"
   },
   {
     "id": "e602609c65baa533",
@@ -18218,6 +18518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The document was saved elsewhere while this change was in flight."
   },
   {
+    "id": "e957d85a1d893328",
+    "source": "That is not a GitHub repository. Paste something like anthropics/skills, or a link to a repository, folder or SKILL.md on github.com."
+  },
+  {
     "id": "e9848d691e99763b",
     "source": "Reading your chats and projects…"
   },
@@ -18320,10 +18624,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ea93d6a262ecb87a",
     "source": "Tools"
-  },
-  {
-    "id": "ea9e069b5158b9b2",
-    "source": "Couldn’t update memory. Try again in a moment."
   },
   {
     "id": "eaa10b551697b06f",
@@ -18508,6 +18808,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ecbc89cd37a03734",
     "source": "Started"
+  },
+  {
+    "id": "ecc5eabb6cdd7bb6",
+    "source": "Change drafted — review it below."
   },
   {
     "id": "eccf8b338da5126d",
@@ -18750,6 +19054,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hour"
   },
   {
+    "id": "f00652096b72d1f3",
+    "source": "inside one — the URL from GitHub's own file browser works. Connect GitHub on"
+  },
+  {
+    "id": "f013aa4b8daf3e22",
+    "source": "topics"
+  },
+  {
     "id": "f02ee2fdfa040071",
     "source": "connection_busy"
   },
@@ -18962,6 +19274,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Working out what the question leaves open"
   },
   {
+    "id": "f2db8404c222e36c",
+    "source": "anthropics/skills"
+  },
+  {
     "id": "f2f05e106c408b00",
     "source": "Inline learning blocks"
   },
@@ -19068,6 +19384,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f456248363a0e7d5",
     "source": "Pinned projects"
+  },
+  {
+    "id": "f45c762a9116019a",
+    "source": "PDFs, documents and data Juno reads before answering here."
   },
   {
     "id": "f45cb54c74d8f716",
@@ -19310,6 +19630,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Remembered from a chat"
   },
   {
+    "id": "f79ed670029000b5",
+    "source": "See them"
+  },
+  {
     "id": "f7ab7425272c2aa4",
     "source": "What should Juno call you?"
   },
@@ -19388,6 +19712,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f87be02e884cf433",
     "source": "Names and paths are both searched. Clear the search to see all of them again."
+  },
+  {
+    "id": "f8942aa4686c49b8",
+    "source": "of them came in switched off because Juno's scanner found something in the instructions. Open one to see what."
   },
   {
     "id": "f89c1848386898d8",
@@ -19598,6 +19926,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Note on"
   },
   {
+    "id": "fb0d4b9308b7bf46",
+    "source": "Forgotten — Juno won’t learn this again."
+  },
+  {
     "id": "fb0d8bd73645875a",
     "source": ". OpenAI’s Responses API accepts a PDF as a first-class"
   },
@@ -19620,6 +19952,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fb5336f02b6c08c6",
     "source": "Filter layers by name"
+  },
+  {
+    "id": "fb5eb9de27de6df4",
+    "source": "Facts Juno kept before it started filing them by subject."
   },
   {
     "id": "fb5f27d5457c4641",
@@ -19824,6 +20160,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fe17e1b7e7fc46e1",
     "source": "Pinned to the top of the model picker."
+  },
+  {
+    "id": "fe19e2514421f69c",
+    "source": "Restrictions narrow what is available while Juno generates in this project. They do not disconnect anything."
+  },
+  {
+    "id": "fe223f7b3f0c5819",
+    "source": "s were"
   },
   {
     "id": "fe258712a5204dd3",

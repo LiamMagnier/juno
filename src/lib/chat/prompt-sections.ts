@@ -66,6 +66,31 @@ export interface SystemPromptSections {
   canvasOn: boolean;
 }
 
+/**
+ * A skill's block, appended after everything else.
+ *
+ * LAST, and that position is the argument. The block already carries its own
+ * authority sentence — it shapes HOW the task is done, it does not change what
+ * the task is, and it cannot reach a tool the turn did not already have — and
+ * putting it after the feature contracts means the rules it is bounded by are
+ * stated before it rather than after. For an imported skill the text is inside
+ * the untrusted-content markers, whose rule sits at the very top of the prompt
+ * beside the identity line, so the distance is deliberate in the other
+ * direction too: the reader of the envelope meets the rule first.
+ *
+ * A separate function rather than another field on `SystemPromptSections`
+ * because the two streaming paths compose sections at different moments — the
+ * private branch has no project, no attachments and no canvas — and a field
+ * only one of them could populate is a field that drifts.
+ */
+export function appendSkillBlock(
+  prompt: string,
+  skill: { systemSuffix: string } | null
+): string {
+  if (!skill || !skill.systemSuffix.trim()) return prompt;
+  return `${prompt}\n\n${skill.systemSuffix}`;
+}
+
 export function composeSystemPrompt(sections: SystemPromptSections): string {
   return [
     sections.base,

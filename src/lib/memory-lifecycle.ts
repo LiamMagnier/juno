@@ -1,4 +1,5 @@
 import { findSuppression } from "@/lib/memory-suppression";
+import { sensitiveWriteDecision, type SensitiveTopic } from "@/lib/memory-sensitive";
 import { cosineSimilarity } from "@/lib/knowledge/rank";
 import {
   DEFAULT_MEMORY_CATEGORY,
@@ -460,8 +461,15 @@ export function isSuppressedBy(candidate: string, suppressions: readonly string[
  * structurally incapable of dropping it.
  */
 export type IngestionPlan =
-  /** Nothing to store: blank, or covered by a "never remember this" note. */
+  /**
+   * Nothing to store: blank, covered by a "never remember this" note, or
+   * falling under a sensitive topic this account has not opted into. `topic`
+   * rides along on the sensitive case so the caller can say WHICH topic
+   * refused it — "Juno doesn't remember health" is actionable where "skipped"
+   * is not.
+   */
   | { action: "skip"; reason: "empty" | "suppressed" }
+  | { action: "skip"; reason: "sensitive"; topic: SensitiveTopic }
   /**
    * Already known. Refreshes `lastVerifiedAt` instead of adding a row; a
    * restated temporary fact also gets its clock and status wound back.
@@ -492,11 +500,43 @@ export type IngestionPlan =
  */
 export function planFactIngestion(
   candidate: { content: string; source: "AUTO" | "MANUAL"; projectId?: string | null },
-  context: { entries: readonly LifecycleEntry[]; suppressions: readonly string[]; now: Date }
+  context: {
+    entries: readonly LifecycleEntry[];
+    suppressions: readonly string[];
+    now: Date;
+    /**
+     * Sensitive topics this account has opted into. Omitted means NONE — the
+     * default has to be the private one, because the caller that forgets to
+     * pass it is exactly the caller that has not thought about the question.
+     */
+    allowedSensitiveTopics?: readonly string[];
+  }
 ): IngestionPlan {
   const content = candidate.content.trim().slice(0, 500);
   if (!content) return { action: "skip", reason: "empty" };
   if (isSuppressedBy(content, context.suppressions)) return { action: "skip", reason: "suppressed" };
+
+  /*
+   * The sensitive gate, and the one exception to it.
+   *
+   * It applies to AUTO only. The question the toggle answers is "may a
+   * background model write this down because I mentioned it", and the answer
+   * for a fact the user typed into the memory page themselves is already yes —
+   * they are looking at the row as they create it. Blocking that would make
+   * the switch mean "I may not record my own diagnosis", which nobody asked
+   * for, and would leave the user with no way to express a fact they do want
+   * kept. A manual sensitive fact is still LABELLED as one wherever it is
+   * shown, so the exception is visible rather than silent.
+   *
+   * Checked before the duplicate test, not after: a sensitive candidate that
+   * happens to match a row already stored must not refresh that row's clock,
+   * or opting out would stop new sensitive facts while quietly keeping the old
+   * ones alive forever.
+   */
+  if (candidate.source === "AUTO") {
+    const sensitive = sensitiveWriteDecision(content, context.allowedSensitiveTopics);
+    if (!sensitive.ok) return { action: "skip", reason: "sensitive", topic: sensitive.topic };
+  }
 
   const { category, confidence } = classifyFact(content, { source: candidate.source });
   const normalized = normalizeFact(content);

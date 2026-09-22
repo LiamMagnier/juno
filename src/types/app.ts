@@ -2,6 +2,7 @@ import type { Plan } from "@prisma/client";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
 import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
+import type { SensitiveTopic } from "@/lib/memory-sensitive";
 import type { BudgetCapSource } from "@/lib/spend-ceiling";
 
 export interface AppUser {
@@ -27,6 +28,14 @@ export interface ClientSettings {
   /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */
   uiLocale: string;
   memoryEnabled: boolean;
+  /**
+   * Sensitive topics this account has opted into remembering (see
+   * @/lib/memory-sensitive). Empty is the default and means Juno learns none of
+   * them on its own. Surfaced on the client because the memory page has to be
+   * able to explain a fact it did NOT store, and "nothing was remembered"
+   * without the reason is indistinguishable from the feature being broken.
+   */
+  memorySensitiveTopics: SensitiveTopic[];
   /**
    * Where invisible work on this account's content may be sent — memory
    * extraction and consolidation, titles, moderation. See

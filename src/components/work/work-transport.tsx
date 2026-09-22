@@ -1445,6 +1445,108 @@ export function revokeWorkFireToken(id: string): Promise<WorkResult<null>> {
 // Skills
 // ---------------------------------------------------------------------------
 
+/**
+ * A skill as it looks in a repository, before anybody has decided to keep it.
+ *
+ * Everything here is read off the `SKILL.md` the server fetched — the client
+ * never holds instructions and never sends them back. An import posts PATHS,
+ * and the server re-reads the files at the commit this preview named.
+ */
+export interface GithubSkillPreview {
+  path: string;
+  directory: string;
+  slug: string;
+  name: string;
+  description: string;
+  license: string | null;
+  compatibility: string | null;
+  instructionChars: number;
+  /** Tool declarations Juno can carry. A request, never a grant. */
+  requestedTools: string[];
+  /** Declarations dropped because Juno matches names, not argument patterns. */
+  droppedTools: string[];
+  /** Frontmatter written for another host, which does nothing here. */
+  hostKeys: string[];
+  /** Frontmatter in neither vocabulary. Shown rather than swallowed. */
+  ignoredKeys: string[];
+  /** Files beside the SKILL.md. Listed, never fetched, never run. */
+  companionFiles: string[];
+  url: string;
+}
+
+export interface GithubSkillProblem {
+  path: string;
+  reason: string;
+  message: string;
+}
+
+export interface GithubSkillDiscovery {
+  repository: { owner: string; repo: string; ref: string; commit: string; url: string };
+  skills: GithubSkillPreview[];
+  problems: GithubSkillProblem[];
+  /** The walk found more than one page's worth. */
+  more: boolean;
+  /** Whether the read used the reader's own GitHub credential. */
+  connected: boolean;
+}
+
+const previewList = (raw: unknown): GithubSkillPreview[] =>
+  Array.isArray(raw) ? (raw as GithubSkillPreview[]) : [];
+const problemList = (raw: unknown): GithubSkillProblem[] =>
+  Array.isArray(raw) ? (raw as GithubSkillProblem[]) : [];
+
+/** Walks a repository and reports what is in it. Writes nothing. */
+export function previewGithubSkills(source: string): Promise<WorkResult<GithubSkillDiscovery>> {
+  return post("/api/skills/import/github", { source }, (data) => ({
+    repository: data.repository as GithubSkillDiscovery["repository"],
+    skills: previewList(data.skills),
+    problems: problemList(data.problems),
+    more: data.more === true,
+    connected: data.connected === true,
+  }));
+}
+
+export interface GithubImportOutcome {
+  imported: ClientWorkSkill[];
+  skipped: { path: string; slug: string; reason: string; message: string }[];
+  problems: GithubSkillProblem[];
+  /** How many landed switched off because the scanner refused them. */
+  blocked: number;
+}
+
+/**
+ * Imports the chosen skills.
+ *
+ * `commit` is carried from the preview so the import reads the bytes the
+ * reader was shown rather than whatever the branch points at by now — a
+ * repository can move between looking and choosing, and a skill is the one
+ * thing here whose content the reader is agreeing to.
+ */
+export function importGithubSkills(input: {
+  source: string;
+  commit: string;
+  paths: string[];
+  projectId?: string | null;
+}): Promise<WorkResult<GithubImportOutcome>> {
+  return post(
+    "/api/skills/import/github",
+    {
+      source: input.source,
+      commit: input.commit,
+      paths: input.paths,
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+    },
+    (data) => ({
+      imported: list<ClientWorkSkill>(data.imported),
+      skipped: Array.isArray(data.skipped)
+        ? (data.skipped as GithubImportOutcome["skipped"])
+        : [],
+      problems: problemList(data.problems),
+      blocked: typeof data.blocked === "number" ? data.blocked : 0,
+    })
+  );
+}
+
 export function fetchWorkSkills(limit = 100): Promise<WorkResult<ClientWorkSkill[]>> {
   return get(`/api/work/skills?limit=${limit}`, (data) => list<ClientWorkSkill>(data.skills));
 }

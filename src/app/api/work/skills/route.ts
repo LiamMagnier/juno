@@ -1,23 +1,16 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { recordWorkAudit } from "@/lib/work/audit";
 import { requireUser } from "@/lib/code-remote";
 import {
-  SKILL_CONTRACT_VERSION,
   createSkillSchema,
   emptySkillContract,
   normalizeSkillSlug,
   parseSkillListQuery,
   serializeSkill,
   serializeSkillVersion,
-  skillContractToJson,
   skillSlugFromName,
-  trustForOrigin,
-  trustPermitsAutoSelection,
 } from "@/lib/work/skills";
-import { scanSkillVersion } from "@/lib/work/skill-security";
+import { createSkillWithFirstVersion } from "@/lib/skills/store";
 import { ownsEverySkillResource } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
@@ -74,10 +67,10 @@ export async function POST(req: Request) {
   }
 
   // Trust is derived from where the skill came from and is never taken from the
-  // body. An imported skill starts untrusted, which is what stops the planner
-  // reaching for a set of instructions the user has not read; the user can
-  // trust it afterwards, deliberately, through PATCH.
-  const trust = trustForOrigin(origin);
+  // body — `createSkillWithFirstVersion` does that derivation, along with the
+  // scan, the `autoSelect` clamp and the one transaction that mints the head row
+  // and version 1 together. This route keeps only what is about THIS request:
+  // who owns the project, and whose files the contract names.
   const contract = parsed.data.contract ?? emptySkillContract();
   const requestedTools = parsed.data.requestedTools ?? [];
 
@@ -104,83 +97,27 @@ export async function POST(req: Request) {
     );
   }
 
-  const securityScan = scanSkillVersion({
+  const created = await createSkillWithFirstVersion({
+    userId: user.id,
+    slug,
     name,
     description,
     instructions,
-    requestedTools,
+    projectId: projectId ?? null,
     contract,
+    requestedTools,
+    origin,
+    autoSelect,
   });
-  const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
 
-  try {
-    const created = await prisma.$transaction(async (tx) => {
-      const skill = await tx.workSkill.create({
-        data: {
-          userId: user.id,
-          projectId: projectId ?? null,
-          slug,
-          name,
-          description,
-          currentVersion: 1,
-          enabled: securityScan.status !== "blocked",
-          trust,
-          securityStatus: securityScan.status,
-          securityUpdatedAt: new Date(),
-          // Clamped rather than stored as asked. A row saying
-          // `autoSelect: true, trust: "untrusted"` is a contradiction every
-          // reader then has to resolve for itself, and the one that resolves it
-          // the other way is the one that matters.
-          autoSelect: autoSelect && trustPermitsAutoSelection(trust),
-        },
-      });
-      // Version 1 is minted with the skill, in the same transaction. A head row
-      // whose `currentVersion` points at nothing is a skill that cannot run and
-      // cannot be fixed except by editing it, and a failure between two separate
-      // writes is exactly how one gets created.
-      const version = await tx.workSkillVersion.create({
-        data: {
-          skillId: skill.id,
-          version: 1,
-          instructions,
-          contract: skillContractToJson(contract),
-          contractVersion: SKILL_CONTRACT_VERSION,
-          requestedTools,
-          securityStatus: securityScan.status,
-          securityScan: securityScan as unknown as Prisma.InputJsonValue,
-          permissionDigest,
-          requiresConsent: false,
-        },
-      });
-      return { skill, version };
-    });
+  // `(userId, slug)` is unique, and the slug may have been derived from the
+  // name rather than chosen — so a user creating "Tidy Downloads" twice reaches
+  // here without ever having typed a slug. Naming the conflict lets the client
+  // say which name is taken instead of reporting a server error.
+  if (!created.ok) return NextResponse.json({ error: "slug_taken", slug: created.slug }, { status: 409 });
 
-    await recordWorkAudit({
-      userId: user.id,
-      kind: "skill_security_scanned",
-      actor: "web",
-      severity: securityScan.status === "blocked" ? "refusal" : securityScan.status === "warning" ? "warning" : "info",
-      detail: {
-        skillId: created.skill.id,
-        skillSlug: created.skill.slug,
-        skillVersion: created.version.version,
-        scanStatus: securityScan.status,
-        findingCount: securityScan.findings.length,
-      },
-    });
-
-    return NextResponse.json(
-      { skill: serializeSkill(created.skill), version: serializeSkillVersion(created.version) },
-      { status: 201 }
-    );
-  } catch (err) {
-    // `(userId, slug)` is unique, and the slug may have been derived from the
-    // name rather than chosen — so a user creating "Tidy Downloads" twice hits
-    // this without ever having typed a slug. Naming the conflict lets the client
-    // say which name is taken instead of reporting a server error.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return NextResponse.json({ error: "slug_taken", slug }, { status: 409 });
-    }
-    throw err;
-  }
+  return NextResponse.json(
+    { skill: serializeSkill(created.skill), version: serializeSkillVersion(created.version) },
+    { status: 201 }
+  );
 }

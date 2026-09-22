@@ -1,0 +1,14 @@
+-- Sensitive-topic opt-in for memory.
+--
+-- Before this, every durable fact a background model extracted was stored on
+-- equal terms, so a chat about a diagnosis, a faith, or a salary could quietly
+-- become a permanent line in the account's memory profile. The gate in
+-- src/lib/memory-sensitive.ts refuses those six topics unless the account has
+-- asked for them, and this column is where the asking is recorded.
+--
+-- Expand-only (docs/JUNO.md §20.2b): a new nullable-by-default array column.
+-- Every existing row takes '{}' — opted into nothing — which is the correct
+-- migration of an account that was never given the choice. No existing row is
+-- read, rewritten, or changed in meaning, and a build that predates this column
+-- simply never selects it.
+ALTER TABLE "Settings" ADD COLUMN "memorySensitiveTopics" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

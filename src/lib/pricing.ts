@@ -271,8 +271,10 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
  * has no fast mode at all.
  *
  *  - Anthropic fast mode (`speed:"fast"` + `fast-mode-2026-02-01` beta): Opus 4.8
- *    only — 4.7's fast mode is deprecated (removed 2026-07-24) and 4.6/other
- *    models error or silently run standard. Docs price it 2x ($10/$50 vs $5/$25).
+ *    and Opus 5.5 — 4.7's fast mode is deprecated (removed 2026-07-24) and
+ *    4.6/other models error or silently run standard. Priced at 2x ($10/$50
+ *    vs $5/$25) on both — confirmed for 5.5 in the Console model card
+ *    (Console does not show it for the bare Opus 5 entry).
  *  - OpenAI priority (`service_tier:"priority"`): the 5.6/5.5/5.4 chat tiers.
  *    5.5 is 2.5x, the rest 2x. The -pro line, 5.1 and 4o are NOT priority-eligible.
  *
@@ -281,7 +283,7 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
  */
 export function fastModeMultiplier(model: ModelInfo): number | null {
   const pm = model.providerModel.toLowerCase();
-  if (model.provider === "anthropic") return pm.includes("opus-4-8") ? 2 : null;
+  if (model.provider === "anthropic") return pm.includes("opus-4-8") || pm.includes("opus-5-5") ? 2 : null;
   if (model.provider === "openai") {
     if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
     if (pm.includes("gpt-6-astra")) return 2;

@@ -37,6 +37,14 @@ export interface Memory {
   lastUsedAt: string | null;
   lastVerifiedAt: string | null;
   supersededById: string | null;
+  /**
+   * The sensitive topic this fact falls under, or null. Computed server-side
+   * from the content on every read rather than stored (see
+   * @/lib/memory-sensitive), so a row written before the gate existed is
+   * flagged exactly like one written today. A value this bundle does not
+   * recognise renders as a generic "Sensitive" chip, never as a crash.
+   */
+  sensitive: string | null;
 }
 
 export interface SummaryData {
@@ -224,4 +232,87 @@ export function parseSummarySections(markdown: string): SummarySection[] {
     if (body) out.push({ title: s.title, body });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Topics — the grouping the memory page reads by
+// ---------------------------------------------------------------------------
+
+/**
+ * A category's worth of facts, ready to render as one card.
+ *
+ * WHY A TOPIC AND NOT JUST A LIST. A flat list of sixty sentences is a
+ * database table with rounded corners: everything is equally prominent, so
+ * nothing is, and the question a user actually arrives with — "what does this
+ * thing think I'm like?" — takes sixty reads to answer. Grouping by the
+ * category the classifier already assigned turns that into six reads, and puts
+ * the edit controls on the same card as the thing they edit.
+ *
+ * `retired` rides along with `active` rather than being filtered out upstream
+ * so a topic that has been entirely superseded still has a card to open. A
+ * topic whose every fact is retired is the one a user is most likely to be
+ * looking for, and dropping it would make "why did Juno stop believing that?"
+ * unanswerable from the topics view.
+ */
+export interface MemoryTopic {
+  /** The category id, or "uncategorised" for rows written before Memory v2. */
+  id: string;
+  label: string;
+  description: string;
+  active: Memory[];
+  retired: Memory[];
+  /** True when any fact in the topic falls under a sensitive subject. */
+  sensitive: boolean;
+  /** The most recent `lastUsedAt` in the topic, for "used …" on the card. */
+  lastUsedAt: string | null;
+}
+
+/** Statuses that mean "Juno used to believe this" rather than "Juno believes this". */
+export const RETIRED_STATUSES: ReadonlySet<string> = new Set([
+  "superseded",
+  "contradicted",
+  "suppressed",
+  "expired",
+]);
+
+export function isRetired(memory: Memory): boolean {
+  return RETIRED_STATUSES.has(memory.status);
+}
+
+/**
+ * Split facts into topics, ordered by the `order` given (the category scale),
+ * with anything unrecognised collected at the end.
+ *
+ * Suppressions never appear. They are a block-list, and a topic card reading
+ * "Juno remembers that you asked it to forget X" is the exact opposite of what
+ * the user did — they have their own strip on the page.
+ */
+export function groupMemoriesByTopic(
+  memories: readonly Memory[],
+  meta: (id: string | null) => { id: string; label: string; description: string },
+  order: readonly string[]
+): MemoryTopic[] {
+  const byId = new Map<string, MemoryTopic>();
+  for (const memory of memories) {
+    if (memory.kind !== "FACT") continue;
+    const { id, label, description } = meta(memory.category);
+    let topic = byId.get(id);
+    if (!topic) {
+      topic = { id, label, description, active: [], retired: [], sensitive: false, lastUsedAt: null };
+      byId.set(id, topic);
+    }
+    (isRetired(memory) ? topic.retired : topic.active).push(memory);
+    if (memory.sensitive) topic.sensitive = true;
+    if (memory.lastUsedAt && (!topic.lastUsedAt || memory.lastUsedAt > topic.lastUsedAt)) {
+      topic.lastUsedAt = memory.lastUsedAt;
+    }
+  }
+
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return [...byId.values()].sort(
+    (a, b) =>
+      (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+      b.active.length - a.active.length ||
+      a.label.localeCompare(b.label)
+  );
 }

@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
+import { GitHubMark } from "@/components/connections/connector-logos";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSkill } from "@/lib/work/skills";
 import { AppIcons } from "@/lib/app-icons";
@@ -56,13 +57,27 @@ export default function SkillsPage() {
     <AppPage measure="wide">
       <AppPageHeader
         heading="Skills"
-        lede="Reusable instructions with a name. Type a slash and the name in a task, or let Juno reach for one itself — only ever for a skill you have said you trust."
+        lede="Reusable instructions with a name. Type a slash and the name in any chat or task, or let Juno reach for one itself — only ever for a skill you have said you trust."
         actions={
-          <Button asChild size="sm" className="gap-1.5">
-            <Link href="/skills/new">
-              <Plus className="size-3.5" aria-hidden="true" /> New skill
-            </Link>
-          </Button>
+          <>
+            {/* Import first, and outlined rather than filled. A skill is easier
+                to get than to write — the format is the one Claude and Codex
+                both read, and there are thousands of them on GitHub — so the
+                door that leads somewhere on the first visit is this one. It
+                stays the secondary weight because it is also the door that
+                brings somebody else's instructions into the account, and a
+                filled primary button is not the right invitation for that. */}
+            <Button asChild size="sm" variant="outline" className="gap-1.5">
+              <Link href="/skills/import">
+                <GitHubMark className="size-3.5" /> Import
+              </Link>
+            </Button>
+            <Button asChild size="sm" className="gap-1.5">
+              <Link href="/skills/new">
+                <Plus className="size-3.5" aria-hidden="true" /> New skill
+              </Link>
+            </Button>
+          </>
         }
       />
 
@@ -84,6 +99,16 @@ export default function SkillsPage() {
             <>
               <Button asChild size="sm" variant="outline">
                 <Link href="/chat">Go and run something</Link>
+              </Button>
+              {/* The second-easiest way to get one is also not to write it.
+                  A SKILL.md is the format Claude and Codex both read, so a
+                  repository full of them is a library somebody else already
+                  wrote — and importing one lands it untrusted, which is what
+                  makes offering this here defensible at all. */}
+              <Button asChild size="sm" variant="outline" className="gap-1.5">
+                <Link href="/skills/import">
+                  <GitHubMark className="size-3.5" /> Import from GitHub
+                </Link>
               </Button>
               {/*
                 Authoring is still here and still second. A blank textarea asking

@@ -19,12 +19,12 @@ import { Section } from "@/components/landing/section";
 const SAMPLE = { input: 1200, output: 600 };
 
 const RECEIPT_IDS = [
-  "anthropic:claude-fable-5",
+  "anthropic:claude-fable-5-1",
   "openai:gpt-5.6-sol",
   "google:gemini-3.1-pro-preview",
   "anthropic:claude-sonnet-5",
-  "zhipu:glm-5.2",
-  "deepseek:deepseek-v4-flash",
+  "zhipu:glm-5.3",
+  "deepseek:deepseek-flash",
 ];
 
 /**

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -9,11 +10,22 @@ import { useApp } from "@/components/app/app-provider";
 import { MemoryManager } from "@/components/memory/memory-manager";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { SENSITIVE_TOPICS, SENSITIVE_TOPIC_META } from "@/lib/memory-sensitive";
 import type { ClientSettings } from "@/types/app";
 
 export function MemorySection() {
   const { settings } = useApp();
   const save = useSettingsSave();
+
+  const allowed = React.useMemo(
+    () => new Set(settings.memorySensitiveTopics),
+    [settings.memorySensitiveTopics]
+  );
+
+  const toggleTopic = (topic: (typeof SENSITIVE_TOPICS)[number], on: boolean) => {
+    const next = SENSITIVE_TOPICS.filter((id) => (id === topic ? on : allowed.has(id)));
+    void save({ memorySensitiveTopics: next });
+  };
 
   return (
     <>
@@ -56,6 +68,50 @@ export function MemorySection() {
             </Select>
           }
         />
+      </SettingsGroup>
+
+      {/*
+       * Sensitive subjects.
+       *
+       * OFF IS THE DEFAULT AND OFF IS THE POINT. Juno's extractor is good at
+       * noticing durable facts, which means it is equally good at noticing a
+       * diagnosis mentioned once while drafting an email about it. Nobody asks
+       * for that to become a permanent line in their profile, and finding it
+       * on this page later is the wrong moment to discover the feature.
+       *
+       * Every switch is additive and reversible, and turning one OFF does not
+       * delete what was learned while it was on — the memory page lists those
+       * facts with a Sensitive chip so they can be forgotten deliberately.
+       * Silently deleting them would be the friendlier-looking choice and the
+       * wrong one: a switch that destroys data is a switch people are afraid
+       * to touch.
+       */}
+      <SettingsGroup
+        title="Sensitive subjects"
+        description="Juno never learns these on its own. Turn one on and it will remember that subject like any other — you can turn it back off at any time, and anything already learned stays listed below until you forget it."
+      >
+        {SENSITIVE_TOPICS.map((topic) => (
+          <SettingRow
+            key={topic}
+            label={SENSITIVE_TOPIC_META[topic].label}
+            htmlFor={`memory-sensitive-${topic}`}
+            description={SENSITIVE_TOPIC_META[topic].description}
+            control={
+              <Switch
+                id={`memory-sensitive-${topic}`}
+                checked={allowed.has(topic)}
+                onCheckedChange={(on) => toggleTopic(topic, on)}
+              />
+            }
+          />
+        ))}
+        <p className="flex items-start gap-1.5 px-1 pt-1 text-caption text-muted-foreground/80">
+          <ShieldAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            A fact you add yourself is always kept, whatever these say — this controls what Juno writes down without
+            being asked.
+          </span>
+        </p>
       </SettingsGroup>
 
       <SettingsGroup

@@ -278,9 +278,13 @@ export function ProjectWorkDefaults({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* "Save". Every card on the Settings tab saves the card it is in,
+              and this was the third different spelling of that one verb —
+              "Save", "Save assistant defaults", "Save task defaults" — for
+              three buttons a reader sees together. */}
           <Button onClick={onSave} disabled={saving || !dirty} size="sm" className="gap-2">
             {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-            Save task defaults
+            Save
           </Button>
           <p className="text-caption leading-relaxed text-muted-foreground">
             Tasks already created keep what they were created with.

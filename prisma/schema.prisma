@@ -394,6 +394,15 @@ model Settings {
   // instructions always win.
   personality                String   @default("default")
   memoryEnabled              Boolean  @default(true)
+  // Sensitive topics this account has opted INTO remembering — health,
+  // ethnicity, religion, politics, sexuality, finances (see
+  // src/lib/memory-sensitive.ts). Empty by default and empty for every existing
+  // row, which is the whole point: a fact about a diagnosis is not stored
+  // because it was mentioned once, only because the account asked for that
+  // topic to be kept. TEXT ids rather than an enum so adding a topic is a
+  // rollback-safe migration, and an id this build does not recognise is
+  // dropped on read rather than granting anything.
+  memorySensitiveTopics      String[] @default([])
   // Where background work — memory extraction, titles, research planning,
   // moderation, consolidation — may be sent. One of the modes in
   // lib/background-provider-policy.ts. Defaults to (and migrates existing rows

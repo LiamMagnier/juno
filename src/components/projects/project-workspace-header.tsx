@@ -25,17 +25,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { promptPreview } from "@/lib/prompt-preview";
 import { cn } from "@/lib/utils";
 
 interface ProjectWorkspaceHeaderProps {
   project: {
     id: string;
     name: string;
-    instructions: string;
     starred: boolean;
     updatedAt: string;
   };
+  /** Every number here renders. See `counts` below for which ones at zero. */
   stats: {
     chatCount: number;
     fileCount: number;
@@ -55,10 +54,16 @@ interface ProjectWorkspaceHeaderProps {
 
 /**
  * The project page's opening: the shared `<AppPageHeader>` with the project's
- * name as the heading, its instructions summarised on one line as the lede,
- * and the pin / instructions / actions cluster on the right. Renaming goes
- * through a dialog — the same one the projects grid uses — rather than an
+ * name as the heading, what it holds counted on one line as the lede, and the
+ * pin / instructions / actions cluster on the right. Renaming goes through a
+ * dialog — the same one the projects grid uses — rather than an
  * inline-editable heading, so the two routes agree.
+ *
+ * No mark beside the title, including for a project that has a cover image.
+ * PREMIUM_AUDIT §2b's rule is that glyphs mark destinations and a page title
+ * is a document; the cover is drawn once, at the head of the Overview rail,
+ * where it is the project's picture rather than a second, larger copy of the
+ * sidebar row that got you here.
  */
 export function ProjectWorkspaceHeader({
   project,
@@ -95,14 +100,33 @@ export function ProjectWorkspaceHeader({
     }
   };
 
-  const summary = promptPreview(project.instructions);
-  const lede = summary ? (
-    <span className="line-clamp-1" title={summary}>
-      {summary}
-    </span>
-  ) : (
+  /**
+   * What this project IS, in numbers, under its name.
+   *
+   * This line used to be `promptPreview(project.instructions)` with the stats
+   * as a fallback — and the fallback was unreachable. `promptPreview` returns
+   * the string "No instructions set." when there are none, which is truthy, so
+   * the ternary took the summary branch on every project in the product: a
+   * project with instructions repeated a sentence the Overview rail already
+   * shows in full 300px below, and one without them printed "No instructions
+   * set." under its title as the single most prominent fact about it. Four of
+   * the five numbers this component is handed had never rendered at all.
+   *
+   * Chats and sources are always drawn, including at zero, so the line keeps
+   * one shape as a project fills up rather than growing a segment at a time.
+   * Tasks and code sessions join only once they exist — most projects never
+   * have either, and a permanent "0 tasks" is a column of zeros teaching the
+   * reader to stop reading the line.
+   */
+  const counts = [
+    plural(stats.chatCount, "chat"),
+    plural(stats.fileCount + (stats.artifactCount ?? 0), "source"),
+    ...(stats.workCount ? [plural(stats.workCount, "task")] : []),
+    ...(stats.codeCount ? [plural(stats.codeCount, "code session")] : []),
+  ];
+  const lede = (
     <span className="font-mono text-caption tabular-nums">
-      {plural(stats.chatCount, "chat")} · {plural(stats.fileCount, "file")} · Updated {timeAgo(project.updatedAt)}
+      {counts.join(" · ")} · Updated {timeAgo(project.updatedAt)}
     </span>
   );
 

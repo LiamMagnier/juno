@@ -28,7 +28,7 @@ import { formatEur } from "@/components/landing/eur";
  * it; a flash-tier default would price this exchange at a hundredth of a cent
  * and read as a rounding error. Falls through to the picker's real default.
  */
-const HERO_MODEL: ModelInfo = getModel("anthropic:claude-fable-5") ?? getModel(DEFAULT_MODEL) ?? MODEL_LIST[0];
+const HERO_MODEL: ModelInfo = getModel("anthropic:claude-fable-5-1") ?? getModel(DEFAULT_MODEL) ?? MODEL_LIST[0];
 
 /** A short question and a two-line answer — roughly what the sample below weighs. */
 const TURN = {
