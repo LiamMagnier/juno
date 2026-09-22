@@ -679,6 +679,35 @@ final class BackendCodeModelClientTests: XCTestCase {
         }
     }
 
+    // MARK: - HTTP 402
+
+    private func error(for status: Int, body: String, model: String = "deepseek:deepseek-v4") async -> AgentModelClientError? {
+        let streamer = FakeByteStreamer(
+            canned: .init(statusCode: status, contentType: "application/json", body: Data(body.utf8))
+        )
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        return await collect(client, makeRequest(modelID: model)).error as? AgentModelClientError
+    }
+
+    /// The proxy passes a provider's own status through. DeepSeek's empty
+    /// balance is a 402 too, and it is the provider's billing, not the
+    /// reader's plan: another model can still serve the turn.
+    func testAProviders402IsItsQuotaNotTheJunoPlan() async {
+        let failure = await error(for: 402, body: #"{"error":{"message":"Insufficient Balance"}}"#)
+        XCTAssertEqual(failure, .quotaExhausted(message: "Insufficient Balance"))
+    }
+
+    /// Only the proxy's own walls carry QUOTA_EXCEEDED, and only they end the
+    /// run as the plan limit.
+    func testTheProxysQuotaExceeded402IsThePlanLimit() async {
+        let failure = await error(
+            for: 402,
+            body: #"{"error":"You have used this plan's allowance until 5 pm.","code":"QUOTA_EXCEEDED"}"#,
+            model: "anthropic:claude-sonnet-5"
+        )
+        XCTAssertEqual(failure, .planLimitReached(message: "You have used this plan's allowance until 5 pm."))
+    }
+
     // MARK: - Thinking block binding
 
     private static let endTurn = """
