@@ -18,6 +18,7 @@ import {
   normalizeBackgroundProviderPolicy,
   type BackgroundProviderMode,
 } from "@/lib/background-provider-policy";
+import { normalizeSensitiveTopics } from "@/lib/memory-sensitive";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -122,6 +123,10 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     responseLanguage: settings?.responseLanguage ?? "auto",
     uiLocale: settings?.uiLocale ?? AUTO_LOCALE,
     memoryEnabled: settings?.memoryEnabled ?? true,
+    // Through the normalizer for the same reason the mode below is: the column
+    // is TEXT[], so an id written by a newer build (or by hand) must grant
+    // nothing here rather than render as a switch this build cannot name.
+    memorySensitiveTopics: normalizeSensitiveTopics(settings?.memorySensitiveTopics),
     // Read through the normalizer rather than cast: the column is TEXT, and a
     // value this build does not recognise must show as the safe mode rather
     // than as a blank control the user cannot reason about.

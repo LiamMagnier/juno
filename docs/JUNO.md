@@ -956,32 +956,70 @@ industry models), `sync:benchmarks` (Artificial Analysis, needs `AA_API_KEY`),
 
 ## 7. Memory
 
-Memory lets Juno remember durable facts about a user across conversations. Three
+Memory lets Juno remember durable facts about a user across conversations. Four
 Prisma models: **`MemoryEntry`** (a `content` string with `kind` = `FACT` or
-`SUPPRESSION`, `source` = `AUTO`/`MANUAL`, `sourceRef`), **`ConversationMemory`** (a
-per-chat high-water mark `processedAt` + one-line `digest` + `factCount`, making
-extraction incremental and resumable), and **`MemorySummary`** (a periodically
-regenerated, deduped markdown summary). `User.memoryEnabled` is the master toggle.
+`SUPPRESSION`, `source` = `AUTO`/`MANUAL`, `sourceRef`, plus the Memory v2 lifecycle
+columns — `category`, `projectId`, `confidence`, `status`, `reason`, `expiresAt`,
+`lastUsedAt`, `supersededById`, `normalized`, `embedding`), **`MemoryEdit`** (the
+server-synced ledger of natural-language instructions, their operations and their
+inverses), **`ConversationMemory`** (a per-chat high-water mark `processedAt` +
+one-line `digest` + `factCount`, making extraction incremental and resumable), and
+**`MemorySummary`** (a periodically regenerated, deduped markdown summary).
+`Settings.memoryEnabled` is the master toggle; `Settings.memorySensitiveTopics` is the
+sensitive-subject opt-in.
 
 **Extraction** (`src/lib/memory.ts`) has two paths: inline `<juno:memory>…</juno:memory>`
 tags the model emits during a reply, and a background distillation
 (`extractConversationMemory`) that runs after the answer persists, chunking user
 messages, running a free utility model, and advancing the high-water mark per chunk.
-**Dedup** is deterministic exact-normalized-string matching plus a suppression filter
-(there are **no embeddings / semantic retrieval** — retrieval injects the whole
-consolidated summary plus recent facts every turn). **Suppression** (`SUPPRESSION`
-entries) filters both ingestion and the summary and is never injected, so "forgotten"
-facts never resurface; a global reset stamps every conversation processed so backfill
-can't re-learn them.
 
-**API/UI** (`/api/memory`, `src/app/(app)/memory/page.tsx`): `GET` (facts + summary,
-optional `?q=` search), `POST` (add a manual fact), `DELETE` (full reset in a
-transaction), `PATCH`/`DELETE /[id]`, `/backfill` (resumable batch distillation of
-past chats), `/consolidate` (regenerate the summary), and `/edit` + `/edit/apply`
-(translate a natural-language instruction — "forget my old job" — into a reviewable,
-undoable set of add/suppress/update/remove operations with a staleness guard). The
-Memory page shows the readable summary, an undo ledger, and a privacy strip
-(pause / export / reset); raw facts are intentionally not listed.
+**Lifecycle** (`src/lib/memory-lifecycle.ts`, no Prisma so it is unit-testable):
+`planFactIngestion` classifies a candidate into one of nine categories, detects
+duplicates by normalized form, resolves contradictions (newer/explicit wins; the loser
+is annotated `superseded`, never deleted), and gives `temporary` facts a TTL.
+**Retrieval** (`selectMemoriesForContext`) ranks candidates against the current message
+— reciprocal-rank fusion of cosine similarity and token overlap when vectors exist for
+both sides, lexical overlap when they do not — weighted by recency, confidence,
+category and project scope, then filled to a token budget. Project-scoped facts never
+leave their project, and the turn emits a receipt naming the facts it used.
+
+**Suppression** (`src/lib/memory-suppression.ts`) stores the statement to forget
+verbatim; `guardedMemoryWrite` is the single door every write goes through, so a
+forgotten statement cannot return via the extractor, a manual add, an applied edit or
+a native sync. A global reset stamps every conversation processed so backfill can't
+re-learn them.
+
+**Sensitive subjects** (`src/lib/memory-sensitive.ts`) are the six GDPR-shaped topics a
+chat assistant actually meets — health, ethnicity, religion, politics, sexuality,
+finances. A candidate falling under one is refused unless the account has opted that
+topic in (`Settings.memorySensitiveTopics`, empty by default), and the extractor's
+prompt is told not to ask for the refused ones in the first place. The gate applies to
+`AUTO` writes only: a fact the user types themselves is always kept, and labelled. The
+verdict is **recomputed from content on every read, never stored** — so rows written
+before the gate existed are flagged exactly like new ones, and widening a pattern later
+covers the whole history.
+
+**API** (`/api/memory`): `GET` (facts + summary, optional `?q=` search), `POST` (add a
+manual fact), `DELETE` (full reset in a transaction), `PATCH`/`DELETE /[id]` (rewrite,
+forget, delete — forget also writes the block-list entry), `/backfill` (resumable batch
+distillation of past chats, two per call), `/consolidate` (regenerate the summary),
+`/edit` + `/edit/apply` (translate a natural-language instruction — "forget my old job"
+— into a reviewable, undoable set of add/suppress/update/remove operations with a
+staleness guard), and `/edits` (the ledger).
+
+**UI** (`src/app/(app)/memory/page.tsx`, `src/components/memory/`): `useMemory` holds
+the whole state machine and is the only thing that knows how the page talks to the
+server. The page shows a stats strip with the resumable "learn from past chats" job,
+the consolidated summary with its natural-language instruction bar, the review queue
+with per-edit diffs and Undo, a search + Topics/All-facts switch, and the rows
+themselves — each carrying its category, sensitivity, project scope, confidence,
+status, provenance link and last-used time, with inline rewrite / forget / delete.
+Below it, the privacy strip (pause · export · hold-to-reset). The settings section
+carries the toggles that decide what Juno is *allowed* to learn, including the six
+sensitive-subject switches. `tests/memory-sensitive.test.ts` additionally pins the
+wiring: every `/api/…` string the memory components fetch must resolve to a real route
+file, no component in the folder may be unreachable, and pausing must write through
+`useSettingsSave` rather than the provider's local-only setter.
 
 ---
 
@@ -2133,7 +2171,7 @@ current revision + tombstone), `SyncCompaction` (single `global` row, monotonic 
 `MutationReceipt` (idempotency).
 
 **Conversations & messages.** `Settings` (theme/accent/defaultModel/customInstructions/
-responseLanguage/uiLocale/personality/memoryEnabled/voiceId/favoriteModels/email opt-ins).
+responseLanguage/uiLocale/personality/memoryEnabled/memorySensitiveTopics/voiceId/favoriteModels/email opt-ins).
 `Folder`. `Conversation` (title + `titleSource`, `model`, `kind` chat|code, `origin`,
 `clientRequestId`, pin/`archivedAt`, `folderId`/`projectId`/`forkedFromId`,
 `activeConnectors`, code-workspace attribution). `Project` (name + `nameSource`,
@@ -2144,8 +2182,10 @@ history). `ChatFirstSubmissionReceipt` (durable first-submission idempotency + l
 `VoiceTranscriptSession`.
 
 **Memory.** `MemoryEntry` (FACT/SUPPRESSION — `content` plaintext, because
-`memorySearchSql` tokenises it in Postgres), `ConversationMemory` (per-chat high-water),
-`MemorySummary` (encrypted `content`).
+`memorySearchSql` tokenises it in Postgres), `MemoryEdit` (the instruction ledger),
+`ConversationMemory` (per-chat high-water), `MemorySummary` (encrypted `content`).
+`Settings.memorySensitiveTopics` holds the sensitive-subject opt-in; a fact's own
+sensitivity is derived from its content on read, never stored.
 
 **Artifacts.** `Artifact` (+ `currentVersion`), `ArtifactVersion` (append-only,
 `@@unique([artifactId, version])`).

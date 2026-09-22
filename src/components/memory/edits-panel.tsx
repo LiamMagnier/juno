@@ -126,8 +126,8 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         <div className="min-h-0 overflow-hidden" inert={!open}>
           {edits.length === 0 ? (
             <p className="px-4 pb-1 pt-3 text-ui text-muted-foreground">
-              No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget —
-              changes apply right away and show up here, with Undo if you change your mind.
+              No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget — it
+              drafts the change here as a diff, and nothing is written until you accept it. Applied edits keep an Undo.
             </p>
           ) : (
             <ul className="space-y-2 pt-2">
