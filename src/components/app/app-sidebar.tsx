@@ -947,6 +947,36 @@ export function AppSidebar({
             with no way to reach it. */}
         <nav
           className={cn(
+            /*
+             * `isolate`, AND IT IS WHY THE SELECTED DESTINATION IS VISIBLE AT
+             * ALL.
+             *
+             * The selection fill is a `motion.span` at `-z-10` inside its row
+             * (see NavRow). A negative z-index is resolved against the nearest
+             * ANCESTOR STACKING CONTEXT, and there wasn't one: the row is
+             * `relative` with `z-index: auto`, which does not make one, so the
+             * fill was hoisted all the way out and painted before
+             * `.app-sidebar-frame` painted `bg-sidebar` over it. Library,
+             * Projects, Artifacts and Design therefore had NO selected state
+             * on the docked panel — the one width nearly everybody reads it
+             * at. It only ever showed at md–lg, where the panel floats on
+             * `z-40` and accidentally supplied the context this needed.
+             *
+             * ON THE `<nav>`, not on the row, and the difference is visible in
+             * motion rather than at rest. Isolating each ROW also makes the
+             * fill paint, but it makes it paint inside that row's own stacking
+             * context — so travelling down the column the fill passes OVER the
+             * labels between, blanking "Projects" and "Artifacts" for the
+             * length of the spring. Isolating the container the fill travels
+             * WITHIN puts it behind every row in the list, which is what this
+             * element has always claimed to be: the ink behind them.
+             *
+             * The contract that buys: nothing between this `<nav>` and a row
+             * may carry a background of its own, or it will paint over the
+             * travelling ink. Today nothing does — the rows are the only
+             * painted things in here.
+             */
+            "isolate",
             // `pt-0.5`, matching the row gap above it: see the note on the
             // Search block — this is the same navigation block continuing.
             collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar space-y-1 px-2.5 pt-2" : "px-2"
@@ -1602,6 +1632,15 @@ function NavRow({
        * The edge comes from `.sidebar-row-selected` (globals.css), which the
        * conversation and project rows below draw too — one selected state for
        * the whole panel, in one place.
+       *
+       * `-z-10` IS ONLY MEANINGFUL INSIDE A STACKING CONTEXT, and the one it
+       * resolves against is the `isolate` on the `<nav>` that holds these rows
+       * — see the long note there for what happened when there wasn't one, and
+       * for why it is on the container rather than on each row. Two things
+       * follow for anyone editing this: a row that draws this fill has to live
+       * inside that `<nav>` (the "New chat" row above it does NOT, which is
+       * safe only because it is never `active`), and nothing between the two
+       * may take a background of its own.
        */}
       {active && (
         <motion.span
