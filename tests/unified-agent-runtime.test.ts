@@ -5,6 +5,7 @@ import { UnifiedAgentRegistry, detectAutomaticEscalation, openUnifiedAgentToolse
 import { browserPageBody } from "../src/lib/agent/browser";
 import {
   BROWSER_TOOL_ID,
+  CODE_INTERPRETER_TOOL_ID,
   INSPECT_IMAGE_TOOL_ID,
   READ_DOCUMENT_TOOL_ID,
   chatRuntimeToolAllowlist,
@@ -22,12 +23,14 @@ test("UnifiedAgentRegistry exposes only hosted-safe tools and emits valid provid
   // only ever ATTACHED by an explicit allowlist — see the tests below.
   assert.ok(registry.getTool(READ_DOCUMENT_TOOL_ID));
   assert.ok(registry.getTool(INSPECT_IMAGE_TOOL_ID));
+  assert.ok(registry.getTool(CODE_INTERPRETER_TOOL_ID));
 
   const schemas = registry.toProviderToolSchemas();
   assert.deepEqual(schemas.map((schema) => schema.function.name), [
     "browser_agent",
     READ_DOCUMENT_TOOL_ID,
     INSPECT_IMAGE_TOOL_ID,
+    CODE_INTERPRETER_TOOL_ID,
   ]);
   // Every registered tool must carry an object schema with properties, or the
   // stricter providers reject the whole request rather than the one tool.
@@ -136,8 +139,8 @@ test("each attachment tool is attached only by its own condition", async () => {
     INSPECT_IMAGE_TOOL_ID,
   ]);
   assert.deepEqual(
-    chatRuntimeToolAllowlist({ webSearch: true, documents: true, images: true }),
-    [BROWSER_TOOL_ID, READ_DOCUMENT_TOOL_ID, INSPECT_IMAGE_TOOL_ID],
+    chatRuntimeToolAllowlist({ webSearch: true, documents: true, images: true, code: true }),
+    [BROWSER_TOOL_ID, READ_DOCUMENT_TOOL_ID, INSPECT_IMAGE_TOOL_ID, CODE_INTERPRETER_TOOL_ID],
   );
 
   const toolset = await openUnifiedAgentToolset([], agentContext, {
@@ -177,4 +180,75 @@ test("a fetched page reaches the model whole, with its closing marker", () => {
 
   const browser = readFileSync(new URL("../src/lib/agent/browser.ts", import.meta.url), "utf8");
   assert.doesNotMatch(browser, /defendedContent\.slice\(/);
+});
+
+/*
+ * THE SAFETY INVARIANT, AND IT IS THE ONE WORTH A TEST OF ITS OWN.
+ *
+ * `UnifiedCodeInterpreter.execute` falls back to `sandbox/python.ts` — a child
+ * process on THIS host — whenever no remote sandbox answers. The code this
+ * tool runs is written by a model reading documents supplied by strangers, so
+ * that fallback would turn a prompt injection inside a PDF into arbitrary
+ * execution beside the provider keys and every other tenant's files. The tool
+ * therefore calls the microVM adapter directly and is not offered at all when
+ * none is configured.
+ */
+test("model-written code never runs on this host", async () => {
+  const source = readFileSync(new URL("../src/lib/agent/code.ts", import.meta.url), "utf8");
+
+  /*
+   * Checked on what the file IMPORTS, not on what it mentions: the header
+   * names `sandbox/python.ts` precisely in order to explain why it is never
+   * used, and a test that cannot tell an explanation from a dependency fails
+   * on its own documentation.
+   */
+  const imports = source
+    .split("\n")
+    .filter((line) => /(^import |await import\()/.test(line))
+    .join("\n");
+  assert.doesNotMatch(imports, /UnifiedCodeInterpreter|codeInterpreter\b/, "the falling-back wrapper");
+  assert.doesNotMatch(imports, /sandbox\/python|LocalIsolatedSandboxAdapter|executePythonSandbox/, "the host subprocess");
+  // Only the remote backend, and never a preference that could fall back to one.
+  assert.match(imports, /MicroVMSandboxAdapter/);
+  assert.doesNotMatch(source, /preferredBackend/);
+
+  const { isCodeInterpreterConfigured } = await import("../src/lib/agent/code");
+  const url = process.env.CODE_INTERPRETER_URL;
+  const token = process.env.CODE_INTERPRETER_TOKEN;
+  const e2b = process.env.E2B_API_KEY;
+  try {
+    delete process.env.CODE_INTERPRETER_URL;
+    delete process.env.CODE_INTERPRETER_TOKEN;
+    delete process.env.E2B_API_KEY;
+    assert.equal(isCodeInterpreterConfigured(), false, "no sandbox means no capability");
+    // An endpoint without a token is not a sandbox either.
+    process.env.CODE_INTERPRETER_URL = "https://sandbox.example";
+    assert.equal(isCodeInterpreterConfigured(), false);
+    process.env.CODE_INTERPRETER_TOKEN = "t";
+    assert.equal(isCodeInterpreterConfigured(), true);
+  } finally {
+    if (url === undefined) delete process.env.CODE_INTERPRETER_URL; else process.env.CODE_INTERPRETER_URL = url;
+    if (token === undefined) delete process.env.CODE_INTERPRETER_TOKEN; else process.env.CODE_INTERPRETER_TOKEN = token;
+    if (e2b === undefined) delete process.env.E2B_API_KEY; else process.env.E2B_API_KEY = e2b;
+  }
+});
+
+/*
+ * Uploads must not read files any more. The whole class of "COULDN'T READ THIS
+ * FILE" came from an extractor that ran before anybody had asked anything and
+ * whose verdict then stuck, so the ordering is the fix and deserves pinning:
+ * a caller that re-adds eager ingest does not fail loudly, it just quietly
+ * restores the old behaviour.
+ */
+test("a chat attachment is not read when it is uploaded", () => {
+  const ingest = readFileSync(new URL("../src/lib/knowledge/index.ts", import.meta.url), "utf8");
+  // The gate lives in scheduleIngest so no upload path can forget it.
+  assert.match(ingest, /if \(!input\.projectId\) return;/);
+  assert.match(ingest, /export async function ensureAttachmentText/);
+
+  const upload = readFileSync(new URL("../src/app/api/upload/route.ts", import.meta.url), "utf8");
+  assert.match(upload, /scheduleIngest\(/, "project files still index, through the same gate");
+
+  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  assert.match(route, /await ensureAttachmentText\(/, "reading happens when the turn does");
 });

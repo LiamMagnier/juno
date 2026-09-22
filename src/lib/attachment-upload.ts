@@ -1,3 +1,4 @@
+import { stripUnstorableCharacters } from "@/lib/knowledge/extract/types";
 import {
   attachmentKind,
   isAcceptedUpload,
@@ -118,9 +119,17 @@ export function planAttachmentUpload(input: {
   let extractedText: string | null = null;
   if (isTextExtractable(storedMime) && input.size < 1_000_000) {
     try {
-      extractedText = new TextDecoder("utf-8", { fatal: false })
-        .decode(input.bytes)
-        .slice(0, 200_000);
+      /*
+       * Sanitised, because this string goes straight into a Postgres `text`
+       * column and `fatal: false` guarantees nothing about NUL. A file that is
+       * mostly text but carries a stray 0x00 — a truncated download, a log
+       * with a binary record, a UTF-16 file mislabelled as UTF-8 — took the
+       * whole INSERT down with "invalid byte sequence for encoding UTF8", so
+       * the upload failed rather than the one unreadable byte.
+       */
+      extractedText = stripUnstorableCharacters(
+        new TextDecoder("utf-8", { fatal: false }).decode(input.bytes),
+      ).slice(0, 200_000);
     } catch {
       extractedText = null;
     }

@@ -238,6 +238,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You got"
   },
   {
+    "id": "027f4cf0fcb07ee7",
+    "source": "Run code"
+  },
+  {
     "id": "0286249762f7c943",
     "source": "Auto"
   },
@@ -2322,6 +2326,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "MiMo Pro"
   },
   {
+    "id": "1f2903c01f66455c",
+    "source": "Running code"
+  },
+  {
     "id": "1f2ba25aaafeea20",
     "source": "Use this model"
   },
@@ -4258,6 +4266,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Streaming response text"
   },
   {
+    "id": "3a22077de1925cf8",
+    "source": "Attached files to place in the working directory. Omit to include every file attached to this conversation."
+  },
+  {
     "id": "3a461f8b3b8b9534",
     "source": "This part of your account could not be searched just now."
   },
@@ -5042,6 +5054,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Chat"
   },
   {
+    "id": "4637b92d9c172243",
+    "source": "What you are trying to find out, in a few words."
+  },
+  {
     "id": "463816d07097e1a7",
     "source": "Reading"
   },
@@ -5296,6 +5312,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49f7feb1dae129fe",
     "source": "Faster, cheaper Seedance 2.0 tier."
+  },
+  {
+    "id": "4a0fbdd946731039",
+    "source": "The Python to run. Print what you want to see; save images to the working directory to have them shown back to you."
   },
   {
     "id": "4a1d04970ebf8260",
@@ -8300,6 +8320,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "71ebacb6bbdbf010",
     "source": "Autoregression"
+  },
+  {
+    "id": "71f485b657a9f6a1",
+    "source": "An attached file's name."
   },
   {
     "id": "71fe31ccd37c3268",

@@ -13,6 +13,7 @@ import type {
   AgentMode,
 } from "@/lib/agent/types";
 import { browserTool } from "@/lib/agent/browser";
+import { runCodeTool } from "@/lib/agent/code";
 import { readDocumentTool } from "@/lib/agent/document";
 import { inspectImageTool } from "@/lib/agent/image";
 
@@ -32,6 +33,10 @@ export class UnifiedAgentRegistry {
     // allowlist is the dangerous case.
     this.registerTool(readDocumentTool as unknown as ToolDefinition<unknown, unknown>);
     this.registerTool(inspectImageTool as unknown as ToolDefinition<unknown, unknown>);
+    // Registered always, ATTACHED only when a remote sandbox exists and the
+    // turn carries a file — see `chatRuntimeToolAllowlist`. Registration is
+    // not exposure; the allowlist is the gate.
+    this.registerTool(runCodeTool as unknown as ToolDefinition<unknown, unknown>);
   }
 
   public registerTool(tool: ToolDefinition<unknown, unknown>): void {
