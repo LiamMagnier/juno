@@ -179,35 +179,43 @@
        because it divides the two largest planes in the app. */
     --sidebar-border: 44 14% 84.5%;
     --sidebar-accent: 46 20% 90.5%;
-    /* HOVER AND SELECTION ARE TWO COLOURS, not one colour at two opacities.
+    /* THE SELECTED ROW IS AN EDGE AROUND A WHISPER, and the split into two
+       tokens is what lets it be both at once.
 
-       `--sidebar-accent` stays exactly where it is — it is the panel's general
-       tonal fill, which the account band, the download menu and the product
-       switch's track all still draw with. What moves out from under it is the
-       two ROW STATES, which now have rungs of their own:
+       `--sidebar-accent` stays exactly where it is — the panel's general tonal
+       fill, which the product switch's track still draws with. What moves out
+       from under it is the two ROW STATES:
 
          panel        94.6%
-         hover        91.6%    -3.0    the pointer is here
-         selected     86.4%    -8.2    this is where you are
-         its edge     78.0%            the `--input` rung: the one hairline in
-                                       the product meant to be FOUND, not felt
+         hover        92.8%    -1.8    the pointer is here
+         selected     90.8%    -3.8    this is where you are
+         its edge     81.0%    -9.8 from the fill it bounds
 
-       The pair they replace was `--sidebar-accent` at 60% for hover and at
-       full strength for selection — 2.5 and 4.1 points below a panel that is
-       itself 2.6 below the page, so the two states sat 1.6 points apart. With
-       the pointer anywhere in the column two rows claimed the same state in
-       two strengths of one paint, and the real one disappeared. An edge was
-       added to tell them apart, and an edge is the right idea, but a hairline
-       cannot carry a state on its own at a glance across a 700px column.
+       WHY THE FILL IS BARELY THERE. A selected row has to be findable, and the
+       obvious way to buy that is a heavier fill — a first pass took selection
+       eight points off the panel, which found it and also made a column of
+       quiet text rows look like it had a button parked in it. Chrome is
+       quieter than content; a sidebar that shouts about where you are is
+       reading over the thing you came to read.
 
-       So selection is a different COLOUR now, not a louder version of the
-       hover. It is also a half-step more saturated than the panel (24% against
-       22%), which is the part that stops it reading as grey shadow: warm paper
-       picked out of warm paper, the way a selected row reads in the products
-       this panel is measured against. */
-    --sidebar-hover: 46 20% 91.6%;
-    --sidebar-selected: 44 24% 86.4%;
-    --sidebar-selected-border: 42 18% 78%;
+       SO THE EDGE CARRIES THE STATE. A hairline is the one property hover does
+       not have at ANY strength, so selection does not have to out-shout hover
+       to be told apart from it — it only has to be BOUNDED. That is why the
+       edge is the part that got louder here: ten points off its own fill,
+       where the panel's seam is six, so the outline reads as a decision at a
+       glance while the fill inside it stays a tone.
+
+       AND WHY HOVER CAME DOWN rather than selection going up. The two used to
+       be `--sidebar-accent` at 60% and at 100% — 2.5 and 4.1 points below the
+       panel, so they sat 1.6 apart and were told apart by opacity alone. Hover
+       is its own colour now and a whisper by design: two points, enough to
+       follow the pointer and not enough to be mistaken for a bounded row.
+
+       The half-step of extra saturation (22% on a 22% panel, and 6% on dark)
+       is what keeps the fill warm paper rather than grey shadow. */
+    --sidebar-hover: 46 20% 92.8%;
+    --sidebar-selected: 46 22% 90.8%;
+    --sidebar-selected-border: 43 16% 81%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
@@ -544,20 +552,21 @@
        so the seam was again the weakest line in the product. */
     --sidebar-border: 30 5% 21%;
     --sidebar-accent: 30 5% 17%;
-    /* The same two rungs, measured the other way up (see the light block):
+    /* The same shape, measured the other way up (see the light block):
 
          panel         8.8%
-         hover        14.5%    +5.7
-         selected     22.5%   +13.7
-         its edge     31.0%
+         hover        13.5%    +4.7
+         selected     17.5%    +8.7
+         its edge     26.0%    +8.5 from the fill it bounds
 
-       Dark takes the BIGGER step, not the smaller one. A fill lightening a
-       near-black ground moves less per point of L than the same step darkens a
-       near-white one, and this panel is the deepest plane on screen — the
-       light theme's 8.2-point selection would land here as a smudge. */
-    --sidebar-hover: 30 5% 14.5%;
-    --sidebar-selected: 32 6% 22.5%;
-    --sidebar-selected-border: 32 7% 31%;
+       Dark takes the bigger step in both: a fill lightening a near-black
+       ground moves less per point of L than the same step darkens a near-white
+       one, and this panel is the deepest plane on screen. The RELATIONSHIP is
+       what is held constant across the two themes, not the numbers — a fill
+       you can just feel, inside an edge you can see. */
+    --sidebar-hover: 30 5% 13.5%;
+    --sidebar-selected: 32 6% 17.5%;
+    --sidebar-selected-border: 32 7% 26%;
 
     /*
      * Depth kit (dark). The highlight is a near-white at 6%: enough that the
@@ -1253,21 +1262,21 @@
   /*
    * THE SELECTED ROW IN THE SIDEBAR — one recipe, every list in the panel.
    *
-   * TWO PROPERTIES, AND EACH ANSWERS A DIFFERENT HALF OF THE QUESTION.
+   * TWO PROPERTIES, AND THE EDGE IS THE ONE DOING THE WORK.
    *
-   * The fill is `--sidebar-selected`, which is a colour of its own and not a
-   * strength of the hover's (the rungs and the arithmetic are in the token
-   * block at the top of this file). That is the half a reader takes in from
-   * across the room: the selected row is a different shade of paper from every
-   * other row in the column, and from the row under the pointer.
+   * The fill is `--sidebar-selected`: barely two points past the hover, and
+   * deliberately so. Chrome is quieter than content, and a selected row loud
+   * enough to be found by its fill alone is a button parked in a column of
+   * text. It is a colour of its own rather than a strength of the hover's
+   * (the rungs are in the token block at the top of this file), which is what
+   * lets it stay a tone without collapsing into the pointer's.
    *
-   * The edge is `--sidebar-selected-border`, and it is the half that survives
-   * a glance from six inches away. A fill says "the pointer is here"; a fill
-   * bounded by a hairline says "this is where you are", and boundedness is the
-   * one property hover does not have at any opacity. It is drawn a clear step
-   * darker than the fill — the `--input` rung, the product's find-me hairline
-   * — rather than in `--sidebar-border`, which is the panel's own seam and
-   * disappeared into a fill this definite.
+   * The edge is `--sidebar-selected-border`, and it is what actually says
+   * "this is where you are". Boundedness is the one property hover does not
+   * have at ANY strength, so selection never has to out-shout it — which is
+   * why the edge is the half that got louder: ten points off its own fill,
+   * where the panel's seam is six. An outline reads as a decision at a glance;
+   * a wash reads as a smudge, however dark you make it.
    *
    * Drawn as an INSET box-shadow rather than a border: every row in this panel
    * is a fixed height on `box-border`, and a real border would eat 2px of the

@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: d845b0730eddb9b5
+// tokens-digest: c62fcb6eb06d0d02
 //
 
 import CoreGraphics
@@ -252,20 +252,20 @@ public enum JunoGeneratedColors {
 
     /// `--sidebar-hover`
     public static let sidebarHover = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.9328, 0.925, 0.8992),
-        dark: JunoColorToken(unchecked: 0.1523, 0.145, 0.1377)
+        light: JunoColorToken(unchecked: 0.9424, 0.9357, 0.9136),
+        dark: JunoColorToken(unchecked: 0.1418, 0.135, 0.1283)
     )
 
     /// `--sidebar-selected`
     public static let sidebarSelected = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.8966, 0.8792, 0.8314),
-        dark: JunoColorToken(unchecked: 0.2385, 0.2259, 0.2115)
+        light: JunoColorToken(unchecked: 0.9282, 0.9188, 0.8878),
+        dark: JunoColorToken(unchecked: 0.1855, 0.1757, 0.1645)
     )
 
     /// `--sidebar-selected-border`
     public static let sidebarSelectedBorder = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.8196, 0.7958, 0.7404),
-        dark: JunoColorToken(unchecked: 0.3317, 0.3114, 0.2883)
+        light: JunoColorToken(unchecked: 0.8404, 0.8232, 0.7796),
+        dark: JunoColorToken(unchecked: 0.2782, 0.2612, 0.2418)
     )
 
     /// `--source`

@@ -128,25 +128,26 @@ import type { ClientConversation } from "@/types/chat";
  * `size-4.5` or `size-5` — every one of which has a rung on the optical stroke
  * ladder in globals.css, so a bigger mark thins rather than fattening.
  *
- * HOVER AND SELECTION ARE TWO COLOURS, NOT ONE COLOUR TWICE. Hover is
- * `bg-sidebar-hover`, a fill and nothing else. Selection is
- * `.sidebar-row-selected`: a fill of its OWN (`--sidebar-selected`, five
- * points past the hover) bounded by a hairline a clear step darker again.
+ * HOVER AND SELECTION ARE TWO COLOURS, NOT ONE COLOUR TWICE, AND THE EDGE IS
+ * WHAT SAYS SELECTED. Hover is `bg-sidebar-hover`, a fill and nothing else, and
+ * a whisper — two points off the panel. Selection is `.sidebar-row-selected`:
+ * a fill two points past THAT, inside a hairline ten points off its own fill.
  *
- * Both halves are load-bearing and they answer different distances. The colour
- * is what a reader takes in without looking — the selected row is a different
- * shade of paper from the whole column. The edge is what survives a glance
- * from six inches away, and boundedness is the one property hover does not
- * have at any opacity.
+ * The fill is deliberately not the loud half. A first pass took selection eight
+ * points off the panel, which certainly found it and also put what looked like
+ * a button in a column of quiet text rows — chrome out-shouting content, which
+ * is the thing this panel keeps being retuned to stop doing. Boundedness is the
+ * one property hover does not have at ANY strength, so a selected row does not
+ * need to out-shout a hovered one; it needs an outline, and that is where the
+ * contrast was spent instead.
  *
  * What this replaces: the two states were `--sidebar-accent` at 60% and at
  * 100%. That token is 4.1 points of lightness from `--sidebar` on light and
  * 8.2 on dark, so the 60% hover covered 2.5 of that step on light — leaving
  * selected and hovered **1.6 points apart** in the theme most people read in
- * daylight. With the pointer anywhere in the column two rows claimed the same
- * state in two strengths of one paint, and the real one disappeared. A
- * hairline was added to break the tie, and a hairline is right, but it was
- * being asked to carry the whole state on its own down a 700px column.
+ * daylight, with an edge drawn in the panel's own seam that was too faint to
+ * break the tie. The fill has barely moved since; the hover came DOWN to get
+ * out of its way, and the edge went from six points of separation to ten.
  *
  * Never weight: swapping a title from medium to semibold on click re-measured
  * it and visibly re-truncated the row you had just chosen.

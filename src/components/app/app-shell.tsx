@@ -478,21 +478,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           THE ROW STATES ARE RE-BASED, not just the accent. Hover and selection
           are separate colours now (globals.css), and both are authored against
           a panel at 8.8% — on the sheet's 16.5% popover ground they would land
-          5.7 and 13.7 points too low, i.e. hover BELOW its own ground and
+          4.7 and 8.7 points too low, i.e. hover BELOW its own ground and
           selection barely above it. Each is re-stated at the same distance
           from THIS ground that it keeps from the panel:
 
             ground     16.5%   (the popover, not --sidebar)
-            hover      22.0%   +5.5
-            selected   30.0%  +13.5
-            its edge   38.0%
+            hover      21.0%   +4.5
+            selected   25.0%   +8.5
+            its edge   34.0%   +9.0 from the fill it bounds
 
           `--sidebar-accent` keeps its own re-basing for the same reason it
-          always had one: the account band and the download menu beside it draw
-          with it directly. */}
+          always had one: the product switch's track draws with it directly. */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent
-          className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_22%] dark:[--sidebar-selected:48_6%_30%] dark:[--sidebar-selected-border:48_7%_38%] md:hidden"
+          className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_25%] dark:[--sidebar-selected-border:48_7%_34%] md:hidden"
           title="Conversations"
         >
           <AppSidebar product={product} />

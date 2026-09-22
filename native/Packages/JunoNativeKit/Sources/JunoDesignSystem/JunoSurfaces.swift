@@ -34,12 +34,13 @@ public extension JunoColorToken {
     //
     // Projected rather than transcribed, and this is the change that proves
     // why. It read `--sidebar-accent` until the web split that token in two:
-    // the panel's general tonal fill stayed where it was and the selected row
-    // moved to a colour of its own, five points further from the column, so
-    // that selection and hover stop being one paint at two opacities. A
-    // transcribed constant would have left the Mac drawing the web's OLD
-    // selection against the web's new one; repointing the projection is the
-    // whole of the fix.
+    // the panel's general tonal fill stayed where it was and the two row
+    // states moved to colours of their own, so that selection and hover stop
+    // being one paint at two opacities. The fill lands close to where the
+    // accent was — on the web the OUTLINE is what says "selected", and this
+    // is a tint with no outline to give — but it is free to move now, and a
+    // transcribed constant would not have followed it. Repointing the
+    // projection is the whole of the fix.
     static let sidebarSelectionLight = JunoGeneratedColors.sidebarSelected.light
     static let sidebarSelectionDark = JunoGeneratedColors.sidebarSelected.dark
 
