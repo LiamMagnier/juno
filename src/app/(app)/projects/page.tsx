@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "lucide-react";
+import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { promptPreview } from "@/lib/prompt-preview";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 
 interface ProjectItem {
   id: string;
@@ -306,6 +307,7 @@ export default function ProjectsPage() {
         <EmptyState
           tone="error"
           className="mt-6"
+          icon={StatusIcons.error}
           title="Couldn’t load your projects"
           description="Check your connection and try once more."
           action={
@@ -484,7 +486,15 @@ function ProjectTile({
   const FolderIcon = AppIcons.projects;
   const fileCount = Math.max(0, p.fileCount - (p.coverUrl ? 1 : 0));
   return (
-    <Card variant="interactive" className="group relative flex h-full min-h-40 flex-col p-4">
+    // `data-icon-trigger`: the whole tile is the link (the name's stretched
+    // overlay), so the folder should answer the pointer anywhere on it, not
+    // only over the name. Hover is tonal — the tile changes shade, it does not
+    // lift (ICONS_AND_MOTION §2.2).
+    <Card
+      variant="interactive"
+      data-icon-trigger=""
+      className="group relative flex h-full min-h-40 flex-col p-4 hover:bg-accent/50 hover:shadow-raised"
+    >
       <div className="flex items-start gap-3">
         {p.coverUrl ? (
           <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field">
@@ -522,13 +532,21 @@ function ProjectTile({
             aria-pressed={!!p.starred}
             aria-label={p.starred ? `Unpin ${p.name}` : `Pin ${p.name}`}
             onClick={onToggleStar}
+            title={p.starred ? "Unpin" : "Pin"}
             className={cn(p.starred && "text-primary hover:text-primary")}
           >
-            <Pin className={cn("size-3.5", p.starred && "fill-current")} aria-hidden="true" />
+            {/* `motion="none"`: the tile is an icon trigger, so an articulated
+                pin would sit tilted for as long as the pointer was anywhere on
+                the card. The swap itself is the feedback here. */}
+            <GlyphSwap
+              active={!!p.starred}
+              off={<Pin motion="none" className="size-3.5" />}
+              on={<Pin motion="none" weight="fill" className="size-3.5" />}
+            />
           </Pressable>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`}>
+              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`} title="More actions">
                 <ActionIcons.more className="size-3.5" aria-hidden="true" />
               </Pressable>
             </DropdownMenuTrigger>
@@ -536,23 +554,23 @@ function ProjectTile({
               <DropdownMenuItem onSelect={onToggleStar}>
                 {p.starred ? (
                   <>
-                    <PinOff className="mr-2 size-4" aria-hidden="true" />
+                    <PinOff className="size-4" aria-hidden="true" />
                     <span>Unpin</span>
                   </>
                 ) : (
                   <>
-                    <Pin className="mr-2 size-4" aria-hidden="true" />
+                    <Pin className="size-4" aria-hidden="true" />
                     <span>Pin</span>
                   </>
                 )}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onRename}>
-                <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
+                <ActionIcons.edit className="size-4" aria-hidden="true" />
                 <span>Rename</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={onDelete} variant="destructive">
-                <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
+                <ActionIcons.delete className="size-4" aria-hidden="true" />
                 <span>Delete</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -562,10 +580,10 @@ function ProjectTile({
 
       <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-1" title={`${p.conversationCount} chats`}>
+          <span className="inline-flex items-center gap-1.5" title={`${p.conversationCount} chats`}>
             <MessageSquare className="size-3" aria-hidden="true" /> {p.conversationCount}
           </span>
-          <span className="inline-flex items-center gap-1" title={`${fileCount} files`}>
+          <span className="inline-flex items-center gap-1.5" title={`${fileCount} files`}>
             <FileText className="size-3" aria-hidden="true" /> {fileCount}
           </span>
         </div>

@@ -76,6 +76,11 @@ const STYLES = `
     justify-content: center;
     flex-wrap: wrap;
   }
+  /* The product's interaction recipe, restated by hand for the one screen
+     that cannot load it (see the header note): a tonal cross-fade on hover at
+     the fast rung (120ms on --ease-out-soft), a dip to 0.97 on press at the
+     press rung (70ms), and the global 2px focus outline. Numbers copied from
+     globals.css's --dur-* / --ease-* tokens, which are not available here. */
   .juno-fallback-button {
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 0.875rem;
@@ -87,8 +92,14 @@ const STYLES = `
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
+    transition:
+      background-color 120ms cubic-bezier(0.33, 1, 0.68, 1),
+      border-color 120ms cubic-bezier(0.33, 1, 0.68, 1),
+      transform 70ms cubic-bezier(0.33, 1, 0.68, 1);
   }
   .juno-fallback-button:hover { border-color: #cfc6b3; }
+  .juno-fallback-button:active { transform: scale(0.97); }
+  .juno-fallback-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   .juno-fallback-button--primary {
     background: #1f1e1c;
     border-color: #1f1e1c;
@@ -101,6 +112,20 @@ const STYLES = `
     font-size: 0.6875rem;
     color: #9a968d;
     word-break: break-all;
+  }
+  /* The card settles in on the shared entrance (rise-in: 6px and a fade over
+     220ms on --ease-out-soft) instead of cutting in over a blank window.
+     Nothing moves under reduced motion. */
+  @keyframes juno-fallback-rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .juno-fallback-card { animation: juno-fallback-rise 220ms cubic-bezier(0.33, 1, 0.68, 1) both; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .juno-fallback-button { transition: none; }
+    .juno-fallback-button:active { transform: none; }
   }
   @media (prefers-color-scheme: dark) {
     .juno-fallback-body { background: ${THEME_COLOR.dark}; color: #f0ece1; }

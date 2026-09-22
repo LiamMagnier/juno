@@ -1,6 +1,6 @@
 "use client";
 
-import { CornerDownRight } from "lucide-react";
+import { CornerDownRight } from "@/components/ui/icons";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import { readEvent, str } from "@/components/work/work-payload";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
@@ -81,7 +81,7 @@ export function PendingSteers({ steers }: { steers: readonly PendingSteer[] }) {
   if (steers.length === 0) return null;
   return (
     <div
-      className="mb-2 rounded-field border border-border/60 bg-secondary px-3 py-2.5"
+      className="mb-2 rounded-field border border-border/60 bg-secondary px-3 py-2.5 motion-safe:animate-rise-in"
       // A live region, because this strip appears as a direct result of the
       // reader's own send and then empties on its own when the run picks the
       // instruction up. Both transitions are worth announcing and neither has a
@@ -95,7 +95,9 @@ export function PendingSteers({ steers }: { steers: readonly PendingSteer[] }) {
       </p>
       <ul className="mt-1.5 space-y-1">
         {steers.map((steer) => (
-          <li key={steer.id} className="flex items-start gap-2">
+          // Each instruction arrives on its own send, so each one rises in on
+          // mount; the ones already queued stay still.
+          <li key={steer.id} className="flex items-start gap-2 motion-safe:animate-fade-in-up">
             <CornerDownRight
               className="mt-[0.2rem] size-3 shrink-0 text-muted-foreground"
               aria-hidden="true"

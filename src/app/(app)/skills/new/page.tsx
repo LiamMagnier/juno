@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -212,7 +212,11 @@ export default function NewSkillPage() {
           </p>
         </div>
 
-        {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}
+        {refusal !== null && (
+          <WorkStateNote tone="error" className="motion-safe:animate-rise-in">
+            {refusal}
+          </WorkStateNote>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => void save()} disabled={!canSave} className="gap-1.5">

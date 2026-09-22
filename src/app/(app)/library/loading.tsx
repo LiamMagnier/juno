@@ -28,7 +28,7 @@ export default function LibraryLoading() {
 
       <div className="surface-inset mt-5 rounded-card p-1.5">
         <div className="flex h-9 items-center gap-3 px-3">
-          <Skeleton className="size-[18px] rounded-xs" />
+          <Skeleton className="size-4.5 rounded-xs" />
           <Skeleton className="h-2.5 w-16 rounded-xs" />
         </div>
         {[...Array(6)].map((_, i) => (
@@ -37,7 +37,7 @@ export default function LibraryLoading() {
             className="flex min-h-[68px] items-center gap-3 px-3 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(i, "tight")}
           >
-            <Skeleton className="size-[18px] rounded-xs" />
+            <Skeleton className="size-4.5 rounded-xs" />
             <Skeleton className="size-11 shrink-0 rounded-field" />
             <span className="min-w-0 flex-1 space-y-2">
               <Skeleton className="block h-3 w-32 max-w-full rounded-xs" />

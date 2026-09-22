@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Pause, Play, Square, X } from "lucide-react";
+import { ChevronDown, Pause, Play, Square } from "@/components/ui/icons";
+import { ActionIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 import { EvidencePanel } from "./evidence-panel";
 import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
 import { workingElapsedMs } from "./run-clock";
@@ -131,10 +133,13 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {!atGate && run.live && <>
-          <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon disabled:opacity-50">{state === "paused" ? <Play className="size-4" /> : <Pause className="size-4" />}</button>
-          <button type="button" disabled={busy} aria-label="Stop research" title="Stop research" onClick={() => void post("/control", { action: "cancel" })} className="research-icon disabled:opacity-50"><Square className="size-3.5" /></button>
+          {/* Pause ⇄ play cross-fade in one cell rather than cutting; `.pressable`
+              gives these the house press and the colour transition
+              `.research-icon` does not carry. */}
+          <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><GlyphSwap active={state === "paused"} on={<Play className="size-4" />} off={<Pause className="size-4" />} /></button>
+          <button type="button" disabled={busy} aria-label="Stop research" title="Stop research" onClick={() => void post("/control", { action: "cancel" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><Square className="size-3.5" /></button>
         </>}
-        {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" onClick={onDismiss} className="research-icon"><X className="size-4" /></button>}
+        {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" title="Hide" onClick={onDismiss} className="research-icon pressable motion-reduce:transition-none motion-reduce:active:scale-100"><ActionIcons.dismiss className="size-4" /></button>}
       </div>
     </header>
     {awaitingClarify ? <div className="mt-5"><ClarifyGate key={`${run.id}-clarify`} goal={run.goal} questions={run.plan.clarifications ?? []} busy={busy} onSubmit={answers => void post("/clarify", { answers })} /></div> : awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} goal={run.goal} effort={run.plan.effort ?? null} budgetMicroUsd={run.budgetMicroUsd} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} successCriteria={run.plan.successCriteria} risks={run.plan.risks} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
@@ -169,12 +174,12 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
         </>}
         {detail && <><span aria-hidden>·</span><span className="min-w-0 truncate">{detail}</span></>}
       </div>
-      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-4 flex min-h-9 w-full items-center justify-between border-t border-border pt-3 text-ui text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {expanded ? CONSOLE_COPY.hide : CONSOLE_COPY.show}<ChevronDown className={cn("size-4 transition-transform duration-fast motion-reduce:transition-none", expanded && "rotate-180")} />
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-4 flex min-h-9 w-full items-center justify-between border-t border-border pt-3 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none">
+        {expanded ? CONSOLE_COPY.hide : CONSOLE_COPY.show}<ChevronDown className={cn("size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none", expanded && "rotate-180")} />
       </button>
       {expanded && <div className="research-tab-body">
         <nav aria-label="Research view" className="flex gap-4 overflow-x-auto border-b border-border">
-          {[{value:"activity",label:"Activity"},{value:"sources",label:"Sources"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
+          {[{value:"activity",label:"Activity"},{value:"sources",label:"Sources"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
         </nav>
         {/* Every tab says something when it has nothing: a tab opened during
             planning used to render a bare region, and an empty region under a

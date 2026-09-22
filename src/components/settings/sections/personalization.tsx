@@ -104,7 +104,7 @@ export function PersonalizationSection() {
                 >
                   <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
                     {p.label}
-                    {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+                    {selected && <StatusIcons.success className="check-morph size-3.5 shrink-0 text-primary" />}
                   </span>
                   <span className="text-ui text-muted-foreground">{p.description}</span>
                 </Pressable>

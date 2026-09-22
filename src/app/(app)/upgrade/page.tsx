@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "@/components/ui/icons";
 import { toast } from "sonner";
 import type { Plan } from "@prisma/client";
 
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
+import { cn } from "@/lib/utils";
 
 type MaxTier = "MAX" | "MAX20";
 type BillingInterval = "month" | "year";
@@ -71,6 +72,52 @@ const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
     a: "Fair use keeps Juno fast for everyone. If your usage ever looks like it needs a conversation, we reach out first — nothing changes on your account without notice.",
   },
 ];
+
+/**
+ * One question, disclosed continuously.
+ *
+ * These were native `<details>`, whose body is removed from the page in a
+ * single frame when the row shuts — the answer vanished while the caret was
+ * still half-way round. The body now opens and closes on `grid-template-rows`
+ * (0fr ⇄ 1fr) on the same rung and curve as the caret, so the two read as one
+ * motion (ICONS_AND_MOTION.md §2.2.6), and `inert` takes the shut answer out
+ * of the tab order and the accessibility tree the way `<details>` did.
+ */
+function FaqRow({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = React.useState(false);
+  const panelId = React.useId();
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((v) => !v)}
+        className="group flex w-full items-center justify-between gap-3 rounded-control px-3 py-2.5 text-left text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+      >
+        {q}
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
+            open && "rotate-180 text-foreground"
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      <div
+        id={panelId}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-base ease-in-out motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={!open}>
+          <p className="px-3 pb-3 pt-1 text-body text-muted-foreground">{a}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function UpgradePage() {
   const { quota, features } = useApp();
@@ -146,7 +193,9 @@ export default function UpgradePage() {
           className="w-full"
           onClick={() => checkout(plan)}
           disabled={!features.billing || loading !== null}
+          aria-busy={loading === plan}
         >
+          {loading === plan && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
           {loading === plan ? "Redirecting…" : `Upgrade to ${planLabel(plan)}`}
         </Button>
       );
@@ -237,7 +286,7 @@ export default function UpgradePage() {
           role="status"
           className="mb-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body"
         >
-          <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <StatusIcons.warning className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
           Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
         </div>
       )}
@@ -282,19 +331,11 @@ export default function UpgradePage() {
         <p className="mt-1 text-body text-muted-foreground">The short version of the terms, before you agree to them.</p>
         {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1.5
             holds `rounded-control` rows (16 = 10 + 6, concentric). Each row is
-            the house hover-raised row; the chevron is the only thing that moves. */}
+            the house tonal-hover row; the caret turns and the answer opens on
+            the same rung (see FaqRow). */}
         <div className="surface-inset mt-4 rounded-card p-1.5">
           {faq.map((entry) => (
-            <details key={entry.q} className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-ui font-medium transition-[background-color,box-shadow] duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-                {entry.q}
-                <ChevronDown
-                  className="size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-open:rotate-180 motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              </summary>
-              <p className="px-3 pb-3 pt-1 text-body text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
-            </details>
+            <FaqRow key={entry.q} q={entry.q} a={entry.a} />
           ))}
         </div>
       </section>

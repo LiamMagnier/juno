@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, FileCode, Copy, Check } from "lucide-react";
+import { ChevronRight, FileCode, Copy, Check } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -81,8 +83,12 @@ export function DiffSummary({
           return (
             <div key={file.path} className="group/file">
               <div
+                // A custom clickable row: the marker lets its glyphs take the
+                // same hover articulation a button's would.
+                data-icon-trigger={hasPatch ? "" : undefined}
                 className={cn(
-                  "flex items-center justify-between gap-3 px-3.5 py-2 transition-colors hover:bg-accent/40 cursor-pointer",
+                  "flex items-center justify-between gap-3 px-3.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/40",
+                  hasPatch && "cursor-pointer",
                   isExpanded && "bg-accent/20"
                 )}
                 onClick={() => {
@@ -92,24 +98,29 @@ export function DiffSummary({
                 }}
               >
                 <div className="flex min-w-0 items-center gap-2">
+                  {/* One caret that turns (in-out: both ends are on screen),
+                      not two that swap in a frame. */}
                   {hasPatch ? (
-                    isExpanded ? (
-                      <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
-                    ) : (
-                      <ChevronRight className="size-3.5 text-muted-foreground shrink-0" />
-                    )
+                    <ChevronRight
+                      className={cn(
+                        "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                        isExpanded && "rotate-90"
+                      )}
+                    />
                   ) : (
                     <span className="size-3.5 shrink-0" />
                   )}
 
-                  <span className="truncate font-mono text-ui text-foreground group-hover/file:text-primary transition-colors">
+                  {/* The path stays in its own ink on hover — the row's tonal
+                      fill is the hover; the accent is kept for state. */}
+                  <span className="truncate font-mono text-ui text-foreground">
                     {file.path}
                   </span>
 
                   {file.status && file.status !== "modified" && (
                     <span
                       className={cn(
-                        "rounded-sm px-1.5 py-0.2 font-mono text-micro",
+                        "rounded-sm px-1.5 py-px font-mono text-micro",
                         file.status === "added" && "bg-success/15 text-success-ink",
                         file.status === "deleted" && "bg-destructive/15 text-destructive-ink",
                         file.status === "renamed" && "bg-warning/15 text-warning-foreground"
@@ -126,8 +137,8 @@ export function DiffSummary({
                 </div>
               </div>
 
-              {/* Collapsible Unified Patch Block */}
-              {isExpanded && file.patch && (
+              {/* Collapsible Unified Patch Block — unfolds under its row. */}
+              <Collapse open={isExpanded && Boolean(file.patch)}>
                 <div className="relative border-t border-border/60 bg-muted/30 p-3">
                   <div className="absolute right-3 top-3">
                     <Button
@@ -140,20 +151,19 @@ export function DiffSummary({
                         copyPatch(file.path, file.patch);
                       }}
                     >
-                      {copiedFile === file.path ? (
-                        <>
-                          <Check className="size-3 text-success-ink" /> Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-3" /> Copy diff
-                        </>
-                      )}
+                      {/* The glyph cross-fades copy → check in place; the
+                          word beside it changes with it. */}
+                      <IconSwap
+                        swapped={copiedFile === file.path}
+                        from={<Copy className="size-3" />}
+                        to={<Check className="size-3 text-success-ink" />}
+                      />
+                      {copiedFile === file.path ? "Copied" : "Copy diff"}
                     </Button>
                   </div>
 
                   <pre className="max-h-80 overflow-x-auto font-mono text-caption leading-relaxed whitespace-pre font-normal text-foreground/90 select-text">
-                    {file.patch.split("\n").map((line, i) => {
+                    {(file.patch ?? "").split("\n").map((line, i) => {
                       const isAdd = line.startsWith("+") && !line.startsWith("+++");
                       const isDel = line.startsWith("-") && !line.startsWith("---");
                       const isHunk = line.startsWith("@@");
@@ -174,7 +184,7 @@ export function DiffSummary({
                     })}
                   </pre>
                 </div>
-              )}
+              </Collapse>
             </div>
           );
         })}

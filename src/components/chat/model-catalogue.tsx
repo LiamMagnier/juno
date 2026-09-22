@@ -46,8 +46,8 @@ import {
   SearchX,
   Star,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -73,37 +73,6 @@ import { isModelLocked, readRecent } from "@/lib/model-picker";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "favorites" | Provider;
-
-/**
- * The model control, in two stages.
- *
- * STAGE ONE is what the composer chip opens, and it is the only thing most
- * turns need: the model you are on, and how hard it should think. Effort is
- * the setting that changes between messages; which model you are using changes
- * a few times a day. Opening a 680px catalogue to move a slider was answering
- * the rare question first — ChatGPT's menu has the same shape for the same
- * reason.
- *
- * STAGE TWO is the catalogue, and the model row in stage one is its door: a
- * row carrying the current model with an arrow pointing UP, which is where the
- * bigger surface comes from. Two popovers rather than one with swapping
- * content, because the two sizes are far apart (a ~150px card against a 460px
- * panel) and a box that resizes by 300px under the pointer reads as a glitch.
- *
- * THE CATALOGUE IS THREE PANES: a 48px rail of lab marks (names in the
- * tooltip — see `RailTile`), a narrow column of MODEL NAMES, and a scrollable
- * detail panel. The names column is deliberately just names: a list you scan
- * for one you recognise, at one line each, so a lab's whole range is visible
- * without scrolling. Everything a choice actually turns on — how capable, how
- * fast, how much, what it can do, how much context — is in the panel beside
- * it, which fills in as the cursor moves and scrolls on its own.
- *
- * ONE ACCENT, AND IT IS ALWAYS STATE: the selected check, a filled star, the
- * focus edge. Nothing else here may be coral (FLAT_UI.md §2.4).
- *
- * Favorites persist to the account and lead the All view; recents stay per
- * browser, like a draft.
- */
 
 /** Below this many rows the list is the answer; a "Recent" copy only pads it. */
 const RECENT_MIN_LIST = 8;
@@ -166,22 +135,26 @@ function SectionLabel({ children, count }: { children: React.ReactNode; count?: 
   );
 }
 
-/** A bare, centred empty state. Deliberately NOT `EmptyState`: that draws a
- *  dashed inset well, which is a second box inside a pane that has none. */
+/** A centred empty state. Deliberately NOT `EmptyState`: that draws a dashed
+ *  inset well, which is a second box inside a pane that has none. The glyph
+ *  sits on a quiet tile (ICONS_AND_MOTION.md §3) so the state reads as
+ *  designed rather than as a stray icon floating in a column. */
 function EmptyBlock({
   icon: Icon,
   title,
   body,
   action,
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   title: string;
   body: string;
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 px-8 py-14 text-center">
-      <Icon aria-hidden className="size-5 text-muted-foreground/50" />
+    <div className="flex flex-col items-center gap-1.5 px-8 py-14 text-center motion-safe:animate-fade-in">
+      <span aria-hidden className="mb-1.5 grid size-10 place-items-center rounded-field bg-secondary text-muted-foreground">
+        <Icon motion="none" className="size-5" />
+      </span>
       <p className="text-ui font-medium text-foreground">{title}</p>
       <p className="text-caption text-muted-foreground">{body}</p>
       {action}
@@ -206,12 +179,15 @@ function Stat({ label, value, unit, score }: { label: string; value: string; uni
         {unit && <span className="font-mono text-micro text-muted-foreground/60">{unit}</span>}
       </div>
       <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-secondary">
-        {/* An inline width percentage: this is DATA, not a colour — the same
-            precedent as the popover's own inline size below. */}
+        {/* An inline scale: this is DATA, not a colour — the same precedent as
+            the popover's own inline size below. It travels on `scaleX` from
+            the left edge rather than on `width`, because only transform and
+            opacity may move (ICONS_AND_MOTION.md §2.2.8): a width transition
+            relaid the bar on every frame of every arrow keypress. */}
         <div
           aria-hidden
-          className="h-full rounded-full bg-foreground/55 transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
-          style={{ width: `${Math.max(0, Math.min(10, score)) * 10}%` }}
+          className="h-full w-full origin-left rounded-full bg-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+          style={{ transform: `scaleX(${Math.max(0, Math.min(10, score)) / 10})` }}
         />
       </div>
     </div>
@@ -269,23 +245,34 @@ function DetailPanel({
   return (
     <div className={shell}>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          {auto ? (
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
-              <JunoMark className="size-3" />
-            </span>
-          ) : (
-            <ProviderLogo provider={model.provider} className="size-5 shrink-0" />
-          )}
-          <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
-        </div>
-        <p className="mt-0.5 font-mono text-micro text-muted-foreground/60">
-          {auto ? "Juno" : model.providerModel}
-        </p>
+        {/* Only the WORDS are keyed, and on the fast rung: the pane itself is
+            never remounted (see above — that re-faded 300px of column on every
+            arrow keypress and stopped the meters from travelling). The name
+            and the sentence under it are what change, so they cross in; held
+            arrow keys read as the words dimming while they move and settling
+            when you stop, rather than as a snap per row. */}
+        <div
+          key={model.id}
+          className="motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]"
+        >
+          <div className="flex items-center gap-2">
+            {auto ? (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
+                <JunoMark className="size-3" />
+              </span>
+            ) : (
+              <ProviderLogo provider={model.provider} className="size-5 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
+          </div>
+          <p className="mt-0.5 font-mono text-micro text-muted-foreground/60">
+            {auto ? "Juno" : model.providerModel}
+          </p>
 
-        {model.description && (
-          <p className="mt-3 text-caption leading-relaxed text-muted-foreground">{model.description}</p>
-        )}
+          {model.description && (
+            <p className="mt-3 text-caption leading-relaxed text-muted-foreground">{model.description}</p>
+          )}
+        </div>
 
         {model.status === "deprecated" && (
           <p className="mt-3 text-caption text-warning">
@@ -366,7 +353,27 @@ function DetailPanel({
                 aria-pressed={starred}
                 onClick={onToggleStar}
               >
-                <Star className={cn("size-3.5", starred && "fill-current text-primary")} />
+                {/* Two cuts of one star in one cell, trading opacity and a
+                    small scale: the filled cut is the set's "on", and the swap
+                    is a cross-fade rather than a replace (§2.2.7). */}
+                <span aria-hidden className="grid place-items-center">
+                  <span
+                    className={cn(
+                      "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
+                      starred ? "scale-75 opacity-0" : "opacity-100",
+                    )}
+                  >
+                    <Star className="size-3.5" />
+                  </span>
+                  <span
+                    className={cn(
+                      "col-start-1 row-start-1 grid place-items-center text-primary transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity",
+                      starred ? "opacity-100" : "scale-75 opacity-0",
+                    )}
+                  >
+                    <Star weight="fill" className="size-3.5" />
+                  </span>
+                </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>{starred ? "Remove from favorites" : "Add to favorites"}</TooltipContent>
@@ -413,8 +420,10 @@ function RailTile({
           onClick={onClick}
           aria-pressed={active}
           className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            // `.pressable` carries the colour cross-fade AND the press dip on
+            // their own rungs, so no transition-* utility sits beside it.
+            "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
+            "motion-reduce:transition-none motion-reduce:active:scale-100",
             "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
@@ -848,14 +857,19 @@ export function ModelCatalogue({
                   className="h-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
                 />
                 {q && (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => setQuery("")}
-                    className="-mr-1 flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
-                  >
-                    <X className="size-3" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Clear search"
+                        onClick={() => setQuery("")}
+                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in motion-reduce:transition-none"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Clear search</TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -869,8 +883,14 @@ export function ModelCatalogue({
                 }}
               >
                 {/* Keyed on `filter` ONLY, never on `query`: typing has to feel
-                    instant, and a fade on every keystroke reads as flicker. */}
-                <div key={filter} className="motion-safe:animate-fade-in">
+                    instant, and a fade on every keystroke reads as flicker.
+                    On the fast rung — a lab switch is a pane changing under a
+                    pointer that is already there, and should be over before
+                    the eye has left the rail. */}
+                <div
+                  key={filter}
+                  className="motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]"
+                >
                   {visible.length === 0 && !showAutoRow ? (
                     filter === "favorites" && !q ? (
                       <EmptyBlock
@@ -919,7 +939,13 @@ export function ModelCatalogue({
                                     the chevron look like it arrives from off-screen. */}
                                 <ChevronDown className="size-3 shrink-0 transition-transform duration-base ease-in-out group-open/legacy:rotate-180 motion-reduce:transition-none" />
                               </summary>
-                              <div>{renderRows(g.legacy, `${g.key}legacy:`, g.byModality)}</div>
+                              {/* A native <details> hides its body with
+                                  display:none, which restarts a CSS animation
+                                  every time it opens — so the rows rise in on
+                                  each open instead of appearing in one frame. */}
+                              <div className="motion-safe:animate-rise-in">
+                                {renderRows(g.legacy, `${g.key}legacy:`, g.byModality)}
+                              </div>
                             </details>
                           )}
                         </div>

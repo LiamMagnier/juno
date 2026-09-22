@@ -118,9 +118,13 @@ export function ReasoningSlider({
           for free instead of only that one. */}
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
         <span className="font-mono text-micro text-muted-foreground/60">Thinking</span>
+        {/* Keyed on the rung, so the word cross-fades in as the knob lands
+            rather than being replaced in one frame (§2.2.7). */}
         <span
+          key={current?.label ?? ""}
           className={cn(
-            "text-ui font-medium transition-colors duration-fast motion-reduce:transition-none",
+            "text-ui font-medium transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]",
             disabled ? "text-muted-foreground" : "text-primary",
           )}
         >
@@ -135,10 +139,18 @@ export function ReasoningSlider({
         <div className="pointer-events-none absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 overflow-hidden rounded-full bg-secondary">
           {/* The fill runs THROUGH the knob rather than up to it, so its
               rounded cap is hidden underneath instead of butting against a
-              circle with a sliver of track showing between the two. */}
+              circle with a sliver of track showing between the two.
+
+              It is a full-width bar SLID in from the left, not a bar whose
+              width grows: only transform and opacity travel
+              (ICONS_AND_MOTION.md §2.2.8). A width transition relaid the
+              track on every frame; a translate stays on the compositor. The
+              percentages inside `head` resolve against the bar's own width,
+              which is the track's, so the cap lands exactly where the width
+              used to end. The track's own clip rounds the left end. */}
           <div
-            className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-primary transition-[width] duration-slow ease-out-soft motion-reduce:transition-none"
-            style={{ width: `calc(${head} + 12px)` }}
+            className="absolute inset-0 overflow-hidden rounded-full bg-primary transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(calc(-100% + ${head} + 12px))` }}
           >
             {/* THE BREATH GETS ITS OWN ELEMENT, and that is not tidiness.
                 Tailwind's `duration-slow` on the fill sets the duration for
@@ -156,7 +168,7 @@ export function ReasoningSlider({
             <span
               key={`tick-${option.value}-${option.label}`}
               className={cn(
-                "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast motion-reduce:transition-none",
+                "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
                 i <= index ? "bg-primary-foreground/55" : "bg-muted-foreground/40",
               )}
               style={{ left: atStop(i, count) }}
@@ -169,12 +181,19 @@ export function ReasoningSlider({
             accent showing round the edge at the first rung — a coral ring on
             a control whose first rung means "no thinking at all". At the
             track's own height the fill's cap is covered in every position.
-            A hairline, not a shadow: still the flat product. */}
+            A hairline, not a shadow: still the flat product.
+
+            It rides a full-width carriage that TRANSLATES, for the same reason
+            as the fill: `left` is a layout property and must not animate. The
+            carriage is the track's width, so `head`'s percentages mean the
+            same thing here as they did as a `left`. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60 bg-knob transition-[left] duration-slow ease-out-soft motion-reduce:transition-none"
-          style={{ left: head }}
-        />
+          className="pointer-events-none absolute inset-0 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
+          style={{ transform: `translateX(${head})` }}
+        >
+          <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60 bg-knob" />
+        </div>
 
         <input
           type="range"
@@ -196,7 +215,7 @@ export function ReasoningSlider({
             to is transparent and has nothing to ring. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast peer-focus-visible:opacity-100 motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 rounded-full opacity-0 ring-2 ring-ring transition-opacity duration-fast ease-out-soft peer-focus-visible:opacity-100 motion-reduce:transition-none"
         />
       </div>
 
@@ -248,7 +267,9 @@ function ModeChip({
           aria-pressed={pressed}
           onClick={onPress}
           className={cn(
-            "inline-flex h-7 items-center rounded-control border px-2.5 text-caption font-medium transition-[background-color,color,border-color] duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none",
+            // `.pressable` times the colour cross-fade and the press dip on
+            // their own rungs; a transition-* utility here would replace it.
+            "pressable inline-flex h-7 items-center rounded-control border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none motion-reduce:active:scale-100",
             pressed
               ? "border-foreground bg-foreground text-background"
               : "border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground",

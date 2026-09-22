@@ -39,8 +39,8 @@ export default function AdminAnnouncementsError({
         description="The draft list didn’t come back. Nothing has been published or unpublished by the attempt."
         action={
           <>
-            <Button size="sm" onClick={reset} className="gap-1.5">
-              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+            <Button size="sm" onClick={reset}>
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
               Try again
             </Button>
             <Button asChild size="sm" variant="outline">

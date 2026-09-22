@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import type {
@@ -53,9 +54,12 @@ function activeAnswer(question: PreflightClarificationQuestion, answer: Prefligh
 /**
  * Pre-answer clarification surface.
  *
- * Editorial, calm, content-first: serif question, quiet mono progress, soft
- * option rows (not pill spam), deliberate motion. `inline` lives inside the
- * composer shell; `card` floats above it with a caret.
+ * Editorial, calm, content-first: one clear question, quiet mono progress,
+ * hairline option rows (not pill spam), and motion only where the reader
+ * caused it — each step stages in from the side, its options are dealt in on
+ * the tight stagger, and a picked option's number cross-morphs into a tick.
+ * `inline` lives inside the composer shell; `card` floats above it with a
+ * caret.
  */
 export function ComposerClarificationPopover({
   pending,
@@ -191,7 +195,7 @@ export function ComposerClarificationPopover({
     }
   };
 
-  // One radius across both placements (18px = the popover rung; the inline variant
+  // One radius across both placements (16px = the popover rung; the inline variant
   // was also stepping to 20px at sm for no reason), and the floating placement takes
   // the shared overlay material instead of a sixth hand-copied version of it. This
   // surface is anchored to the composer exactly like a popover, so it should not
@@ -244,17 +248,22 @@ export function ComposerClarificationPopover({
             </p>
           ) : null}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onClose}
-          disabled={disabled}
-          aria-label="Cancel clarification"
-          className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-        >
-          <ActionIcons.dismiss className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              disabled={disabled}
+              aria-label="Cancel clarification"
+              className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            >
+              <ActionIcons.dismiss className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Cancel</TooltipContent>
+        </Tooltip>
       </header>
 
       {/* Progress — only when multi-step; hairline segments, not a loud bar */}
@@ -275,7 +284,11 @@ export function ComposerClarificationPopover({
                 aria-label={`Go to question ${itemIndex + 1}${answered ? ", answered" : ""}`}
                 aria-current={itemIndex === index ? "step" : undefined}
                 className={cn(
-                  "h-1 flex-1 rounded-full transition-[background-color,transform] duration-base ease-out-soft",
+                  // A 4px rail is the right drawing and the wrong target, so
+                  // the hit area reaches 8px above and below it on a pseudo-
+                  // element: a 20px band to press, a 4px line to see.
+                  "relative h-1 flex-1 rounded-full transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+                  "before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']",
                   // "Which question am I on" was marked with a ring drawn from
                   // --foreground — a white halo in dark that also computes to
                   // ~1.1:1 against the card, so the only wayfinding mark on the
@@ -291,10 +304,13 @@ export function ComposerClarificationPopover({
         </div>
       ) : null}
 
-      {/* Body — keyed so each step rises in cleanly */}
+      {/* Body — keyed so each step stages in from the side. `stage-in` is
+          the staged-flow entrance on the token ladder, and it multiplies its
+          travel by --motion-shift, so reduced motion keeps the fade and drops
+          the slide on its own. */}
       <div
         key={`${pending.id}-${active.id}-${stepKey}`}
-        className="relative flex flex-col gap-3.5 px-3.5 py-3.5 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-1 motion-safe:duration-base motion-safe:ease-out-soft motion-reduce:animate-none sm:gap-4 sm:px-5 sm:py-4"
+        className="relative flex flex-col gap-3.5 px-3.5 py-3.5 motion-safe:animate-stage-in sm:gap-4 sm:px-5 sm:py-4"
       >
         {/* text-heading is the exact 1.125rem this hand-wrote; the sm-only bump
             to an off-ladder 1.25rem is dropped — one size keeps the question the
@@ -314,8 +330,8 @@ export function ComposerClarificationPopover({
               return (
                 <li
                   key={option}
-                  className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both motion-reduce:animate-none"
-                  style={staggerDelay(optionIndex, "tight")}
+                  className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                  style={staggerDelay(Math.min(optionIndex, 8), "tight")}
                 >
                   <button
                     type="button"
@@ -324,9 +340,12 @@ export function ComposerClarificationPopover({
                     disabled={disabled}
                     onClick={() => selectOption(option)}
                     className={cn(
-                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
+                      // Hover is a tonal cross-fade on the fast rung; the press
+                      // is a shallow dip (a full-width row, so 0.99, not the
+                      // control's 0.97) on --dur-press.
+                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,color,transform] duration-fast ease-out-soft",
                       "sm:min-h-12 sm:items-center sm:px-3.5 sm:py-3",
-                      "active:scale-[0.99] motion-reduce:active:scale-100",
+                      "active:scale-[0.99] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
                       // No hand-rolled ring. `ring-offset-card` paints a solid
                       // CARD-coloured gap, and this component renders in two
                       // places — inline over the composer and floating as a
@@ -341,7 +360,7 @@ export function ComposerClarificationPopover({
                         // scale and compiled to nothing, so the dark fill next to
                         // it landed without its paired border. Bracketed so the
                         // 18 the tuning wanted actually ships.
-                        ? "border-foreground/20 bg-foreground/[0.04] shadow-soft dark:border-foreground/[0.18] dark:bg-foreground/[0.06]"
+                        ? "border-foreground/20 bg-foreground/[0.04] dark:border-foreground/[0.18] dark:bg-foreground/[0.06]"
                         // Was `bg-background/40`, which is the PAGE colour painted
                         // inside a floating panel: on dark that is black at 40%
                         // over the 13% popover, i.e. each unanswered option read
@@ -354,22 +373,22 @@ export function ComposerClarificationPopover({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-[background-color,border-color,color,transform] duration-base ease-out-soft sm:mt-0 sm:size-7",
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft motion-reduce:transition-none sm:mt-0 sm:size-7",
                         selected
-                          ? "border-foreground bg-foreground text-background scale-100"
+                          ? "border-foreground bg-foreground text-background"
                           : "border-border/70 bg-card text-muted-foreground group-hover/opt:border-foreground/25"
                       )}
                       aria-hidden
                     >
                       {selected ? (
-                        <StatusIcons.success className="size-3.5 motion-safe:animate-in motion-safe:zoom-in-75 motion-safe:duration-fast" />
+                        <StatusIcons.success className="size-3.5 motion-safe:animate-check-morph" />
                       ) : (
                         optionIndex + 1
                       )}
                     </span>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 text-body leading-snug tracking-[-0.01em] transition-colors duration-fast",
+                        "min-w-0 flex-1 text-body leading-snug tracking-[-0.01em] transition-colors duration-fast ease-out-soft",
                         selected ? "font-medium text-foreground" : "text-foreground/90"
                       )}
                     >
@@ -385,7 +404,7 @@ export function ComposerClarificationPopover({
         {active.allowElse ? (
           <label
             className={cn(
-              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:px-3.5 sm:py-3",
+              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-fast ease-out-soft motion-reduce:transition-none sm:px-3.5 sm:py-3",
               currentAnswer?.source === "else"
                 ? "border-foreground/20 bg-foreground/[0.03]"
                 : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"
@@ -430,7 +449,7 @@ export function ComposerClarificationPopover({
           // `rounded-lg` is 16px — the SURFACE rung, on a bare text button one
           // line tall, so the focus outline bowed out at the corners. `control`
           // is the rung the ghost buttons beside it already sit on.
-          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
+          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground disabled:opacity-50 motion-reduce:transition-none sm:order-1"
         >
           Use your judgment
         </button>
@@ -445,7 +464,9 @@ export function ComposerClarificationPopover({
               disabled={disabled || index === 0}
               className="rounded-full px-3"
             >
-              <ChevronLeft className="size-4" />
+              {/* An arrow, not a caret: this is an action that goes back, and
+                  the arrow nudges the way it goes. Carets are for disclosure. */}
+              <ArrowLeft aria-hidden="true" className="size-4" />
               <span className="sr-only sm:not-sr-only">Back</span>
             </Button>
           ) : null}
@@ -454,17 +475,14 @@ export function ComposerClarificationPopover({
             size="sm"
             onClick={() => void continueOrSubmit()}
             disabled={disabled || !canContinue}
-            className={cn(
-              // No `shadow-none`. Utilities beat the components layer, so it was
-              // erasing the inset top highlight Button's `default` variant draws
-              // — the only elevation cue a solid coral fill has left on a black
-              // ground. This is the primary action of the panel.
-              "min-w-[7.5rem] rounded-full px-4 transition-[transform,opacity,background-color] duration-base ease-out-soft",
-              "active:scale-[0.98] motion-reduce:active:scale-100"
-            )}
+            // No transition or press restated: Button is `.pressable`, whose
+            // split timing (transform on --dur-press, colour on --dur-fast) a
+            // `transition-[…]` utility here was replacing — so the primary
+            // action of the panel dipped with no timing at all.
+            className="min-w-[7.5rem] rounded-full px-4"
           >
             {isFinal ? "Continue" : "Next"}
-            <ChevronRight className="size-4" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         </div>
       </footer>

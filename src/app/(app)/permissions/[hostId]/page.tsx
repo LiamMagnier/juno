@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, ShieldOff } from "lucide-react";
+import { Loader2, ShieldOff } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkCapability } from "@/lib/work/domain";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GlyphSwap } from "@/components/work/shell/glyph-swap";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkHostStatePill, hostWorkloadSentence } from "@/components/work/work-host-row";
 import { WorkHostSettings } from "@/components/work/work-host-settings";
@@ -236,11 +237,12 @@ export default function HostPermissionsPage() {
             onClick={() => void applyPatch({ revoked: false })}
             className="gap-1.5"
           >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <ActionIcons.restore className="size-3.5" aria-hidden="true" />
-            )}
+            <GlyphSwap
+              glyphs={{ idle: ActionIcons.restore, busy: Loader2 }}
+              show={busy ? "busy" : "idle"}
+              spinning="busy"
+              className="size-3.5"
+            />
             Restore access
           </Button>
         ) : (

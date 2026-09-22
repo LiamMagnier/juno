@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import type JSZip from "jszip";
 
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Markdown } from "@/components/chat/markdown";
-import { StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { workArtifactDownloadUrl } from "@/components/work/work-transport";
 import {
   prepareReportPreview,
@@ -966,10 +966,15 @@ function PreviewProblem({
   retryLabel?: string;
 }) {
   return (
-    <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2.5 px-6 text-center">
-      <StatusIcons.warning className="size-4 text-warning" aria-hidden="true" />
+    // The designed failure: one glyph in a quiet tile, one sentence, one
+    // action — the same three parts every error state in the product has.
+    <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2.5 px-6 py-4 text-center motion-safe:animate-fade-in">
+      <span className="flex size-9 items-center justify-center rounded-field bg-warning/10" aria-hidden="true">
+        <StatusIcons.warning className="size-5 text-warning" />
+      </span>
       <p className="max-w-md text-ui leading-relaxed text-muted-foreground">{message}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
+      <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
+        <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
         {retryLabel}
       </Button>
     </div>

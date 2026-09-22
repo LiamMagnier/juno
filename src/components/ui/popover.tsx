@@ -9,11 +9,14 @@ const PopoverTrigger = PopoverPrimitive.Trigger;
 const PopoverAnchor = PopoverPrimitive.Anchor;
 
 /**
- * The floating tier: `.surface-float` + `.overlay-glass` (glass tint, 12px
- * blur, the float shadow) at `rounded-popover` (16). ONE radius and one
- * material for popover, dropdown and select — they open beside each other and
- * must read as the same object. Pops in on the spring, out on the accelerate;
- * `.origin-popper` anchors the scale to the trigger side.
+ * The floating tier: `.surface-float` + `.overlay-glass` (despite the name, an
+ * OPAQUE popover fill, a lighter hairline and `--shadow-float` — see the note
+ * in globals.css) at `rounded-popover` (16). One material for popover,
+ * dropdown and select — they open beside each other and must read as the same
+ * object; the popover takes the card rung rather than the menu's 14 because it
+ * holds content, not a list of verbs. Pops in on the spring from 0.96 with 4px
+ * of drift toward the trigger (`.origin-popper` anchors both to the side it
+ * opened from), and leaves faster on the accelerate.
  *
  * Call sites pass width, padding and alignment only. A `border-*`, `bg-*`,
  * `shadow-*` or `backdrop-blur-*` utility here is a fork of the material and

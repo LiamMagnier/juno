@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence } from "framer-motion";
-import { ChevronDown, MessageSquare } from "lucide-react";
+import { ChevronDown, MessageSquare } from "@/components/ui/icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MemoryIcons } from "@/components/memory/memory-icons";
 import { cn } from "@/lib/utils";
@@ -121,11 +121,13 @@ export function EntryList({
             onClick={() => setShowRetired((open) => !open)}
             aria-expanded={showRetired}
             aria-controls="memory-retired-list"
-            className="flex w-full items-center gap-2 px-4 py-3 text-left text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground"
+            className="flex w-full items-center gap-2 px-4 py-3 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/40 hover:text-foreground motion-reduce:transition-none"
           >
+            {/* A-to-B with both ends on screen: the caret turns on the in-out
+                curve at the base rung, in step with the panel it opens. */}
             <ChevronDown
               className={cn(
-                "size-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+                "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                 showRetired && "rotate-180"
               )}
               aria-hidden="true"

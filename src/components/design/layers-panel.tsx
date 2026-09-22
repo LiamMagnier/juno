@@ -28,21 +28,24 @@
 
 import * as React from "react";
 import {
-  Activity,
   ArrowDown,
   ArrowDownToLine,
   ArrowUp,
   ArrowUpToLine,
-  ChevronDown,
   ChevronRight,
   Eye,
   EyeOff,
+  Film,
+  GripVertical,
+  Layers,
   Lock,
   LockOpen,
   Plus,
+  Search,
+  SearchX,
   Square,
   Zap,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons, DesignIcons, type DesignIconName } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -53,7 +56,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ColorField, NumberField, PanelSelect, SelectField, TextField } from "@/components/design/effects-panel";
+import {
+  ColorField,
+  ICON_TONE,
+  IconButton,
+  NumberField,
+  PanelEmpty,
+  PanelSelect,
+  SelectField,
+  TextField,
+  iconButtonClass,
+} from "@/components/design/effects-panel";
+import { GlyphSwap } from "@/components/design/glyph-swap";
 import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
 import { layoutPage, layoutSubtree } from "@/lib/design/layout";
 import type { DesignViewportHandle } from "@/components/design/design-canvas";
@@ -80,10 +94,22 @@ import { cn } from "@/lib/utils";
  * size could not distinguish a frame from a group or a component from an
  * instance, and which took the row's text colour so a selected row's type mark
  * turned accent-coloured along with its name.
+ *
+ * On a row that can be dragged, the type mark hands its cell to a grip while
+ * the row is hovered. Every row has always been draggable and nothing said so;
+ * a grip in a gutter of its own would cost twelve points of every name in a
+ * 208px rail, so the grip borrows the one cell whose content the name beside it
+ * already implies, and gives it back the moment the pointer leaves.
  */
-function LayerTypeIcon({ type }: { type: string }) {
+function LayerTypeIcon({ type, draggable }: { type: string; draggable?: boolean }) {
   const Icon = DesignIcons[type as DesignIconName] ?? Square;
-  return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground" />;
+  if (!draggable) return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground" />;
+  return (
+    <span aria-hidden className="inline-grid size-3 shrink-0 place-items-center text-muted-foreground">
+      <Icon className="col-start-1 row-start-1 size-3 transition-opacity duration-fast ease-out-soft group-hover:opacity-0" />
+      <GripVertical className="col-start-1 row-start-1 size-3 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100" />
+    </span>
+  );
 }
 
 /** The keys the tree itself answers. Everything else keeps bubbling — Delete
@@ -396,22 +422,16 @@ export function LayersPanel({
       <div className="border-b border-border/60 px-3 py-2">
         <div className="flex items-center justify-between pb-1">
           <p className="font-mono text-micro text-muted-foreground">Pages</p>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={addPage}
-            aria-label="Add page"
-            className="pressable rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-          >
+          <IconButton label="Add page" disabled={readOnly} onClick={addPage}>
             <Plus className="size-3" aria-hidden />
-          </button>
+          </IconButton>
         </div>
         <div className="space-y-px">
           {doc.pages.map((p) => (
             <div
               key={p.id}
               className={cn(
-                "group/page flex items-center gap-1 rounded-md pr-1 transition-colors",
+                "group/page flex items-center gap-1 rounded-md pr-1 transition-colors duration-fast ease-out-soft",
                 p.id === page.id ? "bg-primary/10" : "hover:bg-accent"
               )}
             >
@@ -438,7 +458,7 @@ export function LayersPanel({
                   onDoubleClick={() => !readOnly && setRenamingId(p.id)}
                   aria-current={p.id === page.id}
                   className={cn(
-                    "pressable min-w-0 flex-1 truncate px-2 py-1 text-left text-caption transition-colors coarse:min-h-9",
+                    "min-w-0 flex-1 truncate px-2 py-1 text-left text-caption transition-colors duration-fast ease-out-soft coarse:min-h-9",
                     p.id === page.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -446,15 +466,17 @@ export function LayersPanel({
                 </button>
               )}
               {doc.pages.length > 1 && (
-                <button
-                  type="button"
+                <IconButton
+                  label={`Delete ${p.name}`}
                   disabled={readOnly}
+                  destructive
                   onClick={() => deletePage(p.id)}
-                  aria-label={`Delete ${p.name}`}
-                  className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/page:opacity-100 coarse:opacity-100"
+                  // `.pressable` eases opacity too, so the reveal fades on the
+                  // same rung as the row's own hover fill.
+                  className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover/page:opacity-100 coarse:opacity-100"
                 >
                   <ActionIcons.delete className="size-3" aria-hidden />
-                </button>
+                </IconButton>
               )}
             </div>
           ))}
@@ -466,24 +488,31 @@ export function LayersPanel({
         {/* A substring test over the rows, which is all a forty-row document
             needs and all this can honestly offer — it matches the name, and the
             name is the only thing the row shows. */}
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.key === "Escape") setQuery("");
-          }}
-          aria-label="Filter layers by name"
-          placeholder="Filter"
-          className="ml-auto h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-1.5 text-caption outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 coarse:h-9"
-        />
+        {/* The field's box is the label, so the magnifier sits inside the same
+            hairline as the text and the whole row takes the focus edge. The
+            glyph is a label here, not a tool being picked up, so it holds
+            still when the field is hovered. */}
+        <label className="ml-auto flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9">
+          <Search className="size-3 text-muted-foreground" motion="none" aria-hidden />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Escape") setQuery("");
+            }}
+            aria-label="Filter layers by name"
+            placeholder="Filter"
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-caption outline-none placeholder:text-muted-foreground/70"
+          />
+        </label>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" role="tree" aria-label="Layers" aria-multiselectable>
         {rows.length === 0 && (
-          <p className="px-3 py-6 text-center text-caption text-muted-foreground">
+          <PanelEmpty icon={query.trim() ? SearchX : Layers}>
             {query.trim() ? `No layer matches “${query.trim()}”.` : "Nothing on this page yet."}
-          </p>
+          </PanelEmpty>
         )}
         {rows.map(({ id, depth }, index) => {
           const node = doc.nodes[id];
@@ -513,8 +542,13 @@ export function LayersPanel({
                 drop(id, e.altKey || isContainer(node) ? "inside" : "above");
               }}
               className={cn(
-                "group flex items-center gap-1 rounded-md pr-1 transition-colors duration-fast",
-                selected ? "bg-primary/10" : "hover:bg-muted/60",
+                // Tonal hover on the token rung, and a fade on arrival: a row
+                // revealed by expanding its parent, or by clearing the filter,
+                // eases in where it lands instead of cutting in. No stagger —
+                // an expanded frame's children can sit forty rows down, and a
+                // capped delay there would read as the tree lagging the click.
+                "group flex items-center gap-1 rounded-md pr-1 transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in",
+                selected ? "bg-primary/10" : "hover:bg-accent",
                 dragId === id && "opacity-50",
                 dropTargetId === id && "ring-1 ring-inset ring-primary/60"
               )}
@@ -525,9 +559,17 @@ export function LayersPanel({
                   type="button"
                   onClick={() => toggleCollapse(id)}
                   aria-label={collapsed.has(id) ? `Expand ${node.name}` : `Collapse ${node.name}`}
-                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                 >
-                  {collapsed.has(id) ? <ChevronRight className="size-3" aria-hidden /> : <ChevronDown className="size-3" aria-hidden />}
+                  {/* One caret that turns, not two that swap: the disclosure
+                      says it is opening while it opens. */}
+                  <ChevronRight
+                    className={cn(
+                      "size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                      !collapsed.has(id) && "rotate-90"
+                    )}
+                    aria-hidden
+                  />
                 </button>
               ) : (
                 <span className="w-4 shrink-0" aria-hidden />
@@ -571,7 +613,7 @@ export function LayersPanel({
                     !node.visible && "opacity-40"
                   )}
                 >
-                  <LayerTypeIcon type={node.type} />
+                  <LayerTypeIcon type={node.type} draggable={!readOnly} />
 
                   <span className={cn("truncate text-caption", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
                 </button>
@@ -581,26 +623,29 @@ export function LayersPanel({
                   say what the layer *is*, and a badge you have to hover to find
                   cannot tell you which layer moves. */}
               {animatedNodeIds?.has(id) && (
-                <button
-                  type="button"
+                <IconButton
+                  nativeHint
+                  label={`${node.name} is animated — open the timeline`}
                   onClick={() => onShowMotion?.(id)}
-                  aria-label={`${node.name} is animated — open the timeline`}
-                  className="pressable shrink-0 rounded-sm p-0.5 text-primary/70 transition-colors hover:text-primary"
+                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary"
                 >
-                  <Activity className="size-3" aria-hidden />
-                </button>
+                  {/* The toolbar's Motion film strip, not a pulse line: one
+                      concept, one drawing, and the badge is a shortcut to
+                      exactly what that button opens. */}
+                  <Film className="size-3" aria-hidden />
+                </IconButton>
               )}
               {interactiveNodeIds?.has(id) && (
-                <button
-                  type="button"
+                <IconButton
+                  nativeHint
+                  label={`${node.name} has an interaction — open the prototype panel`}
                   onClick={() => onShowInteractions?.(id)}
-                  aria-label={`${node.name} has an interaction — open the prototype panel`}
-                  className="pressable shrink-0 rounded-sm p-0.5 text-primary/70 transition-colors hover:text-primary"
+                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary"
                 >
                   {/* Raw `Zap`: prototyping, the same bolt design-editor's
                       Prototype tab uses. Not the Juno Work destination. */}
                   <Zap className="size-3" aria-hidden />
-                </button>
+                </IconButton>
               )}
 
               <DropdownMenu>
@@ -609,7 +654,13 @@ export function LayersPanel({
                     type="button"
                     disabled={readOnly}
                     aria-label={`Layer actions for ${node.name}`}
-                    className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+                    // Stays up while its own menu is open, or the kebab the
+                    // menu is anchored to vanishes as the pointer moves into it.
+                    className={cn(
+                      iconButtonClass,
+                      ICON_TONE.neutral,
+                      "size-4.5 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 coarse:opacity-100"
+                    )}
                   >
                     <ActionIcons.more className="size-3.5" aria-hidden />
                   </button>
@@ -659,34 +710,44 @@ export function LayersPanel({
                   the eye stays put while the layer is hidden and the padlock
                   while it is locked, which is also how the state is legible at
                   a glance in a list of forty rows. */}
-              <button
-                type="button"
+              {/* Each glyph cross-fades into the other rather than being
+                  replaced in a frame, so the click reads as the layer changing
+                  state — and the engaged mark is a shade stronger than the
+                  hover-only one, so a column of eyes at rest is quieter than
+                  the one that is actually hiding something. */}
+              <IconButton
+                nativeHint
                 disabled={readOnly}
                 onClick={() => onApply([{ op: "updateNode", nodeId: id, patch: { visible: !node.visible } }], node.visible ? "Hide layer" : "Show layer")}
-                aria-label={node.visible ? `Hide ${node.name}` : `Show ${node.name}`}
+                label={node.visible ? `Hide ${node.name}` : `Show ${node.name}`}
+                hint={node.visible ? "Hide" : "Show"}
                 aria-pressed={!node.visible}
-                title={node.visible ? "Hide" : "Show"}
                 className={cn(
-                  "shrink-0 rounded-sm p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
-                  node.visible ? "opacity-0" : "opacity-100"
+                  // 18px, a notch under the rail's other keys: four of these
+                  // share a row with the layer's name in a 208px rail, and every
+                  // point they take is a point of the name.
+                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  // Disabled (read-only) keeps the same rule: the engaged mark is
+                  // the state, and a viewer is owed it at full strength.
+                  node.visible ? "opacity-0 disabled:opacity-0" : "text-foreground/70 opacity-100 disabled:opacity-100"
                 )}
               >
-                {node.visible ? <Eye className="size-3" aria-hidden /> : <EyeOff className="size-3" aria-hidden />}
-              </button>
-              <button
-                type="button"
+                <GlyphSwap swapped={!node.visible} from={<Eye className="size-3" />} to={<EyeOff className="size-3" />} />
+              </IconButton>
+              <IconButton
+                nativeHint
                 disabled={readOnly}
                 onClick={() => onApply([{ op: "updateNode", nodeId: id, patch: { locked: !node.locked } }], node.locked ? "Unlock layer" : "Lock layer")}
-                aria-label={node.locked ? `Unlock ${node.name}` : `Lock ${node.name}`}
+                label={node.locked ? `Unlock ${node.name}` : `Lock ${node.name}`}
+                hint={node.locked ? "Unlock" : "Lock"}
                 aria-pressed={node.locked}
-                title={node.locked ? "Unlock" : "Lock"}
                 className={cn(
-                  "shrink-0 rounded-sm p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
-                  node.locked ? "opacity-100" : "opacity-0"
+                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  node.locked ? "text-foreground/70 opacity-100 disabled:opacity-100" : "opacity-0 disabled:opacity-0"
                 )}
               >
-                {node.locked ? <Lock className="size-3" aria-hidden /> : <LockOpen className="size-3" aria-hidden />}
-              </button>
+                <GlyphSwap swapped={node.locked} from={<LockOpen className="size-3" />} to={<Lock className="size-3" />} />
+              </IconButton>
             </div>
           );
         })}
@@ -836,14 +897,17 @@ function ComponentLibrary({
         // uppercase mono at 10.5px, off the type scale — on a control the user
         // presses to open the section. The count keeps the mono, because a
         // figure is what the mono face is for.
-        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
       >
-        <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
+        <ChevronRight
+          className={cn("size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none", open && "rotate-90")}
+          aria-hidden
+        />
         Components
         <span className="ml-auto font-mono text-micro tabular-nums">{components.length}</span>
       </button>
       {open && (
-        <ul className="max-h-56 overflow-y-auto pb-1">
+        <ul className="max-h-56 overflow-y-auto pb-1 motion-safe:animate-fade-in">
           {components.map((component) => {
             const thumbnail = thumbnails.get(component.id);
             return (
@@ -853,7 +917,7 @@ function ComponentLibrary({
                   disabled={readOnly}
                   onClick={() => place(component.id)}
                   title={component.description || `Place an instance of ${component.name}`}
-                  className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+                  className="group/component flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left transition-colors duration-fast ease-out-soft hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
                 >
                   <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-xs border border-border/60 bg-muted/40">
                     {thumbnail ? (
@@ -866,7 +930,10 @@ function ComponentLibrary({
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-caption text-foreground">{component.name}</span>
-                  <Plus className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                  <Plus
+                    className="size-3 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/component:text-foreground"
+                    aria-hidden
+                  />
                 </button>
               </li>
             );
@@ -1006,29 +1073,29 @@ function VariableLibrary({
           aria-expanded={open}
           // Sentence case in the sans face, matching the Components disclosure
           // above — the two are one idiom and were both set in uppercase mono.
-          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground hover:text-foreground"
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
         >
-          <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
+          <ChevronRight
+            className={cn("size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none", open && "rotate-90")}
+            aria-hidden
+          />
           Variables
           <span className="ml-auto font-mono text-micro tabular-nums">{variables.length}</span>
         </button>
-        <button
-          type="button"
+        <IconButton
+          label="Add a variable"
           disabled={readOnly}
           onClick={() => {
             setOpen(true);
             add();
           }}
-          aria-label="Add a variable"
-          title="Add a variable"
-          className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
         >
           <Plus className="size-3" aria-hidden />
-        </button>
+        </IconButton>
       </div>
 
       {open && (
-        <div className="pb-1">
+        <div className="pb-1 motion-safe:animate-fade-in">
           {/* Which mode the values below belong to. Shown only when there is a
               choice: on a single-mode collection this picker would be a control
               with one option, which reads as a setting rather than a fact. */}
@@ -1104,7 +1171,7 @@ function VariableRow({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left transition-colors hover:bg-accent"
+          className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left transition-colors duration-fast ease-out-soft hover:bg-accent data-[state=open]:bg-accent"
           title={`${variable.name} — ${preview}`}
         >
           {resolved.ok && resolved.type === "color" ? (
@@ -1191,7 +1258,7 @@ function VariableRow({
           // `sm` (4), not `control` (10): this spans the full width of a 16px
           // card padded by `p-3` (12), so its bottom corners sit exactly on the
           // card's inner corners and 16 − 12 = 4 is what they are.
-          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-caption text-muted-foreground hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50 coarse:min-h-9"
         >
           <ActionIcons.delete className="size-3" aria-hidden />
           Delete variable

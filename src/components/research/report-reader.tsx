@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { PanelRightClose, PanelRightOpen, Printer } from "lucide-react";
+import { ChevronDown, PanelRightClose, PanelRightOpen, Printer } from "@/components/ui/icons";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
@@ -266,7 +267,13 @@ export function ReportReader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={handleCopy} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
-                {copied ? <StatusIcons.success className="size-3.5 text-primary" /> : <ActionIcons.copy className="size-3.5" />}
+                {/* Copy ⇄ check cross-fade in one cell; the check keeps the
+                    label's ink rather than taking the accent. */}
+                <GlyphSwap
+                  active={copied}
+                  off={<ActionIcons.copy className="size-3.5" />}
+                  on={<StatusIcons.success className="size-3.5" />}
+                />
                 <span>{copied ? "Copied" : "Copy"}</span>
               </Button>
             </TooltipTrigger>
@@ -304,7 +311,11 @@ export function ReportReader({
         </div>
       </div>
 
-      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden print:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
+      {/* The narrow-width contents. The summary carries the house caret
+          (native <details> drew the platform's triangle, a different glyph in
+          every browser), turning on the in-out curve as the list opens, and
+          the list arrives on the shared detail entrance. */}
+      {toc.length >= 2 && <details className="group/toc border-b border-border pb-4 lg:hidden print:hidden"><summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-control text-ui font-medium [&::-webkit-details-marker]:hidden">On this page<ChevronDown aria-hidden className="size-4 text-muted-foreground transition-transform duration-base ease-in-out group-open/toc:rotate-180 motion-reduce:transition-none" /></summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1 motion-safe:animate-research-detail-in">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none">{item.text}</button>)}</nav></details>}
       <div className="flex items-start gap-8">
         {toc.length >= 2 && (
           <nav
@@ -363,7 +374,7 @@ export function ReportReader({
         {sources.length > 0 && (
           <aside aria-label="Report sources" className="sticky top-6 hidden shrink-0 xl:block print:hidden">
             {sourcesOpen ? (
-              <div className="flex max-h-[calc(100vh-6rem)] w-72 flex-col rounded-card border border-border/60 bg-card">
+              <div className="flex max-h-[calc(100vh-6rem)] w-72 flex-col rounded-card border border-border/60 bg-card motion-safe:animate-fade-in">
                 <div className="flex items-center justify-between gap-2 border-b border-border/50 py-2 pl-4 pr-2">
                   {/* "Read", in the same words as the recap card: the reader
                       is handed the read corpus (see research-run-panel.tsx),
@@ -374,7 +385,8 @@ export function ReportReader({
                     type="button"
                     onClick={() => setSourcesOpen(false)}
                     aria-label="Hide the sources panel"
-                    className="pressable inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title="Hide sources"
+                    className="pressable inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
                   >
                     <PanelRightClose className="size-4" aria-hidden />
                   </button>
@@ -385,7 +397,9 @@ export function ReportReader({
               <button
                 type="button"
                 onClick={() => setSourcesOpen(true)}
-                className="pressable inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-caption text-muted-foreground shadow-soft transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                // A hairline, not a shadow — the pill sits in the flow of the
+                // document. `.pressable` already carries the colour transition.
+                className="pressable inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-caption text-muted-foreground hover:bg-accent hover:text-foreground motion-safe:animate-fade-in motion-reduce:transition-none motion-reduce:active:scale-100"
               >
                 <PanelRightOpen className="size-3.5" aria-hidden />
                 Sources read · {sources.length}

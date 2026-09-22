@@ -7,11 +7,14 @@ import { useGestureNonce, useTravelSquash } from "@/components/ui/micro";
 import { cn } from "@/lib/utils";
 
 /**
- * Inset track, raised thumb; coral when on (docs/design/FLAT_UI.md §2.2).
+ * A tonal track and a light thumb; the accent when on (docs/design/FLAT_UI.md
+ * §4 — "the switch track is `--input` when off").
  *
- * The track is `.surface-inset` — a slot cut into the page — and the thumb is
- * a raised key sliding along it. Checked, the track takes the primary fill
- * with the pressed recipe (the well is now coral) and the accent glow.
+ * Off, the track is the `--input` rung; on, it takes the primary fill — flat,
+ * no glow — and the thumb, the lightest thing in the control, slides along it
+ * on --dur-base with the front-loaded curve the ladder keeps for things the
+ * user moves. The fill cross-fades on the same rung, so colour and travel
+ * arrive together.
  *
  * The rendered control is 20×36, under the 24×24 pointer-target minimum
  * (SC 2.5.8) in the dense settings rows it lives in. A centred pseudo-element

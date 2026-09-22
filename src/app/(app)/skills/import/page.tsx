@@ -3,12 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, ExternalLink, Loader2, Search } from "lucide-react";
+import { ExternalLink, Loader2, Search } from "@/components/ui/icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { GlyphSwap } from "@/components/work/shell/glyph-swap";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import {
   importGithubSkills,
@@ -180,11 +182,12 @@ export default function ImportSkillsPage() {
               className="max-w-md font-mono text-ui"
             />
             <Button onClick={() => void look()} disabled={!source.trim() || looking} className="gap-1.5">
-              {looking ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Search className="size-3.5" aria-hidden="true" />
-              )}
+              <GlyphSwap
+                glyphs={{ idle: Search, busy: Loader2 }}
+                show={looking ? "busy" : "idle"}
+                spinning="busy"
+                className="size-3.5"
+              />
               {looking ? "Looking…" : "Look inside"}
             </Button>
           </div>
@@ -199,10 +202,17 @@ export default function ImportSkillsPage() {
           </p>
         </div>
 
-        {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}
+        {refusal !== null && (
+          <WorkStateNote tone="error" className="motion-safe:animate-rise-in">
+            {refusal}
+          </WorkStateNote>
+        )}
 
         {outcome !== null && (
-          <WorkStateNote tone={outcome.skipped.length > 0 || outcome.blocked > 0 ? "warning" : "info"}>
+          <WorkStateNote
+            tone={outcome.skipped.length > 0 || outcome.blocked > 0 ? "warning" : "info"}
+            className="motion-safe:animate-rise-in"
+          >
             <span className="block">
               Imported {outcome.imported} skill{outcome.imported === 1 ? "" : "s"}.{" "}
               <Link href="/skills" className="underline underline-offset-2">
@@ -377,8 +387,11 @@ function SkillPreviewRow({
   return (
     <div
       className={cn(
-        "rounded-field border bg-card px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft motion-safe:animate-rise-in",
+        // Tonal state, as every choosable row in Work: the hover fill under the
+        // pointer, the selected fill and an accent hairline once it is chosen.
+        "rounded-field border bg-card px-3.5 py-3 transition-colors duration-fast ease-out-soft motion-reduce:transition-none motion-safe:animate-rise-in",
         chosen ? "border-primary/40 bg-secondary" : "border-border/60",
+        !chosen && !disabled && "hover:bg-accent",
         "[animation-fill-mode:backwards]"
       )}
       style={staggerDelay(index, "tight")}
@@ -426,13 +439,13 @@ function SkillPreviewRow({
           </span>
           {notes.length > 0 && (
             <span className="mt-1.5 flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground">
-              <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+              <StatusIcons.warning className="mt-px size-3.5 shrink-0" aria-hidden="true" />
               <span>{notes.join(" · ")}</span>
             </span>
           )}
           {skill.compatibility && (
             <span className="mt-1 flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground">
-              <Check className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+              <StatusIcons.success className="mt-px size-3.5 shrink-0" aria-hidden="true" />
               <span>{skill.compatibility}</span>
             </span>
           )}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Menu } from "lucide-react";
+import { ArrowRight, Menu, X } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { staggerDelay } from "@/lib/motion";
@@ -12,12 +12,15 @@ import { FlagshipStrip, ModelLineup } from "@/components/landing/model-lineup";
 import { Metering } from "@/components/landing/metering";
 import { Features } from "@/components/landing/features";
 import { Pricing } from "@/components/landing/pricing";
+import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingColumn } from "@/components/landing/section";
 
 /**
- * The public front door (signed-out "/"). Entirely server-rendered — model
- * names, counts and prices are read from the registry at render time, so the
- * page can never disagree with the product.
+ * The public front door (signed-out "/"). Server-rendered: model names, counts
+ * and prices are read from the registry at render time, so the page can never
+ * disagree with the product. The only client code is two small islands that
+ * wrap server markup: the bar's scrolled state (landing-header.tsx) and the
+ * scroll reveals below the hero (reveal.tsx).
  *
  * Reading order: the hero shows one priced reply; Metering explains the
  * receipt; the Lineup says who is in the picker; Features lists the rest;
@@ -95,9 +98,12 @@ const NAV_LINKS = [
 const FOOTER_LINK =
   "block w-fit rounded-xs py-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
 
-/** The two logo lockups (header + footer) — one radius, one press response. */
+/**
+ * The two logo lockups (header + footer): one radius, and the product's one
+ * press (`.pressable`, scale 0.97 on --dur-press) rather than a private 0.98.
+ */
 const LOGO_LOCKUP =
-  "inline-flex items-center gap-2.5 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100";
+  "pressable inline-flex items-center gap-2.5 rounded-control motion-reduce:transition-none motion-reduce:active:scale-100";
 
 /**
  * The hero's entrance, which runs once per session.
@@ -118,15 +124,14 @@ const HERO_ENTER =
 
 export function LandingPage({ nonce }: { nonce?: string }) {
   return (
-    // No `bg-background` here. This div is an in-flow, non-positioned block, so
-    // its background would paint AFTER the hero's `-z-10` backdrop layers in the
-    // root stacking context. `body` already paints --background.
-    <div className="min-h-dvh text-foreground">
-      {/* The bar: the page ground at 90% over a 12px blur with one bottom
-          hairline — the flat header Claude and ChatGPT wear. No float shadow:
-          a sticky header is chrome that stays on the page, not a layer that
-          leaves it. Server-only: no scroll listener, the same at rest and mid-page. */}
-      <header className="sticky top-0 z-toolbar border-b border-border bg-background/90 backdrop-blur-md">
+    // No `bg-background` here: `body` already paints --background, and a fill
+    // on this block would sit over the hero's backdrop where it runs up behind
+    // the bar. `relative` is only an anchor for the bar's scroll sentinel (see
+    // LandingHeader); with no z-index it opens no stacking context.
+    <div className="relative min-h-dvh text-foreground">
+      {/* The bar: transparent at rest, the page ground over a blur with one
+          hairline once content scrolls beneath it (landing-header.tsx). */}
+      <LandingHeader>
         <LandingColumn contentClassName="flex items-center justify-between gap-3 py-2.5">
           <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
             <JunoMark className="size-7" />
@@ -154,11 +159,22 @@ export function LandingPage({ nonce }: { nonce?: string }) {
                 list is a floating menu at the popper rung, and Escape/outside
                 clicks are the browser's to handle. */}
             <details className="group relative md:hidden">
+              {/* Menu and X overlap and cross-fade on the open state (the
+                  contract's state swap: opacity plus 0.8 to 1 scale on the fast
+                  rung), rather than one glyph replacing the other in a frame.
+                  The scale is motion-safe only; reduced motion keeps the fade. */}
               <summary
                 aria-label="Sections"
-                className="pressable flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
+                className="pressable relative flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-open:bg-accent group-open:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
               >
-                <Menu className="size-4" aria-hidden />
+                <Menu
+                  className="size-4 transition-[opacity,transform] duration-fast ease-out-soft group-open:opacity-0 motion-safe:group-open:scale-[0.8]"
+                  aria-hidden
+                />
+                <X
+                  className="absolute size-4 opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-open:scale-100 group-open:opacity-100 motion-safe:scale-[0.8]"
+                  aria-hidden
+                />
               </summary>
               <nav
                 aria-label="Sections"
@@ -172,7 +188,7 @@ export function LandingPage({ nonce }: { nonce?: string }) {
                   <a
                     key={href}
                     href={href}
-                    className={cn(menuRowClass, menuGlyphInkClass, "hover:bg-accent")}
+                    className={cn(menuRowClass, menuGlyphInkClass, "hover:bg-accent focus-visible:bg-accent")}
                   >
                     {label}
                   </a>
@@ -181,7 +197,7 @@ export function LandingPage({ nonce }: { nonce?: string }) {
             </details>
           </div>
         </LandingColumn>
-      </header>
+      </LandingHeader>
 
       <main>
         {/* Runs before the hero below is parsed — see HERO_SEEN_SCRIPT. */}
@@ -189,18 +205,25 @@ export function LandingPage({ nonce }: { nonce?: string }) {
         {/* Hero — static dot-grid backdrop (CSS only, no canvas) + faint coral wash.
             `isolate`: the two backdrop layers below sit at -z-10, which without a
             stacking context of their own resolve against the root and paint
-            behind any opaque ancestor ground. */}
-        <section className="relative isolate overflow-hidden">
+            behind any opaque ancestor ground.
+
+            The layers start 80px ABOVE the section (`-top-20`, past the bar's
+            57-65px), because the bar is transparent until the page scrolls:
+            a wash that began at the hero's top edge drew a hard coral seam
+            straight across the window under the bar, which the old permanent
+            hairline had been hiding. `overflow-x-clip` rather than
+            `overflow-hidden` so the upward reach is not clipped. */}
+        <section className="relative isolate overflow-x-clip">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.1),transparent_70%)]"
+            className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.1),transparent_70%)]"
           />
           {/* CSS twin of DotField's resting frame (dot-field.tsx: --foreground at
               0.05, r 0.7, 24px spacing) — the same dot motif the app shell, auth
               and onboarding paint, at zero client JS. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
+            className="pointer-events-none absolute inset-x-0 -top-20 bottom-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
           />
           {/* Centred, unlike the sections below: on a wide display a
               left-flushed hero left the right half of the viewport empty. The

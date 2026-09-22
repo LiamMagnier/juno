@@ -35,7 +35,11 @@ import {
   AlignVerticalDistributeCenter,
   Link2,
   Link2Off,
-} from "lucide-react";
+  Plus,
+  Upload,
+  type IconComponent,
+} from "@/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   CheckboxField,
   ColorField,
@@ -49,6 +53,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/design/effects-panel";
+import { GlyphSwap } from "@/components/design/glyph-swap";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { collapseCornerRadius, cornerValues } from "@/lib/design/render";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
@@ -629,19 +634,26 @@ const BLEND_MODE_OPTIONS: { value: BlendMode; label: string }[] = [
 function AlignSection({ count, onAlign, disabled }: { count: number; onAlign: (axis: AlignAxis) => void; disabled?: boolean }) {
   return (
     <Section title="Align">
+      {/* Cut from the same box as the fields under it — `rounded-md`, the
+          field hairline, 24px — so the grid reads as the first row of the
+          inspector rather than a separate strip of pills (`rounded-control` on
+          a 24px key was nearly a capsule). */}
       <div className="grid grid-cols-4 gap-1">
         {ALIGN_BUTTONS.map(({ axis, label, icon: Icon }) => (
-          <button
-            key={axis}
-            type="button"
-            aria-label={label}
-            title={label}
-            disabled={disabled || (axis.startsWith("distribute") && count < 3)}
-            onClick={() => onAlign(axis)}
-            className="pressable flex h-6 items-center justify-center rounded-control border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 coarse:h-9"
-          >
-            <Icon className="size-3.5" aria-hidden />
-          </button>
+          <Tooltip key={axis}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={label}
+                disabled={disabled || (axis.startsWith("distribute") && count < 3)}
+                onClick={() => onAlign(axis)}
+                className="pressable flex h-6 items-center justify-center rounded-md border border-border/60 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-30 coarse:h-9"
+              >
+                <Icon className="size-4" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{label}</TooltipContent>
+          </Tooltip>
         ))}
       </div>
     </Section>
@@ -659,7 +671,7 @@ const ALIGN_BUTTONS = [
   { axis: "center-y", label: "Align vertical centres", icon: AlignCenterHorizontal },
   { axis: "bottom", label: "Align bottom edges", icon: AlignEndHorizontal },
   { axis: "distribute-y", label: "Distribute vertically", icon: AlignVerticalDistributeCenter },
-] as const satisfies readonly { axis: AlignAxis; label: string; icon: React.ComponentType<{ className?: string }> }[];
+] as const satisfies readonly { axis: AlignAxis; label: string; icon: IconComponent }[];
 
 /**
  * Corner radius, per corner.
@@ -756,7 +768,7 @@ function CornerRadiusControl({
           }}
           disabled={readOnly}
         >
-          {separate ? <Link2Off className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
+          <GlyphSwap swapped={separate} from={<Link2 className="size-3.5" />} to={<Link2Off className="size-3.5" />} />
         </IconButton>
       </div>
       {roundedSomewhere && (
@@ -1091,8 +1103,9 @@ function AutoLayoutSection({
               "Enable auto layout"
             )
           }
-          className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-10"
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-md border border-border/60 px-2 py-1.5 text-caption text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:min-h-10"
         >
+          <Plus className="size-3.5" aria-hidden />
           Add auto layout
         </button>
       </Section>
@@ -1109,7 +1122,7 @@ function AutoLayoutSection({
           type="button"
           disabled={readOnly}
           onClick={() => set(null, "Remove auto layout")}
-          className="pressable rounded-sm px-1 font-mono text-micro text-muted-foreground hover:text-destructive"
+          className="pressable rounded-sm px-1 font-mono text-micro text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
         >
           Remove
         </button>
@@ -1252,8 +1265,9 @@ function ImageSection({
         type="button"
         disabled={readOnly}
         onClick={() => inputRef.current?.click()}
-        className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+        className="pressable flex w-full items-center justify-center gap-1.5 rounded-md border border-border/60 px-2 py-1.5 text-caption text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:min-h-10"
       >
+        <Upload className="size-3.5" aria-hidden />
         {asset ? "Replace picture…" : "Choose a picture…"}
       </button>
       <input

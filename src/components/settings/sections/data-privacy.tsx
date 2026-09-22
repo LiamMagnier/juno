@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { Loader2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,17 +43,17 @@ export function DataPrivacySection() {
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
                 <a href="/api/account/export" download>
-                  <ActionIcons.download className="size-3.5" /> JSON
+                  <ActionIcons.download className="size-4" /> JSON
                 </a>
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href="/api/account/export?format=juno" download>
-                  <ActionIcons.download className="size-3.5" /> Juno package
+                  <ActionIcons.download className="size-4" /> Juno package
                 </a>
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a href="/api/account/export?format=csv" download>
-                  <ActionIcons.download className="size-3.5" /> CSV
+                  <ActionIcons.download className="size-4" /> CSV
                 </a>
               </Button>
             </div>
@@ -78,7 +79,7 @@ export function DataPrivacySection() {
           tone="destructive"
           description="Every chat and its messages, immediately. Memories and projects stay."
           control={
-            <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)} className="gap-2">
+            <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)}>
               <ActionIcons.delete className="size-4" /> Delete all chats
             </Button>
           }
@@ -97,7 +98,8 @@ export function DataPrivacySection() {
             <Button variant="ghost" onClick={() => setDeleteChatsOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={deleteAllChats} disabled={deletingChats}>
+            <Button variant="destructive" onClick={deleteAllChats} disabled={deletingChats} aria-busy={deletingChats}>
+              {deletingChats && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
               {deletingChats ? "Deleting…" : "Delete all chats"}
             </Button>
           </DialogFooter>

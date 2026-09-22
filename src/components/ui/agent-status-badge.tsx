@@ -1,7 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, CheckCircle2, AlertTriangle, XCircle, Clock, ShieldAlert, Cpu, Terminal, Bot } from "lucide-react";
+import {
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Clock,
+  ShieldAlert,
+  Cpu,
+  Terminal,
+  Bot,
+  type IconComponent,
+} from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 export type AgentRunStatus =
@@ -31,7 +42,7 @@ const statusConfig: Record<
     bgClass: string;
     borderClass: string;
     textClass: string;
-    Icon: React.ElementType;
+    Icon: IconComponent;
     animateDot?: boolean;
   }
 > = {

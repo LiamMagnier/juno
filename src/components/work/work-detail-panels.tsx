@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, ShieldCheck, Sigma, Timer } from "lucide-react";
+import { Coins, ShieldCheck, Sigma, Timer } from "@/components/ui/icons";
 import {
   WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
@@ -581,14 +581,16 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
     <ul className="space-y-1.5">
       {actions.map((action) => (
         <li key={action.id} className="flex items-start gap-2 text-ui leading-relaxed">
-          {action.approved ? (
-            <ShieldCheck className="mt-[3px] size-3.5 shrink-0 text-success-ink" aria-hidden="true" />
-          ) : (
-            <span
-              className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground/70"
-              aria-hidden="true"
-            />
-          )}
+          {/* One 14px slot for both marks, so the summaries start on one edge
+              whether or not the action carries the shield; the plain bullet is
+              centred in the slot the shield would fill. */}
+          <span className="mt-[3px] flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
+            {action.approved ? (
+              <ShieldCheck className="size-3.5 text-success-ink" />
+            ) : (
+              <span className="size-1 rounded-full bg-muted-foreground/70" />
+            )}
+          </span>
           <span className="min-w-0 flex-1 text-foreground">{action.summary}</span>
           <span className="shrink-0 font-mono text-micro text-muted-foreground">
             {workTimeAgo(action.at)}

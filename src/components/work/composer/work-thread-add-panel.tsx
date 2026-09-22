@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AudioLines, FileUp, Loader2, Wrench } from "lucide-react";
+import { AudioLines, FileUp, Loader2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -419,7 +419,8 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
         </p>
       ) : (
         <p className="flex items-center gap-2 text-ui leading-relaxed text-foreground">
-          <Wrench className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {/* The skill's own mark (`AppIcons.skills`), as on the Skills page. */}
+          <AppIcons.skills className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 truncate">
             Runs under <span className="font-mono text-caption">/{slug}</span>
             {skill !== null && skill.name !== slug ? ` — ${skill.name}` : ""}

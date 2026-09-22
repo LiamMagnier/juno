@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogCloseButton, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { JunoMark } from "@/components/brand/logo";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { ClientAnnouncement } from "@/lib/announcements";
+import { staggerDelay } from "@/lib/motion";
 
 function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -183,8 +184,15 @@ export function AnnouncementPopup() {
           <div className="h-64 w-full shrink-0 overflow-hidden rounded-card border border-border bg-muted sm:h-80 lg:h-[26rem]">
             <AnnouncementVisual announcement={announcement} />
           </div>
+          {/* The copy is dealt in after the panel lands — heading, then the
+              actions — on the `loose` rung the motion scale keeps for a few
+              large, consequential items (the onboarding card uses the same).
+              Travel collapses under reduced motion; the fade stays. */}
           <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">
-            <DialogHeader className="text-left">
+            <DialogHeader
+              style={staggerDelay(1, "loose")}
+              className="text-left motion-safe:animate-fade-in-up [animation-fill-mode:backwards]"
+            >
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
                   {announcement.modelName && (
@@ -211,7 +219,10 @@ export function AnnouncementPopup() {
             {/* No `mt-6`: the parent column is already `justify-between gap-6`,
                 so the margin stacked a second 24px onto the gap and the action
                 row sat further from the copy than any other modal's does. */}
-            <div className="flex flex-wrap items-center justify-end gap-3">
+            <div
+              style={staggerDelay(2, "loose")}
+              className="flex flex-wrap items-center justify-end gap-3 motion-safe:animate-fade-in-up [animation-fill-mode:backwards]"
+            >
               {announcement.newsHref ? (
                 <Button variant="outline" onClick={() => followHref(announcement.newsHref)}>
                   {announcement.newsLabel || "Read more"}
@@ -222,9 +233,13 @@ export function AnnouncementPopup() {
                 </Button>
               )}
               {announcement.ctaLabel && announcement.ctaHref && (
-                <Button onClick={() => followHref(announcement.ctaHref)} className="group gap-1.5">
+                // The arrow's nudge is the icon set's own (`nudge-r`, played
+                // by globals.css on hover AND on keyboard focus); the
+                // hand-written `group-hover:translate-x-0.5` it used to carry
+                // was a second, pointer-only copy of the same gesture.
+                <Button onClick={() => followHref(announcement.ctaHref)}>
                   {announcement.ctaLabel}
-                  <ArrowRight className="size-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />
+                  <ArrowRight className="size-4" />
                 </Button>
               )}
             </div>

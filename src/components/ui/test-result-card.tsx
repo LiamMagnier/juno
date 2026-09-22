@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronRight } from "@/components/ui/icons";
+import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 
 export interface TestCase {
@@ -47,7 +48,8 @@ export function TestResultCard({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/40"
+        aria-expanded={tests.length > 0 ? expanded : undefined}
+        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/40"
       >
         <div className="flex items-center gap-2.5">
           {isAllPassed ? (
@@ -79,31 +81,34 @@ export function TestResultCard({
             </span>
           )}
 
+          {/* One caret that turns, not two that swap: a disclosure is an
+              A-to-B move with both ends on screen, hence in-out. */}
           {tests.length > 0 && (
-            expanded ? (
-              <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-            ) : (
-              <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-            )
+            <ChevronRight
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                expanded && "rotate-90"
+              )}
+            />
           )}
         </div>
       </button>
 
-      {/* Test Case Detail List */}
-      {expanded && tests.length > 0 && (
+      {/* Test Case Detail List — unfolds rather than appearing. */}
+      <Collapse open={expanded && tests.length > 0}>
         <div className="border-t border-border/60 divide-y divide-border/40 bg-secondary/20">
           {tests.map((test, i) => (
             <div key={i} className="px-3.5 py-2 text-caption">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {test.status === "passed" && (
-                    <CheckCircle2 className="size-3 text-success-ink shrink-0" />
+                    <CheckCircle2 className="size-3.5 text-success-ink shrink-0" />
                   )}
                   {test.status === "failed" && (
-                    <XCircle className="size-3 text-destructive-ink shrink-0" />
+                    <XCircle className="size-3.5 text-destructive-ink shrink-0" />
                   )}
                   {test.status === "skipped" && (
-                    <AlertCircle className="size-3 text-muted-foreground shrink-0" />
+                    <AlertCircle className="size-3.5 text-muted-foreground shrink-0" />
                   )}
                   <span className="font-mono text-ui text-foreground">{test.name}</span>
                 </div>
@@ -123,7 +128,7 @@ export function TestResultCard({
             </div>
           ))}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

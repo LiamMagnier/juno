@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Check, MicOff } from "lucide-react";
+import { ArrowUp, Check, MicOff } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
-import { Pressable } from "@/components/ui/pressable";
+import { composerFieldClass, composerIconButtonClass } from "@/components/ui/composer-shell";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -454,18 +455,20 @@ export function ComposerDictation({
         // The composer's own surface and radius. Dictation is not a different
         // object arriving over the composer, it is the composer listening, so
         // the box must not appear to change.
-        "composer-surface relative flex w-full flex-col rounded-panel",
+        "composer-surface relative flex w-full flex-col rounded-composer",
         "transition-opacity motion-reduce:transition-none",
         closing ? cn("opacity-0", EXIT_CLASS) : "duration-fast ease-out-soft opacity-100"
       )}
     >
       {/* The words, where the textarea's words were. Same padding, same size,
-          same measure — so the cross-fade reads as the field changing what it
-          holds rather than one panel replacing another. */}
+          same measure — `composerFieldClass` itself, not a copy of its numbers
+          — so the cross-fade reads as the field changing what it holds rather
+          than one panel replacing another. (It was px-5 at 17px against the
+          field's px-4 at 16px, so the first word jumped as the swap ran.) */}
       <div
         ref={previewRef}
         aria-live="off"
-        className="max-h-40 min-h-16 overflow-y-auto px-5 pb-3 pt-4 text-body-lg leading-relaxed"
+        className={cn(composerFieldClass, "max-h-40 overflow-y-auto")}
       >
         {noTranscription ? (
           <p className="text-muted-foreground">
@@ -490,20 +493,28 @@ export function ComposerDictation({
         )}
       </div>
 
-      {/* The controls row, in the composer's own geometry: leading affordance,
-          state in the middle, primary action on the right. */}
-      <div className="flex flex-nowrap items-center gap-1.5 px-3 pb-3 pt-1">
-        <Pressable
-          kind="icon"
-          size="lg"
-          onClick={cancel}
-          aria-label="Cancel dictation"
-          className="shrink-0"
-        >
-          {micError ? <MicOff className="size-4" /> : <ActionIcons.dismiss className="size-4" />}
-        </Pressable>
+      {/* The controls row, in the composer's own geometry (ComposerShell's
+          row: px-2.5 pb-2.5, 32px objects): the ✕ sits exactly where the `+`
+          was and the send circle where the send circle was, so the swap moves
+          nothing but what the controls say. */}
+      <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={cancel}
+              aria-label="Cancel dictation"
+              className={composerIconButtonClass}
+            >
+              {micError ? <MicOff className="size-4" /> : <ActionIcons.dismiss className="size-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Cancel</TooltipContent>
+        </Tooltip>
 
-        <span className="flex min-w-0 items-center gap-2 pl-1">
+        <span className="flex min-w-0 items-center gap-2 pl-1.5">
           {!micError && !noTranscription && <DictationMeter ref={meterRef} active={listening} />}
           <span
             role="status"
@@ -520,7 +531,7 @@ export function ComposerDictation({
           </span>
         </span>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
             type="button"
             variant="ghost"
@@ -532,20 +543,31 @@ export function ComposerDictation({
             <Check className="size-4" />
             Done
           </Button>
-          <button
-            type="button"
-            onClick={send}
-            disabled={transcribing || !canSend}
-            aria-label="Send what you dictated"
-            className={cn(
-              "pressable grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
-              "hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
-              "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
-            )}
-          >
-            <ArrowUp className="size-4" strokeWidth={2.25} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={send}
+                disabled={transcribing || !canSend}
+                aria-label="Send what you dictated"
+                className={cn(
+                  // The composer's send circle, drawn to the same recipe
+                  // (ComposerPrimaryAction): 32px, `.pressable` owns the dip,
+                  // and disabled is the neutral disc — never the accent at 40%,
+                  // which read as a broken button. Focus is the global outline;
+                  // a ring-offset painted a card-coloured halo.
+                  "pressable grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
+                  "hover:bg-primary/90 disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
+                  "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10"
+                )}
+              >
+                {/* The house weight: the arrow's line is the set's, not a
+                    heavier stroke than every glyph beside it. */}
+                <ArrowUp aria-hidden="true" className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Send</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

@@ -4,13 +4,14 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Inbox, PartyPopper, Plus, Search } from "lucide-react";
+import { Inbox, PartyPopper, Plus, Search } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
 import { RequestCard, timeAgo } from "@/components/roadmap/roadmap-ui";
 import { SubmitDialog } from "@/components/roadmap/submit-dialog";
+import { RequestCardSkeleton } from "@/components/roadmap/request-card-skeleton";
 import {
   BOARD_COLUMNS,
   CATEGORY_LABEL,
@@ -21,7 +22,6 @@ import {
   type SortKey,
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
@@ -198,7 +198,7 @@ export default function RoadmapPage() {
                 <Link
                   key={r.id}
                   href={`/roadmap/${r.id}`}
-                  className="text-ui text-foreground/90 underline-offset-2 hover:text-foreground hover:underline"
+                  className="text-ui text-foreground/90 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
                 >
                   {r.title} <span className="text-caption text-muted-foreground">· {timeAgo(r.createdAt)}</span>
                 </Link>
@@ -295,10 +295,11 @@ export default function RoadmapPage() {
             {[...Array(4)].map((_, c) => (
               <div key={c} className="space-y-3">
                 {[...Array(3)].map((_, i) => (
-                  // staggerDelay, not `(c * 3 + i) * 50`: uncapped and off-rung, the
-                  // last of twelve placeholders waited 550ms before it started, so
-                  // the board finished arriving after the data usually has.
-                  <div key={i} className="skeleton h-28 rounded-card" style={staggerDelay(c * 3 + i)} />
+                  // The card's own anatomy, dealt on the shared stagger (capped,
+                  // not `(c * 3 + i) * 50`: uncapped and off-rung, the last of
+                  // twelve placeholders waited 550ms before it started, so the
+                  // board finished arriving after the data usually had).
+                  <RequestCardSkeleton key={i} index={c * 3 + i} />
                 ))}
               </div>
             ))}
@@ -342,7 +343,7 @@ export default function RoadmapPage() {
                           Nothing here yet.
                         </p>
                       ) : (
-                        items.map((r) => <RequestCard key={r.id} req={r} onVote={vote} />)
+                        items.map((r, i) => <RequestCard key={r.id} req={r} onVote={vote} index={i} />)
                       )}
                     </div>
                   </div>
@@ -377,7 +378,7 @@ export default function RoadmapPage() {
                 {mobileList.length === 0 ? (
                   <EmptyState size="panel" icon={Inbox} title="No requests here" description="Try another status or clear the search." />
                 ) : (
-                  mobileList.map((r) => <RequestCard key={r.id} req={r} onVote={vote} />)
+                  mobileList.map((r, i) => <RequestCard key={r.id} req={r} onVote={vote} index={i} />)
                 )}
               </div>
             </div>
@@ -418,8 +419,10 @@ function StatusTab({
       aria-selected={active}
       tabIndex={active ? 0 : -1}
       className={cn(
-        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-ui transition-colors duration-fast",
-        active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
+        // `.pressable`: the house press, and the colour cross-fade on the
+        // fast rung with its curve (this had the duration and no easing).
+        "pressable shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-ui motion-reduce:transition-none motion-reduce:active:scale-100",
+        active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
       )}
     >
       {children}

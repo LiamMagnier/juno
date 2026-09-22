@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "@/components/ui/icons";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
@@ -51,11 +52,11 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
         </div>
 
         {linkable && (
-          <ExternalLink className="size-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
+          <ExternalLink className="size-3 shrink-0 text-muted-foreground/50 transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none" />
         )}
       </div>
 
-      <span className="mt-2 line-clamp-2 text-ui font-medium leading-snug text-foreground transition-colors group-hover:text-primary/95">
+      <span className="mt-2 line-clamp-2 text-ui font-medium leading-snug text-foreground">
         {title}
       </span>
 
@@ -73,7 +74,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
   );
 
   const shell =
-    "group relative flex min-w-0 flex-col justify-between rounded-control px-2 py-4 transition-colors duration-fast hover:bg-secondary/60 motion-reduce:transition-none";
+    "group relative flex min-w-0 flex-col justify-between rounded-control px-2 py-4 transition-colors duration-fast ease-out-soft hover:bg-secondary/60 motion-reduce:transition-none";
 
   return linkable ? (
     <a
@@ -116,15 +117,21 @@ function Group({
         {note && <span className="min-w-0 truncate text-caption text-muted-foreground">{note}</span>}
       </div>
       <div className="mt-2.5 flex flex-col divide-y divide-border">
-        {shown.map((source) => (
-          <SourceCard key={source.id} source={source} />
+        {shown.map((source, index) => (
+          <div
+            key={source.id}
+            className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            style={staggerDelay(index, "tight")}
+          >
+            <SourceCard source={source} />
+          </div>
         ))}
       </div>
       {(hidden > 0 || expanded) && (
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="pressable mt-2 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="pressable mt-2 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           {expanded ? DECK_COPY.showFewer : `${DECK_COPY.showAll} (${sources.length})`}
         </button>

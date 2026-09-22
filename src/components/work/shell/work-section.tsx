@@ -78,11 +78,11 @@ export function WorkSection({
 /**
  * The well a list of rows sits in.
  *
- * Rows are hover-raised — a transparent border at rest, the raised surface on
- * hover — and on a bare page a stack of them has no edge to read as a list.
- * This is the inset frame the sidebar uses for the same job: a recess the rows
- * sit in, `rounded-card` outside with `p-1.5` so the `rounded-control` rows
- * inside are concentric with it.
+ * Rows are text on the well at rest — a transparent border, no fill — and take
+ * a tonal fill on hover (`workRowClass`), so on a bare page a stack of them has
+ * no edge to read as a list without this. It is the inset frame the sidebar
+ * uses for the same job: a recess the rows sit in, `rounded-card` outside with
+ * `p-1.5` so the `rounded-control` rows inside are concentric with it.
  */
 export function WorkList({
   className,
@@ -95,3 +95,40 @@ export function WorkList({
     </div>
   );
 }
+
+/**
+ * One row inside a `WorkList` — a Mac, a skill, an automation.
+ *
+ * The three rows are the same object in three lists and used to be three
+ * bordered cards, each lifting a pixel on hover over a ring-offset focus halo.
+ * Inside an inset well that was a card in a card: two hairlines, two radii, and
+ * a lift that no other list in the product makes. They are now what a list row
+ * is everywhere else (PREMIUM_AUDIT rule 3): text on the panel at rest, a tonal
+ * cross-fade to `--accent` under the pointer, `--secondary` while pressed, and
+ * the global `:focus-visible` outline for the keyboard. Nothing travels and
+ * nothing scales — a full-width row is a surface, not a key.
+ *
+ * `px-3.5 py-3` over a title, a subtitle and a mono meta line is the geometry
+ * `WorkRowSkeletons` is built to, so the placeholder and the row agree.
+ */
+export const workRowClass =
+  "group flex items-start gap-3 rounded-control border border-transparent px-3.5 py-3 " +
+  "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
+
+/** How a row arrives: dealt in on the shared stagger, holding its `from` frame while it waits. */
+export const workRowEnterClass = "motion-safe:animate-rise-in [animation-fill-mode:backwards]";
+
+/**
+ * The trailing chevron that says a row opens a page.
+ *
+ * It fades in with the row's hover or focus rather than sitting in every row at
+ * rest — a column of identical chevrons is the one mark on the list that says
+ * nothing about its row. A short slide in from the left says where the press
+ * goes; under reduced motion only the fade remains. On a touch screen, where
+ * nothing hovers, it stays.
+ */
+export const workRowChevronClass =
+  "mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 -translate-x-1 " +
+  "transition-[opacity,transform] duration-fast ease-out-soft " +
+  "group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:translate-x-0 group-focus-within:opacity-100 " +
+  "motion-reduce:translate-x-0 coarse:translate-x-0 coarse:opacity-100";

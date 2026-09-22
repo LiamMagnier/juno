@@ -1,10 +1,20 @@
-import { Plug } from "lucide-react";
+import { CalendarClock, Database, Globe, Mail, Music2, Plug, Terminal } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /*
  * Inline brand marks so the dashboard needs no network fetch and stays
  * theme-aware: GitHub inherits currentColor; Figma keeps its brand palette
  * (raw hex lives only in SVG fill attributes, never classNames).
+ *
+ * TWO KINDS OF MARK LIVE HERE, and only one of them is drawn in this file.
+ * GitHub, Figma, Notion, Linear and Slack are BRAND marks — the shape is the
+ * company's, so it is drawn here and stays. Postgres, the terminal, web search
+ * and the three Apple apps were never brand marks: they were a database
+ * cylinder, a prompt, a magnifier, a calendar, an envelope and a pair of notes,
+ * hand-drawn at a 1.5px stroke beside the icon set's 1px line. Those are
+ * interface glyphs, so they come from `@/components/ui/icons` like every other
+ * glyph — the same drawing the rest of the product uses for the same idea
+ * (the Apple Music sign-in button already drew `Music2`).
  */
 
 export function GitHubMark({ className }: { className?: string }) {
@@ -44,36 +54,15 @@ export function NotionMark({ className }: { className?: string }) {
 }
 
 export function AppleCalendarMark({ className }: { className?: string }) {
-  // Simplified monochrome calendar: bound page with binding rings and a marked day.
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <rect x="3.5" y="5" width="17" height="15.5" rx="3" className="stroke-current" strokeWidth="1.5" />
-      <path d="M3.5 9.75h17" className="stroke-current" strokeWidth="1.5" />
-      <path d="M8 3v3.5M16 3v3.5" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="8.25" cy="13.5" r="1.4" className="fill-current" />
-      <path d="M12.5 13.5h4M8.25 17h8.25" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
+  return <CalendarClock className={className} aria-hidden="true" />;
 }
 
 export function AppleMailMark({ className }: { className?: string }) {
-  // Simplified monochrome envelope with the fold drawn open.
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <rect x="3" y="5.5" width="18" height="13" rx="3" className="stroke-current" strokeWidth="1.5" />
-      <path d="m4.5 8 6.53 5.06a1.6 1.6 0 0 0 1.94 0L19.5 8" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m4.6 17.4 5.2-4.55M19.4 17.4l-5.2-4.55" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
+  return <Mail className={className} aria-hidden="true" />;
 }
 
 export function AppleMusicMark({ className }: { className?: string }) {
-  // Simplified monochrome beamed eighth notes, the MusicKit idiom.
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M19.5 3.2a1 1 0 0 0-.83-.2l-9 1.87A1.3 1.3 0 0 0 8.63 6.1v9.53a3.6 3.6 0 0 0-1.63-.38c-1.8 0-3.25 1.16-3.25 2.6s1.45 2.6 3.25 2.6 3.25-1.16 3.25-2.6V9.4l8.1-1.69v5.72a3.6 3.6 0 0 0-1.6-.37c-1.8 0-3.25 1.17-3.25 2.6 0 1.44 1.45 2.6 3.25 2.6s3.25-1.16 3.25-2.6V4a1 1 0 0 0-.5-.8Z" />
-    </svg>
-  );
+  return <Music2 className={className} aria-hidden="true" />;
 }
 
 export function LinearMark({ className }: { className?: string }) {
@@ -98,32 +87,16 @@ export function SlackMark({ className }: { className?: string }) {
 }
 
 export function PostgresMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <ellipse cx="12" cy="6" rx="8" ry="3" className="stroke-current" strokeWidth="1.5" />
-      <path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6" className="stroke-current" strokeWidth="1.5" />
-      <path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" className="stroke-current" strokeWidth="1.5" />
-    </svg>
-  );
+  return <Database className={className} aria-hidden="true" />;
 }
 
 export function TerminalMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <rect x="3" y="4" width="18" height="16" rx="3" className="stroke-current" strokeWidth="1.5" />
-      <path d="m7 9 3 3-3 3M13 15h4" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <Terminal className={className} aria-hidden="true" />;
 }
 
+/** The same globe the composer's web-search tool draws (`ComposerIcons.web`). */
 export function WebSearchMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <circle cx="11" cy="11" r="7" className="stroke-current" strokeWidth="1.5" />
-      <path d="m20 20-3.5-3.5" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M11 4a7 7 0 0 0 0 14" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" opacity="0.4" />
-    </svg>
-  );
+  return <Globe className={className} aria-hidden="true" />;
 }
 
 /** Brand mark for a connector id; generic plug for unknown ids. */
@@ -157,7 +130,7 @@ export function ConnectorLogoTile({ id, className }: { id: string; className?: s
         className
       )}
     >
-      <ConnectorMark id={id} className="h-[22px] w-[22px]" />
+      <ConnectorMark id={id} className="size-5" />
     </span>
   );
 }

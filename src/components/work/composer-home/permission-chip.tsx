@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Hand } from "lucide-react";
+import { ChevronDown, Hand } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -111,7 +111,7 @@ export function WorkPermissionChip({
                   {WORK_APPROVAL_MODE_SUMMARY[policy]}
                 </span>
               </span>
-              {active && <StatusIcons.success className="mt-0.5 !size-3.5 shrink-0 text-primary" />}
+              {active && <StatusIcons.success className="mt-0.5 size-3.5 shrink-0 text-primary" />}
             </DropdownMenuItem>
           );
         })}

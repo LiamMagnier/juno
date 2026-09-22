@@ -18,7 +18,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
@@ -161,11 +162,16 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Button asChild variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground hover:text-foreground">
-          <Link href="/design" aria-label="All designs">
-            <ArrowLeft className="size-4" aria-hidden />
-          </Link>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button asChild variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground hover:text-foreground">
+              <Link href="/design" aria-label="All designs">
+                <ArrowLeft className="size-4" aria-hidden />
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">All designs</TooltipContent>
+        </Tooltip>
 
         <NameField value={name} onCommit={rename} />
 
@@ -182,7 +188,12 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Design actions" className="shrink-0 text-muted-foreground hover:text-foreground">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Design actions"
+              className="shrink-0 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+            >
               <ActionIcons.more className="size-4" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
@@ -313,7 +324,7 @@ function NameField({ value, onCommit }: { value: string; onCommit: (next: string
         // switch tools or delete the selection.
         event.stopPropagation();
       }}
-      className="min-w-0 max-w-xs flex-initial truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-heading outline-none transition-colors hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
+      className="min-w-0 max-w-xs flex-initial truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-heading outline-none transition-colors duration-fast ease-out-soft hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
     />
   );
 }

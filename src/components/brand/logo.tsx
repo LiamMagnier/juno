@@ -5,11 +5,11 @@ import { cn } from "@/lib/utils";
 // flips it to light so it stays legible on the dark theme.
 //
 // `dark:brightness-[0.94]` rides with the invert. Inverting a pure-black glyph
-// yields pure #FFFFFF, which is 21:1 against the OLED ground — and --foreground
-// is set to 94% for the express purpose of avoiding that glare (see the note in
-// globals.css beside the dark ramp). Without the clamp the mark was the single
-// brightest object on every signed-out page, worst at the 40-44px lockups on the
-// auth and suspended screens. 0.94 lands it exactly on the foreground ramp.
+// yields pure #FFFFFF, and --foreground stops at 94% for the express purpose of
+// avoiding that glare (see the note in globals.css beside the dark ramp).
+// Without the clamp the mark was the single brightest object on every
+// signed-out page, worst at the 40-44px lockups on the auth and suspended
+// screens. 0.94 lands it exactly on the foreground ramp.
 //
 // `unoptimized`: serve the static PNG directly instead of routing through the
 // /_next/image optimizer. The mark is tiny, always-visible chrome on every page,

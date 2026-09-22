@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Plus } from "lucide-react";
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "framer-motion";
+import { Menu, Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { productOf } from "@/components/app/product-switch";
@@ -18,6 +19,7 @@ import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
+import { spring, transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
@@ -123,6 +125,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the ref mirrors it so pointermove handlers never read a stale closure.
   const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
   const [resizing, setResizing] = React.useState(false);
+  const reduceMotion = useReducedMotion();
+  /*
+   * THE FRAME ANIMATES ONLY ONCE THE PAGE HAS SETTLED.
+   *
+   * The stored width and the stored collapse are both read after the first
+   * render (the width in a layout effect, the collapse in an effect), so the
+   * frame's first real change is a correction, not a gesture — and a spring
+   * starting from the SSR default played the sidebar folding shut on every
+   * load for anyone who keeps it collapsed. One frame after mount the frame
+   * starts answering the reader instead.
+   */
+  const [frameLive, setFrameLive] = React.useState(false);
+  React.useEffect(() => {
+    const id = window.requestAnimationFrame(() => setFrameLive(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
   const widthRef = React.useRef(SIDEBAR_DEFAULT);
   const activeConversation = activeConversationId ? conversations.find((c) => c.id === activeConversationId) : null;
   const activeTitle = activeConversation?.title ?? null;
@@ -378,206 +396,236 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div className="relative flex h-dvh overflow-hidden">
-      {/* Bypass Blocks (SC 2.4.1, Level A). */}
-      <a
-        href="#juno-main"
-        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-ui focus-visible:shadow-float"
-      >
-        Skip to content
-      </a>
-
-      {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
-          over the content; a click anywhere outside it folds it back. */}
-      {floating && (
-        <>
-          {/* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
-              spacer and app-sidebar's collapsed column — and a mismatch leaves
-              a seam of page showing through beside the rail at md–lg. */}
-          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-16 shrink-0 bg-sidebar md:block" />
-          <button
-            type="button"
-            aria-label="Close sidebar"
-            onClick={() => setNarrowOpen(false)}
-            /* /10, not /5. At a twentieth the wash was imperceptible on paper
-               — the page behind the panel looked exactly as it had a frame
-               earlier, so nothing said the panel was a layer you could
-               dismiss by clicking past it. A tenth is still light enough to
-               read the transcript through, which is the point of a soft
-               dismiss rather than a modal. */
-            className="absolute inset-0 z-30 hidden cursor-default bg-foreground/10 motion-safe:animate-fade-in md:block"
-          />
-        </>
-      )}
-
-      {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
-          the content instead of reflowing it mid-animation. The width transition is
-          dropped while dragging so resize follows the pointer 1:1. `ease-in-out`:
-          both endpoints of a collapse are on screen, so this is an A-to-B move. */}
-      <aside
-        data-floating={floating ? "" : undefined}
-        className={cn(
-          "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
-          /* FLOATING MEANS ELEVATED. Over the content the panel had the same
-             hairline it wears as a column, so it read as a layout glitch —
-             a page that had failed to reflow — rather than as something
-             sitting above the page. The float shadow is the one thing that
-             says "this is a layer", and it is the same shadow every other
-             floating surface in the product wears. */
-          floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative",
-          !resizing && "transition-[width] duration-base ease-in-out"
-        )}
-        style={
-          {
-            width: shown ? sidebarWidth : RAIL_WIDTH,
-            "--juno-sidebar-width": `${sidebarWidth}px`,
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
-        {shown && (
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            aria-valuemin={SIDEBAR_MIN}
-            aria-valuemax={SIDEBAR_MAX}
-            aria-valuenow={sidebarWidth}
-            tabIndex={0}
-            title="Drag to resize · double-click to reset"
-            onPointerDown={startResize}
-            onDoubleClick={resetWidth}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                e.preventDefault();
-                const next = clampWidth(widthRef.current + (e.key === "ArrowLeft" ? -16 : 16));
-                applyWidth(next);
-                persistWidth(next);
-              } else if (e.key === "Enter") {
-                resetWidth();
-              }
-            }}
-            className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none"
-          >
-            {/* Invisible until engaged: a neutral hairline on hover/drag/focus. */}
-            <span
-              aria-hidden
-              className={cn(
-                "absolute inset-y-0 right-0 w-[2px] bg-foreground/25 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
-                resizing && "opacity-100"
-              )}
-            />
-          </div>
-        )}
-      </aside>
-
-      {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock),
-          sliding in on `sheet-in`. The sidebar's rungs are re-based for the
-          popover ground it lands on (see the note in sheet.tsx).
-
-          THE ROW STATES ARE RE-BASED, not just the accent. Hover and selection
-          are separate colours now (globals.css), and both are authored against
-          a panel at 8.8% — on the sheet's 16.5% popover ground they would land
-          4.7 and 8.7 points too low, i.e. hover BELOW its own ground and
-          selection barely above it. Each is re-stated at the same distance
-          from THIS ground that it keeps from the panel:
-
-            ground     16.5%   (the popover, not --sidebar)
-            hover      21.0%   +4.5
-            selected   25.0%   +8.5
-            its edge   34.0%   +9.0 from the fill it bounds
-
-          `--sidebar-accent` keeps its own re-basing for the same reason it
-          always had one: the product switch's track draws with it directly. */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent
-          className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_25%] dark:[--sidebar-selected-border:48_7%_34%] md:hidden"
-          title="Conversations"
+    /*
+     * REDUCED MOTION, ONCE, FOR EVERYTHING THE SHELL HOLDS.
+     *
+     * A handful of framer surfaces asked `useReducedMotion()` themselves and
+     * the rest did not, so a reader who had asked the OS for less motion still
+     * got panels sliding and cards springing wherever someone had forgotten
+     * to. `reducedMotion="user"` is framer's own reading of the tiered policy
+     * in globals.css: transform and layout animations become instant, opacity
+     * and colour keep their timing (ICONS_AND_MOTION.md §2.2, rule 10). It is
+     * context, so it reaches the dialogs and menus the shell portals out too.
+     */
+    <MotionConfig reducedMotion="user">
+      <div className="relative flex h-dvh overflow-hidden">
+        {/* Bypass Blocks (SC 2.4.1, Level A). */}
+        <a
+          href="#juno-main"
+          className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-ui focus-visible:shadow-float"
         >
-          <AppSidebar product={product} />
-        </SheetContent>
-      </Sheet>
+          Skip to content
+        </a>
 
-      <main
-        id="juno-main"
-        tabIndex={-1}
-        className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
-        style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
-      >
-        <StreamProgress active={streaming} />
+        {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
+            over the content; a click anywhere outside it folds it back. */}
+        {floating && (
+          /* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
+             spacer and app-sidebar's collapsed column — and a mismatch leaves
+             a seam of page showing through beside the rail at md–lg. */
+          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-16 shrink-0 bg-sidebar md:block" />
+        )}
+        {/* The scrim fades out as well as in. It used to cut on close while the
+            panel it belonged to was still folding away, so the page brightened
+            a frame before the panel had left it. Opacity only, so the reduced
+            tier keeps it unchanged. */}
+        <AnimatePresence>
+          {floating && (
+            <motion.button
+              key="sidebar-scrim"
+              type="button"
+              aria-label="Close sidebar"
+              onClick={() => setNarrowOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: transition.base }}
+              exit={{ opacity: 0, transition: transition.exit }}
+              /* /10, not /5. At a twentieth the wash was imperceptible on paper
+                 — the page behind the panel looked exactly as it had a frame
+                 earlier, so nothing said the panel was a layer you could
+                 dismiss by clicking past it. A tenth is still light enough to
+                 read the transcript through, which is the point of a soft
+                 dismiss rather than a modal. */
+              className="absolute inset-0 z-30 hidden cursor-default bg-foreground/10 md:block"
+            />
+          )}
+        </AnimatePresence>
 
-        {/* THE VOICE LIGHT, and it lives HERE rather than on <body>.
-            `<main>` is `relative` and starts where the sidebar ends, so the
-            layer it positions against is exactly the content column. The old
-            version was `position: fixed` in a body portal, which meant a call
-            lit the frame around the sidebar and the navigation as well as the
-            conversation — a mode light claiming chrome that is not in the
-            mode. Mounted once, here, and absent unless a call is up. */}
-        <AmbientAuraLazy />
+        {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
+            the content instead of reflowing it mid-animation.
 
-        {/* An account that has never confirmed its address can read everything
-            it owns and export it, but cannot spend — so the refusal has to be
-            explained before it is hit, not after. The banner renders null until
-            it has confirmed the address is unverified, so a verified account
-            pays nothing for it. */}
-        <VerifyEmailBanner />
+            ONE SPRING FOR THE FRAME AND EVERYTHING IN IT. The frame used to be
+            a CSS width transition at 220ms in-out while the rows inside it slid
+            on `spring.layout` (360ms, no bounce) — two clocks on one gesture,
+            so the frame finished closing while its own glyphs were still
+            travelling, and a second ⌘⇧S mid-fold restarted one clock and not
+            the other. framer drives the width now, on the same spring the
+            sidebar's rows use, so the panel folds as one object and a reversal
+            carries its velocity instead of snapping into a new tween.
 
-        {/* Mobile navigation stays out of a full-width toolbar: each action is
-            a self-contained circular surface, so the page background continues
-            through the top of the screen. */}
-        <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
+            Instant while dragging, so resize follows the pointer 1:1; instant
+            under reduced motion, where a panel that slides is travel. */}
+        <motion.aside
+          data-floating={floating ? "" : undefined}
+          initial={false}
+          animate={{ width: shown ? sidebarWidth : RAIL_WIDTH }}
+          transition={frameLive && !resizing && !reduceMotion ? spring.layout : { duration: 0 }}
+          className={cn(
+            "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
+            /* FLOATING MEANS ELEVATED. Over the content the panel had the same
+               hairline it wears as a column, so it read as a layout glitch —
+               a page that had failed to reflow — rather than as something
+               sitting above the page. The float shadow is the one thing that
+               says "this is a layer", and it is the same shadow every other
+               floating surface in the product wears. */
+            floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative"
+          )}
+          style={{ "--juno-sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+        >
+          <AppSidebar collapsed={!shown} onToggleCollapse={toggleCollapse} product={product} />
+          {shown && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              aria-valuemin={SIDEBAR_MIN}
+              aria-valuemax={SIDEBAR_MAX}
+              aria-valuenow={sidebarWidth}
+              tabIndex={0}
+              title="Drag to resize · double-click to reset"
+              onPointerDown={startResize}
+              onDoubleClick={resetWidth}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  const next = clampWidth(widthRef.current + (e.key === "ArrowLeft" ? -16 : 16));
+                  applyWidth(next);
+                  persistWidth(next);
+                } else if (e.key === "Enter") {
+                  resetWidth();
+                }
+              }}
+              className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none"
+            >
+              {/* Invisible until engaged: a neutral hairline on hover/drag/focus. */}
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute inset-y-0 right-0 w-[2px] bg-foreground/25 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
+                  resizing && "opacity-100"
+                )}
+              />
+            </div>
+          )}
+        </motion.aside>
+
+        {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock),
+            sliding in on `sheet-in`. The sidebar's rungs are re-based for the
+            popover ground it lands on (see the note in sheet.tsx).
+
+            THE ROW STATES ARE RE-BASED, not just the accent. Hover and selection
+            are separate colours now (globals.css), and both are authored against
+            a panel at 8.8% — on the sheet's 16.5% popover ground they would land
+            4.7 and 8.7 points too low, i.e. hover BELOW its own ground and
+            selection barely above it. Each is re-stated at the same distance
+            from THIS ground that it keeps from the panel:
+
+              ground     16.5%   (the popover, not --sidebar)
+              hover      21.0%   +4.5
+              selected   25.0%   +8.5
+              its edge   34.0%   +9.0 from the fill it bounds
+
+            `--sidebar-accent` keeps its own re-basing for the same reason it
+            always had one: the product switch's track draws with it directly. */}
+        <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+          <SheetContent
+            className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_25%] dark:[--sidebar-selected-border:48_7%_34%] md:hidden"
+            title="Conversations"
           >
-            <Menu className="size-5" />
-          </Button>
-          <AnimatedTitle
-            title={mobileTitle}
-            animate={inConversation && activeConversation?.titleSource === "ai"}
-            className="min-w-0 flex-1 px-1"
-            textClassName="text-body-lg font-semibold tracking-tight text-foreground"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="group ml-auto size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-            aria-label="Search chats and projects"
-          >
-            <SidebarMotionIcon kind="search" className="size-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
-            onClick={() => {
-              router.push("/chat");
-              window.dispatchEvent(new CustomEvent("juno:new-chat"));
-            }}
-            aria-label="New chat"
-          >
-            <Plus className="size-5" />
-          </Button>
-        </div>
+            <AppSidebar product={product} />
+          </SheetContent>
+        </Sheet>
 
-        {/* `z-[1]`, and it is the other half of the aura's `z-index: 0`.
-            A positioned layer at 0 paints ABOVE in-flow content, so without a
-            stacking order here the voice light would cover the conversation
-            instead of sitting behind it. One class, on the one element that
-            wraps everything a person reads. */}
-        <div className="relative z-[1] min-h-0 flex-1">
-          <PageTransition>{children}</PageTransition>
-        </div>
-      </main>
+        <main
+          id="juno-main"
+          tabIndex={-1}
+          className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
+          style={{ "--juno-sidebar-width": !shown || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
+        >
+          <StreamProgress active={streaming} />
 
-      <OnboardingLazy />
-      <AnnouncementPopupLazy />
-      <CommandPaletteLazy />
-      <DocumentTitle />
-    </div>
+          {/* THE VOICE LIGHT, and it lives HERE rather than on <body>.
+              `<main>` is `relative` and starts where the sidebar ends, so the
+              layer it positions against is exactly the content column. The old
+              version was `position: fixed` in a body portal, which meant a call
+              lit the frame around the sidebar and the navigation as well as the
+              conversation — a mode light claiming chrome that is not in the
+              mode. Mounted once, here, and absent unless a call is up. */}
+          <AmbientAuraLazy />
+
+          {/* An account that has never confirmed its address can read everything
+              it owns and export it, but cannot spend — so the refusal has to be
+              explained before it is hit, not after. The banner renders null until
+              it has confirmed the address is unverified, so a verified account
+              pays nothing for it. */}
+          <VerifyEmailBanner />
+
+          {/* Mobile navigation stays out of a full-width toolbar: each action is
+              a self-contained circular surface, so the page background continues
+              through the top of the screen. */}
+          <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="size-5" />
+            </Button>
+            <AnimatedTitle
+              title={mobileTitle}
+              animate={inConversation && activeConversation?.titleSource === "ai"}
+              className="min-w-0 flex-1 px-1"
+              textClassName="text-body-lg font-semibold tracking-tight text-foreground"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="group ml-auto size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+              aria-label="Search chats and projects"
+            >
+              <SidebarMotionIcon kind="search" className="size-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
+              onClick={() => {
+                router.push("/chat");
+                window.dispatchEvent(new CustomEvent("juno:new-chat"));
+              }}
+              aria-label="New chat"
+            >
+              <Plus className="size-5" />
+            </Button>
+          </div>
+
+          {/* `z-[1]`, and it is the other half of the aura's `z-index: 0`.
+              A positioned layer at 0 paints ABOVE in-flow content, so without a
+              stacking order here the voice light would cover the conversation
+              instead of sitting behind it. One class, on the one element that
+              wraps everything a person reads. */}
+          <div className="relative z-[1] min-h-0 flex-1">
+            <PageTransition>{children}</PageTransition>
+          </div>
+        </main>
+
+        <OnboardingLazy />
+        <AnnouncementPopupLazy />
+        <CommandPaletteLazy />
+        <DocumentTitle />
+      </div>
+    </MotionConfig>
   );
 }

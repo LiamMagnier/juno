@@ -4,7 +4,7 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { GitFork, GripVertical, Loader2 } from "lucide-react";
+import { EyeOff, GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -148,19 +148,6 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
     .slice(0, 8)
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
-}
-
-function PrivateGhostMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 48 48" aria-hidden="true" className={className}>
-      <path
-        d="M9.5 39V21C9.5 12 16 6.5 24 6.5S38.5 12 38.5 21v18c0 1.7-1.9 2.6-3.2 1.6l-3.4-2.6-3.4 2.6a2.5 2.5 0 0 1-3.1 0L22 38l-3.4 2.6a2.5 2.5 0 0 1-3.1 0l-3.4-2.6-3.4 2.6C11.4 41.6 9.5 40.7 9.5 39Z"
-        fill="currentColor"
-      />
-      <circle cx="19" cy="22" r="2.4" className="fill-background" />
-      <circle cx="29" cy="22" r="2.4" className="fill-background" />
-    </svg>
-  );
 }
 
 export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
@@ -2071,7 +2058,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               onClick={() => setShareOpen(true)}
               className="text-foreground/75"
             >
-              <ActionIcons.share className="size-4.5" />
+              {/* The page-header rung (size-5), matching the private-chat
+                  toggle beside it; 18px is the sidebar's destination rung. */}
+              <ActionIcons.share className="size-5" />
             </Pressable>
           </TooltipTrigger>
           <TooltipContent>Share chat</TooltipContent>
@@ -2202,8 +2191,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 on the black ground with nothing for the blur to smear — message
                 text scrolled straight through the project name. */}
             <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-popover py-1 pl-1 pr-1 shadow-soft motion-safe:animate-fade-in">
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
-                <AppIcons.projects className="size-3 text-primary" />
+              {/* A neutral tile, not a coral one: the pill names where the chat
+                  is filed, which is information rather than state, and the
+                  accent belongs to state and the primary action. */}
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                <AppIcons.projects className="size-3.5" />
               </span>
               <span className="hidden font-mono text-label text-muted-foreground sm:inline">
                 Project
@@ -2267,7 +2259,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     in the product; and `pulse-ring` is the named keyframe every
                     other live dot here uses, so there is one place to tune them.
                     Same reasoning as the note at research-run-panel.tsx. */}
-                <span aria-hidden className="absolute inline-flex size-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring" />
+                {/* ONE ring (`pulse-ring-once`): a memory write is an event
+                    that has happened, not work in progress, and a pill that
+                    keeps pulsing after the fact says something is still going on. */}
+                <span aria-hidden className="absolute inline-flex size-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring-once" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
               </span>
               <span className="font-mono text-label text-muted-foreground">Memory updated</span>
@@ -2296,21 +2291,33 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-2 font-medium">
-                  <PrivateGhostMark className="size-4 text-foreground/70" />
+                  {/* The private-chat toggle's own mark in its ON cut, so the
+                      header and the control that set it name one state with
+                      one drawing. It was a hand-drawn ghost on a 48 grid. */}
+                  <EyeOff weight="fill" className="size-4 text-foreground/70" />
                   Incognito chat
                 </div>
               )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  exitPrivateMode();
-                }}
-                className="relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground active:scale-95 transition-[color,background-color,transform] duration-fast ease-out-soft pointer-events-auto"
-                aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
-              >
-                <ActionIcons.dismiss className="size-4" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      exitPrivateMode();
+                    }}
+                    // `.pressable` carries the tonal hover's timing and the dip
+                    // on --dur-press; the stray `active:scale-95` ran the press
+                    // at the colour's 120ms, to a deeper scale than any other
+                    // control in the header.
+                    className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
+                    aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
+                  >
+                    <ActionIcons.dismiss className="size-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave private chat"}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -2634,7 +2641,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {...canvas.separatorProps}
               aria-label="Resize canvas"
               title="Drag to resize canvas. Arrow keys adjust, Home resets."
-              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center @[50rem]/split:flex"
+              // The dock's hover tint, so the two resizable edges answer the
+              // pointer the same way when both are open side by side.
+              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
             >
               <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
                 <GripVertical className="size-3.5" />

@@ -90,7 +90,10 @@ export function DotFillBar({
       {Array.from({ length: dots }).map((_, i) => (
         <span
           key={i}
-          className={cn("h-[5px] w-[5px] rounded-full transition-colors", i < filled ? "bg-primary" : "bg-border")}
+          className={cn(
+            "size-[5px] rounded-full transition-colors duration-base ease-out-soft",
+            i < filled ? "bg-primary" : "bg-border"
+          )}
         />
       ))}
     </div>

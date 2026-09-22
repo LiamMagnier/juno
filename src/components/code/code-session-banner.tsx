@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -528,10 +528,10 @@ function ChecksAndAutoFix({
                       href={check.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={cn(
-                        PANEL_ROW,
-                        "pressable transition-colors duration-fast ease-out-soft hover:bg-accent",
-                      )}
+                      // `.pressable` alone: it carries the colour cross-fade
+                      // itself, and a `transition-colors` beside it would have
+                      // replaced its shorthand and taken the press with it.
+                      className={cn(PANEL_ROW, "pressable hover:bg-accent")}
                     >
                       {body}
                     </a>

@@ -255,15 +255,23 @@ export function ActivityHeatmap({
                     onClick={() => pick(isSelected ? null : cell)}
                     className={cn(
                       "activity-cell block size-[var(--cell)] rounded-micro motion-safe:animate-fade-in",
-                      "transition-[transform,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+                      "transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
                       // No private focus ring: the global `:focus-visible`
                       // outline (globals.css) is authoritative, and at 2px on
                       // --ring it now clears 3:1 on its own. The scale-up rides
                       // with it so a focused cell is also the biggest one.
                       "hover:scale-125 focus-visible:scale-125",
                       cell.future ? "bg-muted/40" : LEVEL_CLASS[cell.level],
-                      isSelected && "ring-2 ring-foreground/70 ring-offset-1 ring-offset-background",
-                      isPeak && !isSelected && "ring-1 ring-primary/60 ring-offset-1 ring-offset-background"
+                      // Selection and the peak are OUTLINES with a 1px offset,
+                      // not `ring-offset-background` box-shadows. A ring's offset
+                      // band is painted in a named colour, and this graph lives
+                      // in the settings dialog too, where --background is not
+                      // the surface — each marked cell wore a page-coloured
+                      // square. An outline's offset shows the real ground.
+                      // Focus keeps the global rule's --ring ink and 2px width.
+                      isSelected && "outline outline-2 outline-offset-1 outline-foreground/70",
+                      isPeak && !isSelected && "outline outline-1 outline-offset-1 outline-primary/60",
+                      (isSelected || isPeak) && "focus-visible:outline-2 focus-visible:outline-ring"
                     )}
                     // The shared `tight` rung, per week column, rather than a
                     // private 8ms — the one tempo in the product that was
@@ -273,28 +281,43 @@ export function ActivityHeatmap({
                 );
               })}
               {hover && (
+                // Two boxes on purpose. The outer one POSITIONS (a translate to
+                // centre it over the cell and lift it clear); the inner one is
+                // the surface and carries the pop. They were one element, and
+                // `animate-pop-in` runs with `fill-mode: both`, so its final
+                // `transform: translateY(0) scale(1)` stayed applied and erased
+                // the centring translate — the tooltip sat to the right of the
+                // cell, covering it, whenever motion was allowed.
+                //
+                // The material is the shared tooltip's (ui/tooltip.tsx):
+                // `.surface-float` at `rounded-control`, foreground ink. It was
+                // an inverted ink slab, the brightest object on the dark theme.
                 <div
-                  id={tooltipId}
-                  role="tooltip"
-                  className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[calc(100%+8px)] whitespace-nowrap rounded-control bg-foreground px-2.5 py-1.5 text-caption text-background shadow-float motion-safe:animate-pop-in"
+                  className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[calc(100%+8px)]"
                   style={{ left: hover.x, top: hover.y }}
                 >
-                  {hover.cell.future ? (
-                    <span className="text-background/70">Not yet</span>
-                  ) : hover.cell.count === 0 ? (
-                    <span>
-                      <span className="text-background/70">No activity on </span>
-                      {longDate(hover.cell.date)}
-                    </span>
-                  ) : (
-                    <span>
-                      <span className="font-medium tabular-nums">
-                        {hover.cell.count} {hover.cell.count === 1 ? "reply" : "replies"}
+                  <div
+                    id={tooltipId}
+                    role="tooltip"
+                    className="surface-float origin-bottom whitespace-nowrap rounded-control px-2.5 py-1 text-caption text-foreground motion-safe:animate-pop-in"
+                  >
+                    {hover.cell.future ? (
+                      <span className="text-muted-foreground">Not yet</span>
+                    ) : hover.cell.count === 0 ? (
+                      <span>
+                        <span className="text-muted-foreground">No activity on </span>
+                        {longDate(hover.cell.date)}
                       </span>
-                      <span className="text-background/70"> · {formatTokens(hover.cell.tokens)} tokens · </span>
-                      {longDate(hover.cell.date)}
-                    </span>
-                  )}
+                    ) : (
+                      <span>
+                        <span className="font-medium tabular-nums">
+                          {hover.cell.count} {hover.cell.count === 1 ? "reply" : "replies"}
+                        </span>
+                        <span className="text-muted-foreground"> · {formatTokens(hover.cell.tokens)} tokens · </span>
+                        {longDate(hover.cell.date)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -321,7 +344,7 @@ export function ActivityHeatmap({
               <button
                 type="button"
                 onClick={() => pick(null)}
-                className="ml-2 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="ml-2 rounded-xs text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
               >
                 Clear
               </button>

@@ -13,9 +13,12 @@ import containerQueries from "@tailwindcss/container-queries";
  *                         (mirrored as --ease-* / --dur-* in globals.css, where the
  *                          reasoning behind each value lives — read it before adding a fifth)
  * Overlays .............. animate-{pop-in,pop-out} (floating layers, spring) · animate-{sheet-in,sheet-out}
- *                         (drawers) · animate-{overlay-in,overlay-out} (backdrops) — pair with
- *                         Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
+ *                         (drawers) · animate-{overlay-in,overlay-out} (backdrops) ·
+ *                         animate-{tooltip-in,tooltip-out} (the quick, small-offset tooltip pair) — pair
+ *                         with Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
  *                         animate-check-morph (copy → check).
+ * Icons ................. src/components/ui/icons.tsx (Phosphor geometry, one set); hover
+ *                         articulation is svg.icon[data-motion] in globals.css.
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
  * Elevation ............. Flat kit (docs/design/FLAT_UI.md): shadow-{raised,raised-lg,inset,
  *                         pressed,float} — theme-aware via --shadow-* CSS vars; inset and
@@ -228,14 +231,13 @@ const config: Config = {
         "dot-gap": "var(--dot-gap)",
         // 18px. Tailwind's default scale jumps 16 → 20 with nothing between, and
         // 18px is a size this product genuinely uses for the slightly-larger
-        // interface glyph (the palette's search mark, the composer's send
-        // arrow, an onboarding tile's icon). With no rung to land on, call sites
-        // had split into two workarounds: seven wrote `h-[18px] w-[18px]`, and
-        // three wrote `size-4.5` — which Tailwind does not define, so it emitted
-        // NO css at all and those icons silently rendered at Lucide's intrinsic
-        // 24px. Naming the rung is what makes both spellings converge on one
-        // real value, and it gives the optical stroke ladder in globals.css a
-        // class to key 18px on.
+        // interface glyph — on the icon ladder it is the sidebar-destination
+        // rung (docs/design/ICONS_AND_MOTION.md §1.2). With no rung to land on,
+        // call sites had split into two workarounds: seven wrote
+        // `h-[18px] w-[18px]`, and three wrote `size-4.5` — which Tailwind did
+        // not define, so it emitted NO css at all and those icons silently
+        // rendered at the glyph's intrinsic 24px box. Naming the rung is what
+        // makes both spellings converge on one real value.
         "4.5": "1.125rem",
       },
       transitionTimingFunction: {
@@ -678,6 +680,33 @@ const config: Config = {
           to: { opacity: "0" },
         },
         /*
+         * The tooltip pair. A tooltip is the smallest floating layer and the one
+         * that opens most often, so it moves least: HALF the popper drift (2px,
+         * still toward the trigger via --pop-shift from `.origin-popper`) and a
+         * 0.97 start rather than the menu's 0.96, on the fast rung with no
+         * overshoot. A micro-label that springs reads as a toy; one that fades
+         * in place with a hair of travel reads as the interface answering.
+         *
+         * Both terms multiply --motion-shift, so the reduced tier (globals.css)
+         * collapses travel and scale to identity and keeps the fade.
+         */
+        "tooltip-in": {
+          from: {
+            opacity: "0",
+            transform:
+              "translateY(calc(var(--pop-shift, 4px) * 0.5 * var(--motion-shift, 1))) scale(calc(1 - 0.03 * var(--motion-shift, 1)))",
+          },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "tooltip-out": {
+          from: { opacity: "1", transform: "translateY(0) scale(1)" },
+          to: {
+            opacity: "0",
+            transform:
+              "translateY(calc(var(--pop-shift, 4px) * 0.5 * var(--motion-shift, 1))) scale(calc(1 - 0.03 * var(--motion-shift, 1)))",
+          },
+        },
+        /*
          * A jumped-to citation, marked once and let go — the landing signal for
          * the thought panel's jump-to-source (thought-process-panel.tsx). The
          * reader clicks a source row in the dock, the transcript scrolls, and
@@ -805,6 +834,11 @@ const config: Config = {
         // is a bigger box. Replaces the tailwindcss-animate chain on DialogContent.
         "modal-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "modal-out": "pop-out var(--dur-exit) var(--ease-in) both",
+        // Tooltips: in on the fast rung and the plain decelerate (no spring —
+        // see the keyframe note), out on the same rung on the accelerate, which
+        // is what makes the exit read as the quicker of the two.
+        "tooltip-in": "tooltip-in var(--dur-fast) var(--ease-out-soft) both",
+        "tooltip-out": "tooltip-out var(--dur-fast) var(--ease-in) both",
         // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
         // keyframe on purpose — a transform here would create a containing block
         // and break the `fixed` model-selector / canvas panel.

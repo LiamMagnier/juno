@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,23 @@ import { cn } from "@/lib/utils";
  * `size` is about how much room the state is allowed to take, not how
  * important it is: `panel` for a state inside a card or a sidebar section,
  * `page` for one that owns the whole content column.
+ *
+ * THE GLYPH SITS IN A TILE (docs/design/ICONS_AND_MOTION.md §3): one muted
+ * mark on a small card-fill square with a hairline, the way Claude and Linear
+ * set theirs. A bare glyph floating over a sentence read as a stray icon; in a
+ * tile it reads as the object the page is about, set down where the content
+ * will be. The tile is the only thing with a fill in the well, so it is the
+ * one place the eye lands, and the sentence under it does the rest.
+ *
+ * The mark does not articulate (`motion="none"`): an empty state is sometimes
+ * rendered inside a link or a clickable row, and a glyph that tilts because
+ * the page around it is hoverable is saying something about an action that
+ * is not there.
+ *
+ * It arrives on the workhorse entrance (`rise-in`) — an empty state appears
+ * because the reader filtered, searched or opened something, and a 6px settle
+ * says "this is the answer" where a cut says "the page broke". Reduced motion
+ * keeps the fade.
  */
 export function EmptyState({
   icon: Icon,
@@ -28,7 +45,7 @@ export function EmptyState({
   size = "page",
   className,
 }: {
-  icon?: LucideIcon;
+  icon?: IconComponent;
   title: React.ReactNode;
   /** One or two sentences. Say what would put something here, not just that it is empty. */
   description?: React.ReactNode;
@@ -39,40 +56,41 @@ export function EmptyState({
   className?: string;
 }) {
   const isError = tone === "error";
+  const page = size === "page";
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center",
+        "flex flex-col items-center justify-center text-center motion-safe:animate-rise-in",
         // `border-dashed` is a utility, so it wins the border-style over
         // `.surface-inset`'s shorthand while the recess and fill stay.
         isError
           ? "rounded-card border border-solid border-destructive/35 bg-destructive/[0.07]"
           : "surface-inset rounded-card border-dashed border-border/80",
-        size === "page" ? "min-h-64 px-6 py-12" : "px-4 py-7",
+        page ? "min-h-64 px-6 py-12" : "px-4 py-7",
         className
       )}
       // A failed load is a status message; an empty list is just the page.
       role={isError ? "status" : undefined}
     >
       {Icon && (
-        <Icon
-          className={cn(
-            "shrink-0",
-            size === "page" ? "size-5" : "size-4",
-            isError ? "text-destructive/75" : "text-muted-foreground",
-            // A lighter stroke for the empty-state glyph, as a CSS utility rather
-            // than the `strokeWidth` prop: globals.css's optical ladder sets
-            // stroke-width in CSS, which beats the attribute.
-            "[stroke-width:1.5]"
-          )}
+        <span
           aria-hidden="true"
-        />
+          className={cn(
+            "grid shrink-0 place-items-center border",
+            page ? "size-12 rounded-field" : "size-9 rounded-control",
+            isError
+              ? "border-destructive/25 bg-destructive/[0.06] text-destructive"
+              : "border-border/70 bg-card text-muted-foreground"
+          )}
+        >
+          <Icon motion="none" className={page ? "size-6" : "size-5"} />
+        </span>
       )}
       <p
         className={cn(
           "font-semibold tracking-[-0.01em]",
-          size === "page" ? "text-body-lg" : "text-body",
-          Icon && "mt-4",
+          page ? "text-body-lg" : "text-body",
+          Icon && (page ? "mt-4" : "mt-3"),
           isError && "text-destructive"
         )}
       >
@@ -83,7 +101,7 @@ export function EmptyState({
           {description}
         </p>
       )}
-      {action && <div className="mt-4 flex flex-wrap items-center justify-center gap-2">{action}</div>}
+      {action && <div className="mt-5 flex flex-wrap items-center justify-center gap-2">{action}</div>}
     </div>
   );
 }

@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Wrench } from "lucide-react";
+import { ChevronRight, Wrench } from "@/components/ui/icons";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
+import {
+  workRowChevronClass,
+  workRowClass,
+  workRowEnterClass,
+} from "@/components/work/shell/work-section";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
@@ -34,14 +39,12 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
     <Link
       href={`/skills/${skill.id}`}
       className={cn(
-        // The same rest/hover/press/focus set WorkSessionRow carries. These
-        // three sibling rows are the same object in three lists and had neither a
-        // focus ring — a keyboard reader could not see which row they were on —
-        // nor any press feedback.
-        "group flex items-start gap-3 rounded-field border border-border/60 bg-card px-3.5 py-3 transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        "motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.997]",
-        "[animation-fill-mode:backwards]",
+        // The shared list-row recipe (work-section.tsx): text on the well at
+        // rest, a tonal fill under the pointer, a darker one while pressed, and
+        // the global focus outline.
+        workRowClass,
+        workRowEnterClass,
+        "active:bg-secondary",
         !skill.enabled && "opacity-75"
       )}
       style={staggerDelay(index, "tight")}
@@ -65,10 +68,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
           v{skill.currentVersion} · {trustLabel(skill.trust)} · {workTimeAgo(skill.updatedAt)}
         </span>
       </span>
-      <ChevronRight
-        className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
-        aria-hidden="true"
-      />
+      <ChevronRight className={workRowChevronClass} aria-hidden="true" />
     </Link>
   );
 }

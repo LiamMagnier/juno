@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -110,12 +111,21 @@ export function AppPageHeader({
           row, and no 28px of empty chrome where one used to be. */}
       {(backHref || eyebrow) && (
         <div className="mb-3 flex items-center gap-2">
+          {/* Icon-only, so it names itself in a tooltip as well as to a
+              screen reader — the parent it goes up to is not otherwise
+              written anywhere on the page. The arrow nudges the way it
+              points on hover and focus (the icon set's `nudge-l`). */}
           {backHref && (
-            <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel ?? "Back"}>
-              <Link href={backHref}>
-                <ArrowLeft className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel ?? "Back"}>
+                  <Link href={backHref}>
+                    <ArrowLeft className="size-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{backLabel ?? "Back"}</TooltipContent>
+            </Tooltip>
           )}
           {eyebrow && (
             <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>

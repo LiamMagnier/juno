@@ -259,7 +259,7 @@ export function PaneResizer({
       <span
         aria-hidden
         className={cn(
-          "absolute bg-primary/60 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100",
+          "absolute bg-primary/60 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
           vertical ? "inset-y-0 -left-0.5 w-1" : "inset-x-0 -top-0.5 h-1",
           pane.dragging && "opacity-100"
         )}

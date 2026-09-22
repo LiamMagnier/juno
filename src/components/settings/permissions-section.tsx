@@ -247,8 +247,8 @@ export function PermissionsSection() {
             {state.lockdownMode && (
               // p-4, matching the spend-ceiling warning well on this same page:
               // the two warning states in settings share one chrome.
-              <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body text-foreground">
-                <StatusIcons.security className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body text-foreground motion-safe:animate-rise-in">
+                <StatusIcons.security className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
                 Lockdown is on, so every connector action is refused right now. The choice below takes
                 effect again when you turn it off.
               </p>
@@ -275,24 +275,24 @@ export function PermissionsSection() {
                     role="radio"
                     aria-checked={selected}
                     onClick={() => selectPolicy(policy)}
-                    // No shadows. `--shadow-float` is the OUT-OF-FLOW token —
-                    // card.tsx explicitly forbids an in-flow tile reaching for it,
+                    // No shadows and no lift. `--shadow-float` is the OUT-OF-FLOW
+                    // token — card.tsx forbids an in-flow tile reaching for it,
                     // because a hovered tile then outranks every dropdown in the
-                    // product — and on a black ground both shadows are black ink,
-                    // so the whole hover state degraded to a 2px translate. The
-                    // Pressable `tile` kind already carries border + fill hover.
+                    // product — and the 2px hover translate that outlived it was
+                    // the one tile in settings that moved under the pointer
+                    // (ICONS_AND_MOTION.md §2.2.1: hover is a tonal cross-fade,
+                    // nothing lifts). The Pressable `tile` kind's own hairline and
+                    // `.control-neu` fill are the whole hover state.
                     //
-                    // And no `hover:bg-card` either, which is what the line above
-                    // used to say while doing the opposite: utilities are emitted
-                    // after the components layer, so it beat the kind's
-                    // `hover:bg-accent` and repainted the hover in the tile's OWN
-                    // rest fill. Five policy cards whose only hover was a 2px lift.
-                    className="min-h-11 motion-safe:hover:-translate-y-0.5"
+                    // And no `hover:bg-card` either: utilities are emitted after
+                    // the components layer, so it beat the kind's hover fill and
+                    // repainted the hover in the tile's OWN rest fill.
+                    className="min-h-11"
                     {...policyOption(position)}
                   >
                     <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
                       {option.label}
-                      {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden />}
+                      {selected && <StatusIcons.success className="check-morph size-3.5 shrink-0 text-primary" aria-hidden />}
                     </span>
                     <span className="text-ui text-muted-foreground">
                       {option.description}
@@ -334,7 +334,10 @@ export function PermissionsSection() {
               {connectorRows.length === 0 ? (
                 <p className="mt-3 text-ui text-muted-foreground">
                   No apps are connected yet.{" "}
-                  <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
+                  <Link
+                    href="/connections"
+                    className="rounded-xs underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+                  >
                     Connect one
                   </Link>{" "}
                   and it will appear here.

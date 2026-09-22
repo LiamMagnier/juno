@@ -1,6 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
+import { RequestCardSkeleton } from "@/components/roadmap/request-card-skeleton";
 
 /**
  * Search and sort over the category chips, then the request list.
@@ -31,13 +32,11 @@ export default function RoadmapLoading() {
             />
           ))}
         </div>
+        {/* The request card's anatomy, from the component the board's own
+            pre-data branch renders — one picture for one load. */}
         <div className="mt-6 space-y-2.5">
           {[...Array(6)].map((_, i) => (
-            <Skeleton
-              key={i}
-              className="h-24 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              style={staggerDelay(i, "tight")}
-            />
+            <RequestCardSkeleton key={i} index={i} />
           ))}
         </div>
     </AppPage>

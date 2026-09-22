@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import {
   AUDIT_COPY,
@@ -62,7 +62,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
           : summary}
         <ChevronDown
           aria-hidden="true"
-          className={cn("size-3 transition-transform duration-base ease-out-soft motion-reduce:transition-none", open && "rotate-180")}
+          className={cn("size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none", open && "rotate-180")}
         />
       </button>
       <div
@@ -147,18 +147,17 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
           ? { title: "Juno did not link this: it is not a web address." }
           : {})}
         className={cn(
-          "group/row relative z-0 flex items-center gap-2.5 rounded-menu border border-transparent p-2",
-          "transition-[transform,box-shadow,border-color,background-color] duration-base ease-out-soft motion-reduce:transition-none",
-          // Hover is a LIFT: the row resolves into a card and rises. `relative` +
-          // `hover:z-10` so the next row's fill can't paint over this one's shadow.
-          // Literally `shadow-lift`, not `shadow-float` — float is the FLOATING
-          // rung, and an in-flow transcript row was casting a bigger shadow than
-          // an open dropdown. On black the shadow does nothing either way, which
-          // is why the fill and border changes below carry the state.
-          "hover:z-10 hover:border-border/70 hover:bg-card hover:shadow-lift motion-safe:hover:-translate-y-0.5",
+          "group/row relative flex items-center gap-2.5 rounded-menu p-2",
+          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          // Hover is TONAL: a list row is text on the panel until the pointer
+          // reaches it, and then it takes the --accent fill (PREMIUM_AUDIT §3.3).
+          // It used to resolve into a card that rose 2px and cast `shadow-lift`,
+          // which made the bibliography the one list in the product whose rows
+          // floated off the page under the cursor.
+          "hover:bg-accent",
           // The row is an <a>: it is reachable by keyboard, and the entire
           // "this is a link" treatment used to live on :hover alone.
-          "focus-visible:z-10 focus-visible:border-border/70 focus-visible:bg-card"
+          "focus-visible:bg-accent"
         )}
       >
         {/* Keeps the inline [n] chips and this list readable as the same numbering. */}
@@ -167,14 +166,14 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
         </span>
         <SourceFavicon url={source.url} variant="list" />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-body leading-tight text-foreground/90 transition-colors duration-fast group-hover/row:text-foreground motion-reduce:transition-none">
+          <span className="truncate text-body leading-tight text-foreground/90 transition-colors duration-fast ease-out-soft group-hover/row:text-foreground motion-reduce:transition-none">
             {titleOf(source)}
           </span>
           <span className="truncate font-mono text-caption text-muted-foreground">{hostOf(source.url)}</span>
         </span>
         <ActionIcons.external
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60 motion-reduce:transition-none"
+          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60 motion-reduce:transition-none"
         />
       </Row>
       {audit && <SourceAudit audit={audit} index={index} />}
@@ -201,8 +200,8 @@ export function SourcesPill({
 
   /*
    * The grid-rows 0fr→1fr expand REQUIRES overflow-hidden to clip the rows while
-   * they animate — but that same clip slices each row's hover shadow flat into a
-   * hard bar. So: clip only WHILE animating, then release. Collapsing re-clips
+   * they animate — but that same clip slices the focus outline off the first
+   * and last rows. So: clip only WHILE animating, then release. Collapsing re-clips
    * immediately (settled resets with `open`), which is what the animation needs.
    */
   const [settled, setSettled] = React.useState(false);
@@ -263,14 +262,14 @@ export function SourcesPill({
             />
           ))}
         </span>
-        <span className="font-mono text-label text-muted-foreground transition-colors duration-fast group-hover/pill:text-foreground motion-reduce:transition-none">
+        <span className="font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/pill:text-foreground motion-reduce:transition-none">
           Sources
         </span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground">{sources.length}</span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 text-muted-foreground/70 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+            "size-3.5 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

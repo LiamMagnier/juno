@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/icons";
 import { SettingsIcons } from "@/lib/app-icons";
 
 /**
@@ -27,7 +27,7 @@ export const SETTINGS_SECTIONS = [
   { id: "data", label: "Data & privacy", icon: SettingsIcons.data, description: "Export, import, shared links and deletion." },
   { id: "account", label: "Account", icon: SettingsIcons.account, description: "Who you are to Juno, and how you sign in." },
   { id: "billing", label: "Plan & billing", icon: SettingsIcons.billing, description: "Your plan, what you have used, and the ceiling." },
-] as const satisfies readonly { id: string; label: string; icon: LucideIcon; description: string }[];
+] as const satisfies readonly { id: string; label: string; icon: IconComponent; description: string }[];
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 

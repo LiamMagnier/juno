@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { List, Plus, Search, X } from "lucide-react";
+import { List, Plus, Search } from "@/components/ui/icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -88,7 +89,7 @@ export function MemoryToolbar({
         <div className="relative min-w-0 flex-1 basis-56">
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
             ref={searchRef}
@@ -114,13 +115,14 @@ export function MemoryToolbar({
               variant="ghost"
               size="icon-sm"
               aria-label="Clear the search"
+              title="Clear search"
               onClick={() => {
                 onQueryChange("");
                 searchRef.current?.focus();
               }}
-              className="absolute right-1 top-1/2 -translate-y-1/2"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground motion-safe:animate-fade-in"
             >
-              <X className="size-3.5" />
+              <ActionIcons.dismiss className="size-3.5" />
             </Button>
           )}
         </div>
@@ -144,9 +146,22 @@ export function MemoryToolbar({
           className="shrink-0 gap-1.5"
           disabled={paused}
           aria-label={paused ? "Add a memory — unavailable while memory is paused" : "Add a memory yourself"}
+          aria-expanded={adding}
           onClick={() => setAdding((open) => !open)}
         >
-          <Plus className="size-3.5" aria-hidden="true" />
+          {/* The plus rests at 45° while the field is open, so the control
+              that opened the field reads as the one that closes it. The turn
+              is on a wrapper: the glyph's own transition (its hover
+              articulation, globals.css) would out-rank a utility on the svg. */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-flex transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              adding && "rotate-45"
+            )}
+          >
+            <Plus className="size-3.5" />
+          </span>
           Add
         </Button>
       </div>

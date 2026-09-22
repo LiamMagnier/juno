@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent, IconMotion } from "@/components/ui/icons";
 
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
@@ -31,25 +31,35 @@ import { cn } from "@/lib/utils";
  * /work — rather than the generic "brainstorm / summarize" filler that would
  * describe any chat product.
  */
-const CHIPS: ReadonlyArray<{ label: string; icon: LucideIcon; seed: string }> = [
+/*
+ * Each chip names the gesture its glyph makes under the pointer
+ * (ICONS_AND_MOTION.md §1.3). The telescope and the pencil are tools picked
+ * up; the code brackets and the workflow are marks, and swell. The hover is
+ * the only thing that moves once the row has been dealt in.
+ */
+const CHIPS: ReadonlyArray<{ label: string; icon: IconComponent; motion: IconMotion; seed: string }> = [
   {
     label: "Research",
     icon: AppIcons.research,
+    motion: "tilt",
     seed: "Research and cite sources on ",
   },
   {
     label: "Write",
     icon: ActionIcons.edit,
+    motion: "tilt",
     seed: "Help me write ",
   },
   {
     label: "Code",
     icon: AppIcons.code,
+    motion: "pop",
     seed: "Write code that ",
   },
   {
     label: "Plan",
     icon: AppIcons.work,
+    motion: "pop",
     seed: "Plan the steps to ",
   },
 ];
@@ -67,10 +77,12 @@ export function StarterChips({ className }: { className?: string }) {
           // No `transition-colors` beside `.pressable`: that class already
           // declares the whole transition shorthand, and a later transition-*
           // utility would override it and un-animate the press.
+          // The glyph takes the chip's ink, so muted → foreground on hover is
+          // one cross-fade for the label and the mark together.
           className={cn(
-            "pressable inline-flex h-8 items-center gap-1.5 rounded-full border border-border",
-            "bg-transparent px-3 text-ui text-muted-foreground",
-            "hover:bg-accent hover:text-foreground active:bg-secondary",
+            "pressable inline-flex h-8 items-center gap-2 rounded-full border border-border",
+            "bg-transparent pl-2.5 pr-3 text-ui text-muted-foreground",
+            "hover:border-foreground/15 hover:bg-accent hover:text-foreground active:bg-secondary",
             "coarse:h-10 coarse:px-3.5",
             // Backwards fill so the chip is not painted for one frame before
             // its delay elapses. The 120ms offset lets the greeting land first,
@@ -79,7 +91,7 @@ export function StarterChips({ className }: { className?: string }) {
           )}
           style={staggerDelay(i, "tight", 120)}
         >
-          <chip.icon className="size-3.5" aria-hidden="true" />
+          <chip.icon motion={chip.motion} className="size-4" aria-hidden="true" />
           {chip.label}
         </button>
       ))}

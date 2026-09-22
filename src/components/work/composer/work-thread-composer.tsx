@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Mic, Plus } from "lucide-react";
+import { Loader2, Mic, Plus } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -335,7 +335,7 @@ export function WorkThreadComposer({
                */}
               <div
                 className={cn(
-                  "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                  "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
                   files.uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                 )}
               >
@@ -377,17 +377,28 @@ export function WorkThreadComposer({
                             />
                           )}
                           {added ? (
-                            <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            // Handed over: the tick settles into the slot the
+                            // remove control just left, once, on the press that
+                            // caused it.
+                            <StatusIcons.success
+                              className="size-3.5 shrink-0 animate-check-morph text-primary"
+                              aria-hidden="true"
+                            />
                           ) : (
-                            <Pressable
-                              kind="icon"
-                              size="sm"
-                              onClick={() => files.remove(upload.localId)}
-                              className="-mr-1 shrink-0"
-                              aria-label={`Remove ${upload.fileName}`}
-                            >
-                              <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
-                            </Pressable>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Pressable
+                                  kind="icon"
+                                  size="sm"
+                                  onClick={() => files.remove(upload.localId)}
+                                  className="-mr-1 shrink-0"
+                                  aria-label={`Remove ${upload.fileName}`}
+                                >
+                                  <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
+                                </Pressable>
+                              </TooltipTrigger>
+                              <TooltipContent>Remove</TooltipContent>
+                            </Tooltip>
                           )}
                         </div>
                       );
@@ -452,21 +463,29 @@ export function WorkThreadComposer({
           leading={
             <>
                 <Popover open={addOpen} onOpenChange={setAddOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Add a file, an app or a skill to this task"
-                      className={cn(composerIconButtonClass, "group")}
-                    >
-                      <Plus
-                        aria-hidden="true"
-                        strokeWidth={1.75}
-                        className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-                      />
-                    </Button>
-                  </PopoverTrigger>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Add a file, an app or a skill to this task"
+                          className={cn(composerIconButtonClass, "group")}
+                        >
+                          {/* The house weight, like the chat composer's `+`. The
+                              eighth turn while open is a state (the panel is
+                              up), so it runs A-to-B on the symmetric curve; the
+                              glyph's own hover turn composes with it. */}
+                          <Plus
+                            aria-hidden="true"
+                            className="size-4 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-45 motion-reduce:transition-none"
+                          />
+                        </Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Add to this task</TooltipContent>
+                  </Tooltip>
                   {/* The panel's requests are made when it mounts, which Radix
                       does on open — so a reader who never opens the [+] never
                       makes any of them. */}

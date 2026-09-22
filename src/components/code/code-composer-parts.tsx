@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppIcons, ComposerIcons } from "@/lib/app-icons";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
@@ -57,7 +58,12 @@ export function ComposerAttachmentTray({
  * The "+" menu: photos, files, library.
  *
  * The shared 32px flat icon button; the plus turns into a × while the menu is
- * open, which is the only motion the trigger makes.
+ * open, which is the only motion the trigger makes. That is why the glyph
+ * opts out of its default hover `turn` (`motion="none"`): a plus that spun a
+ * quarter on hover and then an eighth on open would be two gestures saying
+ * one thing — and the articulation's own `transition` on `svg.icon[data-motion]`
+ * outranks the `transition-transform` below, so while it was on, the open
+ * rotation snapped instead of turning.
  */
 export function ComposerAddMenu({
   open,
@@ -76,22 +82,31 @@ export function ComposerAddMenu({
 }) {
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Add an attachment"
-          disabled={disabled}
-          className={cn(composerIconButtonClass, "group")}
-        >
-          <AppIcons.new
-            aria-hidden="true"
-            strokeWidth={1.75}
-            className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-          />
-        </Button>
-      </DropdownMenuTrigger>
+      {/* The menu's trigger OUTSIDE the tooltip's. Both stamp `data-state`
+          on the one button, and the inner Slot's props win — so this order is
+          what keeps `data-state="open"` the MENU's, which the × rotation and
+          the open fill below both read. */}
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add an attachment"
+              disabled={disabled}
+              className={cn(composerIconButtonClass, "group")}
+            >
+              <AppIcons.new
+                aria-hidden="true"
+                motion="none"
+                className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
+              />
+            </Button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>Add an attachment</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="start" side="top" sideOffset={8} className={MENU_W}>
         <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
         <DropdownMenuSub>

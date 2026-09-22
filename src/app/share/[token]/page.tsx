@@ -61,7 +61,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
           <Link
             href="/"
             aria-label="Juno"
-            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             <JunoMark className="size-6" />
           </Link>
@@ -78,7 +78,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       {chat ? (
         // The transcript stays flat prose on the page ground, at the reading measure.
         <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
-              <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
+          <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
         </AppPage>
       ) : artifact ? (
         <AppPage

@@ -5,7 +5,8 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FolderClosed, ImageOff, ImagePlus, Loader2, Maximize2 } from "lucide-react";
+import { ImageOff, ImagePlus, Loader2, Maximize2 } from "@/components/ui/icons";
+import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -644,7 +645,7 @@ export default function ProjectDetailPage() {
         <div className="mx-auto w-full max-w-xl">
           <EmptyState
             className="w-full motion-safe:animate-rise-in"
-            icon={FolderClosed}
+            icon={AppIcons.projects}
             title="Project not found"
             description="It may have been deleted."
             action={
@@ -664,6 +665,7 @@ export default function ProjectDetailPage() {
           <EmptyState
             tone="error"
             className="w-full motion-safe:animate-rise-in"
+            icon={StatusIcons.error}
             title="Couldn’t load this project"
             description="Check your connection and try once more."
             action={
@@ -747,12 +749,12 @@ export default function ProjectDetailPage() {
                 disabled={uploadingCover}
                 onSelect={() => coverRef.current?.click()}
               >
-                <ImagePlus className="mr-2 size-4" aria-hidden="true" />
+                <ImagePlus className="size-4" aria-hidden="true" />
                 <span>{coverUrl ? "Change image" : "Add project image"}</span>
               </DropdownMenuItem>
               {coverUrl && (
                 <DropdownMenuItem disabled={uploadingCover} onSelect={removeCover}>
-                  <ImageOff className="mr-2 size-4" aria-hidden="true" />
+                  <ImageOff className="size-4" aria-hidden="true" />
                   <span>Remove image</span>
                 </DropdownMenuItem>
               )}
@@ -1104,7 +1106,7 @@ export default function ProjectDetailPage() {
                     />
                   </div>
                   {workspace.allowedTools !== undefined && (
-                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70 motion-safe:animate-fade-in-up">
                       {WORKSPACE_TOOLS.map((tool) => (
                         <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
                           <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>

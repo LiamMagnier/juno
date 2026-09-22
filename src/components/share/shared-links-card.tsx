@@ -2,10 +2,13 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Code2, MessagesSquare } from "lucide-react";
+import { Code2, Link2, MessagesSquare } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * Profile section listing the user's active share links: what's public, how
@@ -82,8 +85,9 @@ export function SharedLinksCard() {
       {error ? (
         // role="alert" and the destructive tint — a failed load was rendering as
         // muted body copy, indistinguishable from the empty state one branch down.
-        <p className="text-body text-destructive" role="alert">
-          Couldn’t load your shared links.
+        <p className="flex items-start gap-2 text-body text-destructive motion-safe:animate-fade-in" role="alert">
+          <StatusIcons.error className="mt-1 size-4 shrink-0" aria-hidden />
+          <span className="min-w-0">Couldn’t load your shared links.</span>
         </p>
       ) : !shares ? (
         // `rounded-field`, matching the 36px icon tile and the row height these
@@ -97,7 +101,12 @@ export function SharedLinksCard() {
         // `border-border/60`, matching the `divide-border/60` the populated list
         // uses one branch down: the same rule, under the same header, at two
         // alphas depending on whether you had any links yet.
-        <div className="border-t border-border/60 px-6 py-8 text-center">
+        <div className="flex flex-col items-center border-t border-border/60 px-6 py-8 text-center motion-safe:animate-fade-in">
+          {/* One muted glyph in a quiet tile, then the sentence — the shape
+              every designed empty state in the product takes. */}
+          <span className="mb-3 flex size-10 items-center justify-center rounded-field bg-secondary text-muted-foreground" aria-hidden>
+            <Link2 className="size-5" />
+          </span>
           {/* The product's heading voice. This was `text-base font-semibold` —
               16px sans, a Tailwind default on no Juno rung, for a role every
               other empty state in the tree sets in serif. */}
@@ -108,8 +117,13 @@ export function SharedLinksCard() {
         </div>
       ) : (
         <ul className="divide-y divide-border/60">
-          {shares.map((share) => (
-            <li key={share.id} className="flex items-center gap-3 py-2.5">
+          {/* Dealt in on the tight rung once the list lands. */}
+          {shares.map((share, i) => (
+            <li
+              key={share.id}
+              className="flex items-center gap-3 py-2.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+              style={staggerDelay(i, "tight")}
+            >
               {/* `bg-muted` opaque and `rounded-field`: at /40 over the black
                   card the tile composited to ~7.7% against the card's 6.5% — a
                   1.2-point step that is invisible on an OLED panel, so the icon
@@ -135,19 +149,25 @@ export function SharedLinksCard() {
                   {share.views} {share.views === 1 ? "view" : "views"}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => copy(share)}
-                aria-label="Copy link"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {copiedId === share.id ? (
-                  <StatusIcons.success className="size-4 text-success motion-safe:animate-pop-in" aria-hidden />
-                ) : (
-                  <ActionIcons.copy className="size-4" aria-hidden />
-                )}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => copy(share)}
+                    aria-label="Copy link"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    {/* Copy ⇄ check, cross-faded in one box (GlyphSwap). */}
+                    <GlyphSwap
+                      swapped={copiedId === share.id}
+                      from={<ActionIcons.copy className="size-4" aria-hidden />}
+                      to={<StatusIcons.success className="size-4 text-success-ink" aria-hidden />}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{copiedId === share.id ? "Copied" : "Copy link"}</TooltipContent>
+              </Tooltip>
               <Button
                 variant="ghost"
                 size="sm"

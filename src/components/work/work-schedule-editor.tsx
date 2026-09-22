@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -942,7 +942,11 @@ export function WorkScheduleEditor({
         enabled={draft.enabled}
       />
 
-      {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}
+      {refusal !== null && (
+        <WorkStateNote tone="error" className="motion-safe:animate-rise-in">
+          {refusal}
+        </WorkStateNote>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => void save()} disabled={!canSave} className="gap-1.5">
@@ -1174,8 +1178,13 @@ function PolicyGroup<T extends string>({
             // outline on the 14px radio inside it. This is the control that
             // decides what happens to somebody's files at three in the morning,
             // and a 14px outline inside a full-width row is not where a keyboard
-            // reader looks to find out where they are.
-            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border has-[:checked]:border-foreground/25 has-[:checked]:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background"
+            // reader looks to find out where they are. No ring offset: the
+            // offset is painted in a named page colour, which on this card is a
+            // halo that belongs to no surface underneath it.
+            //
+            // Hover is the tonal fill every row takes; a chosen row keeps its
+            // own fill under the pointer rather than swapping to the hover one.
+            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent has-[:checked]:border-foreground/25 has-[:checked]:bg-secondary has-[:checked]:hover:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring motion-reduce:transition-none"
           >
             <input
               type="radio"

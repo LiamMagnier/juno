@@ -14,10 +14,12 @@ export function EmptyGreeting() {
   );
 }
 
-/** Private-mode empty header — same type scale as the normal greeting, no decoration. */
+/** Private-mode empty header — same type scale as the normal greeting, no
+ *  decoration, and the same rise-in entrance, so switching modes does not
+ *  swap an arriving headline for one that simply appears. */
 export function PrivateGreeting() {
   return (
-    <div className="flex w-full flex-col items-center gap-2 text-center">
+    <div className="flex w-full flex-col items-center gap-2 text-center motion-safe:animate-rise-in">
       <h1 className="font-sans text-page-title">
         You&apos;re incognito
       </h1>

@@ -3,10 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Pin, Plus } from "@/components/ui/icons";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -126,7 +127,8 @@ export default function AssistantsPage() {
     <button
       type="button"
       onClick={() => openStudio(null)}
-      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-ui text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+      style={staggerDelay(filteredAssistants.length, "tight")}
+      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
     >
       <Plus className="size-4" aria-hidden="true" />
       New assistant
@@ -173,7 +175,7 @@ export default function AssistantsPage() {
         {failed ? (
           <EmptyState
             tone="error"
-            icon={AssistantIcon}
+            icon={StatusIcons.error}
             title="Assistants are unavailable"
             description="Juno could not read your assistant library. Nothing was deleted; retry the request."
             action={
@@ -183,13 +185,29 @@ export default function AssistantsPage() {
             }
           />
         ) : loading ? (
+          // The tile's anatomy in placeholder form — icon well, name, two
+          // lines of description, the footer rule — so nothing changes shape
+          // when the gallery lands. It was three bare slabs.
           <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" aria-hidden="true">
             {[0, 1, 2].map((index) => (
-              <Skeleton
+              <div
                 key={index}
-                className="min-h-40 rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                className="surface-raised flex min-h-40 flex-col gap-3 rounded-card p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 style={staggerDelay(index, "tight")}
-              />
+              >
+                <div className="flex items-start gap-3">
+                  <Skeleton className="size-9 shrink-0 rounded-field" />
+                  <div className="min-w-0 flex-1 space-y-2 pt-1">
+                    <Skeleton className="h-3.5 w-1/2" />
+                    <Skeleton className="h-3 w-4/5" />
+                    <Skeleton className="h-3 w-3/5" />
+                  </div>
+                </div>
+                <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3">
+                  <Skeleton className="h-2.5 w-16" />
+                  <Skeleton className="h-2.5 w-8" />
+                </div>
+              </div>
             ))}
           </div>
         ) : filteredAssistants.length === 0 ? (
@@ -220,7 +238,8 @@ export default function AssistantsPage() {
               <Card
                 key={assistant.id}
                 variant="interactive"
-                className="group relative flex min-h-40 flex-col gap-3 p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                // Tonal hover, no lift (ICONS_AND_MOTION §2.2).
+                className="group relative flex min-h-40 flex-col gap-3 p-4 hover:bg-accent/50 hover:shadow-raised [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 style={staggerDelay(i, "tight")}
               >
                 <div className="flex items-start gap-3">
@@ -230,14 +249,14 @@ export default function AssistantsPage() {
                     className="flex min-w-0 flex-1 items-start gap-3 rounded-control text-left"
                     aria-label={`Start a chat with ${assistant.name}`}
                   >
-                    <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+                    <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                       <AssistantIcon className="size-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 pt-0.5">
                       <span className="flex items-center gap-1.5 text-ui font-medium text-foreground">
                         <span className="truncate">{assistant.name}</span>
                         {assistant.isPinned && (
-                          <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="Pinned" />
+                          <Pin weight="fill" motion="none" className="size-3 shrink-0 text-primary" aria-label="Pinned" />
                         )}
                       </span>
                       <span className="mt-0.5 block line-clamp-2 text-caption leading-5 text-muted-foreground">
@@ -253,8 +272,18 @@ export default function AssistantsPage() {
                       size="icon-sm"
                       onClick={() => void togglePin(assistant)}
                       aria-label={assistant.isPinned ? `Unpin ${assistant.name}` : `Pin ${assistant.name}`}
+                      aria-pressed={!!assistant.isPinned}
+                      title={assistant.isPinned ? "Unpin" : "Pin"}
+                      className={cn(
+                        "text-muted-foreground hover:text-foreground",
+                        assistant.isPinned && "text-primary hover:text-primary"
+                      )}
                     >
-                      <Pin className={cn("size-3.5", assistant.isPinned && "fill-current")} />
+                      <GlyphSwap
+                        active={!!assistant.isPinned}
+                        off={<Pin className="size-3.5" />}
+                        on={<Pin weight="fill" className="size-3.5" />}
+                      />
                     </Button>
                     <Button
                       type="button"
@@ -262,8 +291,10 @@ export default function AssistantsPage() {
                       size="icon-sm"
                       onClick={() => openStudio(assistant)}
                       aria-label={`Edit ${assistant.name}`}
+                      title="Edit"
+                      className="text-muted-foreground hover:text-foreground"
                     >
-                      <Edit3 className="size-3.5" aria-hidden="true" />
+                      <ActionIcons.edit className="size-3.5" aria-hidden="true" />
                     </Button>
                     <Button
                       type="button"
@@ -271,8 +302,10 @@ export default function AssistantsPage() {
                       size="icon-sm"
                       onClick={() => setDeleteTarget(assistant)}
                       aria-label={`Delete ${assistant.name}`}
+                      title="Delete"
+                      className="danger-hover text-muted-foreground"
                     >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      <ActionIcons.delete className="size-3.5" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
@@ -282,12 +315,12 @@ export default function AssistantsPage() {
                   onClick={() => startChat(assistant)}
                   className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
                 >
-                  <span className="inline-flex items-center gap-1">
+                  {/* The arrow's nudge is its own articulation (icons.tsx),
+                      played when this footer button is pointed at — not a
+                      second translate keyed to the whole card's hover. */}
+                  <span className="inline-flex items-center gap-1.5">
                     Start chat
-                    <ArrowRight
-                      className="size-3 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none"
-                      aria-hidden="true"
-                    />
+                    <ArrowRight className="size-3" aria-hidden="true" />
                   </span>
                   <span className="tabular-nums">v{assistant.version}</span>
                 </button>

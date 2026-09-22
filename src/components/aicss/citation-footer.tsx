@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { hostOf, titleOf } from "@/components/chat/source-chip";
+import { ArrowUp } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
@@ -20,12 +21,6 @@ import type { ClientSource } from "@/types/chat";
  * form for a place that has room — the panel, and a message short enough that a
  * disclosure would be more clicks than content.
  */
-
-const CiteArrow = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
-  </svg>
-);
 
 export function CitationFooter({
   sources,
@@ -52,8 +47,11 @@ export function CitationFooter({
           <span className="aicss-cite-label">{titleOf(source)}</span>
           <span className="aicss-cite-sep">·</span>
           <span className="aicss-cite-host">{hostOf(source.url)}</span>
+          {/* An UP arrow on purpose: `.aicss-cite-arrow` turns its box 45° to
+              point it out of Juno and slides it in on hover, so the glyph's
+              own nudge is off — the box already does the gesture. */}
           <span className="aicss-cite-arrow">
-            <CiteArrow />
+            <ArrowUp className="size-3" motion="none" />
           </span>
         </a>
       ))}

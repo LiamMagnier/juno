@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronRight, Circle } from "lucide-react";
+import { ChevronRight, Circle } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   menuGlyphInkClass,
@@ -39,6 +39,21 @@ const menuShell = cn(
 );
 
 const menuItem = menuRowClass;
+
+/**
+ * The tick / dot in a checkable row. Always mounted (`forceMount`) and
+ * cross-faded on `data-state`, instead of Radix's default of mounting it only
+ * while checked — which drew the mark in a single frame when a row was toggled
+ * with the menu held open. A toggle now fades and scales the mark in on the
+ * fast rung and back out on the accelerate. Opening a menu is not a change, so
+ * rows that are already checked simply start checked: a transition only runs
+ * between two states, never on mount. The resting scale reads
+ * `--motion-scale-from`, so the reduced tier keeps the fade and drops the scale.
+ */
+const menuIndicator =
+  "flex items-center justify-center transition-[opacity,transform] duration-fast ease-out-soft " +
+  "data-[state=unchecked]:opacity-0 data-[state=unchecked]:ease-in " +
+  "data-[state=unchecked]:[transform:scale(var(--motion-scale-from,0.6))]";
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -136,7 +151,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
-      <DropdownMenuPrimitive.ItemIndicator>
+      <DropdownMenuPrimitive.ItemIndicator forceMount className={menuIndicator}>
         {/* `text-primary`, like the tick in the composer's `+` menu and the
             one in Select. A checked row is the one row in a menu carrying the
             accent, and it was the only one of the three left in plain ink. */}
@@ -158,8 +173,13 @@ const DropdownMenuRadioItem = React.forwardRef<
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
-      <DropdownMenuPrimitive.ItemIndicator>
-        <Circle className="size-2 fill-current" />
+      {/* The dot is the `fill` cut because it IS the on state — the one place
+          a filled glyph belongs (ICONS_AND_MOTION.md §1.2). */}
+      <DropdownMenuPrimitive.ItemIndicator forceMount className={menuIndicator}>
+        {/* `text-current` opts out of the row's muted glyph ink (the recipe's
+            guard skips any glyph that states a `text-*`): the chosen dot is in
+            the label's own ink, as it was. */}
+        <Circle weight="fill" className="size-2 text-current" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}

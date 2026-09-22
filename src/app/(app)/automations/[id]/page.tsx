@@ -4,8 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Play } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { History, Loader2, Play } from "@/components/ui/icons";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +22,9 @@ import { workStatusForCodeTask } from "@/lib/work/code-routine";
 import type { WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { WorkList } from "@/components/work/shell/work-section";
+import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import { WorkList, workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import {
@@ -36,6 +38,8 @@ import {
 } from "@/components/work/work-transport";
 import { ScheduleFireCard } from "@/components/work/schedules/fire-card";
 import { WorkStateNote, WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 
 /**
  * One schedule: what it does, and what it has actually done.
@@ -126,6 +130,10 @@ export default function AutomationPage() {
     );
   }, [history]);
 
+  // The history is dealt in when it first lands, and a Refresh that finds a new
+  // fire brings in only that row — the rows already read stay still.
+  const arrivals = useWorkArrivals(rows.map((row) => row.key));
+
   const runNow = async () => {
     setBusy(true);
     const result = await runWorkScheduleNow(id);
@@ -205,11 +213,12 @@ export default function AutomationPage() {
             onClick={() => void runNow()}
             className="gap-1.5"
           >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <Play className="size-3.5" aria-hidden="true" />
-            )}
+            <GlyphSwap
+              glyphs={{ idle: Play, busy: Loader2 }}
+              show={busy ? "busy" : "idle"}
+              spinning="busy"
+              className="size-3.5"
+            />
             Run now
           </Button>
           <Button
@@ -267,51 +276,63 @@ export default function AutomationPage() {
           <EmptyState
             size="panel"
             tone="error"
+            icon={CodeIcons.error}
             title="Couldn’t read the history"
             description="This automation’s history couldn’t be read just now, which says nothing about whether it has run."
           />
         ) : rows.length === 0 ? (
           <EmptyState
             size="panel"
+            icon={History}
             title="No runs yet"
             description="It has not run yet. Fires that were skipped — a Mac that was away, a budget that was spent — appear here too, so this staying empty means nothing has fired at all."
           />
         ) : (
           <WorkList>
             <ul className="space-y-0.5">
-              {rows.map((row) => (
-                <li key={row.key}>
-                  {/*
-                    A Work run opens through `/work/<sessionId>`, deliberately,
-                    and it is the one URL under `/work` that is a live resolver
-                    rather than a legacy redirect. A run row carries a session
-                    id and nothing else; turning one into the conversation it
-                    writes into is a per-account lookup only the server can do
-                    (src/lib/work-url-migration.ts), and a conversation id baked
-                    into a link here would be stale the moment the conversation
-                    was deleted. Every run of a Work automation shares that one
-                    session, so all of those rows open the same transcript —
-                    which is the point: the fires accumulate in it.
-
-                    A Code run opens its own session instead, and it already
-                    carries the conversation id, so it links straight there:
-                    each fire is a separate branch and a separate pull request,
-                    and there is no accumulating transcript to resolve to.
-                  */}
-                  <Link
-                    href={row.href}
-                    className="group flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none"
+              {rows.map((row) => {
+                const rank = arrivals.rankFor(row.key);
+                return (
+                  <li
+                    key={row.key}
+                    className={rank === null ? undefined : workRowEnterClass}
+                    style={rank === null ? undefined : staggerDelay(rank, "tight")}
                   >
-                    <WorkStatusPill status={row.status} />
-                    <span className="min-w-0 flex-1 truncate text-ui text-foreground">
-                      {row.label}
-                    </span>
-                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
-                      {row.origin} · {workTimeAgo(row.createdAt)}
-                    </span>
-                  </Link>
-                </li>
-              ))}
+                    {/*
+                      A Work run opens through `/work/<sessionId>`, deliberately,
+                      and it is the one URL under `/work` that is a live resolver
+                      rather than a legacy redirect. A run row carries a session
+                      id and nothing else; turning one into the conversation it
+                      writes into is a per-account lookup only the server can do
+                      (src/lib/work-url-migration.ts), and a conversation id baked
+                      into a link here would be stale the moment the conversation
+                      was deleted. Every run of a Work automation shares that one
+                      session, so all of those rows open the same transcript —
+                      which is the point: the fires accumulate in it.
+
+                      A Code run opens its own session instead, and it already
+                      carries the conversation id, so it links straight there:
+                      each fire is a separate branch and a separate pull request,
+                      and there is no accumulating transcript to resolve to.
+                    */}
+                    <Link
+                      href={row.href}
+                      className={cn(
+                        "group flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 text-left",
+                        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-secondary motion-reduce:transition-none"
+                      )}
+                    >
+                      <WorkStatusPill status={row.status} />
+                      <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+                        {row.label}
+                      </span>
+                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                        {row.origin} · {workTimeAgo(row.createdAt)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </WorkList>
         )}

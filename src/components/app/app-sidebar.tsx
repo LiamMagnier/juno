@@ -5,7 +5,17 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, ChevronUp, Pin, Plus } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Pin,
+  PinOff,
+  Plus,
+  type IconComponent,
+} from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";
@@ -33,7 +43,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MENU_W } from "@/components/ui/menu-recipe";
+import {
+  MENU_W,
+  menuGlyphInkClass,
+  menuRowClass,
+  menuSeparatorClass,
+} from "@/components/ui/menu-recipe";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -125,8 +140,15 @@ import type { ClientConversation } from "@/types/chat";
  * rows. They were mono at `label`, which is the eyebrow a settings page heads
  * its groups with: mono is a machine voice, and these name piles of the
  * reader's own chats. Glyphs may only be `size-3`, `size-3.5`, `size-4`,
- * `size-4.5` or `size-5` — every one of which has a rung on the optical stroke
- * ladder in globals.css, so a bigger mark thins rather than fattening.
+ * `size-4.5` or `size-5` — the icon set's ladder (docs/design/ICONS_AND_MOTION.md
+ * §1.2), whose drawings keep one designed line at every rung instead of a
+ * stroke being scaled up or down with the box.
+ *
+ * EACH DESTINATION MAKES ONE GESTURE under the pointer — the plus turns, the
+ * search glass tilts, the folder opens — chosen in `sidebar-motion-icon.tsx`
+ * from the product's own small vocabulary and played by globals.css when the
+ * row is hovered or focused. Documents make none: a conversation title is
+ * text on the panel, and so is its trailing mark.
  *
  * HOVER AND SELECTION ARE TWO COLOURS, NOT ONE COLOUR TWICE, AND THE EDGE IS
  * WHAT SAYS SELECTED. Hover is `bg-sidebar-hover`, a fill and nothing else, and
@@ -233,9 +255,19 @@ function recentsGroupOf(iso: string, now: Date): RecentsGroup {
  * `rounded-control` row and beside the composer's `rounded-control` icon
  * buttons, and it was the only disc in either. `coarse:size-10` rather than
  * `size-11` so it does not fill a 44px touch row edge to edge.
+ *
+ * IT FADES IN, it does not blink in. `.pressable` (which `Pressable` wears)
+ * transitions `opacity` on the `fast` rung, so the kebab arrives with the
+ * row's own hover fill over the same 120ms rather than a frame before it.
+ *
+ * Its OWN hover is an ink tint, not `bg-sidebar-hover`: it only ever appears
+ * on a row that is already painted in that colour (hovered) or in the
+ * selected fill, so the panel's hover paint on it drew nothing at all and the
+ * one pressable target inside the row had no edge. A 5% ink step reads on
+ * both fills in both themes.
  */
 const KEBAB_CLASS =
-  "group/kebab size-7 shrink-0 rounded-control opacity-0 hover:bg-sidebar-hover hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-hover data-[state=open]:opacity-100 coarse:size-10 coarse:opacity-100";
+  "group/kebab size-7 shrink-0 rounded-control opacity-0 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground data-[state=open]:opacity-100 coarse:size-10 coarse:opacity-100";
 
 export function AppSidebar({
   collapsed = false,
@@ -690,7 +722,19 @@ export function AppSidebar({
     quota.limit == null ? ", no message cap" : `, ${quota.used} of ${quota.limit} messages used`
   }`;
 
-  const layoutTransition = reduceMotion ? { duration: 0 } : spring.layout;
+  /*
+   * The column's motion starts one frame after mount, for the reason the
+   * shell's frame does (see `frameLive` in app-shell.tsx): the stored collapse
+   * is restored AFTER the first paint, and without this the rows of anyone who
+   * keeps the panel collapsed slid into the rail on every page load while the
+   * frame around them had already snapped there.
+   */
+  const [motionLive, setMotionLive] = React.useState(false);
+  React.useEffect(() => {
+    const id = window.requestAnimationFrame(() => setMotionLive(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
+  const layoutTransition = reduceMotion || !motionLive ? { duration: 0 } : spring.layout;
   /*
    * ONE NAMESPACE PER MOUNT, and the shell has two of them.
    *
@@ -750,30 +794,43 @@ export function AppSidebar({
          * sat at 40 — six pixels inside the one vertical the whole column is
          * built on, which is exactly the kind of near-miss that reads as
          * "off" without being nameable.
+         *
+         * `layout="position"` HERE AND ON EVERY WRAPPER IN THIS COLUMN, never a
+         * bare `layout`. A bare `layout` animates SIZE as a `scale` on the
+         * wrapper, and nothing inside these wrappers is a layout node that
+         * framer could counter-scale — so the header, a 288px row, went to a
+         * 44px column by stretching the collapse glyph six times its width
+         * and squashing it to a third of its height for the first frames of
+         * the spring. None of the wrappers paints anything, so the size can
+         * change in one frame unseen; what the eye follows is where each mark
+         * goes, and that is what travels.
          */}
         <motion.div
-          layout
+          layout="position"
           transition={layoutTransition}
           className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 gap-2.5 px-2")}
         >
           {onToggleCollapse && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn("group hidden shrink-0 md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
-                  onClick={onToggleCollapse}
-                  aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  aria-keyshortcuts="Meta+Shift+S"
-                >
-                  <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={collapsed ? "right" : "bottom"}>
-                {collapsed ? "Expand sidebar" : "Collapse sidebar"} <Kbd className="ml-1">⌘⇧S</Kbd>
-              </TooltipContent>
-            </Tooltip>
+            <motion.div layout="position" transition={layoutTransition} className="hidden shrink-0 md:flex">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className={cn("group hidden shrink-0 md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
+                    onClick={onToggleCollapse}
+                    aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    aria-keyshortcuts="Meta+Shift+S"
+                  >
+                    <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side={collapsed ? "right" : "bottom"} className="flex items-center gap-1.5">
+                  {collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  <Kbd>⌘⇧S</Kbd>
+                </TooltipContent>
+              </Tooltip>
+            </motion.div>
           )}
           <motion.div layout="position" transition={layoutTransition} className="min-w-0 flex-1">
             <Link
@@ -843,13 +900,28 @@ export function AppSidebar({
           {/* The ONE product switch in the shell. Expanded it is this 28px
               icon pair; at the rail it stays the 44px icon column below,
               because 64px has no room for a header row at all. */}
-          {!collapsed && (
-            <ProductSwitch
-              active={product}
-              plan={quota.plan}
-              onNavigate={() => setSidebarOpen(false)}
-            />
-          )}
+          {/* Fades with the collapse rather than vanishing in the frame the
+              rows start to move: the closing panel is still 200px wide at that
+              moment, so a cut here was the one thing in the header that
+              visibly snapped. */}
+          <AnimatePresence initial={false} mode="popLayout">
+            {!collapsed && (
+              <motion.div
+                key="header-switch"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={transition.fast}
+                className="shrink-0"
+              >
+                <ProductSwitch
+                  active={product}
+                  plan={quota.plan}
+                  onNavigate={() => setSidebarOpen(false)}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
           {!collapsed && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -868,15 +940,34 @@ export function AppSidebar({
           )}
         </motion.div>
 
-        {/* The rail keeps the stacked icon column: see the note above. */}
-        {collapsed && (
-          <ProductSwitch
-            collapsed
-            active={product}
-            plan={quota.plan}
-            onNavigate={() => setSidebarOpen(false)}
-          />
-        )}
+        {/* The rail keeps the stacked icon column: see the note above.
+            It FADES in and out rather than cutting, on the same collapse the
+            rows below slide through — the header's 28px pair is clipped away
+            by the closing frame, and this column arrives as the rows make
+            room for it, so the switch never blinks between its two shapes.
+            `popLayout`, so a leaving column stops holding its 100px while it
+            fades — the rows under it start closing the gap on the same frame
+            instead of waiting out the exit. Under reduced motion the travel
+            collapses and the fade keeps its timing, as everywhere else. */}
+        <AnimatePresence initial={false} mode="popLayout">
+          {collapsed && (
+            <motion.div
+              key="rail-switch"
+              layout="position"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ ...layoutTransition, opacity: transition.base }}
+            >
+              <ProductSwitch
+                collapsed
+                active={product}
+                plan={quota.plan}
+                onNavigate={() => setSidebarOpen(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Search + New chat ────────────────────────────────────────── */}
         {/* `pt-2` when expanded: the product switch no longer sits between this
@@ -920,7 +1011,12 @@ export function AppSidebar({
               or memories — or forward every keystroke into the palette, which
               is two inputs fighting over one caret. One search surface, one
               caret, and this opens it. */}
-          <SidebarSearchField collapsed={collapsed} />
+          {/* `layout`, like every row under it: it was the one object in the
+              column that jumped to its new place on a collapse while the rows
+              beside it slid there. */}
+          <motion.div layout="position" transition={layoutTransition}>
+            <SidebarSearchField collapsed={collapsed} />
+          </motion.div>
 
           <NavRow
             collapsed={collapsed}
@@ -1034,6 +1130,7 @@ export function AppSidebar({
             pathname={pathname}
             onNavigate={() => setSidebarOpen(false)}
             onOpenArchived={() => setArchivedOpen(true)}
+            transition={layoutTransition}
           />
         </nav>
 
@@ -1273,7 +1370,7 @@ export function AppSidebar({
          * list and the bottom of the column, which is the "void" the panel was
          * repeatedly read as having.
          */}
-        <motion.div layout transition={layoutTransition}>
+        <motion.div layout="position" transition={layoutTransition}>
           {collapsed ? (
             /* The rail loses its dedicated 44px Settings button: Settings is a
                row in the account menu, one click away at BOTH widths, and
@@ -1326,7 +1423,7 @@ export function AppSidebar({
                     </span>
                     <ChevronUp
                       aria-hidden
-                      className="size-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+                      className="size-3 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
                     />
                   </button>
                 }
@@ -1548,7 +1645,12 @@ function SidebarSearchField({ collapsed }: { collapsed: boolean }) {
         // panel's seam at rest and darkens to the find-me `--input` rung under
         // the pointer: a field responds at its EDGE, where the caret is going,
         // rather than by lighting its whole box like a button.
-        "group flex w-full items-center rounded-field border border-sidebar-border bg-background text-left text-body text-muted-foreground transition-[background-color,border-color,color] duration-fast ease-out-soft hover:border-input hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+        //
+        // No focus styling of its own: it wore `outline-none` + a `ring-2`,
+        // the one control in the column drawing a different focus mark from
+        // every row under it. The global `:focus-visible` outline is the
+        // product's one focus mark (ICONS_AND_MOTION.md §2.2, rule 3).
+        "group flex w-full items-center rounded-field border border-sidebar-border bg-background text-left text-body text-muted-foreground transition-[background-color,border-color,color] duration-fast ease-out-soft hover:border-input hover:text-foreground motion-reduce:transition-none",
         // The rail has no placeholder to hold, so it drops the field skin
         // entirely and becomes the 44px icon row every other destination is
         // there — a bordered box among twelve plain glyphs would be the one
@@ -1661,17 +1763,26 @@ function NavRow({
 
           The glyph is weight, and it is set BY the label rather than against
           it. 18px under a 15px label is the same ratio 14px held under 13px —
-          the mark reads as the label's companion, not as its heading. Both
-          rungs exist: `4.5` is 18px in the spacing scale and has its own step
-          on the optical stroke ladder in globals.css, so the stroke thins to
-          match instead of a 24-viewBox weight being scaled down whole. */}
-      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
+          the mark reads as the label's companion, not as its heading. `4.5`
+          is the icon ladder's sidebar-destination rung (ICONS_AND_MOTION.md
+          §1.2), drawn in the set's regular line — 1.1px at this size — so the
+          mark keeps the weight of the label beside it.
+
+          Muted at rest, foreground under the pointer and on the page you are
+          on, cross-faded on the `fast` rung — the ink change and the glyph's
+          one gesture (sidebar-motion-icon.tsx) are the whole of the row's
+          hover, with the fill behind them. */}
+      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
         {icon}
       </span>
       {!collapsed && (
         <>
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          {trailing && <span className="ml-auto shrink-0 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100">{trailing}</span>}
+          {trailing && (
+            <span className="ml-auto shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
+              {trailing}
+            </span>
+          )}
         </>
       )}
     </>
@@ -1709,7 +1820,7 @@ function NavRow({
     </button>
   );
   const row = (
-    <motion.div layout layoutId={layoutId} transition={t} className={cn(collapsed && "flex justify-center")}>
+    <motion.div layout="position" layoutId={layoutId} transition={t} className={cn(collapsed && "flex justify-center")}>
       {el}
     </motion.div>
   );
@@ -1717,9 +1828,9 @@ function NavRow({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{row}</TooltipTrigger>
-      <TooltipContent side="right">
+      <TooltipContent side="right" className="flex items-center gap-1.5">
         {label}
-        {trailing && <span className="ml-1.5 inline-flex">{trailing}</span>}
+        {trailing && <span className="inline-flex">{trailing}</span>}
       </TooltipContent>
     </Tooltip>
   );
@@ -1833,6 +1944,15 @@ const LIST_ROW_TRANSITION =
  * `.surface-float` flyout to the right of the sidebar (ChatGPT's "More").
  * The same flyout from the rail, where the trigger is an icon with a tooltip.
  * Archived chats lives here too — it opens the dialog rather than a route.
+ *
+ * THE FLYOUT IS CUT FROM THE MENU RECIPE (`menu-recipe.ts`), like every other
+ * floating list in the product. It was the last one that was not: a 16px
+ * popover shell at `p-1.5`, 15px rows with 18px glyphs and its own hairline,
+ * so opening it beside a row's kebab gave two different objects for one idea
+ * — the exact drift the recipe exists to end (PREMIUM_AUDIT.md §2c). Its rows
+ * are destinations, but inside a floating list they are read the way a menu
+ * is read — scanned, not browsed — so they take the menu's 13px row and 16px
+ * glyph, and the sidebar's 18px destination rung stays in the sidebar.
  */
 function MoreFlyout({
   collapsed,
@@ -1840,12 +1960,15 @@ function MoreFlyout({
   pathname,
   onNavigate,
   onOpenArchived,
+  transition: t,
 }: {
   collapsed: boolean;
   product: ProductSurface;
   pathname: string | null;
   onNavigate: () => void;
   onOpenArchived: () => void;
+  /** The column's layout spring, so More slides with the rows around it. */
+  transition: object;
 }) {
   const [open, setOpen] = React.useState(false);
   const isCode = product === "code";
@@ -1900,8 +2023,15 @@ function MoreFlyout({
    * hanging off a trigger that had gone pale the moment the pointer left it.
    */
   const selected = open || anyActive;
-  const rowClass =
-    "flex h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-body font-normal text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+  // The recipe's row, plus the interaction state the recipe leaves to its
+  // host: these are links and buttons rather than Radix items, so hover and
+  // keyboard focus are spelled here, on the same fill a highlighted menu row
+  // takes.
+  const rowClass = cn(
+    menuRowClass,
+    menuGlyphInkClass,
+    "w-full text-foreground hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none"
+  );
   // `navRowClass(collapsed, selected)` FIRST, then the fill. The order is the
   // point: the active branch of that recipe drops `hover:bg-sidebar-hover`,
   // so the selected fill has nothing competing with it — bolt the fill onto the
@@ -1916,7 +2046,7 @@ function MoreFlyout({
       data-active={selected ? "" : undefined}
       className={cn(navRowClass(collapsed, selected), selected && "sidebar-row-selected")}
     >
-      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
+      <span className="flex size-5 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground group-data-[active]:text-foreground [&_svg]:size-4.5">
         <SidebarMotionIcon kind="more" />
       </span>
       {!collapsed && <span className="min-w-0 flex-1 truncate text-left">More</span>}
@@ -1924,7 +2054,7 @@ function MoreFlyout({
   );
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className={cn(collapsed && "flex justify-center")}>
+      <motion.div layout="position" transition={t} className={cn(collapsed && "flex justify-center")}>
         {collapsed ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1935,7 +2065,10 @@ function MoreFlyout({
         ) : (
           <PopoverTrigger asChild>{trigger}</PopoverTrigger>
         )}
-      </div>
+      </motion.div>
+      {/* `rounded-menu p-1` is the menu shell's own pair (14 − 4 = the rows'
+          10); the popover's material, pop-in and `origin-popper` come from
+          PopoverContent unchanged. */}
       <PopoverContent
         side="right"
         align="start"
@@ -1943,7 +2076,7 @@ function MoreFlyout({
         collisionPadding={16}
         role="menu"
         aria-label="More"
-        className="w-56 p-1.5"
+        className={cn(MENU_W, "rounded-menu p-1")}
       >
         {items.map((item) => (
           <Link
@@ -1955,13 +2088,16 @@ function MoreFlyout({
               setOpen(false);
               onNavigate();
             }}
-            className={cn(rowClass, item.active && "bg-accent font-semibold")}
+            // The page you are on: the highlighted row's fill held still, and
+            // its glyph in full ink. Not a heavier weight — a label that
+            // re-measures when it is chosen visibly re-truncates.
+            className={cn(rowClass, item.active && "bg-accent")}
           >
-            <SidebarMotionIcon kind={item.kind} className="size-4.5 text-muted-foreground" />
+            <SidebarMotionIcon kind={item.kind} className={cn("size-4", item.active && "text-foreground")} />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </Link>
         ))}
-        <div role="separator" aria-hidden="true" className="my-1 h-px bg-border/70" />
+        <div role="separator" aria-hidden="true" className={menuSeparatorClass} />
         <button
           type="button"
           role="menuitem"
@@ -1969,10 +2105,10 @@ function MoreFlyout({
             setOpen(false);
             onOpenArchived();
           }}
-          className={rowClass}
+          className={cn(rowClass, "text-left")}
         >
-          <Archive className="size-4.5 text-muted-foreground" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-left">{isCode ? "Archived sessions" : "Archived chats"}</span>
+          <Archive className="size-4" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">{isCode ? "Archived sessions" : "Archived chats"}</span>
         </button>
       </PopoverContent>
     </Popover>
@@ -1983,16 +2119,22 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
   return (
     <div
       role="alert"
-      className="mx-0.5 my-1 flex items-center gap-2 rounded-control border border-destructive/40 bg-destructive/10 px-2 py-2 text-ui text-destructive"
+      // Fades in rather than landing: it arrives after the panel has already
+      // drawn, and a block that cuts in above the list shoves every row under
+      // it in the same frame.
+      className="mx-0.5 my-1 flex items-center gap-2 rounded-control border border-destructive/40 bg-destructive/10 px-2 py-2 text-ui text-destructive motion-safe:animate-fade-in"
     >
-      <StatusIcons.error className="size-3.5 shrink-0" aria-hidden="true" />
+      {/* `size-4` beside `text-ui` at `gap-2`, the icon ladder's row pair. */}
+      <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
+      {/* No `transition-*` utility: `.pressable` carries the colour AND the
+          press transitions, and a utility beside it would replace both. */}
       <button
         type="button"
         onClick={onRetry}
-        className="pressable flex shrink-0 items-center gap-1 rounded-control px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
+        className="pressable flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
       >
-        <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
+        <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
       </button>
     </div>
   );
@@ -2018,8 +2160,14 @@ function SectionAction({
           size="sm"
           onClick={onClick}
           aria-label={label}
+          // No `transition-opacity`: `.pressable` already fades opacity on the
+          // `fast` rung alongside the colour and the press, and a transition
+          // utility beside it replaced that shorthand — so the hover fill cut
+          // in and the press never dipped. The hover is an ink tint for the
+          // reason the row kebab's is (see KEBAB_CLASS): it sits on a heading
+          // that is itself `bg-sidebar-hover` under the pointer.
           className={cn(
-            "size-6 rounded-control text-muted-foreground/70 transition-opacity duration-fast hover:bg-sidebar-hover hover:text-foreground focus-visible:opacity-100 coarse:size-9 coarse:opacity-100",
+            "size-6 rounded-control text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 coarse:size-9 coarse:opacity-100",
             always ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
           )}
         >
@@ -2084,11 +2232,13 @@ function Section({
            */}
           <span className="min-w-0 truncate text-ui font-medium text-muted-foreground">{label}</span>
           {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
-              turn are on screen, so this is an A-to-B move. */}
+              turn are on screen, so this is an A-to-B move — on the `base`
+              rung, the same 220ms the rows under it take to unfold, so the
+              caret and the list it governs finish together. */}
           <ChevronDown
             aria-hidden
             className={cn(
-              "size-3 shrink-0 text-muted-foreground/60 transition-transform duration-fast ease-in-out motion-reduce:transition-none",
+              "size-3 shrink-0 text-muted-foreground/60 transition-transform duration-base ease-in-out motion-reduce:transition-none",
               isCollapsed && "-rotate-90"
             )}
           />
@@ -2335,7 +2485,13 @@ function ConversationRow({
             <StatusDot tone={signal.tone} label={signal.label} />
           </span>
         ) : (
-          conversation.pinned && !nested && <Pin className="size-3 shrink-0 fill-current text-muted-foreground/60" aria-hidden />
+          /* `weight="fill"` because a pin you set is ON (ICONS_AND_MOTION.md
+             §1.2), and `motion="none"` because here it reports a state rather
+             than offering an action — a status mark that tilted when the row
+             was hovered would be claiming the row pins something. */
+          conversation.pinned && !nested && (
+            <Pin weight="fill" motion="none" className="size-3 shrink-0 text-muted-foreground/60" aria-hidden />
+          )
         )}
       </Link>
       <DropdownMenu>
@@ -2368,8 +2524,12 @@ function ConversationRow({
           <DropdownMenuItem onSelect={() => setRenaming(conversation.id)}>
             <ActionIcons.edit className="size-4" /> Rename
           </DropdownMenuItem>
+          {/* The verb's own glyph: a pin to pin, a struck pin to unpin. It was
+              the same pin for both, filled in the accent when the row was
+              already pinned — a state mark sitting on an action, and the one
+              accent-coloured glyph in a menu of muted ones. */}
           <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            <Pin className={cn("size-4", conversation.pinned && "fill-primary text-primary")} />
+            {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
             {conversation.pinned ? "Unpin" : "Pin"}
           </DropdownMenuItem>
           {/* A project is Chat's filing and a Code session has its own — the
@@ -2495,12 +2655,12 @@ function ProjectRow({
                 }}
                 aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
                 aria-expanded={expanded}
-                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-control text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-hover hover:text-foreground coarse:-my-3 coarse:size-10"
+                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-control text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground coarse:-my-3 coarse:size-10"
               >
                 <ChevronRight
                   aria-hidden
                   className={cn(
-                    "size-3.5 transition-transform duration-fast ease-in-out motion-reduce:transition-none",
+                    "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                     expanded && "rotate-90"
                   )}
                 />
@@ -2525,7 +2685,7 @@ function ProjectRow({
               <Plus className="size-4" /> New chat in project
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onToggleStar}>
-              <Pin className={cn("size-4", starred && "fill-primary text-primary")} />
+              {starred ? <PinOff className="size-4" /> : <Pin className="size-4" />}
               <span>{starred ? "Unpin" : "Pin"}</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onRename}>
@@ -2605,6 +2765,36 @@ function ProjectRow({
 /* ────────────────────────────────────────────────────────────────────────────
  * Archived chats — restore or delete, from the footer.
  * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The dialog list's empty and failed states: one muted glyph in a quiet tile
+ * and one sentence (ICONS_AND_MOTION.md §3). They were a bare centred line of
+ * grey, which in a 448px dialog read as the list having failed to render
+ * rather than as the list saying something.
+ */
+function DialogListState({
+  icon: Icon,
+  tone = "empty",
+  children,
+}: {
+  icon: IconComponent;
+  tone?: "empty" | "error";
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-2 py-8 text-center motion-safe:animate-fade-in">
+      <span
+        className={cn(
+          "flex size-10 items-center justify-center rounded-field",
+          tone === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
+        )}
+      >
+        <Icon className="size-5" motion="none" aria-hidden="true" />
+      </span>
+      <p className="text-body text-muted-foreground">{children}</p>
+    </div>
+  );
+}
 
 function ArchivedChatsDialog({
   open,
@@ -2694,19 +2884,32 @@ function ArchivedChatsDialog({
         </DialogHeader>
         <div className="-mx-1 max-h-[50vh] overflow-y-auto">
           {failed ? (
-            <p className="px-2 py-6 text-center text-body text-muted-foreground">Couldn’t load archived chats.</p>
+            <DialogListState icon={StatusIcons.error} tone="error">
+              Couldn’t load archived chats.
+            </DialogListState>
           ) : items == null ? (
-            <div className="space-y-1 px-1">
+            <div className="space-y-0.5 px-1">
+              {/* The placeholders stand at the row's own geometry — a title and
+                  a date line, 48px — so the list does not re-shape when the
+                  archive lands. */}
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="skeleton h-10 rounded-control" style={staggerDelay(i, "tight")} />
+                <div key={i} className="skeleton h-12 rounded-control" style={staggerDelay(i, "tight")} />
               ))}
             </div>
           ) : items.length === 0 ? (
-            <p className="px-2 py-6 text-center text-body text-muted-foreground">Nothing archived.</p>
+            <DialogListState icon={Archive}>Nothing archived.</DialogListState>
           ) : (
             <ul className="space-y-0.5">
-              {items.map((c) => (
-                <li key={c.id} className="group flex items-center gap-2 rounded-control px-2 py-1.5 hover:bg-accent">
+              {items.map((c, i) => (
+                /* Dealt, not dumped: the first eight rows arrive on the
+                   `tight` stagger, the rest with the eighth. No leading glyph —
+                   a chat is a document, and the title and its date already
+                   say what it is (PREMIUM_AUDIT.md rule 4). */
+                <li
+                  key={c.id}
+                  style={staggerDelay(Math.min(i, 8), "tight")}
+                  className="group flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
+                >
                   <button
                     type="button"
                     onClick={() => {
@@ -2715,10 +2918,6 @@ function ArchivedChatsDialog({
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                   >
-                    <SidebarMotionIcon
-                      kind={isCode ? "code" : "conversation"}
-                      className="size-4 shrink-0 text-muted-foreground"
-                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-ui font-medium">
                         {c.title || (isCode ? "Untitled session" : "New chat")}

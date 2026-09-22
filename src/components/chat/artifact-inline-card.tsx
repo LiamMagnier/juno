@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
-import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "lucide-react";
+import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "@/components/ui/icons";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";
@@ -254,9 +254,12 @@ export function ArtifactInlineCard({
           // `rounded-field`, not `control`: field is the ladder's icon-tile
           // rung, and control is scoped to buttons and rows.
           "flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary",
-          "transition-colors duration-base ease-out-soft",
+          "transition-colors duration-fast ease-out-soft",
+          // Coral only while the source is being WRITTEN — live state. On hover
+          // the glyph takes the card's ink like every chrome glyph does; a tile
+          // turning accent under the pointer spent the one accent on furniture.
           streaming ? "text-primary" : "text-muted-foreground",
-          onOpen && "group-hover/art:border-primary/25 group-hover/art:text-primary"
+          onOpen && !streaming && "group-hover/art:border-border group-hover/art:text-foreground"
         )}
       >
         <Icon className={cn("size-4", streaming && "motion-safe:animate-icon-breathe")} aria-hidden />
@@ -305,7 +308,7 @@ export function ArtifactInlineCard({
         // sits in a transcript that can be 412px wide beside a canvas at any
         // window width, and `sm:` was asking the window.
         "@container group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card",
-        "transition-colors duration-base ease-out-soft hover:border-border",
+        "transition-colors duration-fast ease-out-soft hover:border-border",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
     >
@@ -350,7 +353,7 @@ export function ArtifactInlineCard({
                 className={cn(
                   "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-control text-muted-foreground",
                   "h-8 gap-1.5 px-2.5 text-caption font-medium coarse:h-10 coarse:px-3",
-                  "hover:bg-accent hover:text-primary"
+                  "hover:bg-accent hover:text-foreground"
                 )}
               >
                 <PanelRightOpen aria-hidden className="size-3.5" />

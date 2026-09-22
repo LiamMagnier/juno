@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AudioLines, Mic } from "lucide-react";
+import { AudioLines, Mic } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -849,7 +849,7 @@ export function CodeComposer({
         what the link asked for did not happen.
       */}
       {cloudBlocked && (
-        <p role="status" className="mt-2.5 flex items-start justify-center gap-2 px-1 text-caption text-muted-foreground">
+        <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
           <CodeIcons.cloud className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           <span>
             {cloudBlocked.message}{" "}
@@ -878,7 +878,7 @@ export function CodeComposer({
         stack that was deliberately taken out of this surface.
       */}
       {!cloudBlocked && prefillMessage && (
-        <p role="status" className="mt-2.5 flex items-start justify-center gap-2 px-1 text-caption text-muted-foreground">
+        <p role="status" className="mt-2.5 flex items-start justify-center gap-1.5 px-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
           <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           <span>{prefillMessage}</span>
         </p>

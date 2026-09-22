@@ -3,16 +3,15 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Link2Off, Loader2 } from "lucide-react";
+import { Link2Off, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
-import { staggerDelay } from "@/lib/motion";
+import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 
 const ERRORS: Record<string, string> = {
@@ -198,13 +197,9 @@ export default function ConnectionsPage() {
           }
         />
       ) : loading ? (
-        <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
+        <div className="grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3" role="status" aria-label="Loading connections">
           {[...Array(6)].map((_, i) => (
-            <Skeleton
-              key={i}
-              className="h-36 rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              style={staggerDelay(i, "tight")}
-            />
+            <ConnectorTileSkeleton key={i} index={i} />
           ))}
         </div>
       ) : (
@@ -242,12 +237,8 @@ export default function ConnectionsPage() {
             <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={disconnect} disabled={busy} className="group/disconnect gap-1.5">
-              {busy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Link2Off className="size-4 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
-              )}
+            <Button variant="destructive" onClick={disconnect} disabled={busy} className="gap-1.5">
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2Off className="size-4" />}
               {busy ? "Disconnecting…" : "Disconnect"}
             </Button>
           </DialogFooter>

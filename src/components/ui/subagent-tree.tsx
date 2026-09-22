@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  ChevronDown,
   ChevronRight,
   GitBranch,
   FileCode,
@@ -10,9 +9,10 @@ import {
   Eye,
   Bot,
   Clock,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 
 export interface SubagentItem {
@@ -87,7 +87,10 @@ export function SubagentTree({
         type="button"
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent/40 rounded-t-card aria-expanded:border-b aria-expanded:border-border/60"
+        // The hairline under the header is always there and only changes
+        // colour, so opening the tree never nudges the header by a pixel; the
+        // hover fill rounds all four corners while the card is closed.
+        className="flex w-full items-center justify-between gap-3 rounded-card border-b border-transparent px-3.5 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/40 aria-expanded:rounded-b-none aria-expanded:border-border/60"
       >
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="relative flex size-6 shrink-0 items-center justify-center rounded-xs bg-primary/10 text-primary">
@@ -123,17 +126,20 @@ export function SubagentTree({
               />
             ))}
           </div>
-          {expanded ? (
-            <ChevronDown className="size-4 text-muted-foreground transition-transform duration-fast" />
-          ) : (
-            <ChevronRight className="size-4 text-muted-foreground transition-transform duration-fast" />
-          )}
+          {/* One caret that turns, on the symmetric curve — a disclosure
+              has both of its ends on screen. */}
+          <ChevronRight
+            className={cn(
+              "size-4 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              expanded && "rotate-90"
+            )}
+          />
         </div>
       </button>
 
-      {/* Expanded Hierarchy View */}
-      {expanded && (
-        <div className="p-3 space-y-2 motion-safe:animate-rise-in">
+      {/* Expanded Hierarchy View — unfolds under the header. */}
+      <Collapse open={expanded}>
+        <div className="p-3 space-y-2">
           {/* Main Parent Agent */}
           <div className="flex items-center gap-2 px-1 text-caption font-mono text-muted-foreground">
             <Bot className="size-3 text-muted-foreground" />
@@ -252,7 +258,7 @@ export function SubagentTree({
             })}
           </div>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

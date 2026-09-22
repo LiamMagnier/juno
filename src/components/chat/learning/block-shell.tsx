@@ -28,6 +28,7 @@
  */
 
 import * as React from "react";
+import { Plus } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /** Rule-bounded figure frame — the ONLY outer chrome any learning block gets.
@@ -181,7 +182,7 @@ export function CaptionLine({
   );
 }
 
-/** Quiet text-only disclosure control — mono microcap + a rotating `+` glyph. */
+/** Quiet text-only disclosure control — mono microcap + a `+` that turns to `×`. */
 export function TextToggle({
   open,
   onToggle,
@@ -203,21 +204,25 @@ export function TextToggle({
       onClick={onToggle}
       className={cn(
         "group/toggle inline-flex items-center gap-1.5 self-start rounded-control py-1 pr-1.5 font-mono text-caption font-semibold text-muted-foreground",
-        "transition-colors duration-fast hover:text-foreground",
+        "transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none",
         "coarse:min-h-11",
         className
       )}
     >
       {label}
-      <span
-        aria-hidden
+      {/* The set's plus, not a `+` in the mono face (a text glyph sits on the
+          baseline at the text weight). An eighth of a turn makes it a close
+          mark: the disclosure's state, turned on the symmetric curve because
+          both ends are on screen. Its own hover turn is off — the glyph is the
+          state, and a state mark does not move before it is pressed. */}
+      <Plus
+        aria-hidden="true"
+        motion="none"
         className={cn(
-          "inline-block font-mono text-ui leading-none transition-transform duration-base ease-out-strong",
+          "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
           open && "rotate-45"
         )}
-      >
-        +
-      </span>
+      />
     </button>
   );
 }

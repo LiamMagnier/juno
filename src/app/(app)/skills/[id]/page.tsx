@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { History, Loader2 } from "lucide-react";
+import { History, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,7 +32,8 @@ import { useUploads } from "@/hooks/use-uploads";
 import { DOC_MIME } from "@/lib/uploads";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
-import { WorkList } from "@/components/work/shell/work-section";
+import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { WorkList, workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { trustLabel } from "@/components/work/work-skill-row";
 import {
@@ -45,6 +46,8 @@ import {
   type PatchWorkSkillInput,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 
 interface SkillSecurityFindingView {
   code: string;
@@ -179,6 +182,9 @@ export default function SkillPage() {
   // `null`: these files belong to a skill, not to a chat.
   const { uploads, addFiles, remove: dropUpload, isUploading } = useUploads(null);
   const resourceInput = React.useRef<HTMLInputElement>(null);
+  // The version history is dealt in when it first lands; a save or a restore
+  // that mints a version brings in only that row.
+  const versionArrivals = useWorkArrivals((versions ?? []).map((entry) => entry.id));
 
   const load = React.useCallback(async () => {
     setFailed(false);
@@ -546,8 +552,16 @@ export default function SkillPage() {
 
         <section>
           <h2 className="mb-3 text-heading">How Juno may use it</h2>
-          <Card className="divide-y divide-border/60 p-0">
-          <label className="flex items-center justify-between gap-3 px-4 py-3">
+          {/* `overflow-hidden` so a row's hover fill is cut to the card's own
+              corners rather than squaring them off. */}
+          <Card className="divide-y divide-border/60 overflow-hidden p-0">
+          <label
+            className={cn(
+              "flex items-center justify-between gap-3 px-4 py-3",
+              "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              !busy && "cursor-pointer hover:bg-accent"
+            )}
+          >
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">Available</span>
               <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
@@ -564,7 +578,13 @@ export default function SkillPage() {
             />
           </label>
 
-          <label className="flex items-center justify-between gap-3 px-4 py-3">
+          <label
+            className={cn(
+              "flex items-center justify-between gap-3 px-4 py-3",
+              "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+              !busy && trusted && "cursor-pointer hover:bg-accent"
+            )}
+          >
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">
                 Juno may reach for it unasked
@@ -750,7 +770,7 @@ export default function SkillPage() {
                 {resources.map((resource) => (
                   <li
                     key={resource.attachmentId}
-                    className="flex items-center gap-x-2.5 rounded-control px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                    className="group flex items-center gap-x-2.5 rounded-control px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                   >
                     <CodeIcons.file className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-label text-foreground">
@@ -765,7 +785,12 @@ export default function SkillPage() {
                           current.filter((entry) => entry.attachmentId !== resource.attachmentId)
                         )
                       }
-                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
+                      // A row's trailing action fades in with the row's hover
+                      // or focus, and is always there on a touch screen.
+                      className={cn(
+                        "h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground",
+                        TRAILING_ACTION_CLASS
+                      )}
                     >
                       Remove
                     </Button>
@@ -873,40 +898,52 @@ export default function SkillPage() {
             <EmptyState
               size="panel"
               tone="error"
+              icon={CodeIcons.error}
               title="Couldn’t read the history"
               description="This skill’s history couldn’t be read just now. Nothing about it has changed."
             />
           ) : (
             <WorkList>
               <ul className="space-y-0.5">
-              {versions.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="group flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none"
-                >
-                  <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="shrink-0 font-mono text-micro text-foreground">
-                    v{entry.version}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
-                    {entry.instructions.slice(0, 120)}
-                  </span>
-                  <span className="shrink-0 font-mono text-micro text-muted-foreground">
-                    {workTimeAgo(entry.createdAt)}
-                  </span>
-                  {entry.version !== skill.currentVersion && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => void restore(entry.version)}
-                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
-                    >
-                      <ActionIcons.restore className="size-3" aria-hidden="true" /> Restore
-                    </Button>
-                  )}
-                </li>
-              ))}
+              {versions.map((entry) => {
+                const rank = versionArrivals.rankFor(entry.id);
+                return (
+                  <li
+                    key={entry.id}
+                    className={cn(
+                      "group flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5",
+                      "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+                      rank !== null && workRowEnterClass
+                    )}
+                    style={rank !== null ? staggerDelay(rank, "tight") : undefined}
+                  >
+                    <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="shrink-0 font-mono text-micro text-foreground">
+                      v{entry.version}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
+                      {entry.instructions.slice(0, 120)}
+                    </span>
+                    <span className="shrink-0 font-mono text-micro text-muted-foreground">
+                      {workTimeAgo(entry.createdAt)}
+                    </span>
+                    {entry.version !== skill.currentVersion && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void restore(entry.version)}
+                        className={cn(
+                          "h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground",
+                          TRAILING_ACTION_CLASS
+                        )}
+                      >
+                        <ActionIcons.restore className="size-3" aria-hidden="true" /> Restore
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
               </ul>
             </WorkList>
           )}
@@ -936,6 +973,18 @@ export default function SkillPage() {
     </SkillFrame>
   );
 }
+
+/**
+ * A list row's trailing action: faded out at rest and in with the row's hover
+ * or keyboard focus, so a column of identical buttons does not repeat down the
+ * list, and always present on a touch screen, where nothing hovers.
+ *
+ * No `transition-*` here: the Button's `.pressable` already fades opacity on
+ * `--dur-fast`, and a transition utility would replace that shorthand and take
+ * the press dip with it.
+ */
+const TRAILING_ACTION_CLASS =
+  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100";
 
 /**
  * The page frame every state of this route shares, so the header sits in the

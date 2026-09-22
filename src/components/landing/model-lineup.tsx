@@ -1,7 +1,7 @@
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { MODELS, MODELS_BY_PROVIDER, type ModelInfo } from "@/lib/models";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
-import { staggerDelay } from "@/lib/motion";
+import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -83,6 +83,10 @@ export function FlagshipStrip() {
  * chips with "×N" inventory counts under a "120+ models across 14 labs" H2 —
  * a catalogue page's facts in a marketing section's frame, and the third card
  * grid in a row. The benefit is the choice, not the count.
+ *
+ * The strip is dealt left to right on the tight rung when it scrolls into
+ * view. It used to fade in on page load, below the fold, so the one sequence
+ * in the section finished before anyone could see it.
  */
 export function ModelLineup() {
   return (
@@ -92,26 +96,24 @@ export function ModelLineup() {
       heading="Every lab that matters, one picker."
       lede="Pick per message — the conversation carries on. New flagships appear as each provider ships them, without waiting on us."
     >
-      <ul className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4" aria-label="Labs in the picker">
+      <RevealList as="ul" className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4" aria-label="Labs in the picker">
         {LABS.map(({ provider, label, flagship }, i) => (
-          <li
-            key={provider}
-            style={staggerDelay(i, "tight")}
-            className="inline-flex items-center gap-2 motion-safe:animate-fade-in [animation-fill-mode:backwards]"
-          >
+          <RevealItem key={provider} as="li" index={i} rung="tight" className="inline-flex items-center gap-2">
             <ProviderLogo provider={provider} label={label} className="size-6 shrink-0" />
             <span className="flex flex-col leading-tight">
               <span className="text-ui font-medium text-foreground">{label}</span>
               <span className="font-mono text-caption text-muted-foreground">{flagship}</span>
             </span>
-          </li>
+          </RevealItem>
         ))}
-      </ul>
-      <p className="mt-8 max-w-prose text-body text-muted-foreground">
-        {MODELS_FLOOR}+ models across {TOTAL_LABS} labs, and beyond chat: image and video generation (GPT Image, Nano
-        Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the
-        same way.
-      </p>
+      </RevealList>
+      <Reveal className="mt-8">
+        <p className="max-w-prose text-body text-muted-foreground">
+          {MODELS_FLOOR}+ models across {TOTAL_LABS} labs, and beyond chat: image and video generation (GPT Image, Nano
+          Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the
+          same way.
+        </p>
+      </Reveal>
     </Section>
   );
 }

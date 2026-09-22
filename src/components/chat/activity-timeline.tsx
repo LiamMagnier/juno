@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/ui/icons";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {
@@ -296,8 +296,11 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
+          // No `transition-*` utility: `.pressable` (inside Pressable) already
+          // times the tonal hover on --dur-fast and the press on --dur-press,
+          // and a utility here replaced that list and let the press snap.
           "group/thought relative -mx-2 w-[calc(100%+1rem)] overflow-hidden rounded-field px-2 py-1",
-          "transition-colors duration-base ease-out-soft motion-reduce:transition-none coarse:min-h-11",
+          "motion-reduce:transition-none coarse:min-h-11",
           // One compact line, directly above the answer it describes. The
           // resting row used to be a two-line block at min-h-12 with a 12px
           // margin, which put a 60px hole between the user's turn and the
@@ -350,7 +353,7 @@ export function ActivityTimeline({
         ) : (
           <>
             <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
-              <span className="size-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
+              <span className="size-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-fast ease-out-soft group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
             </span>
             {/* One line: the label, then the nouns. "Thought process" only when
                 there WAS one — plenty of models emit no reasoning at all, and
@@ -363,7 +366,9 @@ export function ActivityTimeline({
               {run.note && <span className="text-warning"> · {run.note}</span>}
             </span>
             {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground">{formatSpan(run.elapsedMs)}</span>}
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
+            {/* Ink only on hover. A caret is a state mark and does not travel
+                before it is pressed (ICONS_AND_MOTION.md §1.3). */}
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors duration-fast ease-out-soft group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
           </>
         )}
       </Pressable>

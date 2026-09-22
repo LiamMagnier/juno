@@ -96,7 +96,14 @@ const Field = React.forwardRef<HTMLInputElement, FieldProps>(
         {error ? (
           // role="alert" so the message is announced when it appears mid-form,
           // and it sits AFTER the input so `aria-describedby` reads in order.
-          <p id={errorId} role="alert" className="flex items-center gap-1.5 text-caption text-destructive">
+          // It settles in on the workhorse entrance rather than cutting in: a
+          // red sentence that appears in one frame under a field reads as the
+          // page glitching, not as the form answering.
+          <p
+            id={errorId}
+            role="alert"
+            className="flex items-center gap-1.5 text-caption text-destructive motion-safe:animate-rise-in"
+          >
             <StatusIcons.error className="size-3.5 shrink-0" aria-hidden />
             {error}
           </p>

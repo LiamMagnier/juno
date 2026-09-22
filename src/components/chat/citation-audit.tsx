@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-// `TextSearch` is a raw lucide glyph like the three it joins: the registry names
-// concepts the product draws in more than one place, and "point at this sentence
-// in the text above" is drawn here and nowhere else.
-import { CircleDashed, CircleSlash } from "lucide-react";
+// `CircleDashed` and `CircleSlash` come from the set directly rather than from a
+// registry: the registries name concepts the product draws in more than one
+// place, and "partly supported" / "contradicted" are drawn here and nowhere else.
+import { CircleDashed, CircleSlash } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   blocksForSourceOffset,

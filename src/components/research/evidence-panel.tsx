@@ -178,7 +178,7 @@ export function EvidencePanel({
                         done ? "bg-success/15 text-success-ink" : "border border-border/70 text-muted-foreground"
                       )}
                     >
-                      {done ? <StatusIcons.success className="size-2.5" /> : null}
+                      {done ? <StatusIcons.success className="size-3" /> : null}
                     </span>
                     <p className="min-w-0 flex-1 text-ui leading-snug text-foreground/85">{objective.question}</p>
                   </div>
@@ -189,13 +189,17 @@ export function EvidencePanel({
                         {/* The bar is drawn only where a measurement exists.
                             An objective the coverage pass has never scored
                             falls to the sentence below instead — see rule 1. */}
+                        {/* The fill is full width, scaled from its left edge:
+                            a strength that moves as sources land travels on
+                            `transform`, never on `width` (rule 8 of the motion
+                            recipe — width re-lays-out every frame). */}
                         <div className="h-1 overflow-hidden rounded-full bg-border/60">
                           <div
                             className={cn(
-                              "h-full rounded-full transition-[width] duration-slow ease-out-soft motion-reduce:transition-none",
+                              "h-full w-full origin-left rounded-full transition-transform duration-slow ease-out-soft motion-reduce:transition-none",
                               done ? "bg-success" : "bg-warning"
                             )}
-                            style={{ width: `${Math.max(4, evidence.strength * 100)}%` }}
+                            style={{ transform: `scaleX(${Math.max(0.04, evidence.strength)})` }}
                           />
                         </div>
                         <p className="mt-1 truncate text-caption text-muted-foreground">

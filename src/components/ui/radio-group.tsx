@@ -6,9 +6,15 @@ import { cn } from "@/lib/utils";
 
 /**
  * Radios are the round sibling of Checkbox: an inset well that, when
- * selected, takes the primary border and a raised coral dot that springs in.
+ * selected, takes the primary border and an accent dot that springs in.
  * The ring stays neutral so a list of options reads as a set of slots with
- * one key in them, not as a row of coral circles.
+ * one key in them, not as a row of accent circles.
+ *
+ * The dot is always mounted and cross-faded on `data-state` (see checkbox.tsx
+ * for why mount-time animation was wrong): choosing a new option grows the new
+ * dot from a point on the spring while the old one shrinks away on the
+ * accelerate, so the selection visibly MOVES from one slot to the other rather
+ * than blinking. Reduced motion keeps the fade and drops the scale.
  */
 const RadioGroup = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Root>,
@@ -30,8 +36,16 @@ const RadioGroupItem = React.forwardRef<
     )}
     {...props}
   >
-    <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
-      <span className="check-morph block size-2 rounded-full bg-primary" aria-hidden="true" />
+    <RadioGroupPrimitive.Indicator
+      forceMount
+      className={cn(
+        "pointer-events-none flex items-center justify-center",
+        "transition-[opacity,transform] duration-base ease-spring",
+        "data-[state=unchecked]:opacity-0 data-[state=unchecked]:duration-fast data-[state=unchecked]:ease-in",
+        "data-[state=unchecked]:[transform:scale(var(--motion-scale-from,0.25))]"
+      )}
+    >
+      <span className="block size-2 rounded-full bg-primary" aria-hidden="true" />
     </RadioGroupPrimitive.Indicator>
   </RadioGroupPrimitive.Item>
 ));

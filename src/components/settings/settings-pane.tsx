@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import { SettingsPaneHeader } from "@/components/settings/setting-row";
 import { settingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
 import { settingsPanelId, settingsTabId } from "@/components/settings/settings-rail";
@@ -13,7 +14,7 @@ import { VoiceSection } from "@/components/settings/sections/voice";
 import { DataPrivacySection } from "@/components/settings/sections/data-privacy";
 import { AccountSection } from "@/components/settings/sections/account";
 import { BillingSection } from "@/components/settings/sections/billing";
-import { cn } from "@/lib/utils";
+import { reducedVariants, transition, variants } from "@/lib/motion";
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   general: GeneralSection,
@@ -28,12 +29,32 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
 };
 
 /**
+ * The pane's switch. The incoming section is the workhorse `rise`; the
+ * outgoing one only fades, on the exit rung, because it is leaving in place
+ * rather than going anywhere. Under reduced motion the rise loses its travel
+ * and keeps its fade (`reducedVariants`), the same tier as the CSS side.
+ */
+const PANE: Variants = {
+  hidden: variants.rise.hidden,
+  visible: variants.rise.visible,
+  exit: { opacity: 0, transition: transition.exit },
+};
+const PANE_REDUCED: Variants = {
+  hidden: reducedVariants.rise.hidden,
+  visible: reducedVariants.rise.visible,
+  exit: { opacity: 0, transition: transition.exit },
+};
+
+/**
  * One section, drawn: its heading, its lede, its content. The modal and the
  * `/settings` page both render exactly this, so a control can never exist in
  * one and not the other again.
  *
- * `key={section}` remounts on switch so each section arrives on the rise-in
- * and its own state (drafts, previews) starts clean.
+ * `key={section}` remounts on switch so each section's own state (drafts,
+ * previews) starts clean — and the switch is a CROSS-FADE rather than a snap:
+ * `AnimatePresence mode="popLayout"` lifts the outgoing section out of the
+ * flow while it fades, so the incoming one takes its place at once instead of
+ * waiting for it, and the two overlap for the exit rung.
  *
  * `tabpanel` only when the rail beside it is a tablist (the modal — see
  * settings-rail.tsx). On the page the rail is a <nav> of links, and a
@@ -53,16 +74,23 @@ export function SettingsPane({
   const meta = settingsSection(section);
   const Section = SECTION_COMPONENTS[section];
   const headingId = `settings-${section}`;
+  const reduce = useReducedMotion();
   return (
-    <div
-      key={section}
-      className={cn("motion-safe:animate-rise-in [animation-fill-mode:backwards]", className)}
-      role={tabpanel ? "tabpanel" : "region"}
-      id={tabpanel ? settingsPanelId(section) : undefined}
-      aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
-    >
-      <SettingsPaneHeader title={<span id={headingId}>{meta.label}</span>} description={meta.description} />
-      <Section />
-    </div>
+    <AnimatePresence mode="popLayout">
+      <motion.div
+        key={section}
+        variants={reduce ? PANE_REDUCED : PANE}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        className={className}
+        role={tabpanel ? "tabpanel" : "region"}
+        id={tabpanel ? settingsPanelId(section) : undefined}
+        aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
+      >
+        <SettingsPaneHeader title={<span id={headingId}>{meta.label}</span>} description={meta.description} />
+        <Section />
+      </motion.div>
+    </AnimatePresence>
   );
 }

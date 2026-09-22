@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight, Search, Users as UsersIcon } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { Ban, ChevronLeft, ChevronRight, Loader2, Search, Users as UsersIcon } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import type { Plan, SubStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -285,7 +285,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             <EmptyState
               tone="error"
               size="panel"
-              icon={UsersIcon}
+              icon={StatusIcons.error}
               className="m-4"
               title="Couldn’t load users"
               description="The request didn't come back. Nothing is shown rather than a guess at what's there."
@@ -331,7 +331,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => {
+                  {users.map((u, i) => {
                     const isSelf = u.id === selfId;
                     const isOwner = u.plan === "OWNER";
                     const locked = isSelf || isOwner;
@@ -343,7 +343,13 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                         // step on a row you are pointing at across an 800px
                         // table, where the hover is the only thing tying a name
                         // on the left to the actions on the right.
-                        className="border-b border-border/60 transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent"
+                        //
+                        // Rows are dealt in on the tight rung when a page or a
+                        // search lands (keyed by id, so an in-place plan change
+                        // does not replay it). Opacity only: a transform on a
+                        // table row is where engines still disagree.
+                        style={staggerDelay(i, "tight")}
+                        className="border-b border-border/60 transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent motion-safe:animate-fade-in [animation-fill-mode:backwards]"
                       >
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-3">
@@ -362,14 +368,16 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               <div className="flex items-center gap-2">
                                 <p className="truncate font-medium">{u.name || "—"}</p>
                                 {u.bannedAt && (
-                                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-caption font-semibold text-destructive">
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-caption font-semibold text-destructive">
+                                    <Ban className="size-3" aria-hidden="true" />
                                     Banned
                                   </span>
                                 )}
                               </div>
                               <p className="truncate text-caption text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 font-mono text-caption tabular-nums text-warning">
+                                <p className="mt-0.5 flex items-center gap-1 font-mono text-caption tabular-nums text-warning">
+                                  <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
                               )}
@@ -425,6 +433,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 size="icon-sm"
                                 disabled={locked}
                                 aria-label={`Actions for ${u.email}`}
+                                title="Actions"
                               >
                                 <ActionIcons.more className="size-4" />
                               </Button>
@@ -437,7 +446,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 </DropdownMenuItem>
                               ) : (
                                 <DropdownMenuItem
-                                  className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                                  variant="destructive"
                                   onSelect={() => {
                                     setBanReason("");
                                     setBanTarget(u);
@@ -449,7 +458,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                                variant="destructive"
                                 onSelect={() => {
                                   setDeleteConfirm("");
                                   setDeleteTarget(u);
@@ -521,8 +530,8 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             <Button variant="ghost" onClick={() => (setBanTarget(null), setBanReason(""))} disabled={banning}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmBan} disabled={banning} className="gap-1.5">
-              <Ban className="size-4" />
+            <Button variant="destructive" onClick={confirmBan} disabled={banning} aria-busy={banning}>
+              {banning ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <Ban className="size-4" />}
               {banning ? "Banning…" : "Ban user"}
             </Button>
           </DialogFooter>
@@ -559,9 +568,13 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               variant="destructive"
               onClick={confirmDelete}
               disabled={deleting || deleteConfirm.trim().toLowerCase() !== deleteTarget?.email.toLowerCase()}
-              className="gap-1.5"
+              aria-busy={deleting}
             >
-              <ActionIcons.delete className="size-4" />
+              {deleting ? (
+                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
+              ) : (
+                <ActionIcons.delete className="size-4" />
+              )}
               {deleting ? "Deleting…" : "Delete user"}
             </Button>
           </DialogFooter>

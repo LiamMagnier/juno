@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -237,9 +237,12 @@ function AlwaysAsks() {
         {ALWAYS_CONFIRM_ACTIONS.map((action) => (
           <li
             key={action}
-            className="surface-raised flex items-center gap-2.5 rounded-card px-3.5 py-2.5"
+            className="surface-raised flex items-center gap-2 rounded-card px-3.5 py-2.5"
           >
-            <span className="size-2 shrink-0 rounded-full bg-warning" aria-hidden="true" />
+            {/* The shield Juno wears wherever it stops to ask — the approval
+                card, a Code permission prompt — in its warning tone, rather
+                than an amber dot that meant nothing on its own. */}
+            <StatusIcons.security className="size-4 shrink-0 text-warning" aria-hidden="true" />
             <span className="min-w-0 text-ui font-medium text-foreground">
               {actionVerb(action).verb}
             </span>
@@ -306,9 +309,10 @@ function ApprovalModes() {
         {WORK_PERMISSION_POLICIES.map((policy) => (
           <Card
             key={policy}
-            // The default mode is the recommended tile, so it takes the larger
-            // throw — the same rung a recommended plan or a hero project tile takes.
-            variant={policy === DEFAULT_WORK_PERMISSION_POLICY ? "elevated" : "default"}
+            // All three on the same flat material. The default used to take the
+            // larger throw, but nothing in the reading column casts a shadow
+            // (FLAT_UI.md §2) and the Default badge already says which it is —
+            // a read-only tile does not need to stand up off the page to be found.
             className="flex flex-col p-4"
           >
             <div className="flex flex-wrap items-center gap-2">

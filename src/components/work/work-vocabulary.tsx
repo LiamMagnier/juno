@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Ban, Cloud, Laptop } from "lucide-react";
+import { Ban, Cloud, Laptop, type IconComponent } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { describeCapability, type WorkCapability, type WorkDegradation, type WorkRiskLevel, type WorkStatus } from "@/lib/work/domain";
 /*
@@ -275,7 +275,9 @@ export function WorkTag({
 }) {
   return (
     <span className={cn(PILL_SHAPE, PILL_CLASS.neutral, className)}>
-      {Icon && <Icon className="size-2.5" aria-hidden="true" />}
+      {/* `size-3`, the bottom rung of the ladder and the size `RiskPill` beside
+          it already uses; at 12px the set draws its bold cut on its own. */}
+      {Icon && <Icon className="size-3" aria-hidden="true" />}
       {children}
     </span>
   );
@@ -505,7 +507,7 @@ const NOTE_CLASS: Record<NoteTone, string> = {
  * a CIRCLE is a failure, and `CodeIcons.error` has used the circle since Juno
  * Code shipped. Work was the surface still using the triangle for both.
  */
-const NOTE_ICON: Record<NoteTone, React.ComponentType<{ className?: string }>> = {
+const NOTE_ICON: Record<NoteTone, IconComponent> = {
   info: StatusIcons.info,
   warning: StatusIcons.warning,
   blocked: Ban,

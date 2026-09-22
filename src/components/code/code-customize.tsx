@@ -88,9 +88,19 @@ function SectionNote({
 }) {
   const isError = tone === "error";
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3.5")}>
-      <p className={cn("min-w-0 flex-1 basis-64 text-ui", isError ? "text-destructive" : "text-muted-foreground")}>
-        {children}
+    // Fades in: it replaces the skeleton rows the moment the fetch answers,
+    // and a sentence that swaps in for a shimmer in one frame reads as a flash.
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3.5 motion-safe:animate-fade-in">
+      <p
+        className={cn(
+          "flex min-w-0 flex-1 basis-64 items-start gap-2 text-ui",
+          isError ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {/* A failure carries the house error mark, so "we could not ask"
+            reads as a failure at a glance and not only once it is read. */}
+        {isError && <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+        <span className="min-w-0">{children}</span>
       </p>
       {action}
     </div>

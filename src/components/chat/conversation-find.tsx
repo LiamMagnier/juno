@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronUp, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   findInConversation,
   stepMatch,
@@ -77,14 +78,18 @@ export function ConversationFind({
     <div
       role="search"
       aria-label="Find in conversation"
-      className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2"
+      // Settles in over the transcript rather than cutting in above it.
+      className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2 motion-safe:animate-fade-in"
     >
       {/* No `bg-background` here. Utilities are emitted after the components
           layer, so it beat `.field-well`'s own fill and the well rendered at the
           page colour — on dark that is #000 under a black inset shadow, i.e. a
           field with no fill and no recess at all. `.field-well` already picks
           the right rung per theme (page ground in light, --secondary in dark). */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input px-3 py-1.5 field-well transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-foreground/70 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background motion-reduce:transition-none">
+      {/* Focus darkens the field's own edge, the composer's recipe. The ring
+          and its 2px offset that used to sit outside it painted a page-coloured
+          halo between the two (ICONS_AND_MOTION.md §2.2.3). */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input px-3 py-1.5 field-well transition-colors duration-fast ease-out-soft focus-within:border-foreground/70 motion-reduce:transition-none">
         {/* Raw `Search`: find-in-conversation. `AppIcons.search` is the app's
             search destination, and this field never leaves the thread. */}
         <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -116,27 +121,45 @@ export function ConversationFind({
           </span>
         )}
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={() => go(-1)}
-        disabled={matches.length === 0}
-        aria-label="Previous match"
-      >
-        <ChevronUp className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={() => go(1)}
-        disabled={matches.length === 0}
-        aria-label="Next match"
-      >
-        <ChevronDown className="size-4" />
-      </Button>
-      <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close find">
-        <ActionIcons.dismiss className="size-4" />
-      </Button>
+      {/* Every glyph-only control names itself on hover. A disabled step shows
+          no tooltip — Radix cannot hover a pointer-events-none target, and a
+          control that cannot act needs no name. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => go(-1)}
+            disabled={matches.length === 0}
+            aria-label="Previous match"
+          >
+            <ChevronUp className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Previous match</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => go(1)}
+            disabled={matches.length === 0}
+            aria-label="Next match"
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Next match</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close find">
+            <ActionIcons.dismiss className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Close find</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

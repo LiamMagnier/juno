@@ -22,9 +22,11 @@ export default function DesignLoading() {
             does not reflow into the page it stands in for. */}
         <div className="grid grid-cols-2 gap-2 @[40rem]/page:grid-cols-4">
           {[...Array(4)].map((_, i) => (
+            // `rounded-card`, the preset tile's own rung, so the corners do not
+            // change as the page lands over the placeholder.
             <Skeleton
               key={i}
-              className="h-[58px] w-full rounded-menu [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              className="h-[58px] w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
               style={staggerDelay(i, "tight")}
             />
           ))}

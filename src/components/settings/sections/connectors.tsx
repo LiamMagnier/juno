@@ -54,9 +54,9 @@ export function ConnectorsSection() {
       <SettingsGroup
         title="Connected apps"
         aside={
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Button asChild variant="outline" size="sm">
             <Link href="/connections">
-              <AppIcons.connections className="size-3.5" aria-hidden="true" />
+              <AppIcons.connections className="size-4" aria-hidden="true" />
               Manage connections
             </Link>
           </Button>
@@ -70,8 +70,8 @@ export function ConnectorsSection() {
               title="Couldn’t load your connections"
               description="The list didn't come back. Nothing has been disconnected."
               action={
-                <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+                <Button variant="outline" size="sm" onClick={() => void load()}>
+                  <ActionIcons.refresh className="size-4" aria-hidden="true" />
                   Try again
                 </Button>
               }

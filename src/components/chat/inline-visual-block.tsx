@@ -13,7 +13,7 @@ import {
   ListChecks,
   Maximize2,
   Table2,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { stepLabFromLegacySteps } from "@/lib/step-lab";
@@ -230,8 +230,10 @@ function Header({ block }: { block: VisualBlock }) {
   return (
     <div className="border-b border-border/70 bg-card px-4 py-3">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-field border bg-primary/10 shadow-soft">
-          <Icon className="size-4 text-primary" />
+        {/* A neutral tile: the kind of visual is information, and the accent
+            belongs to state and the primary action. No shadow in the column. */}
+        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary">
+          <Icon className="size-4 text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -269,12 +271,12 @@ function CardsBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "group flex min-h-20 items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
-                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
-                isActive && "border-primary/55 bg-primary/10 shadow-soft"
+                "group flex min-h-20 items-start gap-3 rounded-field border bg-card p-3 text-left transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent",
+                "motion-reduce:transition-none",
+                isActive && "border-primary/55 bg-primary/10 hover:border-primary/55 hover:bg-primary/10"
               )}
             >
-              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-caption font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-caption font-semibold transition-colors duration-fast ease-out-soft", isActive && "border-primary/40 text-primary")}>
                 {item.label ?? index + 1}
               </span>
               <span className="min-w-0">
@@ -321,12 +323,19 @@ function FlowBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "flex min-w-0 items-start gap-2 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
-                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
-                isActive && "border-primary/55 bg-primary/10 shadow-soft"
+                "flex min-w-0 items-start gap-2 rounded-field border bg-card p-3 text-left transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent",
+                "motion-reduce:transition-none",
+                isActive && "border-primary/55 bg-primary/10 hover:border-primary/55 hover:bg-primary/10"
               )}
             >
-              <Circle className={cn("mt-1 size-3.5 shrink-0 fill-muted text-muted-foreground", isActive && "fill-primary/25 text-primary")} />
+              {/* An outline node at rest and the filled cut when selected —
+                  `weight="fill"` is this set's "on". A `fill-*` class selected
+                  the solid drawing for every node, so all of them rendered as
+                  the same faint disc and the selection had no shape of its own. */}
+              <Circle
+                weight={isActive ? "fill" : undefined}
+                className={cn("mt-1 size-3.5 shrink-0 text-muted-foreground", isActive && "text-primary")}
+              />
               <span className="min-w-0">
                 <span className="block text-ui font-semibold leading-5">{itemTitle(node, `Node ${index + 1}`)}</span>
                 {primaryText(node) && <span className="mt-1 line-clamp-2 block text-caption leading-5 text-muted-foreground">{primaryText(node)}</span>}
@@ -344,7 +353,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       {/* Keyed so the detail panel animates on each selection. */}
       <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
         <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
-          <CornerDownRight className="size-3.5 text-primary" /> Selected node
+          <CornerDownRight className="size-3.5" /> Selected node
         </div>
         <h4 className="mt-3 text-heading font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
         {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-body leading-6 text-muted-foreground">{primaryText(selected)}</p>}
@@ -437,10 +446,10 @@ function QuizBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setSelected(index)}
               onClick={() => setSelected(index)}
               className={cn(
-                "group flex items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99] active:duration-press",
-                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
-                active && correct && "border-success/60 bg-success/10 shadow-soft",
-                active && answered && !correct && "border-destructive/50 bg-destructive/10 shadow-soft"
+                "group flex items-start gap-3 rounded-field border bg-card p-3 text-left transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent",
+                "motion-reduce:transition-none",
+                active && correct && "border-success/60 bg-success/10 hover:border-success/60 hover:bg-success/10",
+                active && answered && !correct && "border-destructive/50 bg-destructive/10 hover:border-destructive/50 hover:bg-destructive/10"
               )}
             >
               {/* The registry's tick and cross, not CheckCircle2/XCircle. The
@@ -513,7 +522,7 @@ function TimelineBlock({ block }: { block: VisualBlock }) {
           className="grid grid-cols-[5rem_1fr] gap-3 border-l border-border pb-4 pl-3 last:pb-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           style={staggerDelay(index)}
         >
-          <span className="-ml-[1.35rem] flex h-6 w-16 items-center justify-center rounded-full border bg-card font-mono text-micro text-muted-foreground shadow-soft">
+          <span className="-ml-[1.35rem] flex h-6 w-16 items-center justify-center rounded-full border bg-card font-mono text-micro text-muted-foreground">
             {item.label ?? index + 1}
           </span>
           <div>
@@ -545,7 +554,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // that has to say "this did not render" had nothing behind its text.
       <div className="my-3 rounded-field border bg-card px-4 py-3 text-ui text-muted-foreground">
         <div className="flex items-center gap-2">
-          {streaming ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
+          {streaming ? <Loader2 className="size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
         </div>
       </div>
@@ -572,7 +581,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
     // reader — and every `@[…]:` step inside keys on THIS box, not on a window
     // the sidebar and the docks make meaningless. Unnamed on purpose: the
     // nearest container is the right one wherever the block lands.
-    <section className="@container juno-visual my-4 overflow-hidden rounded-card border bg-card text-foreground shadow-soft motion-safe:animate-rise-in">
+    <section className="@container juno-visual my-4 overflow-hidden rounded-card border bg-card text-foreground motion-safe:animate-rise-in">
       <Header block={block} />
       <VisualBody block={block} />
     </section>

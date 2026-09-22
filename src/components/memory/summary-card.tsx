@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Maximize2 } from "lucide-react";
+import { ArrowUp, Loader2, Maximize2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 size="icon-sm"
                 onClick={() => setExpanded(true)}
                 aria-label="Expand the memory summary"
+                title="Expand"
+                className="text-muted-foreground"
               >
                 <Maximize2 className="size-3.5" />
               </Button>
@@ -112,6 +114,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               onClick={onRegenerate}
               disabled={consolidating}
               aria-label="Rebuild the summary from your chats and projects"
+              title="Rebuild summary"
+              className="text-muted-foreground"
             >
               <ActionIcons.refresh className={cn("size-3.5", consolidating && "animate-spin")} />
             </Button>
@@ -203,6 +207,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   className="rounded-full"
                   onClick={() => setComposing(false)}
                   aria-label="Cancel editing"
+                  title="Cancel"
                 >
                   <ActionIcons.dismiss className="size-4" />
                 </Button>
@@ -213,6 +218,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 className="rounded-full"
                 disabled={drafting || !value.trim()}
                 aria-label="Send instruction"
+                title="Send"
               >
                 {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
               </Button>
@@ -228,11 +234,17 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               else setComposing(true);
             }}
             aria-disabled={paused}
+            // `.control-primary` already carries the house press (scale .97 on
+            // the press rung, brightness on the fast one, both off under
+            // reduced motion), and the global focus ring applies. This drew
+            // its own ring with a 2px page-coloured offset, which haloed the
+            // button against the card it floats on, and a 95% press.
             className={cn(
-              "pointer-events-auto flex size-11 items-center justify-center control-primary rounded-full transition-[filter,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
+              "pointer-events-auto flex size-11 items-center justify-center control-primary rounded-full coarse:size-12",
               // Press feedback only while pressing does something.
-              paused ? "opacity-50" : "active:scale-95 motion-reduce:active:scale-100"
+              paused && "opacity-50 active:scale-100"
             )}
+            title={paused ? "Memory is paused" : "Edit memory"}
             aria-label={
               paused
                 ? "Edit memory — unavailable while memory is paused"

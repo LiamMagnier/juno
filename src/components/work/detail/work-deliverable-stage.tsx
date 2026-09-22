@@ -44,7 +44,9 @@ export function WorkDeliverableStage({ list }: { list: WorkArtifactList }) {
   const others = (list.artifacts ?? []).length - 1;
 
   return (
-    <section aria-label="What it produced" className="mb-6">
+    // Rises in when the run first writes something worth staging: a change
+    // nobody on the page caused, so it arrives rather than appearing.
+    <section aria-label="What it produced" className="mb-6 motion-safe:animate-rise-in">
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 className="min-w-0 flex-1 truncate text-heading text-foreground">{artifact.title}</h2>
         <span className="font-mono text-micro text-muted-foreground">

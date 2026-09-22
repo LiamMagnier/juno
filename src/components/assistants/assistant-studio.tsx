@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Loader2, Plus, Save } from "@/components/ui/icons";
 import type { JunoAssistantConfig, CreateAssistantInput } from "@/lib/assistants";
 import { MODEL_LIST } from "@/lib/models";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
@@ -161,9 +161,10 @@ export function AssistantStudio({
             {error && (
               <div
                 role="alert"
-                className="rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-ui text-destructive-ink"
+                className="flex items-start gap-2 rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-ui text-destructive-ink motion-safe:animate-fade-in"
               >
-                {error}
+                <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0">{error}</span>
               </div>
             )}
 
@@ -230,7 +231,7 @@ export function AssistantStudio({
                     Optional prompts that make the assistant useful immediately.
                   </p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={handleAddStarter}>
+                <Button type="button" variant="ghost" size="sm" onClick={handleAddStarter} className="gap-1.5">
                   <Plus className="size-3.5" aria-hidden="true" />
                   Add
                 </Button>
@@ -238,7 +239,9 @@ export function AssistantStudio({
 
               <div className="space-y-2">
                 {starterPrompts.map((prompt, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  // A new starter rises into place rather than appearing;
+                  // the rows already there are keyed and do not replay.
+                  <div key={index} className="flex items-center gap-2 motion-safe:animate-fade-in-up">
                     <Input
                       aria-label={`Starter prompt ${index + 1}`}
                       placeholder="Analyze this dataset and explain the important patterns."
@@ -252,8 +255,10 @@ export function AssistantStudio({
                       onClick={() => handleRemoveStarter(index)}
                       disabled={starterPrompts.length === 1}
                       aria-label={`Remove starter prompt ${index + 1}`}
+                      title="Remove starter"
+                      className="danger-hover text-muted-foreground"
                     >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      <ActionIcons.delete className="size-3.5" aria-hidden="true" />
                     </Button>
                   </div>
                 ))}
@@ -311,8 +316,12 @@ export function AssistantStudio({
           <Button type="button" variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" form="assistant-studio-form" disabled={isSaving}>
-            <Save className="size-3.5" aria-hidden="true" />
+          <Button type="submit" form="assistant-studio-form" disabled={isSaving} className="gap-1.5">
+            {isSaving ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Save className="size-3.5" aria-hidden="true" />
+            )}
             {isSaving ? "Saving…" : initialAssistant ? "Save changes" : "Create assistant"}
           </Button>
         </DialogFooter>

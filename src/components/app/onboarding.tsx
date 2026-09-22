@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { DotField } from "@/components/signature/dot-field";
 import { Button } from "@/components/ui/button";
@@ -274,8 +274,13 @@ export function Onboarding() {
                       {...accentOption(i)}
                     >
                       {/* Computed ink, not `text-white`: on the amber preset a
-                          white tick measures 2.3:1 against its own swatch. */}
-                      {selected && <StatusIcons.success className="size-4" />}
+                          white tick measures 2.3:1 against its own swatch.
+                          It springs in (`check-morph`, the copy → check
+                          gesture) rather than appearing in a frame, so moving
+                          the choice reads as the tick moving with it; the
+                          keyframe reads the reduced-motion variables, so that
+                          tier gets a fade. */}
+                      {selected && <StatusIcons.success className="size-4 animate-check-morph" />}
                     </Pressable>
                   );
                 })}

@@ -4,8 +4,9 @@ import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, MessageSquare, Pin, SearchX } from "lucide-react";
+import { ArrowLeft, MessageSquare, Pin, SearchX } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -169,8 +170,8 @@ export default function RoadmapDetailPage() {
               <StatusBadge status={r.status} />
               <CategoryChip category={r.category} />
               {r.pinned && (
-                <span className="inline-flex items-center gap-1 font-mono text-caption text-primary">
-                  <Pin className="size-3 shrink-0 fill-primary text-primary" /> Pinned
+                <span className="inline-flex items-center gap-1.5 font-mono text-caption text-primary">
+                  <Pin weight="fill" className="size-3 shrink-0" /> Pinned
                 </span>
               )}
             </div>
@@ -208,7 +209,12 @@ export default function RoadmapDetailPage() {
                 </SelectContent>
               </Select>
               <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })} className="gap-1.5">
-                <Pin className={cn("size-3.5 shrink-0", r.pinned && "fill-current")} /> {r.pinned ? "Unpin" : "Pin"}
+                <GlyphSwap
+                  active={r.pinned}
+                  off={<Pin className="size-3.5" />}
+                  on={<Pin weight="fill" className="size-3.5" />}
+                />
+                {r.pinned ? "Unpin" : "Pin"}
               </Button>
               {r.status === "DECLINED" && (
                 <Button
@@ -251,11 +257,12 @@ export default function RoadmapDetailPage() {
         <div className="mt-8">
           <DottedDivider label={`${comments.length} ${comments.length === 1 ? "comment" : "comments"}`} />
           <ul className="mt-4 space-y-3">
-            {comments.map((c) => (
+            {comments.map((c, i) => (
               <li
                 key={c.id}
+                style={staggerDelay(i, "tight")}
                 className={cn(
-                  "rounded-card border p-3.5 motion-safe:animate-rise-in",
+                  "rounded-card border p-3.5 [animation-fill-mode:backwards] motion-safe:animate-rise-in",
                   // bg-primary/15, not /5: re-based against black, a 5% coral wash
                   // resolved to ~2.3% lightness — DARKER than the plain bg-card
                   // comment beside it, so the official reply was the one that sank.
@@ -267,7 +274,7 @@ export default function RoadmapDetailPage() {
                   <DotIdenticon seed={c.author.id} className="size-4 shrink-0" />
                   <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
                   {c.official && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
                       <StatusIcons.verified className="size-3 shrink-0" /> Juno team
                     </span>
                   )}

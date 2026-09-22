@@ -47,7 +47,28 @@ import { cn } from "@/lib/utils";
 const WORK_ROW_HEIGHT = 94;
 
 /**
+ * Line widths for the placeholder rows, varied per row so a stack of them reads
+ * as a list of different things rather than one stamped shape. Indexed modulo
+ * their length; the three columns are title, subtitle and meta line.
+ */
+const LINE_WIDTHS = [
+  ["w-2/5", "w-3/4", "w-1/3"],
+  ["w-1/3", "w-2/3", "w-2/5"],
+  ["w-1/2", "w-4/5", "w-1/4"],
+] as const;
+
+/**
  * A list still loading, as rows rather than as a spinner.
+ *
+ * Inside a `WorkList` (no `height`), each placeholder is the ROW: the same
+ * `px-3.5 py-3` box and the same three line boxes — title, subtitle, mono meta
+ * — with a bar set in each at the height of its text. A 94px slab stood in for
+ * a row that is text on the panel, so the swap changed the shape of the list
+ * even though it did not move it; now the bars are where the words land. The
+ * line boxes add up to `WORK_ROW_HEIGHT`, so nothing moves either.
+ *
+ * With a `height`, it is a plain block for a list whose rows are genuinely a
+ * different shape (a document, a run) and which the caller has measured.
  *
  * The cascade is `staggerDelay(i, "tight")` — the same rung the real rows arrive
  * on — so the placeholder and the content it becomes are dealt out at one tempo.
@@ -63,26 +84,53 @@ const WORK_ROW_HEIGHT = 94;
 export function WorkRowSkeletons({
   count = 3,
   /** Override only for a list whose rows are genuinely a different shape. */
-  height = WORK_ROW_HEIGHT,
+  height,
   className,
 }: {
   count?: number;
   height?: number;
   className?: string;
 }) {
+  if (height !== undefined) {
+    return (
+      <div className={cn("space-y-2.5", className)} aria-hidden="true">
+        {Array.from({ length: count }, (_, index) => (
+          <Skeleton
+            key={index}
+            // The entrance as well as the delay. Without it the delay is inert —
+            // `animation-delay` on an element with no animation is nothing.
+            className="w-full rounded-field [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            style={{ height, ...staggerDelay(index, "tight") }}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className={cn("space-y-2.5", className)} aria-hidden="true">
-      {Array.from({ length: count }, (_, index) => (
-        <Skeleton
-          key={index}
-          // The entrance as well as the delay. Without it the delay is inert —
-          // `animation-delay` on an element with no animation is nothing — and
-          // the six lists that wrote this block by hand were split on it: the
-          // route-level placeholders rose in, the in-page ones appeared.
-          className="w-full rounded-field [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-          style={{ height, ...staggerDelay(index, "tight") }}
-        />
-      ))}
+    <div className={cn("space-y-0.5", className)} aria-hidden="true">
+      {Array.from({ length: count }, (_, index) => {
+        const [title, subtitle, meta] = LINE_WIDTHS[index % LINE_WIDTHS.length];
+        return (
+          <div
+            key={index}
+            // The row's own box: the same transparent hairline and padding, so
+            // the bars sit exactly where the row's text will.
+            className="rounded-control border border-transparent px-3.5 py-3 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            style={{ minHeight: WORK_ROW_HEIGHT + 2, ...staggerDelay(index, "tight") }}
+          >
+            <div className="flex h-6 items-center">
+              <Skeleton className={cn("h-3.5 rounded-sm", title)} />
+            </div>
+            <div className="mt-1 flex h-5 items-center">
+              <Skeleton className={cn("h-3 rounded-sm", subtitle)} />
+            </div>
+            <div className="mt-1.5 flex h-4 items-center">
+              <Skeleton className={cn("h-2.5 rounded-sm", meta)} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

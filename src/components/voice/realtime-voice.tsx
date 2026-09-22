@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "lucide-react";
+import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
@@ -120,7 +120,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       {voice.error && (
         <div
           role="alert"
-          className="flex max-w-full items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-caption text-warning-foreground"
+          className="flex max-w-full items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-3 py-1 text-caption text-warning-foreground motion-safe:animate-rise-in"
         >
           <StatusIcons.warning className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate">{voice.error}</span>
@@ -133,7 +133,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       {!voice.error && voice.notice && (
         <div
           role="status"
-          className="flex max-w-full items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-caption text-muted-foreground"
+          className="flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1 text-caption text-muted-foreground motion-safe:animate-rise-in"
         >
           <StatusIcons.info className="size-3.5 shrink-0" />
           <span className="min-w-0">{voice.notice}</span>
@@ -182,7 +182,13 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   a caller had no way to halt a monologue while the label told
                   them to talk over it. */}
               {voice.assistantSpeaking && (
-                <BarButton onClick={voice.interrupt} label="Stop Juno speaking">
+                <BarButton
+                  onClick={voice.interrupt}
+                  label="Stop Juno speaking"
+                  // It arrives with the speech it stops, so it fades in rather
+                  // than landing in the bar in one frame.
+                  className="motion-safe:animate-fade-in"
+                >
                   <Square className="size-3 fill-current" />
                   <span className="hidden md:inline">Stop</span>
                 </BarButton>
@@ -194,7 +200,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 pressed={voice.muted}
                 label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
               >
-                {voice.muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+                <SwapGlyph on={voice.muted} onGlyph={<MicOff className="size-4" />} offGlyph={<Mic className="size-4" />} />
                 <span className="hidden md:inline">{voice.muted ? "Unmute" : "Mute"}</span>
               </BarButton>
 
@@ -211,11 +217,11 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   pressed={voice.screenSharing}
                   label={voice.screenSharing ? "Stop sharing your screen" : "Share your screen"}
                 >
-                  {voice.screenSharing ? (
-                    <MonitorX className="size-4" />
-                  ) : (
-                    <MonitorUp className="size-4" />
-                  )}
+                  <SwapGlyph
+                    on={voice.screenSharing}
+                    onGlyph={<MonitorX className="size-4" />}
+                    offGlyph={<MonitorUp className="size-4" />}
+                  />
                   <span className="hidden md:inline">{voice.screenSharing ? "Sharing" : "Share"}</span>
                 </BarButton>
               )}
@@ -254,6 +260,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
  * and a toggle that silently swaps the thing answering you should say so.
  */
 function VoiceSettings({ voice }: { voice: VoiceController }) {
+  const voiceHeadingId = React.useId();
   const live = voice.status === "live";
   const reconnecting = voice.status === "reconnecting";
   const switchable = live || voice.status === "connecting" || reconnecting;
@@ -265,10 +272,13 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
           <PopoverTrigger
             aria-label="Call settings"
             className={cn(
-              "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
-              "text-muted-foreground transition-colors duration-fast ease-out-soft",
+              // `.pressable` times the colour cross-fade and the dip itself;
+              // a transition-* utility beside it would replace that list and
+              // leave the press untimed.
+              "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground",
               "hover:bg-accent hover:text-foreground",
-              "data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11"
+              "data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11",
+              "motion-reduce:transition-none motion-reduce:active:scale-100"
             )}
           >
             <Settings2 className="size-4" />
@@ -279,8 +289,11 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
 
       <PopoverContent align="end" side="top" sideOffset={10} className="w-[min(20rem,calc(100vw-1.5rem))] p-0">
         <div className="flex flex-col">
-          <section className="flex flex-col gap-0.5 p-2">
-            <h3 className="px-2 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
+          {/* The rows are radios, so their section is the group that names
+              them — a `role="radio"` with no radiogroup is announced as a
+              choice between nothing. */}
+          <section role="radiogroup" aria-labelledby={voiceHeadingId} className="flex flex-col gap-0.5 p-2">
+            <h3 id={voiceHeadingId} className="px-2.5 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
             {VOICE_PROVIDERS.map((id) => {
               const unavailable = voice.availability?.[id] === false;
               const active = id === voice.provider;
@@ -294,8 +307,8 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
                   onClick={() => (switchable ? voice.switchProvider(id) : void voice.start(id))}
                   className={cn(
                     "pressable flex items-center gap-2.5 rounded-control px-2.5 py-2 text-left",
-                    "transition-colors duration-fast ease-out-soft",
                     "disabled:pointer-events-none disabled:opacity-40",
+                    "motion-reduce:transition-none motion-reduce:active:scale-100",
                     active ? "bg-accent" : "hover:bg-accent/60"
                   )}
                 >
@@ -318,7 +331,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               would be a lie on a provider with no reasoning mode. */}
           {voice.capabilities?.thinkingChoice && (
             <section className="border-t border-border p-2">
-              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 hover:bg-accent/60">
+              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
                   <span className="text-ui font-medium text-foreground">Reasoning</span>
                   <span className="text-micro text-muted-foreground">
@@ -361,6 +374,7 @@ function BarButton({
   disabled,
   pressed,
   tone = "default",
+  className,
   children,
 }: {
   onClick: () => void;
@@ -368,6 +382,7 @@ function BarButton({
   disabled?: boolean;
   pressed?: boolean;
   tone?: "default" | "danger";
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -380,15 +395,18 @@ function BarButton({
           aria-label={label}
           aria-pressed={pressed}
           className={cn(
+            // `.pressable` owns the timing: colour on --dur-fast, the dip on
+            // --dur-press. The `transition-colors` that used to sit here
+            // replaced its list, so every control on the bar pressed untimed.
             "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-ui font-medium",
-            "transition-colors duration-fast ease-out-soft",
             "disabled:pointer-events-none disabled:opacity-40",
-            "coarse:h-11",
+            "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-11",
             pressed
               ? "bg-foreground text-background"
               : tone === "danger"
                 ? "text-foreground hover:bg-destructive/10 hover:text-destructive"
-                : "text-foreground hover:bg-accent"
+                : "text-foreground hover:bg-accent",
+            className
           )}
         >
           {children}
@@ -396,5 +414,25 @@ function BarButton({
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * Two glyphs for one control's two states, cross-faded in one grid cell.
+ *
+ * Mute ⇄ unmute and share ⇄ stop sharing used to swap drawings in a single
+ * frame. They trade opacity and a small scale on `--dur-fast` now
+ * (ICONS_AND_MOTION.md §2.2.7), so the control is seen to change state rather
+ * than to be replaced. The fade rides wrappers: a glyph's own transition list
+ * belongs to its hover articulation. Reduced motion keeps the fade.
+ */
+function SwapGlyph({ on, onGlyph, offGlyph }: { on: boolean; onGlyph: React.ReactNode; offGlyph: React.ReactNode }) {
+  const face =
+    "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity";
+  return (
+    <span aria-hidden="true" className="grid place-items-center">
+      <span className={cn(face, on ? "scale-75 opacity-0" : "opacity-100")}>{offGlyph}</span>
+      <span className={cn(face, on ? "opacity-100" : "scale-75 opacity-0")}>{onGlyph}</span>
+    </span>
   );
 }

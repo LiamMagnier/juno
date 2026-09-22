@@ -131,7 +131,32 @@ const config = [
       // rungs fall between the named ones. Warn until the older surfaces are
       // swept, then promote.
       "design-system/no-raw-text-size": "warn",
+      // One icon set. Every glyph comes from `@/components/ui/icons`, which is
+      // where weight, optical size and hover articulation are decided; a direct
+      // library import skips all three and is how the previous set drifted.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "lucide-react",
+              message: "Import icons from \"@/components/ui/icons\" — the one icon set.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["@phosphor-icons/*", "@phosphor-icons/**"],
+              message: "Import icons from \"@/components/ui/icons\" — the one icon set.",
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // The icon set itself is the one module allowed to reach the glyph library.
+    files: ["src/components/ui/icons.tsx"],
+    rules: { "no-restricted-imports": "off" },
   },
   {
     /*

@@ -26,13 +26,18 @@ export function AdminNav({ current, reviewCount = 0 }: { current: AdminSection; 
           href={tab.href}
           aria-current={tab.id === current ? "page" : undefined}
           className={cn(
-            // Scoped transition, and a border on both states so the active pill
-            // gains an edge rather than 1px of width when it becomes active.
-            "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-micro font-medium",
-            "transition-[background-color,border-color,color] duration-fast ease-out-soft",
+            // A border on both states so the active pill gains an edge rather
+            // than 1px of width when it becomes active. `.pressable` carries
+            // the colour cross-fade on --dur-fast and the press dip on
+            // --dur-press, like every other control; the tabs were the one
+            // row of controls in admin that did not answer the finger.
+            "pressable flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-micro font-medium motion-reduce:transition-none motion-reduce:active:scale-100",
+            // Hover is ink alone; selection is the fill AND the edge. Hover was
+            // the selected fill at half strength — a state told apart from its
+            // neighbour by opacity alone, the collapse PREMIUM_AUDIT §2d names.
             tab.id === current
               ? "border-border/60 bg-accent text-foreground"
-              : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
           )}
         >
           {tab.label}

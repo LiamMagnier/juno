@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
@@ -223,7 +223,7 @@ export function ProjectWorkDefaults({
               </Button>
             </div>
           ) : restricted && (connectors?.length ?? 0) > 0 ? (
-            <ul className="mt-3 space-y-0.5">
+            <ul className="mt-3 space-y-0.5 motion-safe:animate-fade-in-up">
               {(connectors ?? []).map((connector) => {
                 const active = chosen.includes(connector.id);
                 return (
@@ -238,7 +238,7 @@ export function ProjectWorkDefaults({
                     >
                       <AppIcons.connections
                         className={cn(
-                          "size-3.5 shrink-0",
+                          "size-3.5 shrink-0 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
                           active ? "text-primary" : "text-muted-foreground"
                         )}
                         aria-hidden="true"
@@ -268,7 +268,7 @@ export function ProjectWorkDefaults({
                 : "Tasks filed here choose their own apps, from everything you have connected — "}
               <Link
                 href="/connections"
-                className="underline underline-offset-2 hover:text-foreground"
+                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
               >
                 manage them
               </Link>

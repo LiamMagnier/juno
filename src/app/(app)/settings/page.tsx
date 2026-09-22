@@ -49,8 +49,9 @@ function SettingsPageContent() {
         </aside>
         {/* `@container/pane`: the sections' grids read the pane — the width
             they actually have — because the same sections render in the modal
-            under a different parent. */}
-        <div className="@container/pane min-w-0 max-w-3xl">
+            under a different parent. `relative` is the box SettingsPane lifts
+            the outgoing section against while the two cross-fade. */}
+        <div className="@container/pane relative min-w-0 max-w-3xl">
           <SettingsPane section={section} />
         </div>
       </div>

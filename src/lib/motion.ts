@@ -21,9 +21,9 @@
  * `tokens.generated.ts`, which is generated from the same `globals.css`
  * custom properties the CSS classes use, so a framer transition and a CSS
  * transition on the same interaction agree by construction. The variants below
- * reproduce the existing keyframes' exact offsets (8px for rise, 6px for
- * fade-up, 4px + 0.96 for pop) so the two systems are indistinguishable in
- * motion even when one element uses each.
+ * reproduce the existing keyframes' exact offsets (6px for rise and fade-up,
+ * 4px + 0.96 for pop) so the two systems are indistinguishable in motion even
+ * when one element uses each.
  *
  * The spring presets deliberately mirror `JunoMotion` in
  * `native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift`
@@ -133,6 +133,9 @@ export const spring = {
  */
 const SHIFT = { rise: 6, fadeUp: 6, pop: 4, stage: 12 } as const;
 const POP_SCALE = 0.96;
+/** The state-swap scale (docs/design/ICONS_AND_MOTION.md §2.2, rule 7). The
+ *  same 0.8 `<IconSwap>` uses in CSS, so a framer swap and a CSS one match. */
+const SWAP_SCALE = 0.8;
 
 export const variants = {
   /** `animate-fade-in`. */
@@ -166,6 +169,18 @@ export const variants = {
     hidden: { opacity: 0, x: SHIFT.stage },
     visible: { opacity: 1, x: 0, transition: transition.slow },
     exit: { opacity: 0, x: -SHIFT.stage, transition: transition.exit },
+  },
+  /**
+   * A state swap in place — copy → check, play → pause, send → stop. The two
+   * faces overlap (put both in one grid cell, `mode="sync"` or `"popLayout"`
+   * on the AnimatePresence) and trade opacity plus a small scale on the fast
+   * rung, so the control reads as one object changing its mind rather than as
+   * one glyph being replaced by another in a frame.
+   */
+  swap: {
+    hidden: { opacity: 0, scale: SWAP_SCALE },
+    visible: { opacity: 1, scale: 1, transition: transition.fast },
+    exit: { opacity: 0, scale: SWAP_SCALE, transition: { duration: duration.fast, ease: ease.in } },
   },
 } satisfies Record<string, Variants>;
 

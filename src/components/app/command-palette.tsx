@@ -8,16 +8,16 @@ import {
   Columns2,
   Keyboard,
   Map as MapIcon,
-  MessageSquare,
   MessageSquareText,
   Moon,
-  NotebookPen,
-  CreditCard,
+  PanelLeft,
+  SearchX,
   Sun,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
-import { ActionIcons, AppIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import {
   SEARCH_TYPE_LABELS,
   SEARCH_WINDOWS,
@@ -34,6 +34,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Kbd } from "@/components/ui/kbd";
 import { useModifierKeyLabel } from "@/components/ui/platform";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { staggerDelay } from "@/lib/motion";
 import type { ClientConversation } from "@/types/chat";
 
@@ -50,7 +51,7 @@ type PaletteItem = {
   snippet?: SearchSnippet | null;
   /** Matched spans inside `label`, so a title-only match is highlighted too. */
   labelMarks?: SearchMark[];
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconComponent;
   keywords?: string;
   run: () => void;
 };
@@ -63,9 +64,9 @@ type PaletteItem = {
  * the highlight legible to a screen reader, since `mark` carries meaning that a
  * coloured `span` does not.
  *
- * `bg-primary/15` deliberately, not `bg-accent`: `accent` is the sliding
- * selection bar's own colour, so a mark painted with it would vanish on exactly
- * the row the user is looking at.
+ * `bg-primary/15` deliberately, not `bg-accent`: `accent` is the highlighted
+ * row's own fill, so a mark painted with it would vanish on exactly the row the
+ * user is looking at.
  */
 function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] }) {
   if (marks.length === 0) return <>{text}</>;
@@ -120,11 +121,10 @@ function relativeTime(iso: string): string {
 /**
  * The shared palette surface — one shell, two surfaces (search + command menu).
  * It owns everything a11y/motion: the combobox input (role=combobox +
- * aria-activedescendant), the role=listbox/option rows, the single sliding
- * highlight bar (measured translateY geometry), arrow-key nav + scrollIntoView,
- * Enter-to-run, Escape (via Radix Dialog), and the pop-in/out keyframes. Each
- * surface just hands it an ordered `items` list, a `placeholder` and an
- * `emptyState`.
+ * aria-activedescendant), the role=listbox/option rows, the highlighted row's
+ * cross-fading fill, arrow-key nav + scrollIntoView, Enter-to-run, Escape (via
+ * Radix Dialog), the scrim and the spring pop-in. Each surface just hands it an
+ * ordered `items` list, a `placeholder` and an `emptyState`.
  */
 function PaletteShell({
   open,
@@ -167,7 +167,6 @@ function PaletteShell({
   const listboxId = `${baseId}-listbox`;
   const optionId = React.useCallback((cmdId: string) => `${baseId}-opt-${cmdId}`, [baseId]);
   const listRef = React.useRef<HTMLDivElement>(null);
-  const highlightRef = React.useRef<HTMLDivElement>(null);
   // True when `active` last changed via the keyboard, so we only auto-scroll then
   // (not while the mouse is hovering rows).
   const keyboardNav = React.useRef(false);
@@ -181,22 +180,6 @@ function PaletteShell({
   React.useEffect(() => {
     setActive((a) => Math.min(a, Math.max(0, items.length - 1)));
   }, [items.length]);
-
-  // Sliding selection highlight — one bar that glides between rows instead of
-  // each row toggling its own background.
-  React.useLayoutEffect(() => {
-    const list = listRef.current;
-    const hl = highlightRef.current;
-    if (!list || !hl) return;
-    const el = list.querySelector<HTMLElement>(`[data-index="${active}"]`);
-    if (!el) {
-      hl.style.opacity = "0";
-      return;
-    }
-    hl.style.opacity = "1";
-    hl.style.transform = `translateY(${el.offsetTop}px)`;
-    hl.style.height = `${el.offsetHeight}px`;
-  }, [active, items]);
 
   // Keep the highlighted row in view when navigating with the arrow keys.
   React.useEffect(() => {
@@ -275,16 +258,25 @@ function PaletteShell({
             aria-autocomplete="list"
             aria-activedescendant={items[active] ? optionId(items[active].id) : undefined}
           />
+          {/* Fades in with the first character rather than cutting in, and at
+              the icon button's own 32px (40 on a coarse pointer) — it was a
+              24px target, under the 32px floor, on the one control in this
+              field a hand reaches for. The X makes its quarter turn on hover. */}
           {query && (
-            <Pressable
-              kind="icon"
-              size="sm"
-              onClick={() => onQueryChange("")}
-              aria-label="Clear search"
-              className="-mr-1 size-6 shrink-0 text-muted-foreground coarse:size-6"
-            >
-              <ActionIcons.dismiss className="size-3.5" />
-            </Pressable>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Pressable
+                  kind="icon"
+                  size="md"
+                  onClick={() => onQueryChange("")}
+                  aria-label="Clear search"
+                  className="-mr-2 shrink-0 text-muted-foreground motion-safe:animate-fade-in"
+                >
+                  <ActionIcons.dismiss className="size-4" />
+                </Pressable>
+              </TooltipTrigger>
+              <TooltipContent>Clear</TooltipContent>
+            </Tooltip>
           )}
         </div>
 
@@ -322,28 +314,28 @@ function PaletteShell({
            */
           className="relative min-h-[13rem] max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-2"
         >
-          {/* One highlight that glides between rows. `transform` is animated
-              (not top), so it stays on the compositor. */}
-          <div
-            ref={highlightRef}
-            aria-hidden="true"
-            // `bg-foreground/10`, not `bg-accent`. On the dark theme --accent and
-            // --popover are the SAME value (48 5% 13%), and this bar floats on a
-            // popover — so the one thing telling you which row Enter will open
-            // was painted in the exact colour of the panel behind it and could
-            // not be seen at all. An ink tint lifts off whatever is under it in
-            // both themes, which is the same reasoning the row's icon tile below
-            // already runs on.
-            //
-            // rounded-menu, not rounded-field: the shell is rounded-panel (20px)
-            // and the list insets it by p-2 (8px), so 12px — `rounded-field` —
-            // is the concentric radius. (The arithmetic in this comment used to
-            // read 18 − 6 = 12 and call that `rounded-menu`; the ladder in
-            // tailwind.config.ts says panel is 20 and menu is 14. The class was
-            // always right, the sum behind it was not — which is exactly how a
-            // later reader "corrects" a correct class.)
-            className="pointer-events-none absolute left-2 right-2 top-0 rounded-field bg-foreground/10 opacity-0 transition-[transform,height,opacity] duration-base ease-out-strong motion-reduce:transition-none"
-          />
+          {/*
+           * THE HIGHLIGHT CROSS-FADES; IT NO LONGER SLIDES.
+           *
+           * It was one absolutely-positioned bar driven by a layout effect that
+           * measured the active row and wrote `translateY` AND `height` into it
+           * — the one animated `height` in the shell, and the reason a snippet
+           * row (two lines) and a title row (one) made the bar visibly stretch
+           * as it travelled between them. A bar flying past four rows to reach
+           * the one under the pointer also says "something moved" about a list
+           * where nothing did.
+           *
+           * Each row now owns its fill and fades it on the `fast` rung, the
+           * same tonal cross-fade every menu row in the product makes — so
+           * arrowing down a list reads as the highlight handing over, row to
+           * row, the way Claude's and ChatGPT's palettes do. `bg-accent`, the
+           * menus' own highlight, now that the dark theme's accent sits four
+           * points off the popover rather than on it.
+           *
+           * Rows are `rounded-field` (12): the shell is `rounded-panel` (20)
+           * and the list insets it by `p-2` (8), so 12 is the concentric
+           * radius.
+           */}
           {items.length === 0
             ? emptyState
             : items.map((c, i) => {
@@ -353,9 +345,9 @@ function PaletteShell({
                 return (
                   <React.Fragment key={c.id}>
                     {showHeader && (
-                      // The sliding highlight is this list's real :first-child, so a
-                      // `first:` variant here would never match — key the tighter top
-                      // padding off the index instead.
+                      // Keyed off the index rather than a `first:` variant: the
+                      // header is a sibling of the rows in one flat list, so
+                      // "first" has to mean the first ROW's group.
                       <div
                         aria-hidden="true"
                         // The SIDEBAR's section voice, which this list's rows
@@ -365,8 +357,10 @@ function PaletteShell({
                         // page heads its groups with — and a machine voice
                         // over "Chats" and "Projects" is what made a list of
                         // the reader's own things read as a console.
+                        // Arrives with the row it heads, on that row's beat.
+                        style={staggerDelay(Math.min(i, 8), "tight")}
                         className={cn(
-                          "px-2 pb-1 text-ui font-medium text-muted-foreground",
+                          "px-2 pb-1 text-ui font-medium text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]",
                           // 24px before a later group, matching the break the
                           // sidebar leaves above a section heading. It was 16,
                           // which is the same gap the rows inside a group use
@@ -384,9 +378,21 @@ function PaletteShell({
                       role="option"
                       tabIndex={-1}
                       data-index={i}
+                      // The highlighted row is `data-highlighted`, the attribute
+                      // Radix sets on a menu row under the keyboard, so its
+                      // glyph makes its one gesture (globals.css) when the
+                      // arrow keys land on it and not only under the pointer.
+                      data-highlighted={isActive ? "" : undefined}
                       onMouseMove={() => setActive(i)}
                       onClick={() => c.run()}
                       aria-selected={isActive}
+                      // Dealt, not dumped: rows that arrive together — on open,
+                      // and when a search lands — fade in on the `tight`
+                      // stagger, the first eight in sequence and the rest with
+                      // the eighth. A row that survives a keystroke keeps its
+                      // key and does not replay. Opacity only, so nothing moves
+                      // under a pointer already on its way to a row.
+                      style={staggerDelay(Math.min(i, 8), "tight")}
                       className={cn(
                         // ONE GRID WITH THE SIDEBAR. `px-2` inside the list's
                         // `p-2` puts the glyph on 16 and `gap-2.5` carries the
@@ -395,7 +401,7 @@ function PaletteShell({
                         // `text-body` (15px) for the same reason: a result is
                         // the reader's own chat or file, and it was set two
                         // rungs under the field that found it.
-                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-field px-2 text-left text-body transition-colors duration-fast ease-out-soft",
+                        "menu-item group group/menu-item relative flex w-full gap-2.5 rounded-field px-2 text-left text-body transition-colors duration-fast ease-out-soft motion-safe:animate-fade-in motion-reduce:transition-none [animation-fill-mode:backwards]",
                         // A fixed 36px when the row is one line — a hair above
                         // the sidebar's 32, because this list is driven by the
                         // arrow keys and its rows are targets as well as text.
@@ -403,7 +409,7 @@ function PaletteShell({
                         // and hangs its glyph and meta off the TITLE rather
                         // than off the centre of the pair.
                         c.snippet ? "items-start py-2 coarse:py-2.5" : "h-9 items-center coarse:h-11",
-                        isActive ? "text-foreground" : "text-foreground/75"
+                        isActive ? "bg-accent text-foreground" : "text-foreground/75"
                       )}
                     >
                       {/* A PLAIN GLYPH, not a plated one. Every row used to
@@ -418,11 +424,10 @@ function PaletteShell({
                           The anchor survives: the glyph still sits in a fixed
                           `size-5` slot, so every title lands on one text edge
                           whether its row has a snippet or not. The active state
-                          survives too — the sliding highlight bar behind the
-                          row already carries it, and the ink goes to full
-                          strength on top. `mt-px` on a two-line row drops the
-                          glyph onto the title's optical centre rather than its
-                          box's. */}
+                          survives too — the row's own fill carries it, and the
+                          ink goes to full strength on top. `mt-px` on a
+                          two-line row drops the glyph onto the title's optical
+                          centre rather than its box's. */}
                       <span
                         className={cn(
                           "flex size-5 shrink-0 items-center justify-center transition-colors duration-fast ease-out-soft [&_svg]:size-4.5",
@@ -479,25 +484,67 @@ function PaletteShell({
   );
 }
 
+/**
+ * What the list says when it has no rows: one muted glyph in a quiet tile, one
+ * sentence and — only where it adds something — a second line saying what to
+ * do (ICONS_AND_MOTION.md §3). It fades in rather than cutting, because it
+ * replaces a list the reader was just looking at.
+ */
+function PaletteEmpty({
+  icon: Icon,
+  tone = "empty",
+  title,
+  hint,
+}: {
+  icon: IconComponent;
+  tone?: "empty" | "error";
+  title: React.ReactNode;
+  hint?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center px-3 py-10 text-center motion-safe:animate-fade-in">
+      <span
+        className={cn(
+          "mb-4 flex size-10 items-center justify-center rounded-field",
+          tone === "error" ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
+        )}
+      >
+        <Icon className="size-5" motion="none" aria-hidden="true" />
+      </span>
+      <p className="text-body-lg text-foreground">{title}</p>
+      {hint && <p className="mt-1.5 text-ui text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
 /** Projects aren't in app context, so the search surface fetches them for its filter. */
 type PaletteProject = { id: string; name: string; starred: boolean; updatedAt: string };
 
 /** One row of /api/recents — the merged Chat / Work / Code / Projects timeline. */
 type RecentRow = { id: string; kind: string; title: string; updatedAt: string; href: string };
 
-const SEARCH_TYPE_ICONS: Record<SearchType, React.ComponentType<{ className?: string }>> = {
-  conversation: MessageSquare,
+/*
+ * Result marks come from the registries (src/lib/app-icons.ts), so a chat, a
+ * project or a memory is drawn here exactly as the sidebar, the composer and
+ * Settings draw it. A conversation was a SQUARE bubble in this list while the
+ * sidebar, the product switch and every conversation row drew the round one —
+ * one idea, two drawings, open side by side. A matched MESSAGE keeps the
+ * squared bubble with lines in it, because it is a different thing: a line
+ * inside a conversation rather than the conversation.
+ */
+const SEARCH_TYPE_ICONS: Record<SearchType, IconComponent> = {
+  conversation: AppIcons.conversation,
   message: MessageSquareText,
   project: AppIcons.projects,
   file: CodeIcons.file,
   knowledge: BookOpen,
   artifact: AppIcons.artifacts,
-  memory: NotebookPen,
+  memory: ComposerIcons.memory,
   work: AppIcons.work,
 };
 
-const RECENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  chat: MessageSquare,
+const RECENT_ICONS: Record<string, IconComponent> = {
+  chat: AppIcons.conversation,
   work: AppIcons.work,
   code: AppIcons.code,
   project: AppIcons.projects,
@@ -710,7 +757,7 @@ function SearchPalette() {
         group: "Recent",
         label: row.title || "Untitled",
         meta: relativeTime(row.updatedAt),
-        icon: RECENT_ICONS[row.kind] ?? MessageSquare,
+        icon: RECENT_ICONS[row.kind] ?? AppIcons.conversation,
         run: () => go(row.href),
       }));
     }
@@ -862,36 +909,29 @@ function SearchPalette() {
         <div key={i} className="skeleton h-9 rounded-field" style={staggerDelay(i, "tight")} />
       ))}
     </div>
+  ) : failed ? (
+    <PaletteEmpty
+      icon={StatusIcons.error}
+      tone="error"
+      title="Search is unavailable right now."
+      hint="Check your connection and try the search again."
+    />
+  ) : trimmed ? (
+    <PaletteEmpty
+      icon={SearchX}
+      title={<>Nothing matches “{query}”.</>}
+      hint="Try fewer words, or widen the filters above."
+    />
   ) : (
-    <div className="px-3 py-10 text-center">
-      {failed ? (
-        <>
-          <p className="text-body-lg text-foreground">Search is unavailable right now.</p>
-          <p className="mt-1.5 text-ui text-muted-foreground">
-            Check your connection and try the search again.
-          </p>
-        </>
-      ) : trimmed ? (
-        <>
-          <p className="text-body-lg text-foreground">Nothing matches “{query}”.</p>
-          <p className="mt-1.5 text-ui text-muted-foreground">
-            Try fewer words, or widen the filters above.
-          </p>
-        </>
-      ) : (
-        <>
-          {/* The one sentence on an otherwise empty 560px overlay, so it is
-              foreground ink at the reading rung rather than a muted line: at
-              `text-body text-muted-foreground` the prompt that tells you what
-              this surface can find was quieter than the placeholder in the
-              field above it. */}
-          <p className="text-body-lg text-foreground">Search everything in Juno</p>
-          <p className="mt-1.5 text-ui text-muted-foreground">
-            Chats and their messages, projects, files, artifacts, memories and tasks.
-          </p>
-        </>
-      )}
-    </div>
+    // The one sentence on an otherwise empty 560px overlay, so it is
+    // foreground ink at the reading rung rather than a muted line: at
+    // `text-body text-muted-foreground` the prompt that tells you what this
+    // surface can find was quieter than the placeholder in the field above it.
+    <PaletteEmpty
+      icon={AppIcons.search}
+      title="Search everything in Juno"
+      hint="Chats and their messages, projects, files, artifacts, memories and tasks."
+    />
   );
 
   const status = !trimmed
@@ -1099,7 +1139,9 @@ function CommandMenu() {
           window.dispatchEvent(new CustomEvent("juno:search"));
         },
       },
-      { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: Columns2, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
+      /* The sidebar's own toggle mark — the panel glyph its collapse button
+         draws — rather than the two columns Compare uses two rows down. */
+      { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: `${mod}⇧S`, icon: PanelLeft, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
       { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
       { id: "code-runs", group: "Actions", label: "Open Code", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
       { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
@@ -1116,7 +1158,7 @@ function CommandMenu() {
       { id: "automations", group: "Actions", label: "Open Automations", icon: AppIcons.automations, keywords: "schedule scheduled tasks recurring trigger cron email calendar monitor", run: () => go("/automations") },
       { id: "permissions", group: "Actions", label: "Open Permissions", icon: AppIcons.permissions, keywords: "approvals allow ask macs hosts security", run: () => go("/permissions") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
-      { id: "memory", group: "Actions", label: "Open Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
+      { id: "memory", group: "Actions", label: "Open Memory", icon: ComposerIcons.memory, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
     ].filter((c) => matches(c.label, c.keywords));
 
@@ -1150,7 +1192,7 @@ function CommandMenu() {
       group: "Chats",
       label: c.title || "New chat",
       meta: relativeTime(c.lastMessageAt),
-      icon: MessageSquare,
+      icon: AppIcons.conversation,
       run: () => go("/chat/" + c.id),
     }));
 
@@ -1186,7 +1228,7 @@ function CommandMenu() {
 
     const settings: PaletteItem[] = [
       { id: "settings", group: "Settings", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
-      { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: CreditCard, keywords: "billing pro max pricing", run: () => go("/upgrade") },
+      { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: SettingsIcons.billing, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
         id: "theme",
         group: "Settings",
@@ -1217,11 +1259,14 @@ function CommandMenu() {
   }, [conversations, projects, q, go, resolvedTheme, toggleTheme, mod]);
 
 
+  // The same anatomy as the search surface's empty state, so the two
+  // palettes that share this shell also share what "nothing" looks like.
   const emptyState = (
-    <div className="px-3 py-10 text-center">
-      <p className="text-body text-muted-foreground">No matches for “{query}”.</p>
-      <p className="mt-1 text-caption text-muted-foreground">Try a chat title, or a command like “settings”.</p>
-    </div>
+    <PaletteEmpty
+      icon={SearchX}
+      title={<>No matches for “{query}”.</>}
+      hint="Try a chat title, or a command like “settings”."
+    />
   );
 
   return (

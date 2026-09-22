@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Link2, Plus, X } from "lucide-react";
+import { ChevronDown, Link2, Plus } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { RESEARCH_EFFORT_COPY } from "./effort-copy";
 import { formatMicroUsd } from "./run-format";
@@ -193,7 +194,7 @@ export function PlanOutline({
           <ul className="flex flex-col gap-1.5">
             {successCriteria.map((line) => (
               <li key={line} className="flex items-start gap-2.5 text-ui leading-relaxed text-foreground/90">
-                <Check aria-hidden className="mt-1 size-3.5 shrink-0 text-success-ink" />
+                <StatusIcons.success aria-hidden className="mt-1 size-3.5 shrink-0 text-success-ink" />
                 <span>{line}</span>
               </li>
             ))}
@@ -523,14 +524,14 @@ export function PlanReview({
             type="button"
             aria-expanded={queriesOpen}
             onClick={() => setQueriesOpen((value) => !value)}
-            className="pressable -ml-1 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground"
+            className="pressable -ml-1 inline-flex items-center gap-1.5 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             {queriesOpen ? PLAN_COPY.hideQueries : PLAN_COPY.showQueries}
             <span className="tabular-nums text-muted-foreground/70">{currentQueries.length}</span>
             <ChevronDown
               aria-hidden
               className={cn(
-                "size-3.5 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+                "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                 queriesOpen && "rotate-180"
               )}
             />
@@ -565,13 +566,13 @@ export function PlanReview({
           type="button"
           aria-expanded={focusOpen}
           onClick={() => setFocusOpen((value) => !value)}
-          className="pressable -ml-1 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground"
+          className="pressable -ml-1 inline-flex items-center gap-1.5 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           {focusOpen ? PLAN_COPY.hideFocus : PLAN_COPY.showFocus}
           <ChevronDown
             aria-hidden
             className={cn(
-              "size-3.5 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+              "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
               focusOpen && "rotate-180"
             )}
           />
@@ -640,16 +641,17 @@ function FocusList({
       {values.length > 0 && (
         <ul className="mt-2 space-y-1">
           {values.map((value, index) => (
-            <li key={`${value}-${index}`} className="flex min-w-0 items-center gap-2 rounded-control bg-secondary/45 px-2 py-1.5 text-ui text-muted-foreground">
+            <li key={`${value}-${index}`} className="flex min-w-0 items-center gap-2 rounded-control bg-secondary/45 px-2 py-1.5 text-ui text-muted-foreground motion-safe:animate-fade-in-up">
               {source ? <Link2 aria-hidden className="size-3.5 shrink-0" /> : null}
               <span className="min-w-0 flex-1 truncate">{value}</span>
               <button
                 type="button"
                 onClick={() => onRemove(index)}
                 aria-label={`Remove ${value}`}
-                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-control hover:bg-accent hover:text-foreground"
+                title="Remove"
+                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-control hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
               >
-                <X aria-hidden className="size-3" />
+                <ActionIcons.dismiss aria-hidden className="size-3.5" />
               </button>
             </li>
           ))}
@@ -675,7 +677,8 @@ function FocusList({
           type="button"
           onClick={onAdd}
           aria-label={emptyLabel}
-          className="pressable inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
+          title={emptyLabel}
+          className="pressable inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <Plus aria-hidden className="size-3.5" />
         </button>

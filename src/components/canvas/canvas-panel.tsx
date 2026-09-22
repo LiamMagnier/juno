@@ -20,8 +20,8 @@ import {
   Smartphone,
   Tablet,
   Terminal,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -39,11 +39,13 @@ import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
+import { GlyphSwap } from "@/components/canvas/glyph-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientArtifact, ClientArtifactVersion } from "@/types/chat";
 
@@ -75,7 +77,7 @@ type OfficeFormat = "docx" | "xlsx" | "pptx";
 // `FileText` stays raw: it is the Word member of a three-mark office-format
 // set, and its two peers have no registry entry. `CodeIcons.file` means "this
 // thing is a file", which is not what a choice of export format is.
-const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: LucideIcon }> = {
+const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: IconComponent }> = {
   docx: { label: "Word document (.docx)", icon: FileText },
   xlsx: { label: "Excel workbook (.xlsx)", icon: FileSpreadsheet },
   pptx: { label: "PowerPoint deck (.pptx)", icon: Presentation },
@@ -148,9 +150,9 @@ function ConsoleView({ entries, onClear }: { entries: ConsoleEntry[]; onClear: (
           // `transition-colors` is dropped: it is a utility, so it beat .pressable's
           // own transition shorthand and took `transform` off the property list —
           // the press scale never animated. .pressable already covers colour.
-          className="pressable flex items-center gap-1 rounded-control px-1.5 py-1 text-caption font-mono text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="pressable flex items-center gap-1.5 rounded-control px-1.5 py-1 text-caption font-mono text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Eraser className="size-3 shrink-0" aria-hidden /> Clear
+          <Eraser className="size-3.5 shrink-0" aria-hidden /> Clear
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-caption leading-relaxed">
@@ -807,11 +809,25 @@ export function CanvasPanel({
         )}
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More actions" className="text-muted-foreground hover:text-foreground">
-              {exportingFormat ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ActionIcons.more className="size-4" aria-hidden />}
-            </Button>
-          </DropdownMenuTrigger>
+          {/* Menu trigger outside the tooltip trigger, so the button's
+              `data-state` stays the menu's (the inner Slot's props win). */}
+          <Tooltip>
+            <DropdownMenuTrigger asChild>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="More actions" className="text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground">
+                  {/* The overflow mark hands its cell to a spinner while an
+                      Office export is being built, and takes it back — a
+                      cross-fade in one cell, so the header never reflows. */}
+                  <GlyphSwap
+                    active={!!exportingFormat}
+                    off={<ActionIcons.more className="size-4" />}
+                    on={<Loader2 className={cn("size-4", exportingFormat && "motion-safe:animate-spin")} />}
+                  />
+                </Button>
+              </TooltipTrigger>
+            </DropdownMenuTrigger>
+            <TooltipContent>More actions</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" className={MENU_W}>
             <DropdownMenuItem onSelect={copy}>
               <ActionIcons.copy className="size-4" aria-hidden /> Copy source
@@ -867,14 +883,23 @@ export function CanvasPanel({
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >
-              {fullscreen ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
+              <GlyphSwap
+                active={fullscreen}
+                off={<Maximize2 className="size-4" />}
+                on={<Minimize2 className="size-4" />}
+              />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</TooltipContent>
         </Tooltip>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close canvas" className="text-muted-foreground hover:text-foreground">
-          <ActionIcons.dismiss className="size-4" aria-hidden />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close canvas" className="text-muted-foreground hover:text-foreground">
+              <ActionIcons.dismiss className="size-4" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close canvas</TooltipContent>
+        </Tooltip>
       </header>
 
       {/* ——— History: version rail + diff ——— */}
@@ -885,7 +910,7 @@ export function CanvasPanel({
               Versions
             </p>
             <div className="space-y-px px-2 pb-2">
-              {[...artifact.versions].reverse().map((v) => {
+              {[...artifact.versions].reverse().map((v, i) => {
                 const isTarget = v.version === targetVersion;
                 const isBase = v.version === baseVersion;
                 const isCurrent = v.version === artifact.currentVersion;
@@ -893,9 +918,14 @@ export function CanvasPanel({
                 return (
                   <div
                     key={v.version}
+                    // Dealt in on the dense-row rung when history opens, newest
+                    // first, rather than repainting as one block. Hover is the
+                    // shared tonal row fill; the target keeps the accent tint,
+                    // because it is state, not a pointer.
+                    style={staggerDelay(i, "tight")}
                     className={cn(
-                      "group flex items-center rounded-control pr-1.5 transition-colors duration-fast ease-out-soft",
-                      isTarget ? "bg-primary/10" : "hover:bg-muted/60"
+                      "group flex items-center rounded-control pr-1.5 transition-colors duration-fast ease-out-soft [animation-fill-mode:backwards] motion-safe:animate-fade-in-up",
+                      isTarget ? "bg-primary/10" : "hover:bg-accent"
                     )}
                   >
                     {/* rounded-control, matching the row it sits flush inside —
@@ -917,10 +947,10 @@ export function CanvasPanel({
                       aria-label={`Compare from v${v.version}`}
                       aria-pressed={isBase}
                       className={cn(
-                        "shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-caption transition-opacity duration-fast ease-out-soft coarse:min-h-9 coarse:px-2.5",
+                        "pressable shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-caption coarse:min-h-9 coarse:px-2.5",
                         isBase
                           ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-border/60 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                          : "border-border/60 text-muted-foreground opacity-0 hover:border-border hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
                       )}
                     >
                       base
@@ -945,12 +975,21 @@ export function CanvasPanel({
               )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={copyDiff} className={contextButton}>
-                {diffCopied ? <StatusIcons.success className="size-3.5 text-success" aria-hidden /> : <ActionIcons.copy className="size-3.5" aria-hidden />}
+                <GlyphSwap
+                  active={diffCopied}
+                  off={<ActionIcons.copy className="size-3.5" />}
+                  on={<StatusIcons.success className="size-3.5 text-success" />}
+                />
                 Copy diff
               </Button>
-              <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(false)} aria-label="Close history" className="text-muted-foreground hover:text-foreground">
-                <ActionIcons.dismiss className="size-4" aria-hidden />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(false)} aria-label="Close history" className="text-muted-foreground hover:text-foreground">
+                    <ActionIcons.dismiss className="size-4" aria-hidden />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Close history</TooltipContent>
+              </Tooltip>
             </div>
 
             <div
@@ -981,9 +1020,13 @@ export function CanvasPanel({
                   ))}
                 </div>
               ) : (
+                // The house empty state at panel scale: one muted glyph, the
+                // fact, the sentence — the same shape every short state in the
+                // product takes, rather than two lines of bare type.
                 <div className="flex h-full items-center justify-center p-6 text-center">
-                  <div>
-                    <p className="font-sans text-heading">No changes</p>
+                  <div className="flex flex-col items-center">
+                    <GitCompare className="size-5 text-muted-foreground" aria-hidden />
+                    <p className="mt-3 font-sans text-heading">No changes</p>
                     <p className="pt-1 text-body text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
                   </div>
                 </div>
@@ -1095,10 +1138,19 @@ export function CanvasPanel({
               </>
             )}
             {tab === "code" && (
-              <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
-                {copied ? <StatusIcons.success className="size-3.5 text-success" aria-hidden /> : <ActionIcons.copy className="size-3.5" aria-hidden />}
-                {panelWide && <span>Copy</span>}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
+                    <GlyphSwap
+                      active={copied}
+                      off={<ActionIcons.copy className="size-3.5" />}
+                      on={<StatusIcons.success className="size-3.5 text-success" />}
+                    />
+                    {panelWide && <span>Copy</span>}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Copy source</TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -1285,13 +1337,16 @@ export function CanvasPanel({
                layer but must never cover a toast, which is the top of the product. */
             className="surface-float overlay-glass fixed z-toolbar flex items-center gap-0.5 rounded-menu p-1 motion-safe:animate-pop-in"
           >
+            {/* The glyphs take the row's ink rather than the accent: coral is
+                for state and the primary action, and neither verb here is
+                either — they are two equal choices on a floating toolbar. */}
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
-              <MessageCircleQuestion className="size-3.5 text-primary" aria-hidden />
+              <MessageCircleQuestion className="size-3.5" aria-hidden />
               Ask
             </Button>
             <span aria-hidden className="h-4 w-px bg-border/70" />
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("modify")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
-              <ActionIcons.edit className="size-3.5 text-primary" aria-hidden />
+              <ActionIcons.edit className="size-3.5" aria-hidden />
               Modify
             </Button>
           </div>,

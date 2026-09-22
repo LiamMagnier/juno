@@ -10,12 +10,12 @@ import {
   useReducedMotion,
   type AnimationPlaybackControls,
 } from "framer-motion";
-import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
+import { ArrowUp, AudioLines, Loader2, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { requiresViewerCredentials } from "@/lib/image-source";
-import { transition } from "@/lib/motion";
+import { spring, transition } from "@/lib/motion";
 import { cn, formatBytes } from "@/lib/utils";
 import { FilePreview } from "@/components/chat/file-preview";
 import type { PendingUpload } from "@/hooks/use-uploads";
@@ -122,8 +122,15 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
  * Shared recipes
  * ———————————————————————————————————————————————————————————————————— */
 
-/** The height spring every composer grows on (SOFT_UI.md §2.4). */
-export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } as const;
+/**
+ * The spring every composer grows on, and its attachment tiles pop on.
+ *
+ * `spring.standard` (lib/motion.ts), not a private stiffness/damping pair: it
+ * was `{ stiffness: 380, damping: 32 }`, a hand-typed near-twin of the shared
+ * settle, which meant the field growing a line and the model chip's thumb
+ * beside it settled on two different clocks. Same feel, one number.
+ */
+export const COMPOSER_SPRING = spring.standard;
 
 /**
  * EVERY PROPERTY THAT DECIDES WHERE A GLYPH LANDS, in one string.
@@ -247,7 +254,7 @@ export function ComposerArmedMark({
   removeLabel,
   disabled = false,
 }: {
-  /** The mark. A Lucide glyph, or a brand logo for a connector. */
+  /** The mark. A glyph from the icon set, or a brand logo for a connector. */
   icon: React.ReactNode;
   label: string;
   /**
@@ -292,9 +299,9 @@ export function ComposerArmedMark({
       aria-label={openLabel}
       className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {/* A fixed box, so a brand logo and a Lucide glyph put their labels on
+      {/* A fixed box, so a brand logo and a set glyph put their labels on
           the same edge. `[&_svg]:size-4` reaches the mark whether it arrived as
-          a `<GitHubMark>` or as a lucide component. */}
+          a `<GitHubMark>` or as a component from `@/components/ui/icons`. */}
       <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
         {icon}
       </span>
@@ -345,7 +352,7 @@ export function ComposerArmedMark({
         onClick={onRemove}
         disabled={disabled}
         aria-label={removeLabel}
-        className="inline-flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 text-muted-foreground opacity-0 transition-opacity duration-fast hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-0 group-hover/armed:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+        className="inline-flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 text-muted-foreground opacity-0 transition-[opacity,color] duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-0 group-hover/armed:opacity-100 motion-reduce:transition-none coarse:opacity-100"
       >
         <ActionIcons.dismiss aria-hidden className="size-3.5" />
       </button>
@@ -683,7 +690,10 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
-                <ArrowUp className="size-4" strokeWidth={2.5} />
+                {/* The bold cut: the one glyph on the row set on a solid
+                    accent disc, where the regular line thins against the fill
+                    — the same weight Claude and ChatGPT give their send arrow. */}
+                <ArrowUp weight="bold" className="size-4" />
               </motion.span>
             )}
           </AnimatePresence>

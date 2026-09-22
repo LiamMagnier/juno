@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -109,28 +109,24 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
            * siblings — the pill would fall apart. So the shell carries the
            * chrome and the two real controls sit inside it, split-button style.
            *
-           * Ghost, not lozenge. The composer 8px below is `bg-card/90` +
-           * shadow-float + rounded-panel — the loudest object on the screen by
-           * design. These are a footnote to the reply above, so they carry no
-           * fill and no shadow at rest and only materialise a surface under the
-           * cursor; that hierarchy is what stops them competing with it.
+           * A hairline, not a lozenge. The composer below is the loudest
+           * object on the screen by design; these are a footnote to the reply
+           * above, so they are `.control-neu` — an edge at rest, the tonal
+           * `--accent` fill under the pointer, and nothing that lifts or casts
+           * a shadow (FLAT_UI.md §2). Never a coral wash: coral is reserved
+           * for active and selected.
            *
-           * Hover is a LIFT (translate + shadow), never a coral wash — coral is
-           * reserved for active/selected. `shadow-soft` rather than
-           * `shadow-float`: float reaches ~40px below the element, which would
-           * both dive under the composer's opaque shell and get smeared through
-           * its backdrop-blur. soft reaches ~6px and fits the 8px gap cleanly.
-           *
-           * `relative` + `hover:z-10`: a wrapped neighbour's background would
-           * otherwise paint over this one's shadow and slice it into a hard edge.
+           * `.control-neu` also owns the timing: its transition list and its
+           * `:active` dip must not be overridden by a transition-* utility
+           * here, or the press snaps. Dealt in on the shared stagger once the
+           * reply has finished, and the `+` turns under the pointer — the one
+           * gesture the row makes.
            */
           <div
             key={suggestion}
             style={staggerDelay(i)}
-            // `.control-neu` (SOFT_UI.md): a raised chip, lifting a rung on
-            // hover, dealt out on the tight stagger under the reply.
             className={cn(
-              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-ui font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:z-10 hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
+              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-ui font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius
@@ -152,22 +148,30 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               // it and substituted an accent ring — on a surface where coral is
               // reserved for chosen things, not focused ones.
               className={cn(
-                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left transition-[color] duration-base ease-out-strong active:scale-[0.98] motion-reduce:transition-none",
+                // No transition or press of its own: the ink is inherited from
+                // the pill, and `.control-neu:active` already dips the whole
+                // pill on --dur-press when either control inside it is held.
+                // A second scale here compounded into a lurch.
+                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left",
                 isOpen ? "items-start" : "items-center"
               )}
             >
               {/* Marks the pill as "add a turn" rather than a fragment of the
                   reply it sits under. Inherits currentColor, so it warms with
                   the label on hover instead of needing a second colour to keep
-                  in sync. */}
-              <Plus
+                  in sync. The fade rides a wrapper: the glyph's own
+                  transition list belongs to its hover turn (globals.css
+                  `svg.icon[data-motion]`) and would swallow one written on it. */}
+              <span
                 aria-hidden="true"
                 className={cn(
-                  "size-3.5 shrink-0 opacity-60 transition-opacity duration-base ease-out-strong group-hover/pill:opacity-100",
+                  "inline-flex shrink-0 opacity-60 transition-opacity duration-fast ease-out-soft group-hover/pill:opacity-100 motion-reduce:transition-none",
                   // 14px glyph on a 20px line: 3px centres it on the first line.
                   isOpen && "mt-[3px]"
                 )}
-              />
+              >
+                <Plus className="size-3.5" />
+              </span>
               <span
                 ref={(el) => {
                   labelRefs.current[i] = el;
@@ -197,7 +201,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                   // chevron, and --border at 40% over --accent computes to a
                   // 1.2-point step — the chevron's own hover was invisible
                   // because it only ever fires on top of the pill's.
-                  "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground coarse:size-8 motion-reduce:transition-none",
+                  "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-border hover:text-foreground coarse:size-8 motion-reduce:transition-none",
                   // Rides the first line when the pill is a tall wrapped block.
                   isOpen ? "self-start" : "self-center"
                 )}
@@ -205,7 +209,9 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                 <ChevronDown
                   aria-hidden="true"
                   className={cn(
-                    "size-3.5 transition-transform duration-base ease-out-strong motion-reduce:transition-none",
+                    // A caret is an A-to-B move with both ends on screen, so it
+                    // turns on the symmetric curve (ICONS_AND_MOTION.md §2.2.6).
+                    "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                     isOpen && "rotate-180"
                   )}
                 />

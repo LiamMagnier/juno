@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   ComposerPrimaryAction,
@@ -325,7 +325,7 @@ export function CompareView() {
                       disabled={panes.length >= MAX_PANES || anyStreaming}
                       className={cn(composerChipClass, "gap-1.5 px-2")}
                     >
-                      <Plus className="size-4" /> Add model
+                      <Plus aria-hidden="true" className="size-4" /> Add model
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -372,9 +372,10 @@ export function CompareView() {
       >
         {!hasRun && (
           <div className="flex shrink-0 flex-col items-center gap-4 pb-8 pt-6 text-center motion-safe:animate-rise-in">
-            {/* The serif display rung, the product's voice for a human moment —
-                this was a hand-set text-xl/2xl with its own tracking, which is the
-                one heading in the app that never landed on the scale. */}
+            {/* The display rung — this was a hand-set text-xl/2xl with its own
+                tracking, which is the one heading in the app that never landed
+                on the scale. Set in the UI face: this is a tool's hero, not the
+                greeting, which keeps the serif to itself. */}
             <h2 className="text-balance font-sans text-display">
               Same prompt, different minds
             </h2>
@@ -395,7 +396,10 @@ export function CompareView() {
                   // see — and these are the first things anyone clicks on
                   // /compare, which is the case staggerDelay is capped for.
                   style={staggerDelay(i, "tight")}
-                  className="rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 transition-[border-color,background-color,color] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-accent/80 motion-safe:animate-rise-in"
+                  // `.pressable`: the hover cross-fade and the press dip on
+                  // their own rungs, which the hand-typed transition list here
+                  // had no transform in — the card snapped when pressed.
+                  className="pressable rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-secondary motion-safe:animate-rise-in motion-reduce:transition-none motion-reduce:active:scale-100"
                 >
                   {sample}
                 </button>

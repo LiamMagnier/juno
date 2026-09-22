@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
+import { GlyphSwap } from "@/components/auth/glyph-swap";
 
 function tokenFromFragment(): string {
   if (typeof window === "undefined") return "";
@@ -76,7 +77,8 @@ export function ResetPasswordForm() {
             <div className="skeleton h-9 w-full rounded-field coarse:h-11" />
           </div>
         ))}
-        <div className="skeleton h-9 w-full rounded-field coarse:h-11" aria-hidden />
+        {/* The submit is a Button — `rounded-control` — not a field. */}
+        <div className="skeleton h-9 w-full rounded-control coarse:h-11" aria-hidden />
       </div>
     );
   }
@@ -84,7 +86,10 @@ export function ResetPasswordForm() {
   if (complete) {
     return (
       <div className="space-y-5 text-center" role="status">
-        <StatusIcons.success className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
+        {/* The quiet-tile terminal state forgot-password-form draws. */}
+        <span className="mx-auto flex size-12 items-center justify-center rounded-field bg-success/10 text-success motion-safe:animate-pop-in">
+          <StatusIcons.success className="check-morph size-6" aria-hidden />
+        </span>
         <div className="space-y-1.5">
           {/* text-heading, not text-xl — see the same note in forgot-password-form. */}
           <h2 className="font-serif text-heading font-medium">Password updated</h2>
@@ -105,7 +110,9 @@ export function ResetPasswordForm() {
       // icon, no heading and no destructive tint, so the state that needs to be
       // read carefully was the quietest thing the card could render.
       <div className="space-y-5 text-center" role="alert">
-        <StatusIcons.error className="mx-auto size-9 text-destructive motion-safe:animate-pop-in" aria-hidden />
+        <span className="mx-auto flex size-12 items-center justify-center rounded-field bg-destructive/10 text-destructive motion-safe:animate-pop-in">
+          <StatusIcons.error className="size-6" aria-hidden />
+        </span>
         <div className="space-y-1.5">
           <h2 className="font-serif text-heading font-medium">This link no longer works</h2>
           <p className="text-body text-muted-foreground">
@@ -142,10 +149,14 @@ export function ResetPasswordForm() {
             kind="icon"
             size="sm"
             aria-label="Show password"
+            title="Show password"
             aria-pressed={showPassword}
             onClick={() => setShowPassword((v) => !v)}
           >
-            {showPassword ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+            <GlyphSwap
+              state={showPassword ? "hide" : "show"}
+              glyphs={{ show: <Eye className="size-4" />, hide: <EyeOff className="size-4" /> }}
+            />
           </Pressable>
         }
       />
@@ -165,7 +176,7 @@ export function ResetPasswordForm() {
       <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
         {/* motion-safe:, matching the majority convention — see the note in
             auth-form.tsx. The button is disabled and aria-busy either way. */}
-        {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+        {loading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
         Choose new password
       </Button>
     </form>

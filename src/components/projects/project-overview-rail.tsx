@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileText, Loader2, NotebookPen, Plus } from "lucide-react";
+import { ArrowRight, FileText, Loader2, NotebookPen, Plus, type IconComponent } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -127,6 +127,7 @@ export function ProjectOverviewRail({
               className="-mr-2"
               onClick={onEditInstructions}
               aria-label="Edit project instructions"
+              title="Edit instructions"
             >
               <ActionIcons.edit className="size-3.5" aria-hidden="true" />
             </Pressable>
@@ -168,11 +169,12 @@ export function ProjectOverviewRail({
               onClick={onAddFile}
               disabled={uploading}
               aria-label="Add a file to this project"
+              title="Add a file"
             >
               {uploading ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
               ) : (
-                <Plus className="size-4" aria-hidden="true" />
+                <Plus className="size-3.5" aria-hidden="true" />
               )}
             </Pressable>
           }
@@ -194,7 +196,10 @@ export function ProjectOverviewRail({
                     key={file.id}
                     className="group/file flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                   >
-                    <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <FileText
+                      className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/file:text-foreground motion-reduce:transition-none"
+                      aria-hidden="true"
+                    />
                     <a
                       href={file.url}
                       target="_blank"
@@ -213,6 +218,7 @@ export function ProjectOverviewRail({
                       size="sm"
                       onClick={() => onDeleteFile(file.id)}
                       aria-label={`Remove ${file.fileName}`}
+                      title="Remove"
                       className="danger-hover size-6 shrink-0 opacity-0 transition-opacity duration-fast ease-out-soft group-hover/file:opacity-100 group-focus-within/file:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
                     >
                       <ActionIcons.delete className="size-3.5" aria-hidden="true" />
@@ -246,6 +252,7 @@ export function ProjectOverviewRail({
                 size="sm"
                 onClick={onManageMemory}
                 aria-label="Manage memories"
+                title="Manage memories"
               >
                 <ActionIcons.edit className="size-3.5" aria-hidden="true" />
               </Pressable>
@@ -302,7 +309,7 @@ function RailSection({
   title: string;
   /** Drawn beside the title when there are more of these than the rail shows. */
   count?: number;
-  icon?: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon?: IconComponent;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -357,15 +364,22 @@ function RailEmpty({
   );
 }
 
-/** The link out of a truncated rail list into the tab that holds all of it. */
+/**
+ * The link out of a truncated rail list into the tab that holds all of it.
+ *
+ * The arrow is a glyph from the set, not a typed "→": a text arrow takes the
+ * mono face's weight and baseline, and it cannot nudge when the row is
+ * pointed at. This one goes where it points (`nudge-r`).
+ */
 function RailMore({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="-mx-2 mt-1.5 block w-full rounded-control px-2 py-1.5 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+      className="-mx-2 mt-1.5 flex w-full items-center gap-1.5 rounded-control px-2 py-1.5 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
     >
-      {children} →
+      {children}
+      <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
     </button>
   );
 }

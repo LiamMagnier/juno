@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 
 /**
  * Mermaid's default theme is drawn for a light canvas, which is why this block
@@ -67,11 +68,12 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
 
   return (
     // `bg-card`, not `bg-card/90`. The diagram frame sits on the transcript
-    // ground, which is #000, so 90% of a 6.5% fill resolved to ~5.9% and the
-    // `shadow-pop` under it is black ink on black — the card had neither fill
-    // nor lift to separate it from the page.
-    <div className="my-4 overflow-hidden rounded-popover border border-border/70 bg-card shadow-pop">
-      <div className="flex items-center justify-between border-b border-border/60 bg-[linear-gradient(180deg,hsl(var(--sheen)),transparent)] px-3 py-2 backdrop-blur-md">
+    // ground, which is #000, so 90% of a 6.5% fill resolved to ~5.9%. Flat:
+    // the hairline is the edge, with no `shadow-pop` under it and no sheen
+    // gradient or blur on the header strip (FLAT_UI §2 — clean paper, and
+    // nothing in the reading column casts a shadow).
+    <div className="my-4 overflow-hidden rounded-popover border border-border/70 bg-card">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <span className="font-mono text-micro font-semibold text-muted-foreground">
           Diagram · Mermaid
         </span>
@@ -81,7 +83,11 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
           aria-label={copied ? "Copied" : "Copy diagram source"}
           className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
         >
-          {copied ? <StatusIcons.success className="size-3.5 text-success" /> : <ActionIcons.copy className="size-3.5" />}
+          <GlyphSwap
+            swapped={copied}
+            from={<ActionIcons.copy className="size-3.5" />}
+            to={<StatusIcons.success className="size-3.5 text-success-ink" />}
+          />
           <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>

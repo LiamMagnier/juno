@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Link2, Loader2 } from "lucide-react";
+import { ChevronRight, Link2, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ARTIFACT_EXTENSION, type WorkArtifactKind } from "@/lib/work/domain";
 import type { ClientWorkArtifact } from "@/lib/work/serializers";
 import type { WorkProducedArtifact } from "@/components/work/work-detail-panels";
@@ -254,9 +255,9 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
           type="button"
           onClick={() => setOpen((prev) => !prev)}
           aria-expanded={open}
-          // The row's disclosure had no focus ring at all, so a keyboard reader
-          // tabbing down the document list had no idea which row they were on.
-          className="group min-w-0 flex-1 rounded-xs text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // The row's disclosure takes the global `:focus-visible` outline, so a
+          // keyboard reader tabbing down the list can see which row they are on.
+          className="group min-w-0 flex-1 rounded-xs text-left"
         >
           <span className="flex items-center gap-1.5">
             <span className="min-w-0 truncate text-ui font-medium text-foreground">
@@ -264,7 +265,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
             </span>
             <ChevronRight
               className={cn(
-                "size-3 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                "size-3 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -302,11 +303,16 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
             </a>
           </Button>
         ) : (
-          <Pressable kind="icon" size="md" asChild className="shrink-0">
-            <a href={workArtifactDownloadUrl(artifact.id)} aria-label={`Download ${artifact.title}`}>
-              <ActionIcons.download className="size-3.5" aria-hidden="true" />
-            </a>
-          </Pressable>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable kind="icon" size="md" asChild className="shrink-0">
+                <a href={workArtifactDownloadUrl(artifact.id)} aria-label={`Download ${artifact.title}`}>
+                  <ActionIcons.download className="size-4" aria-hidden="true" />
+                </a>
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent>Download</TooltipContent>
+          </Tooltip>
         )}
       </div>
 
@@ -359,7 +365,7 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
             <div className="space-y-2.5">
               {!rich && detail.warning !== null && (
                 <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-                  <StatusIcons.warning className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden="true" />
+                  <StatusIcons.warning className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
                   {detail.warning}
                 </p>
               )}
@@ -442,7 +448,7 @@ function VerdictLine({
   if (artifact.validatedAt !== null && (version === null || version.validated)) {
     return (
       <p className="flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground">
-        <StatusIcons.success className="mt-0.5 size-3 shrink-0 text-success-ink" aria-hidden="true" />
+        <StatusIcons.success className="mt-px size-3.5 shrink-0 text-success-ink" aria-hidden="true" />
         Re-opened by the validator after it was written, so it opens in the application it was made
         for.
       </p>
@@ -452,14 +458,16 @@ function VerdictLine({
   return (
     <div className="space-y-1">
       <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-        <StatusIcons.warning className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden="true" />
+        <StatusIcons.warning className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
         {problems.length > 0
           ? "The validator could not confirm this file opens. It said:"
           : (warning ??
             "Nothing has confirmed this file opens. Check it before sending it to anyone.")}
       </p>
       {problems.length > 0 && (
-        <ul className="space-y-0.5 pl-[18px]">
+        // Hung under the sentence rather than the glyph: 14px of glyph and
+        // 6px of gap.
+        <ul className="space-y-0.5 pl-5">
           {problems.map((problem) => (
             <li key={problem} className="text-caption leading-relaxed text-warning-foreground">
               {problem}
@@ -480,14 +488,15 @@ function Provenance({ version }: { version: WorkArtifactVersion }) {
           key={`${entry.kind}-${index}`}
           className="flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground"
         >
-          {entry.url === null ? (
-            <span
-              className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground/70"
-              aria-hidden="true"
-            />
-          ) : (
-            <Link2 className="mt-[3px] size-3 shrink-0 text-source" aria-hidden="true" />
-          )}
+          {/* One slot for both marks, so a named source and a linked one start
+              their labels on the same edge. */}
+          <span className="mt-px flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
+            {entry.url === null ? (
+              <span className="size-1 rounded-full bg-muted-foreground/70" />
+            ) : (
+              <Link2 className="size-3.5 text-source" />
+            )}
+          </span>
           {entry.url === null ? (
             <span className="min-w-0 truncate">{entry.label}</span>
           ) : (

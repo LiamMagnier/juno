@@ -79,6 +79,13 @@ export const menuShellClass =
  * Interaction state (`focus:bg-accent`, the destructive tint, `data-[state=open]`)
  * stays at the call site: Radix spells it differently per primitive, and a row
  * that shipped its own focus colour is how a "shared" recipe stops being shared.
+ *
+ * The row's glyph needs nothing from here to move. A glyph from the icon set
+ * carries its one hover articulation itself (`data-motion`, icons.tsx), and
+ * globals.css plays it on `[data-highlighted]` — which Radix stamps on the row
+ * whether the pointer or the arrow keys put it there — so the fill arriving and
+ * the pencil tilting are the same event, at the same time, for both. Carets
+ * (a submenu's chevron) and ticks carry no articulation by design.
  */
 export const menuRowClass =
   "menu-item group/menu-item relative flex min-h-8 cursor-pointer select-none items-center gap-2.5 " +

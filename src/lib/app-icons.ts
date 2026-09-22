@@ -1,10 +1,21 @@
 /**
- * Canonical destination icons for the whole app shell.
+ * Canonical icons for the whole app shell — one concept, one drawing.
  *
  * Menus, the command palette, the sidebar, chips, and empty states should all
  * import from here so a mark never drifts (e.g. projects as Box in one place
- * and Folder in another). Sidebar hover choreography still lives in
- * SidebarMotionIcon — this module is the shared resting glyph set.
+ * and Folder in another). Every value is a glyph from the one icon set,
+ * `@/components/ui/icons` (Phosphor geometry at the house `regular` weight,
+ * with the bold cut at 12px and under); the NAMES below are the concepts, and
+ * which drawing a concept wears is decided here.
+ *
+ * Motion is not this module's business: a glyph's single hover articulation is
+ * declared in icons.tsx and played by globals.css, and the one sidebar morph
+ * (a folder opening) lives in SidebarMotionIcon. This module is the shared
+ * resting glyph set.
+ *
+ * Several notes below record why a concept LEFT a drawing of the previous set
+ * (Lucide). They are kept because the reasoning — which metaphor a concept
+ * should wear, and which shapes survive 14–18px — outlives any one set.
  */
 import {
   AlertCircle,
@@ -70,8 +81,8 @@ import {
   UserPen,
   X,
   Workflow,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 
 export const AppIcons = {
   /** Home — the assistant surface, whose default landing is `/chat`.
@@ -99,14 +110,14 @@ export const AppIcons = {
   code: Code2,
   /** Juno Design — the visual design surface.
    *
-   *  A TRIANGLE, A SQUARE AND A CIRCLE. This was Lucide's pen nib, which is a
-   *  fine drawing at 24px and falls apart at the two sizes the product
-   *  actually draws it: 18px in the sidebar and 14px on an artifact card. The
-   *  nib is four elements — a body, a twenty-command bezier outline, a tail
-   *  stroke and a `circle r="2"` sitting INSIDE the body — and below about
-   *  20px the circle and the two strokes it sits between merge into one grey
-   *  lozenge. It was the least legible mark in the shell and it was on a
-   *  top-level destination.
+   *  A TRIANGLE, A SQUARE AND A CIRCLE (the set's `Shapes`). This was the
+   *  previous set's pen nib, which is a fine drawing at 24px and fell apart at
+   *  the two sizes the product actually draws it: 18px in the sidebar and 14px
+   *  on an artifact card. That nib was four elements — a body, a
+   *  twenty-command bezier outline, a tail stroke and a `circle r="2"` sitting
+   *  INSIDE the body — and below about 20px the circle and the two strokes it
+   *  sat between merged into one grey lozenge. It was the least legible mark in
+   *  the shell and it was on a top-level destination.
    *
    *  It was also the wrong CLASS of thing. A nib is a TOOL, and every other
    *  destination in this list names its contents — a folder of projects, a
@@ -119,23 +130,27 @@ export const AppIcons = {
   design: Shapes,
   /** Library — the images and documents your conversations have collected.
    *
-   *  BOOKS WITH A SPINE, not four tick marks. Lucide's `Library` is four bare
-   *  strokes of different heights with the last one tilted; at the 18px this
-   *  panel draws it, "a shelf seen from the front" is not what arrives — what
-   *  arrives is an equaliser, and beside a folder and a stack of layers it was
-   *  the one mark in the column that had to be decoded rather than read.
+   *  BOOKS WITH A SPINE, not four tick marks. The previous set's `Library`
+   *  was four bare strokes of different heights with the last one tilted; at
+   *  the 18px this panel draws it, "a shelf seen from the front" was not what
+   *  arrived — what arrived was an equaliser, and beside a folder and a stack
+   *  of layers it was the one mark in the column that had to be decoded
+   *  rather than read.
    *
-   *  `LibraryBig` is the same idea drawn with CLOSED SHAPES: three volumes
-   *  with tops and depth, which survive the size because an outlined form
-   *  survives what a bare hairline does not. Same metaphor, same word over it,
-   *  and the only thing that changes is whether you can tell what it is. */
+   *  `LibraryBig` is the same idea drawn with CLOSED SHAPES — the set's
+   *  `Books`, volumes with tops and depth, one leaning — which survive the
+   *  size because an outlined form survives what a bare hairline does not.
+   *  Same metaphor, same word over it, and the only thing that changes is
+   *  whether you can tell what it is. */
   library: LibraryBig,
   /** Deep research, wherever the shell has to name it — the command palette,
-   *  a native sidebar row, an empty state. The SAME telescope the composer's
-   *  Deep research tool draws (`ComposerIcons.research`): one feature, one
-   *  drawing. There is no longer a `/research` page behind it — a run is read
-   *  in the conversation that asked for it — but the concept is still named in
-   *  the shell and in the native apps, which generate their glyph from here. */
+   *  a native sidebar row, an empty state. The SAME mark the composer's Deep
+   *  research tool draws (`ComposerIcons.research`): one feature, one drawing.
+   *  The export is still called `Telescope`, and the drawing under it is the
+   *  set's binoculars — the set has no telescope, and "looking far, widely"
+   *  is the idea either one carries. There is no longer a `/research` page
+   *  behind it — a run is read in the conversation that asked for it — but
+   *  the concept is still named in the shell and in the native apps. */
   research: Telescope,
   artifacts: Layers3,
   projects: Folder,
@@ -147,10 +162,11 @@ export const AppIcons = {
   new: Plus,
   search: Search,
   /** The web reaches Settings from the user menu rather than the rail, and draws
-   *  it with this same mark (`user-menu.tsx`). It lives here because the native
-   *  apps *do* give it a sidebar row, and without an entry the generator had
-   *  nothing to emit — so that row fell back to SF Symbols' `gearshape`, the one
-   *  non-Lucide glyph in an otherwise Lucide column. */
+   *  it with this same mark (`user-menu.tsx`) — a six-toothed gear that turns
+   *  a little under the pointer. It lives here because the native apps *do*
+   *  give it a sidebar row, and without an entry the generator had nothing to
+   *  emit — so that row fell back to SF Symbols' `gearshape`, the one mark in
+   *  its column drawn from a different family. */
   settings: Settings,
   /** Skills — reusable instructions with a name.
    *
@@ -179,7 +195,7 @@ export const AppIcons = {
    *  is wrong. The same mark in two tones would read as "something needs your
    *  attention" on a row that is simply where the settings live. */
   permissions: ShieldCheck,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type AppIconName = keyof typeof AppIcons;
 
@@ -220,7 +236,7 @@ export const CodeIcons = {
   external: ArrowUpRight,
   /** A file: an attachment chip, a changed file in a run. */
   file: FileText,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type CodeIconName = keyof typeof CodeIcons;
 
@@ -251,7 +267,9 @@ export const ComposerIcons = {
   files: FileUp,
   /** Start a canvas from the composer. */
   canvas: SquarePen,
-  /** Deep research. A telescope, never binoculars. */
+  /** Deep research. The `Telescope` export — drawn as the set's binoculars,
+   *  since the set has no telescope (see `AppIcons.research`). Never a
+   *  sparkle: a sparkle names no action. */
   research: Telescope,
   /** Run this message as a delegated task.
    *
@@ -262,13 +280,14 @@ export const ComposerIcons = {
    *  native apps, and a second glyph for it here would make the composer's
    *  toggle and the run it starts look like two different things. */
   task: Workflow,
-  /** Web search — Lucide's globe, which is a different drawing from SF's. */
+  /** Web search — the set's simple globe (a meridian and an equator), which
+   *  is a different drawing from SF's. */
   web: Globe,
   /** The canvas-and-artifacts tool. */
   artifactsTool: LayoutTemplate,
   /** Memory: what Juno keeps about you between conversations. */
   memory: NotebookPen,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type ComposerIconName = keyof typeof ComposerIcons;
 
@@ -278,7 +297,7 @@ export type ComposerIconName = keyof typeof ComposerIcons;
  * A fourth group, for the same reason the others are separate: this answers
  * "what kind of layer is this". It exists because the layers panel had been
  * drawing them with Unicode box-drawing characters — `▣ ▢ ◈ ◇ ▭ ◯ ╱ ✎ ▤` — in a
- * file that already imported a dozen Lucide icons. Two icon systems in one
+ * file that already imported a dozen glyphs from the icon set. Two icon systems in one
  * panel is the most visible way a surface reads as assembled rather than
  * designed: box-drawing glyphs are a FONT, so they carry the text colour and
  * the text weight, sit on the text baseline rather than the icon's optical
@@ -301,16 +320,17 @@ export const DesignIcons = {
   rectangle: Square,
   ellipse: Circle,
   line: Minus,
-  /** A vector path. Lucide's pen nib — a TOOL naming the one layer kind that is
-   *  made with it. The Design destination used to draw this same mark and now
-   *  draws `Shapes`: the mode is not a tool, and at 18px the nib's inner circle
+  /** A vector path. The pen nib — a TOOL naming the one layer kind that is
+   *  made with it. The Design destination used to draw a nib and now draws
+   *  `Shapes`: the mode is not a tool, and at 18px the old nib's inner circle
    *  closed up (see `AppIcons.design`). At the 12px this tree sets its rows in,
-   *  the nib survives because it is the only mark in the panel with a diagonal
-   *  and the label is right beside it. */
+   *  the nib reads — the set switches to its bold cut at that size, which
+   *  keeps the slit open — and it is the only mark in the panel with a
+   *  diagonal, with the label right beside it. */
   path: PenTool,
   text: Type,
   image: ImageIcon,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type DesignIconName = keyof typeof DesignIcons;
 
@@ -327,10 +347,13 @@ export type DesignIconName = keyof typeof DesignIcons;
  * An audit across `src/` found the same concept drawn several ways in different
  * files — five glyphs for "something is wrong", six for "edit", four each for
  * "confirmed", "leaves Juno" and "code". Some of those pairs are literally the
- * same SVG imported under two names (Lucide keeps `AlertTriangle` as an alias of
- * `TriangleAlert`, `CircleAlert` of `AlertCircle`), which looks identical on
- * screen and still matters: it defeats any grep-based audit and guarantees the
- * next divergence. Where a pair was genuinely two drawings, the winner is
+ * same SVG imported under two names (the previous set kept `AlertTriangle` as an
+ * alias of `TriangleAlert`, `CircleAlert` of `AlertCircle`), which looks
+ * identical on screen and still matters: it defeats any grep-based audit and
+ * guarantees the next divergence. The current set keeps those alias names so
+ * old call sites compile — `AlertTriangle` and `TriangleAlert` are still one
+ * drawing — which is exactly why a concept, not an export name, is what gets
+ * imported. Where a pair was genuinely two drawings, the winner is
  * whichever the product already used most, so adopting this moves the fewest
  * pixels.
  */
@@ -350,13 +373,14 @@ export const StatusIcons = {
   verified: BadgeCheck,
   /** A security or permission problem, as distinct from a plain failure. */
   security: ShieldAlert,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type StatusIconName = keyof typeof StatusIcons;
 
 export const ActionIcons = {
   /** Edit or rename, everywhere. A plain pencil: `SquarePen` is composing a NEW
-   *  thing (the composer's canvas button), and `PenTool` is the Design mode. */
+   *  thing (the composer's canvas button), and `PenTool` is the Design
+   *  editor's vector-path tool (`DesignIcons.path`). */
   edit: Pencil,
   /** Destroy something. Never a bare X — that is dismiss. */
   delete: Trash2,
@@ -386,7 +410,7 @@ export const ActionIcons = {
    *  of "adjust the knobs", as opposed to `AppIcons.settings`, which is the
    *  application's own preferences. */
   parameters: SlidersHorizontal,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type ActionIconName = keyof typeof ActionIcons;
 
@@ -403,10 +427,10 @@ export type ActionIconName = keyof typeof ActionIcons;
  * which is the test that fails.
  *
  * Every mark here names the NOUN of its section — the thing you are editing —
- * rather than a feeling about it. `personalization` is a person and a pen
- * because it is your writing preferences; `models` is a processor because a
- * model is machinery with a price per token, and the section is about picking
- * which one runs.
+ * rather than a feeling about it. `personalization` is a person with a gear
+ * because it is Juno adjusted to you (the export is still `UserPen`; the set
+ * has no person-and-pen); `models` is a processor because a model is machinery
+ * with a price per token, and the section is about picking which one runs.
  */
 export const SettingsIcons = {
   /** Adjustments to how the app itself looks and behaves. */
@@ -428,6 +452,6 @@ export const SettingsIcons = {
   account: User,
   /** What you pay. */
   billing: CreditCard,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type SettingsIconName = keyof typeof SettingsIcons;

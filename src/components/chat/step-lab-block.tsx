@@ -3,6 +3,7 @@
 import * as React from "react";
 import { BlockShell, BlockTitle, CaptionLine, Reveal, TextToggle, LessonKicker, Microcap } from "@/components/chat/learning/block-shell";
 import { QuizInteraction } from "@/components/chat/learning/quiz-block";
+import { ArrowRight, ChevronLeft, ChevronRight } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type { StepLab, StepLabStep } from "@/lib/step-lab";
@@ -698,8 +699,8 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
           // `hover:text-primary` on a control that is ALREADY text-primary is not
           // a hover state — this button did not respond to the pointer at all,
           // while its sibling "Replay" did. The colour slot is spent, so the
-          // hover has to be a ground. duration-base matches the rest of the file.
-          className="shrink-0 rounded-control px-2 py-1 font-mono text-caption font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
+          // hover has to be a ground. On the fast rung, like every hover.
+          className="pressable shrink-0 rounded-control px-2 py-1 font-mono text-caption font-semibold text-primary hover:bg-primary/10 coarse:min-h-11 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Sample
         </button>
@@ -763,7 +764,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
+        className="pressable self-start rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground hover:text-foreground coarse:min-h-11 motion-reduce:transition-none motion-reduce:active:scale-100"
       >
         Replay
       </button>
@@ -795,8 +796,11 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
       {stations.map((station, index) => (
         <React.Fragment key={index}>
           {index > 0 && (
-            <span aria-hidden className="relative hidden self-center px-1 font-mono text-ui text-muted-foreground/50 @[30rem]:block">
-              →
+            // The set's arrow — the connector the inline flow map draws between
+            // its nodes — not a `→` in the mono face. A label, not an action, so
+            // its hover nudge is off.
+            <span aria-hidden className="relative hidden items-center self-center px-1 text-muted-foreground/50 @[30rem]:flex">
+              <ArrowRight className="size-4" motion="none" />
               <span
                 className={cn(
                   "absolute left-0 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-primary transition-[transform,opacity] duration-slow ease-out-soft motion-reduce:hidden",
@@ -1001,7 +1005,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
           <div className="flex flex-col gap-2">
             <p className="flex items-baseline gap-2 font-sans text-body italic leading-6 text-foreground/85">
               {/* The registry's tick, not a "✓" in a font-mono span: a text glyph
-                  carries the text weight instead of the optical stroke ladder and
+                  carries the text weight instead of the icon set's optical weight and
                   resolves against whatever fallback font has the code point.
                   inline-block + align-middle keeps this line's items-baseline
                   alignment, which a block-level svg has no baseline to satisfy. */}
@@ -1028,12 +1032,18 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground",
-              "transition-colors duration-base hover:text-foreground coarse:min-h-11",
+              // `.pressable` times the hover ink on the fast rung and the dip.
+              // The caret is the set's, not a `‹` in the mono face: a text
+              // glyph sits on the text baseline at the text weight, not on the
+              // icon line. `gap-1` because a caret's drawing carries its own
+              // side bearing.
+              "pressable inline-flex items-center gap-1 rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground",
+              "hover:text-foreground coarse:min-h-11 motion-reduce:transition-none motion-reduce:active:scale-100",
               active === 0 && "pointer-events-none opacity-40"
             )}
           >
-            ‹ Previous
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+            Previous
           </button>
           <span aria-live="polite" className="sr-only">
             Step {active + 1} of {steps.length} — {selected.title}
@@ -1044,14 +1054,15 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-control px-2 py-1 font-mono text-caption font-semibold",
-              "transition-colors duration-base coarse:min-h-11",
+              "pressable inline-flex items-center gap-1 rounded-control px-2 py-1 font-mono text-caption font-semibold",
+              "coarse:min-h-11 motion-reduce:transition-none motion-reduce:active:scale-100",
               // As with "Sample": hover:text-primary over text-primary is a
-              // no-op, so Next sat inert while "‹ Previous" beside it lit up.
+              // no-op, so Next sat inert while "Previous" beside it lit up.
               onLast ? "pointer-events-none text-muted-foreground opacity-40" : "text-primary hover:bg-primary/10",
             )}
           >
-            Next ›
+            Next
+            <ChevronRight className="size-3.5" aria-hidden="true" />
           </button>
         </footer>
       )}

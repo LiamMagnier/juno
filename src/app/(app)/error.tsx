@@ -47,13 +47,18 @@ export default function AppError({
         icon={StatusIcons.error}
         title="This view couldn’t load"
         description="Nothing was lost. Retry the view, or head back to your chats if it keeps failing."
+        // ONE action, and a way out. Retry is the primary; the route home is
+        // a quiet ghost beside it rather than a second bordered button, so the
+        // pane asks one question instead of offering two equal answers. The
+        // refresh glyph sits at the button rung (`size-4` at the button's own
+        // `gap-2`) and makes its half turn on hover and focus.
         action={
           <>
-            <Button size="sm" onClick={reset} className="gap-1.5">
-              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+            <Button size="sm" onClick={reset}>
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
               Try again
             </Button>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
               <Link href="/chat">Back to chat</Link>
             </Button>
           </>

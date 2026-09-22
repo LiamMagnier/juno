@@ -22,6 +22,7 @@ import {
   History,
   Image as ImageIcon,
   Layers,
+  Loader2,
   MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -34,9 +35,11 @@ import {
   Type,
   Undo2,
   Zap,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -52,6 +55,7 @@ import { InteractionsPanel } from "@/components/design/interactions-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
 import { MotionPanel, type MotionPreview } from "@/components/design/motion-panel";
 import { derivePreviewDocument } from "@/components/design/motion-model";
+import { PanelEmpty } from "@/components/design/effects-panel";
 import { PaneResizer, usePaneSize } from "@/components/design/panel-layout";
 import {
   useDesignDocument,
@@ -63,21 +67,28 @@ import { layoutPage } from "@/lib/design/layout";
 import { buildSelectionContext } from "@/lib/design/selection-context";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
  * The alignment gestures that keep a seat on the toolbar.
  *
- * `Distribute horizontally` was drawn with a `Minus` — a horizontal rule, which
- * is Lucide's mark for a LINE and reads as "insert a divider". Lucide ships the
- * actual glyph for this, and the icon is the only thing telling these three
+ * `Distribute horizontally` was once drawn with a `Minus` — a horizontal rule,
+ * which is the mark for a LINE and reads as "insert a divider". The set carries
+ * the real distribute glyph, and the icon is the only thing telling these three
  * apart at 16px.
+ *
+ * The names follow the set's own reading of the drawings, which is the reverse
+ * of what the words suggest: `AlignCenterVertical` is the vertical axis the
+ * shapes are centred ON — a horizontal-centres align — and
+ * `AlignCenterHorizontal` is the horizontal axis, a vertical-centres align.
+ * `align()` below is the arbiter; both were checked against it.
  */
 const TOOLBAR_ALIGN = [
   { axis: "center-x", label: "Align horizontal centres", icon: AlignCenterVertical },
   { axis: "center-y", label: "Align vertical centres", icon: AlignCenterHorizontal },
   { axis: "distribute-x", label: "Distribute horizontally · equal spacing", icon: AlignHorizontalDistributeCenter },
-] as const satisfies readonly { axis: AlignAxis; label: string; icon: React.ComponentType<{ className?: string }> }[];
+] as const satisfies readonly { axis: AlignAxis; label: string; icon: IconComponent }[];
 
 /** What the Export menu offers. `png` is rasterised in the browser from the
  *  SVG the server returns — see `src/lib/design/export.ts` on why the server
@@ -98,7 +109,18 @@ type ExportFormat = (typeof EXPORTS)[number]["format"] | "handoff";
 const NUDGE_SMALL = 1;
 const NUDGE_LARGE = 10;
 
-const TOOLS: { tool: CanvasTool; icon: typeof Square; label: string; key: string }[] = [
+/** A toolbar icon key: muted at rest, the row's ink on hover, and the tonal
+ *  "on" fill while pressed — the recipe `IconButton` and `Toggle` share. */
+const TOOL_KEY = "text-muted-foreground hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground";
+
+/** A toolbar key with a word beside its glyph (Motion, Export, Ask Juno):
+ *  caption type, so the glyph takes the caption rung's 14px and gap. */
+const TEXT_KEY = "h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground";
+
+/** A tooltip that names a shortcut: the label, then the keys in a keycap. */
+const HINT_WITH_KEYS = "flex items-center gap-2";
+
+const TOOLS: { tool: CanvasTool; icon: IconComponent; label: string; key: string }[] = [
   { tool: "select", icon: MousePointer2, label: "Select", key: "V" },
   { tool: "frame", icon: Frame, label: "Frame", key: "F" },
   { tool: "rectangle", icon: Square, label: "Rectangle", key: "R" },
@@ -495,15 +517,27 @@ export function DesignEditor({
   if (state.loadError) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center">
-        <div className="max-w-sm">
-          <p className="font-sans text-heading">This design can’t be opened</p>
-          <p className="pt-1 text-ui text-muted-foreground">{state.loadError}</p>
+        {/* The failure mark in its own tint over the sentence, the way every
+            error state in the product opens — not two bare lines of text. */}
+        <div className="flex max-w-sm flex-col items-center gap-3 motion-safe:animate-fade-in">
+          <span aria-hidden className="flex size-9 items-center justify-center rounded-field bg-destructive/10 text-destructive">
+            <StatusIcons.error className="size-5" />
+          </span>
+          <div>
+            <p className="font-sans text-heading">This design can’t be opened</p>
+            <p className="pt-1 text-ui text-muted-foreground">{state.loadError}</p>
+          </div>
         </div>
       </div>
     );
   }
   if (!visibleDocument || !doc) {
-    return <div className="flex h-full items-center justify-center text-caption text-muted-foreground">Loading design…</div>;
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-caption text-muted-foreground">
+        <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+        Loading design…
+      </div>
+    );
   }
 
   // The responsive rule the rails have always followed, hoisted so the collapsed
@@ -520,6 +554,10 @@ export function DesignEditor({
           {TOOLS.map(({ tool: value, icon: Icon, label, key }) => (
             <Tooltip key={value}>
               <TooltipTrigger asChild>
+                {/* The picked tool holds the tonal "on" fill — the same
+                    `bg-secondary` a pressed toggle wears everywhere else —
+                    rather than the accent, which on this bar belongs to the
+                    one primary action a review card puts in front of you. */}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -527,13 +565,14 @@ export function DesignEditor({
                   aria-pressed={tool === value}
                   disabled={readOnly && value !== "select"}
                   onClick={() => setTool(value)}
-                  className={cn("text-muted-foreground hover:text-foreground", tool === value && "bg-primary/10 text-primary hover:text-primary")}
+                  className={TOOL_KEY}
                 >
                   <Icon className="size-4" aria-hidden />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {label} · {key}
+              <TooltipContent className={HINT_WITH_KEYS}>
+                {label}
+                <Kbd>{key}</Kbd>
               </TooltipContent>
             </Tooltip>
           ))}
@@ -543,19 +582,25 @@ export function DesignEditor({
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={state.undo} disabled={!state.canUndo} aria-label="Undo" className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon-sm" onClick={state.undo} disabled={!state.canUndo} aria-label="Undo" className={TOOL_KEY}>
               <Undo2 className="size-4" aria-hidden />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Undo · ⌘Z</TooltipContent>
+          <TooltipContent className={HINT_WITH_KEYS}>
+            Undo
+            <Kbd>⌘Z</Kbd>
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={state.redo} disabled={!state.canRedo} aria-label="Redo" className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon-sm" onClick={state.redo} disabled={!state.canRedo} aria-label="Redo" className={TOOL_KEY}>
               <Redo2 className="size-4" aria-hidden />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Redo · ⇧⌘Z</TooltipContent>
+          <TooltipContent className={HINT_WITH_KEYS}>
+            Redo
+            <Kbd>⇧⌘Z</Kbd>
+          </TooltipContent>
         </Tooltip>
 
         {/* Always mounted, disabled when there is nothing to align.
@@ -577,7 +622,7 @@ export function DesignEditor({
                 disabled={selection.length < (axis === "distribute-x" ? 3 : 2)}
                 onClick={() => align(axis)}
                 aria-label={label}
-                className="text-muted-foreground hover:text-foreground"
+                className={TOOL_KEY}
               >
                 <Icon className="size-4" aria-hidden />
               </Button>
@@ -598,10 +643,7 @@ export function DesignEditor({
               aria-label="Motion timeline"
               aria-pressed={motionOpen}
               onClick={() => setMotionOpen((open) => !open)}
-              className={cn(
-                "h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground",
-                motionOpen && "bg-primary/10 text-primary hover:text-primary"
-              )}
+              className={cn(TEXT_KEY, "aria-pressed:bg-secondary aria-pressed:text-foreground")}
             >
               <Film className="size-3.5" aria-hidden />
               Motion
@@ -616,9 +658,12 @@ export function DesignEditor({
               variant="ghost"
               size="sm"
               aria-label="Export"
-              className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground"
+              className={cn(TEXT_KEY, "data-[state=open]:bg-accent data-[state=open]:text-foreground")}
             >
-              <ActionIcons.share className="size-3.5" aria-hidden />
+              {/* Download, not share: every item in this menu hands a file to
+                  the browser, and `share` is the mark for sending something to
+                  another person. */}
+              <ActionIcons.download className="size-3.5" aria-hidden />
               Export
             </Button>
           </DropdownMenuTrigger>
@@ -644,12 +689,19 @@ export function DesignEditor({
               if (context) onAskJuno(context);
               else toast.error("Select a layer first.");
             }}
-            className="h-7 gap-1.5 rounded-control px-2 text-caption text-muted-foreground hover:text-foreground"
+            className={TEXT_KEY}
           >
             Ask Juno
           </Button>
         )}
-        {state.saving && <span className="px-2 font-mono text-micro text-muted-foreground">Saving…</span>}
+        {/* Live state, so it may move: the one spinner, for as long as the save
+            is in flight, faded in rather than cut in. */}
+        {state.saving && (
+          <span className="flex items-center gap-1.5 px-2 font-mono text-micro text-muted-foreground motion-safe:animate-fade-in">
+            <Loader2 className="size-3 motion-safe:animate-spin" aria-hidden />
+            Saving…
+          </span>
+        )}
       </div>
 
       {/* Body: layers · canvas · inspector */}
@@ -673,10 +725,7 @@ export function DesignEditor({
                 type="button"
                 onClick={() => setPanel(value)}
                 aria-pressed={panel === value}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
-                  panel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                )}
+                className={railTabClass(panel === value)}
               >
                 {value === "layers" ? <Layers className="size-3" aria-hidden /> : <History className="size-3" aria-hidden />}
                 {value === "layers" ? "Layers" : "History"}
@@ -783,10 +832,7 @@ export function DesignEditor({
                 type="button"
                 onClick={() => setRightPanel(value)}
                 aria-pressed={rightPanel === value}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
-                  rightPanel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                )}
+                className={railTabClass(rightPanel === value)}
               >
                 {/* Both raw. These sliders are the layer inspector, which is
                     neither `ActionIcons.filter` (filtering a list) nor
@@ -823,20 +869,43 @@ export function DesignEditor({
   );
 }
 
-/** The toggle in a rail's tab strip. Deliberately the same size as the tabs it
- *  sits beside rather than a floating chevron: it is one of the strip's
- *  controls, not an overlay on top of it. */
+/**
+ * One tab in a rail's strip (Layers · History, Design · Prototype).
+ *
+ * The chosen tab reads in the foreground ink over a 2px rule that sits on the
+ * strip's own hairline, and the rule GROWS out from the tab's centre when it is
+ * chosen rather than being there or not — a scale on the x axis, so only
+ * `transform` travels. It was the accent colour on the label alone, which made
+ * the one word in the strip that was not a control the brightest thing in it.
+ */
+function railTabClass(active: boolean): string {
+  return cn(
+    "relative flex min-w-0 flex-1 items-center justify-center gap-1.5 py-1.5 font-mono text-micro transition-colors duration-fast ease-out-soft coarse:min-h-9",
+    "after:pointer-events-none after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground",
+    "after:transition-transform after:duration-base after:ease-out-soft motion-reduce:after:transition-none",
+    active ? "text-foreground after:scale-x-100" : "text-muted-foreground after:scale-x-0 hover:text-foreground"
+  );
+}
+
+/** The toggle in a rail's tab strip. Deliberately the same height as the tabs
+ *  it sits beside rather than a floating chevron: it is one of the strip's
+ *  controls, not an overlay on top of it — but it is a KEY, so it takes the
+ *  tonal hover fill and a hint the way every other icon key in the editor does. */
 function RailToggle({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className="pressable shrink-0 px-1.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground coarse:min-h-9"
-    >
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={label}
+          className="pressable mx-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-9"
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -862,16 +931,21 @@ function CollapsedRail({
 }) {
   const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
   return (
-    <div className={cn("w-7 shrink-0 flex-col items-center pt-1.5", side === "left" ? "border-r" : "border-l", "border-border/60", className)}>
-      <button
-        type="button"
-        onClick={onExpand}
-        aria-label={label}
-        title={label}
-        className="pressable rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <Icon className="size-3.5" aria-hidden />
-      </button>
+    <div className={cn("w-7 shrink-0 flex-col items-center pt-1", side === "left" ? "border-r" : "border-l", "border-border/60", className)}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onExpand}
+            aria-label={label}
+            className="pressable flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Icon className="size-3.5" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        {/* Out towards the canvas, where there is room, not off the window edge. */}
+        <TooltipContent side={side === "left" ? "right" : "left"}>{label}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -885,7 +959,11 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
   const pending = state.pending;
   if (!pending) return null;
   return (
-    <div className="pointer-events-auto rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
+    // The floating material every other layer over the canvas wears (the Ask
+    // Juno bar, the zoom control): opaque popover fill, the float hairline and
+    // throw. It was a fourth hand-mixed recipe — /95 fill, /70 edge, blur-xl and
+    // the IN-FLOW card shadow on an out-of-flow layer.
+    <div className="pointer-events-auto overlay-glass rounded-card p-3 motion-safe:animate-rise-in">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-ui font-medium">{pending.transaction.summary}</p>
@@ -933,13 +1011,17 @@ function HistoryList({ state, onSelect }: { state: DesignEditorState; onSelect: 
   const entries = [...state.history].reverse();
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-1">
-      {entries.length === 0 && <p className="px-3 py-6 text-center text-caption text-muted-foreground">No changes yet.</p>}
-      {entries.map((entry) => (
+      {entries.length === 0 && <PanelEmpty icon={History}>No changes yet.</PanelEmpty>}
+      {/* Dealt in on the tight rung when the tab opens, and a new entry rises in
+          at the top as it lands — keyed by id, so the rows already there keep
+          their place instead of replaying. */}
+      {entries.map((entry, index) => (
         <button
           key={entry.id}
           type="button"
           onClick={() => onSelect(entry.touched)}
-          className="block w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+          style={staggerDelay(Math.min(index, 8), "tight")}
+          className="block w-full rounded-md px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards]"
         >
           <span className="flex items-baseline gap-1.5">
             <span className={cn("truncate text-caption", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>

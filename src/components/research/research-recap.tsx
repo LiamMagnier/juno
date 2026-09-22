@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ShieldCheck } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ArrowRight, ChevronDown, ShieldCheck } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { SourceRail } from "@/components/research/source-rail";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
@@ -96,12 +96,12 @@ export function ResearchRecap({
         <div className="flex flex-wrap items-center gap-2">
           {clean ? (
             <span className="inline-flex items-center gap-1.5 text-ui font-medium text-success-ink">
-              <CheckCircle2 className="size-3.5 text-success-ink" />
+              <StatusIcons.success className="size-3.5 text-success-ink" />
               {RECAP_COPY.complete}
             </span>
           ) : state === "failed" ? (
             <span className="inline-flex items-center gap-1.5 text-ui font-medium text-destructive">
-              <AlertCircle className="size-3.5 text-destructive" />
+              <StatusIcons.error className="size-3.5 text-destructive" />
               {RESEARCH_STATE_MESSAGE[state]}
             </span>
           ) : state === "cancelled" ? (
@@ -128,7 +128,8 @@ export function ResearchRecap({
               type="button"
               onClick={onDismiss}
               aria-label={RECAP_COPY.dismiss}
-              className="pressable inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Hide"
+              className="pressable inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
             >
               <ActionIcons.dismiss className="size-3.5" />
             </button>
@@ -171,12 +172,12 @@ export function ResearchRecap({
 
       {/* The door into the document. */}
       {onOpenReport ? (
-        <Button type="button" variant="secondary" onClick={onOpenReport} className="group mt-4">
+        // The arrow nudges on its own articulation (icons.tsx); a second,
+        // hand-rolled translate on the same glyph doubled the travel. Button
+        // already sets the glyph gap, so the `ml-2` made it 16px.
+        <Button type="button" variant="secondary" onClick={onOpenReport} className="mt-4">
           {RECAP_COPY.openReport}
-          <ArrowRight
-            aria-hidden
-            className="ml-2 size-4 shrink-0 transition-transform duration-fast ease-out-soft motion-safe:group-hover:translate-x-0.5"
-          />
+          <ArrowRight aria-hidden className="size-4 shrink-0" />
         </Button>
       ) : (
         <p className="mt-4 text-caption text-muted-foreground">{RECAP_COPY.noReport}</p>
@@ -195,18 +196,18 @@ export function ResearchRecap({
             type="button"
             aria-expanded={workOpen}
             onClick={() => setWorkOpen((value) => !value)}
-            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-caption font-medium text-muted-foreground hover:bg-secondary/60 hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             <span>{workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}</span>
             <ChevronDown
               aria-hidden
               className={cn(
-                "size-3.5 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+                "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                 workOpen && "rotate-180"
               )}
             />
           </button>
-          {workOpen && <div className="mt-4 border-t border-border/50 pt-4">{work}</div>}
+          {workOpen && <div className="mt-4 border-t border-border/50 pt-4 motion-safe:animate-research-detail-in">{work}</div>}
         </div>
       )}
     </section>

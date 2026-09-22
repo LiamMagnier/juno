@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileSearch, Search } from "lucide-react";
+import { ArrowLeft, FileSearch, Search } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,7 +107,7 @@ export default function KnowledgeDocumentPage() {
   if (failed) {
     return (
       <AppPage measure="reading">
-          <Link href="/library" className="inline-flex items-center gap-2 text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground">
+          <Link href="/library" className="inline-flex items-center gap-2 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none">
             <ArrowLeft className="size-4" /> Library
           </Link>
           <EmptyState
@@ -171,7 +171,9 @@ export default function KnowledgeDocumentPage() {
         <Card variant="flat" className="p-5">
           {document.error ? (
             <div className="mb-4 flex items-start gap-2 rounded-field border border-warning/30 bg-warning/10 px-3.5 py-3 text-ui text-muted-foreground">
-              <StatusIcons.error className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+              {/* The triangle: this box is drawn in the warning tone, and the
+                  circle is the failure mark (StatusIcons). */}
+              <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
               <span>{document.error}</span>
             </div>
           ) : null}
@@ -184,7 +186,7 @@ export default function KnowledgeDocumentPage() {
                 href={document.sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline underline-offset-2 transition-colors duration-fast hover:text-foreground"
+                className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
               >
                 Download original
               </a>
@@ -220,8 +222,15 @@ export default function KnowledgeDocumentPage() {
           />
         ) : (
           <ol className="mt-5 space-y-3">
-            {blocks.map((block) => (
-              <li key={block.id} id={`block-${block.id}`}>
+            {/* Dealt on the tight rung; staggerDelay caps the tail, so a
+                200-passage document is no slower to arrive than an 8-passage one. */}
+            {blocks.map((block, i) => (
+              <li
+                key={block.id}
+                id={`block-${block.id}`}
+                className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                style={staggerDelay(i, "tight")}
+              >
                 <Card className="p-4">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-caption text-muted-foreground">
                     <span>{locator(block)} · {block.type}</span>

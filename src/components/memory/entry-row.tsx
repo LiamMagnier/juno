@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
-import { EyeOff, FolderLock, Loader2, MessageSquare, ShieldAlert } from "lucide-react";
+import { EyeOff, FolderLock, Loader2, MessageSquare, ShieldAlert } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,7 +106,7 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
           : { opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: duration.exit, ease: ease.in } }
       }
       className={cn(
-        "overflow-hidden px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
+        "group/fact overflow-hidden px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
         retired && "opacity-70"
       )}
     >
@@ -126,7 +126,7 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
             aria-label="Edit this memory"
             className="h-9"
           />
-          <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory">
+          <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory" title="Save">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
           </Button>
           <Button
@@ -134,6 +134,7 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
             size="icon-sm"
             variant="ghost"
             aria-label="Cancel editing"
+            title="Cancel"
             onClick={() => {
               setDraft(memory.content);
               setEditing(false);
@@ -188,12 +189,22 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
             <ProvenanceLine memory={memory} />
             {memory.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{memory.reason}</p>}
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          {/* The row's verbs arrive with the pointer (or focus, or a coarse
+              pointer, or a delete in flight) — a column of three glyphs on
+              every fact was the loudest thing in a list meant for reading. */}
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/fact:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
+              busy ? "opacity-100" : "opacity-0"
+            )}
+          >
             <Button
               ref={editButtonRef}
               variant="ghost"
               size="icon-sm"
               aria-label={`Edit: ${memory.content}`}
+              title="Edit"
+              className="text-muted-foreground"
               onClick={() => setEditing(true)}
               disabled={busy}
             >
@@ -205,6 +216,7 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
                 size="icon-sm"
                 aria-label={`Forget: ${memory.content}`}
                 title="Stop using this, and never learn it again."
+                className="text-muted-foreground"
                 onClick={() => onForget(memory)}
                 disabled={busy}
               >
@@ -214,8 +226,9 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-destructive danger-hover"
+              className="danger-hover text-muted-foreground"
               aria-label={`Delete: ${memory.content}`}
+              title="Delete"
               onClick={() => onDelete(memory)}
               disabled={busy}
             >
@@ -245,7 +258,7 @@ function ProvenanceLine({ memory }: { memory: Memory }) {
       ) : memory.sourceRef ? (
         <Link
           href={`/chat/${memory.sourceRef}`}
-          className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
+          className="inline-flex items-center gap-1.5 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline motion-reduce:transition-none"
         >
           <MessageSquare className="size-3" aria-hidden="true" />
           Remembered from a chat

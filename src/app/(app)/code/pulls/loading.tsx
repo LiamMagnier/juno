@@ -3,7 +3,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { staggerDelay } from "@/lib/motion";
 
 /**
- * The pull-request list: header, then one column of rows.
+ * The pull-request list: header, then the list's own furniture — the account
+ * line and Refresh, a section heading, a repository label, and the rows as the
+ * separate 60px cards `PullsList` draws (it used to be one inset well of 56px
+ * bars, a shape the page never shows, so the list re-cornered as it landed).
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -30,16 +33,19 @@ export default function CodePullsLoading() {
           <Skeleton className="h-9 w-28" />
         </div>
       </div>
-      <div className="mb-4 flex items-center justify-between gap-2">
+      {/* mb-8: the list's own header is mb-5 inside a space-y-8 column, and
+          the two margins collapse to the larger. */}
+      <div className="mb-8 flex items-center justify-between gap-2">
         <Skeleton className="h-4 w-52 rounded-xs" />
         <Skeleton className="h-8 w-24" />
       </div>
       <Skeleton className="mb-2 h-3 w-20 rounded-xs" />
-      <div className="surface-inset space-y-0.5 rounded-card p-1.5">
+      <Skeleton className="mb-1.5 h-3 w-36 rounded-xs" />
+      <div className="space-y-2">
         {[0, 1, 2, 3].map((i) => (
           <Skeleton
             key={i}
-            className="h-14 w-full [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            className="h-[60px] w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(i, "tight")}
           />
         ))}

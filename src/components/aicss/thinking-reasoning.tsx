@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { ChevronUp } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -137,18 +138,11 @@ export function ThinkingReasoning({
             // for the collapsed strip, this header and the search label.
             <ThinkingState className="aicss-tr-label">{label}</ThinkingState>
           )}
-          {done && (
-            <svg className="aicss-tr-chevron" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-              <path
-                d="m4.5 15.75 7.5-7.5 7.5 7.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          )}
+          {/* An UP caret: `.aicss-tr-chevron` turns it to point down while the
+              trace is folded and back up when it opens (globals.css). The
+              turn is A-to-B with both ends on screen, so it takes the
+              symmetric curve rather than the block's decelerate. */}
+          {done && <ChevronUp className="aicss-tr-chevron size-3 ease-in-out motion-reduce:transition-none" />}
         </button>
       )}
 

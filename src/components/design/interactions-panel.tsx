@@ -26,9 +26,9 @@
  */
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
-import { ColorField } from "@/components/design/effects-panel";
+import { ColorField, IconButton } from "@/components/design/effects-panel";
 import { EasingEditor, InlineNumber, SmallSelect, fieldClass } from "@/components/design/motion-panel";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import {
@@ -152,15 +152,9 @@ export function InteractionsPanel({
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
       <div className="flex items-center justify-between">
         <h3 className="truncate font-mono text-micro text-muted-foreground">{node.name}</h3>
-        <button
-          type="button"
-          disabled={readOnly}
-          onClick={add}
-          aria-label="Add an interaction"
-          className="pressable rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-        >
+        <IconButton label="Add an interaction" disabled={readOnly} onClick={add}>
           <Plus className="size-3" aria-hidden />
-        </button>
+        </IconButton>
       </div>
 
       {interactions.length === 0 && (
@@ -247,7 +241,9 @@ function InteractionCard({
   ];
 
   return (
-    <section className="space-y-2 rounded-field border border-border/60 p-2">
+    // Risen in on arrival — a card added with **+**, or the set belonging to a
+    // layer just selected — so a new trigger lands rather than appears.
+    <section className="space-y-2 rounded-field border border-border/60 p-2 motion-safe:animate-rise-in">
       <div className="flex items-start gap-1.5">
         <div className="min-w-0 flex-1 space-y-2">
           <SmallSelect
@@ -280,15 +276,9 @@ function InteractionCard({
             />
           )}
         </div>
-        <button
-          type="button"
-          disabled={readOnly}
-          onClick={onRemove}
-          aria-label="Remove this interaction"
-          className="pressable mt-3 shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-        >
+        <IconButton label="Remove this interaction" disabled={readOnly} destructive onClick={onRemove} className="mt-4">
           <ActionIcons.delete className="size-3" aria-hidden />
-        </button>
+        </IconButton>
       </div>
 
       <SmallSelect

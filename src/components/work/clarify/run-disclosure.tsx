@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "@/components/ui/icons";
 import {
   WORK_APPROVAL_MODE_SUMMARY,
   type WorkEffectiveTarget,
@@ -246,7 +246,8 @@ export function WorkRunDisclosure({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        // Focus is the global `:focus-visible` outline, like every other control.
+        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
       >
         {loading && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
         {/* Announced when it settles or when the mode changes: the chip says
@@ -278,7 +279,15 @@ export function WorkRunDisclosure({
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         )}
       >
-        <div className="min-h-0 overflow-hidden">
+        {/* The lines fade with the reveal as well as unrolling, so closing
+            reads as the detail folding away rather than being cut off by the
+            row above it. */}
+        <div
+          className={cn(
+            "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+            open ? "opacity-100" : "opacity-0"
+          )}
+        >
           <dl className="mt-2 space-y-2 border-l border-border/60 pl-3">
             {!loading && !unknown && target !== null && (
               <Row label="Runs on">

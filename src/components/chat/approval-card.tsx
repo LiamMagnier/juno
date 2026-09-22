@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Clock } from "lucide-react";
+import { ChevronRight, Clock } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -381,10 +381,11 @@ export function ApprovalCard({
             // appears to hang.
             // The dark tint is separate. 7% of --warning over a #000 ground is
             // ~4% lightness — BELOW --card — so on dark the card that has to
-            // out-shout the prose was dimmer than an ordinary one, and
-            // `shadow-pop` (black ink) added nothing back. 7% is still right
-            // over light paper.
-            "border-warning/60 bg-warning/[0.07] shadow-pop ring-1 ring-warning/20 dark:bg-warning/[0.14]"
+            // out-shout the prose was dimmer than an ordinary one. 7% is still
+            // right over light paper. No shadow: it sits in the reading column,
+            // where an edge is a hairline (FLAT_UI §2), and the warning rule and
+            // ring already carry the weight a `shadow-pop` never added.
+            "border-warning/60 bg-warning/[0.07] ring-1 ring-warning/20 dark:bg-warning/[0.14]"
           : // `bg-card`, not `bg-card/50`: half of a 6.5% fill over black is
             // ~3.3%, so a settled approval was a border around the page.
             "border-border/60 bg-card",
@@ -470,19 +471,23 @@ export function ApprovalCard({
             // hand-rolled one.
             "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-label font-medium text-foreground",
             // Full accent. This summary sits on the `bg-secondary` details shell,
-          // and accent at 40% over secondary is a 1.4-point step — the control
-          // that decides whether anyone reads the arguments had no hover.
-          "hover:bg-accent",
+            // and accent at 40% over secondary is a 1.4-point step — the control
+            // that decides whether anyone reads the arguments had no hover.
+            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
             "[&::-webkit-details-marker]:hidden"
           )}
         >
           <ChevronRight
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-open/detail:rotate-90 motion-reduce:transition-none"
+            // A turn with both ends on screen: the symmetric curve, on the
+            // disclosure rung every other caret in the transcript uses.
+            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-open/detail:rotate-90 motion-reduce:transition-none"
             aria-hidden="true"
           />
           Exactly what will be sent
         </summary>
-        <div className="border-t border-border/50 px-3 py-2.5">
+        {/* Fades in as the disclosure opens rather than cutting in under the
+            caret (native <details> gives no height to animate). */}
+        <div className="border-t border-border/50 px-3 py-2.5 motion-safe:animate-fade-in">
           {detailRows.length === 0 ? (
             <p className="text-label leading-relaxed text-muted-foreground">
               This call sends no arguments.
