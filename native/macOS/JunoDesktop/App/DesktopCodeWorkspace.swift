@@ -277,13 +277,6 @@ struct DesktopCodeWorkspace: View {
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
-        .onChange(of: workbenchModel.sessions.map(\.monitorKey), initial: true) { _, _ in
-            StudioRunMonitor.shared.observe(workbenchModel.sessions)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: StudioRunMonitor.openSessionNotification)) { note in
-            guard let id = note.object as? CodeSessionID else { return }
-            selection.wrappedValue = .session(id)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
             guard let target = notification.object as? CodePreviewTarget,
                   target.sessionID == controller?.sessionID,
@@ -321,7 +314,6 @@ struct DesktopCodeWorkspace: View {
             selection.wrappedValue = nil
         }
         .onAppear {
-            StudioRunMonitor.shared.install()
             if storedColumnVisibility == "detailOnly" { columnVisibility = .detailOnly }
         }
         .onDisappear {
@@ -1062,11 +1054,6 @@ private struct DesktopCodeRunClock: View {
         .frame(minWidth: 1)
         .animation(JunoMotion.fast, value: status)
     }
-}
-
-private extension CodeSession {
-    /// What the run monitor needs to notice a change.
-    var monitorKey: String { "\(id.value):\(status.rawValue):\(hasPendingApproval)" }
 }
 
 // MARK: - Cloud and device runs

@@ -43,8 +43,22 @@ requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   // Screen control stays visible and stoppable while it runs.
   "if controller.computerUseActive {",
   "await controller.stopComputerUse()",
-  // Runs that finish or wait while the reader is elsewhere say so.
+]);
+
+// Runs that finish or wait while the reader is elsewhere say so. Wired to the
+// workbench and the app's launch, not to the Code view: a view-owned monitor
+// went deaf, and held the Mac awake, as soon as the reader switched to Chat
+// or closed the window, which is exactly when it is needed.
+requireText("native/macOS/JunoDesktop/App/DesktopWorkbenchRegistry.swift", [
+  "workbench?.sessionsObserver =",
   "StudioRunMonitor.shared.observe(",
+]);
+requireText("native/macOS/JunoDesktop/App/JunoDesktopApp.swift", [
+  "StudioRunMonitor.shared.install",
+]);
+requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchModel.swift", [
+  "didSet { sessionsObserver?(sessions) }",
+  "sessionsObserver?([])",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkspaceContext.swift", [

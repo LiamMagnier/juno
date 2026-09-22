@@ -7,16 +7,21 @@ import UserNotifications
 /// looked away needs: tells them when a run finished or is waiting on them,
 /// and keeps the Mac awake while anything is working.
 ///
-/// Fed from the window (`observe(_:)` on every change to the session list)
-/// rather than subscribing to the store itself, so it has no lifetime of its
-/// own to manage — the window's list is already the source of truth for what
-/// the sidebar shows.
+/// Fed by the workbench (`WorkbenchModel.sessionsObserver`), not by a window.
+/// It used to be fed by the Code window's `onChange`, so switching to Chat or
+/// closing the window — while the app lived on in the menu bar — stopped it
+/// hearing anything: the run finished unannounced, exactly when the reader
+/// had looked away, and the keep-awake assertion it had taken was never
+/// released, so the Mac could not idle-sleep until Code was opened again.
 @MainActor
 public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = StudioRunMonitor()
 
-    /// Posted with the session's id when the reader clicks a notification.
-    public static let openSessionNotification = Notification.Name("juno.code.open-session")
+    /// What a click on one of Juno's notifications does, set by the host at
+    /// launch. A handler rather than a broadcast: every open Code window used
+    /// to hear the broadcast and navigate, and a window showing Chat heard
+    /// nothing at all.
+    private var openSession: (@MainActor (CodeSessionID) -> Void)?
 
     private var previous: [CodeSessionID: StudioStatus] = [:]
     private var titles: [CodeSessionID: String] = [:]
@@ -30,8 +35,10 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
         super.init()
     }
 
-    /// Call once at launch so clicks on Juno's notifications reach the app.
-    public func install() {
+    /// Call once at launch, so clicks on Juno's notifications reach the app
+    /// and open the session they are about.
+    public func install(openSession: @escaping @MainActor (CodeSessionID) -> Void) {
+        self.openSession = openSession
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -92,10 +99,7 @@ public final class StudioRunMonitor: NSObject, UNUserNotificationCenterDelegate 
         Task { @MainActor in
             NSApp.activate()
             if let id {
-                NotificationCenter.default.post(
-                    name: StudioRunMonitor.openSessionNotification,
-                    object: CodeSessionID(value: id)
-                )
+                StudioRunMonitor.shared.openSession?(CodeSessionID(value: id))
             }
         }
     }
