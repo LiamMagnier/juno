@@ -106,6 +106,19 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
         </div>
       )}
 
+      {/* A notice is not a failure: the call is up and usable, it just came up
+          some way other than the one that was asked for. Muted rather than
+          warning-coloured, and not an alert — nothing here needs acting on. */}
+      {!voice.error && voice.notice && (
+        <div
+          role="status"
+          className="flex max-w-full items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-caption text-muted-foreground"
+        >
+          <StatusIcons.info className="size-3.5 shrink-0" />
+          <span className="min-w-0">{voice.notice}</span>
+        </div>
+      )}
+
       <div className="flex max-w-full items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
         <div className="flex min-w-0 items-center gap-2.5 pl-2.5 pr-1">
           <VoiceMeter ref={meterRef} phase={phase} />

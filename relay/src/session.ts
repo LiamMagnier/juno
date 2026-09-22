@@ -191,11 +191,16 @@ export class RelaySession {
         return;
       }
       this.sessionTimer = setTimeout(() => this.endAtSessionLimit(), remainingSec * 1000);
+      // A provider may answer on a path that cannot honour the request — an
+      // OpenAI call that fell back to Realtime reasons nowhere. Report what it
+      // gave, and carry its note, so the UI never shows a mode nothing runs.
+      const established = session.established?.() ?? { thinking: effectiveThinking };
       this.send({
         type: "session.ready",
         provider: id,
         capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec },
-        thinking: effectiveThinking,
+        thinking: established.thinking,
+        ...(established.notice ? { notice: established.notice } : {}),
       });
     } catch (err) {
       this.send({

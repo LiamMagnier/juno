@@ -43,7 +43,14 @@ export type VoiceClientMessage =
   | { type: "ping" };
 
 export type VoiceServerMessage =
-  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities; thinking: boolean }
+  | {
+      type: "session.ready";
+      provider: VoiceProviderId;
+      capabilities: ProviderCapabilities;
+      thinking: boolean;
+      /** Non-fatal note about how the session came up; does not end the call. */
+      notice?: string;
+    }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   | { type: "interrupted" }

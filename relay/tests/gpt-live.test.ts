@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
 import { GptLiveSession } from "../src/providers/gpt-live.js";
+import { OpenAiVoiceSession } from "../src/providers/openai-voice.js";
+import type { RealtimeDialect } from "../src/providers/openai-realtime.js";
 import type { ProviderEvents, VoiceSessionSeed } from "../src/providers/types.js";
 
 /**
@@ -40,7 +42,7 @@ function recorder(): { events: ProviderEvents; recorded: Recorded } {
 /** A stand-in Live endpoint that records what the relay sent it. */
 async function withFakeLive(
   run: (ctx: { sent: Record<string, unknown>[]; socket: () => WsSocket }) => Promise<void>,
-  options: { onStart?: "started" | "close" | "mute" } = {}
+  options: { onStart?: "started" | "close" | "mute" | "destroy" } = {}
 ): Promise<void> {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -56,6 +58,8 @@ async function withFakeLive(
       const mode = options.onStart ?? "started";
       if (mode === "started") socket.send(JSON.stringify({ type: "session.started" }));
       else if (mode === "close") socket.close(1007, "Unknown parameter: session.delegation.responses.reasoning");
+      // No close frame at all — the shape an account without GPT-Live sees.
+      else if (mode === "destroy") socket.terminate();
     });
   });
 
@@ -225,6 +229,96 @@ test("barge-in drops the rest of the interrupted answer, then listens again", as
     delta();
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(recorded.audio.length, 2, "the next answer must be heard");
+    await session.close();
+  });
+});
+
+/**
+ * An account without GPT-Live does not get a refusal: the upgrade is accepted
+ * and the socket is then dropped with no close frame. That is close 1006, and
+ * it is what the fallback exists for.
+ */
+test("an abrupt drop after session.start is reported as a drop, not as a bad model id", async () => {
+  await withFakeLive(
+    async () => {
+      const session = new GptLiveSession();
+      const err = await session.connect(seed, recorder().events).then(
+        () => null,
+        (reason: unknown) => reason as Error
+      );
+      assert.ok(err);
+      assert.match(err.message, /no close frame/);
+      assert.match(err.message, /GPT-Live enabled/);
+      // The server said nothing, so nothing may be claimed on its behalf.
+      assert.doesNotMatch(err.message, /refused the session/);
+      await session.close();
+    },
+    { onStart: "destroy" }
+  );
+});
+
+test("OpenAI voice falls back to Realtime, and says so instead of claiming thinking", async () => {
+  // A second endpoint for the fallback leg, so the fallback actually succeeds
+  // and what it REPORTS can be asserted — which is the whole point of it.
+  const realtime = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  await new Promise<void>((resolve) => realtime.once("listening", resolve));
+  const realtimePort = (realtime.address() as { port: number }).port;
+  let realtimeConnections = 0;
+  realtime.on("connection", () => {
+    realtimeConnections += 1;
+  });
+  const fakeDialect: RealtimeDialect = {
+    provider: "openai",
+    url: () => `ws://127.0.0.1:${realtimePort}`,
+    headers: () => ({}),
+    inputRate: 24000,
+    assistantHistoryContentType: "output_text",
+    supportsVideo: true,
+    sessionUpdate: () => ({}),
+  };
+
+  try {
+    await withFakeLive(
+      async () => {
+        const session = new OpenAiVoiceSession(fakeDialect, { thinking: true });
+        await session.connect(seed, recorder().events);
+        assert.equal(realtimeConnections, 1, "a GPT-Live failure must fall back to Realtime");
+
+        const established = session.established();
+        // Asking for thinking and landing on a protocol that has none must
+        // report what is actually running, or the menu shows a mode nothing
+        // serves and the caller believes the model is reasoning.
+        assert.equal(established.thinking, false);
+        assert.match(established.notice ?? "", /not available on this account/);
+        assert.match(established.notice ?? "", /no thinking mode/);
+        await session.close();
+      },
+      { onStart: "destroy" }
+    );
+  } finally {
+    await new Promise<void>((resolve) => realtime.close(() => resolve()));
+  }
+});
+
+test("a GPT-Live session that comes up needs no notice and keeps the thinking it was given", async () => {
+  const unusedDialect: RealtimeDialect = {
+    provider: "openai",
+    url: () => {
+      throw new Error("the fallback must not be reached when GPT-Live answers");
+    },
+    headers: () => ({}),
+    inputRate: 24000,
+    assistantHistoryContentType: "output_text",
+    supportsVideo: true,
+    sessionUpdate: () => ({}),
+  };
+
+  await withFakeLive(async () => {
+    const session = new OpenAiVoiceSession(unusedDialect, { thinking: true });
+    await session.connect(seed, recorder().events);
+    const established = session.established();
+    assert.equal(established.thinking, true);
+    assert.equal(established.notice, undefined, "a working session must not be annotated");
     await session.close();
   });
 });

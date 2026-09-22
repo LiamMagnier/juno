@@ -211,6 +211,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
   const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "qwen");
   const [thinking, setThinkingState] = React.useState(false);
+  const [notice, setNotice] = React.useState<string | null>(null);
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
@@ -698,6 +699,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           liveProviderRef.current = msg.provider;
           thinkingRef.current = msg.thinking;
           setThinkingState(msg.thinking);
+          // Not an error: the call is up and usable. It says the session came
+          // up some way other than the one that was asked for, which the
+          // caller has to be told without the call being torn down for it.
+          setNotice(msg.notice ?? null);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -804,6 +809,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setCapabilities(null);
       capsRef.current = null;
       liveProviderRef.current = null;
+      setNotice(null);
       setUsage(null);
       try {
         const res = await fetch("/api/voice/relay-token");
@@ -928,6 +934,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setCapabilities(null);
       capsRef.current = null;
       liveProviderRef.current = null;
+      setNotice(null);
       // Optimistic only until session.ready lands: the relay reports the state
       // it could actually give, and that is what finally sticks.
       thinkingRef.current = nextThinking;
@@ -1181,6 +1188,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setCapabilities(null);
     capsRef.current = null;
     liveProviderRef.current = null;
+    setNotice(null);
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, releaseResources, sealTranscript]);
@@ -1203,6 +1211,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     awaitingResponse,
     reconnectAttempt,
     error,
+    notice,
     closedReason,
     levelRef,
     speechInterim: speech.interim,
