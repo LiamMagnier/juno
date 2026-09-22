@@ -12,6 +12,16 @@ function liveUrl(): string {
 }
 
 /**
+ * The API key travels in the query string, so it can surface in whatever a
+ * socket error quotes back. Scrub it on the way out — an error message ends up
+ * in a relay log and on the caller's screen, and neither is a place for a
+ * credential.
+ */
+export function redactKey(message: string): string {
+  return message.replace(/([?&]key=)[^&\s"']+/gi, "$1***");
+}
+
+/**
  * Gemini Live API (native audio) over its stateful WebSocket.
  * Input 16 kHz PCM16, output 24 kHz PCM16. Connections live ~10 minutes: the
  * server sends goAway before dropping, and we transparently reconnect using
@@ -61,7 +71,15 @@ export class GeminiLiveSession implements VoiceProviderSession {
     // accepts (a classic AI Studio API key). New "AQ."-format keys only work
     // on the OpenAI-compat surface — mint a standard key and set it here.
     const key = process.env.GEMINI_LIVE_API_KEY || requiredEnv("GOOGLE_API_KEY");
-    const ws = new WebSocket(liveUrl(), { headers: { "x-goog-api-key": key } });
+    // The Live socket authenticates by QUERY PARAMETER. `x-goog-api-key` is
+    // what the REST surface takes, and it is simply not read on the WebSocket
+    // upgrade — Google answers "Expected OAuth 2 access token, login cookie or
+    // other valid authentication credential", which reads like a rejected key
+    // and is really a credential it never saw. The header stays because
+    // ephemeral tokens do travel that way and sending both costs nothing.
+    const url = new URL(liveUrl());
+    url.searchParams.set("key", key);
+    const ws = new WebSocket(url.toString(), { headers: { "x-goog-api-key": key } });
     this.ws = ws;
 
     await new Promise<void>((resolve, reject) => {
@@ -70,9 +88,9 @@ export class GeminiLiveSession implements VoiceProviderSession {
         clearTimeout(timer);
         resolve();
       });
-      ws.once("error", (err) => {
+      ws.once("error", (err: Error) => {
         clearTimeout(timer);
-        reject(err);
+        reject(new Error(redactKey(err.message)));
       });
     });
 
@@ -86,7 +104,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
         this.events?.onClosed("provider");
       }
     });
-    ws.on("error", (err) => this.events?.onError(`gemini: ${err.message}`));
+    ws.on("error", (err) => this.events?.onError(`gemini: ${redactKey(err.message)}`));
 
     // Gemini rejects a setup frame by CLOSING the socket, and this promise
     // used to settle on exactly two things: setupComplete, or a 15s timer. A
@@ -109,7 +127,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
           )
         );
       };
-      const onSetupError = (err: Error) => settle(new Error(`gemini setup failed: ${err.message}`));
+      const onSetupError = (err: Error) => settle(new Error(`gemini setup failed: ${redactKey(err.message)}`));
       const timer = setTimeout(
         () => settle(new Error(`gemini setup timed out after 15s (model "${this.model}", no reply to the setup frame)`)),
         15_000
@@ -316,7 +334,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
       old?.close();
       await this.openConnection(this.seed, /* seedHistory */ this.resumeHandle == null);
     } catch (err) {
-      this.events?.onError(`gemini reconnect failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.events?.onError(`gemini reconnect failed: ${redactKey(err instanceof Error ? err.message : String(err))}`);
       this.events?.onClosed("provider");
     } finally {
       this.reconnecting = false;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
-import { GeminiLiveSession } from "../src/providers/gemini-live.js";
+import { GeminiLiveSession, redactKey } from "../src/providers/gemini-live.js";
 import type { ProviderEvents, VoiceSessionSeed } from "../src/providers/types.js";
 
 /**
@@ -28,6 +28,9 @@ function silentEvents(): ProviderEvents {
 }
 
 /** A stand-in Live endpoint. `onSetup` decides how it answers the setup frame. */
+/** Filled with the upgrade requests the relay made, for auth assertions. */
+const seen: { url: string; headers: Record<string, string | string[] | undefined> }[][] = [];
+
 async function withFakeLive(
   onSetup: (socket: WsSocket) => void,
   run: () => Promise<void>
@@ -35,9 +38,13 @@ async function withFakeLive(
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const { port } = server.address() as { port: number };
-  server.on("connection", (socket) => {
+  const upgrades: { url: string; headers: Record<string, string | string[] | undefined> }[] = [];
+  server.on("connection", (socket, request) => {
+    upgrades.push({ url: request.url ?? "", headers: request.headers });
     socket.once("message", () => onSetup(socket));
   });
+  seen.length = 0;
+  seen.push(upgrades);
 
   const previousUrl = process.env.RELAY_GEMINI_LIVE_URL;
   const previousKey = process.env.GEMINI_LIVE_API_KEY;
@@ -115,4 +122,34 @@ test("a mute server leaves the connect pending rather than resolving it", async 
       await session.close();
     }
   );
+});
+
+test("the API key travels in the query string, which is what the Live socket reads", async () => {
+  await withFakeLive(
+    (socket) => socket.send(JSON.stringify({ setupComplete: {} })),
+    async () => {
+      const session = new GeminiLiveSession();
+      await session.connect(seed, silentEvents());
+
+      const upgrade = seen[0][0];
+      assert.ok(upgrade, "the relay must have opened a socket");
+      // x-goog-api-key is the REST surface's mechanism and is not read on the
+      // WebSocket upgrade: header-only auth is answered with "Expected OAuth 2
+      // access token", which looks like a bad key and is a missing one.
+      const query = new URLSearchParams(upgrade.url.slice(upgrade.url.indexOf("?") + 1));
+      assert.equal(query.get("key"), "AIzaTestKey");
+      // Sent as well, because ephemeral tokens do travel as a header.
+      assert.equal(upgrade.headers["x-goog-api-key"], "AIzaTestKey");
+      await session.close();
+    }
+  );
+});
+
+test("a socket error never quotes the key back into a log or the caller's screen", () => {
+  assert.equal(
+    redactKey("connect ECONNREFUSED wss://host/ws?key=AIzaSecretValue&alt=sse"),
+    "connect ECONNREFUSED wss://host/ws?key=***&alt=sse"
+  );
+  assert.equal(redactKey('failed: "?key=AIzaSecretValue"'), 'failed: "?key=***"');
+  assert.equal(redactKey("nothing sensitive here"), "nothing sensitive here");
 });
