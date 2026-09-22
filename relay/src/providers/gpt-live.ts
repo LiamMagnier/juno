@@ -1,5 +1,10 @@
 import WebSocket from "ws";
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type {
+  ProviderEvents,
+  SessionEstablished,
+  VoiceProviderSession,
+  VoiceSessionSeed,
+} from "./types.js";
 import { requiredEnv } from "./types.js";
 import { providerText } from "../voice-context.js";
 import { resamplePcm16 } from "../audio.js";
@@ -62,6 +67,10 @@ export class GptLiveSession implements VoiceProviderSession {
     this.thinking = options.thinking === true;
     this.model = process.env.RELAY_OPENAI_MODEL || "gpt-live-1";
     this.backendModel = process.env.RELAY_OPENAI_BACKEND_MODEL || "gpt-5.6-luna";
+  }
+
+  established(): SessionEstablished {
+    return { thinking: this.thinking, model: this.model };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {

@@ -34,7 +34,9 @@ const seen: { url: string; headers: Record<string, string | string[] | undefined
 
 async function withFakeLive(
   onSetup: (socket: WsSocket) => void,
-  run: () => Promise<void>
+  run: () => Promise<void>,
+  /** Receives each frame the relay sent, for assertions on the setup itself. */
+  onFrame?: (frame: Record<string, unknown>) => void
 ): Promise<void> {
   const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -42,7 +44,10 @@ async function withFakeLive(
   const upgrades: { url: string; headers: Record<string, string | string[] | undefined> }[] = [];
   server.on("connection", (socket, request) => {
     upgrades.push({ url: request.url ?? "", headers: request.headers });
-    socket.once("message", () => onSetup(socket));
+    socket.once("message", (raw: Buffer) => {
+      if (onFrame) onFrame(JSON.parse(raw.toString()) as Record<string, unknown>);
+      onSetup(socket);
+    });
   });
   seen.length = 0;
   seen.push(upgrades);
@@ -273,4 +278,29 @@ test("an auth-rejected key is exchanged for a short-lived token and retried", as
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await new Promise<void>((resolve) => rest.close(() => resolve()));
   }
+});
+
+test("the thinking level goes only to the model that requires one", async () => {
+  // Extended Thinking fails setup without `thinkingLevel`; plain 3.8 Live
+  // fails setup WITH it. One constant cannot serve both.
+  const setups: Record<string, unknown>[] = [];
+  const capture = async (thinking: boolean) => {
+    await withFakeLive(
+      (socket) => socket.send(JSON.stringify({ setupComplete: {} })),
+      async () => {
+        const session = new GeminiLiveSession({ thinking });
+        await session.connect(seed, silentEvents());
+        await session.close();
+      },
+      (frame) => setups.push(frame)
+    );
+  };
+
+  await capture(false);
+  await capture(true);
+
+  const plain = (setups[0].setup as { generationConfig: Record<string, unknown> }).generationConfig;
+  const extended = (setups[1].setup as { generationConfig: Record<string, unknown> }).generationConfig;
+  assert.equal(plain.thinkingConfig, undefined, "the plain model must be sent no level at all");
+  assert.deepEqual(extended.thinkingConfig, { thinkingLevel: "low" });
 });

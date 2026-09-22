@@ -68,7 +68,13 @@ export class OpenAiVoiceSession implements VoiceProviderSession {
   established(): SessionEstablished {
     // A fallback session reasons nowhere the caller asked it to. Reporting the
     // request back would make the menu show a mode nothing is running.
-    return { thinking: this.fellBack ? false : this.thinking, notice: this.notice };
+    return {
+      thinking: this.fellBack ? false : this.thinking,
+      notice: this.notice,
+      // Whichever leg answered names itself; the two run different models on
+      // different protocols, so this is the only place that knows.
+      model: this.active?.established?.().model,
+    };
   }
 
   sendAudio(pcm16k: Buffer): void {

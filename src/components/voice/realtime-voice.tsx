@@ -1,25 +1,37 @@
 "use client";
 
 import * as React from "react";
-import { Brain, Mic, MicOff, MonitorUp, MonitorX, MoreHorizontal, PhoneOff, Square } from "lucide-react";
+import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { MENU_W } from "@/components/ui/menu-recipe";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { VoiceMeter } from "@/components/voice/voice-meter";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { PHASE_LABEL, announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
-import { VOICE_PROVIDER_LABELS, VOICE_PROVIDERS } from "@/lib/voice-relay-protocol";
+import {
+  VOICE_PROVIDER_LABELS,
+  VOICE_PROVIDERS,
+  type VoiceProviderId,
+} from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
+
+/**
+ * One line per provider, describing the trade it makes.
+ *
+ * Kept to what the relay's own registry says each one can do
+ * (relay/src/providers/registry.ts) rather than to marketing: these decide a
+ * call, so a wrong word here costs someone a conversation.
+ */
+const PROVIDER_BLURB: Record<VoiceProviderId, string> = {
+  openai: "Full duplex · reasoning runs on a backend model",
+  gemini: "Lowest latency · screen sharing · reasoning mode",
+  qwen: "Long calls · sees images and your screen",
+  minimax: "Speech pipeline · no vision, no screen",
+  mock: "Developer stand-in · no provider is called",
+};
 
 /**
  * The voice call bar.
@@ -88,6 +100,15 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
   const label = reconnecting && voice.reconnectAttempt > 0
     ? `Reconnecting · attempt ${voice.reconnectAttempt}`
     : PHASE_LABEL[phase];
+  // Named only once the relay has confirmed a session; before that there is
+  // nothing true to say, and a provider name shown while connecting to it is
+  // a claim the call has not earned yet.
+  const subtitle =
+    live && voice.model
+      ? `${VOICE_PROVIDER_LABELS[voice.provider]} · ${voice.model}`
+      : live
+        ? VOICE_PROVIDER_LABELS[voice.provider]
+        : null;
 
   return (
     <section
@@ -119,10 +140,27 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
         </div>
       )}
 
-      <div className="flex max-w-full items-center gap-1 rounded-full border border-border bg-popover p-1.5 shadow-float">
-        <div className="flex min-w-0 items-center gap-2.5 pl-2.5 pr-1">
+      <div
+        className={cn(
+          "flex w-full max-w-[min(100%,34rem)] items-center gap-1 rounded-full border border-border",
+          "bg-popover p-1.5 shadow-float sm:w-auto"
+        )}
+      >
+        {/* The status cluster OWNS the flexible width and everything else is
+            shrink-0, so a long phase label truncates instead of pushing End
+            off a narrow screen — which is what used to happen, because every
+            child was equally willing to shrink. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2.5 pl-2.5 pr-1 sm:flex-initial">
           <VoiceMeter ref={meterRef} phase={phase} />
-          <span className="min-w-0 truncate text-ui font-medium text-foreground">{label}</span>
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-ui font-medium text-foreground">{label}</span>
+            {/* Which model is actually answering. It was knowable only from a
+                relay log before, so a call that had quietly fallen back to
+                another protocol looked identical to one that had not. */}
+            {subtitle && (
+              <span className="truncate text-micro text-muted-foreground">{subtitle}</span>
+            )}
+          </span>
         </div>
 
         {/* The one live region for the call. */}
@@ -130,7 +168,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
           {announcement}
         </span>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           {restartable ? (
             <BarButton onClick={() => void voice.start()} label="Try the call again">
               <ActionIcons.refresh className="size-4" />
@@ -146,7 +184,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               {voice.assistantSpeaking && (
                 <BarButton onClick={voice.interrupt} label="Stop Juno speaking">
                   <Square className="size-3 fill-current" />
-                  <span className="hidden sm:inline">Stop</span>
+                  <span className="hidden md:inline">Stop</span>
                 </BarButton>
               )}
 
@@ -157,86 +195,155 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 label={voice.muted ? "Turn your microphone back on" : "Mute your microphone"}
               >
                 {voice.muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-                <span className="hidden sm:inline">{voice.muted ? "Unmute" : "Mute"}</span>
+                <span className="hidden md:inline">{voice.muted ? "Unmute" : "Mute"}</span>
               </BarButton>
+
+              {/* Screen share is a thing you DO mid-call, so it is a control,
+                  not a settings row. It spent a release buried three items
+                  deep in a menu that also held provider choice, where the one
+                  action you might want mid-sentence was the hardest to reach. */}
+              {voice.capabilities?.screenInput && live && (
+                <BarButton
+                  onClick={() => {
+                    if (voice.screenSharing) voice.stopScreenShare();
+                    else void voice.startScreenShare();
+                  }}
+                  pressed={voice.screenSharing}
+                  label={voice.screenSharing ? "Stop sharing your screen" : "Share your screen"}
+                >
+                  {voice.screenSharing ? (
+                    <MonitorX className="size-4" />
+                  ) : (
+                    <MonitorUp className="size-4" />
+                  )}
+                  <span className="hidden md:inline">{voice.screenSharing ? "Sharing" : "Share"}</span>
+                </BarButton>
+              )}
             </>
           )}
 
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger
-                  aria-label="Call options"
-                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11"
-                >
-                  <MoreHorizontal className="size-4" />
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent>Call options</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent align="end" side="top" sideOffset={8} className={MENU_W}>
-              <DropdownMenuLabel className="font-mono text-caption text-muted-foreground">Voice</DropdownMenuLabel>
-              {VOICE_PROVIDERS.map((provider) => (
-                <DropdownMenuItem
-                  key={provider}
-                  disabled={voice.availability?.[provider] === false || provider === voice.provider}
-                  onSelect={() =>
-                    live || voice.status === "connecting" || reconnecting
-                      ? voice.switchProvider(provider)
-                      : void voice.start(provider)
-                  }
-                >
-                  <span className="flex-1">{VOICE_PROVIDER_LABELS[provider]}</span>
-                  {provider === voice.provider && <StatusIcons.success className="size-3.5 text-primary" />}
-                </DropdownMenuItem>
-              ))}
-              {/* Reasoning is a different model on both providers that offer it,
-                  so choosing it re-opens the call. Shown only where there is a
-                  choice to make — a row that cannot change anything is
-                  furniture. */}
-              {voice.capabilities?.thinkingChoice && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      voice.setThinking(!voice.thinking);
-                    }}
-                  >
-                    <Brain className="size-4" />
-                    <span className="flex-1">{voice.thinking ? "Thinking on" : "Thinking off"}</span>
-                    {voice.thinking && <StatusIcons.success className="size-3.5 text-primary" />}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {/* Screen share lived in two places at once — an inline button and
-                  this row — with different labels and different breakpoints. */}
-              {voice.capabilities?.screenInput && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(event) => {
-                      event.preventDefault();
-                      if (voice.screenSharing) voice.stopScreenShare();
-                      else void voice.startScreenShare();
-                    }}
-                  >
-                    {voice.screenSharing ? <MonitorX className="size-4" /> : <MonitorUp className="size-4" />}
-                    <span className="flex-1">{voice.screenSharing ? "Stop sharing screen" : "Share screen"}</span>
-                    {voice.screenSharing && <StatusIcons.success className="size-3.5 text-primary" />}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <VoiceSettings voice={voice} />
+
+          {/* A hairline before End. It is the only irreversible control here,
+              and grouping it with the toggles made it one more identical pill
+              to mis-tap on a phone. */}
+          <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
           <BarButton onClick={onClose} label="End the call" tone="danger">
             <PhoneOff className="size-4" />
-            <span>End</span>
+            <span className="hidden sm:inline">End</span>
           </BarButton>
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Everything you SET, as opposed to everything you press.
+ *
+ * These three choices used to share one kebab menu with Stop, Mute and screen
+ * share: a flat list where "MiniMax" and "Stop sharing screen" were the same
+ * kind of row, and picking a provider looked like pressing a button. They are
+ * not the same kind of thing. A provider and a reasoning mode are settings for
+ * the call — you choose them once and live with them — so they get a panel
+ * with headings, and the verbs stay on the bar where a thumb can find them.
+ *
+ * The reasoning row NAMES THE MODEL each position runs, because on both
+ * providers that offer it the switch is not a parameter but a different model,
+ * and a toggle that silently swaps the thing answering you should say so.
+ */
+function VoiceSettings({ voice }: { voice: VoiceController }) {
+  const live = voice.status === "live";
+  const reconnecting = voice.status === "reconnecting";
+  const switchable = live || voice.status === "connecting" || reconnecting;
+
+  return (
+    <Popover>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger
+            aria-label="Call settings"
+            className={cn(
+              "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full",
+              "text-muted-foreground transition-colors duration-fast ease-out-soft",
+              "hover:bg-accent hover:text-foreground",
+              "data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11"
+            )}
+          >
+            <Settings2 className="size-4" />
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Call settings</TooltipContent>
+      </Tooltip>
+
+      <PopoverContent align="end" side="top" sideOffset={10} className="w-[min(20rem,calc(100vw-1.5rem))] p-0">
+        <div className="flex flex-col">
+          <section className="flex flex-col gap-0.5 p-2">
+            <h3 className="px-2 pb-1 pt-1 text-caption font-medium text-muted-foreground">Voice</h3>
+            {VOICE_PROVIDERS.map((id) => {
+              const unavailable = voice.availability?.[id] === false;
+              const active = id === voice.provider;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={unavailable}
+                  onClick={() => (switchable ? voice.switchProvider(id) : void voice.start(id))}
+                  className={cn(
+                    "pressable flex items-center gap-2.5 rounded-control px-2.5 py-2 text-left",
+                    "transition-colors duration-fast ease-out-soft",
+                    "disabled:pointer-events-none disabled:opacity-40",
+                    active ? "bg-accent" : "hover:bg-accent/60"
+                  )}
+                >
+                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                    <span className="truncate text-ui font-medium text-foreground">
+                      {VOICE_PROVIDER_LABELS[id]}
+                    </span>
+                    <span className="truncate text-micro text-muted-foreground">
+                      {unavailable ? "Not configured on this relay" : PROVIDER_BLURB[id]}
+                    </span>
+                  </span>
+                  {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+                </button>
+              );
+            })}
+          </section>
+
+          {/* Only where there is a choice to make. A row that cannot change
+              anything is furniture, and this one carries a cost warning that
+              would be a lie on a provider with no reasoning mode. */}
+          {voice.capabilities?.thinkingChoice && (
+            <section className="border-t border-border p-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 hover:bg-accent/60">
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+                  <span className="text-ui font-medium text-foreground">Reasoning</span>
+                  <span className="text-micro text-muted-foreground">
+                    {voice.thinking
+                      ? "Thinks before answering, and narrates while it does. Slower, and more per minute."
+                      : "Answers at conversational speed."}
+                  </span>
+                  {voice.model && (
+                    <span className="truncate pt-0.5 font-mono text-micro text-muted-foreground/70">
+                      {voice.model}
+                    </span>
+                  )}
+                </span>
+                <Switch
+                  checked={voice.thinking}
+                  onCheckedChange={(next) => voice.setThinking(next)}
+                  aria-label="Reasoning"
+                  className="mt-0.5 shrink-0"
+                />
+              </label>
+            </section>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

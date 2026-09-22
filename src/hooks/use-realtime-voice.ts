@@ -212,6 +212,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "qwen");
   const [thinking, setThinkingState] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
+  /** The model the relay says is serving the call — never a guess from the id. */
+  const [model, setModel] = React.useState<string | null>(null);
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
@@ -260,6 +262,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * which is what `thinking` below reports.
    */
   const thinkingRef = React.useRef(false);
+  /**
+   * The last thinking state the relay actually confirmed. A switch sets
+   * `thinkingRef` optimistically; if that session never comes up, this is what
+   * the UI has to fall back to, or it goes on showing a mode nothing is running
+   * and the toggle looks stuck.
+   */
+  const confirmedThinkingRef = React.useRef(false);
   const screenTimerRef = React.useRef<number | null>(null);
   const screenStreamRef = React.useRef<MediaStream | null>(null);
   const screenVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -698,11 +707,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           capsRef.current = msg.capabilities;
           liveProviderRef.current = msg.provider;
           thinkingRef.current = msg.thinking;
+          confirmedThinkingRef.current = msg.thinking;
           setThinkingState(msg.thinking);
           // Not an error: the call is up and usable. It says the session came
           // up some way other than the one that was asked for, which the
           // caller has to be told without the call being torn down for it.
           setNotice(msg.notice ?? null);
+          setModel(msg.model ?? null);
           setCapabilities(msg.capabilities);
           setProvider(msg.provider);
           statusRef.current = "live";
@@ -781,6 +792,12 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           // because the dock's alert was gated on the status — so the user sat
           // in a call that had already failed and was told nothing.
           setError(msg.message);
+          // Roll the optimistic switch back. Turning thinking on and having
+          // that session fail used to leave the menu reading "Thinking on"
+          // with nothing running, so the only way out — toggling it off —
+          // looked like it was already off.
+          thinkingRef.current = confirmedThinkingRef.current;
+          setThinkingState(confirmedThinkingRef.current);
           statusRef.current = "error";
           setStatus("error");
           return;
@@ -810,6 +827,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       capsRef.current = null;
       liveProviderRef.current = null;
       setNotice(null);
+    setModel(null);
+      setModel(null);
       setUsage(null);
       try {
         const res = await fetch("/api/voice/relay-token");
@@ -931,10 +950,16 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       providerTurnActiveRef.current = false;
       setAssistantSpeaking(false);
       setProvider(next);
-      setCapabilities(null);
-      capsRef.current = null;
+      // Capabilities are NOT cleared here. Every row in the call menu is gated
+      // on them, so blanking them mid-switch removes the control that undoes a
+      // switch — which is exactly the control you need when the new session is
+      // the one that fails. They are replaced wholesale by the next
+      // session.ready, and nothing can be sent meanwhile because every send
+      // path requires status "live", which a switch has already left.
       liveProviderRef.current = null;
       setNotice(null);
+    setModel(null);
+      setModel(null);
       // Optimistic only until session.ready lands: the relay reports the state
       // it could actually give, and that is what finally sticks.
       thinkingRef.current = nextThinking;
@@ -1189,6 +1214,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     capsRef.current = null;
     liveProviderRef.current = null;
     setNotice(null);
+    setModel(null);
     setMuted(false);
     mutedRef.current = false;
   }, [clearReconnectTimer, releaseResources, sealTranscript]);
@@ -1212,6 +1238,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     reconnectAttempt,
     error,
     notice,
+    model,
     closedReason,
     levelRef,
     speechInterim: speech.interim,

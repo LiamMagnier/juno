@@ -90,6 +90,8 @@ export type ServerMessage =
       provider: VoiceProviderId;
       capabilities: ProviderCapabilities;
       thinking: boolean;
+      /** The model actually serving the call, as the provider reports it. */
+      model?: string;
       /** A non-fatal note about how the session came up — a fallback protocol,
        *  say. Unlike `error` this does not end the call. */
       notice?: string;
