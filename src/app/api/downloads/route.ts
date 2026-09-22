@@ -6,6 +6,11 @@ export const runtime = "nodejs";
 // analysis, and an imported value is not always resolvable. Kept in step with
 // DOWNLOAD_FEED_REVALIDATE in @/lib/download-feed, which is asserted by a test.
 export const revalidate = 60;
+// Rendered for every request, never from Next's route cache: for a private
+// repository the body carries a signed asset URL that stops working within
+// minutes, and a cached response would outlive it. The GitHub requests behind
+// it keep their own one-minute cache, which is what protects the rate limit.
+export const dynamic = "force-dynamic";
 
 /**
  * What a visitor — or an installed Mac app — can download today.
@@ -29,7 +34,8 @@ export async function GET(req: Request) {
   // Keep the small feed out of intermediary caches. The upstream GitHub
   // request remains server-cached for one minute, so this does not turn every
   // visitor into a GitHub API call, while an already-installed app never gets
-  // a stale JSON response after a release is promoted from prerelease.
+  // a stale JSON response after a release is promoted from prerelease — or a
+  // signed download URL that has since expired.
   response.headers.set("Cache-Control", "no-store");
   return response;
 }
