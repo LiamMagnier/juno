@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Link2 } from "lucide-react";
+import { Link2, Link2Off } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -137,16 +138,21 @@ export function ShareDialog({
           // role="alert" and the destructive tint: this was a muted grey sentence,
           // i.e. a failure dressed as ordinary help text, in a dialog whose whole
           // job had just not happened.
-          <div className="space-y-3" role="alert">
-            <p className="text-body text-destructive">Couldn’t create the link. Please try again.</p>
+          <div className="space-y-3 motion-safe:animate-fade-in" role="alert">
+            <p className="flex items-start gap-2 text-body text-destructive">
+              <StatusIcons.error className="mt-1 size-4 shrink-0" aria-hidden />
+              <span className="min-w-0">Couldn’t create the link. Please try again.</span>
+            </p>
             <Button variant="outline" size="sm" onClick={createLink}>
               Try again
             </Button>
           </div>
         ) : status === "revoked" ? (
-          <div className="space-y-3" role="status">
-            <p className="text-body text-muted-foreground">
-              The link was revoked — anyone opening it now sees nothing.
+          <div className="space-y-3 motion-safe:animate-fade-in" role="status">
+            {/* The broken link, the set's own mark for exactly this state. */}
+            <p className="flex items-start gap-2 text-body text-muted-foreground">
+              <Link2Off className="mt-1 size-4 shrink-0" aria-hidden />
+              <span className="min-w-0">The link was revoked — anyone opening it now sees nothing.</span>
             </p>
             {/* size-4, not size-3.5. That is what Button gives an unsized icon
                 (`.ui-button svg:not([class*="size-"])` in globals.css), it is
@@ -158,7 +164,8 @@ export function ShareDialog({
             </Button>
           </div>
         ) : share ? (
-          <div className="space-y-3">
+          // Fades in over the skeleton it replaces, which holds the same two rows.
+          <div className="space-y-3 motion-safe:animate-fade-in">
             <div className="flex items-center gap-2">
               <Input
                 readOnly
@@ -171,11 +178,13 @@ export function ShareDialog({
                   confirmation was a purely visual state change, so a screen
                   reader got no acknowledgement that anything had happened. */}
               <Button size="sm" onClick={copy} className="shrink-0">
-                {copied ? (
-                  <StatusIcons.success className="size-4 motion-safe:animate-pop-in" aria-hidden />
-                ) : (
-                  <ActionIcons.copy className="size-4" aria-hidden />
-                )}
+                {/* Copy ⇄ check in one box (GlyphSwap); the check keeps the
+                    button's own ink, since it sits on the accent fill. */}
+                <GlyphSwap
+                  swapped={copied}
+                  from={<ActionIcons.copy className="size-4" aria-hidden />}
+                  to={<StatusIcons.success className="size-4" aria-hidden />}
+                />
                 <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
               </Button>
             </div>

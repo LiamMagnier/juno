@@ -6,8 +6,9 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
-import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
+import { ActionIcons, CodeIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Burst, Swell } from "@/components/ui/micro";
@@ -229,7 +230,9 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
         // on the transcript ground, which is now #000, so muted at 35% resolved
         // to ~3% lightness — a frame the same colour as the page, holding a
         // "Preparing image" label with nothing behind it. Named rung instead.
-        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted shadow-soft motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-lift"
+        // A hairline, not a shadow: the frame sits in the reading column, and
+        // hover darkens the edge rather than lifting the card off the page.
+        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted transition-colors duration-fast ease-out-soft hover:border-border"
       >
         <div
           aria-hidden="true"
@@ -277,11 +280,11 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           // `caption`, matching the video card's "Open" pill — the same
           // media-overlay action role. `label` is the uppercase-eyebrow rung;
           // its 0.10em tracking has no business on a mixed-case verb.
-          // The press dips at --dur-press, not the base rung the reveal and
-          // the colour run on: 220ms to reach scale(0.95) is felt as lag.
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          // The press dips at --dur-press, not the fast rung the reveal and
+          // the colour run on: a press that eases in is felt as lag.
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-fast ease-out-soft hover:text-foreground active:scale-[0.97] active:duration-press group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
-          <SquareDashed className="size-3.5" aria-hidden="true" /> Edit
+          <ActionIcons.edit className="size-3.5" aria-hidden="true" /> Edit
         </button>
       )}
     </div>
@@ -304,7 +307,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
     // Named rungs, not alpha. `bg-card/75` and `bg-muted/35` were tuned against
     // the old 9%-lightness ground; over #000 they resolve to ~4.9% and ~3.3%,
     // so the card, its stage and the page were three shades of nothing.
-    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-lift">
+    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-fade-in">
       <div className="relative aspect-video min-w-0 overflow-hidden bg-muted">
         <div
           aria-hidden="true"
@@ -362,12 +365,12 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${attachment.fileName} in a new tab`}
-          // The press dips at --dur-press, not the base rung the hover fill
-          // runs on: 220ms to reach scale(0.95) is felt as lag.
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-95 active:duration-press coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          // The press dips at --dur-press, not the fast rung the hover fill
+          // runs on: a press that eases in is felt as lag.
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-fast ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
-          <ActionIcons.external className="size-3" aria-hidden="true" />
+          <ActionIcons.external className="size-3.5" aria-hidden="true" />
         </a>
       </div>
     </div>
@@ -424,7 +427,7 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
             // rounded-md, matching the composer's upload chip (composer.tsx). The
             // same ~34px chip was rounded-lg (24) here and rounded-md (8) there,
             // so a file visibly turned into a stadium the instant it was sent.
-            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-caption transition-colors duration-fast hover:bg-accent"
+            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-caption transition-colors duration-fast ease-out-soft hover:bg-accent"
           >
             <CodeIcons.file className="size-4 text-muted-foreground" />
             <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>
@@ -593,7 +596,9 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
         </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <SquareDashed className="size-4" /> Switch model
+            {/* The models mark (a processor), the same one Settings › Models
+                wears — this row picks which machine answers. */}
+            <SettingsIcons.models className="size-4" /> Switch model
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className={cn(MENU_W, "max-h-[min(24rem,60vh)]")}>
             {grouped.map(([provider, list]) => (
@@ -625,12 +630,20 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
   );
 }
 
-/** A 10px disclosure caret that rides beside a glyph inside a circular action. */
+/** The set's caret at its smallest rung, riding beside a glyph inside a
+ *  circular action to say the press opens a menu rather than acting. */
 function ChevronDownMini() {
+  return <ChevronDown className="-mr-1 size-3 opacity-60" />;
+}
+
+/** Copy ⇄ check, cross-faded in one box (see GlyphSwap). */
+function CopyGlyph({ copied }: { copied: boolean }) {
   return (
-    <svg viewBox="0 0 10 10" aria-hidden className="-mr-1 size-2.5 opacity-60">
-      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <GlyphSwap
+      swapped={copied}
+      from={<ActionIcons.copy className="size-4" />}
+      to={<StatusIcons.success className="size-4 text-success-ink" />}
+    />
   );
 }
 
@@ -966,7 +979,7 @@ export const MessageItem = React.memo(function MessageItem({
                   onClick={toggleExpanded}
                   // `caption` — the mono metadata voice this row shares with
                   // the version pager and the model/cost line below it.
-                  className="mt-1 font-mono text-caption text-muted-foreground transition-colors duration-fast hover:text-foreground"
+                  className="mt-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
                 >
                   {expanded ? "Show less" : `Show more · ${lineCount} lines`}
                 </button>
@@ -997,9 +1010,9 @@ export const MessageItem = React.memo(function MessageItem({
             {totalVersions > 1 && (
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
-            <div className="flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+            <div className="flex opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
               <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                {copied ? <StatusIcons.success className="check-morph size-4 text-success-ink" /> : <ActionIcons.copy className="size-4" />}
+                <CopyGlyph copied={copied} />
               </IconAction>
               {canEdit && (
                 // Prefill from the DISPLAYED version, so paging back and editing
@@ -1128,7 +1141,12 @@ export const MessageItem = React.memo(function MessageItem({
           />
         ) : message.error && !hasPartialWithError ? (
           <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-ui text-destructive dark:bg-destructive/[0.14]">
-            <p>{message.content || message.errorMessage || "Something didn't go well."}</p>
+            {/* The failure mark sits on the first line of the sentence, not
+                centred on a paragraph that may wrap to three. */}
+            <p className="flex items-start gap-2">
+              <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{message.content || message.errorMessage || "Something didn't go well."}</span>
+            </p>
             {onRegenerate && isLast && !busy && (
               <Button
                 variant="outline"
@@ -1224,10 +1242,19 @@ export const MessageItem = React.memo(function MessageItem({
               // resolved to ~4.3%, between the page and --card and equal to
               // neither.
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-muted px-3.5 py-2.5 text-ui text-muted-foreground">
+                {/* A partial answer that failed keeps the failure mark; a
+                    finish note (token limit, stopped, interrupted) is information. */}
+                {message.error ? (
+                  <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
+                ) : (
+                  <StatusIcons.info className="size-4 shrink-0" aria-hidden="true" />
+                )}
                 <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
                 {canContinue && (
+                  // Carry on from here, not "again": the refresh arrow is
+                  // Retry, and this keeps the answer and writes past its end.
                   <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
-                    <ActionIcons.refresh className="size-3.5" /> Continue
+                    <CornerDownRight className="size-3.5" /> Continue
                   </Button>
                 )}
               </div>
@@ -1259,7 +1286,10 @@ export const MessageItem = React.memo(function MessageItem({
             )}
             <div
               className={cn(
-                "flex items-center transition-opacity duration-base ease-out-soft",
+                // `fast`: the bar is chrome answering the pointer, and a toolbar
+                // that takes a fifth of a second to arrive under the cursor
+                // reads as lag rather than as a fade.
+                "flex items-center transition-opacity duration-fast ease-out-soft",
                 // The newest answer keeps its toolbar. Everything a reader does
                 // with a reply — copy it, rate it, regenerate it — they do to
                 // the one that just arrived, and a control that is invisible
@@ -1274,20 +1304,22 @@ export const MessageItem = React.memo(function MessageItem({
               )}
             >
               {hasTextContent && (
-                // The check MORPHS in (`.check-morph`: springs from small and
-                // tilted) rather than swapping silently — the confirmation is
-                // the entire feedback now that copying raises no toast.
+                // The copy glyph cross-fades into a check and back rather than
+                // swapping in a frame — the confirmation is the entire feedback
+                // now that copying raises no toast.
                 <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                  {copied ? <StatusIcons.success className="check-morph size-4 text-success-ink" /> : <ActionIcons.copy className="size-4" />}
+                  <CopyGlyph copied={copied} />
                 </IconAction>
               )}
               {!privateMode && canFeedback && (
                 <>
+                  {/* A rated thumb is filled: `weight="fill"` is this set's
+                      "on", so the state reads in the drawing, not only the tint. */}
                   <IconAction celebrate label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
-                    <ThumbsUp className="size-4" />
+                    <ThumbsUp className="size-4" weight={message.feedback === "UP" ? "fill" : undefined} />
                   </IconAction>
                   <IconAction celebrate label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
-                    <ThumbsDown className="size-4" />
+                    <ThumbsDown className="size-4" weight={message.feedback === "DOWN" ? "fill" : undefined} />
                   </IconAction>
                 </>
               )}

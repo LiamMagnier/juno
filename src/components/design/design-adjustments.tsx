@@ -19,6 +19,7 @@
 import * as React from "react";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ColorField } from "@/components/design/effects-panel";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { DesignAdjustment } from "@/lib/design/ai";
@@ -49,12 +50,20 @@ export function DesignAdjustments({ adjustments, editor, onDismiss }: Props) {
   if (adjustments.length === 0) return null;
 
   return (
-    <div className="pointer-events-auto mx-auto w-full max-w-2xl rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
+    // The canvas's floating material — the same one the Ask Juno bar under it
+    // and the review card above it wear. It was the in-flow card shadow and a
+    // /95 blurred fill, a third recipe for the same tier.
+    <div className="pointer-events-auto mx-auto w-full max-w-2xl overlay-glass rounded-card p-3 motion-safe:animate-rise-in">
       <div className="flex items-center justify-between pb-2">
         <h2 className="font-mono text-micro text-muted-foreground">Tune Juno’s change</h2>
-        <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">
-          <ActionIcons.dismiss className="size-3.5" aria-hidden />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">
+              <ActionIcons.dismiss className="size-3.5" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Hide these controls</TooltipContent>
+        </Tooltip>
       </div>
       <div className="space-y-2.5">
         {adjustments.map((adjustment, index) => (
@@ -148,8 +157,10 @@ function SegmentedRow({ adjustment, onCommit }: { adjustment: SegmentedAdjustmen
               onCommit(option.value);
             }}
             className={cn(
-              "pressable rounded-control px-2 py-1 text-caption transition-colors duration-fast coarse:min-h-9",
-              value === option.value ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground hover:text-foreground"
+              // No `transition-*` utility: it would replace `.pressable`'s own
+              // shorthand and snap the press. The pressable eases the colours.
+              "pressable rounded-control px-2 py-1 text-caption coarse:min-h-9",
+              value === option.value ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
             {option.label}

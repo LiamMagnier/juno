@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Flame, RefreshCw } from "lucide-react";
+import { Flame } from "@/components/ui/icons";
+import { ActionIcons, SettingsIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -180,10 +181,12 @@ function ModelMix({ models }: { models: ProfileStats["models"] }) {
             className="flex items-center gap-3 motion-safe:animate-fade-in"
             style={{ ...staggerDelay(i, "loose"), animationFillMode: "both" }}
           >
+            {/* A model the catalogue no longer knows gets the models mark in
+                muted ink, not a grey disc standing in for a logo. */}
             {resolved ? (
               <ProviderLogo provider={resolved.provider} className="size-4 shrink-0" />
             ) : (
-              <span className="size-4 shrink-0 rounded-full bg-muted" />
+              <SettingsIcons.models className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             )}
             <span className="w-36 shrink-0 truncate text-ui text-foreground sm:w-44">{resolved?.name ?? entry.model}</span>
             <span className="surface-inset relative h-2 min-w-0 flex-1 overflow-hidden rounded-full">
@@ -254,8 +257,8 @@ export function UsageStats({ data, loading, error, reload }: ReturnType<typeof u
     return (
       <div className="surface-inset flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-3">
         <p className="text-body text-muted-foreground">Your usage could not be loaded.</p>
-        <Button variant="outline" size="sm" onClick={() => void reload()} className="gap-1.5">
-          <RefreshCw className="size-3.5" /> Try again
+        <Button variant="outline" size="sm" onClick={() => void reload()}>
+          <ActionIcons.refresh className="size-4" /> Try again
         </Button>
       </div>
     );

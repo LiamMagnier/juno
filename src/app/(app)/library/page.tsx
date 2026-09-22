@@ -5,15 +5,16 @@ import { FilePreview } from "@/components/chat/file-preview";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   History,
   LayoutGrid,
   List as ListIcon,
   MessageCircle,
   Search,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,9 +107,13 @@ const SORTS: { key: LibrarySort; label: string }[] = [
 const browserGrid =
   "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-3 @[40rem]/page:grid-cols-[1.25rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] @5xl/page:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
 
-/** The hover-raised row, the house recipe for a row in a list. */
+/**
+ * The house row: flat at rest, a tonal fill under the pointer. The 1px border
+ * is transparent so the selected state (a fill WITH an edge — PREMIUM_AUDIT
+ * §2d) can arrive without the row changing size.
+ */
 const rowClass =
-  "group/row rounded-control border border-transparent px-3 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none";
+  "group/row rounded-control border border-transparent px-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
 function typeLabel(item: LibItem) {
   const extension = item.fileName.includes(".") ? item.fileName.split(".").pop()?.trim() : "";
@@ -182,18 +187,22 @@ function ItemPreview({ item }: { item: LibItem }) {
   );
 }
 
+/**
+ * One trailing row action. The glyph's hover gesture is its own — the pencil
+ * tilts, the bin lifts, the restore arrow turns back (`data-motion` in
+ * icons.tsx). This used to add a second, hand-rolled translate/rotate per
+ * action on top of that, and the two stacked into one lurch.
+ */
 function ItemAction({
   icon: Icon,
   label,
   onClick,
   tone,
-  motion = "lift",
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   label: string;
   onClick: () => void;
   tone?: "danger";
-  motion?: "lift" | "edit" | "delete";
 }) {
   return (
     <Button
@@ -206,19 +215,9 @@ function ItemAction({
         event.stopPropagation();
         onClick();
       }}
-      className={cn(
-        "group/action text-muted-foreground",
-        tone === "danger" ? "danger-hover" : "hover:text-foreground"
-      )}
+      className={cn("text-muted-foreground", tone === "danger" ? "danger-hover" : "hover:text-foreground")}
     >
-      <Icon
-        className={cn(
-          "size-4 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-          motion === "lift" && "group-hover/action:-translate-y-0.5",
-          motion === "edit" && "group-hover/action:-translate-y-0.5 group-hover/action:-rotate-6",
-          motion === "delete" && "origin-bottom group-hover/action:rotate-6"
-        )}
-      />
+      <Icon className="size-4" />
     </Button>
   );
 }
@@ -230,7 +229,7 @@ function DownloadAction({ item }: { item: LibItem }) {
       variant="ghost"
       size="icon-sm"
       asChild
-      className="group/action text-muted-foreground hover:text-foreground"
+      className="text-muted-foreground hover:text-foreground"
     >
       <a
         href={item.url}
@@ -240,7 +239,7 @@ function DownloadAction({ item }: { item: LibItem }) {
         aria-label={`Download ${item.fileName}`}
         title="Download"
       >
-        <ActionIcons.download className="size-4 transition-transform duration-fast ease-out-soft group-hover/action:translate-y-0.5 motion-reduce:transition-none" />
+        <ActionIcons.download className="size-4" />
       </a>
     </Button>
   );
@@ -368,6 +367,7 @@ function MobileItemMenu({
           variant={triggerVariant ?? "ghost"}
           size="icon-sm"
           aria-label={`Actions for ${item.fileName}`}
+          title="More actions"
           className={cn("text-muted-foreground", triggerClassName ?? "@[40rem]/page:hidden")}
         >
           <ActionIcons.more className="size-4" />
@@ -457,7 +457,8 @@ function LibraryGridItem({
       aria-label={item.fileName}
       style={staggerDelay(index, "base")}
       className={cn(
-        "group/card flex min-w-0 flex-col p-3 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // Tonal hover: the tile takes a shade, it does not lift off the page.
+        "group/card flex min-w-0 flex-col p-3 hover:bg-accent/50 hover:shadow-raised motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // Selection is a border, not a second shadow: the raised tile keeps its
         // own depth and the hairline turns to ink.
         selected && "border-foreground/40 hover:border-foreground/40"
@@ -521,14 +522,14 @@ function LibraryGridItem({
             variant="ghost"
             size="icon-sm"
             asChild
-            className="group/source -mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-foreground"
+            className="-mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-foreground"
           >
             <Link
               href={`/chat/${item.conversationId}`}
               aria-label={`Open source chat for ${item.fileName}`}
               title="Open source chat"
             >
-              <MessageCircle className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/source:-translate-y-0.5 motion-reduce:transition-none" />
+              <MessageCircle className="size-3.5" />
             </Link>
           </Button>
         )}
@@ -545,7 +546,11 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
         aria-label="Loading files"
       >
         {[...Array(8)].map((_, index) => (
-          <Card key={index} className="p-3" style={staggerDelay(index, "base")}>
+          <Card
+            key={index}
+            className="p-3 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            style={staggerDelay(index, "base")}
+          >
             {/* Same 4px as the real well it stands in for, so the skeleton does
                 not resolve into a differently-shaped tile. */}
             <Skeleton className="aspect-square rounded-sm" />
@@ -560,12 +565,12 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
   return (
     <div className="surface-inset mt-5 rounded-card p-1.5" aria-label="Loading files">
       <div className={cn(browserGrid, "h-9 px-3")}>
-        <Skeleton className="size-[18px] rounded-xs" />
+        <Skeleton className="size-4.5 rounded-xs" />
         <Skeleton className="h-2.5 w-16 rounded-xs" />
       </div>
       {[...Array(6)].map((_, index) => (
         <div key={index} className={cn(browserGrid, "min-h-[68px] px-3")}>
-          <Skeleton className="size-[18px] rounded-xs" style={staggerDelay(index, "tight")} />
+          <Skeleton className="size-4.5 rounded-xs" style={staggerDelay(index, "tight")} />
           <span className="flex items-center gap-3">
             <Skeleton className="size-11 shrink-0 rounded-field" style={staggerDelay(index, "tight")} />
             <span className="min-w-0 flex-1 space-y-2">
@@ -817,7 +822,10 @@ export default function LibraryPage() {
               }}
               className="shrink-0 gap-1.5"
             >
-              <ActionIcons.restore className="size-3.5" />
+              {/* Two destinations, two glyphs: the bin for the place deleted
+                  files go, the back arrow for leaving it. One anticlockwise
+                  arrow for both said "restore", which neither button does. */}
+              {showDeleted ? <ArrowLeft className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
               {showDeleted ? "Back to library" : "Recently deleted"}
             </Button>
           </>
@@ -852,7 +860,7 @@ export default function LibraryPage() {
             />
             {query && (
               <div className="absolute inset-y-0 right-1 flex items-center">
-                <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search">
+                <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search" title="Clear search">
                   <ActionIcons.dismiss className="size-3.5" />
                 </Pressable>
               </div>
@@ -910,11 +918,12 @@ export default function LibraryPage() {
         <EmptyState
           tone="error"
           className="mt-6"
+          icon={StatusIcons.error}
           title="Couldn’t load your library"
           description="Check your connection and try once more."
           action={
-            <Button variant="secondary" size="sm" onClick={() => load()} className="group/retry gap-2">
-              <ActionIcons.refresh className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
+            <Button variant="secondary" size="sm" onClick={() => load()} className="gap-1.5">
+              <ActionIcons.refresh className="size-3.5" />
               Try again
             </Button>
           }
@@ -1020,7 +1029,10 @@ export default function LibraryPage() {
                     browserGrid,
                     rowClass,
                     "min-h-[68px] motion-safe:animate-rise-in [animation-fill-mode:backwards]",
-                    isSelected && "surface-raised border-border/60 hover:border-border/60"
+                    // Selected is a fill WITH an edge; hover is the fill
+                    // alone (PREMIUM_AUDIT §2d). It was a raised card — a
+                    // shadow in the flow, which the flat retune retired.
+                    isSelected && "border-border bg-accent hover:border-border"
                   )}
                 >
                   <SelectCheck
@@ -1054,7 +1066,7 @@ export default function LibraryPage() {
                         {item.conversationId ? (
                           <Link
                             href={`/chat/${item.conversationId}`}
-                            className="inline-flex items-center gap-1 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+                            className="inline-flex items-center gap-1.5 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
                           >
                             <MessageCircle className="size-3" />
                             Open source chat
@@ -1077,7 +1089,7 @@ export default function LibraryPage() {
                   </time>
 
                   <div className="hidden items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/row:opacity-100 @[40rem]/page:flex coarse:opacity-100">
-                    <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
+                    <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} />
                     {item.versionCount > 0 && (
                       <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
                     )}
@@ -1086,7 +1098,6 @@ export default function LibraryPage() {
                       icon={showDeleted ? ActionIcons.restore : ActionIcons.delete}
                       label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
                       tone={showDeleted ? undefined : "danger"}
-                      motion={showDeleted ? "lift" : "delete"}
                       onClick={() => (showDeleted ? void restoreItems([item]) : setDeleteTargets([item]))}
                     />
                   </div>
@@ -1148,7 +1159,7 @@ export default function LibraryPage() {
               {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
               <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
             </Button>
-            <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection">
+            <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection" title="Clear selection">
               <ActionIcons.dismiss className="size-4" />
             </Button>
           </div>

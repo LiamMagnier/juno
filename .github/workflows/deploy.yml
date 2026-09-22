@@ -597,11 +597,11 @@ jobs:
             echo "::error::VM_KNOWN_HOSTS is not configured; refusing unpinned SSH host-key trust."
             exit 1
           fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_deploy
-          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_deploy
-          chmod 644 ~/.ssh/known_hosts
+          install -d -m 700 "$RUNNER_TEMP/deploy-ssh"
+          printf '%s\n' "$VM_SSH_KEY" > $RUNNER_TEMP/deploy-ssh/id_deploy
+          printf '%s\n' "$VM_KNOWN_HOSTS" > $RUNNER_TEMP/deploy-ssh/known_hosts
+          chmod 600 $RUNNER_TEMP/deploy-ssh/id_deploy
+          chmod 644 $RUNNER_TEMP/deploy-ssh/known_hosts
 
       - name: Snapshot the current build for rollback
         # Superseded by the immutable VM transaction below. Keep this legacy
@@ -631,7 +631,7 @@ jobs:
           # from the deploy rsync: node_modules and .next/cache are large and
           # rebuilt anyway, and .env/.uploads/logs must never be captured into a
           # snapshot that could later be restored over newer state.
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -e
           if [ -d ~/juno ]; then
@@ -671,7 +671,7 @@ jobs:
             --exclude '.uploads' \
             --exclude '.env' \
             --exclude '.env.*' \
-            -e "ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+            -e "ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile=$RUNNER_TEMP/deploy-ssh/known_hosts -o StrictHostKeyChecking=yes" \
             ./ "$VM_USER@$VM_HOST:~/juno/"
           # `.env` itself is excluded from the rsync above so the VM keeps any
           # values that live ONLY on it. But PROD_ENV is the source of truth, so
@@ -680,7 +680,7 @@ jobs:
           # VM-only keys (absent from PROD_ENV) are preserved. Match real
           # assignment lines only — skip comments and blank lines.
           grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env > .env.shared || true
-          scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             .env.shared "$VM_USER@$VM_HOST:~/juno/.env.shared"
 
       - name: Post-deploy on the VM (install-if-changed, migrate, reload)
@@ -690,7 +690,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           JUNO_BUILD_ROOT: ${{ github.workspace }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "JUNO_BUILD_ROOT='$JUNO_BUILD_ROOT' bash -s" <<'REMOTE'
           set -e
           cd ~/juno
@@ -885,7 +885,7 @@ jobs:
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
           # Free disk space on the VM before transferring artifacts
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "bash -s" <<'PREFLIGHT'
           set -euo pipefail
           rm -f /tmp/juno-*.tar.gz /tmp/juno-*.sha256 /tmp/juno-*.env 2>/dev/null || true
@@ -902,9 +902,9 @@ jobs:
             done
           fi
           PREFLIGHT
-          scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='$GITHUB_WORKSPACE' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"
@@ -976,7 +976,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
           set -e
           # Read the public origin from the same runtime env the app uses. Keep
@@ -1031,7 +1031,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
           set -e
           APP_URL="$(grep -m1 '^NEXT_PUBLIC_APP_URL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
@@ -1114,7 +1114,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"

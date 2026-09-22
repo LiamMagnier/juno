@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarClock, Loader2 } from "lucide-react";
+import { CalendarClock, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { useApp } from "@/components/app/app-provider";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PLANS } from "@/lib/plans";
 import { describeCapSource, type BudgetCapSource } from "@/lib/spend-ceiling";
-import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 
 /** "4 hr 47 min" / "12 min" / "2 days" — time until a rolling window frees up. */
 function formatCountdown(ms: number): string {
@@ -104,12 +104,18 @@ function SpendCeiling({
 
   if (capDisabled) {
     return (
-      <div role="status" className="rounded-field border border-warning/40 bg-warning/10 p-4">
-        <p className="text-body font-medium text-warning-foreground">Spend ceiling is switched off</p>
-        <p className="mt-1 text-ui text-muted-foreground">
-          Nothing is capping what this account can spend on models. This is a development escape hatch — turn
-          it back on before using the account normally.
-        </p>
+      // The warning well every settings warning shares (the permissions
+      // lockdown notice, /upgrade's billing notice): a leading warning mark
+      // on the first line, the text beside it.
+      <div role="status" className="flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4">
+        <StatusIcons.warning className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
+        <div className="min-w-0">
+          <p className="text-body font-medium text-warning-foreground">Spend ceiling is switched off</p>
+          <p className="mt-1 text-ui text-muted-foreground">
+            Nothing is capping what this account can spend on models. This is a development escape hatch — turn
+            it back on before using the account normally.
+          </p>
+        </div>
       </div>
     );
   }
@@ -138,8 +144,13 @@ function SpendCeiling({
             aria-describedby="spend-cap-help"
           />
         </div>
-        <Button type="submit" disabled={!valid || !dirty || saving}>
-          {saving ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+        {/* The label stays in the box while it saves — hidden, not removed —
+            so the button keeps its width and its accessible name, and the
+            spinner turns over it. Swapping the word for the glyph shrank the
+            button by a third and left it nameless for the length of the save. */}
+        <Button type="submit" disabled={!valid || !dirty || saving} aria-busy={saving}>
+          <span className={cn("transition-opacity duration-fast ease-out-soft", saving && "opacity-0")}>Save</span>
+          {saving && <Loader2 className="absolute inset-0 m-auto size-4 motion-safe:animate-spin" aria-hidden />}
         </Button>
       </div>
       <p id="spend-cap-help" className="mt-2 text-caption text-muted-foreground">
@@ -234,9 +245,13 @@ export function BillingSection() {
               </div>
               <p className="mt-1 text-body text-muted-foreground">{plan.tagline}</p>
               <ul className="mt-3 space-y-1.5">
+                {/* The check in muted ink, not the accent: "included" is not a
+                    state and not an action, and three coral ticks per card was
+                    the accent spent on furniture. Same glyph, size and ink as
+                    the plan cards on /upgrade. */}
                 {plan.features.slice(0, 3).map((feat, idx) => (
-                  <li key={idx} className="flex items-center gap-1.5 text-ui text-muted-foreground">
-                    <StatusIcons.success className="size-3 shrink-0 text-primary" />
+                  <li key={idx} className="flex items-center gap-2 text-ui text-muted-foreground">
+                    <StatusIcons.success className="size-4 shrink-0" />
                     <span className="truncate">{feat}</span>
                   </li>
                 ))}
@@ -256,7 +271,14 @@ export function BillingSection() {
                   <Button asChild variant="outline" size="sm">
                     <Link href="/upgrade">Change plan</Link>
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => void openPortal()} disabled={portalLoading}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void openPortal()}
+                    disabled={portalLoading}
+                    aria-busy={portalLoading}
+                  >
+                    {portalLoading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
                     {portalLoading ? "Opening…" : "Manage billing"}
                   </Button>
                 </div>
@@ -265,7 +287,7 @@ export function BillingSection() {
           </div>
           {renewsAtMs != null && (
             <p className="mt-4 flex items-center gap-1.5 border-t border-border/60 pt-3 text-caption text-muted-foreground">
-              <CalendarClock className="size-3.5 opacity-70" aria-hidden="true" />
+              <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
               {cancelAtPeriodEnd ? "Access ends" : "Renews"} {formatDate(renewsAtMs)}
             </p>
           )}
@@ -276,13 +298,14 @@ export function BillingSection() {
         <div className="space-y-5 py-3">
           {unlimited ? (
             <div>
-              <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
+              {/* The dot signature at rest, on its own tokens (`dot` /
+                  `dot-gap`). It pulsed, in a stagger that ran for as long as
+                  the pane was open — an idle loop borrowing the loading
+                  gesture on a line whose whole message is that nothing is
+                  happening (PREMIUM_AUDIT rule 14, ICONS_AND_MOTION §2.2.9). */}
+              <div className="flex items-center gap-dot-gap py-1.5" aria-hidden>
                 {Array.from({ length: 32 }).map((_, i) => (
-                  <span
-                    key={i}
-                    className="size-[5px] rounded-full bg-primary/75 motion-safe:animate-pulse"
-                    style={staggerDelay(i, "tight")}
-                  />
+                  <span key={i} className="size-dot rounded-full bg-primary/75" />
                 ))}
               </div>
               {/* No meter at 0%, and now a second sentence, because the

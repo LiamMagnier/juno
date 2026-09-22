@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Star } from "lucide-react";
+import { Star } from "@/components/ui/icons";
 import { Pressable } from "@/components/ui/pressable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -142,7 +142,9 @@ export function ModelsSection() {
                 >
                   <ProviderLogo provider={m.provider} className="size-3.5" />
                   {m.name}
-                  {selected && <Star className="size-3 fill-current" aria-hidden="true" />}
+                  {/* `fill-current` is the ON drawing (icons.tsx): a favourite is a
+                      mark you set, so it springs in rather than appearing. */}
+                  {selected && <Star className="check-morph size-3 fill-current" aria-hidden="true" />}
                 </Pressable>
               );
             })}

@@ -1,10 +1,12 @@
-import { ReceiptText } from "lucide-react";
+import { ReceiptText } from "@/components/ui/icons";
+import { DURATION } from "@/lib/design/tokens.generated";
 import { getModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { eurPerUsd } from "@/lib/spend";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatEur } from "@/components/landing/eur";
+import { Reveal, RevealItem, RevealList } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -75,52 +77,65 @@ export function Metering() {
       <div className="mt-10 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
         {/* The four points as a plain definition list on hairlines. The
             receipt beside it is the section's one elevated object, and a grid
-            of raised tiles next to it was two sections' worth of cards in one. */}
-        <dl className="divide-y divide-border/60">
-          {POINTS.map(({ term, body }) => (
-            <div key={term} className="py-4 first:pt-0 last:pb-0">
+            of raised tiles next to it was two sections' worth of cards in one.
+            The points are dealt in reading order as the list comes into view. */}
+        <RevealList as="dl" className="divide-y divide-border/60">
+          {POINTS.map(({ term, body }, i) => (
+            <RevealItem key={term} index={i} className="py-4 first:pt-0 last:pb-0">
               <dt className="text-heading">{term}</dt>
               <dd className="mt-1 max-w-prose text-body text-muted-foreground">{body}</dd>
-            </div>
+            </RevealItem>
           ))}
-        </dl>
+        </RevealList>
 
-        {/* The receipt — live numbers, recomputed on every build/deploy. */}
-        <Card variant="elevated" className="p-5 sm:p-6">
-          <CardEyebrow>One message, priced</CardEyebrow>
-          <p className="mt-1.5 text-caption text-muted-foreground">
-            The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
-            {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.
-          </p>
-          {rows.length > 0 ? (
-            <ul className="surface-inset mt-5 space-y-3 rounded-field px-4 py-3.5 font-mono text-caption">
-              {rows.map(({ name, cost }) => (
-                <li key={name} className="flex items-baseline gap-2.5">
-                  <span className="whitespace-nowrap">{name}</span>
-                  <span className="min-w-4 flex-1 border-b border-dotted border-border" aria-hidden />
-                  <span className="tabular-nums text-muted-foreground">~{cost}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            // Dropping one stale id is honest; dropping all six leaves the intro
-            // above and the "this is the exact math" line below bracketing an
-            // empty <ul>, on a server-rendered page with no runtime signal that
-            // anything broke. tone="error" because that is a failure, not a
-            // feature nobody has used yet.
-            <EmptyState
-              className="mt-5"
-              tone="error"
-              size="panel"
-              icon={ReceiptText}
-              title="Receipt unavailable"
-              description="None of the sample models resolve against the current registry, so there is nothing honest to price here."
-            />
-          )}
-          <p className="mt-5 border-t border-border/60 pt-4 text-caption text-muted-foreground">
-            This is the exact math your usage meter runs in the app — shown on every reply, tallied on your plan.
-          </p>
-        </Card>
+        {/* The receipt — live numbers, recomputed on every build/deploy. The
+            card rises as one object; its lines then print top to bottom, one
+            fast rung behind it, which is the argument of the section acted out:
+            the same exchange, priced model by model. */}
+        <Reveal>
+          <Card variant="elevated" className="p-5 sm:p-6">
+            <CardEyebrow>One message, priced</CardEyebrow>
+            <p className="mt-1.5 text-caption text-muted-foreground">
+              The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
+              {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.
+            </p>
+            {rows.length > 0 ? (
+              <RevealList as="ul" className="surface-inset mt-5 space-y-3 rounded-field px-4 py-3.5 font-mono text-caption">
+                {rows.map(({ name, cost }, i) => (
+                  <RevealItem
+                    key={name}
+                    as="li"
+                    index={i}
+                    rung="tight"
+                    offset={DURATION.fast}
+                    className="flex items-baseline gap-2.5"
+                  >
+                    <span className="whitespace-nowrap">{name}</span>
+                    <span className="min-w-4 flex-1 border-b border-dotted border-border" aria-hidden />
+                    <span className="tabular-nums text-muted-foreground">~{cost}</span>
+                  </RevealItem>
+                ))}
+              </RevealList>
+            ) : (
+              // Dropping one stale id is honest; dropping all six leaves the intro
+              // above and the "this is the exact math" line below bracketing an
+              // empty <ul>, on a server-rendered page with no runtime signal that
+              // anything broke. tone="error" because that is a failure, not a
+              // feature nobody has used yet.
+              <EmptyState
+                className="mt-5"
+                tone="error"
+                size="panel"
+                icon={ReceiptText}
+                title="Receipt unavailable"
+                description="None of the sample models resolve against the current registry, so there is nothing honest to price here."
+              />
+            )}
+            <p className="mt-5 border-t border-border/60 pt-4 text-caption text-muted-foreground">
+              This is the exact math your usage meter runs in the app — shown on every reply, tallied on your plan.
+            </p>
+          </Card>
+        </Reveal>
       </div>
     </Section>
   );

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { animate, motion, useMotionValue } from "framer-motion";
 import { HOLD_MS, HOLD_RELEASE_MS, TAP_MS } from "@/lib/micro";
+import { ease } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -98,7 +99,9 @@ export function HoldButton({
     if (!holding || done.current) return;
     setHolding(false);
     const short = Date.now() - pressedAt.current < TAP_MS;
-    animate(progress, 0, { duration: HOLD_RELEASE_MS / 1000, ease: "easeIn" });
+    // The token accelerate (`--ease-in`), not framer's own "easeIn" keyword,
+    // which is a different curve from every other exit in the product.
+    animate(progress, 0, { duration: HOLD_RELEASE_MS / 1000, ease: ease.in });
     if (!short) return;
     if (onTap) {
       onTap();

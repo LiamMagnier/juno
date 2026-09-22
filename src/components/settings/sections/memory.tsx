@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ShieldAlert } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -118,8 +118,10 @@ export function MemorySection() {
             }
           />
         ))}
+        {/* The info mark, not a warning shield: this line explains a rule, and
+            `StatusIcons.security` is reserved for a security PROBLEM. */}
         <p className="flex items-start gap-1.5 px-1 pt-1 text-caption text-muted-foreground/80">
-          <ShieldAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           <span>
             A fact you add yourself is always kept, whatever these say — this controls what Juno writes down without
             being asked.

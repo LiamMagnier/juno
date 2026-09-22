@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search, SearchX } from "@/components/ui/icons";
 import type { StructuredDataFrame } from "@/lib/sandbox/python";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface DataTableBlockProps {
   table: StructuredDataFrame;
@@ -62,7 +63,8 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
   };
 
   return (
-    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card shadow-soft">
+    // A hairline, no shadow: the table sits in the reading column (FLAT_UI §2).
+    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/35 px-4 py-2.5">
         <div className="flex min-w-0 items-baseline gap-2">
           <h4 className="truncate text-caption font-medium text-foreground">{title || "Data table"}</h4>
@@ -95,6 +97,9 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
             size="sm"
             onClick={handleExportCsv}
             disabled={!table.columns.length || !table.data.length}
+            // Below `sm` the label hides and this is a bare glyph, which needs
+            // a name of its own; "CSV" stays inside it for voice control.
+            aria-label="Download CSV"
             className="h-8 gap-1.5 px-2.5"
           >
             <Download className="size-3.5" aria-hidden="true" />
@@ -120,7 +125,7 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
           </thead>
           <tbody className="divide-y divide-border/45 font-mono text-caption text-foreground">
             {paginatedData.map((row, index) => (
-              <tr key={index} className="transition-colors hover:bg-accent/35 motion-reduce:transition-none">
+              <tr key={index} className="transition-colors duration-fast ease-out-soft hover:bg-accent/35 motion-reduce:transition-none">
                 {table.columns.map((column) => (
                   <td
                     key={column}
@@ -138,7 +143,10 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
                   colSpan={Math.max(1, table.columns.length)}
                   className="px-3 py-8 text-center font-sans text-caption text-muted-foreground"
                 >
-                  No matching rows
+                  <span className="inline-flex flex-col items-center gap-2">
+                    <SearchX className="size-5 text-muted-foreground/70" aria-hidden="true" />
+                    No matching rows
+                  </span>
                 </td>
               </tr>
             )}
@@ -152,26 +160,36 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
             Page {currentPage} of {totalPages} · {filteredData.length.toLocaleString()} rows
           </span>
           <div className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-              aria-label="Previous table page"
-            >
-              <ChevronLeft className="size-3.5" aria-hidden="true" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-              aria-label="Next table page"
-            >
-              <ChevronRight className="size-3.5" aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  aria-label="Previous table page"
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Previous table page</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  aria-label="Next table page"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Next table page</TooltipContent>
+            </Tooltip>
           </div>
         </footer>
       )}

@@ -31,9 +31,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import type { LayoutMap } from "@/lib/design/layout";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
+import { cn } from "@/lib/utils";
 
 /**
  * What "Copy" leaves behind.
@@ -104,10 +106,14 @@ export interface DesignContextMenuProps {
 }
 
 /** A right-aligned key hint. Only ever shown for chords the editor really
- *  binds, so the menu cannot teach a shortcut that does not exist. */
-function Hint({ keys }: { keys: string }) {
+ *  binds, so the menu cannot teach a shortcut that does not exist.
+ *
+ *  Tabular, so the column of hints sets flush right down the menu; on the
+ *  destructive row it takes a tint of the row's red rather than staying grey
+ *  beside a red label. */
+function Hint({ keys, className }: { keys: string; className?: string }) {
   return (
-    <span aria-hidden className="ml-auto pl-6 font-mono text-micro text-muted-foreground">
+    <span aria-hidden className={cn("ml-auto pl-6 font-mono text-micro tabular-nums text-muted-foreground", className)}>
       {keys}
     </span>
   );
@@ -191,7 +197,7 @@ export function DesignContextMenu({
         // *flips* a menu vertically — it does not slide it — so without a cap
         // the first four items sat above the top of the browser window and
         // Rename was unreachable.
-        className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-56 overflow-y-auto"
+        className={`max-h-[var(--radix-dropdown-menu-content-available-height)] ${MENU_W} overflow-y-auto`}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           onClosed();
@@ -214,13 +220,16 @@ export function DesignContextMenu({
             <DropdownMenuItem disabled={!canPaste} onSelect={() => paste && onApply([{ op: "duplicateNodes", nodeIds: paste, offset: pasteOffset() }], "Paste")}>
               Paste
             </DropdownMenuItem>
+            {/* The product's destructive row — red at rest, a red-tinted focus
+                fill — not a grey row that only turned red once highlighted,
+                which is the one moment it is too late to notice. */}
             <DropdownMenuItem
+              variant="destructive"
               disabled={!editable}
-              className="focus:text-destructive"
               onSelect={() => onApply([{ op: "deleteNodes", nodeIds: unlocked.map((node) => node.id) }], "Delete")}
             >
               Delete
-              <Hint keys="⌫" />
+              <Hint keys="⌫" className="text-destructive/70" />
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!renameable} onSelect={() => renameable && onRename(renameable.id)}>
               Rename…

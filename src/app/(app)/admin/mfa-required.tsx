@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { StatusIcons } from "@/lib/app-icons";
 
 /**
  * What an owner sees instead of Admin until they have enrolled in two-step
@@ -15,9 +15,12 @@ import { Button } from "@/components/ui/button";
  */
 export function AdminMfaRequired() {
   return (
-    <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-6 py-16 text-center">
-      <span className="flex size-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-        <ShieldAlert className="size-5" aria-hidden />
+    <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-6 py-16 text-center motion-safe:animate-rise-in">
+      {/* The security mark from the shared registry — the same shield the
+          rest of the product uses for "this is a security problem" — in the
+          quiet tonal tile every designed empty and error state stands on. */}
+      <span className="flex size-12 items-center justify-center rounded-field bg-destructive/10 text-destructive">
+        <StatusIcons.security className="size-6" aria-hidden />
       </span>
       <h1 className="font-serif text-heading text-foreground">Two-step verification is required here</h1>
       <p className="max-w-prose text-body text-muted-foreground">

@@ -11,10 +11,11 @@
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDown, ChevronLeft, ChevronRight, Search } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -715,10 +716,15 @@ export function ThoughtProcessPanel({
               control has to read as a way BACK rather than as a dismissal. The
               step is the split mount's (chat-view, code-session-view), not the
               window's: this panel is portalled into whichever surface owns it. */}
-          <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 @[50rem]/split:hidden">
-            <ChevronLeft className="size-4" aria-hidden="true" />
-            <span className="sr-only">Back to chat</span>
-          </Pressable>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable kind="icon" size="md" onClick={onClose} className="-ml-1 @[50rem]/split:hidden">
+                <ChevronLeft className="size-4" aria-hidden="true" />
+                <span className="sr-only">Back to chat</span>
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Back to chat</TooltipContent>
+          </Tooltip>
 
           {/* THE ONE LOOP IN THIS PANEL. Everything else that used to move —
               a shimmering sentence, a crossfading eyebrow, a second 1Hz clock,
@@ -763,7 +769,7 @@ export function ThoughtProcessPanel({
                 }}
               >
                 Find in this run
-                <AppIcons.search className="ml-auto text-muted-foreground" aria-hidden="true" />
+                <Search className="ml-auto text-muted-foreground" aria-hidden="true" />
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem checked={kinds.size === 0} onCheckedChange={() => setKinds(new Set())}>
@@ -858,7 +864,12 @@ export function ThoughtProcessPanel({
       </header>
 
       {findOpen && (
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+        // The bar settles in rather than cutting in, and leads with the
+        // magnifier so it reads as a find field before anything is typed.
+        // Raw `Search`, as in conversation-find.tsx: `AppIcons.search` is the
+        // app's search destination, and this field never leaves the run.
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 motion-safe:animate-fade-in">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" motion="none" aria-hidden="true" />
           <input
             ref={findRef}
             type="search"
@@ -886,18 +897,25 @@ export function ThoughtProcessPanel({
           <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
             {query ? (visible.length ? `${visible.length} of ${allSteps.length}` : "No matches") : ""}
           </span>
-          <Pressable
-            kind="icon"
-            size="sm"
-            className="size-6 shrink-0"
-            onClick={() => {
-              setQuery("");
-              setFindOpen(false);
-            }}
-            aria-label="Close find"
-          >
-            <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
-          </Pressable>
+          {/* 28px, the smallest icon rung — it was a 24px override, under the
+              pointer floor every other control in this header meets. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Pressable
+                kind="icon"
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setQuery("");
+                  setFindOpen(false);
+                }}
+                aria-label="Close find"
+              >
+                <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Close find</TooltipContent>
+          </Tooltip>
         </div>
       )}
 
@@ -977,7 +995,8 @@ export function ThoughtProcessPanel({
                 aria-labelledby={`${id}-notice`}
                 className="-mx-3 mt-3 border-l-2 border-warning/35 bg-warning/5 px-3 py-2 dark:bg-warning/10"
               >
-                <h3 id={`${id}-notice`} className="font-mono text-label text-warning">
+                <h3 id={`${id}-notice`} className="flex items-center gap-1.5 font-mono text-label text-warning">
+                  <StatusIcons.warning className="size-3.5 shrink-0" aria-hidden="true" />
                   Notice
                 </h3>
                 <ul className="mt-1 space-y-1">
@@ -1067,7 +1086,10 @@ export function ThoughtProcessPanel({
                 onClick={() => setDetailsOpen((v) => !v)}
                 aria-expanded={detailsOpen}
                 aria-controls={detailsOpen ? `${id}-details` : undefined}
-                className="pressable flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
+                // `.pressable` alone times the hover fill and the dip; a
+                // `transition-colors` beside it replaced that list, so the
+                // press snapped instead of dipping.
+                className="pressable flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-ui text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
               >
                 <ChevronRight
                   aria-hidden="true"
@@ -1150,15 +1172,21 @@ export function ThoughtProcessPanel({
             resumable; a scroller that silently stops following is a feature
             the reader cannot get back. */}
         {streaming && !following && (
+          // Centred with `inset-x-0 mx-auto w-fit`, not `left-1/2
+          // -translate-x-1/2`: `animate-pop-in` fills `both`, so its final
+          // `transform` outlived the entrance and overwrote the translate —
+          // the pill came to rest half its own width right of centre.
+          // The arrow is the transcript's own jump-to-latest mark
+          // (message-list.tsx): one gesture, one drawing.
           <button
             type="button"
             onClick={() => {
               setFollowing(true);
               scrollToBottom();
             }}
-            className="absolute bottom-3 left-1/2 z-popper inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float motion-safe:animate-pop-in"
+            className="absolute inset-x-0 bottom-3 z-popper mx-auto inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-popover px-3 py-1 text-caption text-foreground shadow-float transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-pop-in motion-reduce:transition-none"
           >
-            <ChevronDown className="size-3" aria-hidden="true" />
+            <ArrowDown className="size-3.5" aria-hidden="true" />
             Live
           </button>
         )}
@@ -1217,8 +1245,13 @@ function StepRow({
   const row = cn(
     "relative grid w-full grid-cols-[1.25rem_minmax(0,1fr)_auto_1.75rem] items-start gap-x-2.5",
     "min-h-8 rounded-control px-0 py-1.5 text-left coarse:min-h-11",
-    "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
-    (openable || linkable) && "pressable motion-reduce:active:scale-100",
+    "hover:bg-accent motion-reduce:transition-none",
+    // A pressable row takes its timing from `.pressable` (hover fill on
+    // --dur-fast, dip on --dur-press). `transition-colors` sat beside it and,
+    // being a utility, replaced that list — so every press snapped.
+    openable || linkable
+      ? "pressable motion-reduce:active:scale-100"
+      : "transition-colors duration-fast ease-out-soft",
     expanded && "bg-secondary hover:bg-secondary",
   );
 
@@ -1391,11 +1424,11 @@ function StepRow({
             }}
             aria-label={copied ? "Copied" : tip}
           >
-            {copied ? (
-              <StatusIcons.success className="size-3.5 motion-safe:animate-check-morph" aria-hidden="true" />
-            ) : (
-              <ActionIcons.copy className="size-3.5" aria-hidden="true" />
-            )}
+            <GlyphSwap
+              swapped={copied}
+              from={<ActionIcons.copy className="size-3.5" aria-hidden="true" />}
+              to={<StatusIcons.success className="size-3.5 text-success-ink" aria-hidden="true" />}
+            />
           </Pressable>
         </TooltipTrigger>
         <TooltipContent side="left">{tip}</TooltipContent>
@@ -1590,7 +1623,7 @@ function MemoryBody({
       ) : (
         <div className="mt-1.5 flex flex-wrap gap-x-3 text-caption text-muted-foreground">
           {sourceHref && (
-            <a href={sourceHref} className="underline-offset-4 hover:text-foreground hover:underline">
+            <a href={sourceHref} className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline">
               Open source chat
             </a>
           )}
@@ -1598,11 +1631,11 @@ function MemoryBody({
             type="button"
             disabled={state.forgetting}
             onClick={() => void state.onForget(memory.id)}
-            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
+            className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
           >
             {state.forgetting ? "Forgetting…" : "Forget this"}
           </button>
-          <a href="/memory" className="underline-offset-4 hover:text-foreground hover:underline">
+          <a href="/memory" className="underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline">
             Manage all
           </a>
         </div>

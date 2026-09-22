@@ -4,14 +4,21 @@ import { cn } from "@/lib/utils";
 
 /**
  * A card is `.surface-raised` (docs/design/FLAT_UI.md §2.2): the card fill,
- * the hairline, and the dual top-left-light / bottom-right-dark shadow.
+ * the hairline, and the 1px contact shadow the flat material allows in flow.
  *
  *   default      raised
  *   elevated     the bigger throw — hero cards, pricing, project tiles
  *   flat         fill + hairline, no shadow — for a card that sits INSIDE
  *                another raised surface, where a second shadow would stack
- *   interactive  raised, lifts to the large throw on hover and presses into
- *                the page on :active — the whole body is the hit target
+ *   interactive  raised; on hover the hairline darkens and the fill takes a
+ *                faint tonal wash, and it goes a shade deeper while held —
+ *                the whole body is the hit target
+ *
+ * The interactive card used to LIFT on hover (to the large shadow throw). In
+ * the flat language nothing in flow casts a shadow and nothing rises under the
+ * pointer; state is tonal (ICONS_AND_MOTION.md §2.2, rule 1). A card is also a
+ * large surface, so it does not scale under the finger either — the fill step
+ * on `:active` is its press.
  *
  * The transition is scoped (not transition-all) so panel resizes and layout
  * changes never animate.
@@ -29,7 +36,7 @@ const cardVariants = cva(
         // depth without a second material. `active:` is here because hover is
         // not an affordance on touch.
         interactive:
-          "surface-raised hover:border-foreground/20 hover:shadow-raised-lg active:bg-secondary focus-within:border-foreground/25 motion-reduce:transition-none",
+          "surface-raised hover:border-foreground/20 hover:bg-accent/40 active:bg-secondary focus-within:border-foreground/25",
       },
     },
     defaultVariants: { variant: "default" },

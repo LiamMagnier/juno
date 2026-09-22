@@ -14,25 +14,32 @@ import { staggerDelay } from "@/lib/motion";
  * arithmetic. Under it stood four `h-16` cards on `space-y-4` for a pane that
  * has no cards — every section is rows on hairlines — so the placeholder was
  * the outline of a different page than the one that replaced it.
+ *
+ * The layout keys on the same containers the real page does — the `page`
+ * column for rail-beside-pane, the rail's own `@container/rail` for strip or
+ * column — not on the window. Keyed to `md:`, a 1024 window with the sidebar
+ * out drew the skeleton side by side and then landed a stacked page on it.
  */
 export default function SettingsLoading() {
   return (
     <AppPage measure="wide" role="status" aria-label="Loading settings">
       <AppPageHeaderSkeleton headingWidth="w-40" />
 
-      <div className="md:grid md:grid-cols-[13.5rem_minmax(0,1fr)] md:gap-10">
-        <div className="surface-inset mb-6 flex gap-1 rounded-card p-1.5 md:mb-0 md:flex-col">
-          {[...Array(9)].map((_, i) => (
-            // 37.5px is a `Pressable kind="row"`: a `text-ui` line (19.5) plus
-            // `py-2` (16) plus the 1px border each side. Below `md:` the rail
-            // sits ABOVE the pane, so a `h-9` row here moved everything under
-            // it by the difference.
-            <Skeleton
-              key={i}
-              className="h-[37.5px] w-28 shrink-0 rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in md:w-full"
-              style={staggerDelay(i, "tight")}
-            />
-          ))}
+      <div className="@[48rem]/page:grid @[48rem]/page:grid-cols-[13.5rem_minmax(0,1fr)] @[48rem]/page:gap-10">
+        <div className="@container/rail mb-6 @[48rem]/page:mb-0">
+          <div className="surface-inset flex flex-col gap-1 overflow-hidden rounded-card p-1.5 @[16rem]/rail:flex-row">
+            {[...Array(9)].map((_, i) => (
+              // 38px is a `Pressable kind="row"`: a `text-body` line (24) plus
+              // `py-1.5` (12) plus the 1px border each side. In the stacked
+              // layout the rail sits ABOVE the pane, so a row that is off by
+              // any amount here moves everything under it by the difference.
+              <Skeleton
+                key={i}
+                className="h-[38px] w-full shrink-0 rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in @[16rem]/rail:w-28"
+                style={staggerDelay(i, "tight")}
+              />
+            ))}
+          </div>
         </div>
         <div className="min-w-0 max-w-3xl">
           <SettingsPaneHeaderSkeleton />

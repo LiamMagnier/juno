@@ -28,14 +28,10 @@ export function LearningCardBlock({ card }: { card: LearningCardData }) {
           {tone.label}
         </LessonKicker>
         <div className={cn("flex flex-col gap-1.5 border-l-2 pl-4", tone.rule)}>
-          <BlockTitle className="leading-snug">
-            {card.icon && (
-              <span aria-hidden className="pr-2 text-body leading-none">
-                {card.icon}
-              </span>
-            )}
-            {card.title}
-          </BlockTitle>
+          {/* `card.icon` is not drawn. It is a model-chosen emoji, and an emoji
+              is not an icon in this product (ICONS_AND_MOTION.md §1.1): the
+              tone kicker above already names what kind of note this is. */}
+          <BlockTitle className="leading-snug">{card.title}</BlockTitle>
           <p className="whitespace-pre-line text-body leading-7 text-foreground/80">{card.content}</p>
         </div>
       </div>

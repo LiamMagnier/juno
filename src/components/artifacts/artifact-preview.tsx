@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import type { ArtifactType } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
@@ -110,15 +110,21 @@ export function ArtifactPreview({
           </pre>
           {/* The clip, said out loud. Without it the excerpt ends on a hard
               horizontal edge mid-glyph, which reads as a rendering fault rather
-              than as "there is more of this". */}
+              than as "there is more of this". It fades into `--background`,
+              the well's own fill (`.surface-inset`): fading into `--muted`
+              laid a darker band along the foot of the tile, a shadow the flat
+              recess does not have. */}
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-muted to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent"
           />
         </>
       ) : (
+        // `lift` rather than the glyph's own gesture (most kinds carry none):
+        // a host that marks itself `data-icon-trigger` — the Artifacts grid
+        // tile — lifts this mark under the pointer instead of lifting the card.
         <span className="flex size-full items-center justify-center text-muted-foreground">
-          <Glyph className="size-7" aria-hidden />
+          <Glyph className="size-7" motion="lift" aria-hidden />
         </span>
       )}
     </div>

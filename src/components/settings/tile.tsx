@@ -9,7 +9,7 @@
  * its name because three sections import it by that path.
  */
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 
 import { cn } from "@/lib/utils";
@@ -27,7 +27,10 @@ export type TileSaveState = "idle" | "saving" | "saved" | "failed";
  * confirms in the same voice, at the same place.
  *
  * Rendered in EVERY state, not mounted on demand: the live region has to exist
- * before the first save for the announcement to be reliable.
+ * before the first save for the announcement to be reliable. What changes is
+ * the keyed line INSIDE it, which fades in on each change of state, and the
+ * saved check springs in (`.check-morph`) — the status moves only because the
+ * save it reports did.
  */
 export function TileSaveStatus({
   state,
@@ -47,22 +50,22 @@ export function TileSaveStatus({
       )}
     >
       {state === "saving" && (
-        <>
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        <span key="saving" className="flex items-center gap-1.5 motion-safe:animate-fade-in">
+          <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
           Saving…
-        </>
+        </span>
       )}
       {state === "saved" && (
-        <>
-          <StatusIcons.success className="size-3.5 text-primary" aria-hidden />
+        <span key="saved" className="flex items-center gap-1.5 motion-safe:animate-fade-in">
+          <StatusIcons.success className="check-morph size-3.5 text-primary" aria-hidden />
           Saved
-        </>
+        </span>
       )}
       {state === "failed" && (
-        <>
-          <StatusIcons.error className="size-3.5" aria-hidden />
+        <span key="failed" className="flex items-center gap-1.5 motion-safe:animate-fade-in">
+          <StatusIcons.error className="size-3.5 shrink-0" aria-hidden />
           {failedMessage}
-        </>
+        </span>
       )}
     </span>
   );

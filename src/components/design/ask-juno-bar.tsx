@@ -16,9 +16,10 @@
  */
 
 import * as React from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ArrowUp, Loader2 } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { GlyphSwap } from "@/components/design/glyph-swap";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { NodeId } from "@/lib/design/types";
@@ -108,7 +109,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
       {(error || note) && (
         <div
           className={cn(
-            "mb-2 rounded-menu border px-3 py-2 text-caption leading-5",
+            "mb-2 flex items-start gap-2 rounded-menu border px-3 py-2 text-caption leading-5 motion-safe:animate-rise-in",
             // The neutral strip is a floating layer like any other, so it takes the
             // shared material rather than a fourth hand-mixed one (/95 fill, /70
             // hairline, blur-xl, no shadow). The error strip keeps its own tint.
@@ -116,7 +117,11 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           )}
           role={error ? "alert" : "status"}
         >
-          {error ?? note}
+          {/* A failure carries the failure mark, in its own colour, on the
+              first line's centre — the same circle every error in the product
+              draws. Juno's answer needs no glyph: the sentence is the answer. */}
+          {error && <StatusIcons.error className="mt-[3px] size-3.5 shrink-0" aria-hidden />}
+          <span className="min-w-0">{error ?? note}</span>
         </div>
       )}
 
@@ -129,7 +134,9 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
         // product — /95 fills, /70 hairlines and shadow-soft, which is the IN-FLOW
         // card shadow worn by an out-of-flow layer. Same material and same radius
         // rung as every other popover now.
-        className="flex items-center gap-2 rounded-popover overlay-glass p-1.5 pl-2.5"
+        // The one edge on the canvas that must be found: it darkens while the
+        // field has focus, the way the composer's does.
+        className="flex items-center gap-2 rounded-popover overlay-glass p-1.5 pl-2.5 transition-colors duration-fast ease-out-soft focus-within:border-foreground/30"
       >
         {/* No leading glyph. The sparkle that used to sit here said nothing the
             placeholder does not already say in words, and it was the one piece
@@ -142,14 +149,18 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
             aria-pressed={scopeToSelection}
             title={scopeToSelection ? "Only this selection will change" : "Juno may change anything in the document"}
             className={cn(
-              "pressable flex max-w-[10rem] shrink-0 items-center gap-1 rounded-control px-2 py-1 font-mono text-micro transition-colors duration-fast",
+              // `.pressable` eases the fill and ink itself; a `transition-*`
+              // utility here replaced its shorthand and snapped the press.
+              "pressable flex max-w-[10rem] shrink-0 items-center gap-1 rounded-control px-2 py-1 font-mono text-micro",
               scopeToSelection
-                ? "bg-primary/10 text-primary"
-                : "bg-muted/60 text-muted-foreground hover:text-foreground"
+                ? "bg-primary/10 text-primary hover:bg-primary/15"
+                : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
             <span className="truncate">{scopeToSelection ? scopeLabel : "Whole design"}</span>
-            {scopeToSelection && <ActionIcons.dismiss className="size-2.5 shrink-0" aria-hidden />}
+            {/* 12px, the floor of the ladder — it was 10px, below the size the
+                set is drawn to survive at. */}
+            {scopeToSelection && <ActionIcons.dismiss className="size-3 shrink-0" aria-hidden />}
           </button>
         )}
 
@@ -184,7 +195,13 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           // arithmetic the dropdown shell and the segmented track already use.
           className="shrink-0 rounded-control"
         >
-          {busy ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
+          {/* Send and busy share one key and cross-fade — the arrow does not
+              vanish in a frame the moment the request leaves. */}
+          <GlyphSwap
+            swapped={busy}
+            from={<ArrowUp className="size-4" />}
+            to={<Loader2 className={cn("size-4", busy && "motion-safe:animate-spin")} />}
+          />
         </Button>
       </form>
     </div>

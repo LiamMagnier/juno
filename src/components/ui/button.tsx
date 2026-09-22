@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Loader2 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,6 +28,16 @@ import { cn } from "@/lib/utils";
  *
  * Every variant carries a 1px border (transparent where it has no colour) so
  * switching variants never changes a button's size by 2px.
+ *
+ * LOADING (`loading`, opt-in). Pass the prop — `true` or `false` — and the
+ * label is kept in the box at zero opacity while a spinner fades in over it,
+ * so the button holds its width instead of collapsing to a spinner-sized pill
+ * mid-click, and the two cross-fade on the fast rung rather than cutting.
+ * While loading it is `disabled` (no double submit) and `aria-busy`, but NOT
+ * dimmed: a button that is working is not a button that is unavailable, and
+ * the spinner is what says so. Leave the prop off entirely and the children
+ * render exactly as before — the wrapper only exists for callers that asked.
+ * Not available with `asChild`, whose Slot needs a single child.
  */
 const buttonVariants = cva(
   "ui-button pressable relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -40,9 +51,9 @@ const buttonVariants = cva(
         // destructive red on hover via .danger-hover (globals.css) — the one
         // opt-in for delete/disconnect/remove controls that shouldn't shout.
         "destructive-outline": "danger-hover border-border bg-transparent text-destructive shadow-none",
-        // Flat → raised on hover → pressed while held. The raised material
-        // arrives WITH its hairline, so the border colour is set here rather
-        // than left to `.surface-raised` (a `border-*` utility on the base
+        // Flat at rest → tonal fill on hover → a step darker while held. The
+        // hairline darkens with the fill, so the border colour is set here
+        // rather than left to a surface class (a `border-*` utility on the base
         // would beat the components-layer class).
         outline:
           "border-border bg-transparent shadow-none hover:border-foreground/20 hover:bg-accent active:bg-secondary",
@@ -73,12 +84,61 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /**
+   * Opt-in busy state: the label cross-fades to a spinner in place and the
+   * button is disabled while `true`. See the note on `buttonVariants`.
+   */
+  loading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    const managed = loading !== undefined && !asChild;
+    const busy = managed && loading === true;
+    return (
+      <Comp
+        className={cn(
+          buttonVariants({ variant, size, className }),
+          // Working is not unavailable: keep full strength while busy.
+          busy && "disabled:opacity-100"
+        )}
+        ref={ref}
+        disabled={busy || disabled}
+        aria-busy={busy || undefined}
+        data-loading={busy ? "" : undefined}
+        {...props}
+      >
+        {managed ? (
+          <>
+            {/* The label keeps its box (and so the button's width) while it
+                fades; `gap-[inherit]` hands the button's own gap to the
+                icon + text pair inside it. */}
+            <span
+              className={cn(
+                "inline-flex items-center justify-center gap-[inherit] transition-opacity duration-fast ease-out-soft",
+                busy && "opacity-0"
+              )}
+            >
+              {children}
+            </span>
+            <span
+              aria-hidden="true"
+              className={cn(
+                // Opacity keeps its timing under reduced motion; the scale reads
+                // --motion-scale-from, which the reduced tier pins to 1.
+                "pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft",
+                busy ? "opacity-100" : "opacity-0 [transform:scale(var(--motion-scale-from,0.8))]"
+              )}
+            >
+              <Loader2 className="size-4 animate-spin" />
+            </span>
+          </>
+        ) : (
+          children
+        )}
+      </Comp>
+    );
   }
 );
 Button.displayName = "Button";

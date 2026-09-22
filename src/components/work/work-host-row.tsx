@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/ui/icons";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkHostState } from "@/lib/work/domain";
 import { HOST_STATE_LABEL, hostUnavailableReason } from "@/components/work/work-transport";
+import {
+  workRowChevronClass,
+  workRowClass,
+  workRowEnterClass,
+} from "@/components/work/shell/work-section";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
@@ -121,18 +126,19 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
     <Link
       href={`/permissions/${host.id}`}
       className={cn(
-        // The same rest/hover/press/focus set WorkSessionRow carries. These
-        // three sibling rows are the same object in three lists and had neither a
-        // focus ring — a keyboard reader could not see which row they were on —
-        // nor any press feedback.
-        "group flex items-start gap-3 rounded-field border border-border/60 bg-card px-3.5 py-3 transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        "motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.997]",
-        "[animation-fill-mode:backwards]",
+        // The shared list-row recipe (work-section.tsx): text on the well at
+        // rest, a tonal fill under the pointer, a darker one while pressed, and
+        // the global focus outline.
+        workRowClass,
+        workRowEnterClass,
+        "active:bg-secondary",
         // Dimmed for the same reason a paused schedule and a switched-off skill
         // are: it is still yours, it is still listed, and it is not going to do
         // anything. The chip is what says which of the two it is.
         (revoked || !host.enabled) && "opacity-75",
+        // The one row in the well that keeps an edge at rest: a Mac whose
+        // access was withdrawn is still listed, and the hairline is what keeps
+        // it from reading as one more machine that is merely asleep.
         revoked && "border-destructive/25"
       )}
       style={staggerDelay(index, "tight")}
@@ -158,10 +164,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
           {host.platform} · Juno {host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
         </span>
       </span>
-      <ChevronRight
-        className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
-        aria-hidden="true"
-      />
+      <ChevronRight className={workRowChevronClass} aria-hidden="true" />
     </Link>
   );
 }

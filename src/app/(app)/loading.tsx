@@ -1,3 +1,5 @@
+import { staggerDelay } from "@/lib/motion";
+
 /**
  * The app group's fallback, for the segments that do not ship one of their own.
  *
@@ -11,6 +13,10 @@
  * Deliberately shapeless: a page-sized pulse rather than a guess at a layout.
  * A skeleton that predicts the wrong structure is worse than one that predicts
  * none, because the correction reads as the page breaking.
+ *
+ * The bars shimmer on the shared stagger scale (`staggerDelay`, the `tight`
+ * rung for dense rows) rather than a private 40ms step, so this pulse keeps
+ * the same tempo as every other list in the product.
  */
 export default function AppGroupLoading() {
   return (
@@ -22,7 +28,7 @@ export default function AppGroupLoading() {
           <div
             key={i}
             className="skeleton h-9 rounded-control"
-            style={{ animationDelay: `${i * 40}ms` }}
+            style={staggerDelay(i, "tight")}
           />
         ))}
       </div>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, useReducedMotion, type MotionValue } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Sparkles } from "@/components/ui/icons";
 
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { Kbd } from "@/components/ui/kbd";
@@ -340,12 +340,16 @@ function Segment({
           segment is exactly as wide as an open one — a width change here would
           move the thumb for a reason that has nothing to do with the reader. */}
       {/* `size-3.5` (14px), not `size-4`. Measured in the reference, the glyphs
-          inside this control draw ~12.8px of ink; a 16px lucide box draws ~14.4,
+          inside this control draw ~12.8px of ink; a 16px box draws ~14.4,
           which is the size of a NAV row's mark — and a switch cell is 24px tall
           against a nav row's 32, so the same mark inside it reads as crowding
-          the cell rather than sitting in it. The optical stroke ladder in
-          globals.css thins the stroke to match, so this gets lighter as well as
-          smaller, which is what keeps it from looking like a shrunken nav icon. */}
+          the cell rather than sitting in it. The icon set keeps its regular
+          line at this rung (0.9px), so the mark gets lighter as well as
+          smaller rather than being a shrunken nav icon.
+
+          Each mark makes its one gesture when its cell is hovered — the
+          bubble and the brackets tilt (sidebar-motion-icon.tsx) — and the
+          thumb is what travels when it is pressed. */}
       {locked ? (
         <Sparkles className="relative size-3.5 shrink-0" aria-hidden="true" />
       ) : (

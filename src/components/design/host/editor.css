@@ -129,7 +129,9 @@ body,
    latency is most obvious. Same class, same 70ms dip, on both platforms.
    globals.css defines no reduced-motion reset for this class and leaves that
    to each call site's `motion-reduce:` utilities; the host's consumers carry
-   none, so the reset lives on the class here. */
+   none, so the reset lives on the class here. `filter` is on the list for the
+   same reason it is on the website's: the destructive Button's brightness
+   step on hover and press. */
 .pressable {
   transition:
     transform        var(--dur-press) var(--ease-out-soft),
@@ -137,7 +139,8 @@ body,
     background-color var(--dur-fast)  var(--ease-out-soft),
     border-color     var(--dur-fast)  var(--ease-out-soft),
     opacity          var(--dur-fast)  var(--ease-out-soft),
-    box-shadow       var(--dur-fast)  var(--ease-out-soft);
+    box-shadow       var(--dur-fast)  var(--ease-out-soft),
+    filter           var(--dur-fast)  var(--ease-out-soft);
 }
 .pressable:active {
   transform: scale(0.97);
@@ -168,4 +171,63 @@ textarea,
    behind the editor and reads as a rendering fault. */
 body {
   overscroll-behavior: none;
+}
+
+/* Interface glyphs, as globals.css draws them — every icon in the editor comes
+   from `src/components/ui/icons.tsx`, which stamps `.icon` and the glyph's one
+   hover gesture (`data-motion`). The host has no globals.css, so without this
+   the Mac editor's glyphs had no centred transform origin and never answered a
+   hover, while the same toolbar on the website nudged, turned and tilted. The
+   selectors and numbers are the website's; change them there first. */
+svg.icon {
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+svg.icon[data-motion] {
+  transition:
+    translate var(--dur-base) var(--ease-out-back),
+    rotate var(--dur-slow) var(--ease-out-back),
+    scale var(--dur-base) var(--ease-out-back);
+}
+svg.icon[data-motion="nudge-r"] { --icon-hover-t: 12% 0; }
+svg.icon[data-motion="nudge-l"] { --icon-hover-t: -12% 0; }
+svg.icon[data-motion="nudge-u"] { --icon-hover-t: 0 -12%; }
+svg.icon[data-motion="nudge-d"] { --icon-hover-t: 0 12%; }
+svg.icon[data-motion="nudge-ne"] { --icon-hover-t: 9% -9%; }
+svg.icon[data-motion="lift"] { --icon-hover-t: 0 -9%; }
+svg.icon[data-motion="turn"] { --icon-hover-r: 90deg; }
+svg.icon[data-motion="spin"] { --icon-hover-r: 60deg; }
+svg.icon[data-motion="cw"] { --icon-hover-r: 180deg; }
+svg.icon[data-motion="ccw"] { --icon-hover-r: -180deg; }
+svg.icon[data-motion="tilt"] { --icon-hover-r: -12deg; }
+svg.icon[data-motion="pop"] { --icon-hover-s: 1.14; }
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :is(
+      a,
+      button,
+      summary,
+      label,
+      [role="button"],
+      [role="link"],
+      [role="menuitem"],
+      [role="menuitemradio"],
+      [role="menuitemcheckbox"],
+      [role="option"],
+      [role="tab"],
+      [data-icon-trigger]
+    ):is(:hover, :focus-visible):not(:disabled, [aria-disabled="true"], [data-disabled])
+    svg.icon[data-motion],
+  [data-highlighted] svg.icon[data-motion] {
+    translate: var(--icon-hover-t, none);
+    rotate: var(--icon-hover-r, none);
+    scale: var(--icon-hover-s, none);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  svg.icon[data-motion] {
+    transition: none;
+  }
 }

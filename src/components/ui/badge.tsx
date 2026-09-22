@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * Mono metadata voice. `text-caption` carries the same 11px/0.02em the
- * arbitrary values were approximating. Badges are ~20px tall, so they take
- * the small `shadow-pop` rather than the full raised throw — a 3px/4px shadow
- * on a chip that size reads as a smudge. Solid fills carry the sheen; `muted`
- * is pressed into its ground; `outline` is a small raised tile.
+ * arbitrary values were approximating. Flat, like every in-flow surface: a
+ * fill or a hairline and no shadow at all — at ~20px tall any throw reads as a
+ * smudge. `muted` and `secondary` are tonal; `outline` is the hairline alone;
+ * `default` is the one accent fill and is for state, not decoration.
  */
 const badgeVariants = cva(
   "inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono text-caption font-medium transition-[color,background-color,border-color] duration-fast ease-out-soft",

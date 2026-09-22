@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Lock, Search, SearchX } from "lucide-react";
+import { ChevronDown, Lock, Search, SearchX } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -87,7 +87,7 @@ export function CompareModelPicker({
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="flex w-80 flex-col overflow-hidden p-0">
         <div className="relative border-b border-border/60 p-2">
-          <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -112,7 +112,9 @@ export function CompareModelPicker({
                   onClick={() => select(m)}
                   className="coarse:py-2.5"
                 >
-                  <ProviderLogo provider={m.provider} className="size-5 shrink-0" />
+                  {/* 16px, the row glyph rung — the same size the catalogue,
+                      the palette and the chip above draw this mark at. */}
+                  <ProviderLogo provider={m.provider} className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-ui font-medium">{m.name}</span>
                   <span className="shrink-0 font-mono text-caption text-muted-foreground">
                     {PROVIDERS[m.provider].label.split(" · ")[0]}

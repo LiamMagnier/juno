@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import {
@@ -94,7 +94,9 @@ export function ScheduleFireCard({ schedule }: { schedule: ClientWorkSchedule })
       </pre>
 
       {issued !== null && (
-        <div className="mt-3">
+        // Arrives rather than appears: the press that issued it is the reason
+        // it is here, and the block the reader has to copy from lands under it.
+        <div className="mt-3 motion-safe:animate-rise-in">
           <WorkStateNote tone="warning">
             Copy this now. It is stored only as a hash, so this is the one time it can be shown —
             issuing another replaces it.

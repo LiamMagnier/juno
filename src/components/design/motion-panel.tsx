@@ -29,7 +29,7 @@
  */
 
 import * as React from "react";
-import { EyeOff, Pause, Play, Plus, Repeat, SkipBack } from "lucide-react";
+import { EyeOff, Film, Pause, Play, Plus, Repeat, SkipBack } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   ANIMATABLE_PROPERTIES,
@@ -40,7 +40,16 @@ import {
   sampleTrack,
   sortedKeyframes,
 } from "@/components/design/motion-model";
-import { ColorField, PanelSelect, fieldClass } from "@/components/design/effects-panel";
+import {
+  ColorField,
+  ICON_TONE,
+  IconButton,
+  PanelEmpty,
+  PanelSelect,
+  fieldClass,
+  iconButtonClass,
+} from "@/components/design/effects-panel";
+import { GlyphSwap } from "@/components/design/glyph-swap";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import type {
   AnimatableProperty,
@@ -340,35 +349,41 @@ export function MotionPanel({
     : null;
 
   return (
-    <section className="flex min-h-0 shrink-0 flex-col border-t border-border/60 bg-card/40" aria-label="Motion timeline" style={{ height }}>
+    // Faded in when the dock opens: the canvas above has already made room, so
+    // the only news is what arrived in it.
+    <section
+      className="flex min-h-0 shrink-0 flex-col border-t border-border/60 bg-card/40 motion-safe:animate-fade-in"
+      aria-label="Motion timeline"
+      style={{ height }}
+    >
       {/* Transport and the animation being edited */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-2 py-1.5">
-        <button
-          type="button"
+        {/* Play and pause share one key and cross-fade, so the control reads as
+            one thing whose state flipped rather than two buttons trading places. */}
+        <IconButton
+          size="md"
           disabled={!animation}
-          aria-label={playing ? "Pause" : "Play"}
+          label={playing ? "Pause" : "Play"}
           onClick={() => {
             if (!animation) return;
             setEngaged(true);
             if (!playing && timeMs >= span) setTimeMs(0);
             setPlaying((value) => !value);
           }}
-          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
-          {playing ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
-        </button>
-        <button
-          type="button"
+          <GlyphSwap swapped={playing} from={<Play className="size-3.5" />} to={<Pause className="size-3.5" />} />
+        </IconButton>
+        <IconButton
+          size="md"
           disabled={!animation}
-          aria-label="Back to the start"
+          label="Back to the start"
           onClick={() => {
             setPlaying(false);
             setTimeMs(0);
           }}
-          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
           <SkipBack className="size-3.5" aria-hidden />
-        </button>
+        </IconButton>
         <span className="w-16 shrink-0 text-right font-mono text-micro tabular-nums text-muted-foreground">{Math.round(timeMs)} ms</span>
 
         <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
@@ -398,19 +413,19 @@ export function MotionPanel({
               disabled={readOnly}
               onCommit={(value) => write({ ...animation, durationMs: Math.max(0, value) }, "Set animation duration")}
             />
-            <button
-              type="button"
+            {/* A mode, so it holds the tonal "on" fill the editor's tools use
+                rather than turning accent: the accent on this strip is kept for
+                the playhead, which is the one thing here that is live. */}
+            <IconButton
+              size="md"
               disabled={readOnly}
               aria-pressed={animation.loop}
-              aria-label="Loop"
+              label="Loop"
               onClick={() => write({ ...animation, loop: !animation.loop }, animation.loop ? "Stop looping" : "Loop animation")}
-              className={cn(
-                "pressable rounded-md p-1 transition-colors disabled:opacity-40",
-                animation.loop ? "text-primary" : "text-muted-foreground hover:text-foreground"
-              )}
+              className="aria-pressed:bg-secondary aria-pressed:text-foreground"
             >
               <Repeat className="size-3.5" aria-hidden />
-            </button>
+            </IconButton>
           </>
         )}
 
@@ -418,25 +433,25 @@ export function MotionPanel({
           type="button"
           disabled={readOnly}
           onClick={addAnimation}
-          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-micro text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
         >
           <Plus className="size-3" aria-hidden /> New
         </button>
         {animation && (
-          <button
-            type="button"
+          <IconButton
+            size="md"
             disabled={readOnly}
-            aria-label={`Delete ${animation.name}`}
+            destructive
+            label={`Delete ${animation.name}`}
             onClick={() => {
               onApply([{ op: "deleteAnimation", animationId: animation.id }], "Delete animation");
               setAnimationId(null);
               setEngaged(false);
               setPlaying(false);
             }}
-            className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
           >
             <ActionIcons.delete className="size-3.5" aria-hidden />
-          </button>
+          </IconButton>
         )}
 
         <div className="flex-1" />
@@ -448,33 +463,34 @@ export function MotionPanel({
               setPlaying(false);
               setEngaged(false);
             }}
-            className="pressable rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-micro text-primary transition-colors hover:bg-primary/15"
+            className="pressable rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-micro text-primary hover:bg-primary/15 motion-safe:animate-fade-in"
           >
             Previewing · back to the design
           </button>
         )}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close the timeline"
-          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-        >
+        <IconButton size="md" label="Close the timeline" onClick={onClose}>
           <ActionIcons.dismiss className="size-3.5" aria-hidden />
-        </button>
+        </IconButton>
       </div>
 
       {!animation ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
-          <p className="text-caption text-muted-foreground">Nothing in this document animates yet.</p>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={addAnimation}
-            className="pressable rounded-control border border-border/60 px-2.5 py-1.5 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
-          >
-            New animation
-          </button>
-        </div>
+        <PanelEmpty
+          icon={Film}
+          className="min-h-0 flex-1 justify-center"
+          action={
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={addAnimation}
+              className="pressable flex items-center gap-1.5 rounded-control border border-border/60 px-2.5 py-1.5 text-caption text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:min-h-10"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              New animation
+            </button>
+          }
+        >
+          Nothing in this document animates yet.
+        </PanelEmpty>
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* Track list */}
@@ -492,16 +508,19 @@ export function MotionPanel({
                 type="button"
                 disabled={readOnly || selection.length === 0}
                 onClick={addTracks}
+                // A native title, not the tooltip every other key here has:
+                // the hint is the reason the button is DISABLED, and a Radix
+                // tooltip never opens on a disabled control.
                 title={selection.length === 0 ? "Select a layer first" : undefined}
                 aria-label="Add a track for the selected layers"
-                className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                className={cn(iconButtonClass, ICON_TONE.neutral, "size-5 disabled:pointer-events-auto disabled:hover:bg-transparent")}
               >
                 <Plus className="size-3" aria-hidden />
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {animation.tracks.length === 0 && (
-                <p className="px-2 py-4 text-center text-caption text-muted-foreground">
+                <p className="px-2 py-4 text-center text-caption text-muted-foreground motion-safe:animate-fade-in">
                   {selection.length === 0 ? "Select a layer, then add a property to animate." : "Add a property to animate."}
                 </p>
               )}
@@ -512,7 +531,7 @@ export function MotionPanel({
                 return (
                   <div
                     key={trackKey(track)}
-                    className="group flex items-center gap-1 border-b border-border/40 px-2"
+                    className="group flex items-center gap-1 border-b border-border/40 px-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-safe:animate-fade-in"
                     style={{ height: ROW_HEIGHT }}
                   >
                     <button
@@ -549,24 +568,25 @@ export function MotionPanel({
                         <span className="sr-only">Does not apply to this layer</span>
                       </span>
                     )}
-                    <button
-                      type="button"
+                    <IconButton
+                      nativeHint
                       disabled={readOnly}
                       onClick={() => addKeyframe(track)}
-                      aria-label={`Add a keyframe to ${node?.name ?? track.nodeId} ${info.label}`}
-                      className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                      label={`Add a keyframe to ${node?.name ?? track.nodeId} ${info.label}`}
+                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:opacity-100"
                     >
                       <Plus className="size-3" aria-hidden />
-                    </button>
-                    <button
-                      type="button"
+                    </IconButton>
+                    <IconButton
+                      nativeHint
                       disabled={readOnly}
+                      destructive
                       onClick={() => removeTrack(track)}
-                      aria-label={`Remove the ${info.label} track`}
-                      className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                      label={`Remove the ${info.label} track`}
+                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:opacity-100"
                     >
                       <ActionIcons.delete className="size-3" aria-hidden />
-                    </button>
+                    </IconButton>
                   </div>
                 );
               })}
@@ -658,7 +678,7 @@ export function MotionPanel({
                           aria-label={`Keyframe at ${Math.round(at)} ms`}
                           aria-pressed={isSelected}
                           className={cn(
-                            "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-micro border transition-colors",
+                            "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-micro border transition-colors duration-fast ease-out-soft",
                             isSelected ? "border-primary bg-primary" : "border-primary/70 bg-background hover:bg-primary/40",
                             readOnly ? "cursor-default" : "cursor-grab"
                           )}
@@ -710,7 +730,7 @@ export function MotionPanel({
 
       {/* The selected keyframe */}
       {selected && (
-        <div className="flex shrink-0 flex-wrap items-end gap-2 border-t border-border/60 px-2 py-1.5">
+        <div className="flex shrink-0 flex-wrap items-end gap-2 border-t border-border/60 px-2 py-1.5 motion-safe:animate-fade-in">
           <InlineNumber
             label="Time"
             value={Math.round(selected.keyframe.time)}
@@ -758,8 +778,9 @@ export function MotionPanel({
             type="button"
             disabled={readOnly}
             onClick={() => deleteKeyframe(selected.track, selected.index)}
-            className="pressable rounded-md px-1.5 py-1 font-mono text-micro text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+            className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
           >
+            <ActionIcons.delete className="size-3" aria-hidden />
             Delete keyframe
           </button>
         </div>

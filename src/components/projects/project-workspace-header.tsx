@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Pin, NotebookPen } from "lucide-react";
+import { Pin, NotebookPen } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import {
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 
 interface ProjectWorkspaceHeaderProps {
   project: {
@@ -159,20 +160,25 @@ export function ProjectWorkspaceHeader({
               selected={isStarred}
               aria-pressed={isStarred}
               aria-label={isStarred ? "Unpin project" : "Pin project"}
+              title={isStarred ? "Unpin project" : "Pin project"}
               className={cn(isStarred && "text-primary hover:text-primary")}
             >
-              <Pin className={cn("size-4", isStarred && "fill-current")} aria-hidden="true" />
+              <GlyphSwap
+                active={isStarred}
+                off={<Pin className="size-4" />}
+                on={<Pin weight="fill" className="size-4" />}
+              />
             </Pressable>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Pressable kind="icon" size="md" aria-label="Project actions">
+                <Pressable kind="icon" size="md" aria-label="Project actions" title="Project actions">
                   <ActionIcons.more className="size-4" aria-hidden="true" />
                 </Pressable>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className={MENU_W}>
                 <DropdownMenuItem onSelect={openRename}>
-                  <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
+                  <ActionIcons.edit className="size-4" aria-hidden="true" />
                   <span>Rename</span>
                 </DropdownMenuItem>
                 {/* No "Edit instructions" item. The outline Instructions button
@@ -191,7 +197,7 @@ export function ProjectWorkspaceHeader({
                   onSelect={onDelete}
                   variant="destructive"
                 >
-                  <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
+                  <ActionIcons.delete className="size-4" aria-hidden="true" />
                   <span>Delete project</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>

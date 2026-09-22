@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { FileUp, Loader2 } from "lucide-react";
+import { FileUp, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
@@ -170,13 +170,19 @@ export function ImportHistoryCard() {
             dragging && "border-primary/60 bg-primary/10"
           )}
         >
+          {/* Each phase is keyed, so moving from one to the next replays the
+              fade: the drop zone's contents change in place, and without an
+              entrance "Uploading" became "Importing" between two frames. */}
           {phase.name === "uploading" ? (
-            <div className="mx-auto max-w-xs">
+            <div key="uploading" className="mx-auto max-w-xs motion-safe:animate-fade-in">
               <p className="font-sans text-heading">Uploading your export</p>
               {/* duration-base ease-out-soft: the visually identical meters on
                   the profile page run on those rungs, and this one was on the
                   browser's 150ms `ease` — two progress bars in the same product
-                  moving on different curves. */}
+                  moving on different curves. The fill travels by `scaleX` from
+                  the left edge, not by `width`: only transform and opacity
+                  animate (ICONS_AND_MOTION.md §2.2.8), which is also how the
+                  model-mix bars on the account pane move. */}
               <div
                 role="progressbar"
                 aria-label="Upload progress"
@@ -186,8 +192,8 @@ export function ImportHistoryCard() {
                 className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10"
               >
                 <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
-                  style={{ width: `${Math.round(phase.progress * 100)}%` }}
+                  className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+                  style={{ transform: `scaleX(${phase.progress})` }}
                 />
               </div>
               <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">
@@ -195,14 +201,14 @@ export function ImportHistoryCard() {
               </p>
             </div>
           ) : phase.name === "importing" ? (
-            <div className="mx-auto max-w-sm">
-              <Loader2 className="mx-auto mb-2 size-6 animate-spin text-muted-foreground/70" />
+            <div key="importing" className="mx-auto max-w-sm motion-safe:animate-fade-in">
+              <Loader2 className="mx-auto mb-2 size-6 text-muted-foreground motion-safe:animate-spin" aria-hidden />
               <p className="font-sans text-heading">Importing conversations</p>
               <p className="pt-1 text-body text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
             </div>
           ) : phase.name === "done" ? (
-            <div className="mx-auto max-w-sm">
-              <StatusIcons.success className="mx-auto mb-2 size-6 text-primary" />
+            <div key="done" className="mx-auto max-w-sm motion-safe:animate-fade-in">
+              <StatusIcons.success className="check-morph mx-auto mb-2 size-6 text-primary" aria-hidden />
               <p className="font-sans text-heading">
                 {phase.imported > 0
                   ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
@@ -218,8 +224,8 @@ export function ImportHistoryCard() {
               </Button>
             </div>
           ) : (
-            <div className="mx-auto max-w-sm">
-              <FileUp className="mx-auto mb-2 size-6 text-muted-foreground/70" />
+            <div key="idle" className="mx-auto max-w-sm">
+              <FileUp className="mx-auto mb-2 size-6 text-muted-foreground" aria-hidden />
               <p className="font-sans text-heading">Import your history</p>
               <p className="pt-1 text-body text-muted-foreground">
                 ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.

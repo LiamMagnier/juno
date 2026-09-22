@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Plus, Sun } from "lucide-react";
+import { Monitor, Moon, Plus, Sun } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { Slider } from "@/components/ui/slider";
@@ -43,9 +43,17 @@ const AccentSwatch = React.forwardRef<
       onClick={onClick}
       // No hover scale: the ring is the state, and a swatch that grows under
       // the pointer was the one gesture in the product nothing else makes.
+      //
+      // The ring is an OUTLINE with an offset, not a `ring-offset-background`
+      // box-shadow: the offset band of a ring is painted in a named colour,
+      // and this picker renders on the page AND inside the settings dialog,
+      // where --background is not the surface — so the selected swatch wore a
+      // page-coloured halo. An outline's offset is transparent and shows
+      // whatever is really underneath. Keyboard focus keeps the --ring colour
+      // the global :focus-visible rule would have drawn.
       className={cn(
-        "overflow-hidden ring-offset-2 ring-offset-background hover:bg-transparent",
-        selected && "ring-2 ring-foreground"
+        "overflow-hidden hover:bg-transparent",
+        selected && "outline outline-2 outline-offset-2 outline-foreground focus-visible:outline-ring"
       )}
       style={{ background, color: swatchInk(inkAgainst ?? background) }}
       {...rest}
@@ -88,7 +96,11 @@ const CustomPickerButton = React.forwardRef<
         onClick={() => pickerRef.current?.click()}
         {...rest}
       >
-        {selected ? <StatusIcons.success className="size-4" /> : <Plus className="size-4 text-background" />}
+        {selected ? (
+          <StatusIcons.success className="check-morph size-4" />
+        ) : (
+          <Plus className="size-4 text-background" />
+        )}
       </AccentSwatch>
     </div>
   );
@@ -160,10 +172,22 @@ export function GeneralSection() {
                   selected={selected}
                   aria-checked={selected}
                   onClick={() => void setThemePref(t.value)}
-                  className="items-center gap-1.5"
+                  className="group items-center gap-1.5"
                   {...themeOption(i)}
                 >
-                  <t.icon className="size-4" />
+                  {/* Muted at rest, the tile's ink on hover or when chosen —
+                      the chrome-glyph rule, so the chosen theme reads by its
+                      edge and its ink rather than by a coloured glyph. The ink
+                      fades on a wrapper so the sun's turn and the moon's tilt
+                      keep the base-layer transition they settle on. */}
+                  <span
+                    className={cn(
+                      "flex transition-colors duration-fast ease-out-soft",
+                      selected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  >
+                    <t.icon className="size-4" />
+                  </span>
                   {t.label}
                 </Pressable>
               );
@@ -184,7 +208,7 @@ export function GeneralSection() {
                   onClick={() => void setAccent(a.id)}
                   {...accentOption(i)}
                 >
-                  {selected && <StatusIcons.success className="size-4" />}
+                  {selected && <StatusIcons.success className="check-morph size-4" />}
                 </AccentSwatch>
               );
             })}

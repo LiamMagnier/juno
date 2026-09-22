@@ -5,11 +5,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
+import { GlyphSwap } from "@/components/auth/glyph-swap";
+import { cn } from "@/lib/utils";
 
 function AppleIcon() {
   return (
@@ -297,21 +299,28 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
       {formError && (
         // role="alert" so an error that arrives after a submit is announced;
         // the destructive tint at low alpha is the product's warning-well
-        // recipe (rounded-field, /35 border, /10 fill) in the failure hue.
+        // recipe (rounded-field, /35 border, /10 fill) in the failure hue. It
+        // rises in on the base rung: it arrives after a submit, and a message
+        // that simply appears above the field the reader is looking at is easy
+        // to miss.
         <p
           role="alert"
-          className="flex items-start gap-2 rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-body text-foreground"
+          className="flex items-start gap-2 rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-body text-foreground motion-safe:animate-rise-in"
         >
-          <StatusIcons.error className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+          <StatusIcons.error className="mt-1 size-4 shrink-0 text-destructive" aria-hidden />
           <span>{formError}</span>
         </p>
       )}
 
       {notice && (
+        // The neutral twin of the error well above: the same shape and the same
+        // leading glyph slot, in the info mark and muted ink, so a notice and an
+        // error read as two tones of one component rather than two components.
         <p
           role="status"
-          className="flex items-start gap-2 rounded-field border border-border/60 bg-muted/40 px-3.5 py-3 text-body text-foreground"
+          className="flex items-start gap-2 rounded-field border border-border/60 bg-muted/40 px-3.5 py-3 text-body text-foreground motion-safe:animate-rise-in"
         >
+          <StatusIcons.info className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span>{notice}</span>
         </p>
       )}
@@ -335,8 +344,16 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
                 spinners already do and these four did not. A control that spins
                 forever is the plainest case prefers-reduced-motion exists for,
                 and nothing is lost: the button is disabled and aria-busy, so the
-                busy state is still both announced and drawn. */}
-            {googleLoading ? <Loader2 className="motion-safe:animate-spin" aria-hidden /> : <GoogleIcon />}
+                busy state is still both announced and drawn. The mark and the
+                spinner share one cell and cross-fade, so the press reads as the
+                same button going to work, not a glyph being swapped out. */}
+            <GlyphSwap
+              state={googleLoading ? "busy" : "mark"}
+              glyphs={{
+                mark: <GoogleIcon />,
+                busy: <Loader2 className={cn("size-4", googleLoading && "motion-safe:animate-spin")} />,
+              }}
+            />
             Continue with Google
           </Button>
         </>
@@ -354,7 +371,13 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             signIn("apple", { callbackUrl });
           }}
         >
-          {appleLoading ? <Loader2 className="motion-safe:animate-spin" aria-hidden /> : <AppleIcon />}
+          <GlyphSwap
+            state={appleLoading ? "busy" : "mark"}
+            glyphs={{
+              mark: <AppleIcon />,
+              busy: <Loader2 className={cn("size-4", appleLoading && "motion-safe:animate-spin")} />,
+            }}
+          />
           Continue with Apple
         </Button>
       )}
@@ -448,21 +471,30 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             // aria-pressed, not a label swap: the accessible name stays "Show
             // password" and the state says whether it is on, so a screen reader
             // hears one control changing rather than two controls trading places.
+            // The eye and the struck eye cross-fade in one cell for the same
+            // reason: one control changing state, not two glyphs trading places.
             <Pressable
               kind="icon"
               size="sm"
               aria-label="Show password"
+              title="Show password"
               aria-pressed={showPassword}
               onClick={() => setShowPassword((v) => !v)}
             >
-              {showPassword ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+              <GlyphSwap
+                state={showPassword ? "hide" : "show"}
+                glyphs={{ show: <Eye className="size-4" />, hide: <EyeOff className="size-4" /> }}
+              />
             </Pressable>
           }
         />
         </div>
 
         {step === "code" && (
-          <>
+          // One block rising in on the base rung: the credentials above are
+          // hidden in the same frame, so without an entrance the card silently
+          // becomes a different card under the reader's pointer.
+          <div className="space-y-4 motion-safe:animate-rise-in">
             <p className="text-body text-muted-foreground">
               This account uses two-step verification. Enter the 6-digit code from your authenticator app — or one of
               your recovery codes if you can&apos;t reach it.
@@ -486,7 +518,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
               spellCheck={false}
               maxLength={20}
             />
-          </>
+          </div>
         )}
 
         {/* Disabled while the Google redirect is in flight too. Clicking Continue
@@ -495,7 +527,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             guards against the reverse order, and this closes the pair.
             aria-busy so the state is announced, not only drawn. */}
         <Button type="submit" className="w-full" disabled={busy} aria-busy={loading}>
-          {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+          {loading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
           {step === "code" ? "Verify and sign in" : mode === "signup" ? "Create account" : "Sign in"}
         </Button>
 
@@ -538,7 +570,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             signIn("resend", { email: address, callbackUrl });
           }}
         >
-          {linkLoading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+          {linkLoading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
           Email me a sign-in link instead
         </Button>
       )}

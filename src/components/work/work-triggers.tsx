@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Plus, Radio } from "lucide-react";
+import { Clock, Plus, Radio } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -353,10 +353,11 @@ export function TriggerListEditor({
           className="rounded-field border border-border/60 bg-card px-3.5 py-3"
         >
           <div className="flex flex-wrap items-center gap-2">
+            {/* `size-4` beside `text-ui`, the row rung of the icon ladder. */}
             {isTimeTriggerKind(trigger.kind) ? (
-              <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             ) : (
-              <Radio className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Radio className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             )}
             {/* `text-ui`, the dense-UI rung. This card is a control panel row
                 rather than a list item — its own detail lines are `micro` — and
@@ -397,9 +398,9 @@ export function TriggerListEditor({
                     : "A schedule needs at least one trigger. Change this one instead."
               }
               aria-label="Remove this trigger"
-              className="text-muted-foreground/70 hover:text-destructive"
+              className="text-muted-foreground hover:text-destructive"
             >
-              <ActionIcons.delete className="size-3.5" aria-hidden="true" />
+              <ActionIcons.delete className="size-4" aria-hidden="true" />
             </Button>
           </div>
 
@@ -665,7 +666,15 @@ function SwitchField({
     // `px-3.5 py-2.5`, the metrics the identical switch row in
     // work-host-settings.tsx uses. One object — a bordered row with a label and
     // a Switch — was drawn at two gutters and two heights in two Work forms.
-    <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
+    // It shares that row's hover too: the whole row is the switch's label, so
+    // the whole row takes the tonal fill while it can be pressed.
+    <label
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5",
+        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        !disabled && "cursor-pointer hover:bg-accent"
+      )}
+    >
       <span className="min-w-0 text-ui leading-relaxed text-foreground">{label}</span>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
     </label>

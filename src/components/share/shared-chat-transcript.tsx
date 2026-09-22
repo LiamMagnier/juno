@@ -1,4 +1,4 @@
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -33,9 +33,11 @@ function ArtifactChip({ title, type }: { title: string; type: ArtifactType }) {
   return (
     // The one raised object in a flat transcript: the artifact is a thing, not
     // prose, so it takes the tile recipe — `surface-raised` at rounded-card
-    // with the app's inset icon tile inside (16 = 12 + 4, concentric).
+    // with the app's inset icon tile inside (16 = 12 + 4, concentric). The
+    // glyph is muted, as it is on the live artifact card: the accent marks
+    // state, and a frozen share has none.
     <div className="surface-raised my-3 flex items-center gap-3 rounded-card px-4 py-3">
-      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-primary">
+      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
         <Icon className="size-4" aria-hidden />
       </span>
       <div className="min-w-0">

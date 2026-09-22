@@ -672,30 +672,93 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* One optical weight for interface glyphs. Product/connector marks use their
-     own SVGs and are intentionally outside this Lucide-only rule. */
-  svg.lucide {
-    stroke-width: 1.75;               /* 24px reference — the house weight, unchanged */
+  /*
+   * Interface glyphs — `src/components/ui/icons.tsx` draws every one of them.
+   *
+   * There is no stroke ladder any more. The previous set was a single path
+   * stroked in viewBox units, so its line thinned as the box shrank and a
+   * twelve-rung ladder of `stroke-width` overrides tried to hold it steady —
+   * and missed every glyph sized by its parent. The current set is drawn as
+   * outlines at designed weights, so the line is part of the drawing and the
+   * optical choice (regular, or the heavier cut at 12px and under) is made in
+   * `icons.tsx` from the size the call site asks for.
+   *
+   * `transform-box: fill-box` + a centred origin so the hover articulations
+   * below turn a glyph about its own middle rather than its box's corner.
+   * `translate` / `rotate` / `scale` are the INDIVIDUAL transform properties,
+   * not `transform`: a call site that flips a caret with `rotate-180` writes
+   * `transform`, and the two compose instead of the hover erasing the flip.
+   */
+  svg.icon {
+    flex-shrink: 0;
     shape-rendering: geometricPrecision;
+    transform-box: fill-box;
+    transform-origin: center;
   }
-  /* Optical sizing. A single stroke-width on a 24 viewBox does the exact opposite
-     of what optical sizing is for: the number is in viewBox units, so it scales
-     down with the box and the smallest icons draw the thinnest. At the sizes
-     actually used that meant size-4 → 1.167px, size-3.5 → 1.021px and size-3 →
-     0.875px, i.e. sub-pixel. Effective stroke has to grow sub-linearly as the box
-     shrinks; the 24px row keeps today's exact value so the weight is not being
-     redefined, only held steady across sizes. */
-  svg.lucide.h-3,    svg.lucide.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
-  svg.lucide.h-3\.5, svg.lucide.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
-  svg.lucide.h-4,    svg.lucide.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
-  svg.lucide.h-4\.5, svg.lucide.size-4\.5 { stroke-width: 2.10; }  /* 18px → 1.575px */
-  svg.lucide.h-5,    svg.lucide.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
-  svg.lucide.h-6,    svg.lucide.size-6    { stroke-width: 1.75; }  /* reference      */
-  svg.lucide.h-7,    svg.lucide.size-7    { stroke-width: 1.60; }
-  svg.lucide.h-8,    svg.lucide.size-8    { stroke-width: 1.50; }
-  svg.lucide.h-9,    svg.lucide.size-9    { stroke-width: 1.42; }
-  svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
-  svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
+
+  /*
+   * Hover articulation — one small gesture per glyph, declared in icons.tsx as
+   * `data-motion` and played when the INTERACTIVE element around the glyph is
+   * hovered or keyboard-focused. The glyph never moves on its own and never
+   * moves inside a disabled control.
+   *
+   * Every entry says what the action does (IconMotion in icons.tsx): an arrow
+   * goes where it points, a plus turns, a gear turns, a pen is picked up, a
+   * copied sheet lifts, a star swells. Carets, spinners and status marks carry
+   * no articulation, so a disclosure never twitches before it is pressed.
+   *
+   * Travel is a PERCENTAGE of the glyph (12% ≈ 2px at 16px, 1.4px at 12px), so
+   * one rule reads the same at every size. The curve is --ease-out-back: a
+   * ~3% overrun, which is the difference between a glyph being moved and a
+   * glyph settling. Rotations get the slower rung so a half turn is seen as a
+   * turn rather than as a flicker. Release runs the same spring back.
+   */
+  svg.icon[data-motion] {
+    transition:
+      translate var(--dur-base) var(--ease-out-back),
+      rotate var(--dur-slow) var(--ease-out-back),
+      scale var(--dur-base) var(--ease-out-back);
+  }
+  svg.icon[data-motion="nudge-r"] { --icon-hover-t: 12% 0; }
+  svg.icon[data-motion="nudge-l"] { --icon-hover-t: -12% 0; }
+  svg.icon[data-motion="nudge-u"] { --icon-hover-t: 0 -12%; }
+  svg.icon[data-motion="nudge-d"] { --icon-hover-t: 0 12%; }
+  svg.icon[data-motion="nudge-ne"] { --icon-hover-t: 9% -9%; }
+  svg.icon[data-motion="lift"] { --icon-hover-t: 0 -9%; }
+  svg.icon[data-motion="turn"] { --icon-hover-r: 90deg; }
+  svg.icon[data-motion="spin"] { --icon-hover-r: 60deg; }
+  svg.icon[data-motion="cw"] { --icon-hover-r: 180deg; }
+  svg.icon[data-motion="ccw"] { --icon-hover-r: -180deg; }
+  svg.icon[data-motion="tilt"] { --icon-hover-r: -12deg; }
+  svg.icon[data-motion="pop"] { --icon-hover-s: 1.14; }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    :is(
+        a,
+        button,
+        summary,
+        label,
+        [role="button"],
+        [role="link"],
+        [role="menuitem"],
+        [role="menuitemradio"],
+        [role="menuitemcheckbox"],
+        [role="option"],
+        [role="tab"],
+        [data-icon-trigger]
+      ):is(:hover, :focus-visible):not(:disabled, [aria-disabled="true"], [data-disabled])
+      svg.icon[data-motion],
+    /* Radix menus move focus to the highlighted row instead of hovering it. */
+    [data-highlighted] svg.icon[data-motion] {
+      translate: var(--icon-hover-t, none);
+      rotate: var(--icon-hover-r, none);
+      scale: var(--icon-hover-s, none);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    svg.icon[data-motion] { transition: none; }
+  }
+
 
   /* No film grain. Claude and ChatGPT ship clean paper; the fractal-noise
      overlay that used to sit here at 2% read as texture on a 5K display and
@@ -930,16 +993,6 @@
     width: 1rem;
     height: 1rem;
   }
-  /* …and the matching optical weight for that 1rem.
-     The ladder above keys on a size class present ON the svg, which an icon
-     sized by its BUTTON never has — that is the whole point of the rule above.
-     So those icons kept `svg.lucide`'s 24px-reference 1.75 while an identical
-     16px icon that spelled `size-4` out got 2.25: the same glyph, two visibly
-     different stroke weights, decided by whether the author happened to write
-     the size. Same value as the `size-4` row, and it must move with it. */
-  .ui-button svg.lucide:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
-    stroke-width: 2.25;
-  }
 
   /* Tactile press feedback for buttons/chips/cards — not large surfaces. Covers the
      common transition properties itself, so drop `transition-colors` when adding it
@@ -949,13 +1002,18 @@
        above the direct-manipulation threshold for movement: a press taking 120ms
        to reach scale(0.97) is felt as lag on the one interaction where latency is
        most obvious. Everything else keeps the hover timing it always had. */
+    /* `filter` is on the list because the destructive Button brightens on
+       hover and dims under the finger with `brightness()`; without it that
+       tonal step was the one hover in the button family that cut instead of
+       cross-fading. */
     transition:
       transform        var(--dur-press) var(--ease-out-soft),
       color            var(--dur-fast)  var(--ease-out-soft),
       background-color var(--dur-fast)  var(--ease-out-soft),
       border-color     var(--dur-fast)  var(--ease-out-soft),
       opacity          var(--dur-fast)  var(--ease-out-soft),
-      box-shadow       var(--dur-fast)  var(--ease-out-soft);
+      box-shadow       var(--dur-fast)  var(--ease-out-soft),
+      filter           var(--dur-fast)  var(--ease-out-soft);
   }
   .pressable:active {
     transform: scale(0.97);
@@ -963,25 +1021,20 @@
 
   /* Destructive hover language — every dangerous control (delete, disconnect,
      remove, revoke) speaks the same way on hover: the background fills
-     destructive red, text and icon go white, and the icon lifts a touch.
-     Composable with any Button variant, menu item, or bare .pressable control —
-     the host element's own transition animates the fill; this class only adds
-     the hover state and the icon motion. The selector is doubled so the hover
-     state (0,3,0) outranks variant hover utilities (e.g. ghost's hover:bg-accent). */
+     destructive red and text and icon go white. Composable with any Button
+     variant, menu item, or bare .pressable control — the host element's own
+     transition animates the fill; this class only adds the hover state. The
+     selector is doubled so the hover state (0,3,0) outranks variant hover
+     utilities (e.g. ghost's hover:bg-accent).
+
+     The icon no longer swells here. It used to scale to 1.08 on top of the
+     glyph's own hover articulation (`svg.icon[data-motion]` above — a trash
+     can already lifts), which gave one glyph two gestures at once; a glyph
+     carries at most one (docs/design/ICONS_AND_MOTION.md §1.3). */
   .danger-hover.danger-hover:hover {
     border-color: hsl(var(--destructive));
     background-color: hsl(var(--destructive));
     color: hsl(var(--destructive-foreground));
-  }
-  .danger-hover svg {
-    transition: transform var(--dur-fast) var(--ease-out-soft);
-  }
-  .danger-hover:hover svg {
-    transform: scale(1.08);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .danger-hover svg { transition: none; }
-    .danger-hover:hover svg { transform: none; }
   }
 
   /* ---- Surfaces (docs/design/FLAT_UI.md §2) ---------------------------------
@@ -1788,6 +1841,17 @@
 
   @media (max-width: 380px) {
     .generation-media__play-icon { width: 2.4rem; height: 2.4rem; padding: .58rem .52rem .58rem .72rem; }
+  }
+  /* The same plate carrying the set's `Play` glyph (`svg.icon`) rather than a
+     hand-drawn triangle. The asymmetric padding above nudges a raw path whose
+     bounding box is centred; the set's triangle is already drawn with its
+     CENTROID on the grid's centre — the optical correction is in the drawing —
+     so it takes even padding, or it would be corrected twice. It also fills
+     ~70% of its grid where the old path filled ~35% of its own, so the padding
+     is larger: a 14px glyph box draws the same ~10px triangle on the plate. */
+  .generation-media__play-icon.icon { padding: 1.0625rem; }
+  @media (max-width: 380px) {
+    .generation-media__play-icon.icon { padding: .85rem; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -3210,6 +3274,109 @@
   }
 }
 
+/* ---- Sonner's toast motion, on the ladder ----------------------------------
+ *
+ * Sonner already moves the right way — a toast slides in from its own edge and
+ * fades, and the stack re-deals itself when one leaves — but on its own clock:
+ * 400ms on the browser's stock `ease` for arrival AND departure, the only
+ * floating layer in the product off the token ladder.
+ *
+ * Arrival is long travel (a full toast height), so it takes the long-travel
+ * pair: --dur-slow on --ease-out-expo, front-loaded so the card is readable
+ * almost at once and then settles. Departure accelerates on --ease-in at
+ * --dur-exit, the same exit every other layer uses — and it now FINISHES:
+ * sonner unmounts a removed toast after 200ms, so its 400ms exit was being cut
+ * off at ~80% with the card still faintly visible. 160ms lands inside that.
+ *
+ * Only duration and timing are set, never `transition-property`: sonner turns
+ * transitions off while a toast is being swiped (`transition: none`), and
+ * leaving the property list to it keeps a dragged toast glued to the finger.
+ * Same specificity trick as the close chip above, and for the same reason.
+ * Under reduced motion sonner removes its own transitions outright, so there
+ * is nothing to tier here. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  transition-duration: var(--dur-slow);
+  transition-timing-function: var(--ease-out-expo);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"][data-removed="true"] {
+  transition-duration: var(--dur-exit);
+  transition-timing-function: var(--ease-in);
+}
+/* The status glyph sits on the title's optical centre. Sonner pulls its own
+   16px box 3px left to hang its stock icons; the set's glyphs are drawn on the
+   full grid, so the hang would put them off the toast's text edge. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-icon] {
+  margin-inline: 0 0.25rem;
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-icon] svg {
+  margin-inline: 0;
+}
+/* The second line in Juno's muted ink. Sonner paints it #3f3f3f on light and
+   #e8e8e8 on dark — two raw greys, the dark one nearly as bright as the title
+   it is supposed to sit under — and its rule ties the `group-[.toast]:` class
+   in sonner.tsx and wins on source order, the same trap as the buttons below. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: hsl(var(--muted-foreground));
+}
+
+/* The toast's own buttons — "Undo", "View", "Retry".
+ *
+ * These were meant to wear `.control-primary` / `.control-neu` through
+ * `group-[.toast]:` classes in sonner.tsx, and never did: that variant is
+ * (0,3,0), sonner's `[data-button]` rule is (0,3,0) too, and sonner's sheet is
+ * appended to <head> at runtime, so it won every tie. Every action shipped as
+ * sonner's stock button — a near-black slab, 24px tall, 12px type, a 4px
+ * corner — the one cold object on a warm toast.
+ *
+ * Measured, it is a neutral control now rather than the accent: the toast
+ * already says what happened, and its button is an offer ("Undo"), not the
+ * page's primary action, so the one saturated colour stays with the page.
+ * Juno's control geometry: 28px, the 13px `ui` rung at 500, the 10px control
+ * corner, a hairline, the tonal hover cross-fade and the 0.97 press. The
+ * cancel button is the ghost of it. `[data-button][data-cancel]` carries an
+ * extra attribute because sonner's dark-theme cancel rule is (0,5,0). */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+  height: 1.75rem;
+  padding-inline: 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    border-color var(--dur-fast) var(--ease-out-soft),
+    color var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--foreground) / 0.18);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
+  transform: scale(0.97);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button][data-cancel] {
+  border-color: transparent;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button][data-cancel]:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:focus-visible {
+  box-shadow: none;
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
+    transform: none;
+  }
+}
+
 @layer components {
   /* Shared page chrome and content rhythm. */
   /*
@@ -3360,21 +3527,22 @@
     }
   }
 
-  /* Menu glyphs do not gesture, anywhere — a decision, not an accident, and
-     recorded here because this is where the switch that made it lived. A
-     ~330-line block of per-icon hover choreography (pin presses, pencil writes,
-     trash-lid tips, 18 keyframes) sat in this layer behind an un-scoped
-     `animation: none !important` kill switch here, whose own comment claimed
-     only the authenticated product went matte. That comment could never be
-     made true: every element those rules matched — dropdown menus, selects,
+  /* Menu glyphs gesture through the ONE vocabulary, and nothing else. A
+     ~330-line block of per-icon keyframe choreography (pin presses, pencil
+     writes, trash-lid tips, 18 keyframes) used to sit in this layer behind an
+     un-scoped `animation: none !important` kill switch, whose own comment
+     claimed only the authenticated product went matte. That comment could never
+     be made true: every element those rules matched — dropdown menus, selects,
      the command palette — is Radix-portalled to <body>, so no
      [data-juno-chat-root] ancestor selector can tell an in-chat menu from any
-     other, and the marketing/auth surfaces render no menu rows at all. Matte
-     everywhere was the shipped reality and is the right call for the
-     highest-repetition rows in the product, so the dead choreography was
-     deleted rather than left contradicting the switch. If per-surface gestures
-     ever return, scope them with an attribute stamped on the portalled content
-     itself — never with an ancestor selector. */
+     other. The choreography was deleted.
+
+     What replaced it is the small articulation set in `@layer base`
+     (`svg.icon[data-motion]`): one gesture per glyph, declared on the glyph
+     itself in icons.tsx, played on the highlighted row (`[data-highlighted]`)
+     the same way it plays on a hovered button. That is the rule this note
+     exists to keep: a gesture is stamped on the portalled content itself —
+     never selected through an ancestor the portal has left behind. */
 }
 /* A quiet document surface shared by research planning, progress and reports. */
 @layer components {

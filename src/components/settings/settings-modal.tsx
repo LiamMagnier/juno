@@ -82,7 +82,11 @@ export function SettingsModal() {
         </aside>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="@container/pane mx-auto w-full max-w-2xl px-5 pb-10 pt-12 sm:px-8 md:pt-7">
+          {/* `relative`: SettingsPane cross-fades by lifting the outgoing
+              section out of the flow, and it has to be lifted against a box
+              INSIDE this scroller — against the dialog it would stop scrolling
+              with the content and jump by the scroll offset while it fades. */}
+          <div className="@container/pane relative mx-auto w-full max-w-2xl px-5 pb-10 pt-12 sm:px-8 md:pt-7">
             <SettingsPane section={section} tabpanel />
           </div>
         </div>

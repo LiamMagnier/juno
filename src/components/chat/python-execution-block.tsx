@@ -3,17 +3,18 @@
 import * as React from "react";
 import {
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Download,
   FileCode2,
+  Loader2,
   Terminal,
   XCircle,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import type { PythonExecutionResult } from "@/lib/sandbox/python";
 import { DataTableBlock } from "@/components/chat/data-table-block";
 import { DataChartBlock } from "@/components/chat/data-chart-block";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface PythonExecutionBlockProps {
   code: string;
@@ -36,18 +37,25 @@ export function PythonExecutionBlock({
   status = "completed",
 }: PythonExecutionBlockProps) {
   const [isCodeOpen, setIsCodeOpen] = React.useState(false);
+  const codeId = React.useId();
   const isSuccess = result ? result.success : status === "completed";
 
   return (
-    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-caption shadow-soft">
+    // A hairline, no shadow: the block sits in the reading column (FLAT_UI §2).
+    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-caption">
+      {/* Focus is the global `:focus-visible` outline; the inset ring that
+          replaced it here is gone. */}
       <button
         type="button"
         onClick={() => setIsCodeOpen((open) => !open)}
-        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/45 motion-reduce:transition-none"
         aria-expanded={isCodeOpen}
+        aria-controls={codeId}
       >
         <span className="flex min-w-0 items-center gap-2">
-          <FileCode2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          {/* Muted ink: the accent is for state and the primary action, and a
+              block header is neither. */}
+          <FileCode2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="truncate font-medium text-foreground">Python execution</span>
           {result && (
             <span className="shrink-0 font-mono text-micro text-muted-foreground">
@@ -58,31 +66,46 @@ export function PythonExecutionBlock({
 
         <span className="flex shrink-0 items-center gap-2">
           {status === "running" ? (
-            <span className="font-medium text-primary" aria-live="polite">
+            <span className="flex items-center gap-1.5 font-medium text-primary" aria-live="polite">
+              <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
               Running…
             </span>
           ) : isSuccess ? (
-            <span className="flex items-center gap-1 font-medium text-foreground">
+            <span className="flex items-center gap-1.5 font-medium text-foreground">
               <CheckCircle2 className="size-3.5" aria-hidden="true" /> Done
             </span>
           ) : (
-            <span className="flex items-center gap-1 font-medium text-destructive">
+            <span className="flex items-center gap-1.5 font-medium text-destructive">
               <XCircle className="size-3.5" aria-hidden="true" /> Failed
             </span>
           )}
-          {isCodeOpen ? (
-            <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          ) : (
-            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          )}
+          {/* One caret that turns, rather than two that swap in a frame. */}
+          <ChevronRight
+            className={cn(
+              "size-3.5 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              isCodeOpen && "rotate-90"
+            )}
+            aria-hidden="true"
+          />
         </span>
       </button>
 
-      {isCodeOpen && (
-        <div className="overflow-x-auto border-t border-border/60 bg-muted/55 p-3 font-mono text-caption text-foreground">
-          <pre className="whitespace-pre">{code}</pre>
+      {/* Continuous disclosure: the source opens on grid rows instead of
+          appearing in one frame, and is inert while folded so it stays out of
+          the tab order and the accessibility tree. */}
+      <div
+        id={codeId}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
+          isCodeOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={!isCodeOpen}>
+          <div className="overflow-x-auto border-t border-border/60 bg-muted/55 p-3 font-mono text-caption text-foreground">
+            <pre className="whitespace-pre">{code}</pre>
+          </div>
         </div>
-      )}
+      </div>
 
       {result && (result.stdout || result.stderr) && (
         <div className="space-y-1 overflow-x-auto border-t border-border/60 bg-muted/35 p-3 font-mono text-caption text-foreground">
@@ -124,7 +147,7 @@ export function PythonExecutionBlock({
           {result.generatedFiles.map((file, index) => (
             <Button key={index} variant="outline" size="sm" asChild className="gap-1.5">
               <a href={file.path} download={file.name}>
-                <Download className="size-3.5 text-primary" aria-hidden="true" />
+                <Download className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 <span className="max-w-52 truncate">{file.name}</span>
                 <span className="font-mono text-micro text-muted-foreground">
                   {Math.round(file.sizeBytes / 1024)} KB

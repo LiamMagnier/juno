@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowUpRight } from "lucide-react";
+import { AlertTriangle, ArrowUpRight } from "@/components/ui/icons";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,21 @@ export interface UsageMeterProps {
   warningThreshold?: number;
   compact?: boolean;
   className?: string;
+}
+
+/*
+ * The fill travels on `transform`, not `width`. A width transition re-lays-out
+ * the bar on every frame; a full-width fill translated back by the unused share
+ * runs on the compositor and draws the same picture, because the track clips
+ * it — the same construction `<Progress>` uses, so the two bars move alike.
+ * `--dur-slow`: a quota changing is a change the reader did not cause, and it
+ * should be seen moving.
+ */
+const METER_FILL =
+  "h-full w-full rounded-full transition-[transform,background-color] duration-slow ease-out-soft motion-reduce:transition-none";
+
+function meterFill(percentage: number): React.CSSProperties {
+  return { transform: `translateX(-${100 - percentage}%)` };
 }
 
 export function UsageMeter({
@@ -50,11 +65,8 @@ export function UsageMeter({
         {percentage !== null && (
           <div className="h-1.5 w-12 overflow-hidden rounded-full bg-secondary">
             <div
-              className={cn(
-                "h-full transition-[width,background-color] duration-base ease-out-soft",
-                isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary"
-              )}
-              style={{ width: `${percentage}%` }}
+              className={cn(METER_FILL, isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary")}
+              style={meterFill(percentage)}
             />
           </div>
         )}
@@ -83,9 +95,9 @@ export function UsageMeter({
         {upgradeUrl && (
           <Link
             href={upgradeUrl}
-            className="inline-flex items-center gap-0.5 font-mono text-micro text-primary hover:underline"
+            className="inline-flex items-center gap-1 font-mono text-micro text-primary underline-offset-2 hover:underline"
           >
-            Upgrade <ArrowUpRight className="size-3" />
+            Upgrade <ArrowUpRight className="size-3" aria-hidden />
           </Link>
         )}
       </div>
@@ -114,11 +126,8 @@ export function UsageMeter({
       {percentage !== null && (
         <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
           <div
-            className={cn(
-              "h-full transition-[width,background-color] duration-base ease-out-soft",
-              isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary"
-            )}
-            style={{ width: `${percentage}%` }}
+            className={cn(METER_FILL, isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary")}
+            style={meterFill(percentage)}
           />
         </div>
       )}

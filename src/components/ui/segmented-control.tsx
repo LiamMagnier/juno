@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion, type Transition } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { RollingNumber, useTravelSquash } from "@/components/ui/micro";
+import { spring } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,8 +18,10 @@ import { cn } from "@/lib/utils";
  * still snapped when a segment's width changed underneath it. With `layoutId`
  * the thumb simply IS wherever the selected segment is; framer measures both
  * boxes and runs the spring between them, interruptible, and a resize just
- * re-measures. The spring (stiffness 420, damping 34, mass 0.8) is a firm
- * settle with no visible overrun — the key lands, it does not bounce.
+ * re-measures. The spring is `spring.standard` (lib/motion.ts) — the settle
+ * the product switch, the page tabs and `<Tabs>` also run, so every selection
+ * mark in the product lands the same way. It was a private stiffness/damping
+ * triple, which is how four thumbs end up with four tempos.
  *
  * Labels cross-fade their ink over `--dur-fast`; icons stay put (no scale,
  * no bounce — the thumb is the thing that moves). A press dips the whole
@@ -50,9 +53,6 @@ export type SegmentedOption<T extends string> = {
   /** Disables just this segment (still announced, not selectable). */
   disabled?: boolean;
 };
-
-/** The thumb's spring: firm, quick, no overrun. */
-const THUMB_SPRING: Transition = { type: "spring", stiffness: 420, damping: 34, mass: 0.8 };
 
 export function SegmentedControl<T extends string>({
   value,
@@ -174,7 +174,7 @@ export function SegmentedControl<T extends string>({
               <motion.span
                 layoutId={thumbId}
                 aria-hidden="true"
-                transition={reduceMotion ? { duration: 0 } : THUMB_SPRING}
+                transition={reduceMotion ? { duration: 0 } : spring.standard}
                 // The raised key. `.surface-raised` supplies fill, hairline and
                 // the dual shadow in both themes. The radius rides `style` too,
                 // so framer can keep the corners true while it scales the box

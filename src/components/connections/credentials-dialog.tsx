@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { KeyRound, Link2, Loader2, Music2 } from "lucide-react";
+import { KeyRound, Link2, Loader2, Music2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -61,7 +61,7 @@ function HelpSteps() {
     // says "read this, then act below it" everywhere else.
     <div className="surface-inset rounded-field p-3.5 text-caption text-muted-foreground">
       <p className="flex items-start gap-1.5">
-        <KeyRound className="mt-0.5 size-3.5 shrink-0 text-primary-ink" />
+        <KeyRound className="mt-0.5 size-3.5 shrink-0" />
         Juno signs in with an app-specific password — never your main Apple ID password.
       </p>
       <ol className="mt-2 list-decimal space-y-1 pl-4">
@@ -241,16 +241,15 @@ export function CredentialsDialog({
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 Cancel
               </Button>
+              {/* No hand-rolled hover transform on the glyph: `Link2` carries
+                  its own articulation (a tilt), and a second rotate on the same
+                  svg stacked the two into one lurch. */}
               <Button
                 type="submit"
                 disabled={busy || !appleId.trim() || !appPassword.trim()}
-                className="group/connect gap-1.5"
+                className="gap-1.5"
               >
-                {busy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Link2 className="size-4 transition-transform duration-fast ease-out-soft group-hover/connect:-rotate-6 group-hover/connect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
-                )}
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
                 {busy ? "Verifying…" : "Connect"}
               </Button>
             </DialogFooter>

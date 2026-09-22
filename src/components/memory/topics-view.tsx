@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronDown, ShieldAlert } from "lucide-react";
+import { ChevronDown, ShieldAlert } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RollingNumber } from "@/components/ui/micro";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { MemoryIcons } from "@/components/memory/memory-icons";
-import { duration, ease, spring, stagger, variants, flatten } from "@/lib/motion";
+import { spring, stagger, transition, variants, flatten } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { EntryRow } from "@/components/memory/entry-row";
 import type { Memory, MemoryTopic } from "@/components/memory/memory-model";
@@ -157,7 +157,7 @@ function TopicCard({
     <motion.li
       layout={!reduceMotion}
       variants={rise}
-      transition={reduceMotion ? { duration: duration.fast } : spring.layout}
+      transition={reduceMotion ? transition.fast : spring.layout}
       className={cn(
         "overflow-hidden rounded-card border border-border/60 bg-card surface-raised",
         // An open card is the subject of the page — it earns the brighter
@@ -175,8 +175,8 @@ function TopicCard({
         <span
           aria-hidden="true"
           className={cn(
-            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-muted/50 text-muted-foreground transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-            open && "border-primary/30 bg-primary/12 text-primary"
+            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-muted/50 text-muted-foreground transition-colors duration-base ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
+            open && "border-primary/30 bg-primary/12 text-primary group-hover:text-primary"
           )}
         >
           <Icon className="size-4" />
@@ -231,7 +231,7 @@ function TopicCard({
           <ChevronDown
             aria-hidden="true"
             className={cn(
-              "size-4 text-muted-foreground transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+              "size-4 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
               open && "rotate-180"
             )}
           />
@@ -254,7 +254,7 @@ function TopicCard({
             initial={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
             animate={reduceMotion ? { opacity: 1 } : { height: "auto", opacity: 1 }}
             exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-            transition={{ duration: duration.base, ease: ease.outSoft }}
+            transition={transition.base}
             className="overflow-hidden"
           >
             <div className="border-t border-border/50">
@@ -332,12 +332,12 @@ function RetiredRows({ memories, busyIds, paused, onEdit, onForget, onDelete }: 
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
         aria-controls={listId}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
       >
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+            "size-3.5 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

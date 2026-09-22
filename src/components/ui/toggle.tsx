@@ -6,12 +6,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * A two-state control on `.control-neu`: raised while off, pressed into the
- * page while on. Radix sets `data-state="on"`, which is one of the selectors
- * the recipe reads, so no compound class is needed for the pressed look —
- * only the ink changes. `ghost` is the flat variant for toolbars, where a row
- * of raised keys would be too loud: flat at rest, raised on hover, pressed
- * when on.
+ * A two-state control on `.control-neu`: a hairline at rest, a tonal fill on
+ * hover, the deeper `--secondary` fill while on. Radix sets
+ * `data-state="on"`, which is one of the selectors the recipe reads, so no
+ * compound class is needed for the on look — only the ink changes. `ghost` is
+ * the borderless variant for toolbars, where a row of outlined keys would be
+ * too loud: nothing at rest, the wash on hover, the secondary fill when on.
+ * Both cross-fade on --dur-fast and dip to 0.97 under the finger (`.pressable`).
  */
 const toggleVariants = cva(
   "pressable inline-flex items-center justify-center gap-2 rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 data-[state=on]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",

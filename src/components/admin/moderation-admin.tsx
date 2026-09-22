@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
+import { AppIcons, ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -75,7 +75,25 @@ function severityClass(severity: string): string {
   }
 }
 
-const CHIP = "rounded-full px-2 py-0.5 font-mono text-caption font-semibold";
+/**
+ * The status mark each severity wears inside its chip, from the shared
+ * vocabulary: a failure circle for the two that need action, the warning
+ * triangle for medium, the info mark for the rest. Colour alone told the
+ * three apart, which is the one thing SC 1.4.1 says a status may not rely on.
+ */
+function severityIcon(severity: string): IconComponent {
+  switch (severity) {
+    case "critical":
+    case "high":
+      return StatusIcons.error;
+    case "medium":
+      return StatusIcons.warning;
+    default:
+      return StatusIcons.info;
+  }
+}
+
+const CHIP = "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-caption font-semibold";
 const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
 
 export function ModerationAdmin() {
@@ -242,10 +260,12 @@ export function ModerationAdmin() {
               ))}
             </div>
           ) : failed ? (
+            // The failure circle, like every other load failure in the product;
+            // the security shield is for a security PROBLEM, which this is not.
             <EmptyState
               tone="error"
               size="panel"
-              icon={StatusIcons.security}
+              icon={StatusIcons.error}
               className="m-4"
               title="Couldn’t load the flag log"
               description="The request didn't come back, so nothing is shown — an empty table here would read as an all-clear."
@@ -258,10 +278,13 @@ export function ModerationAdmin() {
           ) : flags.length === 0 ? (
             // The shared primitive. This was a detached top rule inside a card
             // that already draws a border above it, with no icon and no action.
+            // The shield WITH a check — the standing all-clear the permissions
+            // destination wears — not the warning shield: an empty flag log is
+            // the good news on this page.
             <EmptyState
               tone="empty"
               size="panel"
-              icon={StatusIcons.security}
+              icon={AppIcons.permissions}
               title={
                 filter === "unreviewed"
                   ? "Nothing needs review"
@@ -297,33 +320,42 @@ export function ModerationAdmin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {flags.map((f) => {
+                  {flags.map((f, i) => {
                     const isExpanded = expanded.has(f.id);
                     const long = f.detail.length > 90;
+                    const SeverityIcon = severityIcon(f.severity);
                     return (
                       <tr
                         key={f.id}
                         // Full `hover:bg-accent`, the same step the users table
                         // takes. /40 composited to ~9.1% over the 6.5% card —
                         // 2.6 points, which is not enough to follow a row across
-                        // a seven-column table.
-                        className="border-b border-border/60 align-top transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent"
+                        // a seven-column table. Dealt in on the tight rung, by
+                        // opacity alone, as the users table is.
+                        style={staggerDelay(i, "tight")}
+                        className="border-b border-border/60 align-top transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent motion-safe:animate-fade-in [animation-fill-mode:backwards]"
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <p className="truncate font-medium">{f.user.name || "—"}</p>
                             {f.user.bannedAt && (
-                              <span className={cn(CHIP, "shrink-0 bg-destructive/10 text-destructive")}>Banned</span>
+                              <span className={cn(CHIP, "shrink-0 bg-destructive/10 text-destructive")}>
+                                <Ban className="size-3" aria-hidden="true" />
+                                Banned
+                              </span>
                             )}
                           </div>
                           <p className="truncate text-caption text-muted-foreground">{f.user.email}</p>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={cn(CHIP, severityClass(f.severity))}>{f.severity}</span>
+                          <span className={cn(CHIP, severityClass(f.severity))}>
+                            <SeverityIcon className="size-3 shrink-0" aria-hidden="true" />
+                            {f.severity}
+                          </span>
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-mono text-micro">{f.category}</p>
-                          <span className={cn(CHIP, "mt-1 inline-block bg-muted text-muted-foreground")}>{f.source}</span>
+                          <span className={cn(CHIP, "mt-1 bg-muted text-muted-foreground")}>{f.source}</span>
                         </td>
                         <td className="max-w-[22rem] px-4 py-3 text-caption text-muted-foreground">
                           <p className={cn(!isExpanded && long && "line-clamp-2")}>{f.detail}</p>
@@ -331,11 +363,15 @@ export function ModerationAdmin() {
                             // rounded-control + the opaque secondary rung: a
                             // `bg-muted/60` well composites to ~5.7% on pure
                             // black, which is under the card it sits in.
-                            <p className="mt-1 rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground/85 motion-safe:animate-fade-in">
+                            <p className="mt-1 rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground/85 motion-safe:animate-rise-in">
                               {f.messagePreview}
                             </p>
                           )}
                           {(long || f.messagePreview) && (
+                            // A disclosure, drawn as one: the caret turns with
+                            // the state on the symmetric curve. It was accent
+                            // text, which spent the page's one colour on the
+                            // most frequent control in the table.
                             <button
                               type="button"
                               onClick={() =>
@@ -347,9 +383,16 @@ export function ModerationAdmin() {
                                 })
                               }
                               aria-expanded={isExpanded}
-                              className="mt-1 rounded-sm text-caption font-medium text-primary underline-offset-2 transition-colors duration-fast ease-out-soft hover:underline"
+                              className="mt-1 inline-flex items-center gap-1 rounded-sm text-caption font-medium text-foreground/80 underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
                             >
                               {isExpanded ? "Show less" : "Show more"}
+                              <ChevronDown
+                                className={cn(
+                                  "size-3 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                                  isExpanded && "rotate-180"
+                                )}
+                                aria-hidden="true"
+                              />
                             </button>
                           )}
                         </td>
@@ -368,36 +411,43 @@ export function ModerationAdmin() {
                                   : "bg-muted text-muted-foreground"
                             )}
                           >
+                            {f.action === "banned" ? (
+                              <Ban className="size-3 shrink-0" aria-hidden="true" />
+                            ) : f.action === "strike" ? (
+                              <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
+                            ) : null}
                             {f.action}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1.5">
                             {f.user.bannedAt ? (
-                              <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => unban(f)}>
-                                <ActionIcons.restore className="size-3.5" />
+                              <Button variant="ghost" size="sm" onClick={() => unban(f)}>
+                                <ActionIcons.restore className="size-4" />
                                 Unban
                               </Button>
                             ) : (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 gap-1.5 text-destructive danger-hover"
+                                className="text-destructive danger-hover"
                                 onClick={() => {
                                   setBanReason(`${f.category}: ${f.detail}`.slice(0, 500));
                                   setBanTarget(f);
                                 }}
                               >
-                                <Ban className="size-3.5" />
+                                <Ban className="size-4" />
                                 Ban
                               </Button>
                             )}
+                            {/* The check marks the verb it performs; "Reopen"
+                                is the quiet way back and needs no glyph. */}
                             <Button
                               variant={f.reviewedAt ? "ghost" : "outline"}
                               size="sm"
-                              className="h-8"
                               onClick={() => toggleReviewed(f)}
                             >
+                              {!f.reviewedAt && <StatusIcons.success className="size-4" />}
                               {f.reviewedAt ? "Reopen" : "Mark reviewed"}
                             </Button>
                           </div>
@@ -462,8 +512,8 @@ export function ModerationAdmin() {
             <Button variant="ghost" onClick={() => (setBanTarget(null), setBanReason(""))} disabled={banning}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmBan} disabled={banning} className="gap-1.5">
-              <Ban className="size-4" />
+            <Button variant="destructive" onClick={confirmBan} disabled={banning} aria-busy={banning}>
+              {banning ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <Ban className="size-4" />}
               {banning ? "Banning…" : "Ban user"}
             </Button>
           </DialogFooter>

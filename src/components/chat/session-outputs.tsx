@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AppIcons, CodeIcons, ComposerIcons } from "@/lib/app-icons";
 import { SettingsIcons } from "@/lib/app-icons";
 import { resolveModel } from "@/lib/models";
+import { STAGGER, staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ClientArtifact, ClientMessage } from "@/types/chat";
@@ -280,8 +281,14 @@ export function SessionOutputs({
                   output takes the full width and turns landscape to fill it;
                   the card is the same card either way. */}
               <ul className={cn("mt-3 grid gap-x-3 gap-y-4", outputs.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-                {outputs.map((o) => (
-                  <li key={o.id} className="min-w-0">
+                {/* Dealt in on the base rung as the popover lands, so the
+                    tiles arrive as a set rather than as one repaint. */}
+                {outputs.map((o, i) => (
+                  <li
+                    key={o.id}
+                    className="min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                    style={staggerDelay(i)}
+                  >
                     <OutputCard
                       wide={outputs.length === 1}
                       tile={o}
@@ -312,8 +319,14 @@ export function SessionOutputs({
                 Used in this session
               </h2>
               <ul className="mt-2 space-y-0.5">
-                {used.map((row) => (
-                  <li key={row.id} className="flex h-8 items-center gap-2.5 text-ui">
+                {used.map((row, i) => (
+                  <li
+                    key={row.id}
+                    className="flex h-8 items-center gap-2.5 text-ui motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                    // After the tiles, on the tight rung: rows are lighter
+                    // than cards and follow them rather than racing them.
+                    style={staggerDelay(i, "tight", Math.min(outputs.length, 8) * STAGGER.base)}
+                  >
                     <row.Glyph className="size-4 shrink-0 text-muted-foreground" />
                     <span className="shrink-0 text-foreground">{row.label}</span>
                     {row.detail && (
@@ -366,7 +379,9 @@ function OutputCard({ tile, onOpen, wide }: { tile: OutputTile; onOpen?: () => v
     <button
       type="button"
       onClick={onOpen}
-      className="group/tile block w-full min-w-0 rounded-field text-left transition-opacity duration-fast ease-out-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+      // Focus is the global `:focus-visible` outline — the local ring that
+      // replaced it drew a different focus from every other tile in the app.
+      className="group/tile block w-full min-w-0 rounded-field text-left transition-opacity duration-fast ease-out-soft hover:opacity-80 motion-reduce:transition-none"
     >
       {body}
     </button>

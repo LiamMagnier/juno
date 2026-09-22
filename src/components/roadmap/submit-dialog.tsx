@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ChevronUp } from "lucide-react";
+import { ChevronUp } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

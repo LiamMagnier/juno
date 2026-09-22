@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, Sparkles } from "lucide-react";
+import { History, Loader2 } from "@/components/ui/icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RollingNumber } from "@/components/ui/micro";
-import { MemoryIcons } from "@/components/memory/memory-icons";
 import { useApp } from "@/components/app/app-provider";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -123,7 +123,7 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
   return (
     <section
       aria-label="What Juno has learned"
-      className="rounded-card border border-border/60 bg-card px-4 py-3.5 surface-raised"
+      className="surface-raised rounded-card border-border/60 px-4 py-3.5"
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <Stat index={0} label="In use" value={activeCount} tone="primary" />
@@ -132,7 +132,7 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
         <div className="ml-auto flex min-w-0 items-center gap-2.5">
           {running ? (
             <>
-              <div className="w-28">
+              <div className="w-28 motion-safe:animate-fade-in">
                 <Progress value={pct} aria-label="Reading your past chats" />
               </div>
               <span role="status" className="font-mono text-caption tabular-nums text-muted-foreground">
@@ -169,13 +169,15 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
                     : "Read past chats and learn from them now"
                 }
               >
-                <Sparkles className="size-3.5" aria-hidden="true" />
+                {/* The past, not a sparkle: the button reads your older chats,
+                    and a sparkle says only that something happens here. */}
+                <History className="size-3.5" aria-hidden="true" />
                 {dreaming ? "Read now" : "Learn from past chats"}
               </Button>
             </>
           ) : remaining === 0 ? (
-            <Badge variant="muted" className="gap-1.5">
-              <MemoryIcons.work className="size-3" aria-hidden="true" />
+            <Badge variant="muted" className="gap-1.5 motion-safe:animate-fade-in">
+              <StatusIcons.success className="size-3" aria-hidden="true" />
               Every chat read
             </Badge>
           ) : null}
@@ -183,7 +185,7 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
       </div>
 
       {running && (
-        <p className="mt-2.5 flex items-center gap-1.5 text-caption text-muted-foreground">
+        <p className="mt-2.5 flex items-center gap-1.5 text-caption text-muted-foreground motion-safe:animate-fade-in-up">
           <Loader2 className="size-3 animate-spin" aria-hidden="true" />
           <span>
             Juno is reading your older conversations a couple at a time. You can leave this page — it picks up where it

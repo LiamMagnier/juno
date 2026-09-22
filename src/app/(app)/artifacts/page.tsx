@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,10 +30,12 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -81,9 +83,14 @@ interface Item {
   preview: string | null;
 }
 
-/** The hover-raised row: flat on the page at rest, a raised card under the pointer. */
+/**
+ * The list row: text on the page at rest, the tonal row fill under the pointer.
+ * Nothing lifts and nothing casts — the kind glyph is the one thing that moves
+ * (`data-icon-trigger` plays its `lift`), which says "this opens" without the
+ * row itself pretending to be a card leaving the page.
+ */
 const rowClass =
-  "group relative flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none";
+  "group relative flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
 /**
  * The two view modes, and where the choice is kept.
@@ -142,13 +149,16 @@ export default function ArtifactsPage() {
               variant="ghost"
               size="icon-sm"
               aria-label={`Actions for ${item.title || "artifact"}`}
-              className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+              // No `transition-opacity`: Button is `.pressable`, whose own
+              // shorthand already fades opacity on the fast rung — a utility
+              // here would replace it and take the press's transform with it.
+              className="text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
             >
-              {downloadingId === item.id ? (
-                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
-              ) : (
-                <ActionIcons.more className="size-4" aria-hidden />
-              )}
+              <IconSwap
+                swapped={downloadingId === item.id}
+                from={<ActionIcons.more className="size-4" />}
+                to={<Loader2 className={cn("size-4", downloadingId === item.id && "motion-safe:animate-spin")} />}
+              />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className={MENU_W}>
@@ -500,13 +510,20 @@ export default function ArtifactsPage() {
           aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}
         >
           {filtered.map((item, i) => {
+            const Icon = ICONS[item.type] ?? FileCode2;
             const rt = runtimeFor(item.type, item.language);
             const href = `/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`;
             return (
               <li
                 key={item.id}
                 style={staggerDelay(i, "tight")}
-                className="group relative flex flex-col rounded-card border border-border bg-card p-2 transition-[border-color,background-color] duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards] motion-reduce:transition-none"
+                // A tonal hover, and the glyph — not the card — is what lifts:
+                // the tile is a large surface and stays on the page, while
+                // `data-icon-trigger` lets the kind glyph play its `lift` — the
+                // one on the metadata line, and the preview's own when the tile
+                // has no source to show.
+                data-icon-trigger=""
+                className="group relative flex flex-col rounded-card border border-border bg-card p-2 transition-colors duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards] motion-reduce:transition-none"
               >
                 <ArtifactPreview
                   type={item.type}
@@ -528,6 +545,10 @@ export default function ArtifactsPage() {
                   >
                     <span className="block truncate text-ui font-medium">{item.title || "Untitled artifact"}</span>
                     <span className="mt-0.5 flex items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+                      {/* The list row's kind mark, at metadata size: a tile
+                          previewing its source otherwise had no glyph at all,
+                          so the two views named the same kind two ways. */}
+                      <Icon className="size-3 shrink-0" motion="lift" aria-hidden />
                       <span className="truncate">{rt.label}</span>
                       {item.version > 1 && (
                         <>
@@ -563,11 +584,14 @@ export default function ArtifactsPage() {
               <li
                 key={item.id}
                 style={staggerDelay(i, "tight")}
+                data-icon-trigger=""
                 className={`${rowClass} motion-safe:animate-rise-in [animation-fill-mode:backwards]`}
               >
-                {/* The kind glyph on an inset tile — the row's one piece of depth at rest. */}
+                {/* The kind glyph on an inset tile — the row's one piece of depth
+                    at rest, and the one thing that moves under the pointer: its
+                    ink steps up to the row's foreground and the glyph lifts. */}
                 <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-                  <Icon className="size-4" aria-hidden />
+                  <Icon className="size-4" motion="lift" aria-hidden />
                 </span>
 
                 {/* The stretched link: the whole row opens the artifact; the

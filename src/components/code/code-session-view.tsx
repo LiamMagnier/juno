@@ -43,6 +43,8 @@ import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-cod
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
 import { Button } from "@/components/ui/button";
+import { GitCompare } from "@/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { DEFAULT_MODEL } from "@/lib/models";
 import type { ReasoningEffort } from "@/lib/model-metrics";
@@ -95,6 +97,24 @@ import type {
  * instruction and sending one nobody pressed send on was the behaviour this
  * replaced.
  */
+
+/**
+ * How a docked column — the thought dock, the review, the canvas — arrives.
+ *
+ * On the DRAWER curve, because that is what these are: a sheet pulled in from
+ * the right edge, front-loaded and overshoot-free (`--ease-drawer`, the curve
+ * `sheet.tsx` slides on), rather than `ease-out-expo`, which is for long travel
+ * and made a 16px slide read as a lurch that then hung. Under reduced motion
+ * the travel is dropped and the fade keeps its timing, instead of the column
+ * simply appearing with no sign of where it came from.
+ *
+ * Arrival only. The three columns unmount the frame their state clears, so a
+ * matching exit needs the view to hold a closing column for one exit rung —
+ * the state chat-view keeps as `closingArtifact` — which is a change to what
+ * renders, not to how it moves.
+ */
+const DOCK_ENTER =
+  "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in";
 
 interface CodeSessionViewProps {
   conversation: ClientConversation;
@@ -1089,7 +1109,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               // transcript column. Naming a layer here would instead put the
               // dock over the composer's own portalled dropdowns, which sit at
               // z-popper.
-              className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l"
+              className={cn(DOCK_ENTER, "relative h-full w-full shrink-0 border-border bg-card @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l")}
             />
           )}
 
@@ -1104,7 +1124,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               its file selection — is re-read when a follow-up run becomes the
               latest one, which is the same rule the run list mounted it under. */}
           {reviewDocked && (
-            <div className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 @[52rem]/split:w-[32rem] @[52rem]/split:min-w-0 @[52rem]/split:border-l">
+            <div className={cn(DOCK_ENTER, "relative h-full w-full shrink-0 border-border bg-card @[52rem]/split:w-[32rem] @[52rem]/split:min-w-0 @[52rem]/split:border-l")}>
               <RunReviewPane
                 key={reviewTaskId}
                 placement="dock"
@@ -1154,7 +1174,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           {openArtifact && (
             <div
               className={cn(
-                "relative h-full w-full min-w-0 bg-background duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
+                DOCK_ENTER,
+                "relative h-full w-full min-w-0 bg-background",
                 artifactFullscreen ? "flex-1" : "shrink-0 border-border @[54rem]/split:w-[34rem] @[54rem]/split:border-l",
               )}
             >
@@ -1207,7 +1228,10 @@ function ReviewTray({
   const count = lines.filter((line) => line.startsWith("- ")).length;
 
   return (
-    <div className="surface-inset mb-2 rounded-field px-3 py-2.5">
+    // Rises in when the review lands in it — the reader just pressed the
+    // button that put it here, and a tray that appears in a frame reads as the
+    // composer jumping rather than as the notes arriving.
+    <div className="surface-inset mb-2 rounded-field px-3 py-2.5 motion-safe:animate-rise-in">
       <div className="flex items-center gap-2">
         <CodeIcons.file className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <p className="min-w-0 flex-1 truncate text-ui font-medium">
@@ -1215,19 +1239,28 @@ function ReviewTray({
             ? "Your review of the changes"
             : `${count} review ${count === 1 ? "note" : "notes"} from the changes`}
         </p>
+        {/* The diff's own mark, not a pencil: this goes back to a place, and
+            the pencil is "edit" everywhere else in the product. */}
         <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" onClick={onOpenDiff}>
-          <ActionIcons.edit className="size-3.5" aria-hidden="true" />
+          <GitCompare className="size-3.5" aria-hidden="true" />
           Back to the diff
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="size-7 shrink-0"
-          onClick={onDiscard}
-          aria-label="Discard this review"
-        >
-          <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
-        </Button>
+        {/* The shared 32px icon target (it was `size-7`, 28px — under the
+            pointer floor every other icon button on this surface meets). */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={onDiscard}
+              aria-label="Discard this review"
+            >
+              <ActionIcons.dismiss className="size-4" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Discard this review</TooltipContent>
+        </Tooltip>
       </div>
       <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-caption text-muted-foreground">
         {notes}

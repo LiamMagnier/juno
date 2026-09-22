@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { BlockShell, LessonKicker, Reveal } from "@/components/chat/learning/block-shell";
+import { Plus } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import type { DeepDiveData } from "@/lib/learning-blocks";
 
@@ -25,7 +26,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
         onClick={() => setOpen((value) => !value)}
         className={cn(
           "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-control",
-          "transition-colors duration-fast hover:bg-accent/30",
+          "transition-colors duration-fast ease-out-soft hover:bg-accent/30 motion-reduce:transition-none",
           "-my-1 py-1 coarse:min-h-11"
         )}
       >
@@ -37,7 +38,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
           {showSummary && (
             <span
               className={cn(
-                "truncate text-ui leading-5 text-muted-foreground transition-opacity duration-fast",
+                "truncate text-ui leading-5 text-muted-foreground transition-opacity duration-fast ease-out-soft",
                 open && "opacity-0"
               )}
               aria-hidden={open}
@@ -46,15 +47,17 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
             </span>
           )}
         </span>
-        <span
-          aria-hidden
+        {/* The set's plus, turned an eighth to a close mark while open — the
+            same disclosure glyph as TextToggle, on the symmetric curve. Its
+            hover turn is off: it is the block's state, not an action icon. */}
+        <Plus
+          aria-hidden="true"
+          motion="none"
           className={cn(
-            "pr-1 font-mono text-body leading-none text-muted-foreground transition-transform duration-base ease-out-strong",
+            "mr-1 size-4 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-45"
           )}
-        >
-          +
-        </span>
+        />
       </button>
       <Reveal open={open} id={contentId} className="duration-slow ease-out-expo">
         <div className="pt-3">

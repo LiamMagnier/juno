@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { WORK_THREAD_COMPOSER_FIELD_ID } from "@/components/work/composer/work-thread-composer";
@@ -154,7 +154,9 @@ export function WorkQuestionCard({
     // to ~3.5% lightness over the black ground — under `--card`, so the card
     // holding the question the run has STOPPED for sat lower than an ordinary
     // card beside it. The alpha was tuned against the old 9%-lightness page.
-    <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
+    // It rises in when the run stops to ask: a change nobody on this page
+    // caused, arriving once rather than appearing between two frames.
+    <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3 motion-safe:animate-rise-in">
       <p className="font-mono text-micro text-warning-foreground">
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>

@@ -19,7 +19,7 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SearchX } from "lucide-react";
+import { SearchX } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,17 +29,24 @@ export const metadata: Metadata = { title: "Not found" };
 export default function NotFound() {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-16 text-center">
-      <div className="w-full max-w-md">
+      {/* Settles in on the shared entrance rather than appearing at full
+          weight: this is a whole-screen replacement, the one moment on a
+          dead link where a hard cut reads as the site breaking. */}
+      <div className="w-full max-w-md motion-safe:animate-rise-in">
         <EmptyState
           icon={SearchX}
           title="This page isn’t here"
           description="The link may be out of date, or the address may have a typo in it. Nothing in your account has changed."
+          // One primary action. The library link stays as a quiet ghost
+          // beside it: an unknown URL is most often a stale link to something
+          // the reader saved, but the way home is the answer the page leads
+          // with.
           action={
             <>
               <Button asChild size="sm">
                 <Link href="/chat">Back to chat</Link>
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
                 <Link href="/library">Open your library</Link>
               </Button>
             </>

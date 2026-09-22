@@ -39,8 +39,8 @@ export default function AdminModerationError({
         description="The flag list didn’t come back. No strike, ban or dismissal has been applied by the attempt."
         action={
           <>
-            <Button size="sm" onClick={reset} className="gap-1.5">
-              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+            <Button size="sm" onClick={reset}>
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
               Try again
             </Button>
             <Button asChild size="sm" variant="outline">

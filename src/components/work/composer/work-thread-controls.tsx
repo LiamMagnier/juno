@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,7 +281,7 @@ function ThreadProjectChip({
                     className={cn(active ? "text-primary" : "text-muted-foreground")}
                   />
                   <span className="flex-1 truncate">{project.name}</span>
-                  {active && <StatusIcons.success className="!size-3.5 text-primary" />}
+                  {active && <StatusIcons.success className="size-3.5 text-primary" />}
                 </DropdownMenuItem>
               );
             })

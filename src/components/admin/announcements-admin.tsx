@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -165,12 +165,12 @@ function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl"
       </div>
     );
   }
+  // One muted glyph, on the ladder. Two stacked marks (a 32px picture over a
+  // 20px camera) said "image or video" in the preview and overflowed the 48px
+  // list thumbnail, where the same placeholder renders with p-2.
   return (
     <div className={cn("flex size-full items-center justify-center bg-muted text-muted-foreground", className)}>
-      <div className="flex flex-col items-center gap-2">
-        <ImageIcon className="size-8" />
-        <Video className="size-5 opacity-70" />
-      </div>
+      <ImageIcon className="size-6" aria-hidden="true" />
     </div>
   );
 }
@@ -285,6 +285,7 @@ function MediaDropzone({
           type="button"
           onClick={() => onChange("")}
           aria-label={`Remove ${kind}`}
+          title={`Remove ${kind}`}
           // The remove control is an affordance on touch too, so it does not
           // hide behind hover — hover only raises its contrast. Scoped
           // transition on the token ladder, not a bare 150ms `ease`.
@@ -294,7 +295,8 @@ function MediaDropzone({
           // page token — on the true-black theme it made the one control that
           // has to stay findable over a dark video a pure-black chip held by a
           // /60 hairline. The same fix DialogCloseButton already carries.
-          className="absolute right-2 top-2 grid size-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur transition-[color,background-color,border-color] duration-fast ease-out-soft hover:border-border hover:bg-popover hover:text-foreground"
+          // `.pressable` carries the colour cross-fade and the press dip.
+          className="pressable absolute right-2 top-2 grid size-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur hover:border-border hover:bg-popover hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-9"
         >
           <ActionIcons.dismiss className="size-4" />
         </button>
@@ -349,7 +351,7 @@ function MediaDropzone({
         />
         {uploading ? (
           <>
-            <Loader2 className="size-5 animate-spin text-primary" />
+            <Loader2 className="size-5 text-muted-foreground motion-safe:animate-spin" aria-hidden />
             {/* A real bar, not a number that changes in place: a percentage on
                 its own gives no sense of how much is left, and the same upload
                 already draws one in import-history. */}
@@ -357,19 +359,20 @@ function MediaDropzone({
             <div className="h-1 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
               <div
                 // motion-reduce:transition-none, like the identical upload bar
-                // in import-history: a width that animates is motion, and this
-                // one ran regardless of the preference.
-                className="h-full rounded-full bg-primary transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
-                style={{ width: `${progress}%` }}
+                // in import-history. It travels by `scaleX` from the left edge,
+                // as that bar does, rather than by `width`: only transform and
+                // opacity animate.
+                className="h-full w-full origin-left rounded-full bg-primary transition-transform duration-base ease-out-soft motion-reduce:transition-none"
+                style={{ transform: `scaleX(${progress / 100})` }}
               />
             </div>
           </>
         ) : (
           <>
             {kind === "video" ? (
-              <Video className="size-5 text-muted-foreground" />
+              <Video className="size-5 text-muted-foreground" aria-hidden />
             ) : (
-              <UploadCloud className="size-5 text-muted-foreground" />
+              <UploadCloud className="size-5 text-muted-foreground" aria-hidden />
             )}
             <p className="text-caption">
               <span className="font-medium text-foreground">Drag &amp; drop</span> {kind === "image" ? "an image" : "a video"}, or{" "}
@@ -483,7 +486,7 @@ export function AnnouncementsAdmin() {
           actions={
             <>
               <AdminNav current="announcements" />
-              <Button variant="outline" size="sm" onClick={reset} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={reset}>
                 <Plus className="size-4" />
                 New draft
               </Button>
@@ -636,8 +639,12 @@ export function AnnouncementsAdmin() {
                     Cancel edit
                   </Button>
                 )}
-                <Button onClick={submit} disabled={saving} className="gap-1.5">
-                  <Megaphone className="size-4" />
+                <Button onClick={submit} disabled={saving} aria-busy={saving}>
+                  {saving ? (
+                    <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
+                  ) : (
+                    <Megaphone className="size-4" />
+                  )}
                   {saving ? "Saving..." : editingId ? "Update popup" : "Publish popup"}
                 </Button>
               </div>
@@ -689,9 +696,11 @@ export function AnnouncementsAdmin() {
                       </Button>
                     )}
                     {draft.ctaLabel && (
-                      <Button size="sm" className="group gap-1.5" tabIndex={-1}>
+                      <Button size="sm" tabIndex={-1}>
                         {draft.ctaLabel}
-                        <ArrowRight className="size-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                        {/* The arrow's own `nudge-r` articulation plays on hover,
+                            exactly as it will on the real popup. */}
+                        <ArrowRight className="size-4" />
                       </Button>
                     )}
                   </div>
@@ -703,9 +712,12 @@ export function AnnouncementsAdmin() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-ui font-semibold">Current popups</h2>
                 {/* The spinner is the point of a Refresh button: disabled alone
-                    gives no sign anything is happening on a fast connection. */}
-                <Button variant="ghost" size="sm" onClick={load} disabled={loading} className="gap-1.5">
-                  {loading && <Loader2 className="size-3.5 animate-spin" />}
+                    gives no sign anything is happening on a fast connection.
+                    It is the refresh mark itself that turns while it works
+                    (ActionIcons.refresh: "spins while it works"), rather than
+                    a spinner that pushes the label sideways when it appears. */}
+                <Button variant="ghost" size="sm" onClick={load} disabled={loading} aria-busy={loading}>
+                  <ActionIcons.refresh className={cn("size-4", loading && "motion-safe:animate-spin")} />
                   Refresh
                 </Button>
               </div>
@@ -720,7 +732,7 @@ export function AnnouncementsAdmin() {
                 <EmptyState
                   tone="error"
                   size="panel"
-                  icon={Megaphone}
+                  icon={StatusIcons.error}
                   title="Couldn’t load announcements"
                   description="The list didn't come back. Publishing still works — this is only the read."
                   action={
@@ -739,7 +751,7 @@ export function AnnouncementsAdmin() {
                 />
               ) : (
                 <div className="flex flex-col gap-2">
-                  {items.map((item) => {
+                  {items.map((item, i) => {
                     const status = statusLabel(item);
                     return (
                       // A rung LIGHTER and a rung TIGHTER than the card that
@@ -750,7 +762,8 @@ export function AnnouncementsAdmin() {
                       // container.
                       <div
                         key={item.id}
-                        className="rounded-field border border-border/60 bg-secondary p-3 transition-colors duration-fast ease-out-soft hover:border-border"
+                        style={staggerDelay(i, "tight")}
+                        className="rounded-field border border-border/60 bg-secondary p-3 transition-colors duration-fast ease-out-soft hover:border-border motion-safe:animate-rise-in [animation-fill-mode:backwards]"
                       >
                         <div className="flex items-start gap-3">
                           <div className="flex size-12 shrink-0 overflow-hidden rounded-control border border-border/60 bg-muted">
@@ -784,17 +797,16 @@ export function AnnouncementsAdmin() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="gap-1.5"
                             onClick={() => {
                               setEditingId(item.id);
                               setDraft(draftFromAnnouncement(item));
                             }}
                           >
-                            <ActionIcons.edit className="size-3.5" />
+                            <ActionIcons.edit className="size-4" />
                             Edit
                           </Button>
-                          <Button variant="ghost" size="sm" className="gap-1.5 text-destructive danger-hover" onClick={() => setDeleteTarget(item)}>
-                            <ActionIcons.delete className="size-3.5" />
+                          <Button variant="ghost" size="sm" className="text-destructive danger-hover" onClick={() => setDeleteTarget(item)}>
+                            <ActionIcons.delete className="size-4" />
                             Delete
                           </Button>
                         </div>

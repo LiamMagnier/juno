@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronUp, MessageSquare } from "lucide-react";
+import { ChevronUp, MessageSquare } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
+import { RollingNumber } from "@/components/ui/micro";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { staggerDelay } from "@/lib/motion";
 import { STATUS_META, CATEGORY_LABEL, type RoadmapRequest } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
 
@@ -64,21 +66,25 @@ export function VoteButton({
         // a rounded-card (14px) Card with p-4, so a 16px corner was ROUNDER than
         // the box containing it and the two curves fought at the card's top-left.
         //
-        // transition-all animated the border, the translate and anything layout
-        // resolved; the named properties are the only ones that actually change.
+        // `.pressable` is the house press (scale .97 on the press rung, the
+        // colours on the fast one). The hover used to lift the button 2px as
+        // well; hover is tonal now and nothing leaves the page under the
+        // pointer (ICONS_AND_MOTION §2.2).
         // relative z-10 keeps the vote target above RequestCard's stretched link
         // overlay — without it the overlay swallows every click on the arrow.
-        "group/vote relative z-10 flex shrink-0 flex-col items-center justify-center rounded-control border transition-[background-color,border-color,color,transform] duration-fast ease-out-soft active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100",
+        "pressable group/vote relative z-10 flex shrink-0 flex-col items-center justify-center rounded-control border motion-reduce:transition-none motion-reduce:active:scale-100",
         size === "md" ? "w-12 gap-0.5 py-1.5" : "w-10 gap-0 py-1",
         voted
           ? "border-primary/50 bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:border-primary/40 hover:bg-accent/50 hover:text-foreground motion-safe:hover:-translate-y-0.5"
+          : "border-border text-muted-foreground hover:border-primary/40 hover:bg-accent/50 hover:text-foreground"
       )}
     >
-      <ChevronUp className={cn("size-4 transition-transform duration-base ease-out-soft motion-reduce:transition-none", voted && "-translate-y-0.5")} />
-      <span key={count} className="font-mono text-micro font-medium tabular-nums motion-safe:animate-fade-in">
-        {count}
-      </span>
+      {/* The caret is the vote's state, not an action glyph: it rests a step
+          higher once your vote is in, on the in-out curve. */}
+      <ChevronUp className={cn("size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none", voted && "-translate-y-0.5")} />
+      {/* The count rolls rather than re-mounting: the digit that moves is
+          the confirmation that the vote landed. */}
+      <RollingNumber value={count} className="font-mono text-micro font-medium" />
     </button>
   );
 }
@@ -86,12 +92,24 @@ export function VoteButton({
 export function RequestCard({
   req,
   onVote,
+  index,
 }: {
   req: RoadmapRequest;
   onVote: (id: string) => void;
+  /** Position in its list, for the shared entrance stagger. Omit to arrive unstaggered. */
+  index?: number;
 }) {
   return (
-    <Card variant="interactive" className="relative flex gap-3 p-4">
+    <Card
+      variant="interactive"
+      // Tonal hover, no lift; dealt in on the tight rung when a list passes
+      // its position.
+      className={cn(
+        "relative flex gap-3 p-4 hover:bg-accent/50 hover:shadow-raised",
+        index !== undefined && "[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      )}
+      style={index !== undefined ? staggerDelay(index, "tight") : undefined}
+    >
       <VoteButton count={req.voteCount} voted={req.hasVoted} onToggle={() => onVote(req.id)} />
       {/* The title link stripped the global :focus-visible outline with `outline-none`
           and put nothing back, so tabbing the board showed no focus at all. The
@@ -112,7 +130,7 @@ export function RequestCard({
             <DotIdenticon seed={req.author.id} className="size-4 shrink-0" />
             {req.author.name ?? "Someone"}
           </span>
-          <span className="inline-flex items-center gap-1 tabular-nums">
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
             <MessageSquare className="size-3 shrink-0" /> {req.commentCount}
           </span>
           <span>{timeAgo(req.createdAt)}</span>

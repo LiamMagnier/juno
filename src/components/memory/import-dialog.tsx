@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowLeft, ClipboardCopy, Loader2, ShieldAlert } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { ArrowLeft, Loader2, ShieldAlert } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -204,7 +204,7 @@ export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogPro
                 {copied ? (
                   <StatusIcons.success className="size-3.5" aria-hidden="true" />
                 ) : (
-                  <ClipboardCopy className="size-3.5" aria-hidden="true" />
+                  <ActionIcons.copy className="size-3.5" aria-hidden="true" />
                 )}
                 {copied ? "Copied" : "Copy prompt"}
               </Button>

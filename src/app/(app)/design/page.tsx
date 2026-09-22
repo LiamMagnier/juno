@@ -16,7 +16,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -36,7 +36,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { AppIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/design/glyph-swap";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
@@ -166,11 +167,24 @@ export default function DesignPage() {
               )}
             >
               <span className="flex items-center gap-1.5 text-ui font-medium">
-                {creating === preset.key ? (
-                  <AppIcons.design className="size-3.5 text-primary motion-safe:animate-icon-breathe" aria-hidden />
-                ) : (
-                  <Plus className="size-3.5 text-muted-foreground group-hover:text-primary" aria-hidden />
-                )}
+                {/* The plus hands over to the Design mark while the document is
+                    being made, cross-fading in place, and only that mark
+                    breathes — it is live state, the one thing allowed to loop. */}
+                <GlyphSwap
+                  swapped={creating === preset.key}
+                  from={
+                    <Plus
+                      className="size-3.5 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-primary"
+                      aria-hidden
+                    />
+                  }
+                  to={
+                    <AppIcons.design
+                      className={cn("size-3.5 text-primary", creating === preset.key && "motion-safe:animate-icon-breathe")}
+                      aria-hidden
+                    />
+                  }
+                />
                 {preset.label}
               </span>
               <span className="font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
@@ -193,7 +207,7 @@ export default function DesignPage() {
           // Through EmptyState so a failed load is fenced and role="status" the way
           // it is on every other list page — this was unfenced text in a tint that
           // disappeared on the black ground.
-          <EmptyState tone="error" icon={AlertTriangle} title="Couldn’t load your designs" description={error} />
+          <EmptyState tone="error" icon={StatusIcons.error} title="Couldn’t load your designs" description={error} />
         ) : empty ? (
           <EmptyState
             icon={AppIcons.design}
@@ -203,10 +217,19 @@ export default function DesignPage() {
         ) : (
           <>
             <p className="pb-2 font-mono text-label text-muted-foreground">Recent</p>
+            {/* Dealt in on the tight rung, the first eight staggered and the rest
+                arriving with the eighth — a list of documents, not a queue. */}
             <ul className="space-y-1.5">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <div className="group flex items-center gap-1 rounded-menu border border-border/60 bg-card p-1 transition-colors duration-fast ease-out-soft hover:border-primary/40 hover:bg-accent">
+              {items.map((item, index) => (
+                <li
+                  key={item.id}
+                  style={staggerDelay(Math.min(index, 8), "tight")}
+                  className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                >
+                  {/* Tonal hover with a neutral edge. The edge used to turn the
+                      accent on hover, which spent the page's one accent on a
+                      row the pointer happened to cross. */}
+                  <div className="group flex items-center gap-1 rounded-menu border border-border/60 bg-card p-1 transition-colors duration-fast ease-out-soft hover:border-foreground/15 hover:bg-accent">
                     <button
                       type="button"
                       onClick={() => router.push(`/design/${item.id}`)}
@@ -215,9 +238,13 @@ export default function DesignPage() {
                       // is 8 and a 12 inside it bulges past the curve containing it —
                       // visible at the row's left edge on every design in the list.
                       // The composer rung also has no business naming a list row.
-                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-control px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      // No focus override: the global :focus-visible rule draws it.
+                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-control px-3 py-2 text-left"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-primary/10 text-primary">
+                      {/* A quiet tile, not an accent one: the kind is the same
+                          on every row, so it is furniture, and the row's ink
+                          takes it on hover like every other chrome glyph. */}
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
                         <AppIcons.design className="size-4" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -233,9 +260,12 @@ export default function DesignPage() {
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Actions for ${item.title}`}
-                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+                          // `.pressable` (on every Button) eases opacity itself; a
+                          // `transition-opacity` utility replaced its shorthand
+                          // and took the press's transform off the list.
+                          className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 coarse:opacity-100"
                         >
-                          <MoreHorizontal className="size-4" aria-hidden />
+                          <ActionIcons.more className="size-4" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className={MENU_W}>
@@ -243,7 +273,7 @@ export default function DesignPage() {
                           variant="destructive"
                           onSelect={() => setDeleteTarget(item)}
                         >
-                          <Trash2 className="size-4" aria-hidden />
+                          <ActionIcons.delete className="size-4" aria-hidden />
                           Delete design
                         </DropdownMenuItem>
                       </DropdownMenuContent>

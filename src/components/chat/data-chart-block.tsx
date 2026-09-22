@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Download, Maximize2, Minimize2 } from "lucide-react";
+import { Download, Maximize2, Minimize2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { cn } from "@/lib/utils";
 
 interface DataChartBlockProps {
@@ -33,25 +35,32 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
   };
 
   return (
-    <figure className="my-3 overflow-hidden rounded-card border border-border/60 bg-card shadow-soft">
+    // A hairline, no shadow: the figure sits in the reading column (FLAT_UI §2).
+    <figure className="my-3 overflow-hidden rounded-card border border-border/60 bg-card">
       <figcaption className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/35 px-4 py-2.5">
         <span className="min-w-0 truncate text-caption font-medium text-foreground">
           {chart.title || "Generated chart"}
         </span>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setIsExpanded((expanded) => !expanded)}
-            aria-label={isExpanded ? "Collapse chart" : "Expand chart"}
-          >
-            {isExpanded ? (
-              <Minimize2 className="size-3.5" aria-hidden="true" />
-            ) : (
-              <Maximize2 className="size-3.5" aria-hidden="true" />
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setIsExpanded((expanded) => !expanded)}
+                aria-label={isExpanded ? "Collapse chart" : "Expand chart"}
+              >
+                {/* Expand ⇄ collapse cross-fade in one box (GlyphSwap). */}
+                <GlyphSwap
+                  swapped={isExpanded}
+                  from={<Maximize2 className="size-4" aria-hidden="true" />}
+                  to={<Minimize2 className="size-4" aria-hidden="true" />}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{isExpanded ? "Collapse chart" : "Expand chart"}</TooltipContent>
+          </Tooltip>
           <Button
             type="button"
             variant="outline"

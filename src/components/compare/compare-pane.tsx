@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { ArrowRight } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -98,7 +99,9 @@ export function ComparePane({
     // bg-card, not bg-card/30: at 30% alpha over the true-black ground the pane
     // composited to ~1.5% lightness and stopped being a surface, leaving the
     // divide-x hairline as the only thing separating three streaming answers.
-    <section className="group/pane flex min-h-64 min-w-0 flex-col bg-card md:min-h-0 md:h-full">
+    // Fades in as it mounts, so a third model joining the race arrives
+    // rather than appearing in one frame.
+    <section className="group/pane flex min-h-64 min-w-0 flex-col bg-card motion-safe:animate-fade-in md:min-h-0 md:h-full">
       {/* Pane header: the picker IS the change button. */}
       <header className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
         <CompareModelPicker value={modelId} onChange={onChangeModel} disabled={streaming} />
@@ -110,7 +113,12 @@ export function ComparePane({
                   type="button"
                   onClick={onRemove}
                   aria-label={`Remove ${model?.name ?? "this model"} from the comparison`}
-                  className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none coarse:p-2.5 coarse:opacity-100"
+                  // A 32px target on the control rung (it was a 26px box at an
+                  // off-ladder 8px). Revealed with the pane's hover, and with
+                  // focus anywhere inside the pane, so a keyboard user reaching
+                  // the picker can see it is there. `.pressable` times the
+                  // reveal, the tonal hover and the dip together.
+                  className="pressable grid size-8 place-items-center rounded-control text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-focus-within/pane:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10 coarse:opacity-100"
                 >
                   <ActionIcons.dismiss className="size-3.5" />
                 </button>
@@ -145,7 +153,9 @@ export function ComparePane({
                   onClick={() => router.push("/upgrade")}
                   className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <ActionIcons.external className="size-3.5" /> See plans
+                  {/* A forward arrow, trailing: /upgrade is a page in Juno.
+                      The up-right arrow is reserved for what LEAVES Juno. */}
+                  See plans <ArrowRight aria-hidden="true" className="size-3.5" />
                 </Button>
               ) : (
                 <Button
@@ -154,7 +164,7 @@ export function ComparePane({
                   onClick={onRetry}
                   className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <ActionIcons.refresh className="size-3.5" /> Try again
+                  <ActionIcons.refresh aria-hidden="true" className="size-3.5" /> Try again
                 </Button>
               )}
             </div>
@@ -205,9 +215,11 @@ export function ComparePane({
           <button
             type="button"
             onClick={onContinue}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+            // `ArrowRight`, not the leaves-Juno arrow: this carries the answer
+            // into a chat here, and the arrow nudges the way it goes.
+            className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
           >
-            Continue in chat <ActionIcons.external className="size-3" />
+            Continue in chat <ArrowRight aria-hidden="true" className="size-3.5" />
           </button>
         )}
       </footer>

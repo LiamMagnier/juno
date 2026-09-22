@@ -24,11 +24,12 @@
  */
 
 import * as React from "react";
-// `TextSearch` is a raw lucide glyph like the three it joins: the registry names
-// concepts the product draws in more than one place, and "point at this sentence
-// in the text above" is drawn here and nowhere else.
-import { ChevronDown, TextSearch } from "lucide-react";
+// `TextSearch` is taken from the set directly rather than from a registry: the
+// registries name concepts the product draws in more than one place, and "point
+// at this sentence in the text above" is drawn here and nowhere else.
+import { ChevronDown, Loader2, TextSearch } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import {
   AUDIT_COPY,
@@ -108,16 +109,24 @@ function SourceInspector({
           }}
           aria-label="Copy the cited passage"
           className={cn(
-            "inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            // `.pressable` times the tonal hover and the dip. No local focus
+            // ring: the global `:focus-visible` outline is authoritative.
+            "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
+            "motion-reduce:transition-none motion-reduce:active:scale-100",
             // `hover:bg-accent`. This button is inside the `bg-card` inspector
             // above, so `hover:bg-card` repainted the exact colour already
             // under it — the only copy-passage control in the audit had no
             // hover state at all.
-            "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            "hover:bg-accent hover:text-foreground"
           )}
         >
-          <ActionIcons.copy aria-hidden="true" className="size-3.5" />
+          {/* The copy glyph cross-fades to a check once the passage is on the
+              clipboard, so the receipt is where the press was. */}
+          <GlyphSwap
+            swapped={copied}
+            from={<ActionIcons.copy aria-hidden="true" className="size-3.5" />}
+            to={<StatusIcons.success aria-hidden="true" className="size-3.5 text-success-ink" />}
+          />
         </button>
       </div>
 
@@ -272,10 +281,10 @@ function ClaimInAnswer({
           setMarked(true);
         }}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5",
+          "pressable inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5",
           "font-mono text-caption text-muted-foreground",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-          "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "motion-reduce:transition-none motion-reduce:active:scale-100",
+          "hover:bg-accent hover:text-foreground",
           "coarse:h-11"
         )}
       >
@@ -319,8 +328,9 @@ function ClaimRow({
           // Full-strength `bg-muted`. The claim list is drawn straight on the
           // page, and half a muted fill is a 1-point step over light paper —
           // the row hover on the widest control in the audit was invisible in
-          // the light theme and thin in the dark one.
-          "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          // the light theme and thin in the dark one. Focus is the global
+          // `:focus-visible` outline; the local ring that replaced it is gone.
+          "hover:bg-muted",
           // 44px minimum target on touch, without stretching the row on a desktop list.
           "coarse:min-h-11"
         )}
@@ -361,7 +371,7 @@ function ClaimRow({
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "mt-1 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+            "mt-1 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -455,8 +465,10 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
     return (
       <p
         aria-live="polite"
-        className={cn("mt-3 font-mono text-caption text-muted-foreground", className)}
+        className={cn("mt-3 flex items-center gap-1.5 font-mono text-caption text-muted-foreground", className)}
       >
+        {/* The one loop here, and only while the check is actually running. */}
+        <Loader2 aria-hidden="true" className="size-3 shrink-0 motion-safe:animate-spin" />
         Checking citations…
       </p>
     );
@@ -467,8 +479,9 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
     // missing is Juno's opinion of its own citations, and pretending otherwise
     // would be the one thing this component exists not to do.
     return (
-      <p aria-live="polite" className={cn("mt-3 font-mono text-caption text-muted-foreground", className)}>
-        Citation check unavailable — the sources below have not been verified.
+      <p aria-live="polite" className={cn("mt-3 flex items-start gap-1.5 font-mono text-caption text-muted-foreground", className)}>
+        <StatusIcons.info aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+        <span className="min-w-0">Citation check unavailable — the sources below have not been verified.</span>
       </p>
     );
   }
@@ -488,10 +501,14 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
         aria-expanded={open}
         aria-controls={listId}
         className={cn(
-          "group/audit relative z-0 inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-card pl-2.5 pr-3 shadow-soft",
-          "transition-[transform,box-shadow,border-color] duration-base ease-out-soft motion-reduce:transition-none",
-          "hover:z-10 hover:shadow-lift motion-safe:hover:-translate-y-0.5",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          // Flat and tonal, like every other control in the transcript: a
+          // hairline at rest and an --accent fill under the pointer. It used
+          // to cast a shadow, lift 2px and throw a larger one on hover, which
+          // made the audit strip the one object in the reading column that
+          // floated. `.pressable` times the fill and the dip; the global
+          // `:focus-visible` outline is the focus state.
+          "pressable group/audit relative inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-card pl-2.5 pr-3",
+          "hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100",
           "coarse:h-11",
           trouble > 0 ? "border-warning/45" : "border-border/70"
         )}
@@ -500,13 +517,13 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           aria-hidden="true"
           className={cn("size-2 shrink-0 rounded-full", trouble > 0 ? "bg-warning" : "bg-success")}
         />
-        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast group-hover/audit:text-foreground motion-reduce:transition-none">
+        <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/audit:text-foreground motion-reduce:transition-none">
           {auditHeadline(audit.summary)}
         </span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

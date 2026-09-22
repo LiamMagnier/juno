@@ -16,6 +16,7 @@ import {
   type WebSearchSite,
 } from "@/components/aicss";
 import { Button } from "@/components/ui/button";
+import { Minus, Play, Plus } from "@/components/ui/icons";
 import type { ClientSource } from "@/types/chat";
 
 const REASONING_LINES = [
@@ -126,14 +127,14 @@ export function AicssGallery() {
         note="Fixed 40px slots, two lines each, capped at 180px and then masked. The reveal below is a control, not the component's behaviour — in the app the lines are whatever the provider has sent."
       >
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setRevealed((n) => Math.max(0, n - 1))}>
-            −
+          <Button variant="outline" size="icon-sm" aria-label="One line fewer" onClick={() => setRevealed((n) => Math.max(0, n - 1))}>
+            <Minus className="size-4" />
           </Button>
           <span className="font-mono text-caption tabular-nums text-muted-foreground">
             {revealed}/{REASONING_LINES.length}
           </span>
-          <Button variant="outline" size="sm" onClick={() => setRevealed((n) => Math.min(REASONING_LINES.length, n + 1))}>
-            +
+          <Button variant="outline" size="icon-sm" aria-label="One line more" onClick={() => setRevealed((n) => Math.min(REASONING_LINES.length, n + 1))}>
+            <Plus className="size-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={() => setStreaming((v) => !v)}>
             {streaming ? "Settle" : "Go live"}
@@ -182,10 +183,12 @@ export function AicssGallery() {
             <div className="w-[288px]">
               <div className="relative aspect-video overflow-hidden rounded-field">
                 <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
+                {/* The set's play mark on the plate. `fill` because the plate
+                    IS the play control's face — the solid triangle is the
+                    convention every video player shares — and no hover
+                    articulation, because the placeholder is not pressable. */}
                 <div className="generation-media__play">
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
-                    <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
-                  </svg>
+                  <Play weight="fill" motion="none" className="generation-media__play-icon" />
                 </div>
               </div>
               <div className="mt-2.5 flex flex-col gap-0.5">
@@ -224,11 +227,11 @@ export function AicssGallery() {
 
       <Section title="To-do List" note="The header glyph is the status: list, then determinate pie, then filled check — and a chevron on hover, because folding is the only thing you can do with it.">
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setCurrent((n) => Math.max(0, n - 1))}>
-            −
+          <Button variant="outline" size="icon-sm" aria-label="Step back" onClick={() => setCurrent((n) => Math.max(0, n - 1))}>
+            <Minus className="size-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setCurrent((n) => Math.min(TODO_LABELS.length, n + 1))}>
-            +
+          <Button variant="outline" size="icon-sm" aria-label="Step forward" onClick={() => setCurrent((n) => Math.min(TODO_LABELS.length, n + 1))}>
+            <Plus className="size-4" />
           </Button>
         </div>
         <TodoList items={todos} />

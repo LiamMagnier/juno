@@ -33,7 +33,7 @@
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Minus, Plus, type IconComponent } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -41,8 +41,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { GlyphSwap } from "@/components/design/glyph-swap";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
 import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
@@ -330,13 +333,16 @@ function PaintListSection({
             className={cn("space-y-1.5", index > 0 && "border-t border-border/40 pt-1.5", hidden && "opacity-50")}
           >
             <div className="flex items-center gap-1.5">
+              {/* The swatch is also the disclosure, so it says when it is open:
+                  the edge takes the focus accent while the editor under it is
+                  showing, and darkens on hover like every other field edge. */}
               <button
                 type="button"
                 aria-label={`${title} ${index + 1} — edit`}
                 aria-expanded={expanded === index}
                 disabled={readOnly}
                 onClick={() => setExpanded(expanded === index ? null : index)}
-                className="pressable size-6 shrink-0 rounded-xs border border-border/60"
+                className="pressable size-6 shrink-0 rounded-xs border border-border/60 hover:border-foreground/30 aria-expanded:border-primary/70 disabled:pointer-events-none"
                 style={{ background: paintPreviewCss(paint) }}
               />
               {paint.type === "solid" ? (
@@ -376,7 +382,7 @@ function PaintListSection({
                 disabled={readOnly}
                 onClick={() => setPaint(index, { ...paint, visible: hidden }, hidden ? `Show ${title.toLowerCase()}` : `Hide ${title.toLowerCase()}`)}
               >
-                {hidden ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
+                <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
               </IconButton>
               <IconButton
                 label={`Remove ${title.toLowerCase()} ${index + 1}`}
@@ -461,7 +467,9 @@ function PaintEditor({
   };
 
   return (
-    <div className="space-y-1.5 border-t border-border/40 pt-1.5">
+    // Faded in where it opens, rather than cut in: the row above it stays put,
+    // so the only thing to say is that its detail has arrived.
+    <div className="space-y-1.5 border-t border-border/40 pt-1.5 motion-safe:animate-fade-in">
       {paint.type !== "image" && (
         <Segmented value={paint.type} options={PAINT_KINDS} disabled={disabled} onChange={changeKind} label="Paint type" />
       )}
@@ -583,8 +591,10 @@ function GradientRail({
             }}
             onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
             className={cn(
-              "pressable absolute top-0 size-3.5 -translate-x-1/2 cursor-ew-resize rounded-full border-2 shadow-soft transition-colors",
-              index === selected ? "border-primary" : "border-border"
+              // `.pressable` already eases the border colour; a `transition-*`
+              // utility here would replace its shorthand and un-animate the dip.
+              "pressable absolute top-0 size-3.5 -translate-x-1/2 cursor-ew-resize rounded-full border-2 shadow-soft",
+              index === selected ? "border-primary" : "border-border hover:border-foreground/40"
             )}
             style={{ left: `${stop.position * 100}%`, background: rgbaToCss(stop.color) }}
           />
@@ -663,10 +673,11 @@ function StopEditor({
         />
       </div>
       <div className="flex gap-1.5">
-        <MiniButton disabled={disabled} onClick={addStop}>
+        <MiniButton icon={Plus} disabled={disabled} onClick={addStop}>
           Add stop
         </MiniButton>
         <MiniButton
+          icon={Minus}
           // Two stops is the schema's minimum and the concept's: one stop is a
           // solid colour, and the type picker is how you say that.
           disabled={disabled || stops.length <= 2}
@@ -949,28 +960,30 @@ export function EffectsSection({
 function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: EffectType) => void }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Add effect"
-          title="Add effect"
-          disabled={disabled}
-          className="pressable rounded-xs px-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 coarse:min-h-8 coarse:min-w-8"
-        >
-          <Plus className="size-3" aria-hidden />
-        </button>
-      </DropdownMenuTrigger>
+      {/* The same key as the **+** on Fill and Stroke beside it, with the same
+          hint — three section headers, one control. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label="Add effect" disabled={disabled} className={cn(iconButtonClass, ICON_TONE.neutral)}>
+              <Plus className="size-3" aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Add effect</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent
         align="end"
         // The canvas owns Delete, ⌘Z and the single-key tool shortcuts; without
         // this a keystroke aimed at the open menu also reached the artwork.
         onKeyDown={(event) => event.stopPropagation()}
-        className="w-56"
+        // The wide rung: every row carries a second line (menu-recipe.ts).
+        className={MENU_W_WIDE}
       >
         {EFFECT_MENU.map((item) => (
-          <DropdownMenuItem key={item.type} onSelect={() => onAdd(item.type)} className="flex-col items-start gap-0">
-            <span className="text-caption text-foreground">{item.label}</span>
-            <span className="text-micro leading-snug text-muted-foreground">{item.hint}</span>
+          <DropdownMenuItem key={item.type} onSelect={() => onAdd(item.type)} className="flex-col items-start gap-0.5">
+            <span className="text-ui text-foreground">{item.label}</span>
+            <span className="text-caption text-muted-foreground">{item.hint}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -1010,19 +1023,23 @@ function EffectRow({
             disabled={disabled}
             onClick={() => onChange({ ...effect, visible: hidden }, hidden ? `Show ${label}` : `Hide ${label}`)}
           >
-            {hidden ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
+            <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
           </IconButton>
           {/* The labels used to say "down the stack" on the up arrow and "up the
               stack" on the down arrow. Both readings are defensible in the
               abstract — index 0 paints first, so it is the BOTTOM of the paint
               stack — but the list above renders index 0 at the TOP, so the arrow
               and the words disagreed about the direction of the same click. The
-              visible list is what a person is aiming at, so the words follow it. */}
+              visible list is what a person is aiming at, so the words follow it.
+
+              Arrows, not carets: a caret is a disclosure's state mark, and these
+              MOVE the row — the same arrows the layer menu uses for Bring
+              forward and Send backward, nudging the way the row will go. */}
           <IconButton label={`Move ${label} up`} disabled={disabled || index === 0} onClick={() => onMove(-1)}>
-            <ChevronUp className="size-3.5" aria-hidden />
+            <ArrowUp className="size-3.5" aria-hidden />
           </IconButton>
           <IconButton label={`Move ${label} down`} disabled={disabled || index === count - 1} onClick={() => onMove(1)}>
-            <ChevronDown className="size-3.5" aria-hidden />
+            <ArrowDown className="size-3.5" aria-hidden />
           </IconButton>
           <IconButton label={`Remove ${label}`} disabled={disabled} destructive onClick={onRemove}>
             <ActionIcons.delete className="size-3.5" aria-hidden />
@@ -1363,7 +1380,7 @@ export function Section({ title, action, children }: { title: string; action?: R
  * rather than declaring a second copy of it.
  */
 export const fieldClass =
-  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-caption tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-caption tabular-nums outline-none transition-colors duration-fast ease-out-soft focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
 
 /**
  * The row every inspector field is built on: the label INSIDE the control's
@@ -1383,7 +1400,7 @@ export const fieldClass =
  * being legible again rather than permanently lost.
  */
 const FIELD_ROW =
-  "flex h-6 w-full min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9";
+  "flex h-6 w-full min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast ease-out-soft focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9";
 
 /** The control inside a `FIELD_ROW`. No border and no padding of its own: the
  *  row draws those, and a bordered input inside a bordered row reads as a field
@@ -1405,46 +1422,128 @@ function MixedBadge() {
   return <span className="shrink-0 rounded-sm bg-muted px-1 font-mono text-micro text-muted-foreground">Mixed</span>;
 }
 
-function MiniButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="pressable flex-1 rounded-md border border-border/60 px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-9"
-    >
-      {children}
-    </button>
-  );
-}
-
-export function IconButton({
+/**
+ * A bordered text button the width of its share of a row — Add stop, Remove
+ * stop. The glyph is optional and sits on the label's optical centre at the
+ * caption rung's gap.
+ */
+function MiniButton({
   children,
-  label,
+  icon: Icon,
   disabled,
-  destructive,
   onClick,
 }: {
   children: React.ReactNode;
-  label: string;
+  icon?: IconComponent;
   disabled?: boolean;
-  destructive?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      aria-label={label}
-      title={label}
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "pressable rounded-xs px-1 font-mono text-caption text-muted-foreground transition-colors disabled:opacity-30 coarse:min-h-8 coarse:min-w-8",
-        destructive ? "hover:text-destructive" : "hover:text-foreground"
-      )}
+      className="pressable flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-caption text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50 coarse:min-h-9"
+    >
+      {Icon && <Icon className="size-3" aria-hidden />}
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The editor's small icon key — every eye, arrow, **+** and bin in the rails.
+ *
+ * It was a bare glyph with padding: no fill on hover, so the only sign a row's
+ * four controls were controls was the cursor, and a `transition-colors` beside
+ * `.pressable` that replaced the press's own transition shorthand, so the dip
+ * snapped instead of easing. Now it is a tonal key — flat at rest, the hover
+ * fill every other ghost control in the product uses, the destructive tint for
+ * a remove — at a fixed box, so a row of them is a row rather than four widths.
+ *
+ * Exported as a class too, for the few triggers that must be a plain
+ * `<button>` (a Radix menu trigger, a hint that has to survive `disabled`).
+ */
+export const iconButtonClass =
+  "pressable inline-flex shrink-0 items-center justify-center rounded-xs disabled:pointer-events-none disabled:opacity-30 coarse:size-8";
+
+/** The two inks an icon key comes in. Kept apart from the shape so a call site
+ *  that recolours the glyph (an accent status badge) replaces only this half. */
+export const ICON_TONE = {
+  neutral: "text-muted-foreground hover:bg-accent hover:text-foreground",
+  destructive: "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
+} as const;
+
+const ICON_BOX = { sm: "size-5", md: "size-6" } as const;
+
+export const IconButton = React.forwardRef<
+  HTMLButtonElement,
+  Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "aria-label"> & {
+    /** The accessible name, and the hint unless `hint` says otherwise. */
+    label: string;
+    /** A shorter visible hint where the accessible name carries the layer's
+     *  name ("Hide" over "Hide Rectangle 3"). */
+    hint?: string;
+    destructive?: boolean;
+    /** `sm` (20px) for a rail row, `md` (24px) for a toolbar strip. */
+    size?: keyof typeof ICON_BOX;
+    hintSide?: "top" | "right" | "bottom" | "left";
+    /**
+     * The platform's own hint (`title`) instead of the product tooltip, for
+     * keys REPEATED on every row of a list — a layer's eye and padlock, a
+     * track's **+**. A Radix tooltip is a small tree of its own, and four per
+     * row across a few hundred layers re-rendered on every edit is a cost the
+     * tree should not pay for a hint that says one word.
+     */
+    nativeHint?: boolean;
+  }
+>(function IconButton({ children, label, hint, destructive, size = "sm", hintSide, nativeHint, className, type, ...rest }, ref) {
+  const button = (
+    <button
+      ref={ref}
+      type={type ?? "button"}
+      aria-label={label}
+      title={nativeHint ? (hint ?? label) : undefined}
+      className={cn(iconButtonClass, ICON_BOX[size], destructive ? ICON_TONE.destructive : ICON_TONE.neutral, className)}
+      {...rest}
     >
       {children}
     </button>
+  );
+  if (nativeHint) return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side={hintSide}>{hint ?? label}</TooltipContent>
+    </Tooltip>
+  );
+});
+
+/**
+ * What a rail or dock says when it has nothing to show — one muted glyph in a
+ * quiet tile, one sentence, and the action that would fill it when there is
+ * one. The glyph names the panel's own subject (Layers, History, Motion), so
+ * the empty state reads as that panel waiting rather than as a failure.
+ */
+export function PanelEmpty({
+  icon: Icon,
+  children,
+  action,
+  className,
+}: {
+  icon: IconComponent;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col items-center gap-2 px-4 py-6 text-center motion-safe:animate-fade-in", className)}>
+      <span aria-hidden className="flex size-9 items-center justify-center rounded-field bg-secondary text-muted-foreground">
+        <Icon className="size-5" />
+      </span>
+      <p className="max-w-[16rem] text-caption text-muted-foreground">{children}</p>
+      {action}
+    </div>
   );
 }
 
@@ -1481,7 +1580,7 @@ export function Segmented({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "pressable min-w-0 flex-1 truncate rounded-xs px-1 text-caption leading-none transition-colors disabled:opacity-50",
+            "pressable min-w-0 flex-1 truncate rounded-xs px-1 text-caption leading-none disabled:opacity-50",
             value === option.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -2038,7 +2137,7 @@ export function ColorField({
             type="button"
             disabled={disabled}
             aria-label={`${name} — choose a colour`}
-            className="pressable flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none"
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none"
           >
             <span
               aria-hidden
@@ -2094,15 +2193,9 @@ export function ColorField({
         </PopoverContent>
       </Popover>
       {onClear && (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onClear}
-          aria-label={`Remove ${name.toLowerCase()}`}
-          className="pressable shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
-        >
+        <IconButton label={`Remove ${name.toLowerCase()}`} disabled={disabled} destructive onClick={onClear} className="-mr-1 size-4">
           <ActionIcons.dismiss className="size-3" aria-hidden />
-        </button>
+        </IconButton>
       )}
     </div>
   );

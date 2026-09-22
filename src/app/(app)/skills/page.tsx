@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSkill } from "@/lib/work/skills";

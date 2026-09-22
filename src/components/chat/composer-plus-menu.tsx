@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, Plus } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { composerIconButtonClass } from "@/components/ui/composer-shell";
@@ -60,7 +60,7 @@ export type PlusMenuItem =
       kind: "action";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       onSelect: () => void;
       disabled?: boolean;
       /** A short mono figure after the label — e.g. the row's shortcut. */
@@ -72,7 +72,7 @@ export type PlusMenuItem =
       kind: "toggle";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       checked: boolean;
       onToggle: () => void;
       disabled?: boolean;
@@ -84,7 +84,7 @@ export type PlusMenuItem =
       kind: "sub";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       /** What is currently chosen inside, shown before the chevron. */
       detail?: string;
       /** The flyout's body: rows, and whatever sits between them. */
@@ -108,7 +108,7 @@ export type PlusMenuSection = PlusMenuItem[];
 export const plusMenuRowClass = menuRowClass;
 
 /** The 16px glyph slot at the head of a row. */
-export function PlusMenuGlyph({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
+export function PlusMenuGlyph({ icon: Icon, className }: { icon: IconComponent; className?: string }) {
   // No size and no ink stated: the row's recipe supplies both (16px, muted) and
   // does it for every menu in the product, so a glyph here and a glyph in a row
   // kebab cannot drift apart again. `className` still wins where a call site
@@ -130,7 +130,7 @@ export function PlusMenuSeparator({ className }: { className?: string }) {
 export const PlusMenuRow = React.forwardRef<
   React.ElementRef<typeof DropdownMenuItem>,
   Omit<React.ComponentPropsWithoutRef<typeof DropdownMenuItem>, "onSelect"> & {
-    icon?: LucideIcon;
+    icon?: IconComponent;
     checked?: boolean;
     selected?: boolean;
     note?: string;
@@ -139,7 +139,7 @@ export const PlusMenuRow = React.forwardRef<
     description?: string;
     /** Keep the menu open after this row is picked (a radio that sets a mode, say). */
     keepOpen?: boolean;
-    /** A brand mark or any element in place of the Lucide glyph. */
+    /** A brand mark or any element in place of the set's glyph. */
     leading?: React.ReactNode;
     onSelect?: () => void;
   }
@@ -178,7 +178,7 @@ export const PlusMenuRow = React.forwardRef<
       )}
       {note ? (
         <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
-      ) : ticked ? (
+      ) : toggle || radio ? (
         // A tick, not a Switch. This slot used to render the real `Switch`
         // component (aria-hidden, pointer-events-none) so that the menu and
         // the "@" palette would stop drawing two different toggles for one
@@ -188,12 +188,25 @@ export const PlusMenuRow = React.forwardRef<
         // object in a menu whose every other row carries a 16px glyph. The
         // "@" palette (composer.tsx) moved to this same tick in the same
         // change; if one of them ever grows a switch again, the drift is back.
-        // An OFF row renders nothing here: `aria-checked` on the row is the
-        // state, and the tick is `aria-hidden` decoration of it.
-        <StatusIcons.success
+        //
+        // The slot is kept on an OFF row and the tick CROSS-FADES in and out
+        // of it, on the same recipe DropdownMenu's own indicator uses (fade +
+        // scale on --dur-fast, leaving on the accelerate; the resting scale
+        // reads --motion-scale-from, so the reduced tier keeps the fade). It
+        // used to be mounted on and unmounted off, so switching a tool off
+        // made the mark vanish in one frame and the label reflow into its
+        // space, and every ON row replayed a spring on every menu open.
+        // `aria-checked` on the row is the state; the tick is `aria-hidden`
+        // decoration of it.
+        <span
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-primary motion-safe:animate-check-morph"
-        />
+          className={cn(
+            "grid size-3.5 shrink-0 place-items-center transition-[opacity,transform] duration-fast ease-out-soft",
+            !ticked && "opacity-0 ease-in [transform:scale(var(--motion-scale-from,0.6))]",
+          )}
+        >
+          <StatusIcons.success className="size-3.5 text-primary" />
+        </span>
       ) : null}
     </DropdownMenuItem>
   );
@@ -295,7 +308,9 @@ export function PlusMenu({
           // --motion-shift, so reduced motion gets the fade without the slide.
           <div className="animate-stage-in" style={{ "--stage-dx": "12px" } as React.CSSProperties}>
             <DropdownMenuItem data-menu-back aria-label="Back to Add" className={plusMenuRowClass} onSelect={(event) => { event.preventDefault(); back(); }}>
-              <ArrowLeft className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />{panel.label}
+              {/* 16px and no ink stated — the row recipe's glyph, like every
+                  other row in this menu (it was a 14px outlier). */}
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />{panel.label}
             </DropdownMenuItem>
             <PlusMenuSeparator />
             {panel.render()}

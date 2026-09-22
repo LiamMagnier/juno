@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { FileCode } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,19 +26,6 @@ export interface DiffRow {
   text: string;
 }
 
-const DiffIcon = () => (
-  <svg className="aicss-cb-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-    <path
-      d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
 export function FileDiff({ file, rows, className }: { file: string; rows: DiffRow[]; className?: string }) {
   const added = rows.filter((r) => r.type === "add").length;
   const removed = rows.filter((r) => r.type === "del").length;
@@ -45,8 +33,11 @@ export function FileDiff({ file, rows, className }: { file: string; rows: DiffRo
   return (
     <div className={cn("aicss-cb aicss-diff", className)}>
       <div className="aicss-cb-head">
-        <span className="aicss-cb-file">
-          <DiffIcon />
+        {/* `FileCode`, the mark `DiffSummary` gives a changed file. The span
+            lays itself out: `.aicss-cb-file` has never had a rule, so the glyph
+            sat on the text baseline beside the name instead of centred on it. */}
+        <span className="aicss-cb-file inline-flex min-w-0 items-center gap-1.5">
+          <FileCode className="size-3.5 text-muted-foreground" />
           <span className="aicss-cb-lang">{file}</span>
         </span>
         <span className="aicss-diff-stat">

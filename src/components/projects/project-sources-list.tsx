@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   FileText,
   FileCode,
   FileUp,
@@ -10,12 +11,9 @@ import {
   Table,
   Upload,
   Search,
-  ExternalLink,
-  Boxes,
   Loader2,
-  Download,
-} from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+} from "@/components/ui/icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
@@ -159,15 +157,15 @@ export function ProjectSourcesList({
         disabled={uploading}
         aria-label={onDropFiles ? "Drop files here or click to upload" : "Upload files"}
         className={cn(
-          "surface-inset flex w-full flex-col items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-8 text-center transition-[border-color,background-color,color] duration-fast ease-out-soft hover:border-foreground/30 disabled:cursor-progress motion-reduce:transition-none",
+          "group surface-inset flex w-full flex-col items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-8 text-center transition-colors duration-fast ease-out-soft hover:border-foreground/30 disabled:cursor-progress motion-reduce:transition-none",
           dragging && "border-primary/60 bg-primary/5"
         )}
         {...dropHandlers}
       >
         <span
           className={cn(
-            "surface-raised flex size-10 items-center justify-center rounded-field text-muted-foreground",
-            dragging && "text-primary"
+            "surface-raised flex size-10 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none",
+            dragging && "text-primary group-hover:text-primary"
           )}
         >
           {uploading ? (
@@ -261,10 +259,10 @@ export function ProjectSourcesList({
                   return (
                     <li
                       key={file.id}
-                      className="group flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                      style={staggerDelay(i)}
+                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                      style={staggerDelay(i, "tight")}
                     >
-                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <a
@@ -287,8 +285,8 @@ export function ProjectSourcesList({
 
                       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
                         <Pressable kind="icon" size="sm" asChild aria-label={`Download ${file.fileName}`}>
-                          <a href={file.url} target="_blank" rel="noopener noreferrer" download>
-                            <Download className="size-3.5" aria-hidden="true" />
+                          <a href={file.url} target="_blank" rel="noopener noreferrer" download title="Download">
+                            <ActionIcons.download className="size-3.5" aria-hidden="true" />
                           </a>
                         </Pressable>
                         {onDeleteFile && (
@@ -297,6 +295,7 @@ export function ProjectSourcesList({
                             size="sm"
                             onClick={() => onDeleteFile(file.id)}
                             aria-label={`Remove ${file.fileName}`}
+                            title="Remove"
                             className="danger-hover"
                           >
                             <ActionIcons.delete className="size-3.5" aria-hidden="true" />
@@ -320,20 +319,23 @@ export function ProjectSourcesList({
                   <li
                     key={art.id}
                     className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                    style={staggerDelay(i)}
+                    style={staggerDelay(i, "tight")}
                   >
                     <Link
                       href={`/artifacts?id=${art.identifier}`}
-                      className="group flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none"
+                      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
-                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
-                        <Boxes className="size-4" aria-hidden="true" />
+                      <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                        <AppIcons.artifacts className="size-4" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="truncate text-ui font-medium text-foreground">{art.title}</span>
                         <span className="font-mono text-caption text-muted-foreground">{art.type}</span>
                       </span>
-                      <ExternalLink
+                      {/* An arrow, not the leaves-Juno mark: this row opens the
+                          artifact inside the product. It fades in and nudges
+                          the way the row goes. */}
+                      <ArrowRight
                         className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
                         aria-hidden="true"
                       />

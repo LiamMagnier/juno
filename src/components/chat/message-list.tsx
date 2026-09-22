@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown } from "@/components/ui/icons";
 import { MessageItem } from "@/components/chat/message-item";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, GenerationStatus } from "@/types/chat";
@@ -379,35 +380,48 @@ export function MessageList(props: MessageListProps) {
           the other way, with focus-within:opacity-100; that is right for controls
           that should be REACHABLE while invisible. This one is redundant when the
           reader is already at the bottom.) */}
-      <button
-        type="button"
-        onClick={jumpToLatest}
-        aria-label="Scroll to latest"
-        aria-hidden={atBottom || undefined}
-        tabIndex={atBottom ? -1 : undefined}
-        className={cn(
-          // `transition-all` animated the backdrop-blur, the border and
-          // shadow-float alongside the intended transform/opacity, and the
-          // control had no reduced-motion escape — the visually identical
-          // button in message-item.tsx does guard itself.
-          // Opaque `bg-popover`, not `bg-card/80` behind a blur. This button
-          // floats over the live transcript, and on the black ground card at 80%
-          // resolves to ~5% lightness while the blur has no colour to smear —
-          // so the message text scrolling underneath showed straight through the
-          // glyph. A floating layer takes the floating rung.
-          // `active:duration-press`: transform is in the transition list, so
-          // without it the dip ran at --dur-base — 220ms to reach 0.95, three
-          // times the rung `.pressable` splits transform onto because a press
-          // that slow is felt as lag. The hover lift keeps the base timing.
-          "absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 active:duration-press coarse:size-11",
-          "motion-reduce:transition-none motion-reduce:active:scale-100",
-          atBottom
-            ? "pointer-events-none translate-y-2 opacity-0"
-            : "opacity-100 motion-safe:animate-rise-in hover:-translate-y-0.5"
-        )}
-      >
-        <ArrowDown className="size-4" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            aria-label="Scroll to latest"
+            aria-hidden={atBottom || undefined}
+            tabIndex={atBottom ? -1 : undefined}
+            className={cn(
+              // `transition-all` animated the backdrop-blur, the border and
+              // shadow-float alongside the intended transform/opacity, and the
+              // control had no reduced-motion escape — the visually identical
+              // button in message-item.tsx does guard itself.
+              // Opaque `bg-popover`, not `bg-card/80` behind a blur. This button
+              // floats over the live transcript, and on the black ground card at 80%
+              // resolves to ~5% lightness while the blur has no colour to smear —
+              // so the message text scrolling underneath showed straight through the
+              // glyph. A floating layer takes the floating rung.
+              // `active:duration-press`: transform is in the transition list, so
+              // without it the dip ran at --dur-base — 220ms to reach 0.97, three
+              // times the rung `.pressable` splits transform onto because a press
+              // that slow is felt as lag.
+              // Hover is tonal, not a lift: the fill cross-fades to --accent and
+              // the arrow nudges down on its own (icons.tsx), which is the gesture
+              // that says where the press goes. The button rising toward the
+              // pointer said the opposite.
+              // Centred with `inset-x-0 mx-auto`, not `left-1/2 -translate-x-1/2`:
+              // `animate-rise-in` writes `transform` for its whole run, which
+              // replaced the centring translate, so the button arrived 18px
+              // right of centre and jumped back when the entrance ended.
+              "absolute inset-x-0 bottom-4 z-10 mx-auto flex size-9 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color,background-color] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press coarse:size-11",
+              "motion-reduce:transition-none motion-reduce:active:scale-100",
+              atBottom
+                ? "pointer-events-none translate-y-2 opacity-0"
+                : "opacity-100 motion-safe:animate-rise-in"
+            )}
+          >
+            <ArrowDown className="size-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Scroll to latest</TooltipContent>
+      </Tooltip>
     </div>
   );
 }

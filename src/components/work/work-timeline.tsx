@@ -16,7 +16,7 @@ import {
   Bot,
   Wrench,
   X,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { staggerDelay } from "@/lib/motion";
@@ -850,6 +850,50 @@ function useFeedEntrance(id: string, arrivals: WorkArrivals) {
   };
 }
 
+/**
+ * The mark on the feed's rail beside a row or a fold.
+ *
+ * One glyph per row, and while the row is live that glyph is the one spinner
+ * rather than the row's own mark set turning — a wrench spinning on its axis
+ * read as a broken icon, not as work in progress. When the call reports back
+ * the spinner and the outcome share the slot and CROSS-FADE, so the tick (or
+ * the cross) settles into the place the spinner was instead of replacing it in
+ * a frame; the rail is the one place a reader watches a step finish. Under
+ * reduced motion the scale collapses and the fade keeps its timing, and the
+ * global rule stops the spin.
+ */
+function FeedMarker({
+  icon: Icon,
+  running,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  running: boolean;
+  /** The settled glyph's ink. */
+  tone: string;
+}) {
+  const layer = "[grid-area:1/1] size-3 transition-[opacity,transform] duration-fast ease-out-soft";
+  const hidden = "scale-75 opacity-0 motion-reduce:scale-100";
+  return (
+    <span
+      className="absolute -left-[21px] top-1 grid size-3.5 place-items-center rounded-full bg-background"
+      aria-hidden="true"
+    >
+      <Loader2
+        className={cn(layer, "text-primary", running ? "motion-safe:animate-spin" : hidden)}
+      />
+      <Icon className={cn(layer, tone, running && hidden)} />
+    </span>
+  );
+}
+
+/**
+ * How a disclosure's body arrives. The body is mounted by the press that
+ * opens it, so it rises into place on the house entrance rather than
+ * appearing in the frame after the caret turns.
+ */
+const DISCLOSED = "motion-safe:animate-fade-in-up";
+
 // ---------------------------------------------------------------------------
 // A run of tool calls, folded
 // ---------------------------------------------------------------------------
@@ -983,32 +1027,14 @@ function ActivityBatch({
     : summary.troubled
       ? TONE_CLASS.warning
       : "text-muted-foreground";
-  const Icon = failed
-    ? StatusIcons.error
-    : summary.troubled
-      ? CircleDashed
-      : running
-        ? Loader2
-        : Layers;
+  const Icon = failed ? StatusIcons.error : summary.troubled ? CircleDashed : Layers;
 
   return (
     <li className={cn("relative", entrance.className)} style={entrance.style}>
-      <span
-        className="absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full bg-background"
-        aria-hidden="true"
-      >
-        <Icon
-          className={cn(
-            "size-3",
-            // The one place the marker departs from the line: a fold still
-            // filling up ticks, exactly as the running row inside it would.
-            // Collapsed, it is the only sign the run has not stalled.
-            !failed && !summary.troubled && running
-              ? "text-primary motion-safe:animate-spin"
-              : tone
-          )}
-        />
-      </span>
+      {/* The one place the marker departs from the line: a fold still filling
+          up turns, exactly as the running row inside it would. Collapsed, it is
+          the only sign the run has not stalled. */}
+      <FeedMarker icon={Icon} running={!failed && !summary.troubled && running} tone={tone} />
 
       <button
         type="button"
@@ -1018,18 +1044,21 @@ function ActivityBatch({
         // pressing it does as well as what it is about — a control announced
         // only as "Ran 63 commands" is one nobody knows is a control.
         aria-label={`${open ? "Hide" : "Show"} these ${entries.length} steps: ${summary.line}`}
-        className="group flex w-full items-baseline gap-2 rounded-xs text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // Focus is the global `:focus-visible` outline, as on every other
+        // control; the caret is on the ladder's bottom rung and turns on the
+        // symmetric curve, because both of its ends are on screen.
+        className="group flex w-full items-baseline gap-2 rounded-xs text-left"
       >
         <ChevronRight
           className={cn(
-            "size-2.5 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-foreground",
+            "size-3 shrink-0 translate-y-px text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
             open && "rotate-90"
           )}
           aria-hidden="true"
         />
         <span
           className={cn(
-            "min-w-0 flex-1 text-ui leading-relaxed transition-colors duration-base ease-out-soft",
+            "min-w-0 flex-1 text-ui leading-relaxed transition-colors duration-fast ease-out-soft",
             tone,
             // Only the quiet line brightens on hover. A fold that is open
             // because something failed is already carrying its tone's colour,
@@ -1052,7 +1081,7 @@ function ActivityBatch({
       </button>
 
       {open && (
-        <ol className="mt-2.5 space-y-2.5 border-l border-border/50 pl-4">
+        <ol className={cn("mt-2.5 space-y-2.5 border-l border-border/50 pl-4", DISCLOSED)}>
           {/* No `arrivals` inside an open fold. These rows mount when the reader
               opens the disclosure, not when the calls happened, so an entrance
               here would be twenty rows cascading in on a click — which is the
@@ -1084,21 +1113,11 @@ function ActivityRow({
 
   return (
     <li className={cn("relative", entrance.className)} style={entrance.style}>
-      <span
-        className="absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full bg-background"
-        aria-hidden="true"
-      >
-        <Icon
-          className={cn(
-            "size-3",
-            running
-              ? "text-primary motion-safe:animate-spin"
-              : stranded
-                ? TONE_CLASS.warning
-                : TONE_CLASS[entry.tone]
-          )}
-        />
-      </span>
+      <FeedMarker
+        icon={Icon}
+        running={running}
+        tone={stranded ? TONE_CLASS.warning : TONE_CLASS[entry.tone]}
+      />
 
       <div className="flex items-baseline gap-2">
         <p
@@ -1143,7 +1162,7 @@ function ActivityRow({
 
       {entry.warning !== null && (
         <p className="mt-1 flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-          <StatusIcons.security className="mt-[3px] size-3 shrink-0" aria-hidden="true" />
+          <StatusIcons.security className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0">{entry.warning}</span>
         </p>
       )}
@@ -1158,11 +1177,11 @@ function ActivityRow({
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={open ? `Hide detail: ${entry.title}` : `Show detail: ${entry.title}`}
-            className="mt-1 inline-flex items-center gap-1 rounded-xs font-mono text-micro text-muted-foreground transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-1 inline-flex items-center gap-1 rounded-xs font-mono text-micro text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
           >
             <ChevronRight
               className={cn(
-                "size-2.5 transition-transform duration-base ease-in-out",
+                "size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -1170,7 +1189,7 @@ function ActivityRow({
             {open ? "Hide detail" : "Detail"}
           </button>
           {open && (
-            <dl className="mt-1 space-y-0.5 border-l border-border/50 pl-2.5">
+            <dl className={cn("mt-1 space-y-0.5 border-l border-border/50 pl-2.5", DISCLOSED)}>
               {entry.facts.map((fact) => (
                 <div
                   key={`${fact.label}-${fact.value}`}

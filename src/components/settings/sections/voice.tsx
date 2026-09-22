@@ -2,16 +2,18 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, Play, Square } from "lucide-react";
+import { Loader2, Play, Square } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { useApp } from "@/components/app/app-provider";
+import { GlyphSwap } from "@/components/auth/glyph-swap";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PLANS } from "@/lib/plans";
+import { cn } from "@/lib/utils";
 import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
 
 // Short on purpose: a preview is billed per character and the user may audition
@@ -118,24 +120,34 @@ export function VoiceSection() {
                     >
                       <span className="flex items-center gap-1.5 text-body font-medium">
                         {v.label}
-                        {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+                        {selected && <StatusIcons.success className="check-morph size-3.5 shrink-0 text-primary" />}
                       </span>
                       <span className="text-ui text-muted-foreground">{v.description}</span>
                     </Pressable>
+                    {/* Play, stop and the spinner share one cell and cross-fade:
+                        one control changing state, not three glyphs taking
+                        turns. The spinner turns only while it is showing.
+
+                        Centred with `inset-y-0 my-auto`, not a -50% translate:
+                        `.pressable:active` sets `transform: scale(.97)`, which
+                        replaced the translate and dropped the button by half its
+                        height for as long as it was held. */}
                     <Button
                       variant="secondary"
                       size="icon-sm"
-                      className="absolute right-3 top-1/2 z-10 -translate-y-1/2"
+                      className="absolute inset-y-0 right-3 z-10 my-auto"
                       onClick={() => void playPreview(v.id)}
                       aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
+                      title={active ? "Stop preview" : "Preview voice"}
                     >
-                      {loading ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : active ? (
-                        <Square className="size-4" />
-                      ) : (
-                        <Play className="size-4" />
-                      )}
+                      <GlyphSwap
+                        state={loading ? "busy" : active ? "stop" : "play"}
+                        glyphs={{
+                          play: <Play className="size-4" />,
+                          stop: <Square className="size-4" />,
+                          busy: <Loader2 className={cn("size-4", loading && "motion-safe:animate-spin")} />,
+                        }}
+                      />
                     </Button>
                   </div>
                 );

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -56,9 +56,14 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         <p
           id="forgot-password-unavailable"
           role="note"
-          className="rounded-field border border-warning/35 bg-warning/10 px-3.5 py-3 text-body text-foreground"
+          className="flex items-start gap-2 rounded-field border border-warning/35 bg-warning/10 px-3.5 py-3 text-body text-foreground"
         >
-          Password recovery is unavailable because email is not set up on this server. Please contact the site owner.
+          {/* The same leading-glyph well the sign-in form's error and notice
+              use, in the warning mark: three tones of one component. */}
+          <StatusIcons.warning className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
+          <span>
+            Password recovery is unavailable because email is not set up on this server. Please contact the site owner.
+          </span>
         </p>
         <Field
           id="forgot-email"
@@ -76,7 +81,9 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
           Send reset link
         </Button>
         <Button asChild variant="secondary" className="w-full">
-          <Link href="/sign-in"><ArrowLeft aria-hidden /> Back to sign in</Link>
+          <Link href="/sign-in">
+            <ArrowLeft className="size-4" aria-hidden /> Back to sign in
+          </Link>
         </Button>
       </form>
     );
@@ -85,10 +92,14 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
   if (sent) {
     return (
       <div className="space-y-5 text-center" role="status">
-        {/* motion-safe:animate-pop-in: this state replaces the form in place with
-            no navigation, so without an entrance the card silently becomes a
-            different card. */}
-        <StatusIcons.success className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
+        {/* The glyph sits in a quiet tonal tile and springs in (`.check-morph`),
+            the tile arriving on the pop: this state replaces the form in place
+            with no navigation, so without an entrance the card silently becomes
+            a different card. A bare 36px mark was the one glyph in the auth
+            flow drawn off the size ladder. */}
+        <span className="mx-auto flex size-12 items-center justify-center rounded-field bg-success/10 text-success motion-safe:animate-pop-in">
+          <StatusIcons.success className="check-morph size-6" aria-hidden />
+        </span>
         <div className="space-y-1.5">
           {/* text-heading (18px) — this was text-xl (20px) under a 30px page h1,
               a third size for the serif-heading role inside one card. */}
@@ -99,7 +110,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         </div>
         <Button asChild variant="secondary" className="w-full">
           <Link href="/sign-in">
-            <ArrowLeft aria-hidden /> Back to sign in
+            <ArrowLeft className="size-4" aria-hidden /> Back to sign in
           </Link>
         </Button>
       </div>
@@ -124,20 +135,18 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
       <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
         {/* motion-safe:, matching the majority convention — see the note in
             auth-form.tsx. The button is disabled and aria-busy either way. */}
-        {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+        {loading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
         Send reset link
       </Button>
-      {/* `group` + a transform on the glyph: hover was the link's only affordance
-          and hover does not exist on touch or for a keyboard. The arrow now also
-          answers focus, and the travel is dropped under motion-reduce. */}
+      {/* The arrow's own `nudge-l` articulation (icons.tsx) answers hover AND
+          keyboard focus on the link, and is dropped under reduced motion by
+          globals.css — hover was once this link's only affordance, and a
+          hand-written translate here would now double the travel. */}
       <Link
         href="/sign-in"
-        className="group mx-auto flex w-fit items-center justify-center gap-1.5 rounded-xs text-body text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
+        className="mx-auto flex w-fit items-center justify-center gap-2 rounded-xs text-body text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
       >
-        <ArrowLeft
-          className="size-3.5 transition-transform duration-fast ease-out-soft group-hover:-translate-x-0.5 group-focus-visible:-translate-x-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
-          aria-hidden
-        />
+        <ArrowLeft className="size-4" aria-hidden />
         Back to sign in
       </Link>
     </form>

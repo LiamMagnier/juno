@@ -17,6 +17,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { Toaster } from "sonner";
 import { DesignEditor } from "@/components/design/design-editor";
+import { Loader2 } from "@/components/ui/icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { serializeDesignDocument } from "@/lib/design/migrations";
 import {
@@ -93,7 +94,12 @@ function Boot() {
     );
   }
   if (!session) {
-    return <div className="flex h-full items-center justify-center text-caption text-muted-foreground">Opening design…</div>;
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-caption text-muted-foreground">
+        <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+        Opening design…
+      </div>
+    );
   }
   return <HostedEditor session={session} />;
 }

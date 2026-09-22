@@ -1,6 +1,6 @@
 import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
-import { staggerDelay } from "@/lib/motion";
+import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 
 /**
  * The connector directory: a toolbar over a three-column grid of equal tiles.
@@ -26,13 +26,12 @@ export default function ConnectionsLoading() {
         <Skeleton className="h-9 w-72 max-w-full rounded-field" />
       </div>
 
+      {/* The tile's own anatomy, from the component the directory's catalog
+          fetch renders too — the route transition and the fetch are two
+          moments of one load and draw one picture. */}
       <div className="mt-6 grid gap-4 @[40rem]/page:grid-cols-2 @5xl/page:grid-cols-3">
         {[...Array(6)].map((_, i) => (
-          <Skeleton
-            key={i}
-            className="h-36 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(i, "tight")}
-          />
+          <ConnectorTileSkeleton key={i} index={i} />
         ))}
       </div>
     </AppPage>

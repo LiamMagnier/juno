@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -332,16 +332,19 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
           // region whose content grows on its own, so it needs the "there is
           // more this way" edge the project picker's bounded list already has.
           <ScrollFade className="max-h-56" viewportClassName="pr-1" viewportRef={transcriptRef}>
+            {/* Each line rises in once, when it is first spoken — keyed by id,
+                so a partial line rewritten in place as it is spoken does not
+                replay its entrance on every word. */}
             <div className="space-y-3">
               {lines.map((line) =>
                 line.role === "user" ? (
-                  <div key={line.id} className="flex justify-end">
+                  <div key={line.id} className="flex justify-end motion-safe:animate-fade-in-up">
                     <p className="max-w-[85%] whitespace-pre-wrap rounded-control bg-secondary px-3 py-2 text-ui leading-relaxed text-secondary-foreground">
                       {line.text}
                     </p>
                   </div>
                 ) : (
-                  <p key={line.id} className="whitespace-pre-wrap text-ui leading-relaxed text-foreground">
+                  <p key={line.id} className="whitespace-pre-wrap text-ui leading-relaxed text-foreground motion-safe:animate-fade-in-up">
                     {line.text}
                   </p>
                 ),

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Globe } from "lucide-react";
+import { Globe } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
@@ -82,7 +82,7 @@ function iconUrlOf(url: string): string | null {
 const VARIANTS = {
   inline: { box: "size-[1.05em] rounded-[0.25em]", glyph: "text-[0.62em]", icon: "size-[0.75em]" },
   // Pill cluster avatar — circular, per the stacked-avatar convention.
-  cluster: { box: "size-5 rounded-full", glyph: "text-micro", icon: "size-2.5" },
+  cluster: { box: "size-5 rounded-full", glyph: "text-micro", icon: "size-3" },
   // Expanded list row. 6px = the row's 14px radius minus its 8px padding.
   list: { box: "size-[22px] rounded-xs", glyph: "text-micro", icon: "size-3" },
 } as const;
@@ -137,8 +137,11 @@ export function SourceFavicon({
         )}
       >
         {/* Raw `Globe`: the favicon fallback for a site. `ComposerIcons.web`
-            names the web-SEARCH tool, which is not what a source chip is. */}
-        {letter ?? <Globe className={v.icon} />}
+            names the web-SEARCH tool, which is not what a source chip is.
+            The inline box is em-sized (~8px in body prose), which the set's
+            optical switch cannot read from a class, so it asks for the bold
+            cut itself — the regular line is half a pixel at that size. */}
+        {letter ?? <Globe className={v.icon} weight={variant === "inline" ? "bold" : undefined} />}
       </span>
       {src && (
         // eslint-disable-next-line @next/next/no-img-element -- third-party origin, not an optimizable asset
@@ -167,7 +170,9 @@ export function SourceFavicon({
  * `align-middle` is the load-bearing bit. It centres the chip on the parent's
  * baseline + half x-height, so at this height (~0.94em of the prose font) the
  * chip lives entirely inside the text's own ascender/descender band and the
- * line box never grows. Hover lifts with a transform, which costs no layout.
+ * line box never grows. Hover is tonal — the chip takes the --accent fill and
+ * its number the foreground ink — so nothing in a paragraph moves under the
+ * pointer while the reader is reading it.
  */
 export function SourceChip({ source, index }: { source: ClientSource; index: number }) {
   const host = hostOf(source.url);
@@ -193,7 +198,7 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
               "border border-dashed border-border/70 bg-card px-[0.4em] align-middle text-[0.72em] leading-none"
             )}
           >
-            <Globe aria-hidden className="size-[0.9em] opacity-50" />
+            <Globe aria-hidden weight="bold" className="size-[0.9em] opacity-50" />
             <span className="font-mono tabular-nums text-muted-foreground">{index}</span>
           </span>
         </TooltipTrigger>
@@ -226,12 +231,12 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
             // to be important. Coral is reserved for selected state — a chip is
             // neither selected nor a body link.
             "!no-underline",
-            "transition-[transform,box-shadow,border-color] duration-fast ease-out-soft motion-reduce:transition-none",
-            "hover:z-10 hover:border-border hover:shadow-pop motion-safe:hover:-translate-y-[0.1em]"
+            "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+            "hover:border-border hover:bg-accent"
           )}
         >
           <SourceFavicon url={source.url} variant="inline" />
-          <span className="font-mono tabular-nums text-muted-foreground transition-colors duration-fast group-hover/cite:text-foreground motion-reduce:transition-none">
+          <span className="font-mono tabular-nums text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/cite:text-foreground motion-reduce:transition-none">
             {index}
           </span>
         </a>

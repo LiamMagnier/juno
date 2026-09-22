@@ -13,22 +13,26 @@ import { cn } from "@/lib/utils";
  *
  *   kind="row"   a full-width, left-aligned selectable row — a conversation in
  *                the sidebar, a file, a menu entry. Flat; the affordance is the
- *                hover fill; SELECTED is the one raised object in its list.
+ *                hover fill; SELECTED keeps that fill at full strength.
  *   kind="tile"  a bordered card that is one of a set, usually `role="radio"` —
  *                accent swatches, model cards, plan pickers. `.control-neu`:
- *                raised at rest, pressed into the page when selected.
+ *                a hairline at rest, a tonal fill on hover, a deeper one plus
+ *                the accent edge when selected.
  *   kind="chip"  a pill-shaped filter or token. `.control-neu`.
  *   kind="icon"  a bare glyph affordance — close, copy, expand. Flat at rest,
- *                raises on hover, pressed when on.
+ *                a circular tonal fill on hover, the secondary fill when on.
  *
- * Shared behaviour comes from `.pressable` (globals.css). Focus is deliberately
- * NOT styled here: the global `:focus-visible` rule is authoritative.
+ * Shared behaviour comes from `.pressable` (globals.css): the tonal hover
+ * cross-fade on --dur-fast and the 0.97 dip on --dur-press. Focus is
+ * deliberately NOT styled here: the global `:focus-visible` rule is
+ * authoritative. A glyph inside any kind plays its own hover articulation
+ * (icons.tsx), because every kind renders a button or a link.
  *
- * `.control-neu` reads `[data-selected]` (set below) for its pressed state, so
- * a selected tile, chip or icon goes DOWN — the same gesture as holding it —
+ * `.control-neu` reads `[data-selected]` (set below) for its "on" fill, so a
+ * selected tile, chip or icon takes the same deeper tone as one being held,
  * and the compound variants below only add the accent edge and ink. That is
- * the Soft UI answer to "selected must not look like hovered": hover lifts,
- * selection sinks.
+ * the flat answer to "selected must not look like hovered": hover is a wash,
+ * selection is a bounded, accent-edged fill.
  */
 const pressableVariants = cva(
   // `.pressable` carries the transition and the active:scale(0.97). The two
@@ -70,18 +74,17 @@ const pressableVariants = cva(
       },
     },
     compoundVariants: [
-      // A selected row is the one RAISED object in its list — the sidebar's
-      // active conversation standing proud of the inset well around it. The
-      // hover is pinned to the card fill so pointing at it does not swap the
-      // raised surface for the flat accent wash an unselected sibling shows.
+      // A selected row keeps the hover fill at rest, and the hover is pinned
+      // to it so pointing at the selected row does not change it — the
+      // pointer moving across a list must never make the current row flicker.
       {
         kind: "row",
         selected: true,
         class: "bg-accent text-foreground hover:bg-accent hover:text-foreground",
       },
-      // Tile, chip, icon: `.control-neu[data-selected]` supplies the pressed
-      // recess and the secondary fill; these add the accent edge and ink, and
-      // pin them through hover.
+      // Tile, chip, icon: `.control-neu[data-selected]` supplies the
+      // secondary fill; these add the accent edge and ink, and pin them
+      // through hover.
       {
         kind: "tile",
         selected: true,

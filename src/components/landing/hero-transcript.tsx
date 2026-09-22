@@ -19,8 +19,9 @@ import { formatEur } from "@/components/landing/eur";
  * composer look like an AI demo. The landing was contradicting its own
  * brief.
  *
- * Server-rendered, aria-hidden and inert: imagery, not a control — and zero
- * client JS, which is what keeps the landing free of a bundle of its own.
+ * Server-rendered, aria-hidden and inert: imagery, not a control, with no
+ * client JS of its own. It arrives with the hero's load sequence
+ * (landing-page.tsx) and does not move after that.
  */
 
 /**

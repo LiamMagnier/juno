@@ -21,7 +21,8 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "@/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { renderPageSvg } from "@/lib/design/render";
 import { rgbaToCss } from "@/lib/design/variables";
 import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";
@@ -1922,7 +1923,9 @@ function CanvasZoomControls({
       onFit={onFit}
       onSelection={onSelection}
       hasSelection={hasSelection}
-      className="absolute bottom-3 left-3 rounded-field border border-border/60 bg-popover/90 p-1 backdrop-blur-md"
+      // The floating material the rest of the canvas's overlays wear, at the
+      // field rung with p-1 so its 8px keys sit concentric inside it.
+      className="absolute bottom-3 left-3 overlay-glass rounded-field p-1"
     />
   );
 }
@@ -1958,24 +1961,44 @@ export function ZoomBar({
   hasSelection: boolean;
   className?: string;
 }) {
+  // One height for every key in the group, glyph or word, so the row sits on a
+  // single line; `.pressable` eases colour itself, so no `transition-*` here
+  // (it would replace that shorthand and snap the press).
   const button =
-    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40 coarse:min-h-9 coarse:px-2.5";
+    "pressable inline-flex h-6 items-center justify-center rounded-md px-2 font-mono text-micro text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40 coarse:min-h-9 coarse:px-2.5";
   return (
     <div className={cn("flex items-center gap-0.5", className)} role="group" aria-label="Zoom">
-      <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">
-        <Minus className="size-3.5" aria-hidden />
-      </button>
-      <button
-        type="button"
-        className={cn(button, "min-w-11 tabular-nums")}
-        onClick={onReset}
-        aria-label="Reset zoom to 100%"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <button type="button" className={button} onClick={() => onZoomBy(1.25)} aria-label="Zoom in">
-        <Plus className="size-3.5" aria-hidden />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">
+            <Minus className="size-3.5" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Zoom out</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn(button, "min-w-11 tabular-nums")}
+            onClick={onReset}
+            aria-label="Reset zoom to 100%"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Reset zoom to 100%</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className={button} onClick={() => onZoomBy(1.25)} aria-label="Zoom in">
+            {/* Held still: − beside it has no gesture, and a pair that answers
+                a hover differently reads as two unrelated controls. */}
+            <Plus className="size-3.5" motion="none" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Zoom in</TooltipContent>
+      </Tooltip>
       <span aria-hidden className="mx-0.5 h-4 w-px bg-border/70" />
       <button type="button" className={button} onClick={onFit}>
         Fit

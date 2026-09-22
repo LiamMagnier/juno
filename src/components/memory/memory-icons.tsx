@@ -1,19 +1,18 @@
 import {
   Braces,
-  BriefcaseBusiness,
   CalendarClock,
   EyeOff,
   Fingerprint,
-  FolderKanban,
   GraduationCap,
   Layers,
   Search,
   SlidersHorizontal,
   Target,
   Users,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 
+import { AppIcons } from "@/lib/app-icons";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 
 /**
@@ -25,7 +24,10 @@ import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
  * `Fingerprint` for identity (the one thing that is only ever you), sliders for
  * preferences (the same mark the product already uses for "adjust the knobs"),
  * a target for goals, and a calendar-clock for temporary, which is the only
- * category defined by its expiry.
+ * category defined by its expiry. `projects` is the one mark borrowed from the
+ * shared vocabulary rather than chosen here: facts about your projects are
+ * filed under the same folder the sidebar, the command palette and the
+ * projects grid draw for a project, not a second (kanban) drawing of it.
  *
  * Kept here rather than in `@/lib/app-icons` because that file is the
  * product-wide vocabulary — a mark in it is a promise that the same idea is
@@ -33,13 +35,13 @@ import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
  * promoting them would put nine marks in the shared namespace that nothing
  * outside this folder can use.
  */
-const TOPIC_ICONS: Record<(typeof MEMORY_CATEGORIES)[number], LucideIcon> = {
+const TOPIC_ICONS: Record<(typeof MEMORY_CATEGORIES)[number], IconComponent> = {
   identity: Fingerprint,
   preferences: SlidersHorizontal,
   goals: Target,
   studies: GraduationCap,
   workflows: Braces,
-  projects: FolderKanban,
+  projects: AppIcons.projects,
   relationships: Users,
   temporary: CalendarClock,
   suppression: EyeOff,
@@ -50,8 +52,6 @@ export const MemoryIcons = {
   topic: Layers,
   /** Searching what is remembered. */
   search: Search,
-  /** Work context — the stat tile for facts learned from chats. */
-  work: BriefcaseBusiness,
   /**
    * The mark for a category id read back from the server.
    *
@@ -61,7 +61,7 @@ export const MemoryIcons = {
    * a card with an unfamiliar name is still a card, and a crash is not an
    * improvement on a generic icon.
    */
-  forTopic(id: string | null | undefined): LucideIcon {
+  forTopic(id: string | null | undefined): IconComponent {
     return (id && TOPIC_ICONS[id as keyof typeof TOPIC_ICONS]) || Layers;
   },
 } as const;

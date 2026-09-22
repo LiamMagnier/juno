@@ -4,17 +4,20 @@ import * as React from "react";
 import {
   Activity,
   CheckCircle2,
-  Download,
   Eye,
   FileCode,
   Layers,
+  PanelRightClose,
+  PanelRightOpen,
   Search,
-  SidebarClose,
-  SidebarOpen,
   Table,
   Terminal,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ActionIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type {
   AgentMode,
@@ -110,27 +113,42 @@ export function ContextInspector({
       )}
     >
       <div className="absolute left-0 top-3 z-20 -translate-x-full">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          onClick={() => setOpen(!isOpen)}
-          title={isOpen ? "Hide inspector (⌘I)" : "Show inspector (⌘I)"}
-          aria-label={isOpen ? "Hide inspector" : "Show inspector"}
-          aria-expanded={isOpen}
-          className="rounded-r-none border-r-0 bg-background/90 shadow-soft backdrop-blur"
-        >
-          {isOpen ? (
-            <SidebarClose className="size-4" aria-hidden="true" />
-          ) : (
-            <SidebarOpen className="size-4" aria-hidden="true" />
-          )}
-        </Button>
+        {/* A tooltip with the chord as a keycap, like every icon-only control
+            in the shell, rather than a native `title`. The tab is flush with
+            the rail's hairline, so it carries no shadow of its own: it is part
+            of the edge, not a layer above it. The glyph is the right-hand
+            panel mark — the sidebar's own drawing, mirrored — because this
+            rail opens on the right. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setOpen(!isOpen)}
+              aria-label={isOpen ? "Hide inspector" : "Show inspector"}
+              aria-expanded={isOpen}
+              className="rounded-r-none border-r-0 bg-background/90 backdrop-blur"
+            >
+              {isOpen ? (
+                <PanelRightClose className="size-4" aria-hidden="true" />
+              ) : (
+                <PanelRightOpen className="size-4" aria-hidden="true" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="flex items-center gap-1.5">
+            {isOpen ? "Hide inspector" : "Show inspector"}
+            <Kbd>⌘I</Kbd>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {isOpen && (
+        // Fades in behind the width sweep instead of appearing at full ink
+        // in the frame the rail starts to open.
         <aside
-          className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border/60 bg-background/80 text-caption backdrop-blur-md"
+          className="flex h-full min-w-0 flex-col overflow-hidden border-l border-border/60 bg-background/80 text-caption backdrop-blur-md motion-safe:animate-fade-in"
           aria-label={`${mode} context inspector`}
         >
           <header className="border-b border-border/60 bg-muted/30 px-3 py-2.5">
@@ -151,8 +169,10 @@ export function ContextInspector({
                   role="tab"
                   aria-selected={activeTab === tab.id}
                   onClick={() => setActiveTab(tab.id)}
+                  // The global `:focus-visible` outline is the one focus mark;
+                  // these tabs used to swap it for a ring of their own.
                   className={cn(
-                    "shrink-0 rounded-control px-2.5 py-1.5 text-caption font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                    "shrink-0 rounded-control px-2.5 py-1.5 text-caption font-medium transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
                     activeTab === tab.id
                       ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:bg-accent/55 hover:text-foreground"
@@ -173,10 +193,13 @@ export function ContextInspector({
                     message="No active background actions."
                   />
                 ) : (
+                  // A live feed: each event rises in as it ARRIVES, which is
+                  // the state it reports. No stagger — a delay on the newest
+                  // row would make the rail lag the run it is describing.
                   events.map((event) => (
                     <div
                       key={event.id}
-                      className="space-y-1 surface-raised rounded-control p-2.5"
+                      className="space-y-1 surface-raised rounded-control p-2.5 motion-safe:animate-rise-in"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
@@ -215,7 +238,7 @@ export function ContextInspector({
                   artifacts.map((artifact) => (
                     <div
                       key={artifact.id}
-                      className="flex items-center justify-between gap-3 surface-raised rounded-control p-2.5"
+                      className="flex items-center justify-between gap-3 surface-raised rounded-control p-2.5 motion-safe:animate-rise-in"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <ArtifactIcon type={artifact.type} />
@@ -229,15 +252,20 @@ export function ContextInspector({
                         </div>
                       </div>
                       {artifact.downloadUrl && (
-                        <Button variant="ghost" size="icon-sm" asChild>
-                          <a
-                            href={artifact.downloadUrl}
-                            download
-                            aria-label={`Download ${artifact.title}`}
-                          >
-                            <Download className="size-3.5" aria-hidden="true" />
-                          </a>
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" asChild>
+                              <a
+                                href={artifact.downloadUrl}
+                                download
+                                aria-label={`Download ${artifact.title}`}
+                              >
+                                <ActionIcons.download className="size-4" aria-hidden="true" />
+                              </a>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Download</TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                   ))
@@ -253,7 +281,7 @@ export function ContextInspector({
                   activePlan.map((step, index) => (
                     <div
                       key={step.id}
-                      className="flex items-start gap-2 surface-raised rounded-control p-2.5"
+                      className="flex items-start gap-2 surface-raised rounded-control p-2.5 motion-safe:animate-rise-in"
                     >
                       <span className="mt-0.5 font-mono text-micro text-muted-foreground">
                         {index + 1}.
@@ -294,40 +322,56 @@ export function ContextInspector({
   );
 }
 
+/**
+ * An empty tab: one muted glyph in a quiet tile and one sentence
+ * (ICONS_AND_MOTION.md §3). It was a 24px mark at half opacity floating over a
+ * caption, which read as a disabled control rather than as a tab with nothing
+ * in it yet.
+ */
 function InspectorEmpty({
   icon: Icon,
   message,
 }: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: IconComponent;
   message: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-      <Icon className="mb-2 size-6 opacity-50" aria-hidden={true} />
+    <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground motion-safe:animate-fade-in">
+      <span className="flex size-10 items-center justify-center rounded-field bg-secondary">
+        <Icon className="size-5" motion="none" aria-hidden={true} />
+      </span>
       <p className="text-caption">{message}</p>
     </div>
   );
 }
 
+/*
+ * Event and artifact kinds are drawn in MUTED ink. They were the accent, which
+ * put five coral marks down a rail whose one accent job is the step that is in
+ * progress (the plan tab's `text-primary`): a kind of thing is not a state.
+ * `size-3.5` beside the caption rung, per the icon ladder.
+ */
 function EventIcon({ type }: { type: AgentRuntimeEvent["type"] }) {
+  const cls = "size-3.5 shrink-0 text-muted-foreground";
   if (type === "searching") {
-    return <Search className="size-3 shrink-0 text-primary" aria-hidden="true" />;
+    return <Search className={cls} aria-hidden="true" />;
   }
   if (type === "python_execution") {
-    return <Terminal className="size-3 shrink-0 text-primary" aria-hidden="true" />;
+    return <Terminal className={cls} aria-hidden="true" />;
   }
   if (type === "browsing") {
-    return <Eye className="size-3 shrink-0 text-primary" aria-hidden="true" />;
+    return <Eye className={cls} aria-hidden="true" />;
   }
-  return <Activity className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />;
+  return <Activity className={cls} aria-hidden="true" />;
 }
 
 function ArtifactIcon({ type }: { type: AgentOutputArtifact["type"] }) {
+  const cls = "size-4 shrink-0 text-muted-foreground";
   if (type === "table") {
-    return <Table className="size-4 shrink-0 text-primary" aria-hidden="true" />;
+    return <Table className={cls} aria-hidden="true" />;
   }
   if (type === "file") {
-    return <FileCode className="size-4 shrink-0 text-primary" aria-hidden="true" />;
+    return <FileCode className={cls} aria-hidden="true" />;
   }
-  return <Activity className="size-4 shrink-0 text-primary" aria-hidden="true" />;
+  return <Activity className={cls} aria-hidden="true" />;
 }

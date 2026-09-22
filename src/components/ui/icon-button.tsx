@@ -4,18 +4,24 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * A glyph you can press, as a raised key: `.control-neu` at `rounded-control`
- * (10) — raised at rest, pressed into the page while held or while
- * `aria-pressed`. Every size grows to a 44px target on a coarse pointer.
+ * A glyph you can press, as a key: `.control-neu` at `rounded-control` (10) —
+ * a hairline at rest, a tonal fill on hover, the deeper `--secondary` fill
+ * while held or while `aria-pressed`, and the shared 0.97 dip under the
+ * finger. Every size grows to a 44px target on a coarse pointer. The glyph
+ * inside plays its own hover articulation (icons.tsx) — a gear turns, an
+ * arrow nudges — because this renders a `<button>`.
  *
  * Distinct from `<Pressable kind="icon">`, which is the FLAT circular
  * affordance for close/copy/expand glyphs that sit on another surface. This
  * is a real control — a toolbar action, the composer's attach button, the
  * sidebar collapse — and it stands on the page by itself.
  *
- * `label` is required and becomes the accessible name (and the tooltip, via
- * `title`, unless one is passed): an icon-only button with no name is the
- * single most common accessibility failure in a toolbar.
+ * `label` is required and becomes the accessible name (and the native
+ * tooltip, via `title`, unless one is passed): an icon-only button with no
+ * name is the single most common accessibility failure in a toolbar. Where a
+ * designed tooltip is wanted, wrap the button in `<Tooltip>` at the call site
+ * and pass `title=""` — this primitive stays a plain button so it can still
+ * be a Radix trigger (`asChild`) for a menu or popover.
  */
 const iconButtonVariants = cva(
   "ui-button pressable inline-flex shrink-0 items-center justify-center rounded-control border disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",

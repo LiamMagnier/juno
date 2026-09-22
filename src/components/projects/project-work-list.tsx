@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Zap, Plus, Search } from "lucide-react";
+import { Plus, Search } from "@/components/ui/icons";
+import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -83,7 +84,7 @@ export function ProjectWorkList({
         <EmptyState
           size="panel"
           className="motion-safe:animate-rise-in"
-          icon={query ? Search : Zap}
+          icon={query ? Search : AppIcons.work}
           title={query ? "No matching work" : "No delegated work yet"}
           description={
             query
@@ -108,11 +109,11 @@ export function ProjectWorkList({
             >
               <Link
                 href={chatPathForSession(work.conversationId)}
-                className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg motion-reduce:transition-none"
+                className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/50 motion-reduce:transition-none"
               >
                 <div className="flex items-start gap-3">
-                  <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
-                    <Zap className="size-4" aria-hidden="true" />
+                  <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/tile:text-foreground motion-reduce:transition-none">
+                    <AppIcons.work className="size-4" aria-hidden="true" />
                   </span>
                   <div className="min-w-0 flex-1 pt-0.5">
                     <span className="block truncate text-ui font-medium text-foreground">

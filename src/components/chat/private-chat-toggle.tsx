@@ -1,9 +1,26 @@
 "use client";
 
 import * as React from "react";
+import { EyeOff } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+/**
+ * The private-chat switch in the chat root's header cluster.
+ *
+ * A GLYPH FROM THE SET, not a mascot. This used to hand-draw a 48-unit ghost
+ * whose eyes tracked the pointer and whose body floated on hover — a charming
+ * object, and the one interface icon in the header drawn on a different grid,
+ * at a different line weight, from the two buttons it sits between (Share and
+ * the model parameters). An eye with a slash through it says the same thing
+ * — nothing here is kept — in the house line.
+ *
+ * ON IS THE FILLED CUT. `weight="fill"` is the set's word for "on"
+ * (ICONS_AND_MOTION.md §1.2), so the two states are two drawings of one mark,
+ * and they cross-fade rather than swap in a frame: both glyphs share one grid
+ * cell and trade opacity and a small scale on `--dur-fast`. Reduced motion
+ * keeps the fade and drops the scale.
+ */
 export function PrivateChatToggle({
   active,
   disabled,
@@ -13,79 +30,37 @@ export function PrivateChatToggle({
   disabled?: boolean;
   onToggle: () => void;
 }) {
-  const buttonRef = React.useRef<HTMLButtonElement>(null);
-
-  const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
-    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
-    event.currentTarget.style.setProperty("--ghost-eye-x", `${Math.max(-1, Math.min(1, x)) * 2.5}px`);
-    event.currentTarget.style.setProperty("--ghost-eye-y", `${Math.max(-1, Math.min(1, y)) * 2}px`);
-  }, []);
-
-  const onPointerLeave = React.useCallback(() => {
-    const button = buttonRef.current;
-    if (!button) return;
-    button.style.setProperty("--ghost-eye-x", "0px");
-    button.style.setProperty("--ghost-eye-y", "0px");
-  }, []);
-
+  // The swap rides a wrapper, not the svg: `svg.icon[data-motion]` owns the
+  // glyph's own transition list (its hover articulation), and it outranks any
+  // utility written on the svg itself.
+  const face =
+    "col-start-1 row-start-1 grid place-items-center transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-opacity";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          ref={buttonRef}
           type="button"
           aria-label={active ? "Leave private chat" : "Start private chat"}
           aria-pressed={active}
           disabled={disabled}
           onClick={onToggle}
-          onPointerMove={onPointerMove}
-          onPointerLeave={onPointerLeave}
           className={cn(
-            // Was `transition-all`, which swept the disabled opacity fade and the
-            // hover lift into one unbounded property list with no reduced-motion
-            // escape anywhere on the button or on the nested SVG transforms.
-            //
-            // Hover is the accent FILL, not a lift: this button is one of three
-            // 36px peers in the chat root's cluster (Share, model params), and
-            // both neighbours answer hover with bg-accent — a control that
-            // levitated instead read as a different species. The levitation
-            // wasn't lost; it belongs to the mascot, and the SVG below already
-            // floats on group-hover. Press dips at .97 and at --dur-press, same
-            // as `.pressable`: transform is in the transition list, so on the
-            // base rung alone the dip took 220ms and was felt as lag.
-            "group inline-flex size-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] active:duration-press disabled:pointer-events-none disabled:opacity-50 coarse:size-11",
-            "motion-reduce:transition-none motion-reduce:active:scale-100",
-            active && "text-primary"
+            // Hover is the accent FILL, like both neighbours in the cluster;
+            // the press is `.pressable`'s dip on --dur-press. No transition-*
+            // utility beside it: one would replace the class's shorthand and
+            // un-time the press.
+            "pressable grid size-9 place-items-center rounded-full text-foreground/75",
+            "hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
+            "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+            active && "text-primary hover:text-primary"
           )}
         >
-          <svg
-            viewBox="0 0 48 48"
-            className="size-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100"
-            aria-hidden="true"
-          >
-            <path
-              d="M9.5 39V21C9.5 12 16 6.5 24 6.5S38.5 12 38.5 21v18c0 1.7-1.9 2.6-3.2 1.6l-3.4-2.6-3.4 2.6a2.5 2.5 0 0 1-3.1 0L22 38l-3.4 2.6a2.5 2.5 0 0 1-3.1 0l-3.4-2.6-3.4 2.6C11.4 41.6 9.5 40.7 9.5 39Z"
-              className="fill-background stroke-current transition-colors duration-base"
-              strokeWidth="2"
-              strokeLinejoin="round"
-            />
-            <g
-              className="transition-transform duration-fast ease-out-soft"
-              style={{ transform: "translate(var(--ghost-eye-x, 0px), var(--ghost-eye-y, 0px))" }}
-            >
-              <circle cx="19" cy="22" r="2.4" fill="currentColor" />
-              <circle cx="29" cy="22" r="2.4" fill="currentColor" />
-            </g>
-            <path
-              d="M20.5 30c1.7 1.4 5.3 1.4 7 0"
-              className="stroke-current opacity-70 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 motion-reduce:transition-none"
-              strokeWidth="2"
-              strokeLinecap="round"
-              fill="none"
-            />
-          </svg>
+          <span aria-hidden="true" className={cn(face, active ? "scale-75 opacity-0" : "opacity-100")}>
+            <EyeOff motion="pop" className="size-5" />
+          </span>
+          <span aria-hidden="true" className={cn(face, active ? "opacity-100" : "scale-75 opacity-0")}>
+            <EyeOff motion="pop" weight="fill" className="size-5" />
+          </span>
         </button>
       </TooltipTrigger>
       <TooltipContent>{active ? "Private chat is on. Nothing is saved." : "Start private chat"}</TooltipContent>

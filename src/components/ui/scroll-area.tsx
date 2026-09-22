@@ -36,14 +36,16 @@ const ScrollBar = React.forwardRef<
     ref={ref}
     orientation={orientation}
     className={cn(
-      "flex touch-none select-none transition-colors duration-fast ease-out-soft",
+      "flex touch-none select-none",
       orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent p-px",
       orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent p-px",
       className
     )}
     {...props}
   >
-    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border hover:bg-muted-foreground/50" />
+    {/* The transition lives on the thumb, which is the element whose colour
+        changes — on the scrollbar it animated nothing. */}
+    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border transition-colors duration-fast ease-out-soft hover:bg-muted-foreground/50" />
   </ScrollAreaPrimitive.ScrollAreaScrollbar>
 ));
 ScrollBar.displayName = ScrollAreaPrimitive.ScrollAreaScrollbar.displayName;

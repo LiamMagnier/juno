@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/icons";
 import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
 import { staggerDelay } from "@/lib/motion";
@@ -50,21 +50,22 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
           article so the arrow and the h1 share a left edge. */}
       <AppPage scroll={false} measure="reading" contentClassName="py-0">
         <header className="flex items-center justify-between gap-4 py-5 motion-safe:animate-fade-in sm:py-6">
-          {/* `group` so the arrow answers focus as well as hover — a keyboard user
-              had no affordance at all on the page's only navigation control. */}
+          {/* The arrow's own `nudge-l` articulation (icons.tsx) answers hover
+              AND keyboard focus on the link — a keyboard user once had no
+              affordance at all on the page's only navigation control — and
+              globals.css drops it under reduced motion. A hand-written
+              translate here as well would double the travel. */}
           <Link
             href="/"
-            className="group inline-flex items-center gap-2 rounded-xs font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-xs font-mono text-label text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
           >
-            <ArrowLeft
-              className="size-3.5 transition-transform duration-fast ease-out-soft group-hover:-translate-x-0.5 group-focus-visible:-translate-x-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
-              aria-hidden
-            />
+            <ArrowLeft className="size-3.5" aria-hidden />
             Retour à Juno
           </Link>
           <Link
             href="/"
             aria-label="Juno"
+            title="Juno"
             className="rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             <JunoMark className="size-8" />

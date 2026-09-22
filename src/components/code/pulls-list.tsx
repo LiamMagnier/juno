@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { GitPullRequestDraft } from "lucide-react";
+import { GitPullRequestDraft } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -288,20 +288,25 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     elevation at all — leaving a 9.6% hairline as the only thing
                     separating the row from the page.
 
-                    `pressable` replaces `transition-all` + `active:scale-[0.995]`:
-                    the old press was 0.2px on a 60px row, and `transition-all`
-                    animated layout alongside colour. Focus is the global
-                    :focus-visible outline — the ring it carried set
-                    `outline-none` and then drew flush against the row border,
-                    which on black reads as a slightly thicker border.
+                    A colour cross-fade and nothing else — no `transition-all`
+                    (it animated layout alongside colour) and no press scale:
+                    this is a full-width card, and ICONS_AND_MOTION.md §2.2
+                    keeps the dip for controls under the finger, not for
+                    surfaces. What moves is the status disc, which lifts a
+                    touch, and the leave-Juno arrow, which nudges the way it
+                    points. Focus is the global :focus-visible outline — the
+                    ring it carried set `outline-none` and then drew flush
+                    against the row border, which on black reads as a
+                    slightly thicker border.
 
                     `hover:bg-accent` at full alpha, and that is the hover
                     working at all rather than a taste call. The fill REPLACES
                     `bg-card` on hover, so /50 composited --accent (13%) over the
                     page (0%) at ~6.5% — the exact lightness of the `bg-card` it
-                    was replacing. Pointing at a row changed nothing but its
-                    border. Full accent is the one-rung step every other row in
-                    the product hovers to (Pressable kind="row").
+                    was replacing. Full accent is the one-rung step every other
+                    row in the product hovers to (Pressable kind="row"). The
+                    border stays the hairline: tinting it coral on hover spent
+                    the accent on a pointer, and coral is for state.
                   */}
                   <a
                     href={pr.url}
@@ -313,7 +318,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     // one link and says it leaves Juno, which the arrow says
                     // only to people who can see it.
                     aria-label={`${pr.title} — ${pr.repo} #${pr.number}${pr.draft ? ", draft" : ""}. Opens on GitHub.`}
-                    className="pressable group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left hover:border-primary/40 hover:bg-accent"
+                    className="group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                   >
                     <span
                       className={cn(
@@ -354,14 +359,17 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                           black, under the 3:1 non-text minimum.
 
                           `ActionIcons.external` (an arrow out of a corner), not
-                          Lucide's boxed `ExternalLink`: the registry names one
+                          the set's boxed `ExternalLink`: the registry names one
                           mark for "this leaves Juno", and the session banner's
                           own "View pull request" chip already draws it. Two
                           drawings of one idea, two screens apart. */}
-                      <ActionIcons.external
-                        className="size-3.5 text-muted-foreground transition-colors duration-fast group-hover:text-foreground"
-                        aria-hidden="true"
-                      />
+                      {/* The ink cross-fades on the wrapper: the glyph's own
+                          `transition` is its nudge (svg.icon[data-motion]),
+                          and it outranks a colour transition written on the
+                          svg, which is why this used to snap. */}
+                      <span className="inline-flex text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none">
+                        <ActionIcons.external className="size-3.5" aria-hidden="true" />
+                      </span>
                     </span>
                   </a>
                 </li>

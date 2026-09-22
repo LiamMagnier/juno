@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ChevronRight, Loader2, Pause, Play } from "lucide-react";
+import { ChevronRight, Loader2, Pause, Play } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import { parseCodeRoutineConfig } from "@/lib/work/code-routine";
 import {
@@ -13,6 +14,12 @@ import {
   runWorkScheduleNow,
 } from "@/components/work/work-transport";
 import { describeTrigger } from "@/components/work/work-triggers";
+import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import {
+  workRowChevronClass,
+  workRowClass,
+  workRowEnterClass,
+} from "@/components/work/shell/work-section";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
@@ -157,24 +164,21 @@ export function WorkScheduleRow({
   return (
     <div
       className={cn(
-        // The same rest/hover/press/focus set WorkSessionRow carries. These
-        // three sibling rows are the same object in three lists and had neither a
-        // focus ring — a keyboard reader could not see which row they were on —
-        // nor any press feedback.
-        "group flex items-start rounded-field border border-border/60 bg-card transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
-        // Drawn off the inner anchor with `:has()`, exactly as WorkSessionRow
-        // does: this row is a div wrapping a Link so that its options button is
-        // not nested inside an anchor, which means the div itself never focuses.
-        "[&:has(>a:focus-visible)]:ring-2 [&:has(>a:focus-visible)]:ring-ring [&:has(>a:focus-visible)]:ring-offset-2 [&:has(>a:focus-visible)]:ring-offset-background",
-        "motion-safe:hover:-translate-y-px [&:has(>a:active)]:translate-y-0 motion-safe:[&:has(>a:active)]:scale-[0.997]",
-        "[animation-fill-mode:backwards]",
+        // The shared list-row recipe (work-section.tsx), with the padding moved
+        // onto the anchor: this row is a div wrapping a Link so that its
+        // controls are not nested inside an anchor. The press tint is read off
+        // that anchor with `:has()`, so pressing Run now does not also darken
+        // the whole row; focus is the anchor's own global outline.
+        workRowClass,
+        workRowEnterClass,
+        "gap-0 p-0 [&:has(>a:active)]:bg-secondary",
         !schedule.enabled && "opacity-75"
       )}
       style={staggerDelay(index, "tight")}
     >
       <Link
         href={`/automations/${schedule.id}`}
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-field px-3.5 py-3 focus-visible:outline-none"
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-control px-3.5 py-3"
       >
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -201,13 +205,22 @@ export function WorkScheduleRow({
             {notify !== null && ` · ${notify}`}
           </span>
         </span>
-        <ChevronRight
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
-          aria-hidden="true"
-        />
+        <ChevronRight className={workRowChevronClass} aria-hidden="true" />
       </Link>
 
-      <div className="flex shrink-0 items-center gap-1 py-3 pr-2.5">
+      {/* The row's own controls fade in with the row's hover or focus, as a
+          list row's trailing actions do everywhere else — and stay while a
+          press is in flight, so a spinner never fades out from under the
+          pointer that started it. On a touch screen, where nothing hovers,
+          they are always there. */}
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-1 py-3 pr-2.5",
+          "transition-opacity duration-fast ease-out-soft",
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100",
+          busy !== null && "opacity-100"
+        )}
+      >
         {/*
           The living task this schedule keeps.
           A schedule points at ONE session and re-runs it, so its transcript and
@@ -256,29 +269,37 @@ export function WorkScheduleRow({
           onClick={() => void runNow()}
           className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
         >
-          {busy === "run" ? (
-            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-          ) : (
-            <Play className="size-3" aria-hidden="true" />
-          )}
+          <GlyphSwap
+            glyphs={{ idle: Play, busy: Loader2 }}
+            show={busy === "run" ? "busy" : "idle"}
+            spinning="busy"
+            className="size-3"
+          />
           Run now
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={busy !== null}
-          onClick={() => void toggle()}
-          aria-label={schedule.enabled ? `Pause ${schedule.name}` : `Resume ${schedule.name}`}
-          className="size-7 text-muted-foreground hover:text-foreground"
-        >
-          {busy === "toggle" ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : schedule.enabled ? (
-            <Pause className="size-3.5" aria-hidden="true" />
-          ) : (
-            <Play className="size-3.5" aria-hidden="true" />
-          )}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={busy !== null}
+              onClick={() => void toggle()}
+              aria-label={schedule.enabled ? `Pause ${schedule.name}` : `Resume ${schedule.name}`}
+              className="size-7 text-muted-foreground hover:text-foreground"
+            >
+              {/* Pause and resume share one slot and cross-fade, through the
+                  spinner while the request is out, so the mark the reader
+                  pressed turns into its opposite rather than blinking. */}
+              <GlyphSwap
+                glyphs={{ pause: Pause, resume: Play, busy: Loader2 }}
+                show={busy === "toggle" ? "busy" : schedule.enabled ? "pause" : "resume"}
+                spinning="busy"
+                className="size-3.5"
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{schedule.enabled ? "Pause" : "Resume"}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

@@ -6,7 +6,10 @@ import type { WorkApprovalDecisionInput } from "@/components/work/work-transport
 import type { WorkApprovalCard } from "@/components/work/work-decisions";
 import { ApprovalCard } from "@/components/work/approvals/approval-card";
 import { actionVerb, mayBatchApprove } from "@/components/work/approvals/action-verbs";
+import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { workRowEnterClass } from "@/components/work/shell/work-section";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * The pending decisions, and the one control that answers several at once.
@@ -67,6 +70,9 @@ export function ApprovalQueue({
       !(now !== null && approval.expiresAt !== null && Date.parse(approval.expiresAt) <= now)
   );
   const batchable = live.filter((approval) => mayBatchApprove(approval.action, approval.risk));
+  // Cards are dealt in when the list first lands, and a request the run raises
+  // later arrives on its own instead of the whole stack repainting around it.
+  const arrivals = useWorkArrivals(approvals.map((approval) => approval.id));
 
   if (approvals.length === 0) {
     return (
@@ -80,7 +86,7 @@ export function ApprovalQueue({
   return (
     <div className="space-y-2.5">
       {batchable.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2.5 rounded-field border border-warning/40 bg-warning/[0.08] px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 rounded-field border border-warning/40 bg-warning/[0.08] px-3.5 py-2.5 motion-safe:animate-rise-in">
           <p className="min-w-0 flex-1 text-ui leading-relaxed text-warning-foreground">
             {batchable.length === live.length
               ? `${batchable.length} decisions are waiting, and they are all the same kind.`
@@ -97,19 +103,27 @@ export function ApprovalQueue({
         </div>
       )}
 
-      {approvals.map((approval) => (
-        <ApprovalCard
-          key={approval.id}
-          approval={approval}
-          // Until the clock has ticked once after mount nothing is called
-          // expired, which is the safe direction: the server re-checks expiry on
-          // every decision, so the worst case is one refusal with a sentence,
-          // not an action taken on a stale approval.
-          expired={now !== null && approval.expiresAt !== null && Date.parse(approval.expiresAt) <= now}
-          busy={busyId === approval.id || batching}
-          onDecide={onDecide}
-        />
-      ))}
+      {approvals.map((approval) => {
+        const rank = arrivals.rankFor(approval.id);
+        return (
+          <div
+            key={approval.id}
+            className={rank === null ? undefined : workRowEnterClass}
+            style={rank === null ? undefined : staggerDelay(rank, "base")}
+          >
+            <ApprovalCard
+              approval={approval}
+              // Until the clock has ticked once after mount nothing is called
+              // expired, which is the safe direction: the server re-checks expiry on
+              // every decision, so the worst case is one refusal with a sentence,
+              // not an action taken on a stale approval.
+              expired={now !== null && approval.expiresAt !== null && Date.parse(approval.expiresAt) <= now}
+              busy={busyId === approval.id || batching}
+              onDecide={onDecide}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

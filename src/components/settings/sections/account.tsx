@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Camera, Loader2 } from "lucide-react";
+import { Camera, Loader2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
@@ -27,6 +27,7 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageActivity, UsageDetail, UsageStats, useProfileUsage } from "@/components/settings/usage-overview";
 import { AccountSecuritySection } from "@/components/auth/account-security";
+import { GlyphSwap } from "@/components/auth/glyph-swap";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -128,8 +129,11 @@ export function AccountSection() {
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="group relative shrink-0 rounded-full disabled:cursor-default"
+            // `.pressable`: the portrait is a 64px control, not a surface, so
+            // it dips under the finger like every other control does.
+            className="pressable group relative shrink-0 rounded-full disabled:cursor-default motion-reduce:active:scale-100"
             aria-label="Change profile picture"
+            title="Change profile picture"
           >
             <Avatar size="xl">
               {avatar && (
@@ -148,7 +152,13 @@ export function AccountSection() {
               )}
               aria-hidden="true"
             >
-              {uploading ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+              <GlyphSwap
+                state={uploading ? "busy" : "idle"}
+                glyphs={{
+                  idle: <Camera className="size-4" />,
+                  busy: <Loader2 className={cn("size-4", uploading && "motion-safe:animate-spin")} />,
+                }}
+              />
             </span>
           </button>
           <input
@@ -252,7 +262,7 @@ export function AccountSection() {
           tone="destructive"
           description="Chats, memories, files and your subscription — everything, immediately. Export first if you want a copy."
           control={
-            <Button variant="destructive-outline" size="sm" className="gap-2" onClick={() => setDeleteOpen(true)}>
+            <Button variant="destructive-outline" size="sm" onClick={() => setDeleteOpen(true)}>
               <ActionIcons.delete className="size-4" /> Delete account…
             </Button>
           }
@@ -301,7 +311,12 @@ export function AccountSection() {
             >
               Cancel
             </Button>
-            <Button variant="destructive" disabled={!match || deleting} onClick={() => void deleteAccount()}>
+            <Button
+              variant="destructive"
+              disabled={!match || deleting}
+              aria-busy={deleting}
+              onClick={() => void deleteAccount()}
+            >
               {deleting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" /> Deleting…

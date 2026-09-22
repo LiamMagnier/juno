@@ -1,6 +1,7 @@
 import { AppPage } from "@/components/ui/app-page";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
+import { Reveal } from "@/components/landing/reveal";
 
 /**
  * Shared shell for landing-page sections. The eyebrow/heading/lede stack IS
@@ -9,7 +10,10 @@ import { cn } from "@/lib/utils";
  * landing and the product behind the sign-in wall share one width and one
  * gutter. `scroll={false}`: the document scrolls, not the section.
  *
- * Pure server markup — the landing ships zero client JS of its own.
+ * Server markup. The heading block rises into place the first time it is on
+ * screen (`Reveal`, a client wrapper around the server-rendered header); each
+ * section decides how its own body arrives, because a receipt, a logo strip
+ * and a list of features should not all enter the same way.
  */
 export function Section({
   id,
@@ -32,7 +36,9 @@ export function Section({
     // underneath the bar.
     <section id={id} className={cn("scroll-mt-20", className)}>
       <LandingColumn contentClassName="py-14 sm:py-16">
-        <PageHeader eyebrow={eyebrow} heading={heading} lede={lede} />
+        <Reveal>
+          <PageHeader eyebrow={eyebrow} heading={heading} lede={lede} />
+        </Reveal>
         {children}
       </LandingColumn>
     </section>

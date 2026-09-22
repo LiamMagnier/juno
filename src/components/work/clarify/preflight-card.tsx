@@ -4,6 +4,7 @@ import * as React from "react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PreflightClarificationAnswer } from "@/lib/preflight-clarification";
 import { cn } from "@/lib/utils";
 import {
@@ -126,17 +127,22 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
               : `Juno would decide these ${questions.length} on its own. Its answers are already chosen.`}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onSkip}
-          disabled={disabled}
-          aria-label="Dismiss these questions"
-          className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-        >
-          <ActionIcons.dismiss className="size-4" aria-hidden="true" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onSkip}
+              disabled={disabled}
+              aria-label="Dismiss these questions"
+              className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            >
+              <ActionIcons.dismiss className="size-4" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Dismiss these questions</TooltipContent>
+        </Tooltip>
       </header>
 
       <div className="flex flex-col gap-3.5 px-3.5 py-3.5 sm:gap-4 sm:px-4 sm:py-4">
@@ -181,7 +187,16 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
                           selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
                         )}
                       >
-                        {selected && <StatusIcons.success className="size-2.5" strokeWidth={3} />}
+                        {/* Always mounted, so choosing a row cross-fades the tick
+                            in (and out of the row it left) with the disc's fill,
+                            instead of the mark arriving a frame after the colour.
+                            The 10px box selects the bold cut by itself. */}
+                        <StatusIcons.success
+                          className={cn(
+                            "size-2.5 transition-[opacity,transform] duration-fast ease-out-soft",
+                            selected ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
+                          )}
+                        />
                       </span>
                       <span className="min-w-0 flex-1 text-ui leading-relaxed">{option.label}</span>
                       {option.recommended && (

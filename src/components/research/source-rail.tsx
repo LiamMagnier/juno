@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, Globe } from "lucide-react";
+import { ExternalLink, Globe } from "@/components/ui/icons";
 import { SourceFavicon, hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
@@ -89,7 +89,10 @@ export function SourceRail({
                 <span className="size-1.5 shrink-0 rounded-full bg-success/80" title="Read in full" />
               ) : null}
               {linkable && (
-                <ExternalLink className="size-2.5 shrink-0 text-muted-foreground/50 transition-colors group-hover/chip:text-primary" />
+                // size-3 is the floor of the ladder; the ink rises to the
+                // chip's foreground on hover rather than to the accent, which
+                // is kept for state and the primary action.
+                <ExternalLink className="size-3 shrink-0 text-muted-foreground/50 transition-colors duration-fast ease-out-soft group-hover/chip:text-foreground motion-reduce:transition-none" />
               )}
             </>
           );
@@ -136,7 +139,7 @@ export function SourceRail({
         <button
           type="button"
           onClick={onOpenSources}
-          className="pressable inline-flex items-center gap-1.5 rounded-control bg-secondary px-2.5 py-1 text-caption tabular-nums text-foreground transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+          className="pressable inline-flex items-center gap-1.5 rounded-control bg-secondary px-2.5 py-1 text-caption tabular-nums text-foreground hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <span>
             {sources.length} {RAIL_COPY.sources} · {readCount} {RAIL_COPY.read}

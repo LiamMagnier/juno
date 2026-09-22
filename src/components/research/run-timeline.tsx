@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/components/ui/icons";
 import { WebSearchBlock, type WebSearchSite } from "@/components/aicss/web-search";
 import { hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { formatMicroUsd } from "@/components/research/run-format";
@@ -572,7 +572,7 @@ function EngineStrip({ engines }: { engines: EngineLine[] }) {
               problem ? "text-warning-foreground" : "text-muted-foreground/70"
             )}
           >
-            {problem && <StatusIcons.warning aria-hidden className="size-2.5 shrink-0" />}
+            {problem && <StatusIcons.warning aria-hidden className="size-3 shrink-0" />}
             <span>{engine.name}</span>
             <span className={problem ? undefined : "text-muted-foreground"}>
               {detail
@@ -787,7 +787,7 @@ export function RunTimeline({
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />

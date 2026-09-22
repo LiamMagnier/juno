@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -12,6 +12,7 @@ import { composerChevronClass, composerChipClass } from "@/components/ui/compose
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
 import { filterBranches, isUsableGitRef } from "@/lib/code-branches";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -231,11 +232,13 @@ export function CodeEnvironmentChip({
           aria-label={`Where this runs: ${current.label}. ${current.hint} Change it`}
           className={cn(CHIP_CLASS, className)}
         >
-          {target === "device" ? (
-            <CodeIcons.device className="size-3.5 shrink-0" aria-hidden="true" />
-          ) : (
-            <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
-          )}
+          {/* The machine's mark cross-fades when the machine changes, in one
+              cell, so the chip's width moves only with its word. */}
+          <IconSwap
+            swapped={target === "cloud"}
+            from={<CodeIcons.device className="size-3.5" />}
+            to={<CodeIcons.cloud className="size-3.5" />}
+          />
           <span className="min-w-0 truncate">{current.label}</span>
           <ChevronDown className={composerChevronClass} aria-hidden="true" />
         </button>
@@ -489,11 +492,11 @@ export function CodeTargetPicker({
           }
           className={cn(CHIP_CLASS, className)}
         >
-          {target === "device" ? (
-            <AppIcons.projects className="size-3.5 shrink-0" aria-hidden="true" />
-          ) : (
-            <GitHubMark className="size-3.5 shrink-0" />
-          )}
+          <IconSwap
+            swapped={target === "cloud"}
+            from={<AppIcons.projects className="size-3.5" />}
+            to={<GitHubMark className="size-3.5" />}
+          />
           <span className={cn("min-w-0 truncate", !hasSelection && "text-muted-foreground")}>{chipLabel}</span>
           {branch && (
             <>

@@ -3,7 +3,9 @@
 import * as React from "react";
 import { toast } from "sonner";
 import Image from "next/image";
-import { KeyRound, Loader2, LogOut, Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Mail, ShieldCheck } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { staggerDelay } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,8 +76,8 @@ export function AccountSecuritySection({ email }: { email: string }) {
         label="This session"
         description="Sign out on this device. Other devices stay signed in."
         control={
-          <Button variant="outline" size="sm" onClick={() => void signOutToSignIn()} className="gap-1.5">
-            <LogOut className="size-3.5" />
+          <Button variant="outline" size="sm" onClick={() => void signOutToSignIn()}>
+            <LogOut className="size-4" />
             Sign out
           </Button>
         }
@@ -123,8 +125,8 @@ function TwoStepRow({
               Turn off…
             </Button>
           ) : (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSetupOpen(true)} disabled={!status}>
-              <ShieldCheck className="size-3.5" />
+            <Button variant="outline" size="sm" onClick={() => setSetupOpen(true)} disabled={!status}>
+              <ShieldCheck className="size-4" />
               Set up…
             </Button>
           )
@@ -221,9 +223,18 @@ function TwoStepSetupDialog({
                 they are stored hashed, so nobody, including Juno, can show them to you again.
               </DialogDescription>
             </DialogHeader>
+            {/* Dealt in on the tight rung rather than painted as one block: ten
+                codes arriving together read as a wall, ten arriving in order
+                read as a list someone is handing you. */}
             <ul className="grid grid-cols-2 gap-2 rounded-field border border-border/60 bg-muted/40 p-3 font-mono text-caption text-foreground">
-              {recoveryCodes.map((value) => (
-                <li key={value}>{value}</li>
+              {recoveryCodes.map((value, i) => (
+                <li
+                  key={value}
+                  style={staggerDelay(i, "tight")}
+                  className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+                >
+                  {value}
+                </li>
               ))}
             </ul>
             <DialogFooter className="gap-2">
@@ -236,6 +247,7 @@ function TwoStepSetupDialog({
                     .catch(() => toast.error("Couldn’t copy — select and copy them by hand."));
                 }}
               >
+                <ActionIcons.copy className="size-4" />
                 Copy codes
               </Button>
               <Button onClick={() => onOpenChange(false)}>I&apos;ve saved them</Button>
@@ -250,7 +262,9 @@ function TwoStepSetupDialog({
               </DialogDescription>
             </DialogHeader>
             {enrolment ? (
-              <div className="space-y-3">
+              // Fades in over the "Preparing" line it replaces, so the dialog
+              // settles on the QR rather than snapping to it.
+              <div className="space-y-3 motion-safe:animate-fade-in">
                 <div className="flex justify-center">
                   {/* A server-rendered data URL, so the secret never passes
                       through a third-party script and the CSP needs no image host. */}
@@ -283,7 +297,14 @@ function TwoStepSetupDialog({
               </div>
             ) : (
               <p className="flex items-center gap-2 py-6 text-body text-muted-foreground">
-                {error ?? (
+                {error ? (
+                  // A failure to start is a failure, not a quieter loading line:
+                  // the error mark leads it, in the destructive ink.
+                  <>
+                    <StatusIcons.error className="size-4 shrink-0 text-destructive" aria-hidden />
+                    <span className="text-destructive">{error}</span>
+                  </>
+                ) : (
                   <>
                     <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> Preparing your code…
                   </>
@@ -466,8 +487,8 @@ function PasswordRow({ hasPassword, email }: { hasPassword: boolean; email: stri
         }
         control={
           hasPassword ? (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
-              <KeyRound className="size-3.5" />
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              <KeyRound className="size-4" />
               Change…
             </Button>
           ) : null
@@ -575,8 +596,8 @@ function EmailRow({ currentEmail, hasPassword }: { currentEmail: string; hasPass
         control={
           <div className="flex items-center gap-2">
             <span className="truncate font-mono text-caption text-muted-foreground">{currentEmail}</span>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
-              <Mail className="size-3.5" />
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              <Mail className="size-4" />
               Change…
             </Button>
           </div>
@@ -605,7 +626,7 @@ function EmailRow({ currentEmail, hasPassword }: { currentEmail: string; hasPass
             </DialogDescription>
           </DialogHeader>
           {sentTo ? (
-            <p className="text-body text-foreground">
+            <p className="text-body text-foreground motion-safe:animate-rise-in">
               If <span className="font-medium">{sentTo}</span> isn&apos;t already in use here, a confirmation link is on
               its way to it. The link lasts 24 hours.
             </p>
@@ -688,8 +709,8 @@ function SignOutEverywhereRow() {
         label="Sign out everywhere"
         description="Ends every session on every device, including this one. Use it if you've lost a phone or laptop."
         control={
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
-            <LogOut className="size-3.5" />
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+            <LogOut className="size-4" />
             Sign out everywhere
           </Button>
         }

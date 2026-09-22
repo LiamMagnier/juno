@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,17 +25,6 @@ import { cn } from "@/lib/utils";
 /** Blocks longer than this get the numbered gutter. */
 const GUTTER_MIN_LINES = 8;
 
-const CopyIcon = () => (
-  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="9" y="9" width="11" height="11" rx="2.5" />
-    <path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2" />
-  </svg>
-);
-const CheckIcon = () => (
-  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m4.5 12.75 6 6 9-13.5" />
-  </svg>
-);
 /**
  * Split already-highlighted content into per-line node lists.
  *
@@ -157,8 +148,22 @@ export function AicssCodeBlock({
       <div className="aicss-cb-head">
         {label ? <span className="aicss-cb-lang">{label}</span> : null}
         {action ?? (
-          <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} className="aicss-cb-copy">
-            {copied ? <CheckIcon /> : <CopyIcon />}
+          // The copy → check swap is the receipt (no toast on success): the two
+          // glyphs share one box and cross-fade, and the label follows them.
+          // The press is a utility rather than `.pressable`: `.aicss-cb-copy`
+          // declares its own `transition` later in the same layer and would
+          // drop the transform from it, so the dip would snap.
+          <button
+            type="button"
+            onClick={copy}
+            aria-label={copied ? "Copied" : "Copy code"}
+            className="aicss-cb-copy transition-[color,background-color,transform] duration-fast ease-out-soft active:scale-[0.97] active:duration-press motion-reduce:active:scale-100"
+          >
+            <GlyphSwap
+              swapped={copied}
+              from={<ActionIcons.copy className="size-3.5" />}
+              to={<StatusIcons.success className="size-3.5 text-success-ink" />}
+            />
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
         )}

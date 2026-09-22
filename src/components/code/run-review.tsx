@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { CornerDownRight, GitCompare, Loader2, Send } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { parseUnifiedDiff, type DiffRow } from "@/components/aicss/file-diff";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -280,9 +281,20 @@ export function RunReviewPane({
             </span>
           </p>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close review">
-          <ActionIcons.dismiss className="size-4" aria-hidden="true" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={close}
+              aria-label="Close review"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ActionIcons.dismiss className="size-4" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close review</TooltipContent>
+        </Tooltip>
       </header>
 
       {pullRequest && (
@@ -392,10 +404,16 @@ export function RunReviewPane({
         {onQueueNotes || run.conversationId ? (
           <>
             <Button className="w-full gap-1.5" disabled={!canSend || sending} onClick={deliverNotes}>
+              {/* The glyph names where the notes GO. Not `share`, which is
+                  "hand this to another person": in the session they drop into
+                  the composer below (the elbow down into it), and from a run
+                  opened elsewhere they are sent to it (the send mark). */}
               {sending ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : onQueueNotes ? (
+                <CornerDownRight className="size-3.5" aria-hidden="true" />
               ) : (
-                <ActionIcons.share className="size-3.5" aria-hidden="true" />
+                <Send className="size-3.5" aria-hidden="true" />
               )}
               {/* The verb names what actually happens. In the session the notes
                   land in the composer and WAIT — calling that "send" would be a
@@ -485,27 +503,47 @@ function FileRow({
         writing it in prose. Both buttons are toggles, so a mis-click costs one
         click back, and neither claims to change the code.
       */}
+      {/* The shared 32px icon target: at `size-7` these were the two
+          smallest controls in the pane, on the one row a reader presses
+          file after file. Their "on" fill is the verdict's own status
+          tint — state, which is what a tint is for. */}
       <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Mark ${name} as looking right`}
-          aria-pressed={verdict === "ok"}
-          onClick={() => onVerdict("ok")}
-          className={cn("size-7", verdict === "ok" && "bg-success/15 text-success")}
-        >
-          <StatusIcons.success className="size-3.5" aria-hidden="true" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Mark ${name} as needing a change`}
-          aria-pressed={verdict === "change"}
-          onClick={() => onVerdict("change")}
-          className={cn("size-7", verdict === "change" && "bg-warning/15 text-warning")}
-        >
-          <StatusIcons.warning className="size-3.5" aria-hidden="true" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Mark ${name} as looking right`}
+              aria-pressed={verdict === "ok"}
+              onClick={() => onVerdict("ok")}
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                verdict === "ok" && "bg-success/15 text-success hover:bg-success/20 hover:text-success",
+              )}
+            >
+              <StatusIcons.success className="size-3.5" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Looks right</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Mark ${name} as needing a change`}
+              aria-pressed={verdict === "change"}
+              onClick={() => onVerdict("change")}
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                verdict === "change" && "bg-warning/15 text-warning hover:bg-warning/20 hover:text-warning",
+              )}
+            >
+              <StatusIcons.warning className="size-3.5" aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Needs a change</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );
@@ -684,6 +722,10 @@ function DiffLine({
               size="icon-sm"
               onClick={drafting ? onCancelDraft : onDraft}
               aria-label={drafting ? `Cancel note on line ${row.cur}` : `Add a note on line ${row.cur}`}
+              // A native tooltip rather than a Radix one: this control is
+              // repeated on every line of the diff, and a portal per line is a
+              // cost the pointer never needs more than one of at a time.
+              title={drafting ? "Cancel note" : "Add a note on this line"}
               aria-expanded={drafting}
               // Revealed on hover and on focus. Focus is the half that is easy
               // to forget and the half a keyboard reader depends on entirely.
@@ -727,7 +769,14 @@ function NoteChip({ note, onRemove }: { note: ReviewNote; onRemove: () => void }
         {meta.label}
       </span>
       <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-caption">{note.body}</p>
-      <Button variant="ghost" size="icon-sm" className="size-6 shrink-0" onClick={onRemove} aria-label="Remove note">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={onRemove}
+        aria-label="Remove note"
+        title="Remove note"
+      >
         <ActionIcons.dismiss className="size-3" aria-hidden="true" />
       </Button>
     </div>
@@ -1038,7 +1087,7 @@ export function RunReceipt({
 
       {onOpenReview && detail.files.length > 0 && (
         <Button variant="outline" size="sm" className="w-full gap-1.5" onClick={onOpenReview}>
-          <CodeIcons.file className="size-3.5" aria-hidden="true" />
+          <GitCompare className="size-3.5" aria-hidden="true" />
           Read the diff
         </Button>
       )}

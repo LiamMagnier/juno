@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { BlockLead, BlockShell, BlockTitle, LessonKicker, Microcap, Reveal, TextToggle } from "@/components/chat/learning/block-shell";
+import { ArrowRight } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type { QuizData } from "@/lib/learning-blocks";
@@ -12,7 +13,7 @@ const LETTERS = "ABCDEFGH";
  * The tick and the cross this block marks an answer with.
  *
  * They were "✓" and "✕" inside a font-mono span. A text glyph is a FONT, not an
- * icon: it carries the text weight rather than the optical stroke ladder, sits
+ * icon: it carries the text weight rather than the icon set's optical weight, sits
  * on the text baseline rather than the icon's optical centre, and resolves
  * against whatever fallback font on the reader's machine happens to have those
  * code points — so the one mark that tells someone they were right was drawn
@@ -157,7 +158,7 @@ export function QuizInteraction({
         <button
           type="button"
           onClick={reset}
-          className="self-start rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
+          className="self-start rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:min-h-11 motion-reduce:transition-none"
         >
           Start over
         </button>
@@ -271,18 +272,22 @@ export function QuizInteraction({
               {explanation ?? (isCorrect ? "well spotted." : `the answer is ${LETTERS[correctIndex] ?? correctIndex + 1}.`)}
             </p>
             {multi ? (
+              // The set's arrow, not a `→` in the mono face — the same reason the
+              // tick and the cross above are icons (see RightMark). It nudges
+              // forward on hover, which is where the press goes.
               <button
                 type="button"
                 onClick={advance}
-                className="shrink-0 rounded-control py-1 font-mono text-caption font-semibold text-primary transition-colors duration-fast hover:text-primary/80 coarse:min-h-11"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-control py-1 font-mono text-caption font-semibold text-primary transition-colors duration-fast ease-out-soft hover:text-primary/80 coarse:min-h-11 motion-reduce:transition-none"
               >
-                {isLast ? "See results →" : "Next question →"}
+                {isLast ? "See results" : "Next question"}
+                <ArrowRight className="size-3.5" aria-hidden="true" />
               </button>
             ) : (
               <button
                 type="button"
                 onClick={reset}
-                className="shrink-0 rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
+                className="shrink-0 rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground coarse:min-h-11 motion-reduce:transition-none"
               >
                 Try again
               </button>

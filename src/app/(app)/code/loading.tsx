@@ -12,8 +12,11 @@ import { Skeleton } from "@/components/ui/skeleton";
  * which is the worst kind of skeleton: one that reserves room for furniture
  * that never arrives.
  *
- * The same one-part-above / two-parts-below split page.tsx uses, so the
- * greeting does not step up the column at the moment the real page lands.
+ * The same ONE CENTRED BLOCK page.tsx draws — the greeting, its `mb-6
+ * sm:mb-8`, the composer, centred together in the column. This skeleton used to
+ * keep the old one-third / two-thirds split after the page gave it up, so the
+ * greeting jumped from the top third to the middle, and the composer from the
+ * floor to the middle, at the moment the real page landed.
  */
 export default function CodeLandingLoading() {
   return (
@@ -25,11 +28,8 @@ export default function CodeLandingLoading() {
       aria-label="Loading Juno Code"
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden"
     >
-      <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col pb-4 pt-6">
-        <div className="flex min-h-0 flex-[1_1_0] flex-col justify-end">
-          <Skeleton className="mx-auto h-9 w-80 max-w-full rounded-full" />
-        </div>
-        <div aria-hidden className="min-h-0 flex-[2_2_0]" />
+      <div className="page-gutter mx-auto flex w-full max-w-[44rem] flex-1 flex-col items-center justify-center py-6 md:py-8">
+        <Skeleton className="mb-6 h-9 w-80 max-w-full rounded-full sm:mb-8" />
         {/* The composer at its resting height — 138px: a 42px chip row, the
             52px field at one line, and a 44px controls row. One placeholder,
             because they are one box, and the height is spelled out here so that

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence } from "framer-motion";
-import { ArrowRight, CalendarClock, EyeOff, MessagesSquare } from "lucide-react";
+import { ArrowRight, CalendarClock, EyeOff, MessagesSquare } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";

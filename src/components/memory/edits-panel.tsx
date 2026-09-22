@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2, Undo2 } from "lucide-react";
+import { ChevronDown, Loader2, Undo2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { EditStatus, MemoryEditRecord, Operation } from "./memory-model";
 
@@ -88,10 +89,14 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         aria-controls="memory-edits-panel"
-        className="group flex w-full items-center justify-between gap-3 rounded-card border border-border/60 bg-card px-4 py-3 text-left surface-raised transition-[border-color,box-shadow] duration-fast ease-out-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        // Tonal hover, and the global focus ring: this carried a ring with a
+        // 2px page-coloured offset, which painted a halo round the card.
+        className="surface-raised flex w-full items-center justify-between gap-3 rounded-card border-border/60 px-4 py-3 text-left transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent/40 motion-reduce:transition-none"
       >
-        <span className="flex items-center gap-2.5 text-ui font-medium">
-          <ActionIcons.edit className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="flex items-center gap-2 text-ui font-medium">
+          {/* `motion="none"`: the pencil labels the queue; the button opens
+              it. A pencil that tilts on a disclosure promises an edit. */}
+          <ActionIcons.edit motion="none" className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           Manage edits
         </span>
         <span className="flex items-center gap-2">
@@ -106,7 +111,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
           ) : null}
           <ChevronDown
             className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
               open && "rotate-180"
             )}
             aria-hidden="true"
@@ -131,12 +136,15 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
             </p>
           ) : (
             <ul className="space-y-2 pt-2">
-              {edits.map((edit) => {
+              {edits.map((edit, index) => {
                 const busy = busyIds.has(edit.id);
                 return (
+                  // A hairline, not a shadow: these sit in the flow of the
+                  // page. Dealt on the tight rung, capped by staggerDelay.
                   <li
                     key={edit.id}
-                    className="rounded-card border border-border/60 bg-card p-4 shadow-soft motion-safe:animate-rise-in"
+                    className="rounded-card border border-border/60 bg-card p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                    style={staggerDelay(index, "tight")}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="font-sans text-ui italic text-foreground/90">“{edit.instruction}”</p>
@@ -162,6 +170,8 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                               onClick={() => deleteAndRefocus(edit.id)}
                               disabled={busy}
                               aria-label="Delete this edit"
+                              title="Delete edit"
+                              className="danger-hover text-muted-foreground"
                             >
                               <ActionIcons.delete className="size-4" />
                             </Button>
@@ -189,6 +199,8 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                             size="icon-sm"
                             onClick={() => deleteAndRefocus(edit.id)}
                             aria-label="Delete this edit"
+                            title="Delete edit"
+                            className="danger-hover text-muted-foreground"
                           >
                             <ActionIcons.delete className="size-4" />
                           </Button>

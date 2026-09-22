@@ -26,6 +26,7 @@
 
 import * as React from "react";
 import { AmbientAura } from "@/components/ambient/ambient-aura";
+import { ArrowUp, Plus } from "@/components/ui/icons";
 import { attachAuraLevel, setAuraState, type AuraState } from "@/lib/aura";
 import { cn } from "@/lib/utils";
 
@@ -44,8 +45,9 @@ const STATES: readonly AuraState[] = [
 
 const ACCENTS = ["coral", "juniper", "teal", "violet", "amber", "sage"] as const;
 
-const CONTROL =
-  "rounded-control border border-border bg-card px-2 py-1 text-foreground transition-colors hover:bg-accent";
+/** A bench key. `.pressable` rather than `transition-colors`: the utility
+ *  would replace the press's own transition shorthand and snap the dip. */
+const CONTROL = "pressable rounded-control border border-border bg-card px-2 py-1 text-foreground hover:bg-accent";
 const ON = "border-primary bg-secondary";
 
 export function AuraPreview() {
@@ -95,7 +97,7 @@ export function AuraPreview() {
 
       <div className="fixed left-4 top-4 z-toolbar flex max-w-[22rem] flex-wrap items-center gap-1.5 font-mono text-label">
         {STATES.map((s) => (
-          <button key={s} type="button" onClick={() => setState(s)} className={cn(CONTROL, state === s && ON)}>
+          <button key={s} type="button" aria-pressed={state === s} onClick={() => setState(s)} className={cn(CONTROL, state === s && ON)}>
             {s}
           </button>
         ))}
@@ -109,7 +111,7 @@ export function AuraPreview() {
         <span className="w-full" />
 
         {ACCENTS.map((a) => (
-          <button key={a} type="button" onClick={() => setAccent(a)} className={cn(CONTROL, accent === a && ON)}>
+          <button key={a} type="button" aria-pressed={accent === a} onClick={() => setAccent(a)} className={cn(CONTROL, accent === a && ON)}>
             {a}
           </button>
         ))}
@@ -154,11 +156,18 @@ export function AuraPreview() {
           </p>
         </div>
 
+        {/* The composer's two keys carry their real glyphs, so the bench judges
+            the light against the marks it will actually sit behind rather than
+            against two empty shapes. Inert: nothing here is a control. */}
         <div className="composer-surface flex flex-col gap-2 rounded-composer p-3">
           <div className="text-ui text-muted-foreground">Message Juno…</div>
           <div className="flex items-center justify-between">
-            <div className="h-8 w-8 rounded-control border border-border" />
-            <div className="h-8 w-8 rounded-full bg-primary" />
+            <div className="flex size-8 items-center justify-center rounded-control border border-border text-muted-foreground">
+              <Plus className="size-4" aria-hidden />
+            </div>
+            <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <ArrowUp className="size-4" aria-hidden />
+            </div>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ImageGenerationCanvas } from "@/components/aicss/image-generation";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { Play } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -93,10 +94,11 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
             pitch tuned for that reads as a texture rather than a field here. */}
         <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
         {isVideo && (
-          <div className="generation-media__play">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
-              <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
-            </svg>
+          // The set's play mark in its house weight: it says "this will be a
+          // video", not "playing", so it is not the filled (on) cut. The class
+          // draws the disc around it (globals.css).
+          <div className="generation-media__play" aria-hidden="true">
+            <Play className="generation-media__play-icon" motion="none" />
           </div>
         )}
       </div>

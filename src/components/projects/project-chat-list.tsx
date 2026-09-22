@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MessageSquare, Plus, Pin, FolderInput, Search } from "lucide-react";
+import { MessageSquare, Plus, Pin, FolderInput, Search } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { GlyphSwap } from "@/components/projects/glyph-swap";
 
 export interface ProjectConversationItem {
   id: string;
@@ -164,10 +166,13 @@ function ChatRow({
 
   return (
     <li
-      className="group flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-      style={staggerDelay(index)}
+      className="group flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      style={staggerDelay(index, "tight")}
     >
-      <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <MessageSquare
+        className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground motion-reduce:transition-none"
+        aria-hidden="true"
+      />
       <Link
         href={`/chat/${chat.id}`}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
@@ -178,8 +183,15 @@ function ChatRow({
         </span>
       </Link>
 
+      {/* The resting "pinned" mark fades out as the action cluster fades in,
+          rather than blinking out with `hidden` — it keeps its 14px, so the
+          title never reflows under the pointer. */}
       {chat.pinned && (
-        <Pin className="size-3.5 shrink-0 fill-current text-primary group-hover:hidden group-focus-within:hidden" aria-hidden="true" />
+        <Pin
+          weight="fill"
+          className="size-3.5 shrink-0 text-primary transition-opacity duration-fast ease-out-soft group-focus-within:opacity-0 group-hover:opacity-0 motion-reduce:transition-none"
+          aria-hidden="true"
+        />
       )}
 
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
@@ -188,22 +200,27 @@ function ChatRow({
           size="sm"
           onClick={() => onTogglePin(chat.id, chat.pinned)}
           aria-label={chat.pinned ? "Unpin chat" : "Pin chat"}
+          title={chat.pinned ? "Unpin" : "Pin"}
           aria-pressed={chat.pinned}
           selected={chat.pinned}
           className={cn(chat.pinned && "text-primary hover:text-primary")}
         >
-          <Pin className={cn("size-3.5", chat.pinned && "fill-current")} aria-hidden="true" />
+          <GlyphSwap
+            active={chat.pinned}
+            off={<Pin className="size-3.5" />}
+            on={<Pin weight="fill" className="size-3.5" />}
+          />
         </Pressable>
 
         {onMoveChat && otherProjects.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Pressable kind="icon" size="sm" aria-label="Move chat to another project">
+              <Pressable kind="icon" size="sm" aria-label="Move chat to another project" title="Move to project">
                 <FolderInput className="size-3.5" aria-hidden="true" />
               </Pressable>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className={MENU_W}>
-              <p className="px-2 py-1 font-mono text-label text-muted-foreground">Move to project</p>
+              <DropdownMenuLabel>Move to project</DropdownMenuLabel>
               {otherProjects.map((p) => (
                 <DropdownMenuItem
                   key={p.id}
@@ -223,6 +240,7 @@ function ChatRow({
             size="sm"
             onClick={() => onDeleteChat(chat)}
             aria-label={`Delete “${chat.title}”`}
+            title="Delete"
             className="danger-hover"
           >
             <ActionIcons.delete className="size-3.5" aria-hidden="true" />

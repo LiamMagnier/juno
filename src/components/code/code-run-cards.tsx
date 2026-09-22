@@ -2,14 +2,14 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
-import { spring, staggerDelay, transition } from "@/lib/motion";
+import { spring, staggerDelay, transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type {
   CodeAgentState,
@@ -50,23 +50,29 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  */
 const RUN_CARD = "surface-raised mx-1 mb-2 rounded-field";
 const RUN_CARD_INSET = "px-3 py-2.5";
+/** A disclosure row inside a card: the shared tonal hover, on the token rung. */
+const ROW_HOVER = "rounded-xs transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none";
 
 /*
- * The approval card's entrance, spelled out rather than reusing `variants.rise`.
+ * The approval card's entrance: `variants.rise`'s own endpoints, re-timed.
  *
- * `variants.rise` carries `transition.base` inside its own `visible`, and a
- * variant's transition beats the component's `transition` prop — so pairing it
- * with `spring.emphasized` at the call site would have SHADOWED the spring
- * while looking exactly like the thing that set it. The travel is `rise`'s own
- * 8px; the small scale is what stops a card this wide from arriving as a hard
- * rectangle, and it is the only number here not lifted verbatim.
+ * Not `variants.rise` as it stands, because it carries `transition.base` inside
+ * its own `visible`, and a variant's transition beats the component's
+ * `transition` prop — so pairing it with `spring.emphasized` at the call site
+ * would have SHADOWED the spring while looking exactly like the thing that set
+ * it. So the offsets are spread from the shared variant (they were typed out
+ * here as 8px after `rise` had come down to 6, which is the drift
+ * `src/lib/motion.ts` exists to prevent) and only the timing is this card's.
+ * The small scale is what stops a card this wide from arriving as a hard
+ * rectangle, and it is the only number here not lifted from the shared set.
  */
+const APPROVAL_SCALE = 0.98;
 const APPROVAL_VARIANTS: Variants = {
-  hidden: { opacity: 0, y: 8, scale: 0.98 },
+  hidden: { ...variants.rise.hidden, scale: APPROVAL_SCALE },
   visible: { opacity: 1, y: 0, scale: 1, transition: spring.emphasized },
   // Exits accelerate. The card leaves because the reader has already answered,
   // so making them watch a spring settle on the way out is making them wait.
-  exit: { opacity: 0, y: 8, scale: 0.98, transition: transition.exit },
+  exit: { ...variants.rise.hidden, scale: APPROVAL_SCALE, transition: transition.exit },
 };
 
 export interface CodeFileChange {
@@ -361,7 +367,10 @@ export function CodeRunStack({
           )}
         >
           {steering.phase === "delivered" ? (
-            <StatusIcons.success className="mt-px size-3.5 shrink-0 text-success" aria-hidden="true" />
+            // The host's ack is the one moment this line changes meaning, so
+            // the check springs in (`.check-morph`) rather than replacing the
+            // spinner in a frame.
+            <StatusIcons.success className="check-morph mt-px size-3.5 shrink-0 text-success" aria-hidden="true" />
           ) : steering.phase === "failed" ? (
             <StatusIcons.error className="mt-px size-3.5 shrink-0" aria-hidden="true" />
           ) : (
@@ -636,7 +645,9 @@ function flattenTree(
 function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
   const rows = React.useMemo(() => parseUnifiedDiff(patch), [patch]);
   return (
-    <div tabIndex={0} className="mb-1 mt-1 max-h-72 overflow-auto">
+    // Mounted by the press that opens it, so it arrives rather than appears:
+    // a short rise on the base rung, the same entrance the rows above it use.
+    <div tabIndex={0} className="mb-1 mt-1 max-h-72 overflow-auto motion-safe:animate-fade-in-up">
       <FileDiff file={path} rows={rows} />
     </div>
   );
@@ -757,7 +768,7 @@ function ChangedFilesCard({
         >
           <ChevronRight
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
               open && "rotate-90",
             )}
             aria-hidden="true"
@@ -787,10 +798,14 @@ function ChangedFilesCard({
             disabled={undoing}
             className="shrink-0 gap-1.5 coarse:h-11"
           >
-            <ActionIcons.restore
-              className={cn("size-3.5", undoing && "motion-safe:animate-spin")}
-              aria-hidden="true"
-            />
+            {/* The house spinner while it works. Spinning the restore arrow
+                itself turned an anticlockwise mark clockwise — the one glyph in
+                the product whose direction IS its meaning, running backwards. */}
+            {undoing ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <ActionIcons.restore className="size-3.5" aria-hidden="true" />
+            )}
             {undoing ? "Undoing…" : "Undo last turn"}
           </Button>
         )}
@@ -846,17 +861,15 @@ function ChangedFilesCard({
               const diffOpen = !!leaf && openDiffs.has(leaf.path);
               const row = (
                 <>
-                  {directory ? (
-                    shut ? (
-                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    ) : (
-                      <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    )
-                  ) : patch ? (
+                  {/* One caret for both disclosures, turning on the disclosure
+                      curve. A directory used to swap a right caret for a down
+                      one in a single frame, beside a diff caret one row down
+                      that rotated — two rules for one gesture in one list. */}
+                  {directory || patch ? (
                     <ChevronRight
                       className={cn(
-                        "size-3 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-                        diffOpen && "rotate-90",
+                        "size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                        (directory ? !shut : diffOpen) && "rotate-90",
                       )}
                       aria-hidden="true"
                     />
@@ -977,7 +990,7 @@ function ChangedFilesCard({
                   aria-expanded={!shut}
                   tabIndex={rowTabIndex}
                   onClick={() => toggleDirectory(node.key)}
-                  className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                  className={cn(shared, ROW_HOVER)}
                   style={indent}
                 >
                   {row}
@@ -989,7 +1002,7 @@ function ChangedFilesCard({
                   aria-controls={diffOpen ? diffId : undefined}
                   tabIndex={rowTabIndex}
                   onClick={() => toggleDiff(leaf.path)}
-                  className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                  className={cn(shared, ROW_HOVER)}
                   style={indent}
                 >
                   {row}
@@ -1074,7 +1087,7 @@ function RowAction({
   tabIndex,
   onClick,
 }: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: IconComponent;
   label: string;
   tabIndex: number;
   onClick: () => void;
@@ -1086,7 +1099,9 @@ function RowAction({
       title={label}
       tabIndex={tabIndex}
       onClick={onClick}
-      className="rounded-xs p-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-foreground motion-reduce:transition-none coarse:p-2"
+      // `.pressable` for the dip under the finger; it carries the colour
+      // cross-fade itself, so no `transition-colors` beside it.
+      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
     >
       <Icon className="size-3.5" aria-hidden={true} />
     </button>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookmarkPlus } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -144,7 +144,9 @@ export function CaptureSkillButton({
         onClick={() => setOpen(true)}
         className="h-8 w-full gap-1.5"
       >
-        <BookmarkPlus className="size-3.5" aria-hidden="true" />
+        {/* The skill's own mark, not a bookmark: this makes a skill, and the
+            written sheet is how every other surface draws one. */}
+        <AppIcons.skills className="size-3.5" aria-hidden="true" />
         Save this as a skill
       </Button>
       {/* Mounted only while open, so the draft is rebuilt from the run as it
@@ -276,7 +278,11 @@ function CaptureSkillDialog({
             />
           </div>
 
-          {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}
+          {refusal !== null && (
+            <WorkStateNote tone="error" className="motion-safe:animate-rise-in">
+              {refusal}
+            </WorkStateNote>
+          )}
         </div>
 
         <DialogFooter>

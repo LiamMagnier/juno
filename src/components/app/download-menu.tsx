@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -121,13 +121,19 @@ export function DownloadMenu({ className }: { className?: string }) {
         </div>
         <DropdownMenuSeparator />
 
+        {/* The two non-list states share one anatomy — a 14px glyph at
+            `gap-1.5` before a caption — so the menu does not re-shape when the
+            feed answers. The failure used to be a bare line with no mark,
+            one glyph short of the loading row it replaced. The spinner is
+            the one loop here, and it reports a request in flight. */}
         {ordered === null ? (
-          <div className="flex items-center gap-2 px-2.5 py-3 text-caption text-muted-foreground">
-            <Loader2 className="size-3.5 motion-safe:animate-spin" />
+          <div className="flex items-center gap-1.5 px-2.5 py-3 text-caption text-muted-foreground">
+            <Loader2 className="size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
             Checking for builds…
           </div>
         ) : ordered.length === 0 ? (
-          <div className="px-2.5 py-3 text-caption text-muted-foreground">
+          <div className="flex items-center gap-1.5 px-2.5 py-3 text-caption text-muted-foreground motion-safe:animate-fade-in">
+            <StatusIcons.error className="size-3.5 shrink-0" aria-hidden="true" />
             Couldn’t reach the release feed. Try again shortly.
           </div>
         ) : (
@@ -172,26 +178,32 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
     </span>
   );
 
-  // No radius override on either row below: DropdownMenuItem's rounded-xs (6px)
-  // is concentric with the 12px shell at its 6px inset, and cn() now lets a
-  // call-site radius actually win — so the `rounded-md` these carried drew them
-  // 2px rounder than every other menu row in the app.
+  // No radius override on either row below: DropdownMenuItem's
+  // `rounded-control` (10px) is concentric with the 14px `rounded-menu` shell
+  // at its 4px inset, and cn() lets a call-site radius actually win — so the
+  // `rounded-md` these once carried drew them off the menu's own geometry.
+  //
+  // `items-start` + `mt-0.5` on the glyph: these rows are two and three lines
+  // tall, and a glyph centred on the whole block floated beside the version
+  // line instead of sitting on the name it belongs to. The disabled row keeps
+  // its glyph at full row ink: the item's own `data-disabled` dim already
+  // halves it, and a second `opacity-40` on top put the mark at a fifth.
   if (!download.available || !download.url) {
     return (
-      <DropdownMenuItem disabled className="h-auto gap-2.5 px-2.5 py-2">
-        <ActionIcons.download className="size-4 shrink-0 opacity-40" />
+      <DropdownMenuItem disabled className="h-auto items-start gap-2.5 px-2.5 py-2">
+        <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
         {body}
       </DropdownMenuItem>
     );
   }
 
   return (
-    <DropdownMenuItem asChild className="h-auto gap-2.5 px-2.5 py-2">
+    <DropdownMenuItem asChild className="h-auto items-start gap-2.5 px-2.5 py-2">
       {/* A plain link with `download`: the browser owns the transfer, so it
           resumes, reports progress in the place people look for it, and survives
           the tab being closed. */}
       <a href={download.url} download>
-        <ActionIcons.download className="size-4 shrink-0" />
+        <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
         {body}
       </a>
     </DropdownMenuItem>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Archive } from "lucide-react";
+import { Archive, PinOff } from "@/components/ui/icons";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -147,7 +147,13 @@ export function CodeSessionMenu({ conversation }: { conversation: ClientConversa
               void patch({ pinned }, "Could not change the pin.");
             }}
           >
-            <CodeIcons.pin className="size-4" aria-hidden="true" />
+            {/* The verb's own drawing: Unpin is the struck-through pin, so the
+                row reads as the opposite of the one the reader pressed last. */}
+            {conversation.pinned ? (
+              <PinOff className="size-4" aria-hidden="true" />
+            ) : (
+              <CodeIcons.pin className="size-4" aria-hidden="true" />
+            )}
             {conversation.pinned ? "Unpin" : "Pin"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />

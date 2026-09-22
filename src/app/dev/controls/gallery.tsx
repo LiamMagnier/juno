@@ -1,24 +1,54 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import {
   Archive,
+  ArrowRight,
+  Check,
   ChevronRight,
+  Copy,
   Download,
   LayoutGrid,
   List as ListIcon,
+  Pencil,
   Pin,
   Plug,
   Plus,
+  RefreshCw,
+  RotateCcw,
   Scan,
   Search,
+  Settings,
+  Star,
   Trash2,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapse } from "@/components/ui/collapse";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconButton } from "@/components/ui/icon-button";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { ActionIcons, AppIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { PlusMenu, PlusMenuRow, type PlusMenuSection } from "@/components/chat/composer-plus-menu";
@@ -62,9 +92,10 @@ import { cn } from "@/lib/utils";
  * the product and reported as a regression, which is exactly what a gallery
  * that paraphrases will always produce.
  *
- * So: icons come from the registry, never from a fresh `lucide-react` import,
- * and the rows mirror `composer.tsx` group for group. Anything this file
- * cannot mirror honestly belongs in the live section below it instead.
+ * So: icons come from the registry (`@/lib/app-icons`) wherever a concept has
+ * an entry, never from a fresh pick out of the icon set, and the rows mirror
+ * `composer.tsx` group for group. Anything this file cannot mirror honestly
+ * belongs in the live section below it instead.
  */
 function StaticMenu({ title, width, children }: { title: string; width: string; children: React.ReactNode }) {
   return (
@@ -218,6 +249,52 @@ function LiveKebab() {
   );
 }
 
+/**
+ * One mark from the registry, in a pressable tile so its hover articulation
+ * plays exactly as it does in the product (the glyph moves only inside an
+ * interactive element). The caption is the CONCEPT — the registry key — not
+ * the export name, because the concept is what a call site imports.
+ */
+function GlyphTile({ icon: Icon, name }: { icon: IconComponent; name: string }) {
+  return (
+    <button
+      type="button"
+      className="pressable flex w-24 flex-col items-center gap-2 rounded-field border border-transparent px-2 py-3 text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none"
+    >
+      <Icon className="size-5" />
+      <span className="max-w-full truncate font-mono text-micro">{name}</span>
+    </button>
+  );
+}
+
+function GlyphGroup({ title, icons }: { title: string; icons: Record<string, IconComponent> }) {
+  return (
+    <div className="w-full">
+      <p className="mb-1 font-mono text-caption text-muted-foreground">{title}</p>
+      <div className="flex flex-wrap gap-1">
+        {Object.entries(icons).map(([name, icon]) => (
+          <GlyphTile key={name} icon={icon} name={name} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The seven gestures, one representative each (ICONS_AND_MOTION.md §1.3). */
+const ARTICULATIONS: { icon: IconComponent; motion: string; label: string }[] = [
+  { icon: ArrowRight, motion: "nudge", label: "Go there" },
+  { icon: Plus, motion: "turn", label: "Make one more" },
+  { icon: Settings, motion: "spin", label: "Configure" },
+  { icon: RefreshCw, motion: "cw", label: "Run again" },
+  { icon: RotateCcw, motion: "ccw", label: "Go back" },
+  { icon: Pencil, motion: "tilt", label: "Pick up a tool" },
+  { icon: Copy, motion: "lift", label: "Pick up an object" },
+  { icon: Star, motion: "pop", label: "Set a mark" },
+];
+
+/** The icon ladder, left to right. 12px and under draw the bold cut. */
+const LADDER = ["size-3", "size-3.5", "size-4", "size-4.5", "size-5", "size-6"] as const;
+
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-border py-8">
@@ -233,6 +310,25 @@ export function ControlsGallery() {
   const [filter, setFilter] = React.useState<"ALL" | "HTML" | "MARKDOWN">("ALL");
   const [chip, setChip] = React.useState("a");
   const [view, setView] = React.useState<"list" | "grid">("list");
+  const [notify, setNotify] = React.useState(true);
+  const [agree, setAgree] = React.useState<boolean | "indeterminate">(true);
+  const [plan, setPlan] = React.useState("monthly");
+  const [tab, setTab] = React.useState("overview");
+  const [volume, setVolume] = React.useState([60]);
+  const [saving, setSaving] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+  const [pinned, setPinned] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+
+  // Dev-only demo timers: a save that takes a beat, a copy that resets.
+  const save = () => {
+    setSaving(true);
+    window.setTimeout(() => setSaving(false), 1400);
+  };
+  const copy = () => {
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
 
   // The gallery drives the theme itself so both halves can be checked without
   // leaving the page — the app's own toggle lives behind auth.
@@ -444,6 +540,255 @@ export function ControlsGallery() {
           <Badge variant="soft">Soft</Badge>
           <Badge variant="success">Success</Badge>
           <Badge variant="outline">Outline</Badge>
+        </Section>
+
+        <Section
+          title="Icons · the registry"
+          note="Every concept the shell names, drawn from the one set (Phosphor geometry, regular weight). Hover a tile: a glyph plays its one articulation only inside something pressable, never on its own."
+        >
+          <GlyphGroup title="AppIcons — destinations" icons={AppIcons} />
+          <GlyphGroup title="ActionIcons — verbs" icons={ActionIcons} />
+          <GlyphGroup title="StatusIcons — what happened" icons={StatusIcons} />
+          <GlyphGroup title="ComposerIcons — what + adds" icons={ComposerIcons} />
+        </Section>
+
+        <Section
+          title="Icons · the articulation vocabulary"
+          note="Seven gestures, each naming what the action does. Carets, spinners and status marks carry none. Keyboard focus plays them too; reduced motion and disabled controls never do."
+        >
+          {ARTICULATIONS.map(({ icon: Icon, motion, label }) => (
+            <Button key={motion} variant="outline" size="sm">
+              <Icon className="size-4" />
+              {label}
+              <span className="font-mono text-micro text-muted-foreground">{motion}</span>
+            </Button>
+          ))}
+          <Button variant="outline" size="sm" disabled>
+            <Settings className="size-4" />
+            Disabled — still
+          </Button>
+        </Section>
+
+        <Section
+          title="Icons · size ladder and the on state"
+          note="12 · 14 · 16 · 18 · 20 · 24. At 12px the set swaps to its bold cut on its own, so the line never thins out. `fill` is a state — pinned, starred — never decoration."
+        >
+          <div className="flex items-end gap-4 text-foreground">
+            {LADDER.map((size) => (
+              <div key={size} className="flex flex-col items-center gap-2">
+                <Settings className={size} motion="none" />
+                <span className="font-mono text-micro text-muted-foreground">{size}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Pressable
+                  kind="icon"
+                  size="md"
+                  selected={pinned}
+                  aria-pressed={pinned}
+                  aria-label={pinned ? "Unpin" : "Pin"}
+                  onClick={() => setPinned((v) => !v)}
+                >
+                  <IconSwap
+                    swapped={pinned}
+                    from={<Pin className="size-4" />}
+                    to={<Pin weight="fill" className="size-4" />}
+                  />
+                </Pressable>
+              </TooltipTrigger>
+              <TooltipContent>{pinned ? "Unpin" : "Pin"}</TooltipContent>
+            </Tooltip>
+            <span className="font-mono text-caption text-muted-foreground">regular ⇄ fill, cross-faded</span>
+          </div>
+        </Section>
+
+        <Section
+          title="Tooltips"
+          note="Hover one, then slide along the row: the first waits out the delay, the rest open instantly inside the skip window. 2px of travel toward the trigger, 120ms, no spring."
+        >
+          {[
+            { icon: ActionIcons.edit, label: "Rename" },
+            { icon: ActionIcons.share, label: "Share" },
+            { icon: Archive, label: "Archive" },
+            { icon: ActionIcons.download, label: "Download" },
+            { icon: ActionIcons.delete, label: "Delete" },
+          ].map(({ icon: Icon, label }) => (
+            <Tooltip key={label}>
+              <TooltipTrigger asChild>
+                <IconButton variant="ghost" size="sm" label={label} title="">
+                  <Icon className="size-4" />
+                </IconButton>
+              </TooltipTrigger>
+              <TooltipContent>{label}</TooltipContent>
+            </Tooltip>
+          ))}
+        </Section>
+
+        <Section
+          title="Toggles"
+          note="Every selection mark moves: the switch thumb travels and squashes, the tick and the radio dot spring in and leave on the accelerate, the tab key slides on the shared spring."
+        >
+          <div className="flex w-full flex-wrap items-center gap-6">
+            <label className="flex items-center gap-2 text-ui">
+              <Switch checked={notify} onCheckedChange={setNotify} />
+              Notifications
+            </label>
+            <label className="flex items-center gap-2 text-ui text-muted-foreground">
+              <Switch disabled />
+              Disabled
+            </label>
+            <label className="flex items-center gap-2 text-ui">
+              <Checkbox checked={agree} onCheckedChange={(v) => setAgree(v)} />
+              Checked
+            </label>
+            <label className="flex items-center gap-2 text-ui">
+              <Checkbox checked="indeterminate" />
+              Indeterminate
+            </label>
+            <Slider aria-label="Volume" value={volume} onValueChange={setVolume} className="w-40" />
+          </div>
+          <RadioGroup value={plan} onValueChange={setPlan} className="flex gap-4">
+            {["monthly", "yearly", "team"].map((v) => (
+              <label key={v} className="flex items-center gap-2 text-ui capitalize">
+                <RadioGroupItem value={v} />
+                {v}
+              </label>
+            ))}
+          </RadioGroup>
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList>
+              {["overview", "tasks", "code", "sources", "settings"].map((v) => (
+                <TabsTrigger key={v} value={v} className="capitalize">
+                  {v}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </Section>
+
+        <Section
+          title="Button · loading and state swaps"
+          note="`loading` cross-fades the label to the spinner in place — the width never changes and the button is not dimmed. Copy cross-fades to a check rather than cutting."
+        >
+          <Button size="sm" loading={saving} onClick={save}>
+            Save changes
+          </Button>
+          <Button size="sm" variant="outline" loading={saving} onClick={save}>
+            <Download className="size-4" />
+            Export
+          </Button>
+          <Button size="sm" variant="ghost" onClick={copy}>
+            <IconSwap
+              swapped={copied}
+              from={<Copy className="size-4" />}
+              to={<Check className="size-4 text-success-ink" />}
+            />
+            {copied ? "Copied" : "Copy link"}
+          </Button>
+        </Section>
+
+        <Section
+          title="Disclosure"
+          note="One caret that turns on the symmetric curve, and content that unfolds on grid rows instead of appearing."
+        >
+          <div className="w-full max-w-md rounded-card border border-border">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className="flex w-full items-center gap-2 rounded-card px-3.5 py-2.5 text-left text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent/40"
+            >
+              <ChevronRight
+                className={cn(
+                  "size-4 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+                  open && "rotate-90"
+                )}
+              />
+              Three delegated agents
+            </button>
+            <Collapse open={open} innerClassName="px-3.5 pb-3 text-ui text-muted-foreground">
+              Researcher, Implementer and Reviewer are working in their own branches. Open one to inspect its
+              changes.
+            </Collapse>
+          </div>
+        </Section>
+
+        <Section
+          title="Toasts"
+          note="The tier rides the glyph; the sentence stays in foreground ink. Arrival on the long-travel curve, exit on the accelerate."
+        >
+          <Button size="sm" variant="outline" onClick={() => toast.success("Project renamed")}>Success</Button>
+          <Button size="sm" variant="outline" onClick={() => toast.error("Couldn’t reach GitHub", { description: "Check the connector and try again." })}>Error</Button>
+          <Button size="sm" variant="outline" onClick={() => toast.warning("You’re near your monthly limit")}>Warning</Button>
+          <Button size="sm" variant="outline" onClick={() => toast.info("Juno updated in the background")}>Info</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toast("Conversation archived", { action: { label: "Undo", onClick: () => {} } })}
+          >
+            With action
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              toast.promise(new Promise((resolve) => window.setTimeout(resolve, 1500)), {
+                loading: "Exporting…",
+                success: "Export ready",
+                error: "Export failed",
+              })
+            }
+          >
+            Loading → success
+          </Button>
+        </Section>
+
+        <Section
+          title="Empty and error states"
+          note="One muted glyph in a quiet tile, one sentence, one action."
+        >
+          <div className="grid w-full gap-3 sm:grid-cols-2">
+            <EmptyState
+              size="panel"
+              icon={AppIcons.projects}
+              title="No projects yet"
+              description="Group chats, files and instructions under one name."
+              action={<Button size="sm">New project</Button>}
+            />
+            <EmptyState
+              size="panel"
+              tone="error"
+              icon={StatusIcons.error}
+              title="Couldn’t load your projects"
+              action={<Button size="sm" variant="outline">Try again</Button>}
+            />
+          </div>
+        </Section>
+
+        <Section title="Dialog" note="Scrim leads on open and trails on close; the panel springs in from 0.96 and leaves on the accelerate.">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">Open dialog</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Rename project</DialogTitle>
+                <DialogDescription>The new name shows everywhere the project does.</DialogDescription>
+              </DialogHeader>
+              <Input defaultValue="Juno" aria-label="Project name" />
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="ghost" size="sm">Cancel</Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button size="sm">Rename</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </Section>
 
         <Section

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Clock, Pencil } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { ChevronDown, Clock } from "@/components/ui/icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -196,7 +196,7 @@ export function ApprovalCard({
           >
             <ChevronDown
               className={cn(
-                "size-3 transition-transform duration-fast ease-in-out",
+                "size-3 transition-transform duration-base ease-in-out motion-reduce:transition-none",
                 showParameters && "rotate-180"
               )}
               aria-hidden="true"
@@ -205,7 +205,7 @@ export function ApprovalCard({
             {parameters.length === 1 ? "parameter" : "parameters"}
           </Button>
           {showParameters && (
-            <dl className="mt-1.5 space-y-1 rounded-field bg-warning/10 px-2.5 py-2">
+            <dl className="mt-1.5 space-y-1 rounded-field bg-warning/10 px-2.5 py-2 motion-safe:animate-fade-in-up">
               {parameters.map(([key, value]) => (
                 <div key={key} className="flex gap-2 font-mono text-micro leading-relaxed">
                   <dt className="w-20 shrink-0 text-muted-foreground">{key}</dt>
@@ -231,7 +231,10 @@ export function ApprovalCard({
           web. Decide it in the Juno app on the Mac that raised it.
         </p>
       ) : amending ? (
-        <div className="mt-3">
+        // The two faces of the answer — the buttons and the instruction field —
+        // each rise into place when the other hands over, rather than the card
+        // repainting under the press that switched them.
+        <div className="mt-3 motion-safe:animate-fade-in-up">
           <label
             htmlFor={`amend-${approval.id}`}
             className="font-mono text-micro text-warning-foreground"
@@ -281,7 +284,7 @@ export function ApprovalCard({
         </div>
       ) : (
         <>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2 motion-safe:animate-fade-in-up">
             {/* Refuse first and given equal weight. The reader is being asked to
                 stop and think, and a row that leads with a primary-coloured
                 approve has already answered for them. */}
@@ -301,7 +304,7 @@ export function ApprovalCard({
               onClick={() => setAmending(true)}
               className="h-8 gap-1.5"
             >
-              <Pencil className="size-3.5" aria-hidden="true" />
+              <ActionIcons.edit className="size-3.5" aria-hidden="true" />
               Change it
             </Button>
             {/*
@@ -327,10 +330,13 @@ export function ApprovalCard({
                     variant="ghost"
                     size="sm"
                     disabled={busy}
-                    className="h-8 gap-1.5 text-muted-foreground"
+                    className="group h-8 gap-1.5 text-muted-foreground"
                   >
                     More
-                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                    <ChevronDown
+                      className="size-3.5 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+                      aria-hidden="true"
+                    />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className={MENU_W_WIDE}>

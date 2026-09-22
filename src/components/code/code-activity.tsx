@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -115,6 +115,15 @@ function isCodeRow(event: ClientActivityEvent): boolean {
 /* ── Rows ────────────────────────────────────────────────────────────────── */
 
 const ROW = "flex min-w-0 items-start gap-2 rounded-control px-2 py-1.5 text-caption";
+/**
+ * A row that opens: the tonal hover on the token rung, and the inset ring the
+ * card's flush rows need (the global outline's offset would be clipped by the
+ * card's own edge, so this replaces it rather than joining it).
+ */
+const ROW_BUTTON =
+  "w-full text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+/** The disclosure caret: a quarter turn on the disclosure curve. */
+const CARET = "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none";
 
 /**
  * One command: `$ npm test`, its exit status, and its output one press away.
@@ -165,13 +174,7 @@ function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean })
       )}
       <span className="sr-only">{outcome === "ok" ? ", succeeded" : outcome === "failed" ? ", failed" : ""}</span>
       {hasOutput && (
-        <ChevronRight
-          className={cn(
-            "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-          aria-hidden="true"
-        />
+        <ChevronRight className={cn(CARET, open && "rotate-90")} aria-hidden="true" />
       )}
     </>
   );
@@ -184,18 +187,20 @@ function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean })
           aria-expanded={open}
           aria-controls={open ? outputId : undefined}
           onClick={() => setOpen((v) => !v)}
-          className={cn(ROW, "w-full text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring")}
+          className={cn(ROW, ROW_BUTTON)}
         >
           {body}
         </button>
       ) : (
         <div className={ROW}>{body}</div>
       )}
+      {/* Mounted by the press that opens it, so it rises in rather than
+          appearing in a frame under a caret that took 220ms to turn. */}
       {hasOutput && open && (
         <pre
           id={outputId}
           tabIndex={0}
-          className="mx-2 mb-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground"
+          className="mx-2 mb-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground motion-safe:animate-fade-in-up"
         >
           {detail}
         </pre>
@@ -231,13 +236,7 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
   const body = (
     <>
       {patch ? (
-        <ChevronRight
-          className={cn(
-            "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-          aria-hidden="true"
-        />
+        <ChevronRight className={cn(CARET, open && "rotate-90")} aria-hidden="true" />
       ) : (
         <CodeIcons.file className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       )}
@@ -259,7 +258,7 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
           aria-expanded={open}
           aria-controls={open ? diffId : undefined}
           onClick={() => setOpen((v) => !v)}
-          className={cn(ROW, "w-full text-left hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring")}
+          className={cn(ROW, ROW_BUTTON)}
         >
           {body}
         </button>
@@ -267,7 +266,7 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
         <div className={ROW}>{body}</div>
       )}
       {rows && (
-        <div id={diffId} tabIndex={0} className="mx-2 mb-1.5 max-h-72 overflow-auto">
+        <div id={diffId} tabIndex={0} className="mx-2 mb-1.5 max-h-72 overflow-auto motion-safe:animate-fade-in-up">
           <FileDiff file={path} rows={rows} />
         </div>
       )}

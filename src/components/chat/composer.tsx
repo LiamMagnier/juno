@@ -5,27 +5,22 @@ import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   AudioLines,
-  NotebookPen,
-  Cpu,
-  FileUp,
   Hand,
   Loader2,
-  MessageSquarePlus,
   Mic,
-  Plug,
   Plus,
   Scan,
   Search,
   SquareDashedMousePointer,
-  SquarePen,
   TextQuote,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+} from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { toast } from "sonner";
 import {
   ActionIcons,
   AppIcons,
   ComposerIcons,
+  SettingsIcons,
   StatusIcons,
 } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -343,7 +338,7 @@ type SlashCommand = {
   group: PaletteGroup;
   /** Brand mark for connector rows; `icon` covers everything else. */
   connectorId?: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   /** Defined ⇒ the row is an on/off tool and renders its state. */
   on?: boolean;
   /** Trailing note for a row that can't toggle right now ("not connected"). */
@@ -453,12 +448,14 @@ const filterRows = (rows: SlashCommand[], query: string) =>
 
 // Selection is carried by the neutral accent fill + a coral hairline, never a
 // coral wash: the mouse moves the cursor here, so a filled coral row would read
-// as a hover colour rather than as "this is what Enter picks".
+// as a hover colour rather than as "this is what Enter picks". The fill
+// cross-fades between rows on --dur-fast as the cursor moves.
 //
-// `rounded-xs`, by the same arithmetic DropdownMenuItem documents: the palette
-// shell is a 16px `rounded-popover` with p-1.5, so 16 − 6 leaves 10px (`rounded-control`) for the rows.
-// At rounded-md these were drawn 2px too round for their shell — and 2px rounder
-// than the + menu's rows one trigger to the left, which are the same object.
+// `rounded-control`, by the same arithmetic DropdownMenuItem documents: the
+// palette shell is a 16px `rounded-popover` with p-1.5, so 16 − 6 leaves 10px
+// for the rows. At rounded-md these were drawn 2px too round for their shell —
+// and 2px rounder than the + menu's rows one trigger to the left, which are the
+// same object.
 const paletteRowClass = (selected: boolean) =>
   cn(
     // `px-2.5` inside the list's `p-1.5` puts the glyph on 16 and `gap-2.5`
@@ -564,18 +561,22 @@ function PaletteEyebrow({
  * Uniform icon slot — a SLOT, not a plate.
  *
  * It was a 24px bordered tile with its own fill, on the argument that brand
- * marks need a surface to read on and a shared tile keeps lucide glyphs,
+ * marks need a surface to read on and a shared tile keeps the set's glyphs,
  * provider logos and connector marks on one baseline. The second half is the
  * real requirement and a fixed-size box delivers it on its own; the border and
  * the fill were the part that made ten rows read as ten plates, which is
  * exactly what the ⌘K palette dropped for the same reason.
  *
- * `size-5` with an 18px glyph, so this list lands on the same 16px-glyph /
- * 46px-label grid as the palette, the sidebar and every dropdown.
+ * A 20px slot holding a 16px mark — the menu rung, the same size the `+` menu
+ * one trigger to the left draws its glyphs at — so the glyph starts on 16 and
+ * the label on 46, the grid the palette, the sidebar and every dropdown share.
+ * The slot used to force every child to 18px with a descendant selector that
+ * outranked the size written on the glyph itself, so a `size-3.5` here was
+ * silently drawn at 18 and the two menus' marks never matched.
  */
 function PaletteIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden [&_svg]:size-4.5 [&_img]:size-4.5">
+    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden">
       {children}
     </span>
   );
@@ -591,13 +592,11 @@ type ArmedMark = {
    * The glyph, carrying `size-4` ITSELF rather than inheriting a size from the
    * box around it.
    *
-   * The optical stroke ladder in globals.css is written as
-   * `svg.lucide.size-4 { stroke-width: 2.25 }`, so a mark sized through a
-   * parent selector draws at 16px carrying the 24px REFERENCE weight — the
-   * same bug that once had the sidebar rendering hairline glyphs at the right
-   * size. `ComposerArmedMark`'s box keeps a `[&_svg]:size-4` floor so a caller
-   * that forgets cannot blow the row out to 24px, but the class has to be on
-   * the svg for the stroke to be right.
+   * `icons.tsx` picks each glyph's optical cut from the size written on it
+   * (the bold cut at 12px and under), so a mark sized only through a parent
+   * selector is drawn without that decision being made. `ComposerArmedMark`'s
+   * box keeps a `[&_svg]:size-4` floor so a caller that forgets cannot blow
+   * the row out to 24px, but the class belongs on the glyph.
    */
   icon: React.ReactNode;
   label: string;
@@ -1761,7 +1760,7 @@ export function Composer({
         label: "/model",
         hint: "Switch the AI model",
         group: "commands",
-        icon: Cpu,
+        icon: SettingsIcons.models,
       },
       {
         id: "artifact",
@@ -1769,7 +1768,7 @@ export function Composer({
         label: "/artifact",
         hint: "Ask for an artifact",
         group: "commands",
-        icon: SquarePen,
+        icon: ComposerIcons.canvas,
       },
       ...(onOpenVoiceMode
         ? [
@@ -1790,7 +1789,9 @@ export function Composer({
         label: "/new",
         hint: "Start a new chat",
         group: "commands",
-        icon: MessageSquarePlus,
+        // The same mark the sidebar's New chat row and ⌘K's draw
+        // (`AppIcons.new`) — it was a third drawing of one action here.
+        icon: AppIcons.new,
         run: () => {
           window.dispatchEvent(new CustomEvent("juno:new-chat"));
           router.push("/chat");
@@ -1872,7 +1873,7 @@ export function Composer({
         label: "/memory",
         hint: "Open memory",
         group: "navigate",
-        icon: NotebookPen,
+        icon: ComposerIcons.memory,
         run: () => router.push("/memory"),
       },
     ],
@@ -1937,7 +1938,7 @@ export function Composer({
         label: "@memory",
         hint: "Remember things across chats",
         group: "tools",
-        icon: NotebookPen,
+        icon: ComposerIcons.memory,
         on: settings.memoryEnabled,
         run: () => toggleMemory(!settings.memoryEnabled),
       },
@@ -2885,7 +2886,7 @@ export function Composer({
               `AppIcons.search` is the app's search destination, which this
               never opens. Key events stay in the field — the menu's typeahead
               and arrow handling must not see them. */}
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             value={connectorQuery}
             onChange={(event) => setConnectorQuery(event.target.value)}
@@ -2899,7 +2900,7 @@ export function Composer({
             placeholder="Search apps…"
             aria-label="Search apps"
             autoFocus
-            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-base ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
+            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60 motion-reduce:transition-none"
           />
         </label>
       </div>
@@ -2922,7 +2923,7 @@ export function Composer({
             </button>
           </div>
         ) : connectors.length === 0 ? (
-          <PlusMenuRow icon={Plug} onSelect={() => router.push("/connections")}>
+          <PlusMenuRow icon={AppIcons.connections} onSelect={() => router.push("/connections")}>
             Connect an app
           </PlusMenuRow>
         ) : visibleConnectors.length === 0 ? (
@@ -2948,7 +2949,7 @@ export function Composer({
         <>
           <PlusMenuSeparator />
           <PlusMenuRow
-            icon={Plug}
+            icon={AppIcons.connections}
             detail={`${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on`}
             onSelect={() => router.push("/connections")}
           >
@@ -3204,7 +3205,7 @@ export function Composer({
                   kind: "sub" as const,
                   id: "connectors",
                   label: "Connectors",
-                  icon: Plug,
+                  icon: AppIcons.connections,
                   detail: activeConnectorCount > 0 ? String(activeConnectorCount) : undefined,
                   render: connectorsPanel,
                   onOpenChange: (open: boolean) => {
@@ -3294,22 +3295,29 @@ export function Composer({
           instead; the chip only announces where a brand-new chat will land. */}
       {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
-          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card px-2.5 text-caption text-muted-foreground">
-            <AppIcons.projects className="size-3 text-primary" />
+          {/* Muted glyph on the caption rung (14px, gap-1.5): the folder is a
+              label on the chip, not a state, so it does not take the accent. */}
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card pl-2.5 pr-1 text-caption text-muted-foreground motion-safe:animate-rise-in">
+            <AppIcons.projects aria-hidden="true" className="size-3.5" />
             <span>
               {"New chat in "}
               <span className="font-medium text-foreground">
                 {selectedProject.name}
               </span>
             </span>
-            <button
-              type="button"
-              onClick={() => pickProject(null)}
-              aria-label="Remove from project"
-              className="pressable ml-0.5 rounded-full p-0.5 text-muted-foreground/70 hover:text-foreground coarse:p-1.5"
-            >
-              <ActionIcons.dismiss className="size-3" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => pickProject(null)}
+                  aria-label="Remove from project"
+                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-8"
+                >
+                  <ActionIcons.dismiss aria-hidden="true" className="size-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Remove from project</TooltipContent>
+            </Tooltip>
           </span>
         </div>
       )}
@@ -3370,7 +3378,7 @@ export function Composer({
               {steerMode && steering?.above}
               {dragging && !privateMode && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
-                  <FileUp className="size-6 text-primary" />
+                  <ComposerIcons.files aria-hidden="true" className="size-6 text-primary" />
                   <span className="font-mono text-label text-primary">
                     Drop to attach
                   </span>
@@ -3398,16 +3406,23 @@ export function Composer({
                 className={cn(
                   // `rounded-control`, the one inner radius the composer uses:
                   // the same rung as the chips below and the tiles beside it.
-                  "mx-4 mt-3.5 flex items-start gap-2.5 rounded-control border border-primary/25 bg-primary/5 px-3 py-2",
+                  //
+                  // NEUTRAL, on the argument the armed marks settled
+                  // (PREMIUM_AUDIT.md §2d): what this message is about is a
+                  // fact about the draft, not an alert about it. A coral card,
+                  // coral tile and coral label were the loudest object in the
+                  // composer — louder than the send circle — for a quotation.
+                  "mx-4 mt-3.5 flex items-start gap-2.5 rounded-control border border-border/70 bg-secondary px-3 py-2",
                   quoteRemoving
                     ? "pointer-events-none motion-safe:animate-pop-out"
                     : "motion-safe:animate-rise-in",
                 )}
               >
-                {/* Same size-6 tile as PaletteIcon, so the same rounded-xs corner. */}
+                {/* A 24px tile on the `xs` rung — the one small plate in the
+                    composer, holding a 14px mark beside caption text. */}
                 <span
                   aria-hidden
-                  className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-xs border border-primary/25 bg-primary/10 text-primary"
+                  className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-xs border border-border/70 bg-card text-muted-foreground"
                 >
                   {quote.kind === "element" ? (
                     <SquareDashedMousePointer className="size-3.5" />
@@ -3417,7 +3432,7 @@ export function Composer({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="shrink-0 font-mono text-label text-primary">
+                    <span className="shrink-0 font-mono text-label text-muted-foreground">
                       {quote.mode === "modify" ? "Modify" : "Ask"}
                     </span>
                     <span className="min-w-0 truncate text-ui font-medium">
@@ -3433,14 +3448,21 @@ export function Composer({
                     {quote.text.replace(/\s+/g, " ").trim().slice(0, 220)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={dismissQuote}
-                  aria-label="Remove quoted selection"
-                  className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 transition-colors duration-fast hover:bg-accent hover:text-foreground coarse:p-2"
-                >
-                  <ActionIcons.dismiss className="size-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={dismissQuote}
+                      aria-label="Remove quoted selection"
+                      // No transition-* beside `.pressable`: it would replace
+                      // the class's list and leave the dip untimed.
+                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
+                    >
+                      <ActionIcons.dismiss aria-hidden="true" className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove quote</TooltipContent>
+                </Tooltip>
               </div>
             )}
 
@@ -3475,20 +3497,25 @@ export function Composer({
                       {text.length > 280 ? "…" : ""}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Clear paste"
-                    className="shrink-0"
-                    onClick={() => {
-                      setText("");
-                      setDraftExpanded(false);
-                      requestAnimationFrame(autoresize);
-                    }}
-                  >
-                    <ActionIcons.dismiss className="size-3.5" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Clear paste"
+                        className="shrink-0"
+                        onClick={() => {
+                          setText("");
+                          setDraftExpanded(false);
+                          requestAnimationFrame(autoresize);
+                        }}
+                      >
+                        <ActionIcons.dismiss aria-hidden="true" className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Clear paste</TooltipContent>
+                  </Tooltip>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -3508,7 +3535,7 @@ export function Composer({
                       });
                     }}
                   >
-                    <ActionIcons.edit className="size-3.5" /> Expand to edit
+                    <ActionIcons.edit aria-hidden="true" className="size-3.5" /> Expand to edit
                   </Button>
                   {features.storage && !privateMode && (
                     <Button
@@ -3518,7 +3545,7 @@ export function Composer({
                       onClick={attachAsFile}
                       className="h-7 gap-1.5"
                     >
-                      <FileUp className="size-3.5" /> Attach as file
+                      <ComposerIcons.files aria-hidden="true" className="size-3.5" /> Attach as file
                     </Button>
                   )}
                 </div>
@@ -3541,7 +3568,7 @@ export function Composer({
                     onClick={attachAsFile}
                     className="h-7 shrink-0 gap-1.5"
                   >
-                    <FileUp className="size-3.5" /> Attach as file
+                    <ComposerIcons.files aria-hidden="true" className="size-3.5" /> Attach as file
                   </Button>
                 </div>
               )}
@@ -3553,12 +3580,12 @@ export function Composer({
             rather than .origin-popper because this is not Radix popper content —
             it's pinned to the composer's top edge, so the pop scales out of it. */}
             {slashOpen && slash && (
-              // No `shadow-float` here: .glass-raised already sets box-shadow (its
-              // inset sheen + --shadow-glass), and a utility beats the components
-              // layer — so adding shadow-float silently replaced the glass entirely
-              // and left this popover looking unlike the + menu beside it.
-              // DropdownMenuContent uses glass-raised alone; match it.
-              <div className="surface-float overlay-glass absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-popover p-1.5 motion-safe:animate-pop-in">
+              // No `shadow-*` utility here: `.surface-float` already draws the
+              // floating layer's throw, and a utility beats the components
+              // layer — a second shadow would silently replace it and leave this
+              // popover looking unlike the + menu beside it. `z-popper`, the
+              // named rung every floating list in the product stacks on.
+              <div className="surface-float overlay-glass absolute bottom-full left-2 right-2 z-popper mb-2 origin-bottom overflow-hidden rounded-popover p-1.5 motion-safe:animate-pop-in">
                 {/* Options, not tab stops: the caret never leaves the textarea, so this
                 is a combobox popup, and each row's state is its `aria-checked`
                 rather than a control of its own. */}
@@ -3586,6 +3613,9 @@ export function Composer({
                           id={`composer-palette-${i}`}
                           role="option"
                           aria-selected={i === slashIndex}
+                          // The arrow-key cursor plays the glyph's hover
+                          // gesture, as a Radix menu's highlighted row does.
+                          data-highlighted={i === slashIndex ? "" : undefined}
                           onMouseEnter={() => setSlashIndex(i)}
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => applySlash(m)}
@@ -3604,7 +3634,7 @@ export function Composer({
                             {PROVIDERS[m.provider].label.split(" · ")[0]}
                           </span>
                           {m.id === model && (
-                            <StatusIcons.success className="size-3.5 shrink-0 text-primary" />
+                            <StatusIcons.success aria-hidden className="size-3.5 shrink-0 text-primary" />
                           )}
                         </div>
                       ))}
@@ -3643,6 +3673,7 @@ export function Composer({
                               // the tool's own state. The tick that draws it is
                               // aria-hidden, so without this the state is visual only.
                               aria-checked={item.on}
+                              data-highlighted={selected ? "" : undefined}
                               onMouseEnter={() => setSlashIndex(index)}
                               // Keeps the caret (and the draft's selection) in the
                               // textarea when a row is picked with the mouse.
@@ -3654,17 +3685,22 @@ export function Composer({
                                 {item.connectorId ? (
                                   <ConnectorMark
                                     id={item.connectorId}
-                                    className="size-3.5 text-foreground"
+                                    className="size-4 text-foreground"
                                   />
                                 ) : Icon ? (
                                   // Coral marks a tool that is ON — the one state worth
-                                  // colouring. Selection is the ring, not the colour.
+                                  // colouring. Selection is the ring, not the colour;
+                                  // an off tool's mark is muted at rest and takes the
+                                  // row's ink under the cursor.
                                   <Icon
+                                    aria-hidden
                                     className={cn(
-                                      "size-3.5",
+                                      "size-4",
                                       item.on
                                         ? "text-primary"
-                                        : "text-muted-foreground",
+                                        : selected
+                                          ? "text-foreground"
+                                          : "text-muted-foreground",
                                     )}
                                   />
                                 ) : null}

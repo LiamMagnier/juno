@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import nextDynamic from "next/dynamic";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "@/components/ui/icons";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
@@ -184,7 +184,7 @@ export function ModelSelector({
             type="button"
             onClick={openCatalogue}
             className={cn(
-              "flex h-10 w-full items-center gap-2.5 rounded-control px-2 text-left outline-none",
+              "group flex h-10 w-full items-center gap-2.5 rounded-control px-2 text-left outline-none",
               "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
               "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             )}
@@ -202,7 +202,12 @@ export function ModelSelector({
               </span>
               <span className="block font-mono text-micro text-muted-foreground/60">Change model</span>
             </span>
-            <ChevronUp aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            {/* Muted at rest, the row's ink under the pointer — the caret
+                brightens with the fill rather than staying grey on a lit row. */}
+            <ChevronUp
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground motion-reduce:transition-none"
+            />
           </button>
 
           {thinking && (

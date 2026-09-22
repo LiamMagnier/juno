@@ -83,21 +83,16 @@ export function ProviderLogo({
         // size, and it is owned here rather than passed in: call sites had drifted
         // to 24%, 28% and 32%, so the same provider mark rendered three different
         // corner treatments depending on which screen you were looking at.
-        // `shadow-pop`, not Tailwind's `shadow-sm`: that default is a hardcoded
-        // `rgb(0 0 0 / 0.05)` — off the theme's elevation ladder entirely, and
-        // literally invisible on the true-black ground. --shadow-pop is the
-        // per-theme rung meant for chips and tiles this size.
         //
-        // On dark both the edge and that shadow were doing nothing. --shadow-pop
-        // is pure black ink there, spread on a #000 page — and /55 discounted a
-        // --border that had ALREADY been dropped to 16% to hold its contrast
-        // against that ground, landing the hairline at ~8.8%. So the tile that
-        // carries every provider mark in the hero strip, the lineup and the
-        // picker had neither an edge nor a lift: 14 near-invisible squares on the
-        // front door. Dark takes the full token plus the 1px lit INSET edge every
-        // raised surface on black uses (never an outer glow — that is the halo
-        // the theme removed).
-        "inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/55 bg-card shadow-pop dark:border-border dark:shadow-[inset_0_1px_0_hsl(var(--sheen))]",
+        // Flat, per docs/design/FLAT_UI.md: the card fill and a hairline, nothing
+        // else. It used to carry `shadow-pop` plus, on dark, a 1px lit inset rim,
+        // both written for the old true-black ground, where the tile otherwise
+        // had no edge at all. The dark ground is warm charcoal now and the card
+        // rung sits above it, so the hairline holds the edge by itself, and the
+        // flat retune retired both the contact shadow on chips and the sheen rim.
+        // The light edge is up from /55 to /80 to take over the definition the
+        // shadow was lending it; dark takes the full token.
+        "inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/80 bg-card dark:border-border",
         className
       )}
     >

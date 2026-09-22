@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { ArrowUp, CheckCircle2, ChevronUp, CircleDashed, Globe as GlobeGlyph, Search } from "@/components/ui/icons";
 import { cn, truncate } from "@/lib/utils";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -37,12 +38,19 @@ const BEGINS = ["0s", "-1.2s", "-2.4s", "-3.6s", "-4.8s", "-6s"];
 /**
  * The rotating globe, drawn as morphing meridians rather than a spinning image.
  *
+ * The one drawing in this file that is not from the icon set, and deliberately:
+ * it is not an icon but the live "fetching" state, the same class of thing as
+ * the dot-matrix signature — a loop that reports work in flight and stops the
+ * moment the row resolves.
+ *
  * SMIL, not CSS — `d` interpolation is the whole effect and CSS cannot tween a
  * path. Which is why `still` is a prop and not a media query: `animation: none`
  * cannot reach inside <animate>, so reduced motion has to be answered by not
- * rendering the elements at all.
+ * rendering the elements at all. Held still, the drawing would just be a globe
+ * icon, so under reduced motion it is the set's globe at the box's own size.
  */
 function Globe({ still }: { still?: boolean }) {
+  if (still) return <GlobeGlyph className="size-3" />;
   const values = [MERIDIANS.L, MERIDIANS.ML, MERIDIANS.MR, MERIDIANS.R, MERIDIANS.L].join(";");
   return (
     <svg
@@ -58,62 +66,32 @@ function Globe({ still }: { still?: boolean }) {
     >
       <circle cx="6" cy="6" r="5.7" opacity="0.9" />
       <line x1="0.3" y1="6" x2="11.7" y2="6" opacity="0.9" />
-      {still ? (
-        <path d={MERIDIANS.ML} opacity="0.9" />
-      ) : (
-        BEGINS.map((begin) => (
-          <path key={begin} d={MERIDIANS.L} opacity="0">
-            <animate
-              attributeName="d"
-              dur="7.2s"
-              begin={begin}
-              repeatCount="indefinite"
-              calcMode="spline"
-              keyTimes="0;0.25;0.5;0.75;1"
-              keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"
-              values={values}
-            />
-            <animate
-              attributeName="opacity"
-              dur="7.2s"
-              begin={begin}
-              repeatCount="indefinite"
-              calcMode="linear"
-              keyTimes="0;0.05;0.7;0.75;1"
-              values="0;0.9;0.9;0;0"
-            />
-          </path>
-        ))
-      )}
+      {BEGINS.map((begin) => (
+        <path key={begin} d={MERIDIANS.L} opacity="0">
+          <animate
+            attributeName="d"
+            dur="7.2s"
+            begin={begin}
+            repeatCount="indefinite"
+            calcMode="spline"
+            keyTimes="0;0.25;0.5;0.75;1"
+            keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"
+            values={values}
+          />
+          <animate
+            attributeName="opacity"
+            dur="7.2s"
+            begin={begin}
+            repeatCount="indefinite"
+            calcMode="linear"
+            keyTimes="0;0.05;0.7;0.75;1"
+            values="0;0.9;0.9;0;0"
+          />
+        </path>
+      ))}
     </svg>
   );
 }
-
-const SearchGlyph = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-  </svg>
-);
-const Caret = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m4.5 15.75 7.5-7.5 7.5 7.5" />
-  </svg>
-);
-const ArrowUp = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
-  </svg>
-);
-const DashedRing = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" strokeWidth="1.8" strokeDasharray="1.8 3.6" strokeLinecap="round" />
-  </svg>
-);
-const Check = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-  </svg>
-);
 
 /** Render-time reduced-motion, for the one decision CSS cannot make (see Globe). */
 function useReducedMotion() {
@@ -162,21 +140,25 @@ export function WebSearchBlock({
     <div className={cn("aicss-ws", className)}>
       {query && (
         <div className="aicss-ws-row">
-          <SearchGlyph />
+          {/* A label, not an action: the magnifier's hover tilt is off. */}
+          <Search className="size-3.5" motion="none" />
           <span className="aicss-ws-label">
             <ThinkingState settled={settled} tone="strong">
               {settled ? "Searched" : "Searching"} <span className="aicss-ws-quote">“{truncate(query, 72)}”</span>
             </ThinkingState>
             {sites.length > 0 && (
+              // An UP caret: `.aicss-ws-chevron` turns the button to point it
+              // down while the results are folded. The turn takes the
+              // symmetric curve — both ends of it are on screen.
               <button
                 type="button"
-                className="aicss-ws-chevron"
+                className="aicss-ws-chevron ease-in-out motion-reduce:transition-none"
                 aria-label={open ? "Hide results" : "Show results"}
                 aria-expanded={open}
                 aria-controls={listId}
                 onClick={() => setOpen((v) => !v)}
               >
-                <Caret />
+                <ChevronUp className="size-3" />
               </button>
             )}
           </span>
@@ -195,13 +177,13 @@ export function WebSearchBlock({
                         move as a source resolves. */}
                     <span className="aicss-ws-bullet">
                       <span className="aicss-ws-dots">
-                        <DashedRing />
+                        <CircleDashed className="size-4" />
                       </span>
                       <span className="aicss-ws-globe">
                         <Globe still={reducedMotion} />
                       </span>
                       <span className="aicss-ws-check">
-                        <Check />
+                        <CheckCircle2 className="size-4" />
                       </span>
                     </span>
                     {/* Only a read source is a link: a pending row points at a
@@ -216,8 +198,10 @@ export function WebSearchBlock({
                         <span className="aicss-ws-title">{truncate(site.title, 52)}</span>
                         <span className="aicss-ws-sep">·</span>
                         <span className="aicss-ws-url">{site.label}</span>
+                        {/* Up, turned 45° by `.aicss-ws-arrow`, which also slides
+                            it in — so the glyph's own nudge is off. */}
                         <span className="aicss-ws-arrow">
-                          <ArrowUp />
+                          <ArrowUp className="size-3" motion="none" />
                         </span>
                       </a>
                     ) : (

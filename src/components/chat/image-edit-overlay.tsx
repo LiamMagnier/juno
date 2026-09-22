@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Crop, ImageIcon, ImageOff, MousePointer2 } from "lucide-react";
+import { Crop, ImageIcon, ImageOff, MousePointer2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -295,15 +296,17 @@ export function ImageEditOverlay({
               hole-versus-panel on black. */}
           <section className="relative flex min-h-0 flex-col overflow-hidden border-b border-border/60 bg-secondary md:border-b-0 md:border-r" aria-label="Image canvas">
             <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4 pr-14 sm:px-5 sm:pr-16">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-accent text-muted-foreground shadow-soft">
+              {/* Hairlines, not shadows: in-flow objects in this sheet draw
+                  their edge and nothing under it (FLAT_UI.md §2). */}
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-accent text-muted-foreground">
                 <ImageIcon className="size-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
                 <p className="truncate text-ui font-medium text-foreground">{attachment.fileName}</p>
                 <p className="text-caption text-muted-foreground">Edit canvas</p>
               </div>
-              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-accent px-2.5 py-1 text-caption text-muted-foreground shadow-soft sm:inline-flex">
-                {region ? <Crop className="size-3" aria-hidden="true" /> : <ImageIcon className="size-3" aria-hidden="true" />}
+              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-accent px-2.5 py-1 text-caption text-muted-foreground sm:inline-flex">
+                {region ? <Crop className="size-3.5" aria-hidden="true" /> : <ImageIcon className="size-3.5" aria-hidden="true" />}
                 {region ? "Selected area" : "Whole image"}
               </span>
             </header>
@@ -402,10 +405,17 @@ export function ImageEditOverlay({
                 {region && (
                   <div
                     aria-hidden="true"
+                    // No transition. The keyboard nudges used to glide on
+                    // `left/top/width/height`, which are layout properties and
+                    // must not animate (ICONS_AND_MOTION.md §2.2.8); and a
+                    // marquee that lags the key that moved it reads as input
+                    // latency in a precision tool. It lands where it is sent.
+                    // While a selection is being DRAWN the edge goes to full
+                    // white — the live state, at the moment precision matters.
                     className={cn(
-                      "pointer-events-none absolute z-20 rounded-micro border border-white/90",
+                      "pointer-events-none absolute z-20 rounded-micro border",
                       "shadow-[0_0_0_9999px_hsl(0_0%_0%/0.58),0_0_0_1px_hsl(0_0%_0%/0.34)]",
-                      dragging ? "transition-none" : "transition-[left,top,width,height] duration-fast ease-out-soft motion-reduce:transition-none"
+                      dragging ? "border-white" : "border-white/90"
                     )}
                     style={{
                       left: `${region.x * 100}%`,
@@ -452,7 +462,7 @@ export function ImageEditOverlay({
                   // `hover:bg-accent` on the `control` rung. It hovered to `bg-background`,
                   // which inside this sheet is a step DOWN — on the black ground that is
                   // no hover at all — and `rounded-md` (8px) is not on the radius ladder.
-                  className="shrink-0 rounded-control px-2 py-1 font-medium text-foreground transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
+                  className="pressable shrink-0 rounded-control px-2 py-1 font-medium text-foreground hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
                 >
                   Clear selection
                 </button>
@@ -491,8 +501,8 @@ export function ImageEditOverlay({
                     className={cn(
                       // `md` (8px), concentric with the `field` (12px) track minus its 4px pad.
                       // It read `xs` (6) under a comment calling `field` 10px; `field` is 12.
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
-                      region == null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.98] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region == null ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     )}
                   >
                     <ImageIcon className="size-3.5" aria-hidden="true" />
@@ -505,8 +515,8 @@ export function ImageEditOverlay({
                     className={cn(
                       // `md` (8px), concentric with the `field` (12px) track minus its 4px pad.
                       // It read `xs` (6) under a comment calling `field` 10px; `field` is 12.
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
-                      region != null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,transform] duration-fast ease-out-soft active:scale-[0.98] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region != null ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     )}
                   >
                     <Crop className="size-3.5" aria-hidden="true" />
@@ -547,10 +557,12 @@ export function ImageEditOverlay({
                 </label>
                 {/* The inset was drawn from --foreground (a white top-lip on a black
                     well) and focus was a 6%-alpha white glow — about 1.1:1 on pure
-                    black, i.e. no focus indicator at all. `shadow-well` is the
-                    themed inset, and focus takes the same offset-ring geometry
-                    reasoning-slider.tsx settled on for this exact problem. */}
-                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-secondary shadow-well transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card">
+                    black, i.e. no focus indicator at all. Focus is the accent
+                    edge now, the one decorative home the accent has on a text
+                    field (FLAT_UI.md §2.4): the hairline turns to --ring and a
+                    1px ring doubles it to 2px, with no offset — a ring-offset
+                    painted a card-coloured halo around the well. */}
+                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-secondary transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-1 focus-within:ring-ring motion-reduce:transition-none">
                   <textarea
                     id={`${selectionHelpId}-prompt`}
                     value={prompt}
@@ -567,26 +579,25 @@ export function ImageEditOverlay({
                 </div>
               </div>
 
+              {/* The shared Button, like every other dialog's footer. The
+                  primary was a bespoke black pill — the one dialog in the
+                  product whose main action was not the accent, which is the
+                  one job the accent has (ICONS_AND_MOTION.md §3) — and both
+                  buttons hand-typed a press the `.pressable` recipe already
+                  times. */}
               <div className="mt-auto flex items-center justify-end gap-2 pt-6">
                 <DialogClose asChild>
-                  <button
-                    type="button"
-                    className="h-10 rounded-full px-4 text-ui font-medium text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
-                  >
+                  <Button type="button" variant="ghost">
                     Cancel
-                  </button>
+                  </Button>
                 </DialogClose>
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-ui font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
-                >
+                <Button type="submit" disabled={!canSubmit} className="min-w-36">
                   {/* The mark of the thing being made, not a magic wand that
                       lifted and tilted on hover. A button that says what it
                       does does not need a glyph performing enthusiasm. */}
-                  <ImageIcon className="size-3.5" aria-hidden="true" />
+                  <ImageIcon className="size-4" aria-hidden="true" />
                   <span>Generate edit</span>
-                </button>
+                </Button>
               </div>
             </form>
           </aside>

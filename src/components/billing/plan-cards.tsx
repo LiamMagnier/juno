@@ -18,6 +18,13 @@ import { cn } from "@/lib/utils";
  * tagline, the feature checklist, and an action slot pinned to the bottom so
  * three cards in a row end on one baseline.
  *
+ * ONE ACCENT PER ROW OF CARDS. The coral is spent on two things only: the
+ * recommended tier's edge and the one primary CTA the caller hands in. The
+ * checklist ticks are the success mark in muted ink — "included" is neither a
+ * state nor an action, and fifteen coral ticks across three cards drowned out
+ * the one coral button that mattered. The reader's own plan is marked by a
+ * check in its badge, which is a state, and is the one tick that may be loud.
+ *
  * Server-safe and presentational: no hooks, no data fetching. Callers pass
  * ready-made action nodes (or a `renderAction` that returns one) so the
  * landing can hand in plain links while /upgrade hands in its checkout
@@ -96,20 +103,21 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
       className={cn(
         "relative flex flex-col rounded-card p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // The recommended tier stands a step higher than its neighbours and
-        // wears the accent on its edge: the larger throw, a coral hairline and a
-        // 2px halo at low alpha. `shadow-raised-lg` is restated as a utility so
-        // the ring composes with it — a ring is a box-shadow too, and on its own
-        // it would replace the surface's throw rather than add to it.
-        recommended
-          ? "surface-raised-lg border-primary/60 shadow-raised-lg ring-2 ring-primary/15"
-          : "surface-raised"
+        // wears the accent on its edge: the larger throw and a coral hairline.
+        // The 2px coral halo it also wore is gone — a tinted glow around the
+        // thing we want bought is the pricing-page version of the send-button
+        // halo FLAT_UI.md retired, and the edge already says it.
+        recommended ? "surface-raised-lg border-primary/60" : "surface-raised"
       )}
     >
       <div className="flex min-h-8 items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <h3 className="text-heading">{name}</h3>
           {current ? (
-            <Badge variant="outline">Current plan</Badge>
+            <Badge variant="outline" className="gap-1">
+              <StatusIcons.success className="size-3 shrink-0 text-primary" aria-hidden="true" />
+              Current plan
+            </Badge>
           ) : recommended ? (
             <Badge variant="soft">Recommended</Badge>
           ) : null}
@@ -125,8 +133,8 @@ function PlanCard({ item, index, action }: { item: PlanCardItem; index: number; 
 
       <ul className="mt-5 space-y-2.5">
         {features.map((feature) => (
-          <li key={feature} className="flex items-start gap-2.5 text-ui">
-            <StatusIcons.success className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <li key={feature} className="flex items-start gap-2 text-ui">
+            <StatusIcons.success className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span>{feature}</span>
           </li>
         ))}

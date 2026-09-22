@@ -3,6 +3,7 @@ import { PlanCards, type PlanCardItem } from "@/components/billing/plan-cards";
 import { Button } from "@/components/ui/button";
 import { PLAN_LIST } from "@/lib/plans";
 import { isPlanPurchasable } from "@/lib/stripe";
+import { Reveal } from "@/components/landing/reveal";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -61,12 +62,17 @@ export function Pricing() {
       heading="Simple plans, metered honestly."
       lede="Every paid plan unlocks every model. The difference is budget — measured in real usage, not message counts."
     >
-      <PlanCards items={items} className="mt-10" />
-      <p className="mt-6 max-w-prose text-body text-muted-foreground">
-        {checkoutOpen
-          ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time — changes apply instantly, and the full comparison is on your plan page once you have an account."
-          : "Prices are per month, before VAT. Checkout opens soon — a free account works today, and everything you bring with you carries over when you upgrade."}
-      </p>
+      {/* One reveal for the tiers and their footnote. `amount` is low because
+          four cards stacked on a phone are several screens tall, and a 30%
+          threshold would hold the first card blank while it sat on screen. */}
+      <Reveal className="mt-10" amount={0.1}>
+        <PlanCards items={items} />
+        <p className="mt-6 max-w-prose text-body text-muted-foreground">
+          {checkoutOpen
+            ? "Prices are per month, before VAT. Upgrade, downgrade or cancel any time — changes apply instantly, and the full comparison is on your plan page once you have an account."
+            : "Prices are per month, before VAT. Checkout opens soon — a free account works today, and everything you bring with you carries over when you upgrade."}
+        </p>
+      </Reveal>
     </Section>
   );
 }

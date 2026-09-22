@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
+import { Link2, Link2Off, Loader2, Plug, Search } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
+import { ConnectorTileSkeleton } from "@/components/connections/connector-tile-skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
@@ -134,7 +134,9 @@ function AppLogo({ item }: { item: DirectoryItem }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.logo} alt="" className="size-6 object-contain" loading="lazy" />
       ) : (
-        <Plug className="size-5 text-primary" />
+        // Muted like every other mark in the well: the accent is state and the
+        // primary action, and a Composio app that shipped no logo is neither.
+        <Plug className="size-5" />
       )}
     </span>
   );
@@ -215,7 +217,9 @@ function ConnectorTile({
     <Card
       variant="default"
       className={cn(
-        "group flex flex-col gap-3 p-3.5 hover:border-foreground/20 hover:shadow-raised-lg motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // Tonal, not a lift: the tile changes shade under the pointer and
+        // stays on the page (ICONS_AND_MOTION §2.2).
+        "group flex flex-col gap-3 p-3.5 hover:border-foreground/15 hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         unavailable && "text-muted-foreground"
       )}
       style={staggerDelay(index, "tight")}
@@ -495,9 +499,7 @@ export function ConnectorDirectory({
   };
 
   const skeletons = loading
-    ? Array.from({ length: 6 }, (_, i) => (
-        <Skeleton key={`sk-${i}`} className="h-36 rounded-card" style={staggerDelay(i, "tight")} />
-      ))
+    ? Array.from({ length: 6 }, (_, i) => <ConnectorTileSkeleton key={`sk-${i}`} index={i} />)
     : null;
 
   return (
@@ -663,7 +665,7 @@ function ComposioSetupCallout() {
   return (
     <div className="surface-inset mb-6 rounded-card p-4">
       <div className="flex items-start gap-3">
-        <span className="surface-raised flex size-9 shrink-0 items-center justify-center rounded-field text-primary">
+        <span className="surface-raised flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
           <Plug className="size-4" />
         </span>
         <div className="min-w-0">

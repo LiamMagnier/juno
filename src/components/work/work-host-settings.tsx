@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Folder, Link2, Plug } from "lucide-react";
+import { Ban, Folder, Link2, Plug, type IconComponent } from "@/components/ui/icons";
 import { CodeIcons } from "@/lib/app-icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -152,10 +152,15 @@ function ToggleRow({
    */
   const unofferedAndOff = !advertised && !checked;
   const unofferedButOn = !advertised && checked;
+  // The whole row is the switch's label, so the whole row answers the pointer:
+  // a tonal cross-fade while it can be pressed, nothing while it cannot.
+  const live = !(disabled || unofferedAndOff);
   return (
     <label
       className={cn(
         "flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5",
+        "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+        live && "cursor-pointer hover:bg-accent",
         unofferedAndOff && "opacity-70",
         unofferedButOn && "border-warning/35"
       )}
@@ -236,7 +241,7 @@ const ACCESS_LABEL: Record<WorkAccessMode, string> = {
 
 // `Folder` stays raw: a granted directory on somebody's disk, not
 // `AppIcons.projects` — that mark is the Projects destination in the shell.
-const GRANT_ICON: Record<WorkGrantKind, typeof Folder> = {
+const GRANT_ICON: Record<WorkGrantKind, IconComponent> = {
   local_folder: Folder,
   local_file: CodeIcons.file,
   cloud_folder: Folder,
@@ -366,6 +371,7 @@ export function WorkHostSettings({
         {routableCapabilities.length === 0 ? (
           <EmptyState
             size="panel"
+            icon={CodeIcons.device}
             title="Nothing listed yet"
             description="This Mac has not listed anything it can do. That is what an older build of the app looks like from here — it will fill in on its next check-in after an update."
           />
@@ -401,12 +407,14 @@ export function WorkHostSettings({
           <EmptyState
             size="panel"
             tone="error"
+            icon={CodeIcons.error}
             title="Couldn’t read the folders"
             description="The folders shared with this Mac couldn’t be read just now, which says nothing about whether it has any."
           />
         ) : grants.length === 0 ? (
           <EmptyState
             size="panel"
+            icon={Folder}
             title="No folders shared"
             description="Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in Juno on the Mac, where the file picker is."
           />
@@ -420,7 +428,7 @@ export function WorkHostSettings({
                     key={grant.id}
                     className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                   >
-                    <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-ui text-foreground">
                       {grant.displayName}
                     </span>
@@ -451,19 +459,22 @@ export function WorkHostSettings({
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Apps and sites</h2>
         <div className="space-y-2">
           <NameList
-            icon={<Plug className="size-3.5" aria-hidden="true" />}
+            icon={<Plug className="size-4" aria-hidden="true" />}
             title="Apps it may drive"
             names={allowedApps}
             empty="No app is singled out, so screen control is bounded only by the switch above."
           />
+          {/* The prohibition mark, not a second plug: "may drive" and "may never
+              touch" are opposites, and the same glyph over both made the list
+              heading the only thing that told them apart. */}
           <NameList
-            icon={<Plug className="size-3.5" aria-hidden="true" />}
+            icon={<Ban className="size-4" aria-hidden="true" />}
             title="Apps it may never touch"
             names={blockedApps}
             empty="Nothing is blocked by name."
           />
           <NameList
-            icon={<Link2 className="size-3.5" aria-hidden="true" />}
+            icon={<Link2 className="size-4" aria-hidden="true" />}
             title="Sites the browser may visit"
             names={allowedDomains}
             empty="No site list, so the browser switch above is the whole answer."
@@ -493,7 +504,7 @@ function NameList({
   return (
     <div className="rounded-field border border-border/50 px-3.5 py-2.5">
       <p className="flex items-center gap-2 text-ui font-medium text-foreground">
-        <span className="shrink-0 text-muted-foreground">{icon}</span>
+        <span className="flex shrink-0 text-muted-foreground">{icon}</span>
         {title}
       </p>
       {names.length === 0 ? (
