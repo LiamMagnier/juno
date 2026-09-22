@@ -339,6 +339,54 @@ struct CodeSlashActionTests {
     }
 
     @Test
+    func compactSaysItTakesWhatToKeep() {
+        #expect(CodeSlashCommandLibrary.builtIn.command(named: "compact")?.argumentHint == "what to keep")
+        // Prompts take their argument into visible text and need no hint.
+        #expect(CodeSlashCommandLibrary.builtIn.command(named: "explain")?.argumentHint == nil)
+    }
+
+    /// Once the reader has typed past the name, the menu is gone and sending
+    /// is what runs the verb — with everything after the name as its focus.
+    @Test
+    func aTypedVerbIsFoundWithItsArgument() {
+        let library = CodeSlashCommandLibrary.builtIn
+        let bare = library.typedAction(in: "/compact")
+        #expect(bare?.command.action == .compact)
+        #expect(bare?.argument == "")
+
+        let focused = library.typedAction(in: " /compact   keep the API decisions  ")
+        #expect(focused?.command.action == .compact)
+        #expect(focused?.argument == "keep the API decisions")
+
+        #expect(library.typedAction(in: "/COMPACT now")?.command.name == "compact")
+    }
+
+    @Test
+    func onlyAVerbTypedByItsFullNameCounts() {
+        let library = CodeSlashCommandLibrary.builtIn
+        #expect(library.typedAction(in: "/comp") == nil)
+        #expect(library.typedAction(in: "/compactor tidy") == nil)
+        #expect(library.typedAction(in: "/review the diff") == nil)
+        #expect(library.typedAction(in: "please /compact") == nil)
+        #expect(library.typedAction(in: "/compact first\nthen more") == nil)
+
+        let prompt = CodeSlashCommand.parse(
+            name: "compact",
+            contents: "Summarise the conversation so far.",
+            path: ".juno/commands/compact.md"
+        )!
+        #expect(CodeSlashCommandLibrary.merged(workspace: [prompt]).typedAction(in: "/compact x") == nil)
+    }
+
+    @Test
+    func theLandingLibraryHasNoSessionVerbs() {
+        let landing = CodeSlashCommandLibrary.builtIn.excludingActions()
+        #expect(landing.command(named: "compact") == nil)
+        #expect(landing.command(named: "review") != nil)
+        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 1)
+    }
+
+    @Test
     func aWorkspaceCommandCannotBecomeAnAction() {
         let parsed = CodeSlashCommand.parse(
             name: "compact",

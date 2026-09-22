@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import JunoCodeCore
+import JunoCodeRuntime
 import JunoDesignSystem
 
 /// The composer: one field, its attachments, and a single row of controls.
@@ -21,7 +22,13 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     /// Nil where there is no project to search.
     var searchFiles: ((String) async -> [FileEntry])?
     var chooseFile: (FileEntry) -> Void = { _ in }
-    var runCommand: (CodeSlashCommand, _ argument: String) -> Void = { _, _ in }
+    /// Runs a chosen command. Returns false when the host could not run it
+    /// now, so a verb's typed argument stays in the field for later instead
+    /// of being cleared with nothing to show for it.
+    var runCommand: (CodeSlashCommand, _ argument: String) -> Bool = { _, _ in true }
+    /// Why a command cannot run right now — `/compact` while Juno works —
+    /// shown in its menu row, which is then dimmed and cannot be chosen.
+    var commandUnavailableReason: (CodeSlashCommand) -> String? = { _ in nil }
     var canSend: Bool
     var isRunning = false
     var send: () -> Void
@@ -91,7 +98,12 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     lineWidth: isDropTargeted ? 1.5 : 1
                 )
         )
-        .overlay(alignment: .top) { suggestionMenu }
+        // Above the composer, never over it. The guide goes on the menu as a
+        // whole: set inside the `if` branches it is lost through the
+        // conditional, and the list was drawn down over the field being typed in.
+        .overlay(alignment: .top) {
+            suggestionMenu.alignmentGuide(.top) { $0[.bottom] + JunoSpace.snug }
+        }
         .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
             guard addAttachment != nil else { return false }
             receive(providers)
@@ -131,7 +143,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 if preferences.commandReturnSends, !press.modifiers.contains(.command) {
                     return .ignored
                 }
-                if canSend { send() }
+                submit()
                 return .handled
             }
             .onKeyPress(.upArrow) {
@@ -214,7 +226,7 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
             .accessibilityIdentifier("juno.code.composer.stop")
             .transition(.scale(scale: 0.8).combined(with: .opacity))
         } else {
-            Button(action: send) {
+            Button(action: submit) {
                 JunoIconView(.arrowUp, size: 14)
                     .foregroundStyle(canSend ? Studio.Surface.canvas : Studio.Ink.tertiary)
                     .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
@@ -271,11 +283,20 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     private var suggestionMenu: some View {
         if !slashMatches.isEmpty {
             StudioSuggestionList(
-                rows: slashMatches.map { .init(id: $0.name, title: "/" + $0.name, detail: $0.summary, isMono: false) },
+                rows: slashMatches.map { command in
+                    let unavailable = commandUnavailableReason(command)
+                    return .init(
+                        id: command.name,
+                        title: "/" + command.name,
+                        detail: unavailable ?? command.summary,
+                        isMono: false,
+                        hint: command.argumentHint,
+                        isEnabled: unavailable == nil
+                    )
+                },
                 highlighted: min(highlighted, slashMatches.count - 1),
                 choose: { index in apply(slashMatches[index]) }
             )
-            .alignmentGuide(.top) { $0[.bottom] + JunoSpace.snug }
         } else if !fileMatches.isEmpty || searchingQuery != nil {
             StudioSuggestionList(
                 rows: fileMatches.map {
@@ -285,7 +306,6 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                 isSearching: searchingQuery != nil && fileMatches.isEmpty,
                 choose: { index in apply(fileMatches[index]) }
             )
-            .alignmentGuide(.top) { $0[.bottom] + JunoSpace.snug }
         }
     }
 
@@ -298,15 +318,29 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
     }
 
     private func apply(_ command: CodeSlashCommand) {
+        // A dimmed row already says why; choosing it does nothing rather
+        // than falling through to send the half-typed name as a message.
+        guard commandUnavailableReason(command) == nil else { return }
         highlighted = 0
         let argument = slashToken?.argument ?? ""
         if command.action != nil {
-            text = ""
+            if runCommand(command, argument) { text = "" }
         } else {
             text = command.expanded(argument: argument)
+            _ = runCommand(command, argument)
         }
-        runCommand(command, argument)
         focus?.wrappedValue = true
+    }
+
+    /// Return and the send button both land here. A session verb typed out
+    /// by name — `/compact keep the API decisions` — runs as the verb with its
+    /// argument, instead of going to the model as a message.
+    private func submit() {
+        if let typed = slashCommands.typedAction(in: text) {
+            if runCommand(typed.command, typed.argument) { text = "" }
+            return
+        }
+        if canSend { send() }
     }
 
     private func apply(_ entry: FileEntry) {
@@ -363,6 +397,9 @@ struct StudioSuggestionList: View {
         let title: String
         let detail: String?
         let isMono: Bool
+        /// What may follow the title — a verb's argument — set lighter beside it.
+        var hint: String?
+        var isEnabled = true
     }
 
     let rows: [Row]
@@ -384,9 +421,16 @@ struct StudioSuggestionList: View {
                     HStack(spacing: JunoSpace.snug) {
                         Text(row.title)
                             .font(row.isMono ? Studio.Font.mono : Studio.Font.labelEmphasis)
-                            .foregroundStyle(Studio.Ink.primary)
+                            .foregroundStyle(row.isEnabled ? Studio.Ink.primary : Studio.Ink.tertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                        if let hint = row.hint {
+                            Text(hint)
+                                .font(Studio.Font.label)
+                                .foregroundStyle(Studio.Ink.tertiary)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                         if let detail = row.detail {
                             Text(detail)
                                 .font(Studio.Font.meta)
@@ -399,11 +443,13 @@ struct StudioSuggestionList: View {
                     .frame(height: Studio.Metrics.rowHeight)
                     .background(
                         RoundedRectangle(cornerRadius: Studio.Radius.small, style: .continuous)
-                            .fill(index == highlighted ? Studio.Surface.selected : Color.clear)
+                            .fill(index == highlighted && row.isEnabled ? Studio.Surface.selected : Color.clear)
                     )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(!row.isEnabled)
+                .accessibilityIdentifier("juno.code.composer.suggestion.\(row.id)")
             }
         }
         .padding(JunoSpace.hairline)
@@ -582,8 +628,19 @@ struct StudioModelChip: View {
 struct StudioContextMeter: View {
     let used: Int
     let window: Int
+    /// What the session's calls have been billed for since it was opened,
+    /// compaction summaries included.
+    var spent: ModelUsageTotals?
 
     private var fraction: Double { min(1, Double(used) / Double(max(window, 1))) }
+
+    private var help: String {
+        let context = "Context: \(StudioFormat.tokens(used)) of \(StudioFormat.tokens(window)) tokens (\(Int(fraction * 100))%)"
+        guard let spent, spent.requests > 0 else { return context }
+        return context
+            + "\nSince opening: \(StudioFormat.tokens(spent.inputTokens)) in, "
+            + "\(StudioFormat.tokens(spent.outputTokens)) out over \(StudioFormat.plural(spent.requests, "request"))"
+    }
 
     var body: some View {
         ZStack {
@@ -598,7 +655,7 @@ struct StudioContextMeter: View {
         }
         .frame(width: 14, height: 14)
         .frame(width: Studio.Metrics.control, height: Studio.Metrics.control)
-        .help("Context: \(StudioFormat.tokens(used)) of \(StudioFormat.tokens(window)) tokens (\(Int(fraction * 100))%)")
+        .help(help)
         .accessibilityLabel("Context used")
         .accessibilityValue("\(Int(fraction * 100)) percent")
     }

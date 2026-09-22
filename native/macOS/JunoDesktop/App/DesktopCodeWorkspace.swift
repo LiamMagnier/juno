@@ -539,7 +539,8 @@ struct DesktopCodeWorkspace: View {
                 Button("Compact Context") {
                     Task { await controller?.compactConversation() }
                 }
-                .disabled(controller == nil)
+                // As `/compact`: between runs only, and once at a time.
+                .disabled(controller == nil || controller?.isRunning == true || controller?.isCompacting == true)
                 Divider()
                 Button(controller?.computerUseActive == true ? "Stop Screen Control" : "Start Screen Control",
                        action: toggleComputerUse)

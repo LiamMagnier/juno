@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 import JunoCodeCore
+import JunoDesignSystem
 @testable import JunoCodeUI
 
 /// Renders the Studio surfaces to PNGs for visual review.
@@ -39,6 +40,80 @@ final class StudioSnapshotTests: XCTestCase {
                     name: "session-\(scenario.rawValue)-\(dark ? "dark" : "light")"
                 )
             }
+        }
+    }
+
+    func testRenderCompactionDivider() async throws {
+        let modelSummary = CompactionEvent(
+            summary: """
+                **Requests and intent.** Parser errors carry line and column; "keep ParserError public".
+
+                **Files and code.** `Sources/Parser/Lexer.swift` now tracks positions; \
+                `Sources/Parser/ParserError.swift` gained `line` and `column`.
+
+                **Errors and fixes.** `swift test` failed on `testNestedBlocks`: the column was \
+                zero-based. Fixed in `Lexer.advance()`.
+
+                **Current work.** Updating the three call sites in `Parser.swift`.
+
+                **Next step.** Run `swift test --filter ParserTests`.
+                """,
+            beforeMessageCount: 48,
+            afterMessageCount: 7,
+            beforeTokens: 161_000,
+            requestedByUser: true,
+            summarySource: .model,
+            focus: "the error-type decisions",
+            summaryInputTokens: 52_000,
+            summaryOutputTokens: 700
+        )
+        let fallback = CompactionEvent(
+            summary: """
+                Earlier conversation memory:
+                - User: Add line numbers to parser errors
+                - Called read_file {"path":"Sources/Parser/Lexer.swift"}
+                - Result: 214 lines read.
+                """,
+            beforeMessageCount: 30,
+            afterMessageCount: 8,
+            summarySource: .structural,
+            fallbackReason: "the model took too long"
+        )
+        for dark in [false, true] {
+            try await render(
+                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    StudioAssistantMessage(text: "The lexer now records where each token starts.")
+                    StudioCompactionDivider(event: modelSummary, isExpanded: .constant(false))
+                    StudioCompactionDivider(event: modelSummary, isExpanded: .constant(true))
+                    StudioCompactionDivider(event: fallback, isExpanded: .constant(true))
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: Studio.Metrics.measure)
+                .padding(Studio.Metrics.gutter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Studio.Surface.canvas),
+                size: CGSize(width: 860, height: 820),
+                dark: dark,
+                name: "compaction-\(dark ? "dark" : "light")"
+            )
+        }
+    }
+
+    /// The `/` menu with `/compact` offered, and dimmed while a run works.
+    func testRenderCompactInTheSlashMenu() async throws {
+        for (scenario, name) in [(CodePreviewScenario.transcript, "idle"), (.streaming, "running")] {
+            let controller = SessionController(previewFixture: CodePreviewData.fixture(for: scenario))
+            controller.composerText = "/co"
+            try await render(
+                StudioSessionView(
+                    controller: controller,
+                    models: [ModelOption(modelID: "anthropic:claude-sonnet-5", displayName: "Claude Sonnet 5")],
+                    openReview: { _ in }
+                ),
+                size: CGSize(width: 900, height: 820),
+                dark: false,
+                name: "slash-compact-\(name)"
+            )
         }
     }
 

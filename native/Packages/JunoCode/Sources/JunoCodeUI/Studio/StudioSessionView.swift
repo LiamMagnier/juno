@@ -38,10 +38,16 @@ public struct StudioSessionView: View {
 
     private var isRunning: Bool { controller.isRunning }
 
+    /// A `/compact` between runs holds the session much as a run does: the
+    /// history is being replaced, so nothing is sent and the contract stays
+    /// put until it is done, and Stop is offered for the model's summary.
+    private var isBusy: Bool { isRunning || controller.isCompacting }
+
     private var canSend: Bool {
         (!controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !controller.pendingAttachments.isEmpty)
             && controller.isAgentTransportConfigured
+            && !controller.isCompacting
     }
 
     private var placeholder: String {
@@ -97,13 +103,14 @@ public struct StudioSessionView: View {
                 if !entry.isDirectory { controller.registerComposerFileReference(entry.path) }
             },
             runCommand: run,
+            commandUnavailableReason: unavailableReason,
             canSend: canSend,
-            isRunning: isRunning,
+            isRunning: isBusy,
             send: { Task { await controller.send() } },
             stop: { Task { await controller.stop() } },
             focus: $composerFocused
         ) {
-            StudioModeChip(mode: mode, select: select, isEnabled: !isRunning)
+            StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)
             if isRunning {
                 Menu {
                     Picker("While Juno works", selection: $controller.activeInstructionKind) {
@@ -126,7 +133,7 @@ public struct StudioSessionView: View {
                let window = controller.contextWindowTokens,
                window > 0
             {
-                StudioContextMeter(used: used, window: window)
+                StudioContextMeter(used: used, window: window, spent: controller.sessionUsage)
             }
             StudioModelChip(
                 models: models,
@@ -134,7 +141,7 @@ public struct StudioSessionView: View {
                 effort: controller.session.configuration.reasoningEffort,
                 selectModel: { id in Task { await controller.setModelID(id) } },
                 selectEffort: { effort in Task { await controller.setReasoningEffort(effort) } },
-                isEnabled: !isRunning
+                isEnabled: !isBusy
             )
             if let beginDictation {
                 Button(action: beginDictation) { JunoIconView(.mic, size: 15) }
@@ -155,17 +162,31 @@ public struct StudioSessionView: View {
         }
     }
 
-    private func run(_ command: CodeSlashCommand, argument: String) {
+    private func run(_ command: CodeSlashCommand, argument: String) -> Bool {
         if let action = command.action {
             switch action {
-            case .compact: Task { await controller.compactConversation() }
-            case .review: openReview(nil)
+            case .compact:
+                // The controller refuses mid-run and says why; the typed
+                // focus stays in the field so it can be sent once the run ends.
+                let accepted = !isBusy
+                Task { await controller.compactConversation(focus: argument) }
+                return accepted
+            case .review:
+                openReview(nil)
+                return true
             }
-            return
         }
         if let behavior = command.behavior, behavior != controller.session.configuration.behavior {
             Task { await controller.setBehavior(behavior) }
         }
+        return true
+    }
+
+    private func unavailableReason(_ command: CodeSlashCommand) -> String? {
+        guard command.action == .compact else { return nil }
+        if controller.isCompacting { return "Compacting now" }
+        if isRunning { return "Available when Juno finishes" }
+        return nil
     }
 }
 
