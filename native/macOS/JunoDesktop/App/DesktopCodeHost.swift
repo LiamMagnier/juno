@@ -545,11 +545,13 @@ final class DesktopCodeHostModel {
     private var remoteBridge: WorkbenchRemoteBridge?
     /// The return path — this Mac's session list and transcripts, uploaded
     /// while hosting is on so a phone sees what its commands did. Alive only
-    /// alongside the claim loop, and for the same reason.
-    private var sessionSync: CodeRemoteSessionSync?
-    /// The bridge the uploader is following, kept so it can be told to stop
-    /// even after the workbench has gone.
-    private var observedBridge: WorkbenchRemoteBridge?
+    /// alongside the claim loop, and for the same reason. It owns its store
+    /// observation, so it can be ended even after the workbench has gone.
+    private var sessionUploader: WorkbenchRemoteUploader?
+    /// The last uploader's shutdown, retraction included. The next one waits
+    /// it out, so switching Remote off and on cannot land the old "take these
+    /// off the phone" after the new list.
+    private var sessionUploaderShutdown: Task<Void, Never>?
     /// Distinguishes the current uploader's reports from a stopped one's that
     /// arrive late.
     private var syncGeneration = 0
@@ -683,7 +685,7 @@ final class DesktopCodeHostModel {
     /// loop is: a Mac that takes commands from a phone and never shows it what
     /// they did is how the phone's transcript stayed empty.
     private func syncSessionUploads(shouldServe: Bool, retracting: Bool) {
-        if shouldServe, sessionSync == nil {
+        if shouldServe, sessionUploader == nil {
             guard let accountID, let deviceID, let remoteClient, let bridge = remoteBridge else {
                 return
             }
@@ -708,39 +710,21 @@ final class DesktopCodeHostModel {
                     Task { @MainActor in self?.applySyncStatus(status, generation: generation) }
                 }
             )
-            sessionSync = sync
-            observedBridge = bridge
             remoteSyncProblem = nil
-            Task { [weak self] in
-                await bridge.startRelayObservation { await sync.noteChange() }
-                // Switched off again while the observer was being attached:
-                // the stop has already run, so this start must not.
-                guard self?.syncGeneration == generation else {
-                    await bridge.stopRelayObservation()
-                    return
-                }
-                await sync.start()
-            }
+            sessionUploader = WorkbenchRemoteUploader(
+                sync: sync, bridge: bridge, after: sessionUploaderShutdown
+            )
         } else if !shouldServe || remoteBridge == nil {
             stopSessionUploads(retracting: retracting)
         }
     }
 
     private func stopSessionUploads(retracting: Bool = false) {
-        guard let sync = sessionSync else { return }
-        sessionSync = nil
+        guard let uploader = sessionUploader else { return }
+        sessionUploader = nil
         syncGeneration += 1
         remoteSyncProblem = nil
-        let bridge = observedBridge
-        observedBridge = nil
-        Task {
-            if retracting {
-                await sync.retract()
-            } else {
-                await sync.stop()
-            }
-            await bridge?.stopRelayObservation()
-        }
+        sessionUploaderShutdown = uploader.end(retracting: retracting)
     }
 
     private func applySyncStatus(_ status: CodeRemoteSessionSync.Status, generation: Int) {

@@ -212,6 +212,71 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
         XCTAssertTrue(relaunched.hasLoaded)
     }
 
+    // MARK: - Switching uploads off and on
+
+    func testStoppingOneObservationLeavesAnotherListening() async throws {
+        let shared = try await sharedWorkspace()
+        let bridge = makeBridge(shared: [shared.id.value])
+        let first = ChangeCounter()
+        let second = ChangeCounter()
+
+        let older = await bridge.startRelayObservation { await first.bump() }
+        let newer = await bridge.startRelayObservation { await second.bump() }
+        await bridge.stopRelayObservation(older)
+        await bridge.stopRelayObservation(older)
+        XCTAssertEqual(bridge.relayObservationCount, 1, "stopping one, even twice, ends only that one")
+
+        _ = try await newSession(in: shared.id)
+        try await settle { await second.count > 0 }
+        let heardByStopped = await first.count
+        XCTAssertEqual(heardByStopped, 0)
+
+        await bridge.stopRelayObservation(newer)
+        XCTAssertEqual(bridge.relayObservationCount, 0)
+    }
+
+    /// Remote switched off and straight back on while the retraction is still
+    /// on its way — as it is on a Mac with a slow network. The new uploader
+    /// used to find the old observer attached, attach none, and then lose that
+    /// one to the old shutdown: it heard about changes only from its reconcile.
+    func testSwitchingOffAndOnLeavesTheNewUploaderListeningAndListedLast() async throws {
+        let shared = try await sharedWorkspace()
+        let session = try await newSession(in: shared.id)
+        let bridge = makeBridge(shared: [shared.id.value])
+        let relay = BridgeRelay()
+        let store = InMemoryCodeRemoteSyncStateStore()
+
+        let first = WorkbenchRemoteUploader(
+            sync: makeSync(bridge: bridge, relay: relay, store: store), bridge: bridge
+        )
+        try await settle { await relay.puts.count == 1 }
+
+        await relay.holdNextPut()
+        let shutdown = first.end(retracting: true)
+        let second = WorkbenchRemoteUploader(
+            sync: makeSync(bridge: bridge, relay: relay, store: store), bridge: bridge,
+            after: shutdown
+        )
+        try await settle { await relay.isHoldingPut }
+        await relay.releaseHeldPut()
+        await shutdown.value
+        try await settle { await relay.puts.count >= 3 }
+
+        let puts = await relay.puts
+        XCTAssertEqual(puts[1].deleted, [session.id.value], "the retraction lands first")
+        XCTAssertEqual(puts[2].sessionIDs, [session.id.value], "and the new list after it")
+        XCTAssertEqual(bridge.relayObservationCount, 1, "the new uploader kept its observation")
+
+        // The reconcile is an hour away, so only the observation can bring this.
+        let appended = try await model.sessionStore.appendEvent(
+            sessionID: session.id, payload: .userPrompt(UserPromptEvent(text: "from the desk"))
+        )
+        try await settle { await relay.highWater(for: session.id.value) == appended.sequence + 1 }
+
+        await second.end(retracting: false).value
+        XCTAssertEqual(bridge.relayObservationCount, 0)
+    }
+
     // MARK: - The ceiling
 
     func testAllowingARequestInASessionAboveTheCeilingIsRefused() async throws {
@@ -328,7 +393,12 @@ final class WorkbenchRemoteBridgeTests: XCTestCase {
     }
 }
 
-/// Stores what it is sent.
+private actor ChangeCounter {
+    private(set) var count = 0
+    func bump() { count += 1 }
+}
+
+/// Stores what it is sent, and can hold one list request in flight.
 private actor BridgeRelay: CodeRemoteSyncTransport {
     struct Put: Equatable {
         let sessionIDs: [String]
@@ -338,11 +408,28 @@ private actor BridgeRelay: CodeRemoteSyncTransport {
     private(set) var puts: [Put] = []
     private(set) var posts: [(sessionID: String, seqs: [Int])] = []
     private var stored: [String: Int] = [:]
+    private var holdNext = false
+    private var held: CheckedContinuation<Void, Never>?
+    private(set) var isHoldingPut = false
+
+    func highWater(for sessionID: String) -> Int { stored[sessionID] ?? 0 }
+    func holdNextPut() { holdNext = true }
+
+    func releaseHeldPut() {
+        held?.resume()
+        held = nil
+    }
 
     func putSessions(
         deviceID: String, listVersion: Int, sessions: [CodeRemoteSessionUpload],
         deletedSessionIDs: [String], for accountID: AccountID
     ) async throws {
+        if holdNext {
+            holdNext = false
+            isHoldingPut = true
+            await withCheckedContinuation { held = $0 }
+            isHoldingPut = false
+        }
         puts.append(Put(sessionIDs: sessions.map(\.sessionID), deleted: deletedSessionIDs))
     }
 

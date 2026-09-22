@@ -104,6 +104,9 @@ const remoteBridge = read(
 const remoteAdapter = read(
   "native/Packages/JunoCode/Sources/JunoCodeBridge/RemoteCommandAdapter.swift",
 );
+const remoteUploader = read(
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchRemoteUploader.swift",
+);
 
 const required = [
   // The live start path, end to end: one entry point that chooses a target,
@@ -141,7 +144,12 @@ const required = [
   [remoteClient, "public func putSessions("],
   [remoteClient, "public func postEvents("],
   [desktopHost, "CodeRemoteSessionSync("],
-  [desktopHost, "startRelayObservation"],
+  // Each uploader follows the store through an observation it owns and ends,
+  // and starts only after the previous one has finished ending.
+  [desktopHost, "WorkbenchRemoteUploader("],
+  [remoteUploader, "bridge.startRelayObservation"],
+  [remoteUploader, "bridge.stopRelayObservation(observation)"],
+  [remoteUploader, "await previous?.value"],
   [remoteBridge, "CodeRemoteSyncSource"],
   // The phone is shown what this Mac has, never an unread workbench as empty.
   [remoteBridge, "await model.loadIfNeeded()"],

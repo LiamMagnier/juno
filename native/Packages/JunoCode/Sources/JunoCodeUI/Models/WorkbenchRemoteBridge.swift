@@ -56,8 +56,22 @@ public final class WorkbenchRemoteBridge:
     /// Recent transcript events not yet uploaded, fed by the store as they are
     /// appended, so a working session is not re-read from disk for every batch.
     private var journal = CodeRelayJournalTail()
-    private var storeObserver: UUID?
-    private var relayUpdates: Task<Void, Never>?
+    /// Each uploader's own subscription to the store, by the token it was
+    /// given. Keyed rather than single so switching Remote off and on quickly
+    /// cannot let the old uploader's stop remove the new one's observer.
+    private var relayObservers: [UUID: RelayObserver] = [:]
+
+    private struct RelayObserver {
+        let storeToken: UUID
+        let updates: Task<Void, Never>
+        let stream: AsyncStream<CodeSessionStore.StoreUpdate>.Continuation
+    }
+
+    /// One uploader's store observation, as `startRelayObservation` hands it
+    /// back: the only way to end it.
+    public struct RelayObservation: Hashable, Sendable {
+        fileprivate let id: UUID
+    }
 
     public init(
         model: WorkbenchModel,
@@ -266,20 +280,27 @@ public final class WorkbenchRemoteBridge:
         )
     }
 
-    /// Follows the session store while Remote uploads, feeding the journal
-    /// tail and telling the uploader something changed.
+    /// Follows the session store for one uploader, feeding the journal tail
+    /// and telling that uploader something changed, until the returned
+    /// observation is stopped.
     ///
     /// Updates travel through one ordered stream rather than a task per event,
-    /// so the tail sees appends in the order the store made them.
-    public func startRelayObservation(onChange: @escaping @Sendable () async -> Void) async {
-        guard storeObserver == nil else { return }
+    /// so the tail sees appends in the order the store made them. Every call
+    /// gets its own observer: a second uploader never finds the first one's
+    /// and goes without, and stopping one never ends another's. Two feeding
+    /// the tail at once is harmless, because it only takes the event that
+    /// continues what it holds.
+    public func startRelayObservation(
+        onChange: @escaping @Sendable () async -> Void
+    ) async -> RelayObservation {
+        let observation = RelayObservation(id: UUID())
         let (stream, continuation) = AsyncStream<CodeSessionStore.StoreUpdate>.makeStream(
             bufferingPolicy: .bufferingNewest(4_096)
         )
-        storeObserver = await model.sessionStore.addObserver { update in
+        let storeToken = await model.sessionStore.addObserver { update in
             continuation.yield(update)
         }
-        relayUpdates = Task { @MainActor [weak self] in
+        let updates = Task { @MainActor [weak self] in
             for await update in stream {
                 guard let self else { return }
                 switch update {
@@ -290,17 +311,25 @@ public final class WorkbenchRemoteBridge:
                 await onChange()
             }
         }
+        relayObservers[observation.id] = RelayObserver(
+            storeToken: storeToken, updates: updates, stream: continuation
+        )
+        return observation
     }
 
-    public func stopRelayObservation() async {
-        relayUpdates?.cancel()
-        relayUpdates = nil
-        if let storeObserver {
-            await model.sessionStore.removeObserver(storeObserver)
-            self.storeObserver = nil
-        }
-        journal = CodeRelayJournalTail()
+    /// Ends one observation. Stopping one that already ended does nothing.
+    public func stopRelayObservation(_ observation: RelayObservation) async {
+        guard let observer = relayObservers.removeValue(forKey: observation.id) else { return }
+        observer.updates.cancel()
+        observer.stream.finish()
+        await model.sessionStore.removeObserver(observer.storeToken)
+        // The tail is only a cache for whoever is uploading; with nobody
+        // left it would only grow stale.
+        if relayObservers.isEmpty { journal = CodeRelayJournalTail() }
     }
+
+    /// How many uploaders are following the store. For tests.
+    var relayObservationCount: Int { relayObservers.count }
 
     // MARK: - Session lifecycle
 
