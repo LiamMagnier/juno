@@ -1,23 +1,13 @@
 "use client";
 
-import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
+import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  FileText,
-  FolderClosed,
-  Loader2,
-  Maximize2,
-  Plus,
-  NotebookPen,
-  FileUp,
-} from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { FolderClosed, ImageOff, ImagePlus, Loader2, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import {
@@ -28,9 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { formatBytes } from "@/lib/utils";
 import type { KnowledgeIndexState } from "@/components/library/index-status";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
@@ -56,6 +46,8 @@ import {
 } from "@/lib/work/projects";
 import { ProjectWorkDefaults } from "@/components/projects/project-work-defaults";
 import { ProjectWorkspaceHeader } from "@/components/projects/project-workspace-header";
+import { ProjectPageSkeleton } from "@/components/projects/project-page-skeleton";
+import { ProjectOverviewRail } from "@/components/projects/project-overview-rail";
 import { ProjectChatList } from "@/components/projects/project-chat-list";
 import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
 import { ProjectCodeList } from "@/components/projects/project-code-list";
@@ -63,6 +55,23 @@ import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/proje
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
+
+/**
+ * The tabs, and the `?tab=` values that reach them.
+ *
+ * `workspace` and `assistant` are older spellings of `settings` that people
+ * may still hold in a bookmark, so they resolve rather than 404 into Overview.
+ */
+const TABS = ["overview", "work", "code", "sources", "settings"] as const;
+type TabValue = (typeof TABS)[number];
+
+const TAB_ALIASES: Record<string, TabValue> = { workspace: "settings", assistant: "settings" };
+
+function parseTab(raw: string | null): TabValue | null {
+  if (!raw) return null;
+  if ((TABS as readonly string[]).includes(raw)) return raw as TabValue;
+  return TAB_ALIASES[raw] ?? null;
+}
 
 interface Detail {
   project: {
@@ -74,7 +83,16 @@ interface Detail {
     /** What a Work task filed here inherits. `{}` for a project never asked. */
     workDefaults: WorkProjectDefaults;
   };
-  conversations: { id: string; title: string; lastMessageAt: string; pinned: boolean }[];
+  conversations: {
+    id: string;
+    title: string;
+    lastMessageAt: string;
+    pinned: boolean;
+    /** `"chat"` or `"code"` — see the Code tab below for why it is on the wire. */
+    kind: string;
+    codeWorkspaceName: string | null;
+    codeWorkspacePath: string | null;
+  }[];
   files: {
     id: string;
     fileName: string;
@@ -107,12 +125,22 @@ export default function ProjectDetailPage() {
   /** Guards an unsaved instructions draft against Escape / X / backdrop. */
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  /**
+   * The cover's own busy flag.
+   *
+   * It used to share `uploading` with the source uploader, and the two are not
+   * the same event to anyone watching: picking a project image put the Sources
+   * section's add button into a spinner and disabled it, so the rail reported
+   * that a file was being added to the project's knowledge when a decorative
+   * picture was being replaced. Two independent actions, two flags.
+   */
+  const [uploadingCover, setUploadingCover] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const coverRef = React.useRef<HTMLInputElement>(null);
 
   // Workspace tab state
-  const [tab, setTab] = React.useState("overview");
+  const [tab, setTab] = React.useState<TabValue>("overview");
   const [savingInstructions, setSavingInstructions] = React.useState(false);
 
   // Server-backed project star (Project.starred), toggled optimistically.
@@ -151,12 +179,36 @@ export default function ProjectDetailPage() {
   const projectModel = selectedModel ?? workspace.preferredModelId
     ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
 
-  // Deep-link: /projects/{id}?tab=workspace
+  // Deep-link in: /projects/{id}?tab=sources
   React.useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "workspace" || t === "assistant" || t === "work" || t === "code" || t === "sources" || t === "settings") {
-      setTab(t === "workspace" || t === "assistant" ? "settings" : t);
-    }
+    const t = parseTab(new URLSearchParams(window.location.search).get("tab"));
+    if (t) setTab(t);
+  }, []);
+
+  /**
+   * …and deep-link OUT, which is the half that was missing.
+   *
+   * `?tab=` was readable on arrival and never written, so the address bar said
+   * Overview no matter which tab you were on: a reload dropped you back to the
+   * first one, and a link copied from the Sources tab opened somewhere else for
+   * whoever you sent it to. The tab is part of where you are, so it belongs in
+   * the URL.
+   *
+   * `replaceState` rather than `router.replace`: this changes nothing the
+   * server renders, and a route-level navigation for a local state change
+   * remounts the tab panels — which would throw away the composer draft the
+   * `forceMount` below exists to preserve. It is also deliberately not
+   * `pushState`: Back should leave the project, not walk the reader back
+   * through five tabs to get out of it.
+   */
+  const selectTab = React.useCallback((next: string) => {
+    const value = parseTab(next);
+    if (!value) return;
+    setTab(value);
+    const url = new URL(window.location.href);
+    if (value === "overview") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", value);
+    window.history.replaceState(null, "", url);
   }, []);
 
   const coverFile = data?.files.find((f) => f.fileName === "__cover__");
@@ -449,7 +501,7 @@ export default function ProjectDetailPage() {
   };
 
   const uploadCover = async (file: File) => {
-    setUploading(true);
+    setUploadingCover(true);
     try {
       const existingCover = data?.files.find((f) => f.fileName === "__cover__");
       if (existingCover) {
@@ -471,14 +523,14 @@ export default function ProjectDetailPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn’t upload cover image.");
     } finally {
-      setUploading(false);
+      setUploadingCover(false);
     }
   };
 
   const removeCover = async () => {
     const existingCover = data?.files.find((f) => f.fileName === "__cover__");
     if (!existingCover) return;
-    setUploading(true);
+    setUploadingCover(true);
     try {
       await fetch(`/api/attachments/${existingCover.id}`, { method: "DELETE" });
       setData((cur) => (cur ? { ...cur, files: cur.files.filter((f) => f.id !== existingCover.id) } : cur));
@@ -486,7 +538,7 @@ export default function ProjectDetailPage() {
     } catch {
       toast.error("Couldn’t remove cover image.");
     } finally {
-      setUploading(false);
+      setUploadingCover(false);
     }
   };
 
@@ -630,17 +682,12 @@ export default function ProjectDetailPage() {
     );
   }
   if (!data) {
-    // The same placeholder the route's own loading.tsx draws, from the header's
-    // own metrics — this used to be a third hand-drawn header (an h-10 heading
-    // over an h-3 lede at mb-8) so the client fetch landed on a different jump
-    // from the one the route transition had already made.
+    // Literally the same component the route's own loading.tsx renders, not a
+    // second drawing of it — see ProjectPageSkeleton's header for what the two
+    // hand-copied versions had drifted into.
     return (
       <AppPage measure="wide" role="status" aria-label="Loading project">
-        <AppPageHeaderSkeleton headingWidth="w-72" actions />
-        <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
-          <div className="skeleton h-40 w-full rounded-card" />
-          <div className="skeleton h-64 w-full rounded-card" />
-        </div>
+        <ProjectPageSkeleton />
       </AppPage>
     );
   }
@@ -650,6 +697,22 @@ export default function ProjectDetailPage() {
   const instructionLines = instructions ? instructions.split("\n").length : 0;
   const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
 
+  /**
+   * Chats and Code sessions are two different kinds of conversation, and the
+   * column that says which is `kind`.
+   *
+   * This page used to decide by searching the TITLE for "code" or "repo". So
+   * every real Code session was listed twice — once here, once in the Chats
+   * list, which counted it — any chat whose title happened to contain either
+   * word was filed as a code session, and the workspace a session actually
+   * belongs to, the one fact the Code list exists to show, was not available
+   * to show. `kind` has been on the Conversation model the whole time; it is
+   * on the wire now (see the GET in api/projects/[id]/route.ts).
+   */
+  const chats = data.conversations.filter((c) => c.kind !== "code");
+  const codeSessions = data.conversations.filter((c) => c.kind === "code");
+  const sourceCount = workspaceFiles.length + projectArtifacts.length;
+
   return (
     <AppPage measure="wide">
         {/* A real link, not router.push on a button: this one is not cmd- or
@@ -658,9 +721,9 @@ export default function ProjectDetailPage() {
         <ProjectWorkspaceHeader
           project={data.project}
           stats={{
-            chatCount: data.conversations.length,
+            chatCount: chats.length,
             workCount: workRuns.length,
-            codeCount: 0,
+            codeCount: codeSessions.length,
             fileCount: workspaceFiles.length,
             artifactCount: projectArtifacts.length,
           }}
@@ -674,264 +737,156 @@ export default function ProjectDetailPage() {
             window.dispatchEvent(new CustomEvent("projects:sync"));
           }}
           onDelete={() => setDeleteOpen(true)}
+          /* The cover's home. It was a 96px dashed slab at the head of the
+             Overview rail — the first thing the eye met on the page, offering
+             the one action here that changes nothing about how the project
+             answers. A rare verb belongs with the other rare verbs. */
+          menuExtras={
+            <>
+              <DropdownMenuItem
+                disabled={uploadingCover}
+                onSelect={() => coverRef.current?.click()}
+              >
+                <ImagePlus className="mr-2 size-4" aria-hidden="true" />
+                <span>{coverUrl ? "Change image" : "Add project image"}</span>
+              </DropdownMenuItem>
+              {coverUrl && (
+                <DropdownMenuItem disabled={uploadingCover} onSelect={removeCover}>
+                  <ImageOff className="mr-2 size-4" aria-hidden="true" />
+                  <span>Remove image</span>
+                </DropdownMenuItem>
+              )}
+            </>
+          }
         />
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
-            {/* "Tasks", not "Work". The value stays `work` because `?tab=work`
-                is a URL somebody can hold; the label says what the tab lists. */}
-            <TabsTrigger value="work" className="px-4">
-              Tasks {workRuns.length > 0 && `(${workRuns.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="code" className="px-4">
-              Code
-            </TabsTrigger>
-            <TabsTrigger value="sources" className="px-4">
-              Sources ({workspaceFiles.length + projectArtifacts.length})
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="px-4">
-              Settings
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={selectTab}>
+          {/* One count treatment, on every tab that has something to count.
+              This row used to spell it three ways at once — "Tasks (3)" only
+              above zero, "Sources (0)" always including the literal zero, and
+              Code never, whatever it held. Three spellings of one idea in five
+              triggers, which is what a reader registers as "assembled" long
+              before they could say why.
+
+              The scroller is the narrow-width behaviour: an inline-flex track
+              with five triggers in it has nowhere to go under ~30rem, so it was
+              compressing the labels. It scrolls now, and `-mx-*`/`px-*` let the
+              first and last trigger reach the column's own edge rather than
+              sitting inside a second margin. */}
+          <div className="-mx-1 mb-6 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              {/* "Tasks", not "Work". The value stays `work` because `?tab=work`
+                  is a URL somebody can hold; the label says what the tab lists. */}
+              <TabsTrigger value="work">
+                Tasks
+                <TabCount value={workRuns.length} />
+              </TabsTrigger>
+              <TabsTrigger value="code">
+                Code
+                <TabCount value={codeSessions.length} />
+              </TabsTrigger>
+              <TabsTrigger value="sources">
+                Sources
+                <TabCount value={sourceCount} />
+              </TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
           <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden">
-            <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
-              {/* Main workspace (Left Column) */}
-              <div className="min-w-0">
-                <div className="mb-8">
-                  <Composer
-                    conversationId={null}
-                    model={projectModel}
-                    onModelChange={(m) => setSelectedModel(m)}
-                    onSend={(text, _attachments, options) => handleSend(text, options)}
-                    isBusy={false}
-                    status="idle"
-                    onStop={() => {}}
-                    reasoningEffort={reasoningEffort}
-                    onReasoningChange={setReasoningEffort}
-                    placeholder="How can I help you today?"
-                  />
+            {/*
+              The composer spans the column; the split starts under it.
+
+              It used to be the first thing in the LEFT column of the split,
+              which is where two separate misalignments came from. The
+              composer supplies its own `.page-gutter` for the chat dock it
+              normally lives in, so inside an already-guttered page column it
+              was indented a further 16–32px on both edges — its left edge
+              never agreed with the "Chats in this project" eyebrow directly
+              beneath it, and its right edge stopped short of the rail. (It is
+              `frame="inline"` now; see the prop in composer.tsx.) And with
+              the composer opening the left column, the two columns had
+              nothing in common at the top: a 132px input on one side, a
+              section eyebrow on the other.
+
+              Full width, then the split, and both columns now open on the
+              same line with the same kind of thing — a section eyebrow — so
+              there is one horizontal rule for the eye to follow across the
+              page instead of two independent stacks.
+            */}
+            <div>
+              <Composer
+                conversationId={null}
+                frame="inline"
+                model={projectModel}
+                onModelChange={(m) => setSelectedModel(m)}
+                onSend={(text, _attachments, options) => handleSend(text, options)}
+                isBusy={false}
+                status="idle"
+                onStop={() => {}}
+                reasoningEffort={reasoningEffort}
+                onReasoningChange={setReasoningEffort}
+                /* The project's own name in the prompt, where it fits. A
+                   composer on a project page asking "How can I help you
+                   today?" is the same sentence the account's home composer
+                   asks, on a surface whose whole content is that this is not
+                   that. Long names fall back rather than filling the field
+                   with a title the reader can already see above it. */
+                placeholder={
+                  data.project.name.length <= 32
+                    ? `Ask anything about ${data.project.name}…`
+                    : "Ask anything about this project…"
+                }
+              />
+            </div>
+
+            {/* Keyed to the COLUMN, not the window (PREMIUM_AUDIT §2b): the
+                sidebar takes 256px of the window until the width where it
+                starts floating and then stops taking it, so a `lg:` here —
+                which is what this grid used — split the page at a window size
+                that says nothing about how much room this page actually got. */}
+            <div className="mt-8 grid gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
+              <section className="min-w-0">
+                {/* `min-h-7` is the rail's section-header height, so this
+                    eyebrow and the rail's first eyebrow sit on one line. No
+                    count beside it: the tab above carries one and the list's
+                    own toolbar carries "N of M" 40px below, and three counts
+                    of the same thing on one screen is how a page stops being
+                    read. */}
+                <div className="mb-3 flex min-h-7 items-center">
+                  <CardEyebrow>Chats in this project</CardEyebrow>
                 </div>
+                <ProjectChatList
+                  projectId={data.project.id}
+                  conversations={chats}
+                  allProjects={allProjects}
+                  onTogglePin={togglePin}
+                  onMoveChat={moveChat}
+                  onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
+                  onNewChat={() => {
+                    router.push(`/chat?project=${id}`);
+                  }}
+                />
+              </section>
 
-                {/* Chats List in Project */}
-                <section>
-                  <CardEyebrow className="mb-3 block">Chats in this project</CardEyebrow>
-                  <ProjectChatList
-                    projectId={data.project.id}
-                    conversations={data.conversations}
-                    allProjects={allProjects}
-                    onTogglePin={togglePin}
-                    onMoveChat={moveChat}
-                    onNewChat={() => {
-                      router.push(`/chat?project=${id}`);
-                    }}
-                  />
-                </section>
-              </div>
-
-              {/* Unified Project Sidebar (Right Column) */}
-              <div>
-                <Card className="overflow-hidden">
-                  {coverUrl ? (
-                    <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
-                      <img src={coverUrl} className="size-full object-cover" alt="" />
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
-                        <Button variant="secondary" size="sm" onClick={() => coverRef.current?.click()}>
-                          Change
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={removeCover}>
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => coverRef.current?.click()}
-                      className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-secondary transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
-                    >
-                      <Plus className="mb-1 size-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
-                      <span className="font-mono text-caption text-muted-foreground">
-                        Add project image
-                      </span>
-                    </button>
-                  )}
-                  <input
-                    ref={coverRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) uploadCover(f);
-                      e.target.value = "";
-                    }}
-                  />
-
-                  <div className="divide-y divide-border/60 p-4">
-                    {/* Memory */}
-                    <section className="pb-5">
-                      <div className="mb-2.5 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <NotebookPen className="size-3.5 text-muted-foreground" />
-                          <CardEyebrow>Memory</CardEyebrow>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption text-muted-foreground">
-                            Only you
-                          </span>
-                          <Pressable
-                            kind="icon"
-                            size="sm"
-                            onClick={() => router.push("/memory")}
-                            aria-label="Manage memories"
-                          >
-                            <ActionIcons.edit className="size-3.5" />
-                          </Pressable>
-                        </div>
-                      </div>
-                      {memories.length === 0 ? (
-                        // The same shape as the Instructions and Sources
-                        // sections under it in this card; this was a bare
-                        // sentence while its two siblings were EmptyStates.
-                        // No action, because nothing the reader does here
-                        // resolves it — memories arrive from chats — and the
-                        // "Automatically updated" footer stays with the list,
-                        // since this description already says as much. No
-                        // icon either: the section head 20px above already
-                        // paints NotebookPen beside "Memory", and Instructions
-                        // beneath carries none. "Your chats", not "this
-                        // project's": the list is `/api/memory` with no
-                        // project parameter — the user's global memory, which
-                        // is what the "Only you" chip beside it is saying.
-                        <EmptyState
-                          size="panel"
-                          title="No memories yet"
-                          description="Juno saves durable facts from your chats here."
-                        />
-                      ) : (
-                        <>
-                          <ul className="max-h-[7.5rem] list-disc space-y-1.5 overflow-y-auto pl-4 pr-1 marker:text-muted-foreground/50">
-                            {memories.slice(0, 3).map((m) => (
-                              <li key={m.id} className="text-caption leading-relaxed text-muted-foreground">
-                                <span className="block truncate">{m.content}</span>
-                              </li>
-                            ))}
-                          </ul>
-                          <p className="mt-2.5 font-mono text-caption text-muted-foreground/70">Automatically updated</p>
-                        </>
-                      )}
-                    </section>
-
-                    {/* Instructions Preview */}
-                    <section className="py-5">
-                      <div className="mb-2.5 flex items-center justify-between gap-2">
-                        <CardEyebrow>Instructions</CardEyebrow>
-                        <Pressable
-                          kind="icon"
-                          size="sm"
-                          onClick={() => setInstructionsOpen(true)}
-                          aria-label="Edit project instructions"
-                        >
-                          <ActionIcons.edit className="size-3.5" />
-                        </Pressable>
-                      </div>
-                      {instructions ? (
-                        <button
-                          type="button"
-                          onClick={() => setInstructionsOpen(true)}
-                          className="block w-full rounded-field border border-border/60 bg-secondary p-2.5 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-accent motion-reduce:transition-none"
-                        >
-                          <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
-                            {instructions}
-                          </p>
-                          <p className="mt-2 font-mono text-caption text-muted-foreground/70">
-                            {instructions.length.toLocaleString()} chars · {plural(instructionLines, "line")}
-                          </p>
-                        </button>
-                      ) : (
-                        <EmptyState
-                          size="panel"
-                          title="No instructions yet"
-                          description="Add a prompt Juno follows in every chat in this project."
-                          action={
-                            <Button variant="outline" size="sm" onClick={() => setInstructionsOpen(true)}>
-                              Add instructions
-                            </Button>
-                          }
-                        />
-                      )}
-                    </section>
-
-                    {/* Quick Files */}
-                    <section className="pt-5">
-                      <div className="mb-2.5 flex items-center justify-between gap-2">
-                        <CardEyebrow>Sources</CardEyebrow>
-                        <Pressable
-                          kind="icon"
-                          size="sm"
-                          onClick={() => fileRef.current?.click()}
-                          disabled={uploading}
-                          aria-label="Add file"
-                        >
-                          {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-4" />}
-                        </Pressable>
-                      </div>
-                      {workspaceFiles.length === 0 ? (
-                        <EmptyState
-                          size="panel"
-                          icon={FileUp}
-                          title="No files yet"
-                          description="Add PDFs, documents, or data to ground answers."
-                          action={
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => fileRef.current?.click()}
-                              disabled={uploading}
-                            >
-                              Add file
-                            </Button>
-                          }
-                        />
-                      ) : (
-                        <ul className="-m-1 max-h-[15rem] space-y-1.5 overflow-y-auto p-1">
-                          {workspaceFiles.slice(0, 5).map((f) => (
-                            <li
-                              key={f.id}
-                              className="group/file relative flex items-center gap-2 rounded-field border border-border/60 bg-secondary p-2 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-soft motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
-                            >
-                              <a
-                                href={f.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex min-w-0 flex-1 items-center gap-2 rounded-xs"
-                              >
-                                <FileText className="size-4 shrink-0 text-muted-foreground" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-caption font-medium text-foreground">{f.fileName}</p>
-                                  <p className="font-mono text-caption text-muted-foreground">{formatBytes(f.size)}</p>
-                                </div>
-                              </a>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => deleteFile(f.id)}
-                                aria-label={`Remove ${f.fileName}`}
-                                className="danger-hover size-6 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
-                              >
-                                <ActionIcons.delete className="size-3.5" />
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                  </div>
-                </Card>
-              </div>
+              <ProjectOverviewRail
+                coverUrl={coverUrl}
+                onPickCover={() => coverRef.current?.click()}
+                onRemoveCover={removeCover}
+                uploadingCover={uploadingCover}
+                instructions={instructions}
+                onEditInstructions={() => setInstructionsOpen(true)}
+                files={workspaceFiles}
+                fileCount={sourceCount}
+                onAddFile={() => fileRef.current?.click()}
+                onDeleteFile={deleteFile}
+                onViewAllSources={() => selectTab("sources")}
+                uploading={uploading}
+                memories={memories}
+                onManageMemory={() => router.push("/memory")}
+              />
             </div>
           </TabsContent>
 
@@ -953,13 +908,13 @@ export default function ProjectDetailPage() {
           <TabsContent value="code" forceMount className="data-[state=inactive]:hidden">
             <ProjectCodeList
               projectId={data.project.id}
-              sessions={data.conversations
-                .filter((c) => c.title.toLowerCase().includes("code") || c.title.toLowerCase().includes("repo"))
-                .map((c) => ({
-                  id: c.id,
-                  title: c.title,
-                  lastMessageAt: c.lastMessageAt,
-                }))}
+              sessions={codeSessions.map((c) => ({
+                id: c.id,
+                title: c.title,
+                lastMessageAt: c.lastMessageAt,
+                workspaceName: c.codeWorkspaceName ?? undefined,
+                workspacePath: c.codeWorkspacePath ?? undefined,
+              }))}
               onNewCodeSession={() => {
                 // `/code` — the Code composer is the landing now, and
                 // `/code/new` only redirects here. The `?project=` this used to
@@ -978,6 +933,16 @@ export default function ProjectDetailPage() {
               files={data.files}
               artifacts={projectArtifacts}
               onUploadClick={() => fileRef.current?.click()}
+              /* The well has drawn "Drop files here" for as long as it has
+                 existed and had nothing to drop onto: `onDropFiles` is what
+                 arms the handlers, and no caller passed it, so the label was
+                 a promise the page could not keep. Sequential rather than
+                 parallel — `uploadFile` owns the one `uploading` flag, and
+                 concurrent writes to it would leave the spinner stuck on
+                 after the first of them finished. */
+              onDropFiles={async (dropped) => {
+                for (const file of dropped) await uploadFile(file);
+              }}
               onDeleteFile={deleteFile}
               uploading={uploading}
             />
@@ -1039,10 +1004,23 @@ export default function ProjectDetailPage() {
                 </div>
               </Card>
 
-              {/* Assistant Configuration */}
-              <div className="grid items-start gap-6 lg:grid-cols-2">
+              {/* Assistant Configuration. `@4xl/page`, not `lg:` — the split
+                  has to happen when this COLUMN is wide enough to hold two
+                  cards, and the window width says nothing about that while
+                  the sidebar is taking 256px of it (PREMIUM_AUDIT §2b). */}
+              <div className="grid items-start gap-6 @4xl/page:grid-cols-2">
                 <Card className="p-5">
-                  <CardEyebrow>Identity and model</CardEyebrow>
+                  {/* The same two-line head the card beside it and the
+                      instructions card above it open with: eyebrow, then one
+                      line saying what the controls under it do. This card had
+                      the eyebrow alone, so of the three cards on the tab, two
+                      explained themselves and one did not. */}
+                  <div className="min-h-9">
+                    <CardEyebrow>Identity and model</CardEyebrow>
+                    <p className="mt-1 text-body text-muted-foreground">
+                      What Juno is called here, and which model answers by default.
+                    </p>
+                  </div>
                   <div className="mt-4 space-y-4">
                     <label className="block space-y-2">
                       <span className="text-body font-medium text-foreground">Persona name</span>
@@ -1084,19 +1062,32 @@ export default function ProjectDetailPage() {
                       </Select>
                     </label>
                     <div className="pt-2">
+                      {/* "Save", like the other two on this tab. Each card is
+                          plainly labelled and each button sits inside the card
+                          it saves, so "Save assistant defaults" was naming its
+                          own container — and naming it differently from the
+                          two buttons doing the identical job beside it. */}
                       <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
                         {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
-                        Save assistant defaults
+                        Save
                       </Button>
                     </div>
                   </div>
                 </Card>
 
                 <Card className="p-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
+                  <div className="flex items-start justify-between gap-4">
+                    {/* `min-h-9` on both cards' heads, and the same two rungs
+                        of type in the same order, so the first control in each
+                        card starts on the same line when they sit side by
+                        side. The body line here was `font-medium
+                        text-foreground` against the other card's muted
+                        description — one of the two was a second title. */}
+                    <div className="min-h-9 min-w-0">
                       <CardEyebrow>Tools</CardEyebrow>
-                      <p className="mt-1 text-body font-medium text-foreground">Restrict tools in this project</p>
+                      <p className="mt-1 text-body text-muted-foreground">
+                        Narrow what Juno may reach for while answering here.
+                      </p>
                     </div>
                     <Switch
                       checked={workspace.allowedTools !== undefined}
@@ -1107,6 +1098,7 @@ export default function ProjectDetailPage() {
                         }))
                       }
                       aria-label="Restrict assistant tools"
+                      className="mt-0.5 shrink-0"
                     />
                   </div>
                   {workspace.allowedTools !== undefined && (
@@ -1123,9 +1115,17 @@ export default function ProjectDetailPage() {
                       ))}
                     </div>
                   )}
-                  <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
-                    Restrictions only narrow tools available during generation in this project context.
-                  </p>
+                  {/* Under the list, and only when there IS one. With the
+                      switch off there is no restriction to qualify, and the
+                      card's own description two lines up already says what the
+                      switch does — so this was a third sentence explaining the
+                      same control to a reader who had not used it yet. */}
+                  {workspace.allowedTools !== undefined && (
+                    <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+                      Restrictions narrow what is available while Juno generates in this project.
+                      They do not disconnect anything.
+                    </p>
+                  )}
                 </Card>
               </div>
 
@@ -1147,7 +1147,12 @@ export default function ProjectDetailPage() {
           </TabsContent>
         </Tabs>
 
-      {/* Shared hidden file input — used by both tabs */}
+      {/* The two hidden pickers, at page level rather than inside a tab panel:
+          the source picker is opened from the Overview rail, the Sources tab
+          and the rail's empty state, and the cover picker from the header's
+          actions menu and from the cover itself. A picker owned by one of
+          those places would stop working the moment that place was not the one
+          asking. */}
       <input
         ref={fileRef}
         type="file"
@@ -1155,6 +1160,17 @@ export default function ProjectDetailPage() {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) uploadFile(f);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={coverRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) uploadCover(f);
           e.target.value = "";
         }}
       />
@@ -1318,6 +1334,25 @@ export default function ProjectDetailPage() {
 
 function plural(n: number, noun: string) {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * How many things are behind a tab, said the same way on every tab that has
+ * an answer.
+ *
+ * Quieter than the label it trails and never bracketed: a count is metadata
+ * about the tab, not part of its name, and parentheses inside a control's
+ * label read as an aside rather than as a number. Withheld at zero on every
+ * tab, so "Sources" with nothing in it and "Code" with nothing in it look
+ * alike — which they are.
+ */
+function TabCount({ value }: { value: number }) {
+  if (!value) return null;
+  return (
+    <span className="font-mono text-caption tabular-nums text-muted-foreground">
+      {value.toLocaleString()}
+    </span>
+  );
 }
 
 

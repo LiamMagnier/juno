@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
 import { checkProjectAccess } from "@/lib/project-collaboration";
@@ -27,12 +27,36 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { allowed } = await checkProjectAccess(user.id, id, "VIEWER");
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const project = await prisma.project.findUnique({
+  /*
+   * Unguarded, three lines after `checkProjectAccess` allowed this reader: a
+   * project reached by a VIEWER or an EDITOR is one they do not own, so a
+   * `userId: user.id` filter here would 404 every collaborator — and the
+   * ownership guard throws in development, so as written this route was a 500
+   * on a dev machine for the owner too. See src/lib/db.ts for the guard and
+   * getProjectRole in project-collaboration.ts for the same call one layer up.
+   */
+  const project = await prismaUnguarded.project.findUnique({
     where: { id },
     include: {
       conversations: {
         orderBy: { lastMessageAt: "desc" },
-        select: { id: true, title: true, lastMessageAt: true, pinned: true },
+        select: {
+          id: true,
+          title: true,
+          lastMessageAt: true,
+          pinned: true,
+          // `kind` and the workspace columns are what separate a chat from a
+          // Code session, and the project page had no access to either: it was
+          // deciding which of its own conversations were code by testing
+          // whether the TITLE contained "code" or "repo". So a chat called
+          // "Which decoder should I use?" was filed as a code session, every
+          // real session was double-counted (once in Chats, once in Code), and
+          // the workspace each session actually belongs to — the one fact the
+          // Code list is for — was not on the wire at all.
+          kind: true,
+          codeWorkspaceName: true,
+          codeWorkspacePath: true,
+        },
       },
       files: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
       workspace: { select: { config: true } },
@@ -83,6 +107,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       title: c.title,
       pinned: c.pinned,
       lastMessageAt: c.lastMessageAt.toISOString(),
+      kind: c.kind,
+      codeWorkspaceName: c.codeWorkspaceName,
+      codeWorkspacePath: c.codeWorkspacePath,
     })),
     files: await Promise.all(
       project.files.map(async (file) => {

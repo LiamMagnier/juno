@@ -296,6 +296,21 @@ interface ComposerProps {
   quote?: ComposerQuote | null;
   onClearQuote?: () => void;
   placeholder?: string;
+  /**
+   * How the composer is framed by whatever holds it.
+   *
+   * `dock` (the default) is the chat surface's fixed bottom dock: it supplies
+   * its own `.page-gutter`, centres itself on the reading measure, and reserves
+   * the home-indicator inset underneath.
+   *
+   * `inline` is a composer sitting INSIDE a page column that has already been
+   * measured and guttered — the project page's. There the dock's chrome is not
+   * neutral, it is a second gutter: the field indented 16–32px further than the
+   * section headings beneath it, on both edges, so nothing in the column shared
+   * a left margin. A surface takes the page's gutter once (PREMIUM_AUDIT §2b),
+   * and the column it is in has already taken it.
+   */
+  frame?: "dock" | "inline";
   privateMode?: boolean;
   /** Realtime voice is live: keep this surface focused on the turn being spoken. */
   voiceActive?: boolean;
@@ -625,6 +640,7 @@ export function Composer({
   quote = null,
   onClearQuote,
   placeholder: customPlaceholder,
+  frame = "dock",
   privateMode = false,
   voiceActive = false,
   voiceCanSeeImages = true,
@@ -2974,7 +2990,11 @@ export function Composer({
   return (
     <div
       ref={rootRef}
-      className="page-gutter mx-auto w-full max-w-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      className={cn(
+        "w-full",
+        frame === "dock" &&
+          "page-gutter mx-auto max-w-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      )}
     >
       {quotaReached && (
         <div
