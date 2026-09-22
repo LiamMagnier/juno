@@ -381,9 +381,11 @@ struct CodeSlashActionTests {
     @Test
     func theLandingLibraryHasNoSessionVerbs() {
         let landing = CodeSlashCommandLibrary.builtIn.excludingActions()
+        // Both verbs need a session: nothing to fold, nothing to go back to.
         #expect(landing.command(named: "compact") == nil)
+        #expect(landing.command(named: "rewind") == nil)
         #expect(landing.command(named: "review") != nil)
-        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 1)
+        #expect(landing.commands.count == CodeSlashCommandLibrary.builtIn.commands.count - 2)
     }
 
     @Test
