@@ -12,6 +12,20 @@ private func workspacePath(from input: JSONValue, field: String = "path") throws
     }
 }
 
+/// A mutation's risk, raised to destructive when it would touch one of the
+/// project's policy files.
+///
+/// Destructive is what makes the existing machinery hold the line: every mode
+/// asks, an allow rule never silences it, and no "Always allow" is offered.
+/// Without it, a write to `.juno/settings.local.json` was an ordinary edit
+/// that Auto-edit made unasked.
+private func policyRisk(_ base: ActionRisk, _ input: JSONValue, fields: [String] = ["path"]) -> ActionRisk {
+    let touchesPolicy = fields.contains { field in
+        input[field]?.stringValue.map(WorkspacePolicyPaths.isProtected) ?? false
+    }
+    return touchesPolicy ? .destructive : base
+}
+
 /// Reads the optional `base_sha256` argument, rejecting anything that is not a
 /// SHA-256 digest.
 ///
@@ -326,7 +340,7 @@ public struct CreateFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Create \(input["path"]?.stringValue ?? "?")"
@@ -376,7 +390,7 @@ public struct WriteFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Write \(input["path"]?.stringValue ?? "?")"
@@ -427,7 +441,7 @@ public struct ApplyPatchTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input) }
 
     public func summary(input: JSONValue) -> String {
         "Edit \(input["path"]?.stringValue ?? "?")"
@@ -483,7 +497,7 @@ public struct DeleteFileTool: CodeTool {
     /// revertible, and a session the user set to full access is one that may
     /// refactor files away. Escaping the folder is `destructive` and still asks;
     /// `WorkspaceAccess` is what keeps `path` inside it.
-    public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.critical, input) }
 
     public func summary(input: JSONValue) -> String {
         "Delete \(input["path"]?.stringValue ?? "?")"
@@ -519,7 +533,7 @@ public struct MoveFileTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    public func assessRisk(input: JSONValue) -> ActionRisk { policyRisk(.write, input, fields: ["from", "to"]) }
 
     public func summary(input: JSONValue) -> String {
         "Move \(input["from"]?.stringValue ?? "?") → \(input["to"]?.stringValue ?? "?")"
