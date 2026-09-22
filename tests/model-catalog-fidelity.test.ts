@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DEFAULT_MODEL, MODEL_LIST, GEN_MODELS, resolveModel, RETIRED_MODELS } from "../src/lib/models";
 import { providerRequestModel } from "../src/lib/model-request";
 
@@ -187,4 +188,106 @@ test("the remaining seven labs carry their current ids", () => {
   const fallback = resolveModel(DEFAULT_MODEL);
   assert.ok(fallback, "DEFAULT_MODEL resolves");
   assert.equal(fallback.status, "current", "the default model is routable");
+});
+
+/*
+ * Meta's Muse line, where the trap is not the version number but the TIER.
+ *
+ * Meta serves 1.3 under two ids for one set of weights. `muse-spark-1.3` is the
+ * standard tier; `muse-spark-1.3-contributor` is the same model at 12.5x less
+ * on input and 21x less on output, and the discount is paid for by letting
+ * Meta train on the prompts and completions sent to it. Every mistake this
+ * block guards against is a tier confusion rather than a 404:
+ *
+ *   - a contributor id migrating to the standard one is a silent 12.5x/21x
+ *     price rise charged to somebody who chose the cheap tier deliberately;
+ *   - anything migrating the other way opts a reader into training through a
+ *     rename they never agreed to;
+ *   - and `muse-image-1` — how the launch posts write it — is not an id Meta
+ *     serves at all. `resolveModel` invents a *chat* model for an id it does
+ *     not recognise, so that one does not 404 loudly: it sends an image prompt
+ *     to /chat/completions as text.
+ */
+test("Meta's Muse line carries its real ids, and each tier stays in its own tier", () => {
+  const byId = new Map(ALL_MODELS.map((model) => [model.id, model]));
+
+  const standard = byId.get("meta:muse-spark-1.3");
+  assert.ok(standard, "Muse Spark 1.3 is in the catalog");
+  assert.equal(standard.providerModel, "muse-spark-1.3");
+  assert.equal(standard.status, "current");
+  assert.equal(standard.contextWindow, 1_048_576);
+  assert.notEqual(standard.trainsOnPrompts, true, "the standard tier keeps your prompts out of training");
+
+  const contributor = byId.get("meta:muse-spark-1.3-contributor");
+  assert.ok(contributor, "Muse Spark 1.3 Contributor is in the catalog");
+  assert.equal(contributor.providerModel, "muse-spark-1.3-contributor");
+  assert.equal(contributor.status, "current");
+  assert.equal(contributor.trainsOnPrompts, true, "the discount is paid for with the reader's prompts");
+  assert.notEqual(
+    contributor.family,
+    standard.family,
+    "one current row per family is enforced — sharing a family would hide one of the two tiers"
+  );
+
+  // The generation it replaces is hidden but still answers.
+  assert.equal(byId.get("meta:muse-spark-1.2")?.status, "legacy", "1.2 stepped down for 1.3");
+
+  // Muse Image ships as `muse-image-1.0`. The shorthands are aliases, not ids.
+  const image = byId.get("meta:muse-image-1.0");
+  assert.ok(image, "Muse Image is in the catalog");
+  assert.equal(image.providerModel, "muse-image-1.0");
+  assert.equal(image.modality, "image");
+  assert.equal(image.status, "current");
+  for (const alias of ["meta:muse-image", "meta:muse-image-1"]) {
+    const resolved = resolveModel(alias);
+    assert.equal(resolved?.id, "meta:muse-image-1.0", `${alias} must route to the id Meta actually serves`);
+    assert.equal(resolved?.modality, "image", `${alias} must not resolve to a guessed chat model`);
+  }
+
+  // The tiers never cross, in either direction.
+  for (const alias of [
+    "meta:muse-spark-contributor",
+    "meta:muse-spark-1.2-contributor",
+    "meta:muse-spark-1.1-contributor",
+  ]) {
+    assert.equal(
+      resolveModel(alias)?.id,
+      "meta:muse-spark-1.3-contributor",
+      `${alias} must stay on the contributor ladder — crossing to standard is a 12.5x/21x price rise`
+    );
+  }
+  for (const alias of ["meta:muse-spark", "meta:muse-spark-1.1", "meta:muse-max", "meta:muse-flash"]) {
+    assert.equal(resolveModel(alias)?.id, "meta:muse-spark-1.3", `${alias} must route to the standard tier`);
+  }
+  for (const [dead, target] of Object.entries(RETIRED_MODELS)) {
+    assert.equal(
+      dead.includes("contributor"),
+      target.includes("contributor"),
+      `${dead} -> ${target} crosses the contributor boundary — a tier is not a generation`
+    );
+  }
+});
+
+test("Muse Image is metered at Meta's per-image rate, not the catalog default", () => {
+  /*
+   * `mediaRequestCost` is the only thing that charges for an image generation —
+   * image providers report no token usage, so the per-request figure IS the
+   * bill. Meta publishes $0.01 per returned image, flat: the same whatever
+   * `reasoning_strength` ran at, and with its built-in web and image search
+   * included rather than billed on top. Without a row of its own Muse Image
+   * fell through to the $0.03 default and every generation was metered at 3x.
+   *
+   * Read from source rather than imported: `spend.ts` opens with `server-only`
+   * and pulls in Prisma, so it is not loadable under the plain test condition —
+   * the same reason `usage-windows.test.ts` reads this file as text.
+   */
+  const spend = readFileSync(new URL("../src/lib/spend.ts", import.meta.url), "utf8");
+  const body = spend.slice(spend.indexOf("export function mediaRequestCost"));
+  const museImage = body.indexOf('id.includes("muse-image")');
+  assert.notEqual(museImage, -1, "mediaRequestCost must price Muse Image explicitly");
+  assert.match(body.slice(museImage, museImage + 80), /return 10_000;/, "Muse Image is $0.01 an image");
+  assert.ok(
+    museImage < body.indexOf("return 30_000;"),
+    "the Muse Image branch must come before the default, or it never runs"
+  );
 });

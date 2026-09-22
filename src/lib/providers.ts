@@ -62,7 +62,9 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     // 2026-07-06, but the "no successor developer surface" half of that note is
     // no longer true: Meta reopened developer access on a NEW host, the Meta
     // Model API, serving the Muse Spark line (1.1 on 2026-07-09, 1.2 on
-    // 2026-08-05). Still OpenAI-compatible, so the shared adapter applies.
+    // 2026-08-05, 1.3 on 2026-09-02) and, since 2026-08-26, Muse Image. Still
+    // OpenAI-compatible — chat on /chat/completions, images on the OpenAI-shaped
+    // /images/generations and /images/edits — so the shared adapters apply.
     //
     // The key env flips to META_API_KEY — this is a different product with a
     // different credential, and LLAMA_API_KEY now names a dead service. It stays

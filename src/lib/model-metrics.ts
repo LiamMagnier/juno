@@ -114,11 +114,28 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 5) },
   ],
   meta: [
-    // Muse Spark on the Meta Model API. Prices are Meta's published standard
-    // tier; the grades are positioning estimates — Spark 1.2 shipped 2026-08-05
-    // and has no AA/arena coverage yet, so this stays source:"provider" until
-    // the next benchmark sync grounds it.
+    // Muse Spark on the Meta Model API. Prices are Meta's published rates; the
+    // grades are positioning estimates — the 1.x line has no AA/arena coverage
+    // yet, so these stay source:"provider" until a benchmark sync grounds them.
+    //
+    // BEFORE the bare "muse-spark" rule, which this id also contains. Matching
+    // the contributor tier against the standard row would price it at 12.5x
+    // input and 21x output — and because `pickAutoModel` and `pickWorkModel`
+    // rank on exactly these numbers, the lie would not merely be displayed,
+    // it would change which model the routers choose.
+    { hints: ["muse-spark-1.3-contributor"], metric: metric(0.1, 0.2, 1_048_576, 6, 8) },
+    // 1.3 finishes the same task in ~20% fewer tool calls and ~25% fewer
+    // tokens than 1.2 and reports 98.5% on million-token retrieval, so it
+    // grades a notch above the row below at the same published price.
+    { hints: ["muse-spark-1.3"], metric: metric(1.25, 4.25, 1_048_576, 6, 9) },
     { hints: ["muse-spark"], metric: metric(1.25, 4.25, 1_048_576, 6, 8) },
+    // No row for muse-image on purpose. It bills per returned image, not per
+    // token (`mediaRequestCost` in spend.ts is the authority), and there is no
+    // per-image unit in ModelMetrics — so it falls to PROVIDER_DEFAULT like
+    // every other image model in this catalog does for its own provider.
+    // A zeroed row would be worse than an approximate one: the picker reads
+    // 0-in/0-out as "Free" (that is how the genuinely free GLM Flash tiers are
+    // labelled), and it would print that over a model that costs a cent a shot.
     // Llama API shut down 2026-07-06 — rules below kept only so stragglers
     // resolving through migration still price correctly.
     { hints: ["maverick"], metric: metric(0.35, 0.85, 1_000_000, 7, 2) }, // II 14.3

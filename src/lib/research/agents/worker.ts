@@ -1,7 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { getAnthropic } from "@/lib/anthropic";
-import { MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { MODEL_LIST, trainsOnPrompts, type ModelInfo } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { providerAdapterFor } from "@/lib/provider-routing";
@@ -89,6 +89,13 @@ export function researchWorkerModel(): ModelInfo | null {
       !model.comingSoon &&
       model.status !== "deprecated" &&
       isProviderConfigured(model.provider) &&
+      // Nobody picks a research worker — this function does, cheapest-first,
+      // and a worker carries the reader's question plus a full page digest in
+      // every one of dozens of turns. That is the largest volume of prose
+      // Juno sends anywhere, so a tier whose discount is the right to train on
+      // it is the one thing the ranking must not reach for. See
+      // `ModelInfo.trainsOnPrompts`.
+      !trainsOnPrompts(model) &&
       // The Responses-only snapshots (gpt-*-pro, some Codex) 404 on
       // /chat/completions, which is the only OpenAI surface the loop below
       // speaks. This one IS a real capability filter.
@@ -138,6 +145,9 @@ export function researchLeadModel(): ModelInfo | null {
       !model.comingSoon &&
       model.status !== "deprecated" &&
       isProviderConfigured(model.provider) &&
+      // Same reason as the worker above: the lead reads the goal and every
+      // finding the workers return, and nobody chose it either.
+      !trainsOnPrompts(model) &&
       model.api !== "responses"
   );
   const best = usable.sort(

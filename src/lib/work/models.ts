@@ -31,7 +31,7 @@
 
 import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId } from "@/lib/auto-model";
 import { canUseModel, effectiveMinPlan, planRank } from "@/lib/plans";
-import { DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
+import { DEFAULT_MODEL, trainsOnPrompts, type ModelId, type ModelInfo } from "@/lib/models";
 // Pure scoring, no environment: `getModelMetrics` reads the generated benchmark
 // table and `averageRequestCostMicroUsd` is arithmetic over the catalog's own
 // prices, so importing them here keeps this module as browser-safe as its
@@ -156,7 +156,7 @@ export function isWorkModelAllowed(modelId: string | null | undefined, plan: Pla
  */
 export function cheapestWorkModel(models: readonly ModelInfo[], plan: Plan): ModelInfo | null {
   const eligible = models
-    .filter((model) => isWorkCapableModel(model) && canUseModel(plan, model.id))
+    .filter((model) => isWorkCapableModel(model) && !trainsOnPrompts(model) && canUseModel(plan, model.id))
     .sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
   return eligible[0] ?? null;
 }
@@ -255,7 +255,13 @@ export function pickWorkModel(input: {
   providers?: readonly Provider[] | null;
 }): WorkModelPick | null {
   const pool = workModelOptions(input.models, { providers: input.providers ?? null }).filter(
-    (model) => canUseModel(input.plan, model.id)
+    // `trainsOnPrompts` is excluded here and in `cheapestWorkModel` rather than
+    // in `isWorkCapableModel`, and the split is deliberate: the picker asks
+    // "may a reader choose this" and the answer is yes; these two ask "what
+    // runs when nobody chose", and there the cheapest-first ranking below would
+    // otherwise make the training tier the standing default for every
+    // unattended run on the account. See `ModelInfo.trainsOnPrompts`.
+    (model) => !trainsOnPrompts(model) && canUseModel(input.plan, model.id)
   );
   if (pool.length === 0) return null;
 
@@ -327,7 +333,12 @@ export function workFailoverModels(input: {
   );
 
   const pool = workModelOptions(input.models, { providers: input.providers ?? null }).filter(
-    (model) => canUseModel(input.plan, model.id) && !spent.has(model.id)
+    // A failover is Juno choosing, not the reader — the same line
+    // `pickWorkModel` draws, and it matters more here: the reader's chosen
+    // model has just stopped answering, so this is exactly the moment a
+    // cheapest-first ranking would move an unattended run onto the tier the
+    // provider trains on. See `ModelInfo.trainsOnPrompts`.
+    (model) => !trainsOnPrompts(model) && canUseModel(input.plan, model.id) && !spent.has(model.id)
   );
   if (pool.length === 0) return [];
 
