@@ -347,6 +347,68 @@ public actor CodeSessionStore {
         return (try? JSONDecoder().decode([ModelMessage].self, from: data)) ?? []
     }
 
+    // MARK: - Rewind
+
+    /// What rewinding the session to just before `turnID` would keep, with
+    /// nothing changed. Throws ``ConversationRewindError`` when it cannot be
+    /// rewound there.
+    public func conversationRewindPlan(
+        sessionID: CodeSessionID,
+        to turnID: String
+    ) throws -> ConversationRewindPlan {
+        try loadIfNeeded()
+        guard sessions[sessionID] != nil else {
+            throw SessionStoreError.sessionNotFound(id: sessionID.value)
+        }
+        return try ConversationRewind.plan(
+            rewindingTo: turnID,
+            events: events(for: sessionID),
+            conversation: loadConversation(sessionID: sessionID)
+        )
+    }
+
+    /// Cuts the conversation and the transcript back to just before `turnID`.
+    ///
+    /// The one place the transcript is rewritten rather than appended to, and
+    /// only because the reader asked for exactly that. No event is appended
+    /// for the rewind itself, so observers are told only that the session
+    /// changed; a controller showing this session reloads its events.
+    ///
+    /// The conversation is written before the transcript. Cut short between
+    /// the two, the model has forgotten turns the reader can still see, and a
+    /// second rewind refuses as out of sync — rather than the reverse, where
+    /// the model would quietly remember turns the reader has removed.
+    @discardableResult
+    public func rewindConversation(
+        sessionID: CodeSessionID,
+        to turnID: String
+    ) throws -> ConversationRewindPlan {
+        let plan = try conversationRewindPlan(sessionID: sessionID, to: turnID)
+        try saveConversation(sessionID: sessionID, messages: plan.messages)
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var data = Data()
+            for event in plan.events {
+                data.append(try encoder.encode(event))
+                data.append(0x0A)
+            }
+            try data.write(to: eventsURL(sessionID), options: .atomic)
+        } catch {
+            throw SessionStoreError.persistenceFailed(message: String(describing: error))
+        }
+        eventCounts[sessionID] = plan.events.count
+        _ = try updateSession(id: sessionID) { session in
+            session.status = plan.status
+            session.hasPendingApproval = false
+            session.goal = plan.goal
+            if plan.status != .failed {
+                session.lastErrorSummary = nil
+            }
+        }
+        return plan
+    }
+
     // MARK: - Persistence
 
     private func loadIfNeeded() throws {

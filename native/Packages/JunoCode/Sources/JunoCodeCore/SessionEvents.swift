@@ -114,9 +114,19 @@ public struct TurnConfigurationEvent: Hashable, Codable, Sendable {
 
 public struct UserPromptEvent: Hashable, Codable, Sendable {
     public let text: String
+    /// Where this prompt's message sits in the model-facing conversation: the
+    /// number of messages that preceded it when it was sent.
+    ///
+    /// This is the rewind point. The transcript and the conversation are two
+    /// records of the same session, and only this ties a row the reader can
+    /// point at to the message a rewind has to cut before. Nil on prompts
+    /// recorded before rewind existed, which the synthesized `Codable` reads
+    /// with `decodeIfPresent`, so older transcripts still load.
+    public let conversationIndex: Int?
 
-    public init(text: String) {
+    public init(text: String, conversationIndex: Int? = nil) {
         self.text = text
+        self.conversationIndex = conversationIndex
     }
 }
 
@@ -153,9 +163,15 @@ public struct UserInstructionEvent: Hashable, Codable, Sendable, Identifiable {
 /// The event sequence is therefore also the authoritative delivery order.
 public struct UserInstructionAppliedEvent: Hashable, Codable, Sendable {
     public let instructionID: String
+    /// Where the instruction's message landed in the model-facing
+    /// conversation. Recorded here rather than on the instruction itself,
+    /// because an instruction is accepted long before it is applied and only
+    /// application fixes its place — see ``UserPromptEvent/conversationIndex``.
+    public let conversationIndex: Int?
 
-    public init(instructionID: String) {
+    public init(instructionID: String, conversationIndex: Int? = nil) {
         self.instructionID = instructionID
+        self.conversationIndex = conversationIndex
     }
 }
 
