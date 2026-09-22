@@ -67,7 +67,7 @@ import {
   TextField,
   iconButtonClass,
 } from "@/components/design/effects-panel";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
 import { layoutPage, layoutSubtree } from "@/lib/design/layout";
 import type { DesignViewportHandle } from "@/components/design/design-canvas";
@@ -735,7 +735,7 @@ export function LayersPanel({
                   node.visible ? "opacity-0 disabled:opacity-0" : "text-foreground/70 opacity-100 disabled:opacity-100"
                 )}
               >
-                <GlyphSwap swapped={!node.visible} from={<Eye className="size-3" />} to={<EyeOff className="size-3" />} />
+                <IconSwap curve="spring" swapped={!node.visible} from={<Eye className="size-3" />} to={<EyeOff className="size-3" />} />
               </IconButton>
               <IconButton
                 nativeHint
@@ -749,7 +749,7 @@ export function LayersPanel({
                   node.locked ? "text-foreground/70 opacity-100 disabled:opacity-100" : "opacity-0 disabled:opacity-0"
                 )}
               >
-                <GlyphSwap swapped={node.locked} from={<LockOpen className="size-3" />} to={<Lock className="size-3" />} />
+                <IconSwap curve="spring" swapped={node.locked} from={<LockOpen className="size-3" />} to={<Lock className="size-3" />} />
               </IconButton>
             </div>
           );

@@ -137,8 +137,9 @@ export function TodoList({
           ) : (
             <List className="aicss-todo-list-icon" />
           )}
-          {/* The fold caret turns on the symmetric curve (both ends visible). */}
-          <ChevronDown className="aicss-todo-chevron ease-in-out motion-reduce:transition-none" />
+          {/* The fold caret turns on the symmetric curve (both ends visible);
+              `.aicss-todo-chevron` in globals.css carries it. */}
+          <ChevronDown className="aicss-todo-chevron" />
         </span>
         <span className="aicss-todo-title">{title}</span>
         <span className="aicss-todo-count">

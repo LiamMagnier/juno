@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, MessageSquare, Pin, SearchX } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -209,10 +209,10 @@ export default function RoadmapDetailPage() {
                 </SelectContent>
               </Select>
               <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })}>
-                <GlyphSwap
-                  active={r.pinned}
-                  off={<Pin className="size-3.5" />}
-                  on={<Pin weight="fill" className="size-3.5" />}
+                <IconSwap
+                  swapped={r.pinned}
+                  from={<Pin className="size-3.5" />}
+                  to={<Pin weight="fill" className="size-3.5" />}
                 />
                 {r.pinned ? "Unpin" : "Pin"}
               </Button>

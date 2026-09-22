@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENU_W } from "@/components/ui/menu-recipe";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
@@ -170,7 +170,8 @@ export default function DesignPage() {
                 {/* The plus hands over to the Design mark while the document is
                     being made, cross-fading in place, and only that mark
                     breathes — it is live state, the one thing allowed to loop. */}
-                <GlyphSwap
+                <IconSwap
+                  curve="spring"
                   swapped={creating === preset.key}
                   from={
                     <Plus

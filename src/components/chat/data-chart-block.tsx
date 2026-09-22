@@ -4,7 +4,7 @@ import * as React from "react";
 import { Download, Maximize2, Minimize2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { cn } from "@/lib/utils";
 
 interface DataChartBlockProps {
@@ -51,8 +51,9 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
                 onClick={() => setIsExpanded((expanded) => !expanded)}
                 aria-label={isExpanded ? "Collapse chart" : "Expand chart"}
               >
-                {/* Expand ⇄ collapse cross-fade in one box (GlyphSwap). */}
-                <GlyphSwap
+                {/* Expand ⇄ collapse cross-fade in one box (IconSwap). */}
+                <IconSwap
+                  curve="spring"
                   swapped={isExpanded}
                   from={<Maximize2 className="size-4" aria-hidden="true" />}
                   to={<Minimize2 className="size-4" aria-hidden="true" />}

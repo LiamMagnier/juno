@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { promptPreview } from "@/lib/prompt-preview";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 interface ProjectItem {
   id: string;
@@ -538,10 +538,10 @@ function ProjectTile({
             {/* `motion="none"`: the tile is an icon trigger, so an articulated
                 pin would sit tilted for as long as the pointer was anywhere on
                 the card. The swap itself is the feedback here. */}
-            <GlyphSwap
-              active={!!p.starred}
-              off={<Pin motion="none" className="size-3.5" />}
-              on={<Pin motion="none" weight="fill" className="size-3.5" />}
+            <IconSwap
+              swapped={!!p.starred}
+              from={<Pin motion="none" className="size-3.5" />}
+              to={<Pin motion="none" weight="fill" className="size-3.5" />}
             />
           </Pressable>
           <DropdownMenu>

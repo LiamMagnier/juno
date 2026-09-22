@@ -50,7 +50,7 @@ import {
   fieldClass,
   iconButtonClass,
 } from "@/components/design/effects-panel";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import type {
   AnimatableProperty,
@@ -372,7 +372,7 @@ export function MotionPanel({
             setPlaying((value) => !value);
           }}
         >
-          <GlyphSwap swapped={playing} from={<Play className="size-3.5" />} to={<Pause className="size-3.5" />} />
+          <IconSwap curve="spring" swapped={playing} from={<Play className="size-3.5" />} to={<Pause className="size-3.5" />} />
         </IconButton>
         <IconButton
           size="md"

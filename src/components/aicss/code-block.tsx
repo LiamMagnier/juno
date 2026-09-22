@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
@@ -151,9 +151,9 @@ export function AicssCodeBlock({
         {action ?? (
           // The copy → check swap is the receipt (no toast on success): the two
           // glyphs share one box and cross-fade, and the label follows them.
-          // The press is a utility rather than `.pressable`: `.aicss-cb-copy`
-          // declares its own `transition` later in the same layer and would
-          // drop the transform from it, so the dip would snap.
+          // The press is the house `.pressable` dip. `.aicss-cb-copy` declares
+          // its own `transition` later in the same layer, so that list carries
+          // the press transform itself (globals.css) and the dip eases.
           //
           // Below `sm` the word is dropped and the button is glyph-only, so
           // the tooltip carries the name there; from `sm` up the label is on
@@ -164,9 +164,10 @@ export function AicssCodeBlock({
                 type="button"
                 onClick={copy}
                 aria-label={copied ? "Copied" : "Copy code"}
-                className="aicss-cb-copy transition-[color,background-color,transform] duration-fast ease-out-soft active:scale-[0.97] active:duration-press motion-reduce:active:scale-100"
+                className="aicss-cb-copy pressable motion-reduce:active:scale-100"
               >
-                <GlyphSwap
+                <IconSwap
+                  curve="spring"
                   swapped={copied}
                   from={<ActionIcons.copy className="size-3.5" />}
                   to={<StatusIcons.success className="size-3.5 text-success-ink" />}

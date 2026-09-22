@@ -20,7 +20,7 @@ import { Loader2, Send } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { NodeId } from "@/lib/design/types";
@@ -202,7 +202,8 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
             >
               {/* Send and busy share one key and cross-fade — the arrow does not
                   vanish in a frame the moment the request leaves. */}
-              <GlyphSwap
+              <IconSwap
+                curve="spring"
                 swapped={busy}
                 from={<Send className="size-4" />}
                 to={<Loader2 className={cn("size-4", busy && "motion-safe:animate-spin")} />}

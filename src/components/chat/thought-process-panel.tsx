@@ -15,7 +15,7 @@ import { ArrowDown, ChevronLeft, ChevronRight, Search } from "@/components/ui/ic
 import { toast } from "sonner";
 import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -1424,7 +1424,8 @@ function StepRow({
             }}
             aria-label={copied ? "Copied" : tip}
           >
-            <GlyphSwap
+            <IconSwap
+              curve="spring"
               swapped={copied}
               from={<ActionIcons.copy className="size-3.5" aria-hidden="true" />}
               to={<StatusIcons.success className="size-3.5 text-success-ink" aria-hidden="true" />}

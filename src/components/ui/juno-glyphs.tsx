@@ -23,24 +23,15 @@
  * line — thin 8, light 12, regular 16, bold 24 — and `fill` is a solid drawing
  * of its own, for the selected state.
  *
- * STATUS: STAGED, NOT SHIPPED. Nothing renders these yet. `icons.tsx` does not
- * import this file, and the names they would replace still map to Phosphor
- * (`Send` → PaperPlaneTilt, `AppIcons.design` → Shapes, `AppIcons.code` →
- * Code, `AppIcons.home` → ChatCircle). They are kept as drawings in progress,
- * not as dead weight: no module imports them, so they cost the bundle nothing.
+ * IN USE through `icons.tsx`: `JunoChat` (AppIcons.home / .conversation),
+ * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design) and `Send` (every
+ * send action). Never import this file from a call site: a mark that bypasses
+ * `glyph()` loses the optical weight choice, aria and hover articulation.
  *
- * Adopting them is three steps, and all three belong together:
- *   1. wrap each one with `glyph()` in `icons.tsx` (its props are shaped like a
- *      Phosphor icon's — size, weight, mirrored, color — so optical weight,
- *      hover articulation and aria come along; `glyph()` is typed for
- *      `PhosphorIcon`, so it needs a widened parameter type, not a cast at
- *      each call);
- *   2. point the export or registry key at the wrapped mark, never rename one;
- *   3. record the four exceptions to "Phosphor geometry" in
- *      docs/design/ICONS_AND_MOTION.md §1, after reviewing them at 12, 16 and
- *      20px beside the Phosphor row they would sit in.
- * Until then, do not import this file from a call site: a mark that bypasses
- * `glyph()` loses the optical weight ladder and the hover articulation.
+ * MOTION. The moving part of each drawing carries `juno-part juno-part--*`, and
+ * globals.css moves just that part when the control around the mark is hovered
+ * (the `parts` articulation): the ball terminal pops out of the gap, the spark
+ * twinkles a quarter turn, the circle slides back from the square.
  *
  * No hooks, no context: safe in server components.
  */
@@ -148,7 +139,14 @@ export const JunoChatGlyph = defineGlyph(
   (line) => (
     <>
       <path d={CHAT.line} />
-      <circle cx={CHAT.ball[0]} cy={CHAT.ball[1]} r={r2(line * 0.8)} fill="currentColor" stroke="none" />
+      <circle
+        className="juno-part juno-part--ball"
+        cx={CHAT.ball[0]}
+        cy={CHAT.ball[1]}
+        r={r2(line * 0.8)}
+        fill="currentColor"
+        stroke="none"
+      />
     </>
   ),
   // Selected: the bubble goes solid and the spark from the logo is cut out of it.
@@ -171,13 +169,13 @@ export const JunoCodeGlyph = defineGlyph(
   (line) => (
     <>
       <path d={CHEVRONS} />
-      <path d={sparkPath(128, 128, r2(40 + line * 0.5))} fill="currentColor" stroke="none" />
+      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, r2(40 + line * 0.5))} fill="currentColor" stroke="none" />
     </>
   ),
   () => (
     <>
       <path d={CHEVRONS} strokeWidth={LINE.bold} />
-      <path d={sparkPath(128, 128, 54)} fill="currentColor" stroke="none" />
+      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, 54)} fill="currentColor" stroke="none" />
     </>
   ),
 );
@@ -208,7 +206,7 @@ export const JunoDesignGlyph = defineGlyph(
     return (
       <>
         <rect x={SQUARE.x} y={SQUARE.y} width={SQUARE.size} height={SQUARE.size} rx={SQUARE.rx} />
-        <path d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top}`} />
+        <path className="juno-part juno-part--disc" d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top}`} />
       </>
     );
   },
@@ -225,6 +223,7 @@ export const JunoDesignGlyph = defineGlyph(
           fill="currentColor"
         />
         <path
+          className="juno-part juno-part--disc"
           d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top} L${a.right},${a.top} Z`}
           fill="currentColor"
           strokeWidth={8}

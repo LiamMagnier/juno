@@ -111,21 +111,21 @@ export function ComposerAddMenu({
         <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <ComposerIcons.attach className="text-muted-foreground" />
+            <ComposerIcons.attach />
             <span className="flex-1">Attach</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className={MENU_W}>
             <DropdownMenuItem onSelect={onPickPhotos}>
-              <ComposerIcons.photos className="text-muted-foreground" />
+              <ComposerIcons.photos />
               <span className="flex-1">Photos</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onPickFiles}>
-              <ComposerIcons.files className="text-muted-foreground" />
+              <ComposerIcons.files />
               <span className="flex-1">Files</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onPickLibrary}>
-              <AppIcons.library className="text-muted-foreground" />
+              <AppIcons.library />
               <span className="flex-1">From your library</span>
             </DropdownMenuItem>
           </DropdownMenuSubContent>

@@ -14,7 +14,7 @@ import {
   runWorkScheduleNow,
 } from "@/components/work/work-transport";
 import { describeTrigger } from "@/components/work/work-triggers";
-import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import { IconSwapSet } from "@/components/ui/icon-swap";
 import {
   workRowChevronClass,
   workRowClass,
@@ -270,7 +270,7 @@ export function WorkScheduleRow({
           onClick={() => void runNow()}
           className={cn("h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground", workRowControlClass)}
         >
-          <GlyphSwap
+          <IconSwapSet
             glyphs={{ idle: Play, busy: Loader2 }}
             show={busy === "run" ? "busy" : "idle"}
             spinning="busy"
@@ -291,7 +291,7 @@ export function WorkScheduleRow({
               {/* Pause and resume share one slot and cross-fade, through the
                   spinner while the request is out, so the mark the reader
                   pressed turns into its opposite rather than blinking. */}
-              <GlyphSwap
+              <IconSwapSet
                 glyphs={{ pause: Pause, resume: Play, busy: Loader2 }}
                 show={busy === "toggle" ? "busy" : schedule.enabled ? "pause" : "resume"}
                 spinning="busy"

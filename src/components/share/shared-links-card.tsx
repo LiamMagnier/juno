@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Code2, Link2, MessagesSquare } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -158,8 +158,9 @@ export function SharedLinksCard() {
                     aria-label="Copy link"
                     className="text-muted-foreground hover:text-foreground"
                   >
-                    {/* Copy ⇄ check, cross-faded in one box (GlyphSwap). */}
-                    <GlyphSwap
+                    {/* Copy ⇄ check, cross-faded in one box (IconSwap). */}
+                    <IconSwap
+                      curve="spring"
                       swapped={copiedId === share.id}
                       from={<ActionIcons.copy className="size-4" aria-hidden />}
                       to={<StatusIcons.success className="size-4 text-success-ink" aria-hidden />}

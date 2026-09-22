@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import { IconSwapSet } from "@/components/ui/icon-swap";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import {
   importGithubSkills,
@@ -182,7 +182,7 @@ export default function ImportSkillsPage() {
               className="max-w-md font-mono text-ui"
             />
             <Button onClick={() => void look()} disabled={!source.trim() || looking} className="gap-1.5">
-              <GlyphSwap
+              <IconSwapSet
                 glyphs={{ idle: Search, busy: Loader2 }}
                 show={looking ? "busy" : "idle"}
                 spinning="busy"

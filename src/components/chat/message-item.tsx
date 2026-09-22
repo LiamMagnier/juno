@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Burst, Swell } from "@/components/ui/micro";
@@ -636,10 +636,11 @@ function ChevronDownMini() {
   return <ChevronDown className="-mr-1 size-3 opacity-60" />;
 }
 
-/** Copy ⇄ check, cross-faded in one box (see GlyphSwap). */
+/** Copy ⇄ check, cross-faded in one box (see IconSwap). */
 function CopyGlyph({ copied }: { copied: boolean }) {
   return (
-    <GlyphSwap
+    <IconSwap
+      curve="spring"
       swapped={copied}
       from={<ActionIcons.copy className="size-4" />}
       to={<StatusIcons.success className="size-4 text-success-ink" />}
