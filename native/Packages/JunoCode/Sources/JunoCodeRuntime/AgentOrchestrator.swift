@@ -21,6 +21,9 @@ public enum OrchestratorError: Error, Equatable, Sendable {
     /// A `UserPromptSubmit` hook refused the prompt, which was not sent. The
     /// thread already says which hook and why.
     case promptBlocked(reason: String)
+    /// The reader stopped the session while the prompt's hooks were still
+    /// deciding on it. Nothing was sent or recorded.
+    case stoppedBeforeSending
 }
 
 /// The per-session agent loop: sends model turns, executes gated tool calls,
@@ -81,6 +84,15 @@ public actor AgentOrchestrator {
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
+    /// A `submit` between its guard and its run: the prompt's hooks are
+    /// deciding whether it is sent. They can take minutes, and until this
+    /// existed nothing marked the session as taken meanwhile — a second
+    /// submit passed the `runTask` guard and started a second loop on the
+    /// same conversation, one `stop()` could not reach. A task, not a flag,
+    /// so `stop()` can cancel the hooks that are running.
+    private var admission: Task<PromptHookContext, Error>?
+    /// `stop()` arrived while `admission` was in flight.
+    private var stoppedDuringAdmission = false
     private struct PendingInstruction: Sendable {
         let event: UserInstructionEvent
         let modelPrompt: String
@@ -146,7 +158,9 @@ public actor AgentOrchestrator {
         await fallbackResolver?.resolveFallback(for: current)
     }
 
-    public var isRunning: Bool { runTask != nil }
+    /// True from the moment a prompt is accepted for its hooks until its run
+    /// ends, so nothing replaces this orchestrator while its hooks decide.
+    public var isRunning: Bool { runTask != nil || admission != nil }
 
     /// Observes the assistant text as it accumulates within the current turn.
     ///
@@ -214,18 +228,37 @@ public actor AgentOrchestrator {
         modelPrompt: String? = nil,
         images: [ModelImage] = []
     ) async throws {
-        guard runTask == nil else {
+        guard runTask == nil, admission == nil else {
             throw OrchestratorError.sessionAlreadyRunning
         }
-        try await prepare()
-        // Before anything is recorded: a blocked prompt was never sent, so it
-        // must not appear as a turn in the transcript or the model history.
-        let hookContext = try await promptHookContext(for: prompt)
+        // The session is taken here, before the first suspension: everything
+        // below can wait, the prompt's hooks for minutes.
+        stoppedDuringAdmission = false
+        let admission = Task { () async throws -> PromptHookContext in
+            try await self.prepare()
+            // Before anything is recorded: a blocked prompt was never sent, so
+            // it must not appear as a turn in the transcript or the history.
+            return try await self.promptHookContext(for: prompt)
+        }
+        self.admission = admission
+        defer { self.admission = nil }
+        let statusBefore = try? await store.session(id: sessionID).status
+        let hookContext: PromptHookContext
+        do {
+            hookContext = try await admission.value
+            guard !stoppedDuringAdmission else {
+                pendingHookContext = hookContext.session + pendingHookContext
+                throw OrchestratorError.stoppedBeforeSending
+            }
+        } catch {
+            await restoreStatus(statusBefore)
+            throw error
+        }
         // The transcript stays faithful to what the reader typed while callers
         // may enrich the model-only turn with explicitly selected, bounded
         // workspace context. Keeping those two representations separate avoids
         // dumping source files into the visible conversation.
-        let turnText = AgentHookContext.appending(hookContext, to: modelPrompt ?? prompt)
+        let turnText = AgentHookContext.appending(hookContext.all, to: modelPrompt ?? prompt)
         conversation.append(images.isEmpty ? .user(turnText) : .userWithImages(turnText, images))
         try await store.appendEvent(
             sessionID: sessionID,
@@ -241,6 +274,11 @@ public actor AgentOrchestrator {
             await self.runLoop()
         }
         runTask = task
+        // `stop()` landed while the prompt was being recorded: the run starts,
+        // finds itself cancelled, and ends as stopped by the reader.
+        if stoppedDuringAdmission {
+            task.cancel()
+        }
     }
 
     /// Amends the active execution at the next safe boundary. If a model turn
@@ -282,7 +320,7 @@ public actor AgentOrchestrator {
         images: [ModelImage],
         kind: UserInstructionKind
     ) async throws -> String {
-        guard runTask != nil else { throw OrchestratorError.sessionNotRunning }
+        guard let run = runTask else { throw OrchestratorError.sessionNotRunning }
         let visible = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visible.isEmpty || !images.isEmpty else { return "" }
         try await prepare()
@@ -290,6 +328,13 @@ public actor AgentOrchestrator {
         // blocked one is never recorded as an instruction, so a restored
         // session cannot pick it back up from the transcript.
         let hookContext = try await promptHookContext(for: prompt)
+        // The hooks can outlast the run the instruction was for. Recorded
+        // now, it would belong to a run that has ended: nothing would ever
+        // apply it, and the reader would be told it had been delivered.
+        guard runTask == run else {
+            pendingHookContext = hookContext.session + pendingHookContext
+            throw OrchestratorError.sessionNotRunning
+        }
         let event = UserInstructionEvent(text: prompt, kind: kind)
         _ = try await store.appendEvent(
             sessionID: sessionID,
@@ -298,25 +343,39 @@ public actor AgentOrchestrator {
         pendingInstructions.append(
             PendingInstruction(
                 event: event,
-                modelPrompt: AgentHookContext.appending(hookContext, to: modelPrompt ?? prompt),
+                modelPrompt: AgentHookContext.appending(hookContext.all, to: modelPrompt ?? prompt),
                 images: images
             )
         )
         return event.id
     }
 
+    /// What the hooks in front of a prompt added to the model's context.
+    private struct PromptHookContext: Sendable {
+        /// `SessionStart`'s, with any an unsent prompt left behind. It is
+        /// about the session, so a prompt that does not go passes it on to
+        /// the next one that does.
+        var session: [String]
+        /// `UserPromptSubmit`'s, about this prompt alone.
+        var prompt: [String] = []
+
+        var all: [String] { session + prompt }
+    }
+
     /// Runs the hooks that stand between the reader and the model: the
     /// session's start, once, then the prompt itself. Returns what they add
-    /// to the model's context, and throws when one blocks the prompt.
-    private func promptHookContext(for prompt: String) async throws -> [String] {
-        var context = pendingHookContext
+    /// to the model's context, and throws when one blocks the prompt or the
+    /// reader stops the session while they run.
+    private func promptHookContext(for prompt: String) async throws -> PromptHookContext {
+        var context = PromptHookContext(session: pendingHookContext)
         pendingHookContext = []
         if !sessionStartHooksRan {
             sessionStartHooksRan = true
             let source: AgentSessionStartSource = conversation.isEmpty ? .startup : .resume
             if let start = await lifecycleHooks?.sessionStarted(sessionID: sessionID, source: source) {
+                try stopIfCancelled(keeping: context)
                 await ToolScheduler.record(start.notices, sessionID: sessionID, store: store)
-                context += start.context
+                context.session += start.context
             }
         }
         guard let response = await lifecycleHooks?.promptSubmitted(
@@ -325,20 +384,54 @@ public actor AgentOrchestrator {
         ) else {
             return context
         }
+        try stopIfCancelled(keeping: context)
         await ToolScheduler.record(response.notices, sessionID: sessionID, store: store)
         if let reason = response.haltReason ?? response.blockReason {
             // The session did start, so what its start hooks said still
             // belongs in front of the model — with the next prompt that goes.
-            pendingHookContext = context
+            pendingHookContext = context.session
             throw OrchestratorError.promptBlocked(reason: reason)
         }
-        return context + response.context
+        context.prompt = response.context
+        return context
+    }
+
+    /// Ends the prompt's hooks early when the reader stopped the session
+    /// while they ran. The hooks were killed, so what they returned says
+    /// only that, and is not worth a row in the thread.
+    private func stopIfCancelled(keeping context: PromptHookContext) throws {
+        guard Task.isCancelled else { return }
+        pendingHookContext = context.session
+        throw OrchestratorError.stoppedBeforeSending
+    }
+
+    /// Puts back the status a prompt that was not sent found. An approval
+    /// one of its hooks asked for marks the session waiting and then
+    /// running, and no run follows to settle it.
+    private func restoreStatus(_ status: SessionStatus?) async {
+        guard let status,
+              let current = try? await store.session(id: sessionID).status,
+              current != status,
+              current.isActive
+        else { return }
+        try? await store.setStatus(id: sessionID, status: status)
     }
 
     /// Requests an immediate stop: cancels the loop and denies every pending
     /// approval so suspended tools resume with a denial and exit.
     public func stop() async {
-        guard let task = runTask else { return }
+        guard let task = runTask else {
+            // No run yet, but a prompt's hooks may be deciding on one: they
+            // are killed, an approval one of them waits on is refused, and
+            // the prompt is not sent.
+            if let admission {
+                stoppedDuringAdmission = true
+                admission.cancel()
+                await permissions.denyAll()
+                _ = try? await admission.value
+            }
+            return
+        }
         try? await store.setStatus(id: sessionID, status: .stopping)
         task.cancel()
         await permissions.denyAll()
@@ -1082,7 +1175,7 @@ public actor AgentOrchestrator {
     /// appended to by the loop that owns it — and answered with nil when there
     /// is nothing safe to fold (a single turn has no "older" half).
     public func compactNow() async -> CompactionEvent? {
-        guard runTask == nil else { return nil }
+        guard !isRunning else { return nil }
         if !restored {
             try? await prepare()
         }

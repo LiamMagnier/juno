@@ -114,6 +114,16 @@ public actor PermissionCoordinator {
         case let .deny(reason):
             return .denied(reason: reason)
         case .requireApproval:
+            // A stopped run asks nothing more. `stop()` cancels the run and then
+            // denies what is pending, so a request raised after that denial —
+            // by a call that was already on its way here — would wait for an
+            // answer to a run the reader has ended, and `stop()` with it. The
+            // check and the registration below run without a suspension in
+            // between, so a request is either refused here or pending when
+            // the denial comes.
+            guard !Task.isCancelled else {
+                return .denied(reason: "The run was stopped.")
+            }
             let now = Date()
             let request = ApprovalRequest(
                 sessionID: sessionID,

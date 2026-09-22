@@ -42,6 +42,7 @@ public struct StudioSessionView: View {
         (!controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !controller.pendingAttachments.isEmpty)
             && controller.isAgentTransportConfigured
+            && !controller.isSubmitting
     }
 
     private var placeholder: String {
@@ -99,6 +100,7 @@ public struct StudioSessionView: View {
             runCommand: run,
             canSend: canSend,
             isRunning: isRunning,
+            isSending: controller.isSubmitting,
             send: { Task { await controller.send() } },
             stop: { Task { await controller.stop() } },
             focus: $composerFocused

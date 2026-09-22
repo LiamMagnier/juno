@@ -172,6 +172,31 @@ public actor ToolScheduler {
         var hookPermission: AgentHookPermission?
         if let lifecycleHooks {
             let response = await lifecycleHooks.beforeTool(hookInvocation)
+            // Stop can land while a `PreToolUse` hook runs. The hook is killed,
+            // and a killed hook reads as a non-blocking failure, so without
+            // this the call would go on: in Full access to run the tool, and
+            // in a mode that asks to raise a new prompt for a run the reader
+            // has just stopped — one `stop()` would then sit waiting on.
+            guard !Task.isCancelled else {
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolCompleted(
+                        ToolCompletedEvent(
+                            toolCallID: id,
+                            status: .cancelled,
+                            resultSummary: "Stopped before it ran.",
+                            durationSeconds: Date().timeIntervalSince(startedAt)
+                        )
+                    )
+                )
+                return ExecutionResult(
+                    callID: id,
+                    toolName: name,
+                    input: input,
+                    content: ConversationIntegrity.notExecutedMessage,
+                    isError: true
+                )
+            }
             await record(response.notices, sessionID: sessionID, store: store)
             // `"continue": false` outranks every other answer, as it does in
             // Claude Code: the call does not run and neither does the rest

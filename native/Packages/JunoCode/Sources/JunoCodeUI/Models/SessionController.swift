@@ -1048,9 +1048,18 @@ public final class SessionController {
         )) ?? []
     }
 
+    /// Working, or handing a message over: its hooks may still be deciding
+    /// whether it is sent, before any run exists to mark the session.
     public var isRunning: Bool {
-        session.status.isActive
+        session.status.isActive || isSubmitting
     }
+
+    /// True while ``send()`` is handing a message to the agent, from the
+    /// moment it is taken until its run has started or it has been turned
+    /// away. The prompt's hooks run in between and can take minutes; a second
+    /// send in that window used to start a second run on the same
+    /// conversation.
+    public private(set) var isSubmitting = false
 
     public var elapsedSeconds: Double? {
         guard let runStartedAt, session.status.isActive else { return nil }
@@ -1109,6 +1118,10 @@ public final class SessionController {
     // MARK: - Agent actions
 
     public func send() async {
+        // The draft stays in the composer until it is delivered, so a second
+        // ↩ while its hooks decide finds it still there. It is the same
+        // message; sending it again would be a second turn.
+        guard !isSubmitting else { return }
         let prompt = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         // An attachment on its own is a message. "Look at this" with a screenshot
         // and no sentence is a normal thing to send, and refusing it would make the
@@ -1136,6 +1149,8 @@ public final class SessionController {
             #endif
             return
         }
+        isSubmitting = true
+        defer { isSubmitting = false }
         let modelPrompt = await explicitFileContextPrompt(
             visiblePrompt: prompt,
             live: live
@@ -1162,9 +1177,10 @@ public final class SessionController {
                 pendingAttachments = []
             } catch OrchestratorError.sessionNotRunning {
                 transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
-            } catch OrchestratorError.promptBlocked {
-                // The thread already says which hook refused it and why. The
-                // draft stays in the composer, since nothing was sent.
+            } catch OrchestratorError.promptBlocked, OrchestratorError.stoppedBeforeSending {
+                // The thread already says which hook refused it and why, or the
+                // reader stopped it. The draft stays in the composer, since
+                // nothing was sent.
             } catch {
                 transientError = "Could not deliver the instruction: \(error)"
             }
@@ -1198,8 +1214,9 @@ public final class SessionController {
             pendingAttachments = []
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
-        } catch OrchestratorError.promptBlocked {
-            // As above: the hook's row explains, and the draft is kept.
+        } catch OrchestratorError.promptBlocked, OrchestratorError.stoppedBeforeSending {
+            // As above: the hook's row explains, or the reader pressed Stop
+            // while the hooks ran, and the draft is kept.
         } catch {
             transientError = "Could not start the run: \(error)"
         }

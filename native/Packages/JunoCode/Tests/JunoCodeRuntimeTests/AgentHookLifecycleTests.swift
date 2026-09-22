@@ -3,6 +3,31 @@ import JunoCodeCore
 import JunoCodeLocal
 @testable import JunoCodeRuntime
 
+/// Keeps a hook "running" until it is released, or until its task is
+/// cancelled — the way Stop kills a hook's process, which then answers as a
+/// non-blocking failure.
+private actor HookGate {
+    private var held = false
+    private var released = false
+
+    func hold() async {
+        held = true
+        while !released, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func waitUntilHeld() async {
+        while !held {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func release() {
+        released = true
+    }
+}
+
 /// Hooks that answer from a script and remember what they were asked.
 private actor ScriptedHooks: AgentLifecycleHooks {
     var startResponse = AgentHookResponse.empty
@@ -11,6 +36,12 @@ private actor ScriptedHooks: AgentLifecycleHooks {
     var afterResponse = AgentHookResponse.empty
     /// Answers for successive stop attempts; the last one repeats.
     var stopResponses: [AgentHookResponse] = [.empty]
+    /// Hold the hooks of one event until released or cancelled.
+    var startGate: HookGate?
+    var promptGate: HookGate?
+    var beforeGate: HookGate?
+    /// Something a prompt hook does while it runs, such as ask for approval.
+    var promptAction: (@Sendable () async -> Void)?
 
     private(set) var starts: [AgentSessionStartSource] = []
     private(set) var prompts: [String] = []
@@ -32,21 +63,35 @@ private actor ScriptedHooks: AgentLifecycleHooks {
         if let stops { stopResponses = stops }
     }
 
+    func gate(start: HookGate? = nil, prompt: HookGate? = nil, before: HookGate? = nil) {
+        startGate = start
+        promptGate = prompt
+        beforeGate = before
+    }
+
+    func setPromptAction(_ action: @escaping @Sendable () async -> Void) {
+        promptAction = action
+    }
+
     func sessionStarted(
         sessionID _: CodeSessionID,
         source: AgentSessionStartSource
     ) async -> AgentHookResponse {
         starts.append(source)
+        await startGate?.hold()
         return startResponse
     }
 
     func promptSubmitted(sessionID _: CodeSessionID, prompt: String) async -> AgentHookResponse {
         prompts.append(prompt)
+        await promptAction?()
+        await promptGate?.hold()
         return promptResponse
     }
 
     func beforeTool(_ invocation: AgentToolHookInvocation) async -> AgentHookResponse {
         beforeCalls.append(invocation.toolName)
+        await beforeGate?.hold()
         return beforeResponse
     }
 
@@ -233,6 +278,143 @@ final class AgentHookLifecycleTests: XCTestCase {
         XCTAssertFalse(second.contains("Branch: main"), "session context arrives once")
     }
 
+    // MARK: - A prompt whose hooks are still running
+
+    func testASecondSubmitWhileThePromptsHooksRunIsRefused() async throws {
+        let hooks = ScriptedHooks()
+        let gate = HookGate()
+        await hooks.gate(start: gate)
+        let model = ScriptedModelClient(steps: [.text("Done.")])
+        let (runtime, _) = orchestrator(model, hooks: hooks)
+
+        let first = Task { try await runtime.submit(prompt: "First") }
+        await gate.waitUntilHeld()
+        let taken = await runtime.isRunning
+        XCTAssertTrue(taken, "the session is taken while the prompt's hooks decide")
+        do {
+            try await runtime.submit(prompt: "Second")
+            XCTFail("a second prompt must not start a second run")
+        } catch OrchestratorError.sessionAlreadyRunning {}
+
+        await gate.release()
+        try await first.value
+        await runtime.awaitCompletion()
+
+        XCTAssertEqual(model.receivedRequests.count, 1, "one run, one conversation")
+        let prompts = await payloads().compactMap { payload -> String? in
+            if case let .userPrompt(prompt) = payload { return prompt.text }
+            return nil
+        }
+        XCTAssertEqual(prompts, ["First"])
+        let vetted = await hooks.prompts
+        XCTAssertEqual(vetted, ["First"])
+    }
+
+    func testStopWhileThePromptsHooksRunSendsNothingAndKeepsTheSessionsContext() async throws {
+        let hooks = ScriptedHooks()
+        let gate = HookGate()
+        await hooks.set(start: AgentHookResponse(context: ["Branch: main"]))
+        await hooks.gate(prompt: gate)
+        let model = ScriptedModelClient(steps: [.text("Done.")])
+        let (runtime, _) = orchestrator(model, hooks: hooks)
+
+        let first = Task { try await runtime.submit(prompt: "First") }
+        await gate.waitUntilHeld()
+        await runtime.stop()
+        do {
+            try await first.value
+            XCTFail("a prompt stopped before it was sent must say so")
+        } catch OrchestratorError.stoppedBeforeSending {}
+
+        let running = await runtime.isRunning
+        XCTAssertFalse(running)
+        XCTAssertTrue(model.receivedRequests.isEmpty, "nothing reached the model")
+        let events = await payloads()
+        XCTAssertFalse(events.contains { if case .userPrompt = $0 { return true }; return false })
+        let notices = await hookEvents()
+        XCTAssertTrue(notices.isEmpty, "a hook killed by Stop is not a failure worth a row")
+
+        // The session did start; what its start hooks said goes with the next
+        // prompt that is sent.
+        await hooks.gate()
+        try await runtime.submit(prompt: "Again")
+        await runtime.awaitCompletion()
+        guard case let .user(text)? = model.receivedRequests.first?.messages.last else {
+            return XCTFail("expected the prompt last")
+        }
+        XCTAssertTrue(text.hasPrefix("Again"))
+        XCTAssertTrue(text.contains("Branch: main"))
+    }
+
+    func testASteerWhoseRunEndsWhileItsHooksRunIsNotRecorded() async throws {
+        let hooks = ScriptedHooks()
+        let turn = ScriptedModelGate()
+        let model = ScriptedModelClient(steps: [
+            .gatedEvents([.textDelta("Done."), .turnCompleted(.endTurn)], gate: turn),
+        ])
+        let (runtime, _) = orchestrator(model, hooks: hooks)
+        try await runtime.submit(prompt: "Start")
+        await turn.waitUntilArrived()
+
+        let vetting = HookGate()
+        await hooks.gate(prompt: vetting)
+        let steer = Task { try await runtime.steer(prompt: "Also fix the tests") }
+        await vetting.waitUntilHeld()
+        // The run finishes while the steer's hook is still deciding.
+        await turn.release()
+        await runtime.awaitCompletion()
+        await vetting.release()
+
+        do {
+            _ = try await steer.value
+            XCTFail("a steer for a finished run must not be reported as delivered")
+        } catch OrchestratorError.sessionNotRunning {}
+        let events = await payloads()
+        XCTAssertFalse(
+            events.contains { if case .userInstruction = $0 { return true }; return false },
+            "an instruction no run will apply is not recorded"
+        )
+    }
+
+    func testABlockedPromptWhoseHookWaitedForApprovalLeavesTheSessionAsItWas() async throws {
+        let hooks = ScriptedHooks()
+        let (runtime, permissions) = orchestrator(
+            ScriptedModelClient(steps: []),
+            hooks: hooks,
+            mode: .askBeforeChanges
+        )
+        await permissions.addObserver { update in
+            if case let .requested(request) = update {
+                Task { await permissions.resolve(approvalID: request.id, decision: .approved) }
+            }
+        }
+        let store = self.store!
+        let sessionID = session.id
+        await hooks.setPromptAction {
+            // A repository hook asks before it runs in this mode. The session
+            // shows it waiting, then running, while no run exists yet.
+            _ = await permissions.authorize(
+                toolName: "hook",
+                actionDigest: "vet",
+                risk: .execute,
+                summary: "echo vet"
+            )
+            for _ in 0..<200 {
+                if (try? await store.session(id: sessionID).status) == .running { return }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        await hooks.set(prompt: AgentHookResponse(blockReason: "Name the ticket."))
+
+        do {
+            try await runtime.submit(prompt: "Go")
+            XCTFail("the prompt is blocked")
+        } catch OrchestratorError.promptBlocked {}
+
+        let status = try await store.session(id: session.id).status
+        XCTAssertFalse(status.isActive, "no run follows a blocked prompt, so none may be shown")
+    }
+
     // MARK: - Stop
 
     func testAStopHookKeepsTheAgentWorkingAndIsToldWhenItAlreadyHas() async throws {
@@ -325,6 +507,48 @@ final class AgentHookLifecycleTests: XCTestCase {
         let hookIndex = try XCTUnwrap(events.firstIndex { if case .hookActivity = $0 { return true }; return false })
         let completedIndex = try XCTUnwrap(events.firstIndex { if case .toolCompleted = $0 { return true }; return false })
         XCTAssertLessThan(hookIndex, completedIndex)
+    }
+
+    func testStopDuringAPreToolUseHookNeitherAsksNorRunsTheTool() async throws {
+        // In a mode that asks, the call used to go on to a new prompt that
+        // `stop()` then waited on; in Full access, to the tool itself.
+        for mode in [PermissionMode.askBeforeChanges, .fullAccess] {
+            let hooks = ScriptedHooks()
+            let gate = HookGate()
+            await hooks.gate(before: gate)
+            let model = ScriptedModelClient(steps: [
+                .toolCalls([("w1", "write_file", ["path": "src/main.swift", "content": "changed\n"])], text: ""),
+            ])
+            let (runtime, permissions) = orchestrator(model, hooks: hooks, mode: mode)
+            nonisolated(unsafe) var requests = 0
+            await permissions.addObserver { update in
+                if case .requested = update { requests += 1 }
+            }
+
+            try await runtime.submit(prompt: "Rewrite main")
+            await gate.waitUntilHeld()
+            let stopped = expectation(description: "stop returns in \(mode)")
+            Task {
+                await runtime.stop()
+                stopped.fulfill()
+            }
+            await fulfillment(of: [stopped], timeout: 5)
+            // Releases a prompt a regression would have left `stop()` waiting
+            // on, so the failure is reported instead of hanging the suite.
+            await permissions.denyAll()
+
+            XCTAssertEqual(requests, 0, "nothing is asked for a stopped run (\(mode))")
+            let content = try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            )
+            XCTAssertEqual(content, "let value = 1\n", "the tool never ran (\(mode))")
+            let completion = await payloads().compactMap { payload -> ToolCompletedEvent? in
+                if case let .toolCompleted(event) = payload, event.toolCallID == "w1" { return event }
+                return nil
+            }.last
+            XCTAssertEqual(completion?.status, .cancelled)
+        }
     }
 
     func testPostToolUseFeedbackAndContextReachTheModelWithTheResult() async throws {
