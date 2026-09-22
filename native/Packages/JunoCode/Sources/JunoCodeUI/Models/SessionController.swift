@@ -2294,7 +2294,9 @@ public final class SessionController {
 
     /// Says why `/rewind` did nothing, when it could not open.
     public func explainRewindUnavailable() {
-        transientError = isRunning ? RewindCopy.running : "There is nothing to rewind to yet."
+        transientError = isRunning
+            ? RewindCopy.running
+            : isCompacting ? RewindCopy.compacting : "There is nothing to rewind to yet."
     }
 
     /// How many files each turn changed, by turn, for the rewind picker. What
@@ -2375,6 +2377,16 @@ public final class SessionController {
         }
         if let orchestrator, await orchestrator.isRunning {
             return .failed(message: RewindCopy.running)
+        }
+        // Nor while a `/compact` between runs is folding the history: the
+        // fold saves its result over the conversation when it lands, and
+        // records a compaction in the transcript, so it would undo the cut
+        // or fold turns the reader just removed.
+        if isCompacting {
+            return .failed(message: RewindCopy.compacting)
+        }
+        if let orchestrator, await orchestrator.isCompacting {
+            return .failed(message: RewindCopy.compacting)
         }
         // Checked before a file moves: code and conversation together must not
         // restore the files and only then find the conversation cannot follow.

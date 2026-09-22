@@ -105,6 +105,7 @@ public enum RewindOutcome: Equatable, Sendable {
 enum RewindCopy {
     static let noProject = "This conversation has no project, so there are no files to restore."
     static let running = "Juno is working. Stop it before rewinding."
+    static let compacting = "Juno is compacting the conversation. Rewind once it has finished, or stop it."
     static let preview = "Preview mode does not rewind."
     /// The limit every rewind shares with Claude Code's: Juno sees the files
     /// its own tools write, and nothing a command writes. The exception is a

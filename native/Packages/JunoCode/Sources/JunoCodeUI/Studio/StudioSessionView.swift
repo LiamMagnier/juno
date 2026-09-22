@@ -106,7 +106,8 @@ public struct StudioSessionView: View {
     /// The rewind picker, from esc esc or `/rewind`. Not while a run is active:
     /// the run owns the history a rewind would cut.
     private var openRewindPicker: (() -> Void)? {
-        guard !isRunning, !controller.rewindTurns.isEmpty else { return nil }
+        // Nor mid-fold: a `/compact` saves its result over the history.
+        guard !isBusy, !controller.rewindTurns.isEmpty else { return nil }
         return { isRewindPickerPresented = true }
     }
 

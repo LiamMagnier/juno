@@ -44,6 +44,28 @@ private final class ScriptedRewindModel: AgentModelClient, @unchecked Sendable {
     }
 }
 
+/// A model that answers from a script and then never answers again, so the
+/// call after the script — a compaction summary — stays in flight.
+private final class ScriptedThenSilentModel: AgentModelClient, @unchecked Sendable {
+    private let scripted: ScriptedRewindModel
+    private let lock = NSLock()
+    private var remaining: Int
+
+    init(_ steps: [[ModelStreamEvent]]) {
+        scripted = ScriptedRewindModel(steps)
+        remaining = steps.count
+    }
+
+    func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+        lock.lock()
+        let answers = remaining > 0
+        remaining -= 1
+        lock.unlock()
+        guard answers else { return SilentModel().streamTurn(request) }
+        return scripted.streamTurn(request)
+    }
+}
+
 /// A model that never answers, so a run stays active.
 private final class SilentModel: AgentModelClient, @unchecked Sendable {
     func streamTurn(_ request: ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
@@ -265,6 +287,34 @@ final class SessionRewindTests: XCTestCase {
 
         XCTAssertEqual(outcome, .failed(message: RewindCopy.running))
         await controller.stop()
+    }
+
+    /// A `/compact` between runs saves its fold over the conversation when
+    /// the model's summary comes back, so a rewind meanwhile would be undone
+    /// by it, or have the turns it removed folded back into the summary.
+    func testARewindIsRefusedWhileTheConversationIsBeingCompacted() async throws {
+        let controller = try await makeController(
+            model: ScriptedThenSilentModel([ScriptedRewindModel.reply("One."), ScriptedRewindModel.reply("Two.")]),
+            withProject: false
+        )
+        try await send("First", on: controller)
+        try await send("Second", on: controller)
+        let second = try XCTUnwrap(controller.rewindTurns.last)
+
+        let compacting = Task { await controller.compactConversation(focus: "the parser") }
+        for _ in 0..<400 where !controller.isCompacting {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(controller.isCompacting)
+
+        let outcome = await controller.rewind(to: second.id, restoring: .conversation)
+        XCTAssertEqual(outcome, .failed(message: RewindCopy.compacting))
+        XCTAssertEqual(controller.rewindTurns.map(\.text), ["First", "Second"], "nothing was cut")
+
+        // Stop reaches the summary; the notes stand in and the fold ends.
+        await controller.stop()
+        await compacting.value
+        XCTAssertFalse(controller.isCompacting)
     }
 
     func testAConversationWithNoProjectRewindsItsConversationOnly() async throws {
