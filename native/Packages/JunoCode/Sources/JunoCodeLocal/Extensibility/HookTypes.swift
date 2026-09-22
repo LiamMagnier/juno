@@ -396,10 +396,15 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
     public let timeoutSeconds: Double
     public let source: ExtensibilitySource
     public let path: String
+    /// Where the hook sits in its file, for ordering and nothing else: it is
+    /// not part of the ID.
     public let ordinal: Int
     public let trust: ExtensibilityTrust
     public let risk: ActionRisk
 
+    /// - Parameter occurrence: which copy this is of an entry listed more
+    ///   than once, identically, in one file — 0 for the first. It keeps
+    ///   those IDs apart without making any ID depend on a position.
     public init(
         id: String? = nil,
         event: HookLifecycleEvent,
@@ -409,6 +414,7 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         source: ExtensibilitySource,
         path: String,
         ordinal: Int = 0,
+        occurrence: Int = 0,
         trust: ExtensibilityTrust = .untrustedWorkspace,
         risk: ActionRisk? = nil
     ) {
@@ -427,7 +433,7 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
             command: command,
             source: source,
             path: path,
-            ordinal: ordinal
+            occurrence: occurrence
         )
     }
 
@@ -478,20 +484,26 @@ public struct HookDefinition: Identifiable, Equatable, Codable, Sendable {
         }
     }
 
+    /// A hook's identity is what it is, not where it sits: its file, event,
+    /// matcher and command. The reader's allowing and switching off are both
+    /// keyed by it, so a position in the file would move them onto other
+    /// hooks — or off these — whenever an entry above was added or removed,
+    /// and a teammate's new `Notification` hook would silently stop the
+    /// guards below it until they were allowed again.
     static func makeID(
         event: HookLifecycleEvent,
         matcher: HookMatcher,
         command: String,
         source: ExtensibilitySource,
         path: String,
-        ordinal: Int
+        occurrence: Int
     ) -> String {
         let identity = [
             source.rawValue,
             path,
             event.rawValue,
             matcher.pattern ?? "*",
-            String(ordinal),
+            String(occurrence),
             command,
         ].joined(separator: "\u{1f}")
         return "hook-" + Digests.sha256Hex(identity)

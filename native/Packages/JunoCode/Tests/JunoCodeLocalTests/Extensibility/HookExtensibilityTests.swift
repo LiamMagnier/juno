@@ -172,6 +172,69 @@ final class HookExtensibilityTests: XCTestCase {
         XCTAssertTrue(disabled.diagnostics.contains { $0.message.contains("disabled") })
     }
 
+    // MARK: - Identity
+
+    func testAHooksIDDoesNotMoveWhenOtherEntriesAreAddedOrRemoved() throws {
+        func ids(_ json: String) throws -> [String: String] {
+            let configuration = try HookConfigurationParser().parse(
+                json: json,
+                source: .claude,
+                path: ".claude/settings.json"
+            )
+            return Dictionary(uniqueKeysWithValues: configuration.hooks.map { ($0.command, $0.id) })
+        }
+        let before = try ids("""
+        {"hooks": {
+          "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo guard"}]}],
+          "Stop": [{"hooks": [{"type": "command", "command": "echo tests"}]}]
+        }}
+        """)
+        // A teammate adds a Notification hook, which sorts before both, and
+        // a second PreToolUse hook above the guard.
+        let after = try ids("""
+        {"hooks": {
+          "Notification": [{"hooks": [{"type": "command", "command": "echo notify"}]}],
+          "PreToolUse": [
+            {"matcher": "Edit", "hooks": [{"type": "command", "command": "echo format"}]},
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo guard", "timeout": 30}]}
+          ],
+          "Stop": [{"hooks": [{"type": "command", "command": "echo tests"}]}]
+        }}
+        """)
+        let guardID = try XCTUnwrap(before["echo guard"])
+        XCTAssertEqual(after["echo guard"], guardID, "the reader's allowing stays on the untouched guard")
+        XCTAssertEqual(after["echo tests"], try XCTUnwrap(before["echo tests"]))
+        XCTAssertEqual(after.count, 4)
+
+        // What the entry runs, and on what, is its identity.
+        let edited = try ids("""
+        {"hooks": {"PreToolUse": [{"matcher": "Bash|Edit", "hooks": [{"type": "command", "command": "echo guard"}]}]}}
+        """)
+        XCTAssertNotEqual(try XCTUnwrap(edited["echo guard"]), guardID, "a changed matcher is a hook to allow again")
+    }
+
+    func testIdenticalEntriesInOneFileStillHaveTheirOwnIDs() throws {
+        let configuration = try HookConfigurationParser().parse(
+            json: """
+            {"hooks": {"Stop": [
+              {"hooks": [{"type": "command", "command": "echo tests"}]},
+              {"hooks": [{"type": "command", "command": "echo tests"}]}
+            ]}}
+            """,
+            source: .claude,
+            path: ".claude/settings.json"
+        )
+        XCTAssertEqual(configuration.hooks.count, 2)
+        XCTAssertEqual(Set(configuration.hooks.map(\.id)).count, 2)
+
+        let elsewhere = try HookConfigurationParser().parse(
+            json: "{\"hooks\": {\"Stop\": [\"echo tests\"]}}",
+            source: .claude,
+            path: ".claude/settings.local.json"
+        )
+        XCTAssertFalse(configuration.hooks.map(\.id).contains(elsewhere.hooks[0].id), "another file is another hook")
+    }
+
     func testDisplayNameIsTheScriptTheHookRuns() {
         func name(_ command: String) -> String {
             HookDefinition(event: .preToolUse, command: command, source: .claude, path: ".claude/settings.json")

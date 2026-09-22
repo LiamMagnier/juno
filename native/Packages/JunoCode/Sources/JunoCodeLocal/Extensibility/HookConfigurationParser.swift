@@ -481,15 +481,22 @@ public struct HookConfigurationParser: Sendable {
                 )
             }
 
+            let hookMatcher = HookMatcher(pattern: matcher)
+            // Only an identical earlier entry shifts this one's ID; see
+            // `HookDefinition.makeID`.
+            let occurrence = hooks.count(where: {
+                $0.event == event && $0.matcher == hookMatcher && $0.command == command
+            })
             hooks.append(
                 HookDefinition(
                     event: event,
-                    matcher: HookMatcher(pattern: matcher),
+                    matcher: hookMatcher,
                     command: command,
                     timeoutSeconds: effectiveTimeout,
                     source: provenance.source,
                     path: path,
                     ordinal: ordinal,
+                    occurrence: occurrence,
                     trust: provenance.trust,
                     risk: risk
                 )
