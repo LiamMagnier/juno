@@ -715,8 +715,17 @@ struct DesktopCodeWorkspace: View {
             createPullRequest: controller?.pullRequestUnavailableReason == nil
                 ? { isCreatingPullRequest = true }
                 : nil,
+            stop: isStoppable ? { stop() } : nil,
             hasSession: controller != nil
         )
+    }
+
+    /// Whether the thing on screen is running and can be told to stop.
+    private var isStoppable: Bool {
+        if let controller { return controller.session.status.isActive }
+        if let selectedTask { return selectedTask.status.isActive }
+        if selectedRemote != nil { return selectedRemoteSummary?.isRunning == true }
+        return false
     }
 
     private func step(_ delta: Int) {
@@ -1443,7 +1452,7 @@ private struct DesktopCodeRemoteCanvas: View {
                     .buttonStyle(.bordered)
                     .tint(Color.junoDanger)
                     .disabled(remote.isSendingCommand)
-                    .keyboardShortcut(".", modifiers: .command)
+                    // ⌘. is Session › Stop, which stops this session too.
                     .accessibilityLabel("Stop this session")
                 }
                 Button(action: send) {
