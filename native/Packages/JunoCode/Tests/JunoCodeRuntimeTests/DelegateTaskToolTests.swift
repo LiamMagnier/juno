@@ -74,6 +74,26 @@ private struct RecordingReadTool: CodeTool {
     }
 }
 
+/// An edit tool that only records what it was asked to change.
+private struct RecordingEditTool: CodeTool {
+    let log: ReadLog
+    let name = "record_edit"
+    let description = "Edit a file."
+    let inputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["path": ["type": "string"]],
+        "required": ["path"],
+    ]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .write }
+    func summary(input: JSONValue) -> String { "Edit \(input["path"]?.stringValue ?? "?")" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        await log.record(input["path"]?.stringValue ?? "")
+        return ToolResult(content: "Edited.")
+    }
+}
+
 /// Delegation as the panel sees it: children that are children, agents that
 /// publish their whole life into the delegating transcript, and real bounded
 /// concurrency rather than a list that can only ever hold one row.
@@ -304,6 +324,63 @@ final class DelegateTaskToolTests: XCTestCase {
             if case let .toolResult("read-env", content, true) = $0 { return content.contains("Read(.env)") }
             return false
         })
+    }
+
+    /// A write-capable child that asks before an edit must show as waiting in
+    /// the parent's transcript, which is what brings its approval on screen,
+    /// and as working again once the reader answers.
+    func testAChildWaitingOnTheReaderSaysSoInTheParentsTranscript() async throws {
+        let parent = try await makeParent()
+        let log = ReadLog()
+        let controls = SubagentControlRegistry()
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("edit", "record_edit", ["path": "src/a.swift"])], text: ""),
+            .text("Edited."),
+        ])
+        let tool = DelegateTaskTool(
+            model: model,
+            registry: ToolRegistry(tools: []),
+            store: store,
+            workspaceID: WorkspaceID(value: "workspace"),
+            workspaceName: "workspace",
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            parentSystemPrompt: "You are Juno Code.",
+            executionFactory: { request in
+                SubagentExecutionEnvironment(
+                    registry: ToolRegistry(tools: [RecordingEditTool(log: log)]),
+                    workspaceName: "isolated",
+                    executionRootPath: "/workspace/.juno/worktrees/agent",
+                    gitBranch: request.branch,
+                    permissionMode: .askBeforeChanges
+                )
+            },
+            controls: controls
+        )
+        let delegation = Task {
+            try await tool.execute(
+                input: ["task": "Make the edit.", "mode": "workspace_write"],
+                context: ToolContext(sessionID: parent.id, toolCallID: "call-edit", emitOutput: { _, _ in })
+            )
+        }
+
+        var waiting: SubagentUpdateEvent?
+        for _ in 0..<300 where waiting == nil {
+            try await Task.sleep(for: .milliseconds(10))
+            waiting = await subagentUpdates(in: parent.id).last { $0.status == .waitingForApproval }
+        }
+        let update = try XCTUnwrap(waiting, "the child never said it was waiting on the reader")
+        let childID = try XCTUnwrap(update.childSessionID)
+        let requests = await controls.pendingApprovals(for: childID)
+        let request = try XCTUnwrap(requests.first)
+        await controls.resolve(childSessionID: childID, approvalID: request.id, decision: .approved)
+
+        let result = try await delegation.value
+        XCTAssertFalse(result.isError, result.content)
+        let paths = await log.paths
+        XCTAssertEqual(paths, ["src/a.swift"])
+        let statuses = await subagentUpdates(in: parent.id).map(\.status)
+        XCTAssertEqual(statuses, [.queued, .preparing, .running, .waitingForApproval, .running, .completed])
     }
 
     func testAnEmptyCallIsRefused() async throws {
