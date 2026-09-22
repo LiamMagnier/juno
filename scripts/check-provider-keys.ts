@@ -167,6 +167,37 @@ const MARK: Record<State, string> = {
   "not set": "not set",
 };
 
+/**
+ * Gemini Live's surface is pickier than Gemini's.
+ *
+ * This script asks each provider whether the key works, and for Google it asks
+ * the OpenAI-compat surface — which the newer "AQ." keys DO authenticate
+ * against. So an AQ key passes here, ships, and then fails only when someone
+ * opens voice mode, because the Live WebSocket takes classic AI Studio keys
+ * and nothing else. That is exactly how one reached production on 2026-09-22.
+ *
+ * The shape is checkable without a network call and without printing the key,
+ * so check it: a voice relay configured with a key its Live surface cannot use
+ * is a broken feature, and the deploy is where that should be said.
+ */
+function checkGeminiLiveKey(): string | null {
+  const relayConfigured = !!(process.env.VOICE_RELAY_URL || process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
+  if (!relayConfigured) return null;
+  const explicit = process.env.GEMINI_LIVE_API_KEY;
+  const key = explicit || process.env.GOOGLE_API_KEY;
+  if (!key) return null;
+  const name = explicit ? "GEMINI_LIVE_API_KEY" : "GOOGLE_API_KEY";
+  if (key.startsWith("AIza")) return null;
+  const kind = key.startsWith("AQ.")
+    ? 'an "AQ." key, which authenticates only against the OpenAI-compat surface'
+    : "not a classic AI Studio key";
+  return (
+    `${name} is ${kind} — Gemini Live voice will fail to start with it. ` +
+    `Mint a classic AI Studio key (it starts "AIza") and set GEMINI_LIVE_API_KEY. ` +
+    `New key: https://aistudio.google.com/apikey`
+  );
+}
+
 async function main() {
   const results = await Promise.all(PROVIDER_LIST.map(check));
 
@@ -184,7 +215,10 @@ async function main() {
     `\n${live.length} accepted · ${results.filter((r) => r.state === "not set").length} not configured · ${bad.length} bad\n`,
   );
 
-  if (bad.length) {
+  const geminiLive = checkGeminiLiveKey();
+  if (geminiLive) console.log(`::error::${geminiLive}`);
+
+  if (bad.length || geminiLive) {
     for (const r of bad) {
       const def = PROVIDERS[r.provider];
       // ::error:: so GitHub surfaces it on the run summary, not only in the log.
