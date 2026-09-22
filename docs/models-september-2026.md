@@ -5,6 +5,7 @@ are curated; predecessor IDs remain selectable as legacy entries.
 
 | Model | Provider ID | Context | Input / output per million tokens |
 | --- | --- | --- | --- |
+| Claude Opus 5.5 | claude-opus-5-5 | 1,000,000 | $5 / $25 |
 | Claude Fable 5.1 | claude-fable-5-1 | 1,000,000 | $10 / $50 |
 | Gemini 3.8 Flash | gemini-3.8-flash | 1,048,576 | $0.75 / $3.75 |
 | Grok 4.6 | grok-4.6 | 500,000 | $2 / $6 |
@@ -65,6 +66,39 @@ mask from any provider that is not `"mask"`.
 No Meta credential was available, so none of the above was exercised against a
 live key; it is curated from Meta's own documentation and the gateways
 reselling the models.
+
+## Anthropic · Claude Opus 5.5
+
+Not (yet) covered by Anthropic's public docs at the time of this entry — no
+`platform.claude.com/docs/en/models/opus-5-5/` page, and web search for
+"Claude Opus 5.5" turned up only unconfirmed leak blogs, not an Anthropic
+announcement. Curated instead from the account owner's own Claude Platform
+Console — Dashboard → model card, `claude-opus-5-5` — which is a live,
+first-party read of an account's actual model list rather than a rumor site.
+
+Console card showed: description "Powerful model for complex work"; $5/$25
+per MTok input/output (same as Opus 5 — Anthropic did not reprice the family
+for this release, unlike the leaked "20% cheaper" rumor); prompt-cache write
+$6.25/MTok and read $0.50/MTok (the standard 1.25x/0.1x-of-input Anthropic
+ratios, unchanged); fast mode $10/$50 (2x, same multiplier as Opus 4.8); 1M
+context window; 128K max output; adaptive thinking; fast mode supported;
+May 2026 knowledge cutoff.
+
+Registered as `anthropic:claude-opus-5-5`, family `opus`, `current` — Opus 5
+moves to `legacy` in the same family (one current model per family per the
+picker convention). No independent benchmark coverage exists yet, so
+`model-metrics.ts` intentionally does NOT get a dedicated `opus-5-5` hint —
+it falls through to the existing generic `opus` family rule
+(`official(5, 25, 1_000_000, 4, 9)`), which already matches the console's
+price and context figures and keeps the intelligence/speed grades as
+positioning estimates pending real benchmark data, exactly like `gpt-5.5-pro`
+and other unbenchmarked entries already do in that file.
+
+Live provider inference was not exercised for this entry (no API credential
+available in this environment) — only the Console's own model-catalog UI,
+which is generated from Anthropic's live model registry for the signed-in
+account. Recheck against `platform.claude.com/docs` once Anthropic publishes
+a model page.
 
 Sources:
 - https://platform.claude.com/docs/en/models/fable-5-1/overview
