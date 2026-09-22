@@ -1103,30 +1103,49 @@ public final class SessionController {
             visiblePrompt: prompt,
             live: live
         )
+        let wasActive = session.status.isActive
+        do {
+            try await deliver(
+                prompt: prompt,
+                modelPrompt: modelPrompt,
+                images: pendingAttachments.map(\.image),
+                kind: activeInstructionKind,
+                live: live
+            )
+            composerText = ""
+            composerFileReferences = []
+            pendingAttachments = []
+        } catch OrchestratorError.sessionNotRunning {
+            transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
+        } catch OrchestratorError.sessionAlreadyRunning {
+            transientError = "The agent is already running; stop it first."
+        } catch {
+            transientError = wasActive
+                ? "Could not deliver the instruction: \(error)"
+                : "Could not start the run: \(error)"
+        }
+    }
+
+    /// Hands a message to the agent: to the run in progress as a steer or a
+    /// queued follow-up, or as a new turn when nothing is running.
+    ///
+    /// Everything it sends arrives as an argument, so a caller other than the
+    /// composer, such as a redirect typed into an approval, never reads or
+    /// clears the reader's draft, its images or its file references.
+    private func deliver(
+        prompt: String,
+        modelPrompt: String,
+        images: [ModelImage],
+        kind: UserInstructionKind,
+        live: Live
+    ) async throws {
         if session.status.isActive {
-            do {
-                let current = await currentOrchestrator(live)
-                switch activeInstructionKind {
-                case .steer:
-                    try await current.steer(
-                        prompt: prompt,
-                        modelPrompt: modelPrompt,
-                        images: pendingAttachments.map(\.image)
-                    )
-                case .queue:
-                    try await current.queue(
-                        prompt: prompt,
-                        modelPrompt: modelPrompt,
-                        images: pendingAttachments.map(\.image)
-                    )
-                }
-                composerText = ""
-                composerFileReferences = []
-                pendingAttachments = []
-            } catch OrchestratorError.sessionNotRunning {
-                transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
-            } catch {
-                transientError = "Could not deliver the instruction: \(error)"
+            let current = await currentOrchestrator(live)
+            switch kind {
+            case .steer:
+                try await current.steer(prompt: prompt, modelPrompt: modelPrompt, images: images)
+            case .queue:
+                try await current.queue(prompt: prompt, modelPrompt: modelPrompt, images: images)
             }
             return
         }
@@ -1146,21 +1165,8 @@ public final class SessionController {
                 )
             )
         )
-        do {
-            try await currentOrchestrator(live).submit(
-                prompt: prompt,
-                modelPrompt: modelPrompt,
-                images: pendingAttachments.map(\.image)
-            )
-            runStartedAt = Date()
-            composerText = ""
-            composerFileReferences = []
-            pendingAttachments = []
-        } catch OrchestratorError.sessionAlreadyRunning {
-            transientError = "The agent is already running; stop it first."
-        } catch {
-            transientError = "Could not start the run: \(error)"
-        }
+        try await currentOrchestrator(live).submit(prompt: prompt, modelPrompt: modelPrompt, images: images)
+        runStartedAt = Date()
     }
 
     /// Resubmits the most recent user prompt as a new turn.
@@ -1503,17 +1509,28 @@ public final class SessionController {
 
     /// Declines the action and tells the agent what to do instead, as a
     /// steer that reaches it right after the declined call is answered.
+    ///
+    /// Delivered directly, not through the composer. Borrowing the composer
+    /// sent whatever images the reader had attached to their draft along with
+    /// the redirect, then cleared them and its file references from the draft;
+    /// and when delivery failed, the "send it again" message pointed at a
+    /// composer already restored to the draft, with the redirect gone.
     public func deny(_ approvalID: String, redirect: String) async {
         let text = redirect.trimmingCharacters(in: .whitespacesAndNewlines)
         await deny(approvalID)
         guard !text.isEmpty else { return }
-        let draft = composerText
-        let kind = activeInstructionKind
-        composerText = text
-        activeInstructionKind = .steer
-        await send()
-        composerText = draft
-        activeInstructionKind = kind
+        guard let live else {
+            #if DEBUG
+            previewInstruction(text, kind: .steer)
+            #endif
+            return
+        }
+        do {
+            try await deliver(prompt: text, modelPrompt: text, images: [], kind: .steer, live: live)
+        } catch {
+            // Kept where the reader can see it and send it again.
+            transientError = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+        }
     }
 
     /// Denies approvals that have outlived their expiry.
