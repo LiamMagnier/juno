@@ -7,8 +7,8 @@ import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
 import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
-import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
+import { serializeAttachment } from "@/lib/serializers";
 import { isOwnerEmail } from "@/lib/owner";
 import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 
@@ -170,9 +170,9 @@ export async function POST(request: Request) {
     transactionCommitted = true;
 
 
-    // Structured extraction (program §5.1): the same bytes become citable blocks
-    // with page / slide / sheet / line locators, beside the flat `extractedText`
-    // above. Scheduled, not awaited — see `scheduleIngest`.
+    // A project file is a corpus entry and still gets indexed; a chat
+    // attachment is not read at all until a question needs it. The rule is
+    // enforced inside `scheduleIngest`, so no upload path can forget it.
     scheduleIngest({
       userId: user.id,
       attachmentId: attachment.id,

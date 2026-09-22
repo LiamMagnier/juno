@@ -149,6 +149,7 @@ scripts/                    model sync, benchmarks, task runner, sync pruning, t
 deploy/                     deploy.sh, ecosystem.config.js (PM2), nginx template, VM guides
 contracts/openapi/          juno-native-v1.yaml — the /api/v1 OpenAPI contract
 docs/JUNO.md                this document
+docs/file-understanding.md  how files are read, audited against vendor docs (§5.6c)
 ```
 
 Key `src/lib` modules: `auth.ts` / `session.ts` / `native-auth*.ts` (auth),
@@ -729,6 +730,21 @@ Rasterising is `src/lib/media/raster.ts`, on `unpdf` (already shipped) plus
 because it is a native module). The binding is optional: where it is missing every
 entry point returns `null`, thumbnails fall back to the extension badge and
 `inspect_image` tells the model it cannot crop.
+
+### 5.6c Why the file pipeline is shaped this way
+
+`docs/file-understanding.md` is the reference behind §5.6 and §5.6b: an audit of what
+Anthropic, OpenAI, Google and Microsoft actually publish about their own document and
+image pipelines, cross-checked against this repository. Every external claim in it is
+labelled **[DOC]** (with a link), **[INFER]** or **[UNKNOWN]**, and every **[JUNO]**
+item is a defect that was real here. Read it before changing extraction, attachment
+policy or how a document reaches a provider — most of the tempting simplifications
+(analyse at upload; gate on `text.length > 0`; one reader with no ladder; retrieval
+instead of reading) are in it as named failures with the symptom each produced.
+
+A public, condensed version is published at `/engineering/file-understanding`
+(`src/app/(engineering)/`). The two are meant to stay in step: the page is the argument
+and the sources, the doc adds the migration plan and the file paths.
 
 ### 5.7 Idempotency & durable receipts
 
