@@ -12,7 +12,7 @@ import { composerChevronClass, composerChipClass } from "@/components/ui/compose
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
-import { GlyphSwap } from "@/components/canvas/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
 import { filterBranches, isUsableGitRef } from "@/lib/code-branches";
 import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -234,10 +234,10 @@ export function CodeEnvironmentChip({
         >
           {/* The machine's mark cross-fades when the machine changes, in one
               cell, so the chip's width moves only with its word. */}
-          <GlyphSwap
-            active={target === "cloud"}
-            off={<CodeIcons.device className="size-3.5" />}
-            on={<CodeIcons.cloud className="size-3.5" />}
+          <IconSwap
+            swapped={target === "cloud"}
+            from={<CodeIcons.device className="size-3.5" />}
+            to={<CodeIcons.cloud className="size-3.5" />}
           />
           <span className="min-w-0 truncate">{current.label}</span>
           <ChevronDown className={composerChevronClass} aria-hidden="true" />
@@ -492,10 +492,10 @@ export function CodeTargetPicker({
           }
           className={cn(CHIP_CLASS, className)}
         >
-          <GlyphSwap
-            active={target === "cloud"}
-            off={<AppIcons.projects className="size-3.5" />}
-            on={<GitHubMark className="size-3.5" />}
+          <IconSwap
+            swapped={target === "cloud"}
+            from={<AppIcons.projects className="size-3.5" />}
+            to={<GitHubMark className="size-3.5" />}
           />
           <span className={cn("min-w-0 truncate", !hasSelection && "text-muted-foreground")}>{chipLabel}</span>
           {branch && (

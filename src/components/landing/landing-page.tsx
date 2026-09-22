@@ -98,6 +98,11 @@ const NAV_LINKS = [
 const FOOTER_LINK =
   "block w-fit rounded-xs py-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
 
+/** One face of the mobile menu's Menu/X swap: `icon-swap.tsx`'s FACE, which
+ *  owns the opacity/scale transition so the glyph inside keeps its own. */
+const SWAP_FACE =
+  "col-start-1 row-start-1 inline-flex items-center justify-center transition-[opacity,transform] duration-fast ease-out-soft";
+
 /**
  * The two logo lockups (header + footer): one radius, and the product's one
  * press (`.pressable`, scale 0.97 on --dur-press) rather than a private 0.98.
@@ -162,19 +167,34 @@ export function LandingPage({ nonce }: { nonce?: string }) {
               {/* Menu and X overlap and cross-fade on the open state (the
                   contract's state swap: opacity plus 0.8 to 1 scale on the fast
                   rung), rather than one glyph replacing the other in a frame.
-                  The scale is motion-safe only; reduced motion keeps the fade. */}
+                  This is <IconSwap> driven by `group-open` instead of a prop:
+                  the transition sits on the FACE, never on the glyph, because
+                  X carries a hover turn and `svg.icon[data-motion]` would
+                  replace a glyph-level transition list with its own. The
+                  scale reads --motion-scale-from, so reduced motion keeps the
+                  fade and drops the scale. */}
               <summary
                 aria-label="Sections"
-                className="pressable relative flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-open:bg-accent group-open:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
+                className="pressable flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-open:bg-accent group-open:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
               >
-                <Menu
-                  className="size-4 transition-[opacity,transform] duration-fast ease-out-soft group-open:opacity-0 motion-safe:group-open:scale-[0.8]"
-                  aria-hidden
-                />
-                <X
-                  className="absolute size-4 opacity-0 transition-[opacity,transform] duration-fast ease-out-soft group-open:scale-100 group-open:opacity-100 motion-safe:scale-[0.8]"
-                  aria-hidden
-                />
+                <span className="inline-grid place-items-center">
+                  <span
+                    className={cn(
+                      SWAP_FACE,
+                      "group-open:opacity-0 group-open:[transform:scale(var(--motion-scale-from,0.8))]"
+                    )}
+                  >
+                    <Menu className="size-4" aria-hidden />
+                  </span>
+                  <span
+                    className={cn(
+                      SWAP_FACE,
+                      "opacity-0 [transform:scale(var(--motion-scale-from,0.8))] group-open:opacity-100 group-open:[transform:none]"
+                    )}
+                  >
+                    <X className="size-4" aria-hidden />
+                  </span>
+                </span>
               </summary>
               <nav
                 aria-label="Sections"

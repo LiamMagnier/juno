@@ -37,19 +37,36 @@ export function GlyphSwap<K extends string>({
   return (
     <span className="inline-grid shrink-0 place-items-center" aria-hidden="true">
       {keys.map((key) => {
-        const Glyph = glyphs[key];
+        // Widened to the plain component type: JSX cannot resolve props on the
+        // generic indexed access `Record<K, IconComponent>[K]`.
+        const Glyph: IconComponent = glyphs[key];
         const on = key === show;
         return (
-          <Glyph
+          // The cross-fade lives on a wrapper per layer, not on the <svg>: a
+          // transition utility on the glyph would replace the base
+          // `svg.icon[data-motion]` transition list, and the glyph's own hover
+          // articulation (a restore arrow's half turn, a play mark's pop) would
+          // snap instead of easing.
+          <span
             key={key}
-            motion={key === spinning ? "none" : undefined}
             className={cn(
-              "[grid-area:1/1] transition-[opacity,transform] duration-fast ease-out-soft",
-              on ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100",
-              on && key === spinning && "animate-spin",
-              className
+              "flex items-center justify-center [grid-area:1/1]",
+              "transition-[opacity,transform] duration-fast ease-out-soft",
+              on ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
             )}
-          />
+          >
+            <Glyph
+              motion={key === spinning ? "none" : undefined}
+              className={cn(
+                // The spinner keeps its animation while it fades out, paused
+                // where it stands: dropping the class would snap the notch
+                // back to 0deg mid-fade, and a hidden spinner does not turn.
+                key === spinning && "animate-spin",
+                key === spinning && !on && "[animation-play-state:paused]",
+                className
+              )}
+            />
+          </span>
         );
       })}
     </span>

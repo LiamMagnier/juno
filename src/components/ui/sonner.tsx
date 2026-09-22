@@ -105,12 +105,12 @@ export function Toaster(props: ToasterProps) {
           // rather than hanging outside the corner.
           toast:
             "group toast group-[.toaster]:rounded-card group-[.toaster]:surface-float group-[.toaster]:font-sans group-[.toaster]:text-ui group-[.toaster]:pr-9",
-          // Foreground title for every tier (see TOAST_ICONS); the semantic
-          // colour rides the glyph on Juno's AA ink ramps.
-          title: "group-[.toast]:font-medium group-[.toast]:text-foreground",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:rounded-control group-[.toast]:control-primary",
-          cancelButton: "group-[.toast]:rounded-control group-[.toast]:control-neu group-[.toast]:text-muted-foreground",
+          // No per-tier classes: the title inherits the toast's foreground ink
+          // for every tier and the semantic colour rides the glyph (see
+          // TOAST_ICONS). The description and the action / cancel buttons are
+          // styled in globals.css, because sonner's rules for those parts tie
+          // any `group-[.toast]:` class here and win on source order — the
+          // classes that used to sit here never took effect.
         },
       }}
       {...props}

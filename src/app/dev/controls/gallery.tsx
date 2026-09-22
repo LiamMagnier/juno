@@ -727,6 +727,13 @@ export function ControlsGallery() {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => toast("Conversation archived", { action: { label: "Undo", onClick: () => {} } })}
+          >
+            With action
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={() =>
               toast.promise(new Promise((resolve) => window.setTimeout(resolve, 1500)), {
                 loading: "Exporting…",

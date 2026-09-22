@@ -35,7 +35,7 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
-import { GlyphSwap } from "@/components/canvas/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -154,10 +154,10 @@ export default function ArtifactsPage() {
               // here would replace it and take the press's transform with it.
               className="text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
             >
-              <GlyphSwap
-                active={downloadingId === item.id}
-                off={<ActionIcons.more className="size-4" />}
-                on={<Loader2 className={cn("size-4", downloadingId === item.id && "motion-safe:animate-spin")} />}
+              <IconSwap
+                swapped={downloadingId === item.id}
+                from={<ActionIcons.more className="size-4" />}
+                to={<Loader2 className={cn("size-4", downloadingId === item.id && "motion-safe:animate-spin")} />}
               />
             </Button>
           </DropdownMenuTrigger>

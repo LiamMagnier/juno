@@ -3311,6 +3311,71 @@
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-icon] svg {
   margin-inline: 0;
 }
+/* The second line in Juno's muted ink. Sonner paints it #3f3f3f on light and
+   #e8e8e8 on dark — two raw greys, the dark one nearly as bright as the title
+   it is supposed to sit under — and its rule ties the `group-[.toast]:` class
+   in sonner.tsx and wins on source order, the same trap as the buttons below. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: hsl(var(--muted-foreground));
+}
+
+/* The toast's own buttons — "Undo", "View", "Retry".
+ *
+ * These were meant to wear `.control-primary` / `.control-neu` through
+ * `group-[.toast]:` classes in sonner.tsx, and never did: that variant is
+ * (0,3,0), sonner's `[data-button]` rule is (0,3,0) too, and sonner's sheet is
+ * appended to <head> at runtime, so it won every tie. Every action shipped as
+ * sonner's stock button — a near-black slab, 24px tall, 12px type, a 4px
+ * corner — the one cold object on a warm toast.
+ *
+ * Measured, it is a neutral control now rather than the accent: the toast
+ * already says what happened, and its button is an offer ("Undo"), not the
+ * page's primary action, so the one saturated colour stays with the page.
+ * Juno's control geometry: 28px, the 13px `ui` rung at 500, the 10px control
+ * corner, a hairline, the tonal hover cross-fade and the 0.97 press. The
+ * cancel button is the ghost of it. `[data-button][data-cancel]` carries an
+ * extra attribute because sonner's dark-theme cancel rule is (0,5,0). */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+  height: 1.75rem;
+  padding-inline: 0.625rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-soft),
+    border-color var(--dur-fast) var(--ease-out-soft),
+    color var(--dur-fast) var(--ease-out-soft),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--foreground) / 0.18);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
+  transform: scale(0.97);
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button][data-cancel] {
+  border-color: transparent;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button][data-cancel]:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:focus-visible {
+  box-shadow: none;
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
+    transform: none;
+  }
+}
 
 @layer components {
   /* Shared page chrome and content rhythm. */

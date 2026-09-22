@@ -39,7 +39,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
-import { GlyphSwap } from "@/components/canvas/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
@@ -818,10 +818,10 @@ export function CanvasPanel({
                   {/* The overflow mark hands its cell to a spinner while an
                       Office export is being built, and takes it back — a
                       cross-fade in one cell, so the header never reflows. */}
-                  <GlyphSwap
-                    active={!!exportingFormat}
-                    off={<ActionIcons.more className="size-4" />}
-                    on={<Loader2 className={cn("size-4", exportingFormat && "motion-safe:animate-spin")} />}
+                  <IconSwap
+                    swapped={!!exportingFormat}
+                    from={<ActionIcons.more className="size-4" />}
+                    to={<Loader2 className={cn("size-4", exportingFormat && "motion-safe:animate-spin")} />}
                   />
                 </Button>
               </TooltipTrigger>
@@ -883,10 +883,10 @@ export function CanvasPanel({
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               className="hidden text-muted-foreground hover:text-foreground @[50rem]/split:inline-flex"
             >
-              <GlyphSwap
-                active={fullscreen}
-                off={<Maximize2 className="size-4" />}
-                on={<Minimize2 className="size-4" />}
+              <IconSwap
+                swapped={fullscreen}
+                from={<Maximize2 className="size-4" />}
+                to={<Minimize2 className="size-4" />}
               />
             </Button>
           </TooltipTrigger>
@@ -975,10 +975,10 @@ export function CanvasPanel({
               )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={copyDiff} className={contextButton}>
-                <GlyphSwap
-                  active={diffCopied}
-                  off={<ActionIcons.copy className="size-3.5" />}
-                  on={<StatusIcons.success className="size-3.5 text-success" />}
+                <IconSwap
+                  swapped={diffCopied}
+                  from={<ActionIcons.copy className="size-3.5" />}
+                  to={<StatusIcons.success className="size-3.5 text-success" />}
                 />
                 Copy diff
               </Button>
@@ -1141,10 +1141,10 @@ export function CanvasPanel({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
-                    <GlyphSwap
-                      active={copied}
-                      off={<ActionIcons.copy className="size-3.5" />}
-                      on={<StatusIcons.success className="size-3.5 text-success" />}
+                    <IconSwap
+                      swapped={copied}
+                      from={<ActionIcons.copy className="size-3.5" />}
+                      to={<StatusIcons.success className="size-3.5 text-success" />}
                     />
                     {panelWide && <span>Copy</span>}
                   </Button>
