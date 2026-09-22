@@ -433,6 +433,13 @@ struct DesktopCodeWorkspace: View {
             isStarting: isStartingSession,
             initialPrompt: pendingPrompt,
             initialEnvironment: pendingEnvironment,
+            // Let go once the landing has it, so it cannot reappear in a
+            // later landing, and so the next hand-off of the same text is a
+            // change the landing sees.
+            adoptedInitialPrompt: {
+                pendingPrompt = nil
+                pendingEnvironment = nil
+            },
             selectProject: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
             addProject: { isChoosingRepository = true },
             startLocal: start,

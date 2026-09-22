@@ -48,6 +48,16 @@ public struct StudioLanding: View {
     let addProject: () -> Void
     let startLocal: (StudioDraft) -> Void
     let openTask: (NativeCodeTask) -> Void
+    /// A prompt (and where to run it) handed in from outside, such as quick
+    /// entry. Watched, not only read at init: a hand-off to a landing that is
+    /// already on screen keeps this view and its state, so reading it once
+    /// dropped the prompt.
+    let initialPrompt: String?
+    let initialEnvironment: CodeEnvironmentChoice?
+    /// Called once the hand-off is taken, so the host can let go of it: a
+    /// value left behind showed up again in some later, unrelated landing,
+    /// and a second hand-off of the same text changed nothing to observe.
+    let adoptedInitialPrompt: (() -> Void)?
 
     @State private var prompt: String
     @State private var environment: CodeEnvironmentChoice
@@ -73,6 +83,7 @@ public struct StudioLanding: View {
         isStarting: Bool,
         initialPrompt: String? = nil,
         initialEnvironment: CodeEnvironmentChoice? = nil,
+        adoptedInitialPrompt: (() -> Void)? = nil,
         selectProject: @escaping (WorkspaceID?) -> Void,
         addProject: @escaping () -> Void,
         startLocal: @escaping (StudioDraft) -> Void,
@@ -82,6 +93,9 @@ public struct StudioLanding: View {
         self.code = code
         self.project = project
         self.isStarting = isStarting
+        self.initialPrompt = initialPrompt
+        self.initialEnvironment = initialEnvironment
+        self.adoptedInitialPrompt = adoptedInitialPrompt
         self.selectProject = selectProject
         self.addProject = addProject
         self.startLocal = startLocal
@@ -198,7 +212,25 @@ public struct StudioLanding: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Studio.Surface.canvas)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            // Seeded at init; the host can let go of it now.
+            if initialPrompt != nil || initialEnvironment != nil { adoptedInitialPrompt?() }
+        }
+        .onChange(of: initialPrompt) { _, next in
+            guard let next else { return }
+            // A draft already in the composer is the reader's too, so the
+            // new text goes after it rather than over it; nothing sends
+            // until they do.
+            prompt = trimmed.isEmpty ? next : prompt + "\n\n" + next
+            focused = true
+            adoptedInitialPrompt?()
+        }
+        .onChange(of: initialEnvironment) { _, next in
+            guard let next else { return }
+            environment = next
+            adoptedInitialPrompt?()
+        }
         .task(id: project?.id) { await loadBranch() }
         .onChange(of: environment) { _, choice in configureRemote(choice) }
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, ids in
