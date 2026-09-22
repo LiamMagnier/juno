@@ -78,6 +78,7 @@ export function needsSummarizedDisplay(providerModel: string): boolean {
   return (
     id.includes("fable") ||
     id.includes("mythos") ||
+    id.includes("opus-5") || // claude-opus-5 and claude-opus-5-5 alike
     id.includes("opus-4-8") ||
     id.includes("opus-4-7") ||
     id.includes("sonnet-5")
