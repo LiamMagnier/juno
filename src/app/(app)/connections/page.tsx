@@ -237,7 +237,7 @@ export default function ConnectionsPage() {
             <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={disconnect} disabled={busy} className="gap-1.5">
+            <Button variant="destructive" onClick={disconnect} disabled={busy}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <Link2Off className="size-4" />}
               {busy ? "Disconnecting…" : "Disconnect"}
             </Button>

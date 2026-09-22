@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, MessageSquare, Pin, SearchX } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -158,7 +158,7 @@ export default function RoadmapDetailPage() {
 
   return (
     <AppPage measure="reading">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 gap-1.5 text-muted-foreground">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 text-muted-foreground">
           <ArrowLeft className="size-4" /> Roadmap
         </Button>
 
@@ -208,11 +208,11 @@ export default function RoadmapDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })} className="gap-1.5">
-                <GlyphSwap
-                  active={r.pinned}
-                  off={<Pin className="size-3.5" />}
-                  on={<Pin weight="fill" className="size-3.5" />}
+              <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })}>
+                <IconSwap
+                  swapped={r.pinned}
+                  from={<Pin className="size-3.5" />}
+                  to={<Pin weight="fill" className="size-3.5" />}
                 />
                 {r.pinned ? "Unpin" : "Pin"}
               </Button>

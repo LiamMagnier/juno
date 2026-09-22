@@ -45,7 +45,7 @@ import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
 import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
@@ -382,7 +382,7 @@ function PaintListSection({
                 disabled={readOnly}
                 onClick={() => setPaint(index, { ...paint, visible: hidden }, hidden ? `Show ${title.toLowerCase()}` : `Hide ${title.toLowerCase()}`)}
               >
-                <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
+                <IconSwap curve="spring" swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
               </IconButton>
               <IconButton
                 label={`Remove ${title.toLowerCase()} ${index + 1}`}
@@ -960,18 +960,16 @@ export function EffectsSection({
 function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: EffectType) => void }) {
   return (
     <DropdownMenu>
-      {/* The same key as the **+** on Fill and Stroke beside it, with the same
-          hint — three section headers, one control. */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button type="button" aria-label="Add effect" disabled={disabled} className={cn(iconButtonClass, ICON_TONE.neutral)}>
-              <Plus className="size-3" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Add effect</TooltipContent>
-      </Tooltip>
+      {/* The same 20px key as the **+** on Fill and Stroke beside it — three
+          section headers, one control. Its hint is the native one, though:
+          the menu hands focus back to its trigger as it closes, and a Radix
+          tooltip on that trigger would open on the returning focus after
+          every pick. */}
+      <DropdownMenuTrigger asChild>
+        <IconButton nativeHint label="Add effect" disabled={disabled}>
+          <Plus className="size-3" aria-hidden />
+        </IconButton>
+      </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         // The canvas owns Delete, ⌘Z and the single-key tool shortcuts; without
@@ -1023,7 +1021,7 @@ function EffectRow({
             disabled={disabled}
             onClick={() => onChange({ ...effect, visible: hidden }, hidden ? `Show ${label}` : `Hide ${label}`)}
           >
-            <GlyphSwap swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
+            <IconSwap curve="spring" swapped={hidden} from={<Eye className="size-3.5" />} to={<EyeOff className="size-3.5" />} />
           </IconButton>
           {/* The labels used to say "down the stack" on the up arrow and "up the
               stack" on the down arrow. Both readings are defensible in the
@@ -1463,6 +1461,13 @@ function MiniButton({
  *
  * Exported as a class too, for the few triggers that must be a plain
  * `<button>` (a Radix menu trigger, a hint that has to survive `disabled`).
+ *
+ * On touch it grows to 32px. Rows that are dense in width or fixed in height —
+ * a layer row, a timeline track — cap theirs at `coarse:size-6` (24px) instead,
+ * or their keys crowd out the name and overflow the row.
+ *
+ * Not `@/components/ui/icon-button`: that is the product's 32px ghost key, and
+ * its `size="sm"` is a different rung from this one's 20px `sm`.
  */
 export const iconButtonClass =
   "pressable inline-flex shrink-0 items-center justify-center rounded-xs disabled:pointer-events-none disabled:opacity-30 coarse:size-8";
@@ -1473,6 +1478,18 @@ export const ICON_TONE = {
   neutral: "text-muted-foreground hover:bg-accent hover:text-foreground",
   destructive: "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
 } as const;
+
+/**
+ * The editor chrome's "on" mark — the picked tool, the open timeline, a
+ * looping animation. The accent tint, the selected mark FLAT_UI keeps the
+ * accent for, and the same one a selected layer row, the scoped Ask Juno chip
+ * and a chosen adjustment wear in this editor. Not the tonal `bg-secondary`:
+ * that token sits a shade BELOW the `--accent` hover fill in both themes, so a
+ * key the pointer merely passed over read as more "on" than the tool in
+ * hand. It keeps a hover of its own, a step deeper, so the picked key still
+ * answers the pointer.
+ */
+export const ON_KEY = "aria-pressed:bg-primary/10 aria-pressed:text-primary aria-pressed:hover:bg-primary/15";
 
 const ICON_BOX = { sm: "size-5", md: "size-6" } as const;
 

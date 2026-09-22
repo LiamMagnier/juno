@@ -26,7 +26,7 @@
 
 import * as React from "react";
 import { AmbientAura } from "@/components/ambient/ambient-aura";
-import { ArrowUp, Plus } from "@/components/ui/icons";
+import { Plus, Send } from "@/components/ui/icons";
 import { attachAuraLevel, setAuraState, type AuraState } from "@/lib/aura";
 import { cn } from "@/lib/utils";
 
@@ -166,7 +166,7 @@ export function AuraPreview() {
               <Plus className="size-4" aria-hidden />
             </div>
             <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <ArrowUp className="size-4" aria-hidden />
+              <Send className="size-4" aria-hidden />
             </div>
           </div>
         </div>

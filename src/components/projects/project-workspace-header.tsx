@@ -26,7 +26,7 @@ import {
 import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 interface ProjectWorkspaceHeaderProps {
   project: {
@@ -147,7 +147,6 @@ export function ProjectWorkspaceHeader({
               variant="outline"
               size="sm"
               onClick={onEditInstructions}
-              className="gap-1.5"
             >
               <NotebookPen className="size-3.5" aria-hidden="true" />
               Instructions
@@ -163,10 +162,10 @@ export function ProjectWorkspaceHeader({
               title={isStarred ? "Unpin project" : "Pin project"}
               className={cn(isStarred && "text-primary hover:text-primary")}
             >
-              <GlyphSwap
-                active={isStarred}
-                off={<Pin className="size-4" />}
-                on={<Pin weight="fill" className="size-4" />}
+              <IconSwap
+                swapped={isStarred}
+                from={<Pin className="size-4" />}
+                to={<Pin weight="fill" className="size-4" />}
               />
             </Pressable>
 

@@ -177,6 +177,17 @@ function PaletteShell({
     if (open) setActive(0);
   }, [open, resetKey]);
 
+  // Whether the READER has moved the cursor since it was last put on row 0.
+  // Presentation only: it gates `data-highlighted` (and with it the glyph's
+  // hover gesture), never which row Enter runs. Without it the first result's
+  // mark sat in its hover pose the moment the palette opened, and the pose
+  // hopped rows on every keystroke as results were replaced, with no hand on
+  // the list at all — a glyph moving on its own (ICONS_AND_MOTION.md §1.3).
+  const [readerMoved, setReaderMoved] = React.useState(false);
+  React.useEffect(() => {
+    if (open) setReaderMoved(false);
+  }, [open, resetKey]);
+
   React.useEffect(() => {
     setActive((a) => Math.min(a, Math.max(0, items.length - 1)));
   }, [items.length]);
@@ -195,10 +206,12 @@ function PaletteShell({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       keyboardNav.current = true;
+      setReaderMoved(true);
       setActive((a) => Math.min(a + 1, items.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       keyboardNav.current = true;
+      setReaderMoved(true);
       setActive((a) => Math.max(a - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -382,8 +395,15 @@ function PaletteShell({
                       // Radix sets on a menu row under the keyboard, so its
                       // glyph makes its one gesture (globals.css) when the
                       // arrow keys land on it and not only under the pointer.
-                      data-highlighted={isActive ? "" : undefined}
-                      onMouseMove={() => setActive(i)}
+                      // Only once the reader has moved the cursor: the row the
+                      // palette opens (or re-filters) onto is `aria-selected`
+                      // and filled, but its mark stays at rest, the way a
+                      // Radix menu opened by the pointer highlights nothing.
+                      data-highlighted={isActive && readerMoved ? "" : undefined}
+                      onMouseMove={() => {
+                        setActive(i);
+                        setReaderMoved(true);
+                      }}
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       // Dealt, not dumped: rows that arrive together — on open,

@@ -462,7 +462,7 @@ export function ImageEditOverlay({
                   // `hover:bg-accent` on the `control` rung. It hovered to `bg-background`,
                   // which inside this sheet is a step DOWN — on the black ground that is
                   // no hover at all — and `rounded-md` (8px) is not on the radius ladder.
-                  className="pressable shrink-0 rounded-control px-2 py-1 font-medium text-foreground hover:bg-accent motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="pressable shrink-0 rounded-control px-2 py-1 font-medium text-foreground hover:bg-accent motion-reduce:active:scale-100"
                 >
                   Clear selection
                 </button>
@@ -562,7 +562,7 @@ export function ImageEditOverlay({
                     field (FLAT_UI.md §2.4): the hairline turns to --ring and a
                     1px ring doubles it to 2px, with no offset — a ring-offset
                     painted a card-coloured halo around the well. */}
-                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-secondary transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-1 focus-within:ring-ring motion-reduce:transition-none">
+                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-secondary transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
                   <textarea
                     id={`${selectionHelpId}-prompt`}
                     value={prompt}

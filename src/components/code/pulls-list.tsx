@@ -6,7 +6,7 @@ import { GitPullRequestDraft } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PullsSkeleton } from "@/components/code/pulls-skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
@@ -95,30 +95,18 @@ export function PullsList({ account, connected = true }: { account: string | nul
       // `aria-busy` + a polite line, because four grey rectangles say nothing
       // at all to a screen reader — the page previously announced its heading
       // and then went silent for the length of a GitHub round trip.
-      <div className="space-y-3" aria-busy="true">
+      <div aria-busy="true">
         <p className="sr-only" role="status">
           Loading your pull requests…
         </p>
-        {/* The header the rows arrive under, held open at its real height. It
-            used to appear with the data, so the whole list jumped down one row
-            the moment the fetch landed. */}
-        <div className="mb-5 flex items-center justify-between gap-2" aria-hidden="true">
-          <Skeleton className="h-4 w-52 rounded-sm" />
-          <Skeleton className="h-8 w-24 rounded-control" />
-        </div>
-        {[...Array(4)].map((_, i) => (
-          <Skeleton
-            key={i}
-            // rounded-card, not rounded-lg (24px): a skeleton that re-corners
-            // when the data lands is the row changing shape in front of you.
-            // The entrance classes are what make the stagger real — the delay
-            // alone did nothing, because `.skeleton`'s shimmer lives on its
-            // ::after and animation-delay is not inherited by pseudo-elements.
-            className="h-[60px] w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(i)}
-            aria-hidden="true"
-          />
-        ))}
+        {/* The route's own skeleton, continued rather than redrawn: this
+            phase follows `loading.tsx` on every connected visit, and the two
+            used to be different shapes, so the rows jumped up at the hand-off
+            and down again when the data landed. No second entrance either —
+            the rows are already on screen. The status line above is `sr-only`
+            (absolutely positioned) and sits outside the skeleton's column, so
+            it adds no gap above the header the way a `space-y` sibling did. */}
+        <PullsSkeleton enter={false} />
       </div>
     );
   }
@@ -292,10 +280,12 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     (it animated layout alongside colour) and no press scale:
                     this is a full-width card, and ICONS_AND_MOTION.md §2.2
                     keeps the dip for controls under the finger, not for
-                    surfaces. What moves is the status disc, which lifts a
-                    touch, and the leave-Juno arrow, which nudges the way it
-                    points. Focus is the global :focus-visible outline — the
-                    ring it carried set `outline-none` and then drew flush
+                    surfaces. Nothing on it lifts either: the status disc used
+                    to swell under the pointer, a second gesture on a row that
+                    already has one and a lift §2.2 rule 1 rules out. The one
+                    thing that moves is the leave-Juno arrow, which nudges the
+                    way it points. Focus is the global :focus-visible outline —
+                    the ring it carried set `outline-none` and then drew flush
                     against the row border, which on black reads as a
                     slightly thicker border.
 
@@ -325,7 +315,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                         // rounded-full because that is what a 24px radius
                         // already paints on a 36px square — the browser clamps
                         // it. Authoring the circle says what it renders.
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform duration-fast ease-out-soft group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none",
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
                         // Both states are a real disc. `bg-success/10` composited
                         // to ~2% lightness on black, so the *secondary* state
                         // (draft, on `bg-muted`) out-read the primary one.

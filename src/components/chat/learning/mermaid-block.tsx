@@ -4,7 +4,8 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * Mermaid's default theme is drawn for a light canvas, which is why this block
@@ -77,19 +78,27 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
         <span className="font-mono text-micro font-semibold text-muted-foreground">
           Diagram · Mermaid
         </span>
-        <button
-          type="button"
-          onClick={copy}
-          aria-label={copied ? "Copied" : "Copy diagram source"}
-          className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
-        >
-          <GlyphSwap
-            swapped={copied}
-            from={<ActionIcons.copy className="size-3.5" />}
-            to={<StatusIcons.success className="size-3.5 text-success-ink" />}
-          />
-          <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
-        </button>
+        {/* Glyph-only below `sm`, so the tooltip names it there; from `sm` up
+            the word is on the button and the tooltip would only repeat it. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={copy}
+              aria-label={copied ? "Copied" : "Copy diagram source"}
+              className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
+            >
+              <IconSwap
+                curve="spring"
+                swapped={copied}
+                from={<ActionIcons.copy className="size-3.5" />}
+                to={<StatusIcons.success className="size-3.5 text-success-ink" />}
+              />
+              <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="sm:hidden">{copied ? "Copied" : "Copy diagram source"}</TooltipContent>
+        </Tooltip>
       </div>
       {/* The diagram now follows the app theme (see themedSource), so the canvas
           can sit on the same near-black rung as the block's own chrome instead

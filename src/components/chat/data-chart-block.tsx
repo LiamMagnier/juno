@@ -4,7 +4,7 @@ import * as React from "react";
 import { Download, Maximize2, Minimize2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { cn } from "@/lib/utils";
 
 interface DataChartBlockProps {
@@ -51,8 +51,9 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
                 onClick={() => setIsExpanded((expanded) => !expanded)}
                 aria-label={isExpanded ? "Collapse chart" : "Expand chart"}
               >
-                {/* Expand ⇄ collapse cross-fade in one box (GlyphSwap). */}
-                <GlyphSwap
+                {/* Expand ⇄ collapse cross-fade in one box (IconSwap). */}
+                <IconSwap
+                  curve="spring"
                   swapped={isExpanded}
                   from={<Maximize2 className="size-4" aria-hidden="true" />}
                   to={<Minimize2 className="size-4" aria-hidden="true" />}
@@ -74,9 +75,13 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
         </div>
       </figcaption>
 
+      {/* The frame changes size in one step. Height is layout, not travel
+          (ICONS_AND_MOTION §2.2.8): tweening `max-height` re-laid-out the
+          transcript on every frame. The glyph cross-fade in the header is the
+          acknowledgement that the view changed. */}
       <div
         className={cn(
-          "flex items-center justify-center overflow-auto bg-background/70 p-4 transition-[max-height] duration-base ease-out-soft motion-reduce:transition-none",
+          "flex items-center justify-center overflow-auto bg-background/70 p-4",
           isExpanded ? "max-h-[800px]" : "max-h-[420px]"
         )}
       >

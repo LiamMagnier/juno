@@ -231,7 +231,7 @@ export function AssistantStudio({
                     Optional prompts that make the assistant useful immediately.
                   </p>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={handleAddStarter} className="gap-1.5">
+                <Button type="button" variant="ghost" size="sm" onClick={handleAddStarter}>
                   <Plus className="size-3.5" aria-hidden="true" />
                   Add
                 </Button>
@@ -316,7 +316,7 @@ export function AssistantStudio({
           <Button type="button" variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" form="assistant-studio-form" disabled={isSaving} className="gap-1.5">
+          <Button type="submit" form="assistant-studio-form" disabled={isSaving}>
             {isSaving ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (

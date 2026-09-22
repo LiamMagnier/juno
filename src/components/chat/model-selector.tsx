@@ -136,9 +136,9 @@ export function ModelSelector({
       className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]")}
     >
       {autoSelected ? (
-        <JunoMark className="size-3.5 shrink-0 rounded-sm sm:size-4" />
+        <JunoMark className="size-3.5 shrink-0 sm:size-4" />
       ) : current ? (
-        <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded-sm sm:size-4" />
+        <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 sm:size-4" />
       ) : null}
       <span
         key={current?.id ?? "no-model"}
@@ -206,7 +206,7 @@ export function ModelSelector({
                 brightens with the fill rather than staying grey on a lit row. */}
             <ChevronUp
               aria-hidden
-              className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground motion-reduce:transition-none"
+              className="size-4 shrink-0 text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-focus-visible:text-foreground"
             />
           </button>
 

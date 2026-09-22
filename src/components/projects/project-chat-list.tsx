@@ -19,7 +19,7 @@ import { MENU_W } from "@/components/ui/menu-recipe";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 
 export interface ProjectConversationItem {
   id: string;
@@ -81,7 +81,7 @@ export function ProjectChatList({
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {conversations.length}
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto gap-1.5">
+        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto">
           <Plus className="size-3.5" aria-hidden="true" />
           New chat
         </Button>
@@ -205,10 +205,10 @@ function ChatRow({
           selected={chat.pinned}
           className={cn(chat.pinned && "text-primary hover:text-primary")}
         >
-          <GlyphSwap
-            active={chat.pinned}
-            off={<Pin className="size-3.5" />}
-            on={<Pin weight="fill" className="size-3.5" />}
+          <IconSwap
+            swapped={chat.pinned}
+            from={<Pin className="size-3.5" />}
+            to={<Pin weight="fill" className="size-3.5" />}
           />
         </Pressable>
 

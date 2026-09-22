@@ -2900,7 +2900,7 @@ export function Composer({
             placeholder="Search apps…"
             aria-label="Search apps"
             autoFocus
-            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60 motion-reduce:transition-none"
+            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
           />
         </label>
       </div>
@@ -3311,7 +3311,7 @@ export function Composer({
                   type="button"
                   onClick={() => pickProject(null)}
                   aria-label="Remove from project"
-                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-8"
+                  className="pressable ml-0.5 grid size-6 place-items-center rounded-full text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:size-8"
                 >
                   <ActionIcons.dismiss aria-hidden="true" className="size-3" />
                 </button>
@@ -3456,7 +3456,7 @@ export function Composer({
                       aria-label="Remove quoted selection"
                       // No transition-* beside `.pressable`: it would replace
                       // the class's list and leave the dip untimed.
-                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
+                      className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground motion-reduce:active:scale-100 coarse:p-2"
                     >
                       <ActionIcons.dismiss aria-hidden="true" className="size-3.5" />
                     </button>

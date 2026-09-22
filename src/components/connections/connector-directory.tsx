@@ -219,7 +219,7 @@ function ConnectorTile({
       className={cn(
         // Tonal, not a lift: the tile changes shade under the pointer and
         // stays on the page (ICONS_AND_MOTION §2.2).
-        "group flex flex-col gap-3 p-3.5 hover:border-foreground/15 hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "group flex flex-col gap-3 p-3.5 hover:border-foreground/20 hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         unavailable && "text-muted-foreground"
       )}
       style={staggerDelay(index, "tight")}

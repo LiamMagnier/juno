@@ -144,11 +144,14 @@ import type { ClientConversation } from "@/types/chat";
  * §1.2), whose drawings keep one designed line at every rung instead of a
  * stroke being scaled up or down with the box.
  *
- * EACH DESTINATION MAKES ONE GESTURE under the pointer — the plus turns, the
- * search glass tilts, the folder opens — chosen in `sidebar-motion-icon.tsx`
- * from the product's own small vocabulary and played by globals.css when the
- * row is hovered or focused. Documents make none: a conversation title is
- * text on the panel, and so is its trailing mark.
+ * A DESTINATION MAKES AT MOST ONE GESTURE under the pointer — the plus turns,
+ * the gear turns, the search glass tilts, the folder opens — and it is the
+ * glyph's own, declared once in icons.tsx so the same mark behaves the same
+ * way in the palette and on the page; `sidebar-motion-icon.tsx` only adds the
+ * folder's cross-fade and silences defaults that are wrong in this column.
+ * Played by globals.css when the row is hovered or focused. Documents make
+ * none: a conversation title is text on the panel, and so is its trailing
+ * mark.
  *
  * HOVER AND SELECTION ARE TWO COLOURS, NOT ONE COLOUR TWICE, AND THE EDGE IS
  * WHAT SAYS SELECTED. Hover is `bg-sidebar-hover`, a fill and nothing else, and
@@ -247,9 +250,22 @@ type RowSignal = { tone: StatusTone; label: string; meaning: string };
  * selected fill, so the panel's hover paint on it drew nothing at all and the
  * one pressable target inside the row had no edge. A 5% ink step reads on
  * both fills in both themes.
+ *
+ * OPEN IS READ FROM `aria-expanded`, not `data-state`. The kebab is a
+ * DropdownMenuTrigger inside a TooltipTrigger's Slot, and the tooltip's own
+ * `data-state` (closed / delayed-open) wins the prop merge, so a
+ * `data-[state=open]` recipe never matched and the kebab faded out under its
+ * own open menu the moment the pointer left the row. `aria-expanded` is
+ * written by the dropdown alone.
+ *
+ * THE HIT AREA IS 32px, the box is 28. The `after:` layer (Pressable is
+ * `relative`) reaches 2px past each edge, so the pointer floor in
+ * ICONS_AND_MOTION.md §3 holds without the drawn target growing inside a 36px
+ * row or taking width from the title beside it. Under `coarse:` the same
+ * 2px lifts the 40px box to 44.
  */
 const KEBAB_CLASS =
-  "group/kebab size-7 shrink-0 rounded-control opacity-0 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-foreground/5 data-[state=open]:text-foreground data-[state=open]:opacity-100 coarse:size-10 coarse:opacity-100";
+  "group/kebab size-7 shrink-0 rounded-control opacity-0 after:absolute after:-inset-0.5 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:bg-foreground/5 aria-expanded:text-foreground aria-expanded:opacity-100 coarse:size-10 coarse:opacity-100";
 
 export function AppSidebar({
   collapsed = false,
@@ -2124,9 +2140,12 @@ function SectionAction({
           // utility beside it replaced that shorthand — so the hover fill cut
           // in and the press never dipped. The hover is an ink tint for the
           // reason the row kebab's is (see KEBAB_CLASS): it sits on a heading
-          // that is itself `bg-sidebar-hover` under the pointer.
+          // that is itself `bg-sidebar-hover` under the pointer. The drawn
+          // box stays 24px so the "+" sits on the heading's line; the `after:`
+          // layer reaches 4px past each edge, so the hit area meets the 32px
+          // pointer floor (44 under `coarse:`) without the heading growing.
           className={cn(
-            "size-6 rounded-control text-muted-foreground/70 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 coarse:size-9 coarse:opacity-100",
+            "size-6 rounded-control text-muted-foreground/70 after:absolute after:-inset-1 hover:bg-foreground/5 hover:text-foreground focus-visible:opacity-100 coarse:size-9 coarse:opacity-100",
             always ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
           )}
         >

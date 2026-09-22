@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StatusIcons } from "@/lib/app-icons";
 import { PLANS, planRank } from "@/lib/plans";
-import { cn } from "@/lib/utils";
 
 type MaxTier = "MAX" | "MAX20";
 type BillingInterval = "month" | "year";
@@ -74,50 +73,22 @@ const FAQ: { q: string; a: string; annualOnly?: boolean }[] = [
 ];
 
 /**
- * One question, disclosed continuously.
+ * The FAQ rows stay native `<details>`: the disclosure semantics are the
+ * platform's, and find-in-page still opens a shut answer when it matches.
  *
- * These were native `<details>`, whose body is removed from the page in a
- * single frame when the row shuts — the answer vanished while the caret was
- * still half-way round. The body now opens and closes on `grid-template-rows`
- * (0fr ⇄ 1fr) on the same rung and curve as the caret, so the two read as one
- * motion (ICONS_AND_MOTION.md §2.2.6), and `inert` takes the shut answer out
- * of the tab order and the accessibility tree the way `<details>` did.
+ * Continuous disclosure is layered on as progressive enhancement. Where the
+ * browser has `::details-content` (and `interpolate-size` for the `auto`
+ * end), the answer's box eases open and shut on the caret's own rung and
+ * curve, and `content-visibility` flips discretely at the end of the close so
+ * the text stays painted while it collapses. Elsewhere the rule is dropped
+ * and the row opens as it always has, with the answer's fade-in.
  */
-function FaqRow({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = React.useState(false);
-  const panelId = React.useId();
-  return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center justify-between gap-3 rounded-control px-3 py-2.5 text-left text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
-      >
-        {q}
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground motion-reduce:transition-none",
-            open && "rotate-180 text-foreground"
-          )}
-          aria-hidden="true"
-        />
-      </button>
-      <div
-        id={panelId}
-        className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-base ease-in-out motion-reduce:transition-none",
-          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        )}
-      >
-        <div className="min-h-0 overflow-hidden" inert={!open}>
-          <p className="px-3 pb-3 pt-1 text-body text-muted-foreground">{a}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
+const FAQ_DISCLOSURE =
+  "group [interpolate-size:allow-keywords] " +
+  "[&::details-content]:[block-size:0] [&::details-content]:overflow-clip " +
+  "[&::details-content]:transition-[block-size,content-visibility] [&::details-content]:[transition-behavior:allow-discrete] " +
+  "[&::details-content]:duration-base [&::details-content]:ease-in-out " +
+  "[&[open]::details-content]:[block-size:auto] motion-reduce:[&::details-content]:transition-none";
 
 export default function UpgradePage() {
   const { quota, features } = useApp();
@@ -332,10 +303,19 @@ export default function UpgradePage() {
         {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1.5
             holds `rounded-control` rows (16 = 10 + 6, concentric). Each row is
             the house tonal-hover row; the caret turns and the answer opens on
-            the same rung (see FaqRow). */}
+            the same rung (see FAQ_DISCLOSURE). */}
         <div className="surface-inset mt-4 rounded-card p-1.5">
           {faq.map((entry) => (
-            <FaqRow key={entry.q} q={entry.q} a={entry.a} />
+            <details key={entry.q} className={FAQ_DISCLOSURE}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-ui font-medium transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+                {entry.q}
+                <ChevronDown
+                  className="size-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-in-out group-hover:text-foreground group-open:rotate-180 group-open:text-foreground motion-reduce:transition-none"
+                  aria-hidden="true"
+                />
+              </summary>
+              <p className="px-3 pb-3 pt-1 text-body text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
+            </details>
           ))}
         </div>
       </section>

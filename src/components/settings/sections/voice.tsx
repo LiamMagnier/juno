@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { useApp } from "@/components/app/app-provider";
-import { GlyphSwap } from "@/components/auth/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
@@ -140,13 +140,12 @@ export function VoiceSection() {
                       aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
                       title={active ? "Stop preview" : "Preview voice"}
                     >
-                      <GlyphSwap
-                        state={loading ? "busy" : active ? "stop" : "play"}
-                        glyphs={{
-                          play: <Play className="size-4" />,
-                          stop: <Square className="size-4" />,
-                          busy: <Loader2 className={cn("size-4", loading && "motion-safe:animate-spin")} />,
-                        }}
+                      {/* Three faces from two swaps: play ⇄ stop inside,
+                          and that pair ⇄ the spinner outside. */}
+                      <IconSwap
+                        swapped={loading}
+                        from={<IconSwap swapped={active} from={<Play className="size-4" />} to={<Square className="size-4" />} />}
+                        to={<Loader2 className={cn("size-4", loading && "motion-safe:animate-spin")} />}
                       />
                     </Button>
                   </div>

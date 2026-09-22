@@ -44,12 +44,13 @@ import {
   ColorField,
   ICON_TONE,
   IconButton,
+  ON_KEY,
   PanelEmpty,
   PanelSelect,
   fieldClass,
   iconButtonClass,
 } from "@/components/design/effects-panel";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import type {
   AnimatableProperty,
@@ -371,7 +372,7 @@ export function MotionPanel({
             setPlaying((value) => !value);
           }}
         >
-          <GlyphSwap swapped={playing} from={<Play className="size-3.5" />} to={<Pause className="size-3.5" />} />
+          <IconSwap curve="spring" swapped={playing} from={<Play className="size-3.5" />} to={<Pause className="size-3.5" />} />
         </IconButton>
         <IconButton
           size="md"
@@ -413,16 +414,16 @@ export function MotionPanel({
               disabled={readOnly}
               onCommit={(value) => write({ ...animation, durationMs: Math.max(0, value) }, "Set animation duration")}
             />
-            {/* A mode, so it holds the tonal "on" fill the editor's tools use
-                rather than turning accent: the accent on this strip is kept for
-                the playhead, which is the one thing here that is live. */}
+            {/* A mode, so it wears the editor's "on" mark (ON_KEY) — the same
+                one as the picked tool and the open timeline — which outranks
+                the hover fill, so a looping animation never reads as off. */}
             <IconButton
               size="md"
               disabled={readOnly}
               aria-pressed={animation.loop}
               label="Loop"
               onClick={() => write({ ...animation, loop: !animation.loop }, animation.loop ? "Stop looping" : "Loop animation")}
-              className="aria-pressed:bg-secondary aria-pressed:text-foreground"
+              className={ON_KEY}
             >
               <Repeat className="size-3.5" aria-hidden />
             </IconButton>
@@ -510,10 +511,13 @@ export function MotionPanel({
                 onClick={addTracks}
                 // A native title, not the tooltip every other key here has:
                 // the hint is the reason the button is DISABLED, and a Radix
-                // tooltip never opens on a disabled control.
-                title={selection.length === 0 ? "Select a layer first" : undefined}
+                // tooltip never opens on a disabled control. Enabled, it says
+                // what the key does, in the words of its accessible name.
+                // 24px on touch, not the key's usual 32px: the header is a
+                // 28px row and a taller key would break its hairline.
+                title={selection.length === 0 ? "Select a layer first" : "Add a track for the selected layers"}
                 aria-label="Add a track for the selected layers"
-                className={cn(iconButtonClass, ICON_TONE.neutral, "size-5 disabled:pointer-events-auto disabled:hover:bg-transparent")}
+                className={cn(iconButtonClass, ICON_TONE.neutral, "size-5 coarse:size-6 disabled:pointer-events-auto disabled:hover:bg-transparent")}
               >
                 <Plus className="size-3" aria-hidden />
               </button>
@@ -568,12 +572,14 @@ export function MotionPanel({
                         <span className="sr-only">Does not apply to this layer</span>
                       </span>
                     )}
+                    {/* Capped at 24px on touch, like the header's **+**: the
+                        row is ROW_HEIGHT tall and the lanes beside it match. */}
                     <IconButton
                       nativeHint
                       disabled={readOnly}
                       onClick={() => addKeyframe(track)}
                       label={`Add a keyframe to ${node?.name ?? track.nodeId} ${info.label}`}
-                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:opacity-100"
+                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:size-6 coarse:opacity-100"
                     >
                       <Plus className="size-3" aria-hidden />
                     </IconButton>
@@ -583,7 +589,7 @@ export function MotionPanel({
                       destructive
                       onClick={() => removeTrack(track)}
                       label={`Remove the ${info.label} track`}
-                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:opacity-100"
+                      className="opacity-0 focus-visible:opacity-100 disabled:opacity-0 group-hover:opacity-100 coarse:size-6 coarse:opacity-100"
                     >
                       <ActionIcons.delete className="size-3" aria-hidden />
                     </IconButton>

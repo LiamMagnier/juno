@@ -506,6 +506,7 @@ export function ComposerDictation({
               size="icon-sm"
               onClick={cancel}
               aria-label="Cancel dictation"
+              // 44px under a coarse pointer, the shared composer rung.
               className={composerIconButtonClass}
             >
               {micError ? <MicOff className="size-4" /> : <ActionIcons.dismiss className="size-4" />}
@@ -552,13 +553,14 @@ export function ComposerDictation({
                 aria-label="Send what you dictated"
                 className={cn(
                   // The composer's send circle, drawn to the same recipe
-                  // (ComposerPrimaryAction): 32px, `.pressable` owns the dip,
+                  // (ComposerPrimaryAction): 32px (44px under a coarse
+                  // pointer — the touch minimum), `.pressable` owns the dip,
                   // and disabled is the neutral disc — never the accent at 40%,
                   // which read as a broken button. Focus is the global outline;
                   // a ring-offset painted a card-coloured halo.
                   "pressable grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
                   "hover:bg-primary/90 disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
-                  "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10"
+                  "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
                 )}
               >
                 {/* The house weight: the arrow's line is the set's, not a

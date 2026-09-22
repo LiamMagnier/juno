@@ -29,7 +29,8 @@ import * as React from "react";
 // at this sentence in the text above" is drawn here and nowhere else.
 import { ChevronDown, Loader2, TextSearch } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import {
   AUDIT_COPY,
@@ -75,6 +76,17 @@ function SourceInspector({
   claimText: string;
 }) {
   const [copied, setCopied] = React.useState(false);
+  // The check is a receipt, not a state: it reverts after 1.5s like every
+  // other copy control, so a second copy gets a second receipt. The inspector
+  // stays mounted (inert) while its claim is folded, so the id is held and
+  // cleared rather than left to fire into a later render.
+  const copiedTimer = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
   const published = source?.publishedAt ? new Date(source.publishedAt) : null;
   const quoteRange = React.useMemo(
     () => matchedQuoteRange(link.passage, claimText),
@@ -102,32 +114,42 @@ function SourceInspector({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            void navigator.clipboard?.writeText(link.passage).then(() => setCopied(true));
-          }}
-          aria-label="Copy the cited passage"
-          className={cn(
-            // `.pressable` times the tonal hover and the dip. No local focus
-            // ring: the global `:focus-visible` outline is authoritative.
-            "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-            "motion-reduce:transition-none motion-reduce:active:scale-100",
-            // `hover:bg-accent`. This button is inside the `bg-card` inspector
-            // above, so `hover:bg-card` repainted the exact colour already
-            // under it — the only copy-passage control in the audit had no
-            // hover state at all.
-            "hover:bg-accent hover:text-foreground"
-          )}
-        >
-          {/* The copy glyph cross-fades to a check once the passage is on the
-              clipboard, so the receipt is where the press was. */}
-          <GlyphSwap
-            swapped={copied}
-            from={<ActionIcons.copy aria-hidden="true" className="size-3.5" />}
-            to={<StatusIcons.success aria-hidden="true" className="size-3.5 text-success-ink" />}
-          />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(link.passage).then(() => {
+                  setCopied(true);
+                  if (copiedTimer.current) window.clearTimeout(copiedTimer.current);
+                  copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+              aria-label={copied ? "Copied" : "Copy the cited passage"}
+              className={cn(
+                // `.pressable` times the tonal hover and the dip. No local focus
+                // ring: the global `:focus-visible` outline is authoritative.
+                "pressable inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
+                "motion-reduce:transition-none motion-reduce:active:scale-100",
+                // `hover:bg-accent`. This button is inside the `bg-card` inspector
+                // above, so `hover:bg-card` repainted the exact colour already
+                // under it — the only copy-passage control in the audit had no
+                // hover state at all.
+                "hover:bg-accent hover:text-foreground"
+              )}
+            >
+              {/* The copy glyph cross-fades to a check once the passage is on the
+                  clipboard, so the receipt is where the press was. */}
+              <IconSwap
+                curve="spring"
+                swapped={copied}
+                from={<ActionIcons.copy aria-hidden="true" className="size-3.5" />}
+                to={<StatusIcons.success aria-hidden="true" className="size-3.5 text-success-ink" />}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{copied ? "Copied" : "Copy the cited passage"}</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* `=== true` on purpose, not a truthiness test: `truncated` is
@@ -467,8 +489,11 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
         aria-live="polite"
         className={cn("mt-3 flex items-center gap-1.5 font-mono text-caption text-muted-foreground", className)}
       >
-        {/* The one loop here, and only while the check is actually running. */}
-        <Loader2 aria-hidden="true" className="size-3 shrink-0 motion-safe:animate-spin" />
+        {/* The one loop here, and only while the check is actually running.
+            Plain `animate-spin`, not `motion-safe:`: globals.css turns this
+            exact class into a fade in place under reduced motion, so the
+            spinner still says "working" instead of freezing. */}
+        <Loader2 aria-hidden="true" className="size-3 shrink-0 animate-spin" />
         Checking citations…
       </p>
     );

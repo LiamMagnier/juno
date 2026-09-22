@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Maximize2 } from "@/components/ui/icons";
+import { Loader2, Maximize2, Send } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -255,7 +255,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   aria-label="Send instruction"
                   title="Send"
                 >
-                  {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                  {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 </Button>
               </div>
             </form>

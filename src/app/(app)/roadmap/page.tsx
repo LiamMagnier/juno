@@ -175,7 +175,7 @@ export default function RoadmapPage() {
           heading={<>What we’re <span className="italic text-primary">building</span></>}
           lede="Vote on what matters to you, or request something new. We read every one."
           actions={
-            <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
+            <Button onClick={() => setSubmitOpen(true)}>
               <Plus className="size-4" /> Request a feature
             </Button>
           }
@@ -311,7 +311,7 @@ export default function RoadmapPage() {
             title="The board is open."
             description="Be the first to shape where Juno goes next."
             action={
-              <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
+              <Button onClick={() => setSubmitOpen(true)}>
                 <Plus className="size-4" /> Request a feature
               </Button>
             }

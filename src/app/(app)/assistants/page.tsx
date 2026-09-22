@@ -7,7 +7,7 @@ import { ArrowRight, Pin, Plus } from "@/components/ui/icons";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -142,7 +142,7 @@ export default function AssistantsPage() {
         heading="Specialists you can reuse"
         lede="Focused Juno personalities with their own instructions, starter prompts and model preference."
         actions={
-          <Button onClick={() => openStudio(null)} className="gap-1.5">
+          <Button onClick={() => openStudio(null)}>
             <Plus className="size-4" aria-hidden="true" />
             New assistant
           </Button>
@@ -225,7 +225,7 @@ export default function AssistantsPage() {
                   Clear search
                 </Button>
               ) : (
-                <Button onClick={() => openStudio(null)} className="gap-1.5">
+                <Button onClick={() => openStudio(null)}>
                   <Plus className="size-4" aria-hidden="true" />
                   Create assistant
                 </Button>
@@ -238,8 +238,8 @@ export default function AssistantsPage() {
               <Card
                 key={assistant.id}
                 variant="interactive"
-                // Tonal hover, no lift (ICONS_AND_MOTION §2.2).
-                className="group relative flex min-h-40 flex-col gap-3 p-4 hover:bg-accent/50 hover:shadow-raised [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                // Tonal hover, no lift: the interactive variant owns it (ICONS_AND_MOTION §2.2).
+                className="group relative flex min-h-40 flex-col gap-3 p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 style={staggerDelay(i, "tight")}
               >
                 <div className="flex items-start gap-3">
@@ -279,10 +279,10 @@ export default function AssistantsPage() {
                         assistant.isPinned && "text-primary hover:text-primary"
                       )}
                     >
-                      <GlyphSwap
-                        active={!!assistant.isPinned}
-                        off={<Pin className="size-3.5" />}
-                        on={<Pin weight="fill" className="size-3.5" />}
+                      <IconSwap
+                        swapped={!!assistant.isPinned}
+                        from={<Pin className="size-3.5" />}
+                        to={<Pin weight="fill" className="size-3.5" />}
                       />
                     </Button>
                     <Button

@@ -75,7 +75,6 @@ export function PrivacyStrip({
             <Button
               variant="ghost"
               size="sm"
-              className="gap-1.5"
               onClick={onImport}
               disabled={paused}
               aria-label={paused ? "Import — unavailable while memory is paused" : "Import memory from another assistant"}
@@ -83,7 +82,7 @@ export function PrivacyStrip({
               <Upload className="size-3.5" aria-hidden="true" /> Import
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={onExport} disabled={empty}>
+          <Button variant="ghost" size="sm" onClick={onExport} disabled={empty}>
             <ActionIcons.download className="size-3.5" /> Export
           </Button>
           <HoldButton

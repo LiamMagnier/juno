@@ -176,7 +176,7 @@ function rollbackLabel(entry: CodeRollbackRequest): { text: string; tone: string
  *
  * Read at runtime rather than typed, because `ClientActivityEvent` is the chat
  * vocabulary and the patch is a Juno Code extra key on the write row (see the
- * note in src/lib/code-remote.ts). Written today by `persistCodeTaskOutcome`
+ * note in src/lib/code-task-outcome.ts). Written today by `persistCodeTaskOutcome`
  * and dropped by `serializeActivity`'s field whitelist on the way back out — so
  * this returns null on every reloaded transcript and will start returning
  * hunks, with no change here, the day that whitelist learns the key. Checking

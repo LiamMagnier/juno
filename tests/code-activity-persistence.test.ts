@@ -6,7 +6,7 @@ import test from "node:test";
 /*
  * WHAT A CODE TRANSCRIPT KEEPS ACROSS A RELOAD.
  *
- * `persistCodeTaskOutcome` (src/lib/code-remote.ts) folds a run's events into
+ * `persistCodeTaskOutcome` (src/lib/code-task-outcome.ts) folds a run's events into
  * one ASSISTANT row, and `serializeActivity` (src/lib/serializers.ts) rebuilds
  * that row from a FIELD WHITELIST on the way back out. The trap the whitelist
  * lays is that a field written on one side and not read on the other streams
@@ -19,7 +19,7 @@ const root = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
 const serializers = read("src/lib/serializers.ts");
-const remote = read("src/lib/code-remote.ts");
+const remote = read("src/lib/code-task-outcome.ts");
 const hook = read("src/hooks/use-code-session.ts");
 const cards = read("src/components/code/code-run-cards.tsx");
 const activity = read("src/components/code/code-activity.tsx");

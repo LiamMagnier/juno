@@ -475,12 +475,19 @@ export function WorkThreadComposer({
                         >
                           {/* The house weight, like the chat composer's `+`. The
                               eighth turn while open is a state (the panel is
-                              up), so it runs A-to-B on the symmetric curve; the
-                              glyph's own hover turn composes with it. */}
-                          <Plus
+                              up), so it runs A-to-B on the symmetric curve, on
+                              a wrapper. The glyph's own hover turn is off
+                              (`motion="none"`), as on Code's `+`
+                              (code-composer-parts.tsx): a plus that turns a
+                              quarter under the pointer AND an eighth for the
+                              open state reads as 135deg of spin rather than
+                              a plus becoming an x. */}
+                          <span
                             aria-hidden="true"
-                            className="size-4 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-                          />
+                            className="grid place-items-center transition-transform duration-base ease-in-out group-data-[state=open]:rotate-45 motion-reduce:transition-none"
+                          >
+                            <Plus aria-hidden="true" motion="none" className="size-4" />
+                          </span>
                         </Button>
                       </PopoverTrigger>
                     </TooltipTrigger>

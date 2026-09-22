@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Ban, Folder, Link2, Plug, type IconComponent } from "@/components/ui/icons";
-import { CodeIcons } from "@/lib/app-icons";
+import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
@@ -407,7 +407,7 @@ export function WorkHostSettings({
           <EmptyState
             size="panel"
             tone="error"
-            icon={CodeIcons.error}
+            icon={StatusIcons.error}
             title="Couldn’t read the folders"
             description="The folders shared with this Mac couldn’t be read just now, which says nothing about whether it has any."
           />

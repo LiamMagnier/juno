@@ -55,7 +55,7 @@ import { InteractionsPanel } from "@/components/design/interactions-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
 import { MotionPanel, type MotionPreview } from "@/components/design/motion-panel";
 import { derivePreviewDocument } from "@/components/design/motion-model";
-import { PanelEmpty } from "@/components/design/effects-panel";
+import { ON_KEY, PanelEmpty } from "@/components/design/effects-panel";
 import { PaneResizer, usePaneSize } from "@/components/design/panel-layout";
 import {
   useDesignDocument,
@@ -109,9 +109,9 @@ type ExportFormat = (typeof EXPORTS)[number]["format"] | "handoff";
 const NUDGE_SMALL = 1;
 const NUDGE_LARGE = 10;
 
-/** A toolbar icon key: muted at rest, the row's ink on hover, and the tonal
- *  "on" fill while pressed — the recipe `IconButton` and `Toggle` share. */
-const TOOL_KEY = "text-muted-foreground hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground";
+/** A toolbar icon key: muted at rest, the row's ink on hover, and the accent
+ *  "on" mark while pressed. */
+const TOOL_KEY = cn("text-muted-foreground hover:text-foreground", ON_KEY);
 
 /** A toolbar key with a word beside its glyph (Motion, Export, Ask Juno):
  *  caption type, so the glyph takes the caption rung's 14px and gap. */
@@ -554,10 +554,8 @@ export function DesignEditor({
           {TOOLS.map(({ tool: value, icon: Icon, label, key }) => (
             <Tooltip key={value}>
               <TooltipTrigger asChild>
-                {/* The picked tool holds the tonal "on" fill — the same
-                    `bg-secondary` a pressed toggle wears everywhere else —
-                    rather than the accent, which on this bar belongs to the
-                    one primary action a review card puts in front of you. */}
+                {/* The picked tool holds the "on" mark (ON_KEY), which
+                    outranks the hover fill a passing pointer leaves. */}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -643,7 +641,7 @@ export function DesignEditor({
               aria-label="Motion timeline"
               aria-pressed={motionOpen}
               onClick={() => setMotionOpen((open) => !open)}
-              className={cn(TEXT_KEY, "aria-pressed:bg-secondary aria-pressed:text-foreground")}
+              className={cn(TEXT_KEY, ON_KEY)}
             >
               <Film className="size-3.5" aria-hidden />
               Motion

@@ -524,7 +524,7 @@ export function PlanReview({
             type="button"
             aria-expanded={queriesOpen}
             onClick={() => setQueriesOpen((value) => !value)}
-            className="pressable -ml-1 inline-flex items-center gap-1.5 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
           >
             {queriesOpen ? PLAN_COPY.hideQueries : PLAN_COPY.showQueries}
             <span className="tabular-nums text-muted-foreground/70">{currentQueries.length}</span>
@@ -566,7 +566,7 @@ export function PlanReview({
           type="button"
           aria-expanded={focusOpen}
           onClick={() => setFocusOpen((value) => !value)}
-          className="pressable -ml-1 inline-flex items-center gap-1.5 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="pressable -ml-1 inline-flex items-center gap-2 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           {focusOpen ? PLAN_COPY.hideFocus : PLAN_COPY.showFocus}
           <ChevronDown

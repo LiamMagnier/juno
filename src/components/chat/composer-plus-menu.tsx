@@ -201,8 +201,11 @@ export const PlusMenuRow = React.forwardRef<
         <span
           aria-hidden="true"
           className={cn(
-            "grid size-3.5 shrink-0 place-items-center transition-[opacity,transform] duration-fast ease-out-soft",
-            !ticked && "opacity-0 ease-in [transform:scale(var(--motion-scale-from,0.6))]",
+            // The curve is chosen, not stacked: tailwind-merge cannot tell
+            // `ease-out-soft` and `ease-in` apart as one group, so both
+            // survived and the later rule in the sheet always won.
+            "grid size-3.5 shrink-0 place-items-center transition-[opacity,transform] duration-fast",
+            ticked ? "ease-out-soft" : "opacity-0 ease-in [transform:scale(var(--motion-scale-from,0.6))]",
           )}
         >
           <StatusIcons.success className="size-3.5 text-primary" />

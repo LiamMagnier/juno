@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ChevronDown, Pause, Play, Square } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { EvidencePanel } from "./evidence-panel";
 import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
 import { workingElapsedMs } from "./run-clock";
@@ -133,10 +133,10 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {!atGate && run.live && <>
-          {/* Pause ⇄ play cross-fade in one cell rather than cutting; `.pressable`
-              gives these the house press and the colour transition
-              `.research-icon` does not carry. */}
-          <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><GlyphSwap active={state === "paused"} on={<Play className="size-4" />} off={<Pause className="size-4" />} /></button>
+          {/* Pause ⇄ play cross-fade in one cell rather than cutting;
+              `.pressable` gives these the house press and `.research-icon`
+              the colour cross-fade. */}
+          <button type="button" disabled={busy} aria-label={state === "paused" ? "Resume research" : "Pause research"} title={state === "paused" ? "Resume research" : "Pause research"} onClick={() => void post("/control", { action: state === "paused" ? "resume" : "pause" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><IconSwap swapped={state === "paused"} from={<Pause className="size-4" />} to={<Play className="size-4" />} /></button>
           <button type="button" disabled={busy} aria-label="Stop research" title="Stop research" onClick={() => void post("/control", { action: "cancel" })} className="research-icon pressable disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100"><Square className="size-3.5" /></button>
         </>}
         {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" title="Hide" onClick={onDismiss} className="research-icon pressable motion-reduce:transition-none motion-reduce:active:scale-100"><ActionIcons.dismiss className="size-4" /></button>}

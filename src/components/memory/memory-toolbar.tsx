@@ -148,7 +148,7 @@ export function MemoryToolbar({
           type="button"
           variant="outline"
           size="sm"
-          className="shrink-0 gap-1.5"
+          className="shrink-0"
           disabled={paused}
           aria-label={paused ? "Add a memory — unavailable while memory is paused" : "Add a memory yourself"}
           aria-expanded={adding}

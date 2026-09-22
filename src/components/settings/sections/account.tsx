@@ -27,7 +27,7 @@ import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageActivity, UsageDetail, UsageStats, useProfileUsage } from "@/components/settings/usage-overview";
 import { AccountSecuritySection } from "@/components/auth/account-security";
-import { GlyphSwap } from "@/components/auth/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -152,12 +152,10 @@ export function AccountSection() {
               )}
               aria-hidden="true"
             >
-              <GlyphSwap
-                state={uploading ? "busy" : "idle"}
-                glyphs={{
-                  idle: <Camera className="size-4" />,
-                  busy: <Loader2 className={cn("size-4", uploading && "motion-safe:animate-spin")} />,
-                }}
+              <IconSwap
+                swapped={uploading}
+                from={<Camera className="size-4" />}
+                to={<Loader2 className={cn("size-4", uploading && "motion-safe:animate-spin")} />}
               />
             </span>
           </button>
@@ -319,7 +317,7 @@ export function AccountSection() {
             >
               {deleting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Deleting…
+                  <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> Deleting…
                 </>
               ) : (
                 "Delete permanently"

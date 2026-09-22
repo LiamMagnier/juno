@@ -293,7 +293,7 @@ export function ActivityHeatmap({
                 // `.surface-float` at `rounded-control`, foreground ink. It was
                 // an inverted ink slab, the brightest object on the dark theme.
                 <div
-                  className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[calc(100%+8px)]"
+                  className="pointer-events-none absolute z-popper -translate-x-1/2 -translate-y-[calc(100%+8px)]"
                   style={{ left: hover.x, top: hover.y }}
                 >
                   <div

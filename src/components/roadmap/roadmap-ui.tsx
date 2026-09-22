@@ -102,10 +102,10 @@ export function RequestCard({
   return (
     <Card
       variant="interactive"
-      // Tonal hover, no lift; dealt in on the tight rung when a list passes
-      // its position.
+      // The interactive variant owns the tonal hover (no lift); dealt in on the
+      // tight rung when a list passes its position.
       className={cn(
-        "relative flex gap-3 p-4 hover:bg-accent/50 hover:shadow-raised",
+        "relative flex gap-3 p-4",
         index !== undefined && "[animation-fill-mode:backwards] motion-safe:animate-rise-in"
       )}
       style={index !== undefined ? staggerDelay(index, "tight") : undefined}

@@ -39,11 +39,11 @@ export default function KnowledgeDocumentError({
           description="The extractor couldn’t open it, or the request didn’t come back. The file itself is still in your library."
           action={
             <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              <Button size="sm" onClick={reset}>
+                <ActionIcons.refresh className="size-4" aria-hidden="true" />
                 Try again
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
                 <Link href="/library">Back to library</Link>
               </Button>
             </>

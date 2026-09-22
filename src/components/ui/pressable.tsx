@@ -23,10 +23,15 @@ import { cn } from "@/lib/utils";
  *                a circular tonal fill on hover, the secondary fill when on.
  *
  * Shared behaviour comes from `.pressable` (globals.css): the tonal hover
- * cross-fade on --dur-fast and the 0.97 dip on --dur-press. Focus is
- * deliberately NOT styled here: the global `:focus-visible` rule is
- * authoritative. A glyph inside any kind plays its own hover articulation
- * (icons.tsx), because every kind renders a button or a link.
+ * cross-fade on --dur-fast and the 0.97 dip on --dur-press. A ROW does not
+ * dip: it is a large surface, and large surfaces never scale
+ * (ICONS_AND_MOTION.md §2.2, rule 2) — a full-width row shrinking by 3% moves
+ * its edges further than a button's whole dip. It presses TONALLY instead,
+ * stepping to the `--secondary` fill while held, the same pressed tone
+ * `.control-neu` and the ghost IconButton take. Focus is deliberately NOT
+ * styled here: the global `:focus-visible` rule is authoritative. A glyph
+ * inside any kind plays its own hover articulation (icons.tsx), because every
+ * kind renders a button or a link.
  *
  * `.control-neu` reads `[data-selected]` (set below) for its "on" fill, so a
  * selected tile, chip or icon takes the same deeper tone as one being held,
@@ -35,11 +40,25 @@ import { cn } from "@/lib/utils";
  * selection is a bounded, accent-edged fill.
  */
 const pressableVariants = cva(
-  // `.pressable` carries the transition and the active:scale(0.97). The two
+  // `.pressable` carries the transition and the active:scale(0.97). The
   // `motion-reduce:` escapes are here because a plain `:active` rule reads
   // neither --motion-shift nor --motion-scale-from, so the preference reaches
-  // it through nothing else.
-  "pressable relative select-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  // it through nothing else. Under the preference only the TRAVEL goes: the
+  // dip is held at scale 1 and transform leaves the transition list, while
+  // colour, fill, edge and opacity keep their cross-fade on the fast rung
+  // (Tier A of the reduced-motion note in globals.css — removing feedback is
+  // not an accessibility win). The timing is restated with the list rather
+  // than left to `.pressable`, because a bare `transition-property` would
+  // re-pair the remaining properties with the class's duration list by
+  // position and hand colour the 70ms press rung. It is written as arbitrary
+  // properties, not `duration-fast` / `ease-out-soft`: tailwindcss-animate
+  // reads those utilities as ANIMATION timing too, and would retime an
+  // entrance on the same element.
+  "pressable relative select-none disabled:pointer-events-none disabled:opacity-50 " +
+    "motion-reduce:transition-[color,background-color,border-color,opacity,box-shadow,filter] " +
+    "motion-reduce:[transition-duration:var(--dur-fast)] motion-reduce:[transition-timing-function:var(--ease-out-soft)] " +
+    "motion-reduce:active:scale-100 " +
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       /**
@@ -54,7 +73,11 @@ const pressableVariants = cva(
         // row in the product. It was `text-ui` on `py-2` with no fixed height,
         // which is what left the settings rail and every other caller of this
         // primitive a rung of type below the sidebar that opens them.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground",
+        //
+        // `active:scale-100` cancels `.pressable`'s dip (a row never scales)
+        // and `active:bg-secondary` is its press: a tonal step, on the same
+        // fast cross-fade as the hover fill.
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-secondary",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.

@@ -53,7 +53,7 @@ import {
   SelectField,
   TextField,
 } from "@/components/design/effects-panel";
-import { GlyphSwap } from "@/components/design/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { collapseCornerRadius, cornerValues } from "@/lib/design/render";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
@@ -768,7 +768,7 @@ function CornerRadiusControl({
           }}
           disabled={readOnly}
         >
-          <GlyphSwap swapped={separate} from={<Link2 className="size-3.5" />} to={<Link2Off className="size-3.5" />} />
+          <IconSwap curve="spring" swapped={separate} from={<Link2 className="size-3.5" />} to={<Link2Off className="size-3.5" />} />
         </IconButton>
       </div>
       {roundedSomewhere && (

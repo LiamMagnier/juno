@@ -192,7 +192,18 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["small"], metric: official(0.15, 0.6, 262_144, 8, 3) }, // II 19.6 · 165 tok/s
   ],
   xai: [
-    { hints: ["grok-4.6", "grok-4.5"], metric: official(2, 6, 500_000, 6, 9) }, // II 53.8 · 93 tok/s — cheapest frontier-class model (EU mid-July)
+    // No AA Intelligence Index published for 4.7 yet — positioning estimate
+    // (same price/context as 4.6, larger base model), stays source:"provider"
+    // until a benchmark run lands. See docs/models-september-22-2026.md.
+    { hints: ["grok-4.7"], metric: metric(2, 6, 500_000, 6, 9) },
+    // Was `hints: ["grok-4.6", "grok-4.5"]` — FAMILY_RULES hints are AND'd
+    // (every() below), and no id contains both substrings, so that rule could
+    // never match either model: grok-4.5 silently fell through to the generic
+    // `grok` catch-all (source "provider", wrong 1,000,000 context) and lost
+    // its official II 53.8 benchmark. Split into two rules, same metric — the
+    // two models really do share EU mid-July pricing and the same benchmark.
+    { hints: ["grok-4.6"], metric: official(2, 6, 500_000, 6, 9) }, // II 53.8 · 93 tok/s — cheapest frontier-class model (EU mid-July)
+    { hints: ["grok-4.5"], metric: official(2, 6, 500_000, 6, 9) }, // same EU mid-July price/benchmark as 4.6
     { hints: ["multi-agent"], metric: metric(3, 15, 1_000_000, 2, 7) },
     { hints: ["grok-build"], metric: metric(0.5, 2, 256_000, 8, 6) },
     { hints: ["grok-4.3"], metric: official(1.25, 2.5, 1_000_000, 7, 6) }, // II 37.6 · 105 tok/s
@@ -742,6 +753,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps([], false);
     case "xai":
       if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
+      // low | medium | high (default) | xhigh — same ladder as 4.6, one rung
+      // longer runs aimed at multi-hour agent loops. Not verified against a
+      // live key; see docs/models-september-22-2026.md.
+      if (id.includes("grok-4.7")) return caps(LMHX, false, false, "high");
       if (id.includes("grok-4.6")) return caps(LMHX, false, false, "high");
       if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
       if (id.includes("grok-4.3")) return caps(LMH, true); // none|low|medium|high

@@ -23,9 +23,15 @@
  * line — thin 8, light 12, regular 16, bold 24 — and `fill` is a solid drawing
  * of its own, for the selected state.
  *
- * Each component takes the same props as a Phosphor icon, so `glyph()` in
- * `icons.tsx` wraps them exactly like the rest of the set (optical weight,
- * hover articulation, aria). Import them through `icons.tsx`, never directly.
+ * IN USE through `icons.tsx`: `JunoChat` (AppIcons.home / .conversation),
+ * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design) and `Send` (every
+ * send action). Never import this file from a call site: a mark that bypasses
+ * `glyph()` loses the optical weight choice, aria and hover articulation.
+ *
+ * MOTION. The moving part of each drawing carries `juno-part juno-part--*`, and
+ * globals.css moves just that part when the control around the mark is hovered
+ * (the `parts` articulation): the ball terminal pops out of the gap, the spark
+ * twinkles a quarter turn, the circle slides back from the square.
  *
  * No hooks, no context: safe in server components.
  */
@@ -133,7 +139,14 @@ export const JunoChatGlyph = defineGlyph(
   (line) => (
     <>
       <path d={CHAT.line} />
-      <circle cx={CHAT.ball[0]} cy={CHAT.ball[1]} r={r2(line * 0.8)} fill="currentColor" stroke="none" />
+      <circle
+        className="juno-part juno-part--ball"
+        cx={CHAT.ball[0]}
+        cy={CHAT.ball[1]}
+        r={r2(line * 0.8)}
+        fill="currentColor"
+        stroke="none"
+      />
     </>
   ),
   // Selected: the bubble goes solid and the spark from the logo is cut out of it.
@@ -156,13 +169,13 @@ export const JunoCodeGlyph = defineGlyph(
   (line) => (
     <>
       <path d={CHEVRONS} />
-      <path d={sparkPath(128, 128, r2(40 + line * 0.5))} fill="currentColor" stroke="none" />
+      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, r2(40 + line * 0.5))} fill="currentColor" stroke="none" />
     </>
   ),
   () => (
     <>
       <path d={CHEVRONS} strokeWidth={LINE.bold} />
-      <path d={sparkPath(128, 128, 54)} fill="currentColor" stroke="none" />
+      <path className="juno-part juno-part--spark" d={sparkPath(128, 128, 54)} fill="currentColor" stroke="none" />
     </>
   ),
 );
@@ -193,7 +206,7 @@ export const JunoDesignGlyph = defineGlyph(
     return (
       <>
         <rect x={SQUARE.x} y={SQUARE.y} width={SQUARE.size} height={SQUARE.size} rx={SQUARE.rx} />
-        <path d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top}`} />
+        <path className="juno-part juno-part--disc" d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top}`} />
       </>
     );
   },
@@ -210,6 +223,7 @@ export const JunoDesignGlyph = defineGlyph(
           fill="currentColor"
         />
         <path
+          className="juno-part juno-part--disc"
           d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top} L${a.right},${a.top} Z`}
           fill="currentColor"
           strokeWidth={8}

@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, ShieldAlert } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RollingNumber } from "@/components/ui/micro";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -239,48 +240,36 @@ function TopicCard({
       </button>
 
       {/*
-       * AnimatePresence with a height tween, rather than the grid-rows collapse
-       * used elsewhere in this file's neighbours. The difference is what is
-       * inside: a topic's rows carry their own presence animation for delete,
-       * and a grid-rows parent clips a row that is animating out at exactly
-       * the moment it needs to be visible. Here the panel measures itself
-       * ("auto"), so a row leaving shrinks the card in the same motion.
+       * The shared continuous disclosure: the panel rides grid-template-rows
+       * 0fr to 1fr on the symmetric curve, in step with the caret, and folds
+       * back the same way before it unmounts (ICONS_AND_MOTION §2.2 rules 6
+       * and 8 — no `height` tween). Nothing is mounted while the card is
+       * closed, as before. The 1fr track follows its content, so a row that
+       * closes its own track on delete shrinks the card in the same motion.
        */}
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            id={panelId}
-            key="panel"
-            initial={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-            animate={reduceMotion ? { opacity: 1 } : { height: "auto", opacity: 1 }}
-            exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-            transition={transition.base}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border/50">
-              <p className="px-4 pb-1 pt-3 text-caption text-muted-foreground">{topic.description}</p>
-              <TopicRows
-                memories={topic.active}
-                busyIds={busyIds}
-                paused={paused}
-                onEdit={onEdit}
-                onForget={onForget}
-                onDelete={onDelete}
-              />
-              {topic.retired.length > 0 && (
-                <RetiredRows
-                  memories={topic.retired}
-                  busyIds={busyIds}
-                  paused={paused}
-                  onEdit={onEdit}
-                  onForget={onForget}
-                  onDelete={onDelete}
-                />
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Collapse open={open}>
+        <div id={panelId} className="border-t border-border/50">
+          <p className="px-4 pb-1 pt-3 text-caption text-muted-foreground">{topic.description}</p>
+          <TopicRows
+            memories={topic.active}
+            busyIds={busyIds}
+            paused={paused}
+            onEdit={onEdit}
+            onForget={onForget}
+            onDelete={onDelete}
+          />
+          {topic.retired.length > 0 && (
+            <RetiredRows
+              memories={topic.retired}
+              busyIds={busyIds}
+              paused={paused}
+              onEdit={onEdit}
+              onForget={onForget}
+              onDelete={onDelete}
+            />
+          )}
+        </div>
+      </Collapse>
     </motion.li>
   );
 }

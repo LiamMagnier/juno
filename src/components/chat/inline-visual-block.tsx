@@ -554,7 +554,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // that has to say "this did not render" had nothing behind its text.
       <div className="my-3 rounded-field border bg-card px-4 py-3 text-ui text-muted-foreground">
         <div className="flex items-center gap-2">
-          {streaming ? <Loader2 className="size-4 text-muted-foreground motion-safe:animate-spin" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
+          {streaming ? <Loader2 className="size-4 text-muted-foreground animate-spin" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
         </div>
       </div>

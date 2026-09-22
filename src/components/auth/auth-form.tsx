@@ -10,7 +10,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
-import { GlyphSwap } from "@/components/auth/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { cn } from "@/lib/utils";
 
 function AppleIcon() {
@@ -347,12 +347,10 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
                 busy state is still both announced and drawn. The mark and the
                 spinner share one cell and cross-fade, so the press reads as the
                 same button going to work, not a glyph being swapped out. */}
-            <GlyphSwap
-              state={googleLoading ? "busy" : "mark"}
-              glyphs={{
-                mark: <GoogleIcon />,
-                busy: <Loader2 className={cn("size-4", googleLoading && "motion-safe:animate-spin")} />,
-              }}
+            <IconSwap
+              swapped={googleLoading}
+              from={<GoogleIcon />}
+              to={<Loader2 className={cn("size-4", googleLoading && "motion-safe:animate-spin")} />}
             />
             Continue with Google
           </Button>
@@ -371,12 +369,10 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
             signIn("apple", { callbackUrl });
           }}
         >
-          <GlyphSwap
-            state={appleLoading ? "busy" : "mark"}
-            glyphs={{
-              mark: <AppleIcon />,
-              busy: <Loader2 className={cn("size-4", appleLoading && "motion-safe:animate-spin")} />,
-            }}
+          <IconSwap
+            swapped={appleLoading}
+            from={<AppleIcon />}
+            to={<Loader2 className={cn("size-4", appleLoading && "motion-safe:animate-spin")} />}
           />
           Continue with Apple
         </Button>
@@ -481,10 +477,7 @@ export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }
               aria-pressed={showPassword}
               onClick={() => setShowPassword((v) => !v)}
             >
-              <GlyphSwap
-                state={showPassword ? "hide" : "show"}
-                glyphs={{ show: <Eye className="size-4" />, hide: <EyeOff className="size-4" /> }}
-              />
+              <IconSwap swapped={showPassword} from={<Eye className="size-4" />} to={<EyeOff className="size-4" />} />
             </Pressable>
           }
         />

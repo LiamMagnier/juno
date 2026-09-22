@@ -17,6 +17,9 @@ const BAR_PROFILE = [0.48, 0.78, 1, 0.72, 0.42] as const;
 /** The tallest a bar draws, in px. Bars are laid out at this height and
  *  scaled down on the compositor rather than re-laid out every frame. */
 const BAR_MAX = 15;
+/** How close the smoothed level must get to its idle target before the loop
+ *  sleeps: a thousandth of full scale, far below a visible bar step. */
+const SETTLED = 0.001;
 const VOICE_FIELD =
   "radial-gradient(circle at 30% 24%, hsl(190 88% 70%) 0%, hsl(222 78% 58%) 48%, hsl(263 62% 46%) 100%)";
 
@@ -42,6 +45,8 @@ export function VoiceOrb({
   const rootRef = React.useRef<HTMLSpanElement>(null);
   const statusRef = React.useRef(status);
   const liveLevelRef = React.useRef(levelRef);
+  /** Restarts the frame loop after it has gone to sleep on a settled idle. */
+  const wakeRef = React.useRef<() => void>(() => {});
   statusRef.current = status;
   liveLevelRef.current = levelRef;
 
@@ -54,10 +59,17 @@ export function VoiceOrb({
     let smooth = FLOOR[statusRef.current];
 
     const render = (time: number) => {
+      frame = 0;
       const currentStatus = statusRef.current;
       const audio = Math.max(0, Math.min(1, liveLevelRef.current?.current ?? 0));
       const target = Math.max(FLOOR[currentStatus], audio);
       smooth += (target - smooth) * 0.2;
+      // Idle is not live state (docs/design/ICONS_AND_MOTION.md §2.2.9):
+      // once the bars have eased onto their idle resting height, every
+      // further frame would redraw the same picture. Land exactly on it,
+      // draw it once more, and stop; the next status change wakes the loop.
+      const settled = currentStatus === "idle" && Math.abs(target - smooth) < SETTLED;
+      if (settled) smooth = target;
 
       BAR_PROFILE.forEach((profile, index) => {
         const thinkingWave =
@@ -71,12 +83,23 @@ export function VoiceOrb({
       root.style.setProperty("--voice-ring-opacity", String(0.2 + smooth * 0.32));
       root.style.setProperty("--voice-orb-scale", String(0.985 + smooth * 0.035));
 
-      frame = requestAnimationFrame(render);
+      if (!settled) frame = requestAnimationFrame(render);
     };
 
+    wakeRef.current = () => {
+      if (!frame) frame = requestAnimationFrame(render);
+    };
     frame = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      wakeRef.current = () => {};
+    };
   }, []);
+
+  // Leaving idle (or re-entering it) restarts a loop that went to sleep.
+  React.useEffect(() => {
+    wakeRef.current();
+  }, [status]);
 
   return (
     <span

@@ -713,11 +713,20 @@
    * glyph settling. Rotations get the slower rung so a half turn is seen as a
    * turn rather than as a flicker. Release runs the same spring back.
    */
+  /*
+   * The list carries colour, opacity and `transform` too. This rule outranks a
+   * `transition-*` utility written on the same svg (0,2,1 against 0,1,0), so
+   * without them an articulated glyph's ink snapped when its row lit up, and a
+   * call site's own `rotate-45` open state jumped instead of turning.
+   */
   svg.icon[data-motion] {
     transition:
       translate var(--dur-base) var(--ease-out-back),
       rotate var(--dur-slow) var(--ease-out-back),
-      scale var(--dur-base) var(--ease-out-back);
+      scale var(--dur-base) var(--ease-out-back),
+      transform var(--dur-base) var(--ease-in-out),
+      color var(--dur-fast) var(--ease-out-soft),
+      opacity var(--dur-fast) var(--ease-out-soft);
   }
   svg.icon[data-motion="nudge-r"] { --icon-hover-t: 12% 0; }
   svg.icon[data-motion="nudge-l"] { --icon-hover-t: -12% 0; }
@@ -731,6 +740,37 @@
   svg.icon[data-motion="ccw"] { --icon-hover-r: -180deg; }
   svg.icon[data-motion="tilt"] { --icon-hover-r: -12deg; }
   svg.icon[data-motion="pop"] { --icon-hover-s: 1.14; }
+
+  /*
+   * `parts` — Juno's own marks (juno-glyphs.tsx) move a PART of the drawing
+   * rather than the whole glyph, because they were drawn with the moving part
+   * separate: Chat's ball terminal pops out of the ring's gap (a message
+   * leaving), Code's spark turns a quarter and swells (a twinkle — the spark is
+   * four-fold, so it lands where it started), Design's circle slides back from
+   * the square in front of it (two layers parting). The trigger below sets
+   * `--icon-on: 1` on the svg; the parts inherit it, so one trigger rule serves
+   * both vocabularies and reduced motion leaves it at 0. Offsets are in the
+   * drawing's own 256-unit space: 16 units is 1px at 16px.
+   */
+  svg.icon .juno-part {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      translate var(--dur-base) var(--ease-out-back),
+      rotate var(--dur-slow) var(--ease-out-back),
+      scale var(--dur-base) var(--ease-out-back);
+  }
+  svg.icon .juno-part--ball {
+    translate: calc(var(--icon-on, 0) * 10px) calc(var(--icon-on, 0) * -17px);
+    scale: calc(1 + var(--icon-on, 0) * 0.3);
+  }
+  svg.icon .juno-part--spark {
+    rotate: calc(var(--icon-on, 0) * 90deg);
+    scale: calc(1 + var(--icon-on, 0) * 0.14);
+  }
+  svg.icon .juno-part--disc {
+    translate: calc(var(--icon-on, 0) * 14px) calc(var(--icon-on, 0) * -14px);
+  }
 
   @media (hover: hover) and (prefers-reduced-motion: no-preference) {
     :is(
@@ -753,10 +793,12 @@
       translate: var(--icon-hover-t, none);
       rotate: var(--icon-hover-r, none);
       scale: var(--icon-hover-s, none);
+      --icon-on: 1;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    svg.icon[data-motion] { transition: none; }
+    svg.icon[data-motion],
+    svg.icon .juno-part { transition: none; }
   }
 
 
@@ -809,34 +851,11 @@
     /* The Tier C kill list MOVED OUT OF THIS LAYER — see the unlayered block
        at the end of this file. It cannot live in `@layer base`, because every
        loop it names is declared in `components` or `utilities`, and a later
-       layer beats an earlier one no matter what the selectors are. */
-    /*
-     * Tailwind's stock infinite loops, which were in no tier at all.
-     *
-     * `animate-spin` alone had 70 unguarded call sites, plus 12 of
-     * `animate-pulse` and 4 of `animate-ping`, none written with
-     * `motion-safe:`. Under the preference every one of them ran at full
-     * speed — so a person who asks the operating system to stop non-essential
-     * motion got 86 things spinning and pulsing at them anyway, while the
-     * carefully tiered product animations beside them correctly stopped.
-     *
-     * A spinner still has to say "working", so it is slowed and its travel
-     * removed rather than frozen: the ring fades in place instead of turning.
-     * `ping` and `pulse` are pure decoration and stop outright.
-     */
-    .animate-spin {
-      animation: reduced-working 1.6s var(--ease-breathe) infinite;
-    }
-    .animate-ping,
-    .animate-pulse { animation: none; }
+       layer beats an earlier one no matter what the selectors are. The same
+       is true of the stand-ins for Tailwind's stock loops (`animate-spin`,
+       `animate-ping`, `animate-pulse`): they are utilities, so the stand-ins
+       live at the end of the file too, beside the kill list. */
     html { scroll-behavior: auto; }
-  }
-
-  /* The reduced-motion stand-in for a spinner: it still says "working", it
-     just stops turning. */
-  @keyframes reduced-working {
-    0%, 100% { opacity: 0.45; }
-    50% { opacity: 1; }
   }
 
   /* Focus visibility for keyboard users.
@@ -1373,10 +1392,20 @@
    * also meant fifteen different answers to "what does hovering do here",
    * which is the opposite of a system.
    *
-   * WHAT IS LEFT. The row's own tonal hover, and the one morph that carries
-   * meaning: a folder opens. That is a state change — closed becomes open —
-   * rather than a flourish, and it is the only place a glyph says something
-   * the label does not.
+   * WHAT IS LEFT. The row's own tonal hover, the glyph's own articulation,
+   * and the one morph that belongs to the sidebar: a folder opens. That is a
+   * state change — closed becomes open — rather than a flourish, and it is
+   * the only place a sidebar glyph says something the label does not.
+   *
+   * The articulation is NOT the sidebar's. A destination's mark moves the way
+   * that glyph moves everywhere — the plus turns, the gear turns, the library
+   * lifts, Juno's own Chat, Code and Design marks move a part of themselves —
+   * because the gesture is declared once on the glyph in icons.tsx and played
+   * by `svg.icon[data-motion]` above, in the sidebar as in a menu or a page.
+   * The sidebar only SILENCES the defaults that are wrong in a navigation
+   * column (sidebar-motion-icon.tsx: the folder and projects marks, whose
+   * gesture is the morph below, the panel toggle, the overflow dots and a
+   * conversation). It never assigns a gesture of its own.
    */
   .sidebar-motion-icon {
     position: relative;
@@ -1977,9 +2006,12 @@
   .aicss-tr-chevron {
     flex: none;
     color: hsl(var(--muted-foreground) / .7);
-    /* The path is drawn as an up-caret; the collapsed summary points down. */
+    /* The path is drawn as an up-caret; the collapsed summary points down.
+       The turn is A-to-B with both ends on screen, so it runs on the
+       symmetric curve (ICONS_AND_MOTION.md §2.2, rule 6); the ink keeps the
+       block's decelerate. */
     transform: rotate(180deg);
-    transition: transform var(--dur-base) var(--ease-out-soft), color var(--dur-base) var(--ease-out-soft);
+    transition: transform var(--dur-base) var(--ease-in-out), color var(--dur-base) var(--ease-out-soft);
   }
   .aicss-tr-header[aria-expanded="true"] .aicss-tr-chevron { transform: rotate(0deg); }
   .aicss-tr-header[data-clickable="true"]:hover .aicss-tr-chevron { color: hsl(var(--foreground) / .7); }
@@ -2153,7 +2185,9 @@
     background: none;
     color: hsl(var(--muted-foreground) / .7);
     cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-out-strong), transform var(--dur-base) var(--ease-out-strong);
+    /* The button itself turns (see web-search.tsx): A-to-B, both ends on
+       screen, so the symmetric curve. */
+    transition: color var(--dur-fast) var(--ease-out-strong), transform var(--dur-base) var(--ease-in-out);
   }
   .aicss-ws-chevron:hover { color: hsl(var(--muted-foreground)); }
   .aicss-ws-chevron[aria-expanded="false"] { transform: rotate(180deg); }
@@ -2332,7 +2366,14 @@
     color: hsl(var(--muted-foreground));
     font-size: 12px;
     cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft);
+    /* The button is also `.pressable` (code-block.tsx), which is declared
+       earlier in this layer, so this list REPLACES that class's shorthand
+       rather than joining it. It therefore carries the press transform on
+       --dur-press itself; without it the 0.97 dip snapped. */
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft);
   }
   /* --accent (13%), not --muted (9.5%). This button sits on `.aicss-cb`, which is
      --card at 6.5%, so a muted hover fill was a three-point step — invisible on
@@ -2605,7 +2646,8 @@
      check is drawn full size where the others are inset. */
   .aicss-todo-head-check { width: 16px; height: 16px; color: hsl(var(--success-ink)); }
   .dark .aicss-todo-head-check { color: hsl(var(--success)); }
-  .aicss-todo-chevron { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft), transform var(--dur-base) var(--ease-out-soft); }
+  /* The fold caret turns on the symmetric curve (both ends visible). */
+  .aicss-todo-chevron { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft), transform var(--dur-base) var(--ease-in-out); }
   .aicss-todo-head[aria-expanded="false"] .aicss-todo-chevron { transform: rotate(-90deg); }
   .aicss-todo-head:hover .aicss-todo-list-icon,
   .aicss-todo-head:hover .aicss-todo-pie,
@@ -2747,6 +2789,11 @@
     .aicss-todo-collapsible,
     .aicss-todo-digit-inner,
     .aicss-todo-pie { transition: none; }
+    /* The fold carets turn in a frame; their ink and the to-do caret's
+       reveal keep their timing (Tier A in the reduced-motion note above). */
+    .aicss-tr-chevron { transition: color var(--dur-base) var(--ease-out-soft); }
+    .aicss-ws-chevron { transition: color var(--dur-fast) var(--ease-out-strong); }
+    .aicss-todo-chevron { transition: opacity var(--dur-fast) var(--ease-out-soft); }
     .aicss-ig-glow { animation: none; opacity: .7; }
   }
 
@@ -3256,6 +3303,15 @@
     background-color var(--dur-fast) var(--ease-out-soft),
     color var(--dur-fast) var(--ease-out-soft);
 }
+/* The chip is drawn at 24px and hit at 32px, the contract's pointer floor. The
+   extension stops there: the toast's `pr-9` gutter is 36px, so anything wider
+   would reach into the action button beside it. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]::before {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+  border-radius: inherit;
+}
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]:hover {
   background: hsl(var(--accent));
   color: hsl(var(--foreground));
@@ -3331,13 +3387,19 @@
  * Measured, it is a neutral control now rather than the accent: the toast
  * already says what happened, and its button is an offer ("Undo"), not the
  * page's primary action, so the one saturated colour stays with the page.
- * Juno's control geometry: 28px, the 13px `ui` rung at 500, the 10px control
- * corner, a hairline, the tonal hover cross-fade and the 0.97 press. The
- * cancel button is the ghost of it. `[data-button][data-cancel]` carries an
- * extra attribute because sonner's dark-theme cancel rule is (0,5,0). */
+ * Juno's control geometry: 32px (the `sm` button, and the contract's pointer
+ * floor for a hit target), the 13px `ui` rung at 500, the 10px control corner,
+ * a hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
+ * is the ghost of it. `[data-button][data-cancel]` carries an extra attribute
+ * because sonner's dark-theme cancel rule is (0,5,0).
+ *
+ * On touch the drawn button stays 32px and a centred ::before carries the hit
+ * area to 44px, the idiom checkbox and switch use: a 44px slab would make every
+ * toast a third taller on the phone, where it already sits over the page. */
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
-  height: 1.75rem;
-  padding-inline: 0.625rem;
+  position: relative;
+  height: 2rem;
+  padding-inline: 0.75rem;
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
   background: hsl(var(--secondary));
@@ -3370,6 +3432,16 @@
   box-shadow: none;
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 2.75rem;
+    transform: translateY(-50%);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {
@@ -3550,7 +3622,21 @@
   /* `text-body-lg` (17px), not `text-base`: the research field is a reading
      surface and was the last piece of chrome on Tailwind's stock rung. */
   .research-field { @apply block w-full rounded-field border border-border bg-card px-4 py-3 text-body-lg leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60; }
-  .research-icon { @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-11; }
+  /* An icon control in a research header. Its hover is the house colour
+     cross-fade, and its focus is the global 2px --ring outline
+     (`:focus-visible` in the base layer), not a ring of its own. Every caller
+     is also `.pressable`, which is declared earlier in this layer, so this
+     shorthand REPLACES that class's list rather than joining it: it names the
+     press transform on --dur-press and the disabled fade as well, or the dip
+     would snap. */
+  .research-icon {
+    @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:bg-secondary coarse:size-11;
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft),
+      opacity          var(--dur-fast)  var(--ease-out-soft);
+  }
   .research-tab-body { @apply min-w-0 pt-6; }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -3626,4 +3712,47 @@
   [class*="animate-ultra-"] {
     animation: none !important;
   }
+}
+
+/*
+ * Tailwind's stock infinite loops, which were in no tier at all.
+ *
+ * `animate-spin` alone had 70 unguarded call sites, plus 12 of
+ * `animate-pulse` and 4 of `animate-ping`, none written with `motion-safe:`.
+ * Under the preference every one of them ran at full speed — so a person who
+ * asks the operating system to stop non-essential motion got 86 things
+ * spinning and pulsing at them anyway, while the carefully tiered product
+ * animations beside them correctly stopped.
+ *
+ * A spinner still has to say "working", so it is slowed and its travel
+ * removed rather than frozen: the ring fades in place instead of turning.
+ * `ping` and `pulse` are pure decoration and stop outright.
+ *
+ * UNLAYERED, for the reason the kill list above is: these rules sat in
+ * `@layer base`, and `animate-spin` / `animate-ping` / `animate-pulse` are
+ * utilities, emitted later at the same specificity — so the utility won and
+ * every spinner kept turning under the preference while this block read as
+ * handled. Here, after every layer, the stand-in wins on source order alone,
+ * so it needs no `!important`. A call site written `motion-safe:animate-spin`
+ * does not carry the bare class and is not touched.
+ */
+@media (prefers-reduced-motion: reduce) {
+  /* Longhands, not the shorthand: the shorthand would reset
+     animation-play-state, and IconSwapSet pauses the spinner it is fading
+     out (`[animation-play-state:paused]`). */
+  .animate-spin {
+    animation-name: reduced-working;
+    animation-duration: 1.6s;
+    animation-timing-function: var(--ease-breathe);
+    animation-iteration-count: infinite;
+  }
+  .animate-ping,
+  .animate-pulse { animation: none; }
+}
+
+/* The reduced-motion stand-in for a spinner: it still says "working", it
+   just stops turning. */
+@keyframes reduced-working {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
 }

@@ -212,14 +212,14 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "pointer-events-none absolute inset-0 rounded-inherit ring-1 ring-inset ring-primary transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
+                        "pointer-events-none absolute inset-0 rounded-inherit ring-1 ring-inset ring-primary transition-opacity duration-fast ease-out-soft",
                         isSel ? "opacity-100" : "opacity-0"
                       )}
                     />
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-xs border backdrop-blur-xs transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-xs border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
                         isSel
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border/80 bg-background/80 text-transparent group-hover:border-foreground/40"
@@ -229,7 +229,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                           stroke override needed to read on a 20px box. */}
                       <StatusIcons.success className="size-3" />
                     </span>
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left text-micro font-medium text-white opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left text-micro font-medium text-white opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100">
                       {i.fileName}
                     </span>
                   </button>

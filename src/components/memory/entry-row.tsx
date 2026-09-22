@@ -18,7 +18,7 @@ import {
   memoryCategoryLabel,
 } from "@/lib/memory-categories";
 import { sensitiveTopicLabel } from "@/lib/memory-sensitive";
-import { duration, ease } from "@/lib/motion";
+import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { isRetired, type Memory } from "@/components/memory/memory-model";
 
@@ -35,7 +35,7 @@ import { isRetired, type Memory } from "@/components/memory/memory-model";
  * THE ROW IS A PRESENCE ELEMENT. Deleting one used to be a splice: the row
  * vanished and every row beneath it jumped up a notch, in one frame, with no
  * indication that the thing that left was the thing you pressed. It now
- * collapses its own height on the way out, so the gap closing IS the
+ * closes its own grid track on the way out, so the gap closing IS the
  * confirmation — which matters more here than on most lists, because the
  * control next to it ("forget") is destructive in a different way and the two
  * have to feel different.
@@ -96,147 +96,160 @@ export function EntryRow({ memory, busy, paused = false, onEdit, onForget, onDel
   return (
     <motion.li
       layout={!reduceMotion}
-      // No `initial`: a row that is merely being rendered (the list loaded, a
-      // topic opened) has not arrived from anywhere, and animating it in would
-      // make every scroll into a performance. Only the EXIT is animated,
-      // because leaving is the one thing the user caused.
-      exit={
-        reduceMotion
-          ? { opacity: 0, transition: { duration: duration.exit } }
-          : { opacity: 0, height: 0, marginTop: 0, marginBottom: 0, transition: { duration: duration.exit, ease: ease.in } }
-      }
+      // No entrance (`initial={false}`): a row that is merely being rendered
+      // (the list loaded, a topic opened) has not arrived from anywhere, and
+      // animating it in would make every scroll into a performance. Only the
+      // EXIT is animated, because leaving is the one thing the user caused.
+      //
+      // The exit closes the row's own track (grid-template-rows 1fr to 0fr,
+      // ICONS_AND_MOTION §2.2 rules 6 and 8) rather than tweening `height`,
+      // so the row needs no measured height and the rows beneath it close the
+      // gap in the same move. Under reduced motion it only fades. The resting
+      // `animate` seeds the track in framer's own units: read back from the
+      // DOM it is the resolved pixel height ("84px"), which does not mix with
+      // "0fr" and would hold the row open until the exit's last frame.
+      initial={false}
+      animate={{ gridTemplateRows: "1fr" }}
+      exit={reduceMotion ? { opacity: 0, transition: transition.exit } : { opacity: 0, gridTemplateRows: "0fr", transition: transition.exit }}
       className={cn(
-        "group/fact overflow-hidden px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
+        "group/fact grid grid-rows-[1fr] transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
         retired && "opacity-70"
       )}
     >
-      {editing ? (
-        <form onSubmit={save} className="flex items-center gap-1.5">
-          <Input
-            ref={inputRef}
-            value={draft}
-            maxLength={500}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setDraft(memory.content);
-                setEditing(false);
-              }
-            }}
-            aria-label="Edit this memory"
-            className="h-9"
-          />
-          <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory" title="Save">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Cancel editing"
-            title="Cancel"
-            onClick={() => {
-              setDraft(memory.content);
-              setEditing(false);
-            }}
-          >
-            <ActionIcons.dismiss className="size-3.5" />
-          </Button>
-        </form>
-      ) : (
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p className={cn("text-ui text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
-              {memory.content}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge variant="soft" title={categoryMeta?.description}>
-                {memoryCategoryLabel(memory.category)}
-              </Badge>
-              {memory.sensitive && (
-                // Warning-tinted rather than soft: this chip is the one that
-                // says "you may not have meant to keep this", and it has to
-                // out-rank the category chip beside it to do that job.
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-warning/40 bg-warning/10"
-                  title="A sensitive subject. Juno only learns these on its own when you turn the topic on in Settings → Memory."
-                >
-                  <ShieldAlert className="size-3" aria-hidden="true" />
-                  {sensitiveTopicLabel(memory.sensitive)}
-                </Badge>
-              )}
-              {memory.projectId && (
-                <Badge variant="outline" className="gap-1" title="Only chats in this project can see this memory.">
-                  <FolderLock className="size-3" aria-hidden="true" />
-                  {memory.projectName ?? "One project"}
-                </Badge>
-              )}
-              <Badge variant="muted" title="How Juno came to believe this.">
-                {confidenceLabel(memory.confidence)}
-              </Badge>
-              {statusMeta && memory.status !== "active" && (
-                <Badge variant="outline" title={statusMeta.description}>
-                  {statusMeta.label}
-                </Badge>
-              )}
-              {paused && !retired && (
-                <Badge variant="muted" title="Memory is paused, so nothing here reaches a conversation.">
-                  Not in use
-                </Badge>
-              )}
-            </div>
-            <ProvenanceLine memory={memory} />
-            {memory.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{memory.reason}</p>}
-          </div>
-          {/* The row's verbs arrive with the pointer (or focus, or a coarse
-              pointer, or a delete in flight) — a column of three glyphs on
-              every fact was the loudest thing in a list meant for reading. */}
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/fact:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
-              busy ? "opacity-100" : "opacity-0"
-            )}
-          >
-            <Button
-              ref={editButtonRef}
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit: ${memory.content}`}
-              title="Edit"
-              className="text-muted-foreground"
-              onClick={() => setEditing(true)}
-              disabled={busy}
-            >
-              <ActionIcons.edit className="size-3.5" />
-            </Button>
-            {memory.status !== "suppressed" && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Forget: ${memory.content}`}
-                title="Stop using this, and never learn it again."
-                className="text-muted-foreground"
-                onClick={() => onForget(memory)}
-                disabled={busy}
-              >
-                <EyeOff className="size-3.5" />
+      {/* The clip lives on the track's only item and the padding one level
+          in: padding cannot shrink below itself, so a padded item would stop
+          the track closing short of zero. */}
+      <div className="min-h-0 overflow-hidden">
+        <div className="px-4 py-3">
+          {editing ? (
+            <form onSubmit={save} className="flex items-center gap-1.5">
+              <Input
+                ref={inputRef}
+                value={draft}
+                maxLength={500}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setDraft(memory.content);
+                    setEditing(false);
+                  }
+                }}
+                aria-label="Edit this memory"
+                className="h-9"
+              />
+              <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory" title="Save">
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="danger-hover text-muted-foreground"
-              aria-label={`Delete: ${memory.content}`}
-              title="Delete"
-              onClick={() => onDelete(memory)}
-              disabled={busy}
-            >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
-            </Button>
-          </div>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Cancel editing"
+                title="Cancel"
+                onClick={() => {
+                  setDraft(memory.content);
+                  setEditing(false);
+                }}
+              >
+                <ActionIcons.dismiss className="size-3.5" />
+              </Button>
+            </form>
+          ) : (
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className={cn("text-ui text-foreground/90", retired && "line-through decoration-muted-foreground/50")}>
+                  {memory.content}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="soft" title={categoryMeta?.description}>
+                    {memoryCategoryLabel(memory.category)}
+                  </Badge>
+                  {memory.sensitive && (
+                    // Warning-tinted rather than soft: this chip is the one that
+                    // says "you may not have meant to keep this", and it has to
+                    // out-rank the category chip beside it to do that job.
+                    <Badge
+                      variant="outline"
+                      className="gap-1 border-warning/40 bg-warning/10"
+                      title="A sensitive subject. Juno only learns these on its own when you turn the topic on in Settings → Memory."
+                    >
+                      <ShieldAlert className="size-3" aria-hidden="true" />
+                      {sensitiveTopicLabel(memory.sensitive)}
+                    </Badge>
+                  )}
+                  {memory.projectId && (
+                    <Badge variant="outline" className="gap-1" title="Only chats in this project can see this memory.">
+                      <FolderLock className="size-3" aria-hidden="true" />
+                      {memory.projectName ?? "One project"}
+                    </Badge>
+                  )}
+                  <Badge variant="muted" title="How Juno came to believe this.">
+                    {confidenceLabel(memory.confidence)}
+                  </Badge>
+                  {statusMeta && memory.status !== "active" && (
+                    <Badge variant="outline" title={statusMeta.description}>
+                      {statusMeta.label}
+                    </Badge>
+                  )}
+                  {paused && !retired && (
+                    <Badge variant="muted" title="Memory is paused, so nothing here reaches a conversation.">
+                      Not in use
+                    </Badge>
+                  )}
+                </div>
+                <ProvenanceLine memory={memory} />
+                {memory.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{memory.reason}</p>}
+              </div>
+              {/* The row's verbs arrive with the pointer (or focus, or a coarse
+                  pointer, or a delete in flight) — a column of three glyphs on
+                  every fact was the loudest thing in a list meant for reading. */}
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/fact:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
+                  busy ? "opacity-100" : "opacity-0"
+                )}
+              >
+                <Button
+                  ref={editButtonRef}
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Edit: ${memory.content}`}
+                  title="Edit"
+                  className="text-muted-foreground"
+                  onClick={() => setEditing(true)}
+                  disabled={busy}
+                >
+                  <ActionIcons.edit className="size-3.5" />
+                </Button>
+                {memory.status !== "suppressed" && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Forget: ${memory.content}`}
+                    title="Stop using this, and never learn it again."
+                    className="text-muted-foreground"
+                    onClick={() => onForget(memory)}
+                    disabled={busy}
+                  >
+                    <EyeOff className="size-3.5" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="danger-hover text-muted-foreground"
+                  aria-label={`Delete: ${memory.content}`}
+                  title="Delete"
+                  onClick={() => onDelete(memory)}
+                  disabled={busy}
+                >
+                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </motion.li>
   );
 }

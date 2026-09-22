@@ -39,11 +39,11 @@ export default function MemoryError({
           description="The summary didn’t come back. Nothing has been forgotten — memory is unchanged and still in use in your chats."
           action={
             <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              <Button size="sm" onClick={reset}>
+                <ActionIcons.refresh className="size-4" aria-hidden="true" />
                 Try again
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
                 <Link href="/chat">Back to chat</Link>
               </Button>
             </>

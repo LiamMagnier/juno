@@ -4,7 +4,6 @@ import {
   PanelLeft,
   PanelLeftClose,
   type IconComponent,
-  type IconMotion,
 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
@@ -50,8 +49,9 @@ export type SidebarMotionIconKind =
  *
  * Every drawing comes from the `AppIcons` registry so the sidebar, its More
  * flyout, the product switch, the command palette and the pages never draw one
- * destination two ways. This file adds exactly one thing the registry does not
- * know: WHAT EACH MARK DOES UNDER THE POINTER.
+ * destination two ways. This file adds only what the registry cannot know:
+ * the folder's closed → open cross-fade, and which glyph defaults to silence
+ * in a navigation column.
  */
 const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
   new: AppIcons.new,
@@ -80,61 +80,38 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
 };
 
 /**
- * ONE GESTURE PER DESTINATION, and each one says something about the place.
+ * WHAT EACH MARK DOES UNDER THE POINTER is the glyph's own business.
  *
- * Played by `globals.css` (`svg.icon[data-motion]`) when the row around the
- * mark — a link or a button — is hovered or keyboard-focused, on the same
- * spring every other glyph in the product settles on, and never under
- * `prefers-reduced-motion`. The vocabulary is `IconMotion` in icons.tsx; this
- * table only chooses from it, so the sidebar cannot invent a gesture the rest
- * of the product does not already make.
+ * Every gesture is declared once, on the glyph, in icons.tsx
+ * (docs/design/ICONS_AND_MOTION.md §1.3), and played by globals.css
+ * (`svg.icon[data-motion]`) when the row around the mark is hovered or
+ * keyboard-focused — never under `prefers-reduced-motion`. This file does not
+ * assign gestures: a destination that moved here but sat still in the command
+ * palette, the product switch or a page would be one registry mark behaving
+ * two ways. So the plus turns (New), the gear turns (Settings, Customize), the
+ * search glass tilts, the dismiss X turns and the library and artifact stacks
+ * lift because THAT is what those glyphs do everywhere. Juno's own marks move a
+ * part of themselves (`parts`): Chat's ball terminal pops out of the ring's gap,
+ * Code's spark twinkles, Design's circle slides back from its square. The
+ * destinations whose glyphs icons.tsx leaves still (Research, Assistants,
+ * Connections, Automations, Permissions and the rest) stay still here too, as
+ * the `.sidebar-motion-icon` note in globals.css settled.
  *
- * The reference is Claude's panel: the plus turns, the gear turns, the search
- * glass tilts, the folder opens. A row already says where it goes in words, so
- * a gesture earns its place only by saying what KIND of place it is:
+ * The only thing this table does is SILENCE a default that is wrong in the
+ * sidebar:
  *
- *   turn   New — one more of something; Close — the same plus, dismissing.
- *   tilt   a tool you pick up: the search glass, the telescope, the pieces of
- *          a design, the chat and code marks of the product switch, an
- *          assistant's head.
- *   lift   an object taken off the shelf: a book, a stack of artifacts, a
- *          written skill, a calendar page, a pull request.
- *   pop    a mark that is SET: a granted permission, a trigger that fires.
- *   spin   configuration: the gear.
- *   nudge  the plug pushes toward its socket, because connecting is what the
- *          page does (Phosphor draws the prongs up and to the right).
- *
- * Three marks stay still on purpose: the overflow dots (More opens a menu, it
- * is not a place), the panel toggle (its effect is the whole column moving,
- * which is gesture enough) and a conversation's bubble, which marks a
- * DOCUMENT rather than a destination (docs/design/PREMIUM_AUDIT.md rule 4).
- *
- * Projects and folders make no transform at all — their gesture is the
- * closed → open cross-fade below, which is a state change the label cannot
- * say, and a folder that also lifted would be making two gestures at once.
+ *   folder, projects  their gesture is the closed → open cross-fade below, a
+ *                     state change the label cannot say; the folder glyph's
+ *                     default lift on top of it would be two gestures at once.
+ *   panel toggle      its effect is the whole column moving.
+ *   more              the overflow dots open a menu; they are not a place.
+ *   conversation      a DOCUMENT, not a destination (PREMIUM_AUDIT.md rule 4).
  */
-const MOTION: Record<SidebarMotionIconKind, IconMotion | "none"> = {
-  new: "turn",
-  home: "tilt",
-  code: "tilt",
-  design: "tilt",
-  library: "lift",
-  research: "tilt",
-  artifacts: "lift",
-  connections: "nudge-ne",
+const SILENT: Partial<Record<SidebarMotionIconKind, "none">> = {
   projects: "none",
-  assistants: "tilt",
-  tasks: "lift",
-  skills: "lift",
-  automations: "pop",
-  permissions: "pop",
-  pulls: "lift",
-  settings: "spin",
-  search: "tilt",
+  folder: "none",
   "panel-open": "none",
   "panel-close": "none",
-  close: "turn",
-  folder: "none",
   conversation: "none",
   more: "none",
 };
@@ -182,7 +159,7 @@ export function SidebarMotionIcon({
       aria-hidden="true"
       className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, DEFAULT_GLYPH_SIZE, className)}
     >
-      <Icon focusable="false" motion={MOTION[kind]} className={glyphCls} />
+      <Icon focusable="false" motion={SILENT[kind]} className={glyphCls} />
 
       {opens ? (
         <FolderOpen

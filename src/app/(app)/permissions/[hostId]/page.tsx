@@ -18,7 +18,7 @@ import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkCapability } from "@/lib/work/domain";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GlyphSwap } from "@/components/work/shell/glyph-swap";
+import { IconSwapSet } from "@/components/ui/icon-swap";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkHostStatePill, hostWorkloadSentence } from "@/components/work/work-host-row";
 import { WorkHostSettings } from "@/components/work/work-host-settings";
@@ -237,7 +237,7 @@ export default function HostPermissionsPage() {
             onClick={() => void applyPatch({ revoked: false })}
             className="gap-1.5"
           >
-            <GlyphSwap
+            <IconSwapSet
               glyphs={{ idle: ActionIcons.restore, busy: Loader2 }}
               show={busy ? "busy" : "idle"}
               spinning="busy"

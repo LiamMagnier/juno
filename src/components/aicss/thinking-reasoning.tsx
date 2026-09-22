@@ -142,7 +142,7 @@ export function ThinkingReasoning({
               trace is folded and back up when it opens (globals.css). The
               turn is A-to-B with both ends on screen, so it takes the
               symmetric curve rather than the block's decelerate. */}
-          {done && <ChevronUp className="aicss-tr-chevron size-3 ease-in-out motion-reduce:transition-none" />}
+          {done && <ChevronUp className="aicss-tr-chevron size-3" />}
         </button>
       )}
 

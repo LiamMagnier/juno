@@ -90,7 +90,7 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
 
     // Juno Code's two extra keys on the shared row shape. `patch` is the
     // unified diff a `write` row may carry (capped at write time by
-    // persistCodeTaskOutcome in lib/code-remote.ts); `exitCode` is a tool
+    // persistCodeTaskOutcome in lib/code-task-outcome.ts); `exitCode` is a tool
     // row's process status. Both were being written and then dropped HERE on
     // the way back out — the exact silent failure the note above describes —
     // so a reloaded Code session lost every diff it had shown live. Read

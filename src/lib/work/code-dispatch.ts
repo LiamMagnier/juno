@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
-import { appendTaskEvents, persistCodeTaskOutcome } from "@/lib/code-remote";
+import { appendTaskEvents } from "@/lib/code-task-events";
+import { persistCodeTaskOutcome } from "@/lib/code-task-outcome";
 import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
 import {
   codeRoutineConversationSeed,

@@ -42,23 +42,14 @@ import {
  * one and you must change the other, which is why the number lives in one
  * place.
  *
- * THE TOP RUNG ANIMATES, and it is the one thing in this product's chrome that
- * does. Rule 10 of the premium audit says nothing in chrome moves except a
- * fill; this is a fill, and it is the case the exception exists for. Max is not
- * one more notch — it is the end of the scale, where a reply can take minutes
- * and cost several times the rung below it.
- *
- * IT IS NOT A SHEEN. The first version swept a translucent white band along the
- * fill on a loop, and a white band travelling left to right across a coloured
- * bar is the skeleton-loader gesture — the most copied effect on the web. On a
- * control that is not loading anything it reads as decoration applied because
- * decoration was available, which is the opposite of what it is for.
- *
- * What replaced it has no highlight and no direction: the fill breathes between
- * `--primary` and `--primary-ink`, two shades of the accent the palette already
- * owns, over eight seconds. Nothing crosses the bar, nothing arrives or leaves,
- * and at any instant it is a flat fill in the accent — it reads as alive only
- * if you keep looking at it. It stops dead under `prefers-reduced-motion`.
+ * THE TOP RUNG IS STILL. It used to breathe: first a sheen swept along the
+ * fill on a loop (the skeleton-loader gesture, on a control that loads
+ * nothing), then the whole fill brightened and settled every eight seconds.
+ * Both were idle loops, and loops are for live state only — thinking,
+ * streaming, recording (ICONS_AND_MOTION.md §2.9). Max is a setting, not
+ * something happening, so it is the static accent fill like every other rung;
+ * the knob's travel to the end of the track is the arrival, and the word
+ * above it says the rest.
  *
  * The export keeps its old name so every composer that mounts it keeps
  * compiling; the props are unchanged.
@@ -107,7 +98,6 @@ export function ReasoningSlider({
 
   if (count < 2) return null;
 
-  const atMax = index === count - 1;
   const head = atStop(index, count);
 
   return (
@@ -151,16 +141,7 @@ export function ReasoningSlider({
           <div
             className="absolute inset-0 overflow-hidden rounded-full bg-primary transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
             style={{ transform: `translateX(calc(-100% + ${head} + 12px))` }}
-          >
-            {/* THE BREATH GETS ITS OWN ELEMENT, and that is not tidiness.
-                Tailwind's `duration-slow` on the fill sets the duration for
-                everything timed on that element, animation included, and wins
-                on layer order however the shorthand is written — so an 8s
-                cycle would silently run at --dur-slow, 360ms, which is not a
-                breath but a flicker. A child with no timing utility on it
-                cannot be overridden by one. */}
-            {atMax && <span aria-hidden className="effort-max absolute inset-0" />}
-          </div>
+          />
 
           {/* A mark per rung, inside the track. Behind the knob they sit on
               the accent and have to invert to stay visible. */}
@@ -269,7 +250,7 @@ function ModeChip({
           className={cn(
             // `.pressable` times the colour cross-fade and the press dip on
             // their own rungs; a transition-* utility here would replace it.
-            "pressable inline-flex h-7 items-center rounded-control border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-9 motion-reduce:transition-none motion-reduce:active:scale-100",
+            "pressable inline-flex h-7 items-center rounded-control border px-2.5 text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-9 motion-reduce:active:scale-100",
             pressed
               ? "border-foreground bg-foreground text-background"
               : "border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground",

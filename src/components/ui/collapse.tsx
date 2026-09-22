@@ -22,6 +22,12 @@ import { cn } from "@/lib/utils";
  * no layout thrash — the one legitimate way to animate "as tall as it needs
  * to be" (the contract's rule 8 names it).
  *
+ * Padding and borders never go on the grid item itself: a 0fr track still
+ * keeps the item's padding and border as its floor, so a padded item would
+ * open from, and fold back to, that many pixels and then snap to nothing when
+ * it unmounts. The clipped item stays bare (`min-h-0 overflow-hidden`) and
+ * `innerClassName` lands on a box inside it, which the clip hides entirely.
+ *
  * Reduced motion: the rows snap and the fade keeps its timing (Tier B).
  */
 export function Collapse({
@@ -32,9 +38,13 @@ export function Collapse({
 }: {
   open: boolean;
   children: React.ReactNode;
-  /** The unfolding track — margins, borders that should fold with it. */
+  /**
+   * The grid container whose row unfolds — width, placement. Its own margin,
+   * padding and border do NOT fold (they are there at 0fr); put spacing in
+   * `innerClassName` instead.
+   */
   className?: string;
-  /** The clipped content box — padding goes HERE, so it folds too. */
+  /** The content box inside the clip — padding and borders go HERE, so they fold too. */
   innerClassName?: string;
 }) {
   const reduce = useReducedMotion() ?? false;
@@ -59,7 +69,9 @@ export function Collapse({
             transition: { gridTemplateRows: rows, opacity: { duration: duration.exit, ease: ease.in } },
           }}
         >
-          <div className={cn("min-h-0 overflow-hidden", innerClassName)}>{children}</div>
+          <div className="min-h-0 overflow-hidden">
+            <div className={innerClassName}>{children}</div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

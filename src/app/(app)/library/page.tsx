@@ -457,8 +457,8 @@ function LibraryGridItem({
       aria-label={item.fileName}
       style={staggerDelay(index, "base")}
       className={cn(
-        // Tonal hover: the tile takes a shade, it does not lift off the page.
-        "group/card flex min-w-0 flex-col p-3 hover:bg-accent/50 hover:shadow-raised motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // Tonal hover comes from the interactive variant: the tile takes a shade, it does not lift.
+        "group/card flex min-w-0 flex-col p-3 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         // Selection is a border, not a second shadow: the raised tile keeps its
         // own depth and the hairline turns to ink.
         selected && "border-foreground/40 hover:border-foreground/40"
@@ -820,7 +820,7 @@ export default function LibraryPage() {
                 setSelected(new Set());
                 setShowDeleted((value) => !value);
               }}
-              className="shrink-0 gap-1.5"
+              className="shrink-0"
             >
               {/* Two destinations, two glyphs: the bin for the place deleted
                   files go, the back arrow for leaving it. One anticlockwise
@@ -922,8 +922,8 @@ export default function LibraryPage() {
           title="Couldn’t load your library"
           description="Check your connection and try once more."
           action={
-            <Button variant="secondary" size="sm" onClick={() => load()} className="gap-1.5">
-              <ActionIcons.refresh className="size-3.5" />
+            <Button variant="secondary" size="sm" onClick={() => load()}>
+              <ActionIcons.refresh className="size-4" aria-hidden="true" />
               Try again
             </Button>
           }
@@ -1143,7 +1143,7 @@ export default function LibraryPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground"
                 onClick={() => openRename(selectedItems[0])}
               >
                 <ActionIcons.edit className="size-3.5" />
@@ -1153,7 +1153,6 @@ export default function LibraryPage() {
             <Button
               variant={showDeleted ? "secondary" : "destructive-outline"}
               size="sm"
-              className="gap-1.5"
               onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
             >
               {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}

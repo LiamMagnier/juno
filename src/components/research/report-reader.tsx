@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChevronDown, PanelRightClose, PanelRightOpen, Printer } from "@/components/ui/icons";
-import { GlyphSwap } from "@/components/projects/glyph-swap";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
@@ -269,10 +269,10 @@ export function ReportReader({
               <Button variant="ghost" size="sm" onClick={handleCopy} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
                 {/* Copy ⇄ check cross-fade in one cell; the check keeps the
                     label's ink rather than taking the accent. */}
-                <GlyphSwap
-                  active={copied}
-                  off={<ActionIcons.copy className="size-3.5" />}
-                  on={<StatusIcons.success className="size-3.5" />}
+                <IconSwap
+                  swapped={copied}
+                  from={<ActionIcons.copy className="size-3.5" />}
+                  to={<StatusIcons.success className="size-3.5" />}
                 />
                 <span>{copied ? "Copied" : "Copy"}</span>
               </Button>
