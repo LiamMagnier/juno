@@ -599,7 +599,7 @@ struct DesktopCodeWorkspace: View {
             if controller.pullRequestUnavailableReason == nil {
                 items.append(CodePaletteItem(id: "action.pull-request", kind: .action, title: "Create pull request…", icon: .pulls))
             }
-            if controller.session.status.isActive {
+            if controller.isRunning || controller.isCompacting {
                 items.append(CodePaletteItem(id: "action.stop", kind: .action, title: "Stop", icon: .stop, shortcut: "⌘."))
             }
             for mode in StudioMode.ladder {
@@ -701,8 +701,14 @@ struct DesktopCodeWorkspace: View {
     }
 
     /// Whether the thing on screen is running and can be told to stop.
+    ///
+    /// For a local session that is more than the recorded status: a prompt
+    /// whose hooks are still deciding has no run yet (`isRunning` covers
+    /// it), and a `/compact` between runs waits on the model. The composer
+    /// offers Stop in both, and Command-period, which is the only other way to
+    /// reach it, has to as well.
     private var isStoppable: Bool {
-        if let controller { return controller.session.status.isActive }
+        if let controller { return controller.isRunning || controller.isCompacting }
         if let selectedTask { return selectedTask.status.isActive }
         if selectedRemote != nil { return selectedRemoteSummary?.isRunning == true }
         return false
