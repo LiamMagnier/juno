@@ -2451,7 +2451,9 @@ public final class SessionController {
             invocation = CommandSandboxProfile(
                 workspaceRoot: root,
                 filesystem: .readWrite,
-                allowsNetwork: true
+                allowsNetwork: true,
+                // The reader types here; the policy files are theirs to change.
+                protectsPolicyFiles: false
             ).wrap(command: trimmed)
         } else {
             invocation = ("/bin/zsh", ["-ilc", trimmed])

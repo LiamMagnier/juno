@@ -68,7 +68,8 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             filesystem: sandbox.filesystem,
             allowsNetwork: sandbox.allowsNetwork && overrides.allowsNetwork,
             allowsLocalhost: sandbox.allowsLocalhost,
-            additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths
+            additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths,
+            protectsPolicyFiles: sandbox.protectsPolicyFiles
         )
     }
 

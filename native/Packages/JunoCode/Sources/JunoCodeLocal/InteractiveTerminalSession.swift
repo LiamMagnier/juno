@@ -71,7 +71,9 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
             sandbox: CommandSandboxProfile(
                 workspaceRoot: workspaceRootURL,
                 filesystem: .readWrite,
-                allowsNetwork: allowsNetwork
+                allowsNetwork: allowsNetwork,
+                // The reader types here; the policy files are theirs to change.
+                protectsPolicyFiles: false
             )
         )
     }

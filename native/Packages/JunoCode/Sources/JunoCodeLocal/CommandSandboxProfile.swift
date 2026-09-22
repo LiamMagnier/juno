@@ -41,19 +41,28 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     public let allowsLocalhost: Bool
     /// Extra roots a command legitimately needs: caches, toolchains, temp.
     public let additionalWritablePaths: [String]
+    /// Whether the project's policy files are refused to commands.
+    ///
+    /// On for everything the agent runs. Off for the reader's own terminal:
+    /// they may edit those files in any editor anyway, and refusing their
+    /// `git pull` or `git checkout` because it updates a tracked
+    /// `.juno/settings.json` would protect nothing.
+    public let protectsPolicyFiles: Bool
 
     public init(
         workspaceRoot: URL,
         filesystem: FilesystemAccess = .readWrite,
         allowsNetwork: Bool = false,
         allowsLocalhost: Bool = false,
-        additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths
+        additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths,
+        protectsPolicyFiles: Bool = true
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
         self.allowsNetwork = allowsNetwork
         self.allowsLocalhost = allowsLocalhost
         self.additionalWritablePaths = additionalWritablePaths
+        self.protectsPolicyFiles = protectsPolicyFiles
     }
 
     /// Paths a real build cannot function without.
@@ -131,7 +140,10 @@ public struct CommandSandboxProfile: Equatable, Sendable {
             // files inside it stay writable while a swap of the whole folder
             // does not. Both the path as named and as resolved are listed, in
             // case either part of it is a link.
-            for relative in WorkspacePolicyPaths.files + [WorkspacePolicyPaths.folder] {
+            let protected = protectsPolicyFiles
+                ? WorkspacePolicyPaths.files + [WorkspacePolicyPaths.folder]
+                : []
+            for relative in protected {
                 let named = workspaceRoot.path + "/" + relative
                 for path in Set([Self.resolved(workspaceRoot.path) + "/" + relative, Self.resolved(named)]).sorted() {
                     lines.append("(deny file-write* (literal \(Self.quote(path))))")
