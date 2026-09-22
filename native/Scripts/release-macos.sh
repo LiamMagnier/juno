@@ -791,24 +791,50 @@ step "Verify the live updater feed"
 # stable feed for it would fail forever and revert a release that was correct.
 FEED_URL="https://chat.liams.dev/api/downloads?refresh=release-${VERSION}-${SOURCE_SHORT_SHA}"
 [ "$NOTARIZE" = 1 ] || FEED_URL="$FEED_URL&channel=next"
+# The feed's URL takes one of two forms. A public repository's asset is its
+# permanent github.com link. This repository is private, so the backend hands out
+# the short-lived signed URL GitHub redirects the asset's API download to, on one
+# of the two release hosts the installed updater accepts — and a signed URL names
+# no version, so its string proves nothing about which file it serves. Whichever
+# form comes back is therefore fetched exactly as an installed app fetches it,
+# over HTTPS with no credential, and has to be this build's bytes. That is also
+# the only check that catches a feed pointing a private asset at github.com,
+# where everyone but the owner gets a 404.
+FEED_ASSET="$BUILD_DIR/feed-check-$VERSION.dmg"
 for attempt in $(seq 1 18); do
   FEED="$(curl --fail --silent --show-error --max-time 20 "$FEED_URL" 2>/dev/null || true)"
-  if [ -n "$FEED" ] && printf '%s' "$FEED" | jq -e \
-    --arg version "$VERSION" \
-    --arg sha "$SHA" \
-    --argjson notarized "$([ "$NOTARIZE" = 1 ] && echo true || echo false)" \
-    '.downloads[]
-      | select(
-          .platform == "macos"
-          and .available == true
-          and .version == $version
-          and .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Juno-" + $version + ".dmg")
-          and .sha256 == $sha
-          and .notarized == $notarized
-        )' >/dev/null; then
+  FEED_ASSET_URL=""
+  if [ -n "$FEED" ]; then
+    FEED_ASSET_URL="$(printf '%s' "$FEED" | jq -r \
+      --arg version "$VERSION" \
+      --arg sha "$SHA" \
+      --argjson size "$SIZE" \
+      --argjson notarized "$([ "$NOTARIZE" = 1 ] && echo true || echo false)" \
+      '[.downloads[]
+        | select(
+            .platform == "macos"
+            and .available == true
+            and .version == $version
+            and .sha256 == $sha
+            and .size == $size
+            and .notarized == $notarized
+            and (
+              .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Juno-" + $version + ".dmg")
+              or ((.url // "") | test("^https://(release-assets|objects)[.]githubusercontent[.]com/"))
+            )
+          )
+        | .url][0] // empty' 2>/dev/null || true)"
+  fi
+  # The URL itself is never printed: a signed one is a working link to the file.
+  if [ -n "$FEED_ASSET_URL" ] \
+    && curl --fail --silent --location --proto '=https' --proto-redir '=https' --max-time 300 \
+      --output "$FEED_ASSET" "$FEED_ASSET_URL" 2>/dev/null \
+    && [ "$(shasum -a 256 "$FEED_ASSET" | awk '{print $1}')" = "$SHA" ]; then
+    rm -f "$FEED_ASSET"
     printf '\n  Published and discoverable. The live updater feed serves Juno %s.\n\n' "$VERSION"
     exit 0
   fi
+  rm -f "$FEED_ASSET"
   printf '  Waiting for /api/downloads to expose %s (attempt %s/18)\n' "$VERSION" "$attempt"
   sleep 5
 done
