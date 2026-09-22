@@ -546,8 +546,14 @@ public final class WorkbenchModel {
     /// Returns the durable transcript sequence without constructing or attaching
     /// a presentation controller. Hosts use this for inventory summaries, so a
     /// CLI session listing cannot wake screen capture or other UI-only work.
-    public func eventCount(for sessionID: CodeSessionID) async -> Int {
-        await sessionStore.events(for: sessionID).count
+    ///
+    /// The last event's protocol (one-based) sequence, not the number of
+    /// events: a rewound transcript is numbered on from where it was, so it
+    /// holds fewer events than the sequence it has reached, and a client
+    /// comparing this with its cursor must see the newer number.
+    public func lastEventSequence(for sessionID: CodeSessionID) async -> Int {
+        guard let last = await sessionStore.events(for: sessionID).last else { return 0 }
+        return CodeSessionStoreProtocolAdapter.envelope(from: last).sequence
     }
 
     /// The live controller for a session, created on first use.

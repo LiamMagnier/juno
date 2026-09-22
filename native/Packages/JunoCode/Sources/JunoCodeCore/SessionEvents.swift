@@ -50,6 +50,38 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// The model context was folded down. Recorded so the transcript can say,
     /// quietly and in place, that older turns now reach the model as a summary.
     case compaction(CompactionEvent)
+    /// The reader rewound the session, and the transcript restarts here. Only
+    /// ever the first event of a transcript; see ``TranscriptRewoundEvent``.
+    case transcriptRewound(TranscriptRewoundEvent)
+
+    /// Whether this event replaces everything before it in the stream, so a
+    /// reader keeping its place by sequence drops what it holds and rebuilds
+    /// from here rather than treating the jump in numbering as a hole.
+    public var restartsTranscript: Bool {
+        if case .transcriptRewound = self { return true }
+        return false
+    }
+}
+
+/// The transcript was cut back to just before one of the reader's messages,
+/// and starts again from this event.
+///
+/// A rewind is the one change to a transcript that is not an append, and the
+/// sequence number is how every reader of one keeps its place: a phone, or
+/// `juno events`, asks for what came after the last sequence it saw. So a cut
+/// transcript is never numbered from zero again. It opens with this event,
+/// numbered past everything the session ever held, and the events it kept
+/// follow it, renumbered after it. Whatever cursor a reader holds, this is the
+/// next event it receives, and it says to drop what came before; a number the
+/// reader has already seen is never given to an event it would then skip.
+public struct TranscriptRewoundEvent: Hashable, Codable, Sendable {
+    /// The transcript event of the message the session was rewound to, which
+    /// is no longer in the transcript.
+    public let turnID: String
+
+    public init(turnID: String) {
+        self.turnID = turnID
+    }
 }
 
 public struct SessionCreatedEvent: Hashable, Codable, Sendable {

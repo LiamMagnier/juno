@@ -130,6 +130,29 @@ final class CodeRemoteThreadTests: XCTestCase {
         XCTAssertEqual(text, "Found it.")
     }
 
+    /// A rewound transcript restarts with a marker; what came before it is
+    /// what the reader cut, so the thread starts again from there.
+    func testATranscriptRestartDropsWhatCameBefore() {
+        let restart = event(6, "canonical_session_event", ["event": .object([
+            "payload": .object(["transcriptRewound": .object(["_0": .object(["turnID": .string("p2")])])])
+        ])])
+        XCTAssertTrue(CodeRemoteThread.restartsTranscript(restart))
+        XCTAssertFalse(CodeRemoteThread.restartsTranscript(event(1, "user_message")))
+
+        let thread = CodeRemoteThread.reduce([
+            event(1, "user_message", ["text": .string("First")]),
+            event(2, "text_delta", ["text": .string("One.")]),
+            event(3, "user_message", ["text": .string("Second")]),
+            restart,
+            event(7, "user_message", ["text": .string("First")]),
+            event(8, "text_delta", ["text": .string("One.")]),
+        ])
+
+        XCTAssertEqual(thread.items.count, 2)
+        guard case .userMessage(_, let prompt, _) = thread.items[0] else { return XCTFail("prompt first") }
+        XCTAssertEqual(prompt, "First")
+    }
+
     func testSubagentUpdatesCoalesceByAgent() {
         let thread = CodeRemoteThread.reduce([
             event(1, "subagent_update", ["agent": .object(["id": .string("a1"), "title": .string("Explorer"), "status": .string("running")])]),

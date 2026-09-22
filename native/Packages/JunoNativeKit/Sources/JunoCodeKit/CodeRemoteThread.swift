@@ -196,6 +196,12 @@ public struct CodeRemoteThread: Equatable, Sendable {
         var queued = queuedPrompts
         for event in events {
             let (kind, payload) = unwrap(event)
+            if kind == restartKind {
+                // The host rewound the session: what came before is gone.
+                // Prompts already echoed stay echoed.
+                thread = CodeRemoteThread()
+                continue
+            }
             thread.apply(kind: kind, payload: payload, seq: event.seq, at: event.createdAt)
             if kind == "user_message" || kind == "user" || kind == "message" {
                 let text = read(payload, ["text", "message", "prompt", "content"]) ?? ""
@@ -209,6 +215,17 @@ public struct CodeRemoteThread: Equatable, Sendable {
         }
         thread.queuedPrompts = queued
         return thread
+    }
+
+    /// The canonical case a host's transcript restarts with.
+    private static let restartKind = "transcriptRewound"
+
+    /// Whether `event` restarts the transcript: the host rewound the session,
+    /// cut its transcript back, and numbered the restart past every event it
+    /// ever sent. Everything before it is replaced by what follows, and the
+    /// jump in sequence is the cut rather than a missing event.
+    public static func restartsTranscript(_ event: CodeRemoteSessionEvent) -> Bool {
+        unwrap(event).0 == restartKind
     }
 
     /// Unwraps a `canonical_session_event` envelope to a legacy-shaped

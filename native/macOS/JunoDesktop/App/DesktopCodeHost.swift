@@ -304,6 +304,10 @@ private actor DesktopQueuedCodeHost {
             )
         case .userInstructionApplied:
             nil
+        // A rewind is refused while a run is active, and this relays one
+        // task's run; a restart never falls inside it.
+        case .transcriptRewound:
+            nil
         case .compaction(let compaction):
             .init(
                 kind: "status",

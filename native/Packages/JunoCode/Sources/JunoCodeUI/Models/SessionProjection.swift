@@ -151,6 +151,13 @@ public final class SessionProjection {
     /// and whenever the coordinator replays its events; must agree exactly
     /// with `apply(event:)`.
     public func reduce(events: [SessionEvent]) {
+        reset()
+        for event in events {
+            apply(event: event)
+        }
+    }
+
+    private func reset() {
         executionState = .idle
         narrativeGroups = []
         lastError = nil
@@ -158,9 +165,6 @@ public final class SessionProjection {
         filesChangedPaths = []
         lastTestRun = nil
         lastProposedToolName = ""
-        for event in events {
-            apply(event: event)
-        }
     }
 
     /// When the event being applied happened. Groups close at *this* time,
@@ -183,6 +187,10 @@ public final class SessionProjection {
 
         case .userInstructionApplied, .sessionCreated, .turnConfiguration:
             break
+
+        case .transcriptRewound:
+            // The transcript starts again here; nothing before it stands.
+            reset()
 
         case .assistantMessage:
             closeActiveGroup(status: .completed)

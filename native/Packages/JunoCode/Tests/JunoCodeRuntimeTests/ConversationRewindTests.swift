@@ -155,6 +155,8 @@ final class ConversationRewindTests: XCTestCase {
         let turnsSoFar = await recordedTurns()
         let second = try XCTUnwrap(turnsSoFar.last)
         let index = try XCTUnwrap(second.conversationIndex)
+        let beforeRewind = await store.events(for: session.id)
+        let highWater = try XCTUnwrap(beforeRewind.last).sequence + 1
 
         let plan = try await store.rewindConversation(
             sessionID: session.id,
@@ -166,7 +168,12 @@ final class ConversationRewindTests: XCTestCase {
         XCTAssertTrue(ConversationIntegrity.isValid(after), "\(after)")
         XCTAssertEqual(plan.turn.text, "Summarise it")
         let events = await store.events(for: session.id)
-        XCTAssertEqual(events.map(\.sequence), Array(0..<events.count), "renumbered without gaps")
+        XCTAssertEqual(
+            events.map(\.sequence),
+            Array(highWater..<highWater + events.count),
+            "numbered on from the old high-water mark, never from zero"
+        )
+        XCTAssertEqual(events.first?.payload.restartsTranscript, true, "the cut transcript opens with its restart")
         XCTAssertEqual(ConversationRewind.turns(in: events).map(\.text), ["What does notes.txt say?"])
         let status = try await store.session(id: session.id).status
         XCTAssertEqual(status, .completed)
@@ -178,7 +185,7 @@ final class ConversationRewindTests: XCTestCase {
         await resumed.awaitCompletion()
         XCTAssertEqual(resumedModel.receivedRequests.first?.messages, after + [.user("List the files instead")])
         let appended = await store.events(for: session.id)
-        XCTAssertEqual(appended.map(\.sequence), Array(0..<appended.count))
+        XCTAssertEqual(appended.map(\.sequence), Array(highWater..<highWater + appended.count))
     }
 
     func testRewindingToASteerKeepsAValidHistoryAndDoesNotDeliverItAgain() async throws {
@@ -245,13 +252,15 @@ final class ConversationRewindTests: XCTestCase {
         XCTAssertEqual(reloadedConversation, conversation)
         let status = try await relaunched.session(id: session.id).status
         XCTAssertEqual(status, .completed)
-        // New events continue the renumbered sequence rather than colliding
-        // with it.
+        // New events continue the rewound sequence rather than colliding with
+        // it — read from the transcript, which now holds fewer lines than the
+        // numbers it has used.
         let next = try await relaunched.appendEvent(
             sessionID: session.id,
             payload: .assistantMessage(AssistantMessageEvent(text: "after"))
         )
-        XCTAssertEqual(next.sequence, events.count)
+        XCTAssertEqual(next.sequence, try XCTUnwrap(events.last).sequence + 1)
+        XCTAssertGreaterThan(next.sequence, events.count)
     }
 
     func testRewindingTheFirstPromptLeavesAnEmptyConversation() async throws {
@@ -267,8 +276,9 @@ final class ConversationRewindTests: XCTestCase {
         XCTAssertEqual(conversation, [])
         XCTAssertEqual(plan.status, .idle)
         let events = await store.events(for: session.id)
-        XCTAssertEqual(events.count, 1)
-        guard case .sessionCreated = events.first?.payload else {
+        XCTAssertEqual(events.count, 2)
+        XCTAssertEqual(events.first?.payload.restartsTranscript, true)
+        guard case .sessionCreated = events.last?.payload else {
             return XCTFail("only the session's creation is left")
         }
     }
@@ -298,6 +308,70 @@ final class ConversationRewindTests: XCTestCase {
 
         let goal = try await store.session(id: session.id).goal
         XCTAssertNil(goal)
+    }
+
+    // MARK: - Readers keeping their place
+
+    /// A phone or `juno events` keeps its place in a transcript by sequence.
+    /// After a rewind, a reader at any cursor — caught up, behind, or new —
+    /// must receive the restart and everything after it, and the host's
+    /// planner must accept that, not skip new events whose numbers it has
+    /// seen or refuse the jump as a hole.
+    func testAReaderPollingFromBeforeARewindReceivesTheRestartAndWhatFollows() async throws {
+        let agent = orchestrator(ScriptedModelClient(steps: [.text("One."), .text("Two.")]))
+        try await agent.submit(prompt: "First")
+        await agent.awaitCompletion()
+        try await agent.submit(prompt: "Second")
+        await agent.awaitCompletion()
+        let before = await store.protocolEvents(
+            after: CodeSessionEventCursor(sessionID: session.id, afterSequence: 0)
+        )
+        let caughtUp = try XCTUnwrap(before.last).sequence
+        let turnsSoFar = await recordedTurns()
+        let second = try XCTUnwrap(turnsSoFar.last)
+
+        try await store.rewindConversation(sessionID: session.id, to: second.id)
+        let resumed = orchestrator(ScriptedModelClient(steps: [.text("Again.")]))
+        try await resumed.submit(prompt: "Second, differently")
+        await resumed.awaitCompletion()
+
+        let transcripts: CodeSessionStore = store
+        let host = RuntimeCodeHost(
+            targets: { [] },
+            events: { cursor in await transcripts.protocolEvents(after: cursor) },
+            execute: { _ in throw CancellationError() }
+        )
+        for cursor in [0, 3, caughtUp] {
+            let page = try await host.events(
+                after: CodeSessionEventCursor(sessionID: session.id, afterSequence: cursor)
+            )
+            let restart = try XCTUnwrap(page.first, "from \(cursor)")
+            XCTAssertTrue(restart.payload.restartsTranscript, "from \(cursor)")
+            XCTAssertEqual(restart.sequence, caughtUp + 1, "numbered past everything seen, from \(cursor)")
+
+            // What a reader holds after applying the page: nothing before the
+            // restart, and the new turn after it.
+            var held = before.filter { $0.sequence <= cursor }
+            for event in page {
+                if event.payload.restartsTranscript { held = [] }
+                held.append(event)
+            }
+            let prompts = held.compactMap { event -> String? in
+                if case let .userPrompt(prompt) = event.payload { return prompt.text }
+                return nil
+            }
+            XCTAssertEqual(prompts, ["First", "Second, differently"], "from \(cursor)")
+        }
+
+        let transcript = await store.events(for: session.id)
+        let last = try XCTUnwrap(transcript.last)
+        let caughtUpAfter = try await host.events(
+            after: CodeSessionEventCursor(
+                sessionID: session.id,
+                afterSequence: CodeSessionStoreProtocolAdapter.envelope(from: last).sequence
+            )
+        )
+        XCTAssertTrue(caughtUpAfter.isEmpty, "a reader that took the restart is caught up again")
     }
 
     // MARK: - The plan, from records alone
@@ -406,7 +480,9 @@ final class ConversationRewindTests: XCTestCase {
 
         let plan = try ConversationRewind.plan(rewindingTo: "B", events: events, conversation: conversation)
 
-        XCTAssertEqual(plan.events.map(\.id), ["A", "event-1"], "the contract written for B goes with B")
+        XCTAssertEqual(plan.events.first?.payload.restartsTranscript, true)
+        XCTAssertEqual(plan.events.dropFirst().map(\.id), ["A", "event-1"], "the contract written for B goes with B")
+        XCTAssertEqual(plan.events.map(\.sequence), [6, 7, 8], "numbered past everything the transcript held")
         XCTAssertEqual(plan.status, .completed)
         XCTAssertEqual(plan.messages, [.user("A"), .assistant("a")])
     }

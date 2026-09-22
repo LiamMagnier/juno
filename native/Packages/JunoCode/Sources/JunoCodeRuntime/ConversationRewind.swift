@@ -38,7 +38,9 @@ public struct ConversationRewindPlan: Sendable {
     public let turn: ConversationTurn
     /// The model-facing history, ending just before the turn's message.
     public let messages: [ModelMessage]
-    /// The transcript, ending just before the turn's prompt, renumbered.
+    /// The transcript as it will be: a ``TranscriptRewoundEvent`` numbered
+    /// past every event the session ever held, then what is kept from before
+    /// the turn's prompt, numbered on from it.
     public let events: [SessionEvent]
     public let status: SessionStatus
     /// The goal as it stood before the turn, so a goal the rewound turns
@@ -106,10 +108,17 @@ public enum ConversationRewind {
     /// a record of an edit with no turn around it would be drawn as work
     /// happening after the thread ends. The turn store still holds what those
     /// turns wrote, so code can be rewound past them later.
+    ///
+    /// - Parameter nextSequence: the sequence the store would give its next
+    ///   event. The cut transcript is numbered from there, never from zero, so
+    ///   no number a reader has already seen is reused; see
+    ///   ``TranscriptRewoundEvent``. Nil numbers it past the last of `events`.
     public static func plan(
         rewindingTo turnID: String,
         events: [SessionEvent],
-        conversation: [ModelMessage]
+        conversation: [ModelMessage],
+        nextSequence: Int? = nil,
+        at date: Date = Date()
     ) throws -> ConversationRewindPlan {
         let turns = turns(in: events)
         guard let position = turns.firstIndex(where: { $0.id == turnID }) else {
@@ -137,10 +146,16 @@ public enum ConversationRewind {
         })
         var kept = events.filter { event in
             guard event.sequence < cut else { return false }
-            if case let .userInstruction(instruction) = event.payload {
+            switch event.payload {
+            case let .userInstruction(instruction):
                 return appliedBeforeCut.contains(instruction.id)
+            case .transcriptRewound:
+                // An earlier rewind's restart, which this one supersedes: the
+                // cut transcript opens with a restart of its own.
+                return false
+            default:
+                return true
             }
-            return true
         }
 
         // A cut inside a run leaves its last status active, and a transcript
@@ -166,14 +181,26 @@ public enum ConversationRewind {
             return nil
         }.first
 
-        // Sequence is the transcript's order of truth and the store assumes it
-        // counts from zero without gaps, so the kept events are renumbered.
-        // Their ids — which rows, groups and turns are keyed on — are kept.
+        // Numbered on from the highest sequence the session ever used, never
+        // from zero: a reader polling "after 150" has to receive the restart,
+        // and every event after it, rather than skip them as already seen.
+        // Ids — which rows, groups and turns are keyed on — are kept.
+        let first = max(
+            nextSequence ?? 0,
+            (events.lazy.map(\.sequence).max() ?? -1) + 1
+        )
+        // Not empty: the turn was found in it.
+        let restart = SessionEvent(
+            sessionID: events[0].sessionID,
+            sequence: first,
+            timestamp: date,
+            payload: .transcriptRewound(TranscriptRewoundEvent(turnID: turn.id))
+        )
         let renumbered = kept.enumerated().map { offset, event in
             SessionEvent(
                 id: event.id,
                 sessionID: event.sessionID,
-                sequence: offset,
+                sequence: first + 1 + offset,
                 timestamp: event.timestamp,
                 payload: event.payload
             )
@@ -181,7 +208,7 @@ public enum ConversationRewind {
         return ConversationRewindPlan(
             turn: turn,
             messages: ConversationIntegrity.repaired(Array(conversation[..<index])),
-            events: renumbered,
+            events: [restart] + renumbered,
             status: status,
             goal: goal
         )

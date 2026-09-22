@@ -12,13 +12,17 @@ public enum SessionStoreError: Error, Equatable, Sendable {
 ///
 /// Layout under the store directory:
 /// `sessions/<id>/session.json` — the session record;
-/// `sessions/<id>/events.jsonl` — append-only transcript events;
+/// `sessions/<id>/events.jsonl` — append-only transcript events, cut back only
+/// by a rewind the reader asked for (`rewindConversation`);
 /// `sessions/<id>/conversation.json` — resumable model context with ephemeral
 /// screenshot bytes redacted before they reach disk.
 public actor CodeSessionStore {
     private let directoryURL: URL
     private var sessions: [CodeSessionID: CodeSession] = [:]
-    private var eventCounts: [CodeSessionID: Int] = [:]
+    /// The sequence each session's next event takes: one past the highest it
+    /// ever used. That is the number of lines in its transcript until a rewind
+    /// cuts lines away without giving their numbers back.
+    private var nextSequences: [CodeSessionID: Int] = [:]
     private var observers: [UUID: @Sendable (StoreUpdate) -> Void] = [:]
     private var loaded = false
 
@@ -260,7 +264,7 @@ public actor CodeSessionStore {
             try FileManager.default.removeItem(at: directory)
         }
         sessions.removeValue(forKey: id)
-        eventCounts.removeValue(forKey: id)
+        nextSequences.removeValue(forKey: id)
         notify(.sessionRemoved(id))
     }
 
@@ -287,7 +291,7 @@ public actor CodeSessionStore {
         guard sessions[sessionID] != nil else {
             throw SessionStoreError.sessionNotFound(id: sessionID.value)
         }
-        let sequence = eventCounts[sessionID, default: 0]
+        let sequence = nextSequences[sessionID, default: 0]
         let event = SessionEvent(
             sessionID: sessionID,
             sequence: sequence,
@@ -310,7 +314,7 @@ public actor CodeSessionStore {
         } catch {
             throw SessionStoreError.persistenceFailed(message: String(describing: error))
         }
-        eventCounts[sessionID] = sequence + 1
+        nextSequences[sessionID] = sequence + 1
         notify(.eventAppended(event))
         return event
     }
@@ -363,16 +367,21 @@ public actor CodeSessionStore {
         return try ConversationRewind.plan(
             rewindingTo: turnID,
             events: events(for: sessionID),
-            conversation: loadConversation(sessionID: sessionID)
+            conversation: loadConversation(sessionID: sessionID),
+            nextSequence: nextSequences[sessionID, default: 0]
         )
     }
 
     /// Cuts the conversation and the transcript back to just before `turnID`.
     ///
     /// The one place the transcript is rewritten rather than appended to, and
-    /// only because the reader asked for exactly that. No event is appended
-    /// for the rewind itself, so observers are told only that the session
-    /// changed; a controller showing this session reloads its events.
+    /// only because the reader asked for exactly that. Sequence numbers still
+    /// only go up: the cut transcript opens with a ``TranscriptRewoundEvent``
+    /// numbered past everything before it, so a reader polling from any
+    /// cursor (`protocolEvents(after:)`) receives the restart next rather
+    /// than skipping new events whose numbers it has already seen. Observers
+    /// in this process are told only that the session changed; a controller
+    /// showing this session reloads its events.
     ///
     /// The conversation is written before the transcript. Cut short between
     /// the two, the model has forgotten turns the reader can still see, and a
@@ -397,7 +406,9 @@ public actor CodeSessionStore {
         } catch {
             throw SessionStoreError.persistenceFailed(message: String(describing: error))
         }
-        eventCounts[sessionID] = plan.events.count
+        if let last = plan.events.last {
+            nextSequences[sessionID] = last.sequence + 1
+        }
         _ = try updateSession(id: sessionID) { session in
             session.status = plan.status
             session.hasPendingApproval = false
@@ -414,7 +425,7 @@ public actor CodeSessionStore {
     private func loadIfNeeded() throws {
         guard !loaded else { return }
         sessions.removeAll(keepingCapacity: true)
-        eventCounts.removeAll(keepingCapacity: true)
+        nextSequences.removeAll(keepingCapacity: true)
 
         do {
             let interruptionMessage = "Interrupted by app termination."
@@ -464,7 +475,7 @@ public actor CodeSessionStore {
                 }
 
                 sessions[session.id] = session
-                eventCounts[session.id] = eventLines.count
+                nextSequences[session.id] = Self.nextSequence(after: eventLines)
                 guard requiresRepair else { continue }
 
                 // Persisting the terminal session first prevents a relaunch
@@ -509,13 +520,31 @@ public actor CodeSessionStore {
             // a failed interruption repair must retry from durable state on the
             // next call rather than leaving this actor permanently "loaded".
             sessions.removeAll(keepingCapacity: true)
-            eventCounts.removeAll(keepingCapacity: true)
+            nextSequences.removeAll(keepingCapacity: true)
             loaded = false
             if let storeError = error as? SessionStoreError {
                 throw storeError
             }
             throw SessionStoreError.persistenceFailed(message: String(describing: error))
         }
+    }
+
+    /// The sequence a transcript's next event takes.
+    ///
+    /// Read from the last line that has one rather than counted: a rewound
+    /// transcript is numbered on from where it was before the cut, so it holds
+    /// fewer lines than the numbers it has used. Only the sequence is decoded,
+    /// so a line whose payload this build cannot read still counts, and the
+    /// line count stays a floor for a transcript whose last line was torn.
+    private static func nextSequence(after lines: [Data]) -> Int {
+        struct Numbered: Decodable {
+            let sequence: Int
+        }
+        let decoder = JSONDecoder()
+        let last = lines.reversed().lazy.compactMap {
+            try? decoder.decode(Numbered.self, from: Data($0)).sequence
+        }.first
+        return max(lines.count, (last ?? -1) + 1)
     }
 
     private enum InterruptionRepairState {
