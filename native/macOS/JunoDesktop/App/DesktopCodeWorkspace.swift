@@ -474,22 +474,9 @@ struct DesktopCodeWorkspace: View {
             }
         }
         .overlay(alignment: .top) {
-            if controller.computerUseActive {
-                HStack(spacing: JunoSpace.snug) {
-                    Circle().fill(Studio.Ink.danger).frame(width: 7, height: 7)
-                    Text("Juno is controlling the screen")
-                        .font(Studio.Font.label)
-                    Button("Stop") { Task { await controller.stopComputerUse() } }
-                        .buttonStyle(StudioSecondaryButtonStyle())
-                        .accessibilityIdentifier("juno.code.computer-use.stop")
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
-                .background(Capsule().fill(Studio.Surface.raised))
-                .overlay(Capsule().strokeBorder(Studio.Surface.hairline))
-                .padding(.top, JunoSpace.snug)
-                .transition(.junoOverlay)
-            }
+            // The stop while screen control runs, and the missing macOS grant
+            // with its System Settings link when a start could not happen.
+            StudioScreenControlBanner(controller: controller)
         }
     }
 
@@ -788,10 +775,7 @@ struct DesktopCodeWorkspace: View {
             if controller.computerUseActive {
                 await controller.stopComputerUse()
             } else {
-                if !controller.session.configuration.computerUseEnabled {
-                    await controller.setComputerUseEnabled(true)
-                }
-                await controller.activateComputerUse()
+                await controller.startComputerUse()
             }
         }
     }

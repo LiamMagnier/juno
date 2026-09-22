@@ -74,6 +74,9 @@ public struct StudioSettingsView: View {
     /// The host's "let other devices use this Mac" control, which lives in the
     /// app because the model behind it does.
     let remoteHosting: AnyView?
+    /// Where the screen-control grants are read from: this Mac, except in a
+    /// snapshot or test that needs a particular answer.
+    let screenControlProbe: ComputerUsePermissionProbe
 
     @State private var section: StudioSettingsSection
     @State private var scope: CodeSettingsScope = .user
@@ -83,10 +86,12 @@ public struct StudioSettingsView: View {
     public init(
         workbench: WorkbenchModel?,
         initialSection: StudioSettingsSection = .general,
-        remoteHosting: AnyView? = nil
+        remoteHosting: AnyView? = nil,
+        screenControlProbe: ComputerUsePermissionProbe = .system
     ) {
         self.workbench = workbench
         self.remoteHosting = remoteHosting
+        self.screenControlProbe = screenControlProbe
         _section = State(initialValue: initialSection)
     }
 
@@ -162,6 +167,12 @@ public struct StudioSettingsView: View {
                 StudioPermissionsSettings(scope: scope, settings: settings)
                 if scope == .user, let remoteHosting {
                     Section("This Mac as a host") { remoteHosting }
+                }
+                // Beside the host switch, and on the same terms: macOS grants
+                // belong to this Mac, not to any settings file, so the section
+                // shows with the reader's own scope rather than a project's.
+                if scope == .user {
+                    StudioScreenControlSettings(probe: screenControlProbe)
                 }
             case .environment: StudioEnvironmentSettings(scope: scope, settings: settings)
             case .instructions: StudioInstructionsSettings(settings: settings)

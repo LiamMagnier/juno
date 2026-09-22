@@ -464,7 +464,19 @@ public final class SessionController {
         ComputerUsePermissionState = .notDetermined
     public private(set) var computerUseDisplayBounds: CGRect?
     public private(set) var computerUseJournal: [ComputerUseJournalEntry] = []
-    public private(set) var computerUseScreenshot: Data?
+    /// What the agent last saw, from the coordinator's own record. Memory
+    /// only, and gone the moment screen control stops.
+    public private(set) var computerUseLatestCapture: ComputerUseCapture?
+    /// The reader asked to start screen control and macOS had not granted
+    /// what it needs.
+    ///
+    /// A flag rather than an error string, because the answer is not a
+    /// sentence at the foot of the thread — it is a System Settings pane, and
+    /// which one changes as the reader grants them. The notice reads the live
+    /// grants every time it draws; this only remembers that someone is waiting
+    /// on them. It is cleared by a successful start, by dismissing the notice,
+    /// and by leaving the session.
+    public private(set) var computerUseStartBlocked = false
     public private(set) var acceptedHunks: Set<String> = []
 
     /// Review state for this session — which file is open, unified or side-by-side,
@@ -1039,7 +1051,8 @@ public final class SessionController {
         guard let live else { return }
         await live.context?.computerUse.deactivate(sessionID: sessionID)
         computerUseActive = false
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
+        computerUseStartBlocked = false
         if let token = storeObserver {
             await live.store.removeObserver(token)
             storeObserver = nil
@@ -1322,7 +1335,7 @@ public final class SessionController {
         )
         if behavior != .code {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.behavior = behavior
@@ -1333,6 +1346,21 @@ public final class SessionController {
         if behavior != .code {
             await refreshComputerUse()
         }
+    }
+
+    /// The reader's Start Screen Control, from the session menu or the
+    /// notice: allows it for this session, then starts it. Both halves are the
+    /// same gesture, so the session's switch is never turned on by anything
+    /// but the reader asking for screen control.
+    public func startComputerUse() async {
+        if let reason = computerUseUnavailableReason {
+            transientError = reason
+            return
+        }
+        if !session.configuration.computerUseEnabled {
+            await setComputerUseEnabled(true)
+        }
+        await activateComputerUse()
     }
 
     /// Called only from the visible Computer Use control. This is the explicit
@@ -1352,23 +1380,39 @@ public final class SessionController {
                 userConsented: true
             )
             computerUseActive = true
+            computerUseStartBlocked = false
             transientError = nil
-        } catch ComputerUseError.screenCapturePermissionMissing {
-            transientError =
-                "Screen Recording permission is required. Enable Juno in System Settings › Privacy & Security."
-        } catch ComputerUseError.accessibilityPermissionMissing {
-            transientError =
-                "Accessibility permission is required. Enable Juno in System Settings › Privacy & Security."
+        } catch let error as ComputerUseError where error.missingPermission != nil {
+            // Not a transient error. That line sits at the foot of the thread,
+            // often out of view, and cannot open the pane that fixes it, which
+            // is how a missing grant used to read as Start doing nothing. The
+            // notice at the top of the session names every grant still
+            // missing and opens each pane in turn.
+            computerUseStartBlocked = true
         } catch {
-            transientError = "Computer Use could not start: \(error)"
+            transientError = "Screen control could not start: \(error)"
         }
         await refreshComputerUse()
+    }
+
+    /// The reader closed the notice without granting anything.
+    public func dismissComputerUsePermissionNotice() {
+        computerUseStartBlocked = false
+    }
+
+    /// Both grants as last read, for the notice and anything else that has to
+    /// say which System Settings pane comes next.
+    public var computerUsePermissions: ComputerUsePermissionStatus {
+        ComputerUsePermissionStatus(
+            screenRecording: computerUseScreenPermission,
+            accessibility: computerUseAccessibilityPermission
+        )
     }
 
     public func stopComputerUse() async {
         guard let context = live?.context else { return }
         await context.computerUse.emergencyStop()
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
         await refreshComputerUse()
     }
 
@@ -1387,7 +1431,7 @@ public final class SessionController {
         }
         if !enabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.computerUseEnabled = enabled
@@ -1400,11 +1444,13 @@ public final class SessionController {
     public func captureComputerUseScreenshot() async {
         guard let context = live?.context else { return }
         do {
-            let captures = try await context.computerUse.perform(
+            // The coordinator keeps the capture itself and the refresh below
+            // reads it back, so a capture the reader takes and one the agent
+            // takes reach the window by the same path.
+            try await context.computerUse.perform(
                 .screenshot,
                 sessionID: sessionID
             )
-            computerUseScreenshot = captures.after
             transientError = nil
         } catch {
             transientError = "Screen capture failed: \(error)"
@@ -1420,6 +1466,9 @@ public final class SessionController {
         computerUseAccessibilityPermission = snapshot.accessibilityPermission
         computerUseDisplayBounds = snapshot.displayBounds
         computerUseJournal = snapshot.journal.filter { $0.sessionID == sessionID }
+        computerUseLatestCapture = snapshot.latestCapture?.sessionID == sessionID
+            ? snapshot.latestCapture
+            : nil
     }
 
     public func approve(_ approvalID: String) async {
@@ -1537,7 +1586,7 @@ public final class SessionController {
         let supportsVision = live.modelSupportsVision(modelID)
         if !supportsVision, session.configuration.computerUseEnabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.modelID = modelID
@@ -1562,12 +1611,12 @@ public final class SessionController {
         guard let live else {
             session.configuration.computerUseEnabled = false
             computerUseActive = false
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
             return
         }
 
         await live.context?.computerUse.deactivate(sessionID: sessionID)
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
         do {
             session = try await live.store.updateSession(id: sessionID) { session in
                 session.configuration.computerUseEnabled = false
@@ -3021,6 +3070,13 @@ public final class SessionController {
         case let .toolCompleted(completed):
             if openToolCallID == completed.toolCallID {
                 openToolCallID = nil
+            }
+            // Nothing pushes the coordinator's state into the window, and the
+            // agent's own screen actions are tool calls. Re-reading as each
+            // call finishes keeps the capture the reader sees in step with the
+            // machine, without polling while nothing is happening.
+            if computerUseActive {
+                Task { @MainActor [weak self] in await self?.refreshComputerUse() }
             }
         case let .toolOutput(output):
             appendTerminalChunk(
