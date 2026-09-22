@@ -528,7 +528,7 @@ export function prSettled(
   return !openPrUrls.has(run.prUrl);
 }
 
-/** Mirrors TERMINAL_TASK_STATUSES in lib/code-remote.ts, which is server-only. */
+/** Mirrors TERMINAL_TASK_STATUSES in lib/code-task-outcome.ts, which is server-only. */
 export function isTerminalRunStatus(status: string): boolean {
   return status === "done" || status === "failed" || status === "cancelled";
 }
