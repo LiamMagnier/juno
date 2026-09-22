@@ -23,9 +23,24 @@
  * line — thin 8, light 12, regular 16, bold 24 — and `fill` is a solid drawing
  * of its own, for the selected state.
  *
- * Each component takes the same props as a Phosphor icon, so `glyph()` in
- * `icons.tsx` wraps them exactly like the rest of the set (optical weight,
- * hover articulation, aria). Import them through `icons.tsx`, never directly.
+ * STATUS: STAGED, NOT SHIPPED. Nothing renders these yet. `icons.tsx` does not
+ * import this file, and the names they would replace still map to Phosphor
+ * (`Send` → PaperPlaneTilt, `AppIcons.design` → Shapes, `AppIcons.code` →
+ * Code, `AppIcons.home` → ChatCircle). They are kept as drawings in progress,
+ * not as dead weight: no module imports them, so they cost the bundle nothing.
+ *
+ * Adopting them is three steps, and all three belong together:
+ *   1. wrap each one with `glyph()` in `icons.tsx` (its props are shaped like a
+ *      Phosphor icon's — size, weight, mirrored, color — so optical weight,
+ *      hover articulation and aria come along; `glyph()` is typed for
+ *      `PhosphorIcon`, so it needs a widened parameter type, not a cast at
+ *      each call);
+ *   2. point the export or registry key at the wrapped mark, never rename one;
+ *   3. record the four exceptions to "Phosphor geometry" in
+ *      docs/design/ICONS_AND_MOTION.md §1, after reviewing them at 12, 16 and
+ *      20px beside the Phosphor row they would sit in.
+ * Until then, do not import this file from a call site: a mark that bypasses
+ * `glyph()` loses the optical weight ladder and the hover articulation.
  *
  * No hooks, no context: safe in server components.
  */

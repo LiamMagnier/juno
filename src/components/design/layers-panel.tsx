@@ -627,7 +627,7 @@ export function LayersPanel({
                   nativeHint
                   label={`${node.name} is animated — open the timeline`}
                   onClick={() => onShowMotion?.(id)}
-                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary"
+                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary coarse:size-6"
                 >
                   {/* The toolbar's Motion film strip, not a pulse line: one
                       concept, one drawing, and the badge is a shortcut to
@@ -640,7 +640,7 @@ export function LayersPanel({
                   nativeHint
                   label={`${node.name} has an interaction — open the prototype panel`}
                   onClick={() => onShowInteractions?.(id)}
-                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary"
+                  className="size-4.5 text-primary/70 hover:bg-primary/10 hover:text-primary coarse:size-6"
                 >
                   {/* Raw `Zap`: prototyping, the same bolt design-editor's
                       Prototype tab uses. Not the Juno Work destination. */}
@@ -659,7 +659,7 @@ export function LayersPanel({
                     className={cn(
                       iconButtonClass,
                       ICON_TONE.neutral,
-                      "size-4.5 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 coarse:opacity-100"
+                      "size-4.5 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-accent data-[state=open]:opacity-100 coarse:size-6 coarse:opacity-100"
                     )}
                   >
                     <ActionIcons.more className="size-3.5" aria-hidden />
@@ -725,8 +725,11 @@ export function LayersPanel({
                 className={cn(
                   // 18px, a notch under the rail's other keys: four of these
                   // share a row with the layer's name in a 208px rail, and every
-                  // point they take is a point of the name.
-                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  // point they take is a point of the name. On touch they grow
+                  // to 24px, not to the key's usual 32px: they are all shown
+                  // there at once, and five 32px keys would leave the name a
+                  // few letters wide.
+                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:size-6 coarse:opacity-100",
                   // Disabled (read-only) keeps the same rule: the engaged mark is
                   // the state, and a viewer is owed it at full strength.
                   node.visible ? "opacity-0 disabled:opacity-0" : "text-foreground/70 opacity-100 disabled:opacity-100"
@@ -742,7 +745,7 @@ export function LayersPanel({
                 hint={node.locked ? "Unlock" : "Lock"}
                 aria-pressed={node.locked}
                 className={cn(
-                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  "size-4.5 focus-visible:opacity-100 group-hover:opacity-100 coarse:size-6 coarse:opacity-100",
                   node.locked ? "text-foreground/70 opacity-100 disabled:opacity-100" : "opacity-0 disabled:opacity-0"
                 )}
               >

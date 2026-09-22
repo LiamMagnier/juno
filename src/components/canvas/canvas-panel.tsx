@@ -771,13 +771,20 @@ export function CanvasPanel({
             {hasHistory && (
               <>
                 <span aria-hidden>·</span>
+                {/* The name carries the version the reader can see ("v3"), so
+                    a voice user can say what is on screen (WCAG 2.5.3) — a
+                    bare "Version history" label replaced it. The pill stays
+                    one caption line tall so the header keeps its height; the
+                    ::after reaches 6px up and 8px down (into the header's own
+                    padding) for a ~32px target on a fine pointer. Coarse
+                    pointers already get a real 36px box, so it stands down. */}
                 <button
                   type="button"
                   onClick={toggleHistory}
                   aria-pressed={historyOpen}
-                  aria-label="Version history"
+                  aria-label={`Version history, v${artifact.currentVersion}`}
                   className={cn(
-                    "pressable -mx-1 inline-flex items-center gap-1 rounded-xs px-1 py-px coarse:min-h-9 coarse:px-2",
+                    "pressable relative -mx-1 inline-flex items-center gap-1 rounded-xs px-1 py-px after:absolute after:inset-x-0 after:-bottom-2 after:-top-1.5 after:content-[''] coarse:min-h-9 coarse:px-2 coarse:after:content-none",
                     historyOpen ? "text-primary" : "hover:bg-accent hover:text-foreground"
                   )}
                 >

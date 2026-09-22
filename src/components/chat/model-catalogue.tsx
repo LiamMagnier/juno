@@ -245,34 +245,26 @@ function DetailPanel({
   return (
     <div className={shell}>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
-        {/* Only the WORDS are keyed, and on the fast rung: the pane itself is
-            never remounted (see above — that re-faded 300px of column on every
-            arrow keypress and stopped the meters from travelling). The name
-            and the sentence under it are what change, so they cross in; held
-            arrow keys read as the words dimming while they move and settling
-            when you stop, rather than as a snap per row. */}
-        <div
-          key={model.id}
-          className="motion-safe:animate-fade-in motion-safe:[animation-duration:var(--dur-fast)]"
-        >
-          <div className="flex items-center gap-2">
-            {auto ? (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
-                <JunoMark className="size-3" />
-              </span>
-            ) : (
-              <ProviderLogo provider={model.provider} className="size-5 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
-          </div>
-          <p className="mt-0.5 font-mono text-micro text-muted-foreground/60">
-            {auto ? "Juno" : model.providerModel}
-          </p>
-
-          {model.description && (
-            <p className="mt-3 text-caption leading-relaxed text-muted-foreground">{model.description}</p>
+        {/* The words swap in place, unkeyed and unfaded: the cursor moves
+            every ~33ms under a held arrow key or a pointer sweep, and a fade
+            restarted per step never gets past partial opacity (see above). */}
+        <div className="flex items-center gap-2">
+          {auto ? (
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-logo border border-border/55 bg-card">
+              <JunoMark className="size-3" />
+            </span>
+          ) : (
+            <ProviderLogo provider={model.provider} className="size-5 shrink-0" />
           )}
+          <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
         </div>
+        <p className="mt-0.5 font-mono text-micro text-muted-foreground/60">
+          {auto ? "Juno" : model.providerModel}
+        </p>
+
+        {model.description && (
+          <p className="mt-3 text-caption leading-relaxed text-muted-foreground">{model.description}</p>
+        )}
 
         {model.status === "deprecated" && (
           <p className="mt-3 text-caption text-warning">
@@ -423,7 +415,7 @@ function RailTile({
             // `.pressable` carries the colour cross-fade AND the press dip on
             // their own rungs, so no transition-* utility sits beside it.
             "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
-            "motion-reduce:transition-none motion-reduce:active:scale-100",
+            "motion-reduce:active:scale-100",
             "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
@@ -863,7 +855,7 @@ export function ModelCatalogue({
                         type="button"
                         aria-label="Clear search"
                         onClick={() => setQuery("")}
-                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in motion-reduce:transition-none"
+                        className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-safe:animate-fade-in"
                       >
                         <X className="size-3" />
                       </button>

@@ -158,7 +158,7 @@ export default function RoadmapDetailPage() {
 
   return (
     <AppPage measure="reading">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 gap-1.5 text-muted-foreground">
+        <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 text-muted-foreground">
           <ArrowLeft className="size-4" /> Roadmap
         </Button>
 
@@ -208,7 +208,7 @@ export default function RoadmapDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })} className="gap-1.5">
+              <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })}>
                 <GlyphSwap
                   active={r.pinned}
                   off={<Pin className="size-3.5" />}

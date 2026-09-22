@@ -92,7 +92,10 @@ export function DownloadMenu({ className }: { className?: string }) {
                 // ring-offset paints a SOLID named colour into the gap, so this one
                 // wore a sidebar-coloured halo whenever the drawer floated it over
                 // a popover instead).
-                "data-[state=open]:bg-sidebar-hover data-[state=open]:text-foreground coarse:size-11",
+                // Open is read from `aria-expanded`: this trigger sits inside the
+                // tooltip's Slot, whose own `data-state` (closed / delayed-open)
+                // overrides the dropdown's, so `data-[state=open]` never matched.
+                "aria-expanded:bg-sidebar-hover aria-expanded:text-foreground coarse:size-11",
                 className,
               )}
             >

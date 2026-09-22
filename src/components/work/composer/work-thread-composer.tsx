@@ -475,12 +475,18 @@ export function WorkThreadComposer({
                         >
                           {/* The house weight, like the chat composer's `+`. The
                               eighth turn while open is a state (the panel is
-                              up), so it runs A-to-B on the symmetric curve; the
-                              glyph's own hover turn composes with it. */}
-                          <Plus
+                              up), so it runs A-to-B on the symmetric curve. It
+                              lives on a wrapper rather than on the <svg>: a
+                              transition utility on the glyph would replace the
+                              base `svg.icon[data-motion]` transition list and
+                              the glyph's own hover turn would snap instead of
+                              easing. On the wrapper the two compose. */}
+                          <span
                             aria-hidden="true"
-                            className="size-4 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-                          />
+                            className="grid place-items-center transition-transform duration-base ease-in-out group-data-[state=open]:rotate-45 motion-reduce:transition-none"
+                          >
+                            <Plus aria-hidden="true" className="size-4" />
+                          </span>
                         </Button>
                       </PopoverTrigger>
                     </TooltipTrigger>

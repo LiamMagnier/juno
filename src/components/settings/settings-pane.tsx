@@ -15,6 +15,7 @@ import { DataPrivacySection } from "@/components/settings/sections/data-privacy"
 import { AccountSection } from "@/components/settings/sections/account";
 import { BillingSection } from "@/components/settings/sections/billing";
 import { reducedVariants, transition, variants } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   general: GeneralSection,
@@ -56,6 +57,14 @@ const PANE_REDUCED: Variants = {
  * flow while it fades, so the incoming one takes its place at once instead of
  * waiting for it, and the two overlap for the exit rung.
  *
+ * FIRST PAINT IS CSS, NOT FRAMER. The (app) layout renders on the server, and
+ * a framer `initial="hidden"` would be written into that HTML as `opacity:0`,
+ * leaving the pane invisible beside a visible rail until the bundle hydrates
+ * (and for ever without JS). So `AnimatePresence initial={false}` renders the
+ * first section at rest, and that first section arrives on the CSS
+ * `animate-rise-in` instead, which plays on first paint with no JS at all.
+ * Framer takes over only for switches the reader makes after that.
+ *
  * `tabpanel` only when the rail beside it is a tablist (the modal — see
  * settings-rail.tsx). On the page the rail is a <nav> of links, and a
  * tabpanel with no tabs is a promise to assistive tech that nothing keeps;
@@ -75,15 +84,21 @@ export function SettingsPane({
   const Section = SECTION_COMPONENTS[section];
   const headingId = `settings-${section}`;
   const reduce = useReducedMotion();
+  // The first section the pane was mounted with keeps its CSS entrance; once
+  // the reader switches, framer owns every entrance (adjusting state on a
+  // prop change, React's own pattern — no effect, no extra paint).
+  const [firstSection] = React.useState(section);
+  const [switched, setSwitched] = React.useState(false);
+  if (!switched && section !== firstSection) setSwitched(true);
   return (
-    <AnimatePresence mode="popLayout">
+    <AnimatePresence mode="popLayout" initial={false}>
       <motion.div
         key={section}
         variants={reduce ? PANE_REDUCED : PANE}
         initial="hidden"
         animate="visible"
         exit="exit"
-        className={className}
+        className={cn(!switched && "motion-safe:animate-rise-in [animation-fill-mode:backwards]", className)}
         role={tabpanel ? "tabpanel" : "region"}
         id={tabpanel ? settingsPanelId(section) : undefined}
         aria-labelledby={tabpanel ? settingsTabId(section) : headingId}

@@ -250,7 +250,7 @@ export default function ProjectsPage() {
              makes. Two identical primary buttons on one screen is not two
              chances to find it — it is a reader deciding which one is real. */
           empty || loading ? undefined : (
-            <Button onClick={openCreate} size="sm" className="gap-1.5">
+            <Button onClick={openCreate} size="sm">
               <Plus className="size-4" aria-hidden="true" /> New project
             </Button>
           )
@@ -323,7 +323,7 @@ export default function ProjectsPage() {
           title="No projects yet"
           description="Create one to keep a topic’s chats, instructions, and files together."
           action={
-            <Button onClick={openCreate} className="gap-1.5">
+            <Button onClick={openCreate}>
               <Plus className="size-4" aria-hidden="true" /> New project
             </Button>
           }
@@ -488,12 +488,12 @@ function ProjectTile({
   return (
     // `data-icon-trigger`: the whole tile is the link (the name's stretched
     // overlay), so the folder should answer the pointer anywhere on it, not
-    // only over the name. Hover is tonal — the tile changes shade, it does not
-    // lift (ICONS_AND_MOTION §2.2).
+    // only over the name. Hover is tonal and owned by the interactive variant —
+    // the tile changes shade, it does not lift (ICONS_AND_MOTION §2.2).
     <Card
       variant="interactive"
       data-icon-trigger=""
-      className="group relative flex h-full min-h-40 flex-col p-4 hover:bg-accent/50 hover:shadow-raised"
+      className="group relative flex h-full min-h-40 flex-col p-4"
     >
       <div className="flex items-start gap-3">
         {p.coverUrl ? (

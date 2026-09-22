@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import { ArrowUp, CheckCircle2, ChevronUp, CircleDashed, Globe as GlobeGlyph, Search } from "@/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, truncate } from "@/lib/utils";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -150,16 +151,28 @@ export function WebSearchBlock({
               // An UP caret: `.aicss-ws-chevron` turns the button to point it
               // down while the results are folded. The turn takes the
               // symmetric curve — both ends of it are on screen.
-              <button
-                type="button"
-                className="aicss-ws-chevron ease-in-out motion-reduce:transition-none"
-                aria-label={open ? "Hide results" : "Show results"}
-                aria-expanded={open}
-                aria-controls={listId}
-                onClick={() => setOpen((v) => !v)}
-              >
-                <ChevronUp className="size-3" />
-              </button>
+              //
+              // The drawn box stays 16px so the caret sits on the label's line,
+              // but the hit area does not: a transparent `::before` pads it to
+              // 32px, and to 44px under `coarse:`. It is square, so the button's
+              // half-turn leaves it where it was, and the results below are a
+              // later positioned box, so where the two overlap the rows keep
+              // their own clicks.
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="aicss-ws-chevron relative ease-in-out before:absolute before:-inset-2 coarse:before:-inset-3.5 motion-reduce:transition-none"
+                    aria-label={open ? "Hide results" : "Show results"}
+                    aria-expanded={open}
+                    aria-controls={listId}
+                    onClick={() => setOpen((v) => !v)}
+                  >
+                    <ChevronUp className="size-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{open ? "Hide results" : "Show results"}</TooltipContent>
+              </Tooltip>
             )}
           </span>
         </div>

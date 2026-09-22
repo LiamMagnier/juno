@@ -58,7 +58,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
           {paused ? "Memory paused" : "Pause memory"}
         </label>
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={onExport} disabled={empty}>
+          <Button variant="ghost" size="sm" onClick={onExport} disabled={empty}>
             <ActionIcons.download className="size-3.5" /> Export
           </Button>
           <HoldButton

@@ -974,7 +974,6 @@ export default function ProjectDetailPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setInstructionsOpen(true)}
-                      className="gap-1.5"
                     >
                       <Maximize2 className="size-3.5" />
                       Full editor
@@ -983,7 +982,6 @@ export default function ProjectDetailPage() {
                       size="sm"
                       onClick={saveInstructions}
                       disabled={!instructionsDirty || savingInstructions}
-                      className="gap-1.5"
                     >
                       {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
                       Save
@@ -1302,7 +1300,6 @@ export default function ProjectDetailPage() {
                 size="sm"
                 onClick={saveInstructionsAndClose}
                 disabled={!instructionsDirty || savingInstructions}
-                className="gap-1.5"
               >
                 {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
                 Save instructions

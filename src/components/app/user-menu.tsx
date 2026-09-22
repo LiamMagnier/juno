@@ -133,7 +133,12 @@ export function UserMenu({
           // the pointer, and a face that swells is the loudest thing in a
           // quiet column. Open, it wears the panel's one selected recipe —
           // the same bounded fill the expanded footer's account row takes.
-          className="group sidebar-row-selected-on-open size-11 rounded-control hover:bg-sidebar-hover"
+          // Keyed off `aria-expanded`, not `data-state`: this trigger sits
+          // inside the tooltip's Slot, and TooltipTrigger's own `data-state`
+          // (closed / delayed-open) overrides the dropdown's, so a
+          // `[data-state=open]` recipe never matched here. `aria-expanded` is
+          // written by DropdownMenuTrigger alone.
+          className="group size-11 rounded-control hover:bg-sidebar-hover aria-expanded:sidebar-row-selected"
           aria-label="Account menu"
         >
           <UserAvatar className="size-6" />

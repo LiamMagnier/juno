@@ -3256,6 +3256,15 @@
     background-color var(--dur-fast) var(--ease-out-soft),
     color var(--dur-fast) var(--ease-out-soft);
 }
+/* The chip is drawn at 24px and hit at 32px, the contract's pointer floor. The
+   extension stops there: the toast's `pr-9` gutter is 36px, so anything wider
+   would reach into the action button beside it. */
+.toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]::before {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+  border-radius: inherit;
+}
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]:hover {
   background: hsl(var(--accent));
   color: hsl(var(--foreground));
@@ -3331,13 +3340,19 @@
  * Measured, it is a neutral control now rather than the accent: the toast
  * already says what happened, and its button is an offer ("Undo"), not the
  * page's primary action, so the one saturated colour stays with the page.
- * Juno's control geometry: 28px, the 13px `ui` rung at 500, the 10px control
- * corner, a hairline, the tonal hover cross-fade and the 0.97 press. The
- * cancel button is the ghost of it. `[data-button][data-cancel]` carries an
- * extra attribute because sonner's dark-theme cancel rule is (0,5,0). */
+ * Juno's control geometry: 32px (the `sm` button, and the contract's pointer
+ * floor for a hit target), the 13px `ui` rung at 500, the 10px control corner,
+ * a hairline, the tonal hover cross-fade and the 0.97 press. The cancel button
+ * is the ghost of it. `[data-button][data-cancel]` carries an extra attribute
+ * because sonner's dark-theme cancel rule is (0,5,0).
+ *
+ * On touch the drawn button stays 32px and a centred ::before carries the hit
+ * area to 44px, the idiom checkbox and switch use: a 44px slab would make every
+ * toast a third taller on the phone, where it already sits over the page. */
 .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
-  height: 1.75rem;
-  padding-inline: 0.625rem;
+  position: relative;
+  height: 2rem;
+  padding-inline: 0.75rem;
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
   background: hsl(var(--secondary));
@@ -3370,6 +3385,16 @@
   box-shadow: none;
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 2.75rem;
+    transform: translateY(-50%);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .toaster[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button]:active {

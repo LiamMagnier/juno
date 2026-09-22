@@ -287,7 +287,7 @@ export function ComposerClarificationPopover({
                   // A 4px rail is the right drawing and the wrong target, so
                   // the hit area reaches 8px above and below it on a pseudo-
                   // element: a 20px band to press, a 4px line to see.
-                  "relative h-1 flex-1 rounded-full transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+                  "relative h-1 flex-1 rounded-full transition-colors duration-base ease-out-soft",
                   "before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']",
                   // "Which question am I on" was marked with a ring drawn from
                   // --foreground — a white halo in dark that also computes to
@@ -345,7 +345,7 @@ export function ComposerClarificationPopover({
                       // control's 0.97) on --dur-press.
                       "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,color,transform] duration-fast ease-out-soft",
                       "sm:min-h-12 sm:items-center sm:px-3.5 sm:py-3",
-                      "active:scale-[0.99] active:duration-press motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "active:scale-[0.99] active:duration-press motion-reduce:active:scale-100",
                       // No hand-rolled ring. `ring-offset-card` paints a solid
                       // CARD-coloured gap, and this component renders in two
                       // places — inline over the composer and floating as a
@@ -373,7 +373,7 @@ export function ComposerClarificationPopover({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft motion-reduce:transition-none sm:mt-0 sm:size-7",
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-colors duration-fast ease-out-soft sm:mt-0 sm:size-7",
                         selected
                           ? "border-foreground bg-foreground text-background"
                           : "border-border/70 bg-card text-muted-foreground group-hover/opt:border-foreground/25"
@@ -404,7 +404,7 @@ export function ComposerClarificationPopover({
         {active.allowElse ? (
           <label
             className={cn(
-              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-fast ease-out-soft motion-reduce:transition-none sm:px-3.5 sm:py-3",
+              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-fast ease-out-soft sm:px-3.5 sm:py-3",
               currentAnswer?.source === "else"
                 ? "border-foreground/20 bg-foreground/[0.03]"
                 : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"
@@ -449,7 +449,7 @@ export function ComposerClarificationPopover({
           // `rounded-lg` is 16px — the SURFACE rung, on a bare text button one
           // line tall, so the focus outline bowed out at the corners. `control`
           // is the rung the ghost buttons beside it already sit on.
-          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground disabled:opacity-50 motion-reduce:transition-none sm:order-1"
+          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground disabled:opacity-50 sm:order-1"
         >
           Use your judgment
         </button>

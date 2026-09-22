@@ -278,7 +278,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               "pressable inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground",
               "hover:bg-accent hover:text-foreground",
               "data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11",
-              "motion-reduce:transition-none motion-reduce:active:scale-100"
+              "motion-reduce:active:scale-100"
             )}
           >
             <Settings2 className="size-4" />
@@ -308,7 +308,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
                   className={cn(
                     "pressable flex items-center gap-2.5 rounded-control px-2.5 py-2 text-left",
                     "disabled:pointer-events-none disabled:opacity-40",
-                    "motion-reduce:transition-none motion-reduce:active:scale-100",
+                    "motion-reduce:active:scale-100",
                     active ? "bg-accent" : "hover:bg-accent/60"
                   )}
                 >
@@ -331,7 +331,7 @@ function VoiceSettings({ voice }: { voice: VoiceController }) {
               would be a lie on a provider with no reasoning mode. */}
           {voice.capabilities?.thinkingChoice && (
             <section className="border-t border-border p-2">
-              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60 motion-reduce:transition-none">
+              <label className="flex cursor-pointer items-start gap-3 rounded-control px-2.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/60">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
                   <span className="text-ui font-medium text-foreground">Reasoning</span>
                   <span className="text-micro text-muted-foreground">
@@ -400,7 +400,7 @@ function BarButton({
             // replaced its list, so every control on the bar pressed untimed.
             "pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-ui font-medium",
             "disabled:pointer-events-none disabled:opacity-40",
-            "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:h-11",
+            "motion-reduce:active:scale-100 coarse:h-11",
             pressed
               ? "bg-foreground text-background"
               : tone === "danger"

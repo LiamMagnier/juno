@@ -187,11 +187,12 @@ export function AnnouncementPopup() {
           {/* The copy is dealt in after the panel lands — heading, then the
               actions — on the `loose` rung the motion scale keeps for a few
               large, consequential items (the onboarding card uses the same).
-              Travel collapses under reduced motion; the fade stays. */}
+              Travel collapses under reduced motion (`fade-in-up` reads
+              --motion-shift, so no `motion-safe:` guard); the fade stays. */}
           <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">
             <DialogHeader
               style={staggerDelay(1, "loose")}
-              className="text-left motion-safe:animate-fade-in-up [animation-fill-mode:backwards]"
+              className="text-left animate-fade-in-up [animation-fill-mode:backwards]"
             >
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
@@ -221,7 +222,7 @@ export function AnnouncementPopup() {
                 row sat further from the copy than any other modal's does. */}
             <div
               style={staggerDelay(2, "loose")}
-              className="flex flex-wrap items-center justify-end gap-3 motion-safe:animate-fade-in-up [animation-fill-mode:backwards]"
+              className="flex flex-wrap items-center justify-end gap-3 animate-fade-in-up [animation-fill-mode:backwards]"
             >
               {announcement.newsHref ? (
                 <Button variant="outline" onClick={() => followHref(announcement.newsHref)}>

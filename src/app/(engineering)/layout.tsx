@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/ui/icons";
 import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
 

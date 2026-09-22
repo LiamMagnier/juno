@@ -399,7 +399,7 @@ export function CompareView() {
                   // `.pressable`: the hover cross-fade and the press dip on
                   // their own rungs, which the hand-typed transition list here
                   // had no transform in — the card snapped when pressed.
-                  className="pressable rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-secondary motion-safe:animate-rise-in motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="pressable rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-ui leading-5 text-foreground/80 [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-secondary motion-safe:animate-rise-in motion-reduce:active:scale-100"
                 >
                   {sample}
                 </button>

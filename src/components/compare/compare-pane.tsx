@@ -118,7 +118,7 @@ export function ComparePane({
                   // focus anywhere inside the pane, so a keyboard user reaching
                   // the picker can see it is there. `.pressable` times the
                   // reveal, the tonal hover and the dip together.
-                  className="pressable grid size-8 place-items-center rounded-control text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-focus-within/pane:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10 coarse:opacity-100"
+                  className="pressable grid size-8 place-items-center rounded-control text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-focus-within/pane:opacity-100 group-hover/pane:opacity-100 motion-reduce:active:scale-100 coarse:size-10 coarse:opacity-100"
                 >
                   <ActionIcons.dismiss className="size-3.5" />
                 </button>
@@ -217,7 +217,7 @@ export function ComparePane({
             onClick={onContinue}
             // `ArrowRight`, not the leaves-Juno arrow: this carries the answer
             // into a chat here, and the arrow nudges the way it goes.
-            className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100"
+            className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
           >
             Continue in chat <ArrowRight aria-hidden="true" className="size-3.5" />
           </button>

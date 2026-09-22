@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { History, Loader2, Play } from "@/components/ui/icons";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -276,7 +276,7 @@ export default function AutomationPage() {
           <EmptyState
             size="panel"
             tone="error"
-            icon={CodeIcons.error}
+            icon={StatusIcons.error}
             title="Couldn’t read the history"
             description="This automation’s history couldn’t be read just now, which says nothing about whether it has run."
           />

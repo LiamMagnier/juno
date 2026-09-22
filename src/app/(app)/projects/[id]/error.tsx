@@ -39,11 +39,11 @@ export default function ProjectError({
           description="Its chats, instructions and files come from one request, and it didn’t come back. Nothing in the project has been changed."
           action={
             <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              <Button size="sm" onClick={reset}>
+                <ActionIcons.refresh className="size-4" aria-hidden="true" />
                 Try again
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
                 <Link href="/projects">All projects</Link>
               </Button>
             </>

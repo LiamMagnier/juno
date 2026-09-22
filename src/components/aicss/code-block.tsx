@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { GlyphSwap } from "@/components/aicss/glyph-swap";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
@@ -153,19 +154,28 @@ export function AicssCodeBlock({
           // The press is a utility rather than `.pressable`: `.aicss-cb-copy`
           // declares its own `transition` later in the same layer and would
           // drop the transform from it, so the dip would snap.
-          <button
-            type="button"
-            onClick={copy}
-            aria-label={copied ? "Copied" : "Copy code"}
-            className="aicss-cb-copy transition-[color,background-color,transform] duration-fast ease-out-soft active:scale-[0.97] active:duration-press motion-reduce:active:scale-100"
-          >
-            <GlyphSwap
-              swapped={copied}
-              from={<ActionIcons.copy className="size-3.5" />}
-              to={<StatusIcons.success className="size-3.5 text-success-ink" />}
-            />
-            <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
-          </button>
+          //
+          // Below `sm` the word is dropped and the button is glyph-only, so
+          // the tooltip carries the name there; from `sm` up the label is on
+          // the button itself and a tooltip would only repeat it.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={copy}
+                aria-label={copied ? "Copied" : "Copy code"}
+                className="aicss-cb-copy transition-[color,background-color,transform] duration-fast ease-out-soft active:scale-[0.97] active:duration-press motion-reduce:active:scale-100"
+              >
+                <GlyphSwap
+                  swapped={copied}
+                  from={<ActionIcons.copy className="size-3.5" />}
+                  to={<StatusIcons.success className="size-3.5 text-success-ink" />}
+                />
+                <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="sm:hidden">{copied ? "Copied" : "Copy code"}</TooltipContent>
+          </Tooltip>
         )}
       </div>
       {/* The one scroll region, and therefore the one tab stop: a long line

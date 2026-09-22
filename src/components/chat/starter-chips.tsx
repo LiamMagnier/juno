@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { IconComponent, IconMotion } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
@@ -32,34 +32,30 @@ import { cn } from "@/lib/utils";
  * describe any chat product.
  */
 /*
- * Each chip names the gesture its glyph makes under the pointer
- * (ICONS_AND_MOTION.md §1.3). The telescope and the pencil are tools picked
- * up; the code brackets and the workflow are marks, and swell. The hover is
- * the only thing that moves once the row has been dealt in.
+ * Each glyph's hover gesture is its own, declared once in icons.tsx
+ * (ICONS_AND_MOTION.md §1.3), so a chip plays whatever that drawing plays
+ * everywhere else — nothing is assigned here. The hover is the only thing
+ * that moves once the row has been dealt in.
  */
-const CHIPS: ReadonlyArray<{ label: string; icon: IconComponent; motion: IconMotion; seed: string }> = [
+const CHIPS: ReadonlyArray<{ label: string; icon: IconComponent; seed: string }> = [
   {
     label: "Research",
     icon: AppIcons.research,
-    motion: "tilt",
     seed: "Research and cite sources on ",
   },
   {
     label: "Write",
     icon: ActionIcons.edit,
-    motion: "tilt",
     seed: "Help me write ",
   },
   {
     label: "Code",
     icon: AppIcons.code,
-    motion: "pop",
     seed: "Write code that ",
   },
   {
     label: "Plan",
     icon: AppIcons.work,
-    motion: "pop",
     seed: "Plan the steps to ",
   },
 ];
@@ -91,7 +87,7 @@ export function StarterChips({ className }: { className?: string }) {
           )}
           style={staggerDelay(i, "tight", 120)}
         >
-          <chip.icon motion={chip.motion} className="size-4" aria-hidden="true" />
+          <chip.icon className="size-4" aria-hidden="true" />
           {chip.label}
         </button>
       ))}

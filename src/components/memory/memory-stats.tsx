@@ -142,7 +142,6 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5"
                 disabled={paused}
                 onClick={() => void runBackfill()}
                 aria-label={

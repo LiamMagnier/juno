@@ -175,7 +175,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                             >
                               <ActionIcons.delete className="size-4" />
                             </Button>
-                            <Button size="sm" className="gap-1.5" onClick={() => onAccept(edit)} disabled={busy}>
+                            <Button size="sm" onClick={() => onAccept(edit)} disabled={busy}>
                               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
                               {busy ? "Applying…" : "Accept"}
                             </Button>
@@ -185,7 +185,6 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                           <Button
                             variant="outline"
                             size="sm"
-                            className="gap-1.5"
                             onClick={() => onUndo(edit)}
                             disabled={busy}
                           >

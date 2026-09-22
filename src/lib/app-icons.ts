@@ -31,7 +31,6 @@ import {
   Download,
   Circle,
   Cloud,
-  Code2,
   Component,
   FileText,
   FileUp,
@@ -50,7 +49,9 @@ import {
   Lock,
   Mic,
   Info,
-  MessageCircle,
+  JunoChat,
+  JunoCode,
+  JunoDesign,
   Minus,
   MoreHorizontal,
   NotebookPen,
@@ -65,7 +66,6 @@ import {
   ScrollText,
   Search,
   Settings,
-  Shapes,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -97,8 +97,12 @@ export const AppIcons = {
    *  second drawing of the same idea. A squared variant was tried first for
    *  silhouette-matching with `work`; it meant the switcher said "chat" with one
    *  glyph while the list under it said "chat" with another, three pixels apart.
-   *  Matching the thing it navigates to beats matching the thing beside it. */
-  home: MessageCircle,
+   *  Matching the thing it navigates to beats matching the thing beside it.
+   *
+   *  Juno's own drawing (`JunoChat`, juno-glyphs.tsx): the logo's bubble as a
+   *  line — an open ring with the ball terminal in its gap. Its `fill` weight
+   *  is the logo itself, the solid bubble with the spark cut out. */
+  home: JunoChat,
   /** Juno Work — tasks Juno carries out on your Mac or in the cloud.
    *
    *  A workflow mark: nodes joined by a line, i.e. steps being carried out.
@@ -107,7 +111,9 @@ export const AppIcons = {
    *  says TALK versus ACT, and the drawing survives 14px — three boxes and one
    *  stroke, nothing to lose. */
   work: Workflow,
-  code: Code2,
+  /** Juno Code — Juno's own drawing (`JunoCode`): the logo's four-point spark
+   *  between two chevrons, where `</>` puts a slash. Code that Juno writes. */
+  code: JunoCode,
   /** Juno Design — the visual design surface.
    *
    *  A TRIANGLE, A SQUARE AND A CIRCLE (the set's `Shapes`). This was the
@@ -126,8 +132,13 @@ export const AppIcons = {
    *  file's first entry gave up the house for a speech bubble.
    *
    *  The nib is not retired: `DesignIcons.path` keeps it for a vector path
-   *  layer, where it names a tool because a tool is what it is. */
-  design: Shapes,
+   *  layer, where it names a tool because a tool is what it is.
+   *
+   *  The three primitives became two, in Juno's own drawing (`JunoDesign`): a
+   *  square in front of a circle, stacked like cut paper — the circle stops
+   *  short of the square instead of crossing it, which is what keeps the mark
+   *  quiet at 14px where three overlapping outlines turned into a knot. */
+  design: JunoDesign,
   /** Library — the images and documents your conversations have collected.
    *
    *  BOOKS WITH A SPINE, not four tick marks. The previous set's `Library`
@@ -158,7 +169,7 @@ export const AppIcons = {
   tasks: CalendarClock,
   connections: Plug,
   pulls: GitPullRequest,
-  conversation: MessageCircle,
+  conversation: JunoChat,
   new: Plus,
   search: Search,
   /** The web reaches Settings from the user menu rather than the rail, and draws
@@ -322,7 +333,7 @@ export const DesignIcons = {
   line: Minus,
   /** A vector path. The pen nib — a TOOL naming the one layer kind that is
    *  made with it. The Design destination used to draw a nib and now draws
-   *  `Shapes`: the mode is not a tool, and at 18px the old nib's inner circle
+   *  `JunoDesign`: the mode is not a tool, and at 18px the old nib's inner circle
    *  closed up (see `AppIcons.design`). At the 12px this tree sets its rows in,
    *  the nib reads — the set switches to its bold cut at that size, which
    *  keeps the slit open — and it is the only mark in the panel with a

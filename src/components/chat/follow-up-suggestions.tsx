@@ -165,7 +165,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               <span
                 aria-hidden="true"
                 className={cn(
-                  "inline-flex shrink-0 opacity-60 transition-opacity duration-fast ease-out-soft group-hover/pill:opacity-100 motion-reduce:transition-none",
+                  "inline-flex shrink-0 opacity-60 transition-opacity duration-fast ease-out-soft group-hover/pill:opacity-100",
                   // 14px glyph on a 20px line: 3px centres it on the first line.
                   isOpen && "mt-[3px]"
                 )}

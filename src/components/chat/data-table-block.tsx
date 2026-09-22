@@ -91,20 +91,27 @@ export function DataTableBlock({ table, title }: DataTableBlockProps) {
               aria-label="Filter data table rows"
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleExportCsv}
-            disabled={!table.columns.length || !table.data.length}
-            // Below `sm` the label hides and this is a bare glyph, which needs
-            // a name of its own; "CSV" stays inside it for voice control.
-            aria-label="Download CSV"
-            className="h-8 gap-1.5 px-2.5"
-          >
-            <Download className="size-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">CSV</span>
-          </Button>
+          {/* Below `sm` the label hides and this is a bare glyph, so the
+              tooltip names it there; from `sm` up "CSV" is on the button. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={!table.columns.length || !table.data.length}
+                // Below `sm` the label hides and this is a bare glyph, which needs
+                // a name of its own; "CSV" stays inside it for voice control.
+                aria-label="Download CSV"
+                className="h-8 gap-1.5 px-2.5"
+              >
+                <Download className="size-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">CSV</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="sm:hidden">Download CSV</TooltipContent>
+          </Tooltip>
         </div>
       </header>
 

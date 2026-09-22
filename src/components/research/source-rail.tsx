@@ -55,8 +55,12 @@ export function SourceRail({
 
   if (publishers.length === 0) {
     return (
-      <div className={cn("flex items-center gap-2 text-caption text-muted-foreground", className)}>
-        <Globe className="size-3.5 text-primary/70 motion-safe:animate-pulse" />
+      // Static and muted: the rail is only mounted for a finished run, so an
+      // empty publisher list is a settled state, not live work — nothing here
+      // may loop (ICONS_AND_MOTION §2.2 rule 9), and the accent is kept for
+      // state and the primary action.
+      <div className={cn("flex items-center gap-1.5 text-caption text-muted-foreground", className)}>
+        <Globe className="size-3.5 shrink-0" aria-hidden="true" />
         <span>{RAIL_COPY.nothingYet}</span>
       </div>
     );

@@ -74,7 +74,7 @@ export function ProjectWorkList({
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
           {filtered.length} of {workRuns.length}
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNewWork} className="ml-auto gap-1.5">
+        <Button type="button" size="sm" variant="secondary" onClick={onNewWork} className="ml-auto">
           <Plus className="size-3.5" aria-hidden="true" />
           Delegate work
         </Button>
@@ -109,7 +109,7 @@ export function ProjectWorkList({
             >
               <Link
                 href={chatPathForSession(work.conversationId)}
-                className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/50 motion-reduce:transition-none"
+                className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/40 active:bg-secondary motion-reduce:transition-none"
               >
                 <div className="flex items-start gap-3">
                   <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/tile:text-foreground motion-reduce:transition-none">

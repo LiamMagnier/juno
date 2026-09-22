@@ -92,8 +92,8 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
         title="Couldn’t load your memory"
         description="Check your connection and try again. Nothing has been changed."
         action={
-          <Button variant="outline" size="sm" onClick={() => void memory.reload()} className="gap-1.5">
-            <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+          <Button variant="outline" size="sm" onClick={() => void memory.reload()}>
+            <ActionIcons.refresh className="size-4" aria-hidden="true" />
             Retry
           </Button>
         }

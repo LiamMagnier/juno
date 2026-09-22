@@ -1,12 +1,13 @@
 import { AppPage } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
-import { staggerDelay } from "@/lib/motion";
+import { PullsSkeleton } from "@/components/code/pulls-skeleton";
 
 /**
  * The pull-request list: header, then the list's own furniture — the account
  * line and Refresh, a section heading, a repository label, and the rows as the
- * separate 60px cards `PullsList` draws (it used to be one inset well of 56px
- * bars, a shape the page never shows, so the list re-cornered as it landed).
+ * separate cards `PullsList` draws (it used to be one inset well of 56px bars,
+ * a shape the page never shows, so the list re-cornered as it landed). That
+ * part is `PullsSkeleton`, shared with PullsList's own loading phase.
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -16,7 +17,7 @@ import { staggerDelay } from "@/lib/motion";
 export default function CodePullsLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
-    // the same "this is loading" the sighted reader gets from the shimmer.
+    // the same "this is loading" the sighted reader gets from the placeholders.
     <AppPage measure="wide" role="status" aria-label="Loading pull requests">
       {/* AppPageHeader, at its own metrics: the mb-3 eyebrow row, the
           display-size heading, its lede, and the rule it now keeps for itself
@@ -33,23 +34,10 @@ export default function CodePullsLoading() {
           <Skeleton className="h-9 w-28" />
         </div>
       </div>
-      {/* mb-8: the list's own header is mb-5 inside a space-y-8 column, and
-          the two margins collapse to the larger. */}
-      <div className="mb-8 flex items-center justify-between gap-2">
-        <Skeleton className="h-4 w-52 rounded-xs" />
-        <Skeleton className="h-8 w-24" />
-      </div>
-      <Skeleton className="mb-2 h-3 w-20 rounded-xs" />
-      <Skeleton className="mb-1.5 h-3 w-36 rounded-xs" />
-      <div className="space-y-2">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton
-            key={i}
-            className="h-[60px] w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-            style={staggerDelay(i, "tight")}
-          />
-        ))}
-      </div>
+      {/* The list itself: the same placeholder PullsList draws while its own
+          fetch is in flight, so the hand-off from this route skeleton to that
+          one moves nothing. */}
+      <PullsSkeleton />
     </AppPage>
   );
 }

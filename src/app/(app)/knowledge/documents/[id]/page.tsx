@@ -117,8 +117,8 @@ export default function KnowledgeDocumentPage() {
             title="This document could not be read."
             description="The extractor could not open it, or the request did not come back."
             action={
-              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" /> Try again
+              <Button variant="outline" size="sm" onClick={() => void load()}>
+                <ActionIcons.refresh className="size-4" aria-hidden="true" /> Try again
               </Button>
             }
           />
