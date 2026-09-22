@@ -746,7 +746,6 @@ function fileExtension(name: string) {
  */
 export function ComposerAttachmentTile({
   upload,
-  readiness,
   onRemove,
   className,
 }: {
@@ -759,7 +758,7 @@ export function ComposerAttachmentTile({
    * index (see `useAttachmentReadiness`). A `.txt` is sent whatever the index
    * does, so it is left alone rather than given a status it does not have.
    */
-  readiness?: "reading" | "unreadable" | "visual" | "partial" | "ready";
+
   onRemove?: () => void;
   className?: string;
 }) {
@@ -778,20 +777,21 @@ export function ComposerAttachmentTile({
    * "Reading…" while the indexer works, so the empty second does not read as
    * a verdict; the warning only once it has actually settled.
    */
-  const unreadable = readiness === "unreadable";
-  const line = unreadable
-    ? "Couldn’t read this file"
-    : readiness === "visual"
-      // Not a warning. This file has no text layer — a scan, a photographed
-      // form — and will be read as pictures of its pages, which is how a
-      // person reads it too. Saying so beats both the old lie ("couldn't read
-      // this file", of a document that reads fine) and silence.
-      ? "Read as pages"
-      : readiness === "partial"
-        ? "Read in part"
-        : readiness === "reading"
-          ? "Reading…"
-          : (status ?? meta);
+  /*
+   * NO VERDICT ON THE FILE. The tile says what the file IS, not what a parser
+   * made of it.
+   *
+   * It used to carry a readiness line — "Reading…", then "Couldn't read this
+   * file" — driven by an extractor that ran at upload. That line was wrong in
+   * both directions and could not be made right from here: it was computed
+   * from a search index, while whether the model can read a document depends
+   * on the model (Claude and Gemini are handed the PDF itself and read a scan
+   * fine). Worse, it passed judgement before the person had asked anything.
+   *
+   * Nothing reads the file now until a question is sent, so there is no
+   * verdict to show and no honest way to show one. Name, type, size.
+   */
+  const line = status ?? meta;
 
   /* The paper square. Before the upload lands there is no attachment id, so
      no excerpt can be asked for — it shows the extension, which is what the
@@ -822,7 +822,7 @@ export function ComposerAttachmentTile({
         // the tiles and the controls read as one family of objects.
         "group relative flex h-16 shrink-0 overflow-hidden rounded-control border border-border/70 bg-secondary",
         isImage ? "w-16" : "w-56 max-w-full",
-        (upload.status === "error" || unreadable) && "border-destructive/60",
+        upload.status === "error" && "border-destructive/60",
         className,
       )}
     >
@@ -848,8 +848,7 @@ export function ComposerAttachmentTile({
             </span>
             <span
               className={cn(
-                "truncate font-mono text-micro uppercase",
-                unreadable ? "text-destructive" : "text-muted-foreground",
+                "truncate font-mono text-micro uppercase text-muted-foreground",
               )}
             >
               {line}
@@ -862,16 +861,10 @@ export function ComposerAttachmentTile({
           <Loader2 className="size-4 animate-spin text-foreground" aria-hidden="true" />
         </span>
       )}
-      {/* Said out loud too, and as a live region: a reader who cannot see the
-          tile turning red has to be TOLD that the file they attached is one
-          the model will not receive. */}
-      <span role={unreadable ? "status" : undefined} className="sr-only">
-        {unreadable
-          ? `${upload.fileName} — Juno could not read this file, so its contents will not reach the model.`
-          : status
-            ? `${upload.fileName}, ${status}`
-            : upload.fileName}
-      </span>
+      {/* Said out loud too: a reader who cannot see the tile still needs the
+          file's name and, while it is going up, its progress. There is no
+          verdict to announce any more — nothing has read the file yet. */}
+      <span className="sr-only">{status ? `${upload.fileName}, ${status}` : upload.fileName}</span>
       {onRemove && (
         <button
           type="button"
@@ -892,13 +885,12 @@ export function ComposerAttachmentTile({
  */
 export function ComposerAttachmentRow({
   uploads,
-  readiness,
   onRemove,
   className,
 }: {
   uploads: readonly PendingUpload[];
   /** Attachment id → whether its text reached the index (`useAttachmentReadiness`). */
-  readiness?: ReadonlyMap<string, "reading" | "unreadable" | "visual" | "partial" | "ready">;
+
   onRemove: (localId: string) => void;
   className?: string;
 }) {
@@ -910,7 +902,6 @@ export function ComposerAttachmentRow({
             <motion.div key={upload.localId} layout {...TILE_MOTION} className="min-w-0">
               <ComposerAttachmentTile
                 upload={upload}
-                readiness={upload.attachment ? readiness?.get(upload.attachment.id) : undefined}
                 onRemove={() => onRemove(upload.localId)}
               />
             </motion.div>

@@ -8,8 +8,8 @@ import { isStorageAvailable } from "@/lib/env";
 import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { isAcceptedUpload } from "@/lib/uploads";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
-import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
+import { serializeAttachment } from "@/lib/serializers";
 import { isOwnerEmail } from "@/lib/owner";
 import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 
@@ -149,9 +149,33 @@ export async function POST(req: Request) {
   }
 
 
-  // Structured extraction (program §5.1): the same bytes become citable blocks
-  // with page / slide / sheet / line locators, beside the flat `extractedText`
-  // above. Scheduled, not awaited — see `scheduleIngest`.
+  /*
+   * NOTHING IS READ HERE. THE UPLOAD STORES BYTES.
+   *
+   * This used to schedule structured extraction the moment a file landed, and
+   * that eagerness was the source of the whole class of bug this route kept
+   * producing. A parser ran minutes before anybody asked a question, decided
+   * there and then what the file contained, and its verdict became permanent:
+   * a PDF it misjudged was "COULDN'T READ THIS FILE" for good, a format it had
+   * no reader for was refused outright, and a single NUL byte in one block
+   * failed the insert for the entire document. The person was told their file
+   * was unreadable before they had asked anything about it.
+   *
+   * Reading now happens when the question does — see `ensureAttachmentText` in
+   * the chat route, which extracts on the first turn that actually needs text
+   * and caches the result. And the model can go further on its own: it has
+   * `read_document` to page through a file, `inspect_image` to crop and
+   * magnify, and `code_interpreter` to write Python against the bytes where a
+   * sandbox is configured. That is what the other assistants do, and it is
+   * strictly better than guessing at upload time, because by then there is a
+   * question to read the file *for*.
+   *
+   * A PROJECT FILE IS THE EXCEPTION, and it is a different feature wearing the
+   * same route. A project knowledge base exists to be searched across many
+   * documents at once, which is what an index is actually good at, and the
+   * person opted into that by filing the document there. `scheduleIngest`
+   * enforces the distinction itself so no upload path can get it wrong.
+   */
   scheduleIngest({
     userId: user.id,
     attachmentId: attachment.id,

@@ -1,7 +1,36 @@
 name: Deploy to VM
 
-# Builds on GitHub's runners (fast, lots of RAM) and ships only the build to the
-# VM over SSH, so the low-RAM VM never has to run `next build` itself.
+# Runs on a self-hosted runner registered ON the production VM itself (label
+# "juno-vm"), not GitHub-hosted "ubuntu-latest" — moved here after hitting the
+# account's included 3,000 GitHub Actions minutes/month. Self-hosted runner
+# time is unmetered, so every push to main now builds and deploys regardless
+# of Actions usage.
+#
+# What the VM needs for this to work (once, when registering the runner):
+#   - Docker, for the `migrations` job's ephemeral `postgres:16` service
+#     container — GitHub Actions service containers require it even on a
+#     self-hosted runner, and the runner's user must be able to run it
+#     (`docker run hello-world` should work without sudo).
+#   - Everything `deploy/deploy.sh` already assumes when it builds locally
+#     (node/npm, git, the usual POSIX toolchain) — see that script's
+#     `require_command` calls.
+#   - Enough free RAM/swap to run `npm run build` (Next.js) plus the test
+#     suite plus the relay/runner builds without OOM-killing the very
+#     process serving production traffic. This used to run on GitHub's
+#     bigger hosted runners for exactly this reason — watch `free -h` and
+#     `pm2 status` during the first few self-hosted runs.
+#
+# The existing `concurrency` group below already serializes every
+# deploy-capable run onto one slot, which matters more now than it did on
+# hosted runners: two builds running at once on the same small VM would
+# starve each other rather than just queuing on GitHub's infrastructure.
+#
+# This workflow also runs on every `pull_request` (see the trigger below) —
+# fine for a private, single-owner repo with no forks, but if this repo ever
+# gains outside contributors or goes public, a PR from an untrusted branch
+# would execute on this same runner with this same access. Re-scope the
+# `pull_request` trigger (e.g. to `pull_request_target` with a path/author
+# allowlist, or drop it back to hosted runners) before that changes.
 
 on:
   push:
@@ -34,7 +63,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, juno-vm]
     # Green runs take about 1m40s. Every job in this workflow is capped because
     # deploying runs now queue instead of cancelling one another: without a cap,
     # one hung job holds the single deploy slot for GitHub's 360-minute default.
@@ -165,7 +194,7 @@ jobs:
   # A real service container rather than `continue-on-error`: a step that cannot
   # fail is not a gate, it is a green tick.
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, juno-vm]
     # Green runs take about 1m10s.
     timeout-minutes: 15
     services:
@@ -381,7 +410,7 @@ jobs:
   # too. It is deliberately not path filtered: `runner/agent-core` is outside the
   # root tsconfig, so nothing else in CI compiles it.
   runner:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, juno-vm]
     # Green runs take about 20s.
     timeout-minutes: 10
     steps:
@@ -443,7 +472,7 @@ jobs:
     # ref is checked explicitly because workflow_dispatch is otherwise allowed
     # from any branch.
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, juno-vm]
     # Production secrets and deployment approval belong to the protected GitHub
     # environment, never to an unscoped repository secret.
     environment: Production
@@ -568,11 +597,11 @@ jobs:
             echo "::error::VM_KNOWN_HOSTS is not configured; refusing unpinned SSH host-key trust."
             exit 1
           fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_deploy
-          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_deploy
-          chmod 644 ~/.ssh/known_hosts
+          install -d -m 700 "$RUNNER_TEMP/deploy-ssh"
+          printf '%s\n' "$VM_SSH_KEY" > $RUNNER_TEMP/deploy-ssh/id_deploy
+          printf '%s\n' "$VM_KNOWN_HOSTS" > $RUNNER_TEMP/deploy-ssh/known_hosts
+          chmod 600 $RUNNER_TEMP/deploy-ssh/id_deploy
+          chmod 644 $RUNNER_TEMP/deploy-ssh/known_hosts
 
       - name: Snapshot the current build for rollback
         # Superseded by the immutable VM transaction below. Keep this legacy
@@ -602,7 +631,7 @@ jobs:
           # from the deploy rsync: node_modules and .next/cache are large and
           # rebuilt anyway, and .env/.uploads/logs must never be captured into a
           # snapshot that could later be restored over newer state.
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -e
           if [ -d ~/juno ]; then
@@ -642,7 +671,7 @@ jobs:
             --exclude '.uploads' \
             --exclude '.env' \
             --exclude '.env.*' \
-            -e "ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+            -e "ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile=$RUNNER_TEMP/deploy-ssh/known_hosts -o StrictHostKeyChecking=yes" \
             ./ "$VM_USER@$VM_HOST:~/juno/"
           # `.env` itself is excluded from the rsync above so the VM keeps any
           # values that live ONLY on it. But PROD_ENV is the source of truth, so
@@ -651,7 +680,7 @@ jobs:
           # VM-only keys (absent from PROD_ENV) are preserved. Match real
           # assignment lines only — skip comments and blank lines.
           grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env > .env.shared || true
-          scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             .env.shared "$VM_USER@$VM_HOST:~/juno/.env.shared"
 
       - name: Post-deploy on the VM (install-if-changed, migrate, reload)
@@ -661,7 +690,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           JUNO_BUILD_ROOT: ${{ github.workspace }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "JUNO_BUILD_ROOT='$JUNO_BUILD_ROOT' bash -s" <<'REMOTE'
           set -e
           cd ~/juno
@@ -856,7 +885,7 @@ jobs:
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
           # Free disk space on the VM before transferring artifacts
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "bash -s" <<'PREFLIGHT'
           set -euo pipefail
           rm -f /tmp/juno-*.tar.gz /tmp/juno-*.sha256 /tmp/juno-*.env 2>/dev/null || true
@@ -873,9 +902,9 @@ jobs:
             done
           fi
           PREFLIGHT
-          scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='$GITHUB_WORKSPACE' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"
@@ -947,7 +976,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
           set -e
           # Read the public origin from the same runtime env the app uses. Keep
@@ -1002,7 +1031,7 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
           set -e
           APP_URL="$(grep -m1 '^NEXT_PUBLIC_APP_URL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
@@ -1085,7 +1114,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+          ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"

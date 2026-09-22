@@ -647,7 +647,7 @@ export async function POST(req: Request) {
         ...(importKey ? { clientRequestId: importKey } : {}),
         title: convo.title,
         titleSource: convo.titleSource ?? "imported",
-        model: convo.model ?? "claude-opus-4-8",
+        model: convo.model ?? "claude-opus-5-5",
         kind: convo.kind ?? "chat",
         pinned: convo.pinned === true,
         archivedAt: convo.archivedAt ?? null,
