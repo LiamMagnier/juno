@@ -43,7 +43,8 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(resolved.rules.deny, [PermissionRule(tool: "Read", specifier: ".env")])
         XCTAssertEqual(store.awaitingApproval(projectRoot: project), [.project])
 
-        try store.approve(.project, projectRoot: project)
+        let reviewed = store.snapshot(.project, projectRoot: project)
+        XCTAssertTrue(try store.approve(.project, projectRoot: project, expectedDigest: reviewed.digest))
         resolved = store.resolved(projectRoot: project)
         XCTAssertEqual(resolved.environment, ["FEATURE": "1"])
         XCTAssertEqual(resolved.rules.allow, [PermissionRule(tool: "Bash")])
@@ -56,6 +57,44 @@ final class CodeSettingsStoreTests: XCTestCase {
         resolved = store.resolved(projectRoot: project)
         XCTAssertEqual(resolved.environment, [:])
         XCTAssertEqual(resolved.rules.allow, [])
+    }
+
+    /// The reported hole: approving hashed whatever the file held at the
+    /// click, so a change that landed after the window read it — a `git pull`,
+    /// a checkout, an editor's sync — was approved without being seen.
+    func testAnApprovalCoversOnlyTheBytesTheReaderReviewed() throws {
+        try write(#"{"permissions":{"allow":["Bash(npm test *)"]}}"#, .project)
+        let reviewed = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(reviewed.file.permissions?.allow, [PermissionRule(tool: "Bash", specifier: "npm test *")])
+        XCTAssertTrue(store.awaitsApproval(reviewed, .project, projectRoot: project))
+
+        // The file changes while the window still shows the old version.
+        try write(#"{"permissions":{"allow":["Bash"]}}"#, .project)
+        XCTAssertFalse(try store.approve(.project, projectRoot: project, expectedDigest: reviewed.digest))
+        XCTAssertFalse(store.isApproved(.project, projectRoot: project))
+        XCTAssertEqual(store.resolved(projectRoot: project).rules.allow, [])
+        XCTAssertEqual(store.awaitingApproval(projectRoot: project), [.project])
+
+        // What the reader looks at next, they may approve.
+        let current = store.snapshot(.project, projectRoot: project)
+        XCTAssertTrue(try store.approve(.project, projectRoot: project, expectedDigest: current.digest))
+        XCTAssertEqual(store.resolved(projectRoot: project).rules.allow, [PermissionRule(tool: "Bash")])
+    }
+
+    /// The digest a snapshot carries is of the very bytes it decoded.
+    func testASnapshotsDigestIsOfWhatItShows() throws {
+        let text = #"{"env":{"FEATURE":"1"}}"#
+        try write(text, .project)
+        let snapshot = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(snapshot.digest, Digests.sha256Hex(Data(text.utf8)))
+        XCTAssertEqual(snapshot.file.env, ["FEATURE": "1"])
+        XCTAssertNil(snapshot.loadError)
+
+        try write("{ not json", .project)
+        let broken = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(broken.digest, Digests.sha256Hex(Data("{ not json".utf8)))
+        XCTAssertNotNil(broken.loadError)
+        XCTAssertEqual(broken.file, CodeSettingsFile())
     }
 
     /// "Always allow" and the Settings window write the local file for the
