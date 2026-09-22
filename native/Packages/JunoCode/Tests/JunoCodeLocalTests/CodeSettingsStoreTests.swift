@@ -133,6 +133,32 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(permissions["remoteCeiling"] as? String, "sometimes")
     }
 
+    // MARK: - Keeping the personal file out of Git
+
+    private var ignoreList: String {
+        (try? String(contentsOf: project.appendingPathComponent(".juno/.gitignore"), encoding: .utf8)) ?? ""
+    }
+
+    /// "Open File" used to write `{}` itself, leaving an untracked but not
+    /// ignored file for the reader to fill with allow rules and variables.
+    func testCreatingThePersonalFileToEditIgnoresItFirst() throws {
+        let url = try store.createIfMissing(.local, projectRoot: project)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(ignoreList.split(separator: "\n").contains("settings.local.json"))
+        XCTAssertTrue(store.isApproved(.local, projectRoot: project), "an empty file the reader asked for is theirs")
+
+        // Asking again changes nothing.
+        try store.createIfMissing(.local, projectRoot: project)
+        XCTAssertEqual(ignoreList.components(separatedBy: "settings.local.json").count, 2)
+    }
+
+    func testAPersonalFileMadeOutsideJunoIsIgnoredWhenJunoNextReadsIt() throws {
+        try write("{}", .local)
+        XCTAssertFalse(ignoreList.contains("settings.local.json"))
+        _ = store.resolved(projectRoot: project)
+        XCTAssertTrue(ignoreList.split(separator: "\n").contains("settings.local.json"))
+    }
+
     /// The system prompt names the branch without running Git.
     func testTheBranchIsReadFromHEADWithoutRunningGit() throws {
         let git = project.appendingPathComponent(".git")

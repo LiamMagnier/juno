@@ -124,6 +124,20 @@ public final class CodeSettingsModel {
 
     public var personalInstructionsURL: URL { store.userInstructionsURL() }
 
+    /// The scope's file, created empty through the store if there is none, so
+    /// a new personal file is kept out of Git before the reader fills it in.
+    public func fileForEditing(_ scope: CodeSettingsScope) -> URL? {
+        guard isAvailable(scope) else { return nil }
+        do {
+            let url = try store.createIfMissing(scope.storeScope, projectRoot: projectRoot)
+            reload()
+            return url
+        } catch {
+            problems.append("Could not create \(scope.detail): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Whether a scope can be edited right now: the project ones need a project.
     public func isAvailable(_ scope: CodeSettingsScope) -> Bool {
         scope == .user || projectRoot != nil

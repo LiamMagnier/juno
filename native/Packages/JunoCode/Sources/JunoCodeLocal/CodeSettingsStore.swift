@@ -101,6 +101,14 @@ public struct CodeSettingsStore: Sendable {
     public func layers(projectRoot: URL?) -> [CodeSettingsLayer] {
         var layers = [CodeSettingsLayer(load(.user, projectRoot: nil), origin: .user, isApproved: true)]
         if let projectRoot {
+            // Every session and the Settings window resolve through here, so
+            // a personal file made in an editor is ignored by Git as soon as
+            // Juno next reads it.
+            if let local = url(for: .local, projectRoot: projectRoot),
+               FileManager.default.fileExists(atPath: local.path)
+            {
+                ensureLocalFileIsIgnored(projectRoot: projectRoot)
+            }
             for (scope, origin) in [(Scope.project, CodeSettingsLayer.Origin.project), (.local, .local)] {
                 layers.append(
                     CodeSettingsLayer(
@@ -303,10 +311,36 @@ public struct CodeSettingsStore: Sendable {
         }
     }
 
+    /// Creates an empty file for the reader to open in their editor, if there
+    /// is none, and answers where it is.
+    ///
+    /// Created here rather than by whoever wants to open it, so a new
+    /// `settings.local.json` is listed in `.juno/.gitignore` before the reader
+    /// fills it with allow rules and variables: "Open File" used to write `{}`
+    /// directly, and the file it made was untracked but not ignored, one
+    /// `git add -A` away from being pushed.
+    @discardableResult
+    public func createIfMissing(_ scope: Scope, projectRoot: URL?) throws -> URL {
+        guard let url = url(for: scope, projectRoot: projectRoot) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try save(CodeSettingsFile(), to: scope, projectRoot: projectRoot)
+            // The reader asked for it; an empty file is theirs to approve.
+            if scope != .user, let projectRoot {
+                try approve(scope, projectRoot: projectRoot)
+            }
+        } else if scope == .local, let projectRoot {
+            ensureLocalFileIsIgnored(projectRoot: projectRoot)
+        }
+        return url
+    }
+
     /// `settings.local.json` is personal. A reader who commits it by accident
-    /// publishes their allow-list, so the first write adds it to the
-    /// project's `.juno/.gitignore`.
-    private func ensureLocalFileIsIgnored(projectRoot: URL) {
+    /// publishes their allow-list, so it is added to the project's
+    /// `.juno/.gitignore` whenever Juno writes it or finds it, including one
+    /// made outside Juno.
+    public func ensureLocalFileIsIgnored(projectRoot: URL) {
         let ignore = projectRoot.appendingPathComponent(".juno/.gitignore")
         let line = "settings.local.json"
         let existing = (try? String(contentsOf: ignore, encoding: .utf8)) ?? ""
