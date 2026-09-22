@@ -58,6 +58,12 @@ public struct StudioLanding: View {
     @State private var fileReferences: [WorkspacePath] = []
     @State private var branch: String?
     @State private var remoteError: String?
+    /// Set the moment a cloud or device start is sent, before the task that
+    /// sends it has run. `isStarting` is the host's local-only flag and
+    /// `NativeCodeModel.isMutating` is set only once that task's body starts,
+    /// so a second Return or a Return then a click in between created, and
+    /// billed, a second remote task for the same prompt.
+    @State private var isSubmittingRemote = false
     @FocusState private var focused: Bool
 
     public init(
@@ -117,7 +123,9 @@ public struct StudioLanding: View {
     }
 
     private var canSend: Bool {
-        !isStarting && (!trimmed.isEmpty || !attachments.isEmpty)
+        !isStarting && !isSubmittingRemote
+            && !(isRemote && (code?.isMutating ?? false))
+            && (!trimmed.isEmpty || !attachments.isEmpty)
             && (environment == .worktree || blockingReason == nil)
             && !modelID.isEmpty
     }
@@ -352,7 +360,7 @@ public struct StudioLanding: View {
         let message = remoteError ?? (canSend || trimmed.isEmpty ? nil : blockingReason)
             ?? (environment == .worktree ? blockingReason : nil)
         HStack {
-            if isStarting {
+            if isStarting || isSubmittingRemote {
                 StudioSpinner().frame(width: 10, height: 10)
                 Text("Starting…").font(Studio.Font.meta).foregroundStyle(Studio.Ink.tertiary)
             } else if let message {
@@ -427,9 +435,11 @@ public struct StudioLanding: View {
                 )
             )
         case .cloud, .device:
-            guard let code else { return }
+            guard let code, !isSubmittingRemote else { return }
+            isSubmittingRemote = true
             let submitted = trimmed
             Task {
+                defer { isSubmittingRemote = false }
                 guard let task = await code.startTask(prompt: submitted) else {
                     remoteError = code.lastErrorDescription ?? code.startBlockedReason
                     return
