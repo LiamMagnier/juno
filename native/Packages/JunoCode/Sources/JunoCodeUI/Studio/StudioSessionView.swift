@@ -58,6 +58,8 @@ public struct StudioSessionView: View {
         VStack(spacing: 0) {
             if let problem = controller.settingsProblem {
                 StudioBanner(text: problem, tone: .warning)
+            } else if let notice = controller.settingsNotice {
+                StudioBanner(text: notice)
             }
             StudioThreadView(controller: controller, openReview: openReview)
             VStack(spacing: JunoSpace.snug) {

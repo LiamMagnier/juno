@@ -108,7 +108,10 @@ final class PermissionRulesTests: XCTestCase {
             sandbox: .init(network: false),
             instructions: "Use tabs."
         )
-        let resolved = ResolvedCodeSettings.resolve([user, project])
+        let resolved = ResolvedCodeSettings.resolve([
+            CodeSettingsLayer(user, origin: .user),
+            CodeSettingsLayer(project, origin: .project, isApproved: true),
+        ])
         XCTAssertEqual(resolved.rules.allow, [PermissionRule(tool: "Bash", specifier: "npm test *")])
         XCTAssertEqual(resolved.rules.deny, [PermissionRule(tool: "Read", specifier: ".env")])
         XCTAssertEqual(resolved.environment, ["A": "1", "B": "2"])
@@ -124,9 +127,11 @@ final class PermissionRulesTests: XCTestCase {
     func testOnlyTheReadersOwnFileCanRaiseTheRemoteCeiling() {
         func ceiling(_ user: PermissionMode?, _ project: PermissionMode?, _ local: PermissionMode? = nil) -> PermissionMode {
             ResolvedCodeSettings.resolve([
-                CodeSettingsFile(permissions: .init(remoteCeiling: user)),
-                CodeSettingsFile(permissions: .init(remoteCeiling: project)),
-                CodeSettingsFile(permissions: .init(remoteCeiling: local)),
+                CodeSettingsLayer(CodeSettingsFile(permissions: .init(remoteCeiling: user)), origin: .user),
+                // Approved, even: approval lets a project file widen the
+                // agent's own reach, never the phone's.
+                CodeSettingsLayer(CodeSettingsFile(permissions: .init(remoteCeiling: project)), origin: .project, isApproved: true),
+                CodeSettingsLayer(CodeSettingsFile(permissions: .init(remoteCeiling: local)), origin: .local, isApproved: true),
             ]).remoteCeiling
         }
         XCTAssertEqual(ceiling(.readOnly, .fullAccess), .readOnly)

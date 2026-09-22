@@ -131,8 +131,62 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     }
 }
 
+/// One settings file as resolution sees it: what it says, where it came from,
+/// and whether the reader has approved it as it now reads.
+public struct CodeSettingsLayer: Equatable, Sendable {
+    public enum Origin: String, Sendable {
+        /// `~/.juno/settings.json`: the reader's own, always in force.
+        case user
+        /// `<project>/.juno/settings.json`: arrives with the repository.
+        case project
+        /// `<project>/.juno/settings.local.json`: personal, but it lives in
+        /// the project, where a clone can carry it and the agent can write it.
+        case local
+    }
+
+    public var file: CodeSettingsFile
+    public var origin: Origin
+    /// The reader approved this file's current contents. Their own file
+    /// needs no approval.
+    public var isApproved: Bool
+
+    public init(_ file: CodeSettingsFile, origin: Origin, isApproved: Bool = false) {
+        self.file = file
+        self.origin = origin
+        self.isApproved = isApproved
+    }
+
+    /// Whether this file may widen what the agent can do, rather than only
+    /// narrow it.
+    public var mayLoosen: Bool { origin == .user || isApproved }
+}
+
+extension CodeSettingsFile {
+    /// Whether the file asks for anything that widens what the agent may do:
+    /// the parts a project file needs the reader's approval for.
+    public var loosensAnything: Bool {
+        !(permissions?.allow ?? []).isEmpty
+            || !(env ?? [:]).isEmpty
+            || !(sandbox?.writablePaths ?? []).isEmpty
+            || sandbox?.network == true
+            || agent?.modelFallback == true
+    }
+}
+
 /// The settings a session actually runs with: every layer applied, every
 /// default filled in.
+///
+/// **Trust.** A project's files are not the reader's. The checked-in
+/// `.juno/settings.json` arrives with a clone, and `settings.local.json`
+/// lives in the folder the agent edits. Until the reader approves a project
+/// file as it now reads (the approval is kept outside the project, against a
+/// digest of the file, so any edit withdraws it), resolution takes only what
+/// narrows the agent: deny and ask rules, `network: false`, a lower remote
+/// ceiling. Allow rules, the environment, extra writable folders, network
+/// access and model fallback wait for approval. Even approved, a project file
+/// cannot set the variables that decide which programs run or how they load
+/// (``CodeSettingsEnvironment``), nor make anything outside the project
+/// writable (``CodeSettingsPaths``).
 public struct ResolvedCodeSettings: Equatable, Sendable {
     public var rules: PermissionRuleSet
     public var remoteCeiling: PermissionMode
@@ -166,14 +220,26 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     public static let maxTurnsRange = 10...1_000
     public static let compactThresholdRange = 0.50...0.95
 
-    /// Applies `layers` lowest first. The first is the reader's own file.
-    public static func resolve(_ layers: [CodeSettingsFile]) -> ResolvedCodeSettings {
+    /// Applies `layers` lowest first.
+    ///
+    /// - Parameters:
+    ///   - projectRoot: the project the project files belong to; their
+    ///     writable folders must lie inside it.
+    ///   - homeDirectory: no file may make the home folder, `/`, or anything
+    ///     above either writable.
+    public static func resolve(
+        _ layers: [CodeSettingsLayer],
+        projectRoot: URL? = nil,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> ResolvedCodeSettings {
         var resolved = defaults
-        for (index, layer) in layers.enumerated() {
-            if let permissions = layer.permissions {
+        for layer in layers {
+            let file = layer.file
+            let loosens = layer.mayLoosen
+            if let permissions = file.permissions {
                 resolved.rules = resolved.rules.merging(
                     PermissionRuleSet(
-                        allow: permissions.allow ?? [],
+                        allow: loosens ? permissions.allow ?? [] : [],
                         ask: permissions.ask ?? [],
                         deny: permissions.deny ?? []
                     )
@@ -184,20 +250,34 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                     // phone may do with nobody at this Mac, so only the
                     // reader's own file may set it; a project's files, which
                     // arrive with a clone or can be written by the agent, may
-                    // only lower it.
-                    resolved.remoteCeiling = index == 0
+                    // only lower it, approved or not.
+                    resolved.remoteCeiling = layer.origin == .user
                         ? ceiling
                         : resolved.remoteCeiling.capped(at: ceiling)
                 }
             }
-            if let env = layer.env {
-                resolved.environment.merge(env) { _, closer in closer }
+            if loosens, let env = file.env {
+                for (name, value) in env
+                where layer.origin == .user || !CodeSettingsEnvironment.isReserved(name) {
+                    resolved.environment[name] = value
+                }
             }
-            if let sandbox = layer.sandbox {
-                if let network = sandbox.network { resolved.allowsNetwork = network }
-                if let paths = sandbox.writablePaths { resolved.writablePaths += paths }
+            if let sandbox = file.sandbox {
+                if let network = sandbox.network, loosens || !network {
+                    resolved.allowsNetwork = network
+                }
+                if loosens, let paths = sandbox.writablePaths {
+                    resolved.writablePaths += paths.compactMap {
+                        CodeSettingsPaths.writablePath(
+                            $0,
+                            origin: layer.origin,
+                            projectRoot: projectRoot,
+                            homeDirectory: homeDirectory
+                        )
+                    }
+                }
             }
-            if let agent = layer.agent {
+            if let agent = file.agent {
                 if let turns = agent.maxTurns {
                     resolved.maxTurns = min(max(turns, maxTurnsRange.lowerBound), maxTurnsRange.upperBound)
                 }
@@ -208,18 +288,120 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
                         compactThresholdRange.upperBound
                     )
                 }
-                if let fallback = agent.modelFallback { resolved.modelFallback = fallback }
+                // Fallback hands the reader's code to another lab's model, so
+                // switching it on is a widening like any other.
+                if let fallback = agent.modelFallback, loosens || !fallback {
+                    resolved.modelFallback = fallback
+                }
             }
-            if let git = layer.git {
+            if let git = file.git {
                 if let trailer = git.coAuthorTrailer { resolved.coAuthorTrailer = trailer }
                 if let prefix = git.branchPrefix { resolved.branchPrefix = prefix }
             }
-            if let text = layer.instructions?.trimmingCharacters(in: .whitespacesAndNewlines),
+            if let text = file.instructions?.trimmingCharacters(in: .whitespacesAndNewlines),
                !text.isEmpty
             {
                 resolved.instructions.append(text)
             }
         }
         return resolved
+    }
+}
+
+/// The command-environment variables a project's settings may not set, even
+/// once approved.
+///
+/// Each decides which program runs, what it loads before the code it was
+/// asked to run, or where it reads its configuration. `PATH` pointing at a
+/// checked-in `.juno/bin/git` turned the `git status` Juno runs while building
+/// the system prompt into the repository's own program, before any approval;
+/// `GIT_CONFIG_*` installs a `core.fsmonitor` hook the same way; `DYLD_*`
+/// injects a library into every process. The reader's own file may still set
+/// any of them.
+public enum CodeSettingsEnvironment {
+    static let reservedNames: Set<String> = [
+        "PATH", "HOME", "PWD", "SHELL", "ENV", "BASH_ENV", "ZDOTDIR", "IFS", "CDPATH", "FPATH",
+        "PROMPT_COMMAND", "PS4", "TMPDIR",
+        "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS",
+        "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE",
+        "RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB", "PERLLIB", "PERL5DB",
+        "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH",
+        "EDITOR", "VISUAL", "PAGER", "MANPAGER", "LESSOPEN", "LESSCLOSE", "BROWSER",
+        "SSH_ASKPASS", "SUDO_ASKPASS", "SSH_AUTH_SOCK", "GNUPGHOME",
+        "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CC", "CXX", "LD", "AR",
+        "XDG_CONFIG_HOME", "XDG_DATA_HOME", "CURL_HOME", "WGETRC",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    ]
+    static let reservedPrefixes = [
+        "GIT_", "DYLD_", "LD_", "NPM_CONFIG_", "YARN_", "BUNDLE_", "CARGO_", "PIP_",
+        "POETRY_", "GEM_", "MALLOC_",
+    ]
+
+    /// Compared without case: tools read `npm_config_*` and `http_proxy` in
+    /// lower case as readily as upper.
+    public static func isReserved(_ name: String) -> Bool {
+        let upper = name.uppercased()
+        return reservedNames.contains(upper) || reservedPrefixes.contains { upper.hasPrefix($0) }
+    }
+}
+
+/// Where a settings file may let commands write.
+public enum CodeSettingsPaths {
+    /// The canonical form of one `sandbox.writablePaths` entry, or nil when it
+    /// names a folder that file may not open up.
+    ///
+    /// Never `/`, the home folder, or anything above either, from any file:
+    /// the sandbox allows writes beneath each entry, so any of those grants
+    /// the home folder and with it shell profiles, LaunchAgents and keys. A
+    /// project file's entries must also lie inside the project once symbolic
+    /// links are resolved, so a checked-in link to `~` cannot bring it back.
+    /// The reader's own file may name any other folder.
+    public static func writablePath(
+        _ raw: String,
+        origin: CodeSettingsLayer.Origin,
+        projectRoot: URL?,
+        homeDirectory: URL
+    ) -> String? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let isProjectFile = origin != .user
+        if text == "~" || text.hasPrefix("~/") {
+            text = homeDirectory.path + text.dropFirst()
+        }
+        if !text.hasPrefix("/") {
+            // A relative entry means the project's folder; the reader's own
+            // file has no project to be relative to.
+            guard isProjectFile, let projectRoot else { return nil }
+            text = projectRoot.path + "/" + text
+        }
+        let path = canonical(text)
+        guard path != "/", !contains(path, canonical(homeDirectory.path)) else { return nil }
+        if isProjectFile {
+            guard let projectRoot, contains(canonical(projectRoot.path), path) else { return nil }
+        }
+        return path
+    }
+
+    /// Whether `inner` is `outer` or lies beneath it.
+    private static func contains(_ outer: String, _ inner: String) -> Bool {
+        outer == "/" || inner == outer || inner.hasPrefix(outer + "/")
+    }
+
+    /// The path the kernel sees: `..` removed and symbolic links resolved
+    /// through the deepest part that exists.
+    static func canonical(_ path: String) -> String {
+        var remainder: [String] = []
+        var candidate = (path as NSString).standardizingPath
+        while !candidate.isEmpty, candidate != "/" {
+            if let real = realpath(candidate, nil) {
+                defer { free(real) }
+                let base = String(cString: real)
+                return ([base == "/" ? "" : base] + remainder.reversed()).joined(separator: "/")
+            }
+            remainder.append((candidate as NSString).lastPathComponent)
+            candidate = (candidate as NSString).deletingLastPathComponent
+        }
+        return "/" + remainder.reversed().joined(separator: "/")
     }
 }

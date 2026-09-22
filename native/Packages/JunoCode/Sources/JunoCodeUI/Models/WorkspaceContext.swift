@@ -258,7 +258,10 @@ public final class WorkspaceContext: Sendable {
                 "Work as a patient technical explainer: make the code and decisions easy to understand."
         }
 
-        let branch = access.isGitRepository ? (try? await git.status())?.branch : nil
+        // Read from `.git/HEAD`, not by running `git status`: this runs before
+        // the first request of a folder that may have just been cloned, and a
+        // subprocess here would run whatever the repository points Git at.
+        let branch = access.isGitRepository ? GitHeadReader.branch(atRepositoryRoot: access.rootURL) : nil
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE d MMMM yyyy"
         formatter.locale = Locale(identifier: "en_US_POSIX")

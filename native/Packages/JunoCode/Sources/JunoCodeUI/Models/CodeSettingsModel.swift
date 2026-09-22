@@ -61,6 +61,9 @@ public final class CodeSettingsModel {
     public private(set) var problems: [String] = []
     /// `~/.juno/JUNO.md`, the reader's instructions for every project.
     public private(set) var personalInstructions = ""
+    /// Project files that ask for more than the reader has approved, and so
+    /// apply only where they narrow the agent.
+    public private(set) var awaitingApproval: Set<CodeSettingsScope> = []
 
     public init(store: CodeSettingsStore = CodeSettingsStore()) {
         self.store = store
@@ -82,6 +85,29 @@ public final class CodeSettingsModel {
         problems = CodeSettingsStore.Scope.allCases.compactMap {
             store.loadError($0, projectRoot: projectRoot)
         }
+        awaitingApproval = Set(
+            store.awaitingApproval(projectRoot: projectRoot).map { scope -> CodeSettingsScope in
+                switch scope {
+                case .user: .user
+                case .project: .project
+                case .local: .local
+                }
+            }
+        )
+    }
+
+    /// Puts a project file in force as it now reads: its allow rules,
+    /// environment, folders and network access. Any later change to the file
+    /// withdraws this.
+    public func approve(_ scope: CodeSettingsScope) {
+        guard let projectRoot, scope != .user else { return }
+        do {
+            try store.approve(scope.storeScope, projectRoot: projectRoot)
+        } catch {
+            problems.append("Could not approve \(scope.detail): \(error.localizedDescription)")
+            return
+        }
+        reload()
     }
 
     public func file(_ scope: CodeSettingsScope) -> CodeSettingsFile {
