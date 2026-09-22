@@ -1,4 +1,5 @@
 import Foundation
+import JunoCodeCore
 
 /// Environment-level containment for locally executed commands.
 ///
@@ -121,6 +122,20 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         if filesystem == .readWrite {
             for path in ([workspaceRoot.path] + additionalWritablePaths).map(Self.resolved) {
                 lines.append("(allow file-write* (subpath \(Self.quote(path))))")
+            }
+            // The project's policy files, and Juno's folder itself, are not a
+            // command's to write, whatever the mode: a shell redirect would
+            // otherwise reach what the file tools ask about every time. Later
+            // rules win in SBPL, so these denies override the workspace grant.
+            // The folder is denied as an entry only, so worktrees and other
+            // files inside it stay writable while a swap of the whole folder
+            // does not. Both the path as named and as resolved are listed, in
+            // case either part of it is a link.
+            for relative in WorkspacePolicyPaths.files + [WorkspacePolicyPaths.folder] {
+                let named = workspaceRoot.path + "/" + relative
+                for path in Set([Self.resolved(workspaceRoot.path) + "/" + relative, Self.resolved(named)]).sorted() {
+                    lines.append("(deny file-write* (literal \(Self.quote(path))))")
+                }
             }
             // ioctl on a tty is what makes interactive-ish tools work at all.
             lines.append("(allow file-ioctl (subpath \"/dev\"))")

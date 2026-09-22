@@ -206,6 +206,32 @@ final class CommandSandboxTests: XCTestCase {
         )
     }
 
+    /// A shell redirect must not reach what the file tools ask about every
+    /// time: the project's policy files, or Juno's folder as a whole.
+    func testACommandCannotWriteThePolicyFiles() async throws {
+        try FileManager.default.createDirectory(
+            at: workspaceURL.appendingPathComponent(".juno"),
+            withIntermediateDirectories: true
+        )
+        let writes = [
+            #"echo '{"permissions":{"allow":["Bash"]}}' > .juno/settings.local.json"#,
+            #"echo '{}' > .juno/settings.json"#,
+            #"echo '{}' > .mcp.json"#,
+            "mv .juno .juno-old",
+            "rm -rf .juno",
+        ]
+        for command in writes {
+            let result = try await run(command)
+            XCTAssertNotEqual(result.exitCode, 0, "\(command) was allowed: \(result.output)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(".juno/settings.local.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(".mcp.json").path))
+
+        // The rest of the folder stays usable: worktrees live there.
+        let worktree = try await run("mkdir -p .juno/worktrees/task && echo ok > .juno/worktrees/task/file && cat .juno/worktrees/task/file")
+        XCTAssertEqual(worktree.exitCode, 0, worktree.output)
+    }
+
     func testAReadOnlyProfileGrantsNoWriteAtAll() throws {
         let profile = CommandSandboxProfile(workspaceRoot: workspaceURL, filesystem: .readOnly)
         XCTAssertFalse(profile.profileText().contains("file-write*"))
