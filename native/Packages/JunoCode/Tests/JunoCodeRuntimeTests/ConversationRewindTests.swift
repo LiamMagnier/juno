@@ -27,9 +27,6 @@ private actor TurnRecorder: TurnCheckpointing {
     func openTurn(id: String, sessionID: CodeSessionID, openedAt: Date) async {
         opened.append(id)
     }
-
-    func capturePreImage(of path: WorkspacePath, sessionID: CodeSessionID) async {}
-    func recordAgentWrite(to path: WorkspacePath, sessionID: CodeSessionID) async {}
 }
 
 final class ConversationRewindTests: XCTestCase {

@@ -160,8 +160,13 @@ public enum TurnCheckpointError: Error, Equatable, Sendable {
     case restoreFailed(path: String, message: String)
 }
 
-/// Snapshots files before an agent turn first changes them, so the turn can
-/// be rewound later.
+/// Where the runtime marks the start of each of the reader's turns, so the
+/// files the turn's tools change can be snapshotted against it and the turn
+/// rewound later.
+///
+/// Only the boundary is the runtime's to report. The snapshots themselves are
+/// taken by the file operations the agent's tools are given (in JunoCodeLocal),
+/// which see each write and whether it went through.
 ///
 /// Deliberately separate from ``Checkpointing``. Those are per mutation and
 /// back the per-file revert in the Changes panel; these are per *turn* and
@@ -171,13 +176,4 @@ public enum TurnCheckpointError: Error, Equatable, Sendable {
 public protocol TurnCheckpointing: Sendable {
     /// Starts the turn every later capture for `sessionID` belongs to.
     func openTurn(id: String, sessionID: CodeSessionID, openedAt: Date) async
-
-    /// Records `path`'s current state as the open turn's pre-image, unless
-    /// this turn already has one for it. Called immediately before an agent
-    /// tool changes the path.
-    func capturePreImage(of path: WorkspacePath, sessionID: CodeSessionID) async
-
-    /// Records what an agent tool left at `path`, whether or not the change
-    /// went through. Called immediately after.
-    func recordAgentWrite(to path: WorkspacePath, sessionID: CodeSessionID) async
 }

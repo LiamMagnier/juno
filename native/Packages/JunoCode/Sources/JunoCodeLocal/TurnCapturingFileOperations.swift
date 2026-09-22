@@ -11,9 +11,9 @@ import JunoCodeCore
 /// agent's, a rewind would overwrite them without asking.
 public struct TurnCapturingFileOperations: FileOperating {
     private let base: any FileOperating
-    private let turns: any TurnCheckpointing
+    private let turns: TurnCheckpointStore
 
-    public init(base: any FileOperating, turns: any TurnCheckpointing) {
+    public init(base: any FileOperating, turns: TurnCheckpointStore) {
         self.base = base
         self.turns = turns
     }
@@ -75,16 +75,19 @@ public struct TurnCapturingFileOperations: FileOperating {
         }
     }
 
-    /// Snapshots before, and records the outcome after — on failure too:
-    /// whatever a tool left on disk is what the agent last left there, and a
-    /// rewind judges every later edit against it.
+    /// Reads each path before, and records the outcome after — on failure
+    /// too: whatever a tool left on disk is what the agent last left there,
+    /// and a rewind judges every later edit against it. A pre-image is only
+    /// kept for a path the operation changed, so one the service refused
+    /// costs the turn nothing.
     private func capturing(
         _ paths: [WorkspacePath],
         sessionID: CodeSessionID,
         _ operation: () async throws -> FileMutationResult
     ) async throws -> FileMutationResult {
+        var preImages: [TurnCheckpointStore.PreImage?] = []
         for path in paths {
-            await turns.capturePreImage(of: path, sessionID: sessionID)
+            preImages.append(await turns.capturePreImage(of: path, sessionID: sessionID))
         }
         let result: Result<FileMutationResult, any Error>
         do {
@@ -92,8 +95,14 @@ public struct TurnCapturingFileOperations: FileOperating {
         } catch {
             result = .failure(error)
         }
-        for path in paths {
-            await turns.recordAgentWrite(to: path, sessionID: sessionID)
+        let succeeded = if case .success = result { true } else { false }
+        for (path, preImage) in zip(paths, preImages) {
+            await turns.recordAgentWrite(
+                to: path,
+                preImage: preImage,
+                succeeded: succeeded,
+                sessionID: sessionID
+            )
         }
         return try result.get()
     }

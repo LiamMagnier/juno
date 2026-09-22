@@ -11,16 +11,18 @@ import JunoCodeCore
 ///
 /// **What is captured.** The first time an agent file tool changes a path in a
 /// turn, the path's state from just before: its bytes and POSIX mode, or the
-/// fact that it did not exist. Changes made by commands the agent runs are not
-/// captured — the shell writes files Juno never sees, which is the same
+/// fact that it did not exist. A tool the file service refuses changes
+/// nothing and records nothing. Changes made by commands the agent runs are
+/// not captured — the shell writes files Juno never sees, which is the same
 /// boundary Claude Code draws.
 ///
 /// **What is kept.** Snapshots for the most recent ``Limits/maximumTurns``
 /// turns that changed anything, and no more than ``Limits/maximumBytes`` of
-/// them per session. Past either, the oldest turn's snapshots are dropped and
-/// the turn marked ``TurnSnapshotGap/pruned``: its conversation can still be
-/// rewound, but its code — and any earlier turn's — cannot, because restoring
-/// them would need the bytes that were let go.
+/// them per session. Past either, the oldest turn's snapshots are dropped —
+/// their bytes deleted from disk — and the turn marked
+/// ``TurnSnapshotGap/pruned``: its conversation can still be rewound, but its
+/// code — and any earlier turn's — cannot, because restoring them would need
+/// the bytes that were let go.
 public actor TurnCheckpointStore: TurnCheckpointing {
     public struct Limits: Sendable {
         /// Turns that keep file snapshots. Turns that changed nothing cost
@@ -28,8 +30,11 @@ public actor TurnCheckpointStore: TurnCheckpointing {
         public var maximumTurns: Int
         /// Snapshot bytes per session, counted once per distinct content.
         public var maximumBytes: Int
-        /// The largest single file snapshotted. Agent file tools refuse files
-        /// over 2 MB anyway; this only has to be comfortably above that.
+        /// The largest single file whose pre-image is read and kept. A larger
+        /// one is only noticed: if a tool does change it, its turn is marked
+        /// ``TurnSnapshotGap/notCaptured``. Juno's file service refuses to
+        /// change anything over 2 MB, so with it this only bounds how much a
+        /// refused operation reads.
         public var maximumFileBytes: Int
 
         public init(maximumTurns: Int, maximumBytes: Int, maximumFileBytes: Int) {
@@ -76,62 +81,160 @@ public actor TurnCheckpointStore: TurnCheckpointing {
         store(turns, for: sessionID)
     }
 
-    public func capturePreImage(of path: WorkspacePath, sessionID: CodeSessionID) async {
+    /// A path as it was just before an agent tool ran, held in memory until
+    /// the tool has.
+    struct PreImage: Sendable {
+        enum Content: Sendable {
+            /// Read whole: its state, and the bytes to keep if the tool
+            /// changes it (none for a path that did not exist).
+            case read(TurnFileState, Data?)
+            /// Too large to keep, or unreadable. All that can be told
+            /// afterwards is whether the tool changed it.
+            case unread(Stamp?)
+        }
+
+        let turnID: String
+        let content: Content
+    }
+
+    /// Enough of a file's attributes to tell that it changed without reading
+    /// it.
+    struct Stamp: Equatable, Sendable {
+        let byteCount: Int?
+        let modifiedAt: Date?
+
+        init?(at url: URL) {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+                return nil
+            }
+            byteCount = (attributes[.size] as? NSNumber)?.intValue
+            modifiedAt = attributes[.modificationDate] as? Date
+        }
+    }
+
+    /// Reads `path` as it is immediately before an agent tool changes it.
+    ///
+    /// Nothing is recorded yet. The file service checks the operation only
+    /// after this — a stale base, a file over its size limit, a patch that
+    /// does not apply — and a refused operation leaves the disk as it was, so
+    /// it must leave the turn as it was too: no entry, no stored bytes, and
+    /// above all no gap, or one failed delete of a large log would make the
+    /// turn and every one before it unrestorable.
+    /// ``recordAgentWrite(to:preImage:succeeded:sessionID:)`` keeps it only
+    /// if the path changed.
+    ///
+    /// Nil when there is nothing to hold: no open turn, a turn that cannot be
+    /// restored whole anyway, a path this turn already recorded, or one the
+    /// tool refuses before touching anything (a directory, a path outside the
+    /// workspace).
+    func capturePreImage(of path: WorkspacePath, sessionID: CodeSessionID) -> PreImage? {
+        let turns = journal(for: sessionID)
+        guard let current = turns.indices.last, turns[current].gap == nil else { return nil }
+        guard !turns[current].files.contains(where: { $0.path == path }) else { return nil }
+
+        let turnID = turns[current].id
+        guard let url = try? access.resolveForMutation(path) else {
+            // Outside the workspace: the tool fails on the same check.
+            return nil
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return PreImage(turnID: turnID, content: .read(.absent, nil))
+        }
+        guard !isDirectory.boolValue else { return nil }
+        let stamp = Stamp(at: url)
+        guard let byteCount = stamp?.byteCount,
+              byteCount <= limits.maximumFileBytes,
+              let data = try? Data(contentsOf: url),
+              data.count <= limits.maximumFileBytes
+        else {
+            return PreImage(turnID: turnID, content: .unread(stamp))
+        }
+        let state = TurnFileState.file(
+            sha256: Digests.sha256Hex(data),
+            byteCount: data.count,
+            permissions: Self.permissions(at: url)
+        )
+        return PreImage(turnID: turnID, content: .read(state, data))
+    }
+
+    /// Records what an agent tool left at `path`, whether or not it went
+    /// through: whatever a tool left on disk is what the agent last left
+    /// there, and a rewind judges every later edit against it.
+    ///
+    /// A path its turn already holds gets its new state. A new one is kept
+    /// only if the tool changed it, and only then are its pre-image's bytes
+    /// written, so the storage cap counts snapshots a rewind could use and
+    /// nothing else.
+    func recordAgentWrite(
+        to path: WorkspacePath,
+        preImage: PreImage?,
+        succeeded: Bool,
+        sessionID: CodeSessionID
+    ) {
         var turns = journal(for: sessionID)
-        guard let current = turns.indices.last,
-              turns[current].gap == nil,
-              !turns[current].files.contains(where: { $0.path == path })
+        // The turn the pre-image was read for. The tool scheduler runs writes
+        // to one path one at a time and no turn opens mid-tool, so this is the
+        // open turn; looked up by id so it could never land in another.
+        guard let current = preImage.flatMap({ image in turns.firstIndex { $0.id == image.turnID } })
+            ?? turns.indices.last
         else { return }
 
-        let state: TurnFileState
-        do {
-            guard let read = try readDisk(path) else {
-                // A directory: the file tool refuses it, so there is nothing
-                // to snapshot.
-                return
-            }
-            if let data = read.data {
-                guard data.count <= limits.maximumFileBytes else {
+        if let index = turns[current].files.firstIndex(where: { $0.path == path }) {
+            // Unreadable now leaves the last known state in place, which a later
+            // rewind reads as a change it did not make and asks about — the safe
+            // direction to be wrong in.
+            guard let after = currentState(of: path),
+                  turns[current].files[index].after != after
+            else { return }
+            turns[current].files[index].after = after
+            store(turns, for: sessionID)
+            return
+        }
+        guard let preImage, turns[current].gap == nil else { return }
+
+        switch preImage.content {
+        case let .read(before, data):
+            let after = currentState(of: path)
+            // Left as it was: a refused operation, or a write of the same
+            // bytes. There is nothing for a rewind to undo.
+            if let after, after.matches(before) { return }
+            if let data, let sha256 = before.sha256 {
+                do {
+                    try writeBlob(data, sha256: sha256, sessionID: sessionID)
+                } catch {
                     markUncaptured(&turns, at: current, sessionID: sessionID)
                     return
                 }
-                try writeBlob(data, sha256: read.state.sha256 ?? "", sessionID: sessionID)
             }
-            state = read.state
-        } catch is WorkspaceAccessError {
-            // The path resolves outside the workspace. The tool fails on the
-            // same check, so nothing is about to change.
-            return
-        } catch {
+            // Unreadable after the tool: the pre-image stands in as the last
+            // known state, so a rewind finds the disk different and asks.
+            turns[current].files.append(
+                TurnFileSnapshot(path: path, before: before, after: after ?? before)
+            )
+            let pruned = enforceLimits(&turns)
+            if snapshotBytes(turns) > limits.maximumBytes {
+                // Every older turn is already pruned and this one alone is over
+                // the cap. Keeping part of a turn restores none of it, so the
+                // turn gives its snapshots up rather than crowding out the next.
+                markUncaptured(&turns, at: current, sessionID: sessionID)
+                return
+            }
+            store(turns, for: sessionID)
+            if pruned {
+                // A pruned turn's bytes are what the cap is for; left on disk
+                // they would outlive the journal that says they were dropped.
+                collectGarbage(turns, sessionID: sessionID)
+            }
+        case let .unread(stamp):
+            // A file too large to keep (or unreadable) that the tool left
+            // alone costs the turn nothing. One it changed cannot be put back,
+            // so the turn can no longer be restored whole.
+            let unchanged = !succeeded
+                && (stamp == nil || stamp == (try? access.resolveForMutation(path)).flatMap(Stamp.init(at:)))
+            guard !unchanged else { return }
             markUncaptured(&turns, at: current, sessionID: sessionID)
-            return
         }
-
-        turns[current].files.append(TurnFileSnapshot(path: path, before: state, after: state))
-        enforceLimits(&turns)
-        if snapshotBytes(turns) > limits.maximumBytes {
-            // Every older turn is already pruned and this one alone is over the
-            // cap. Keeping part of a turn restores none of it, so the turn
-            // gives its snapshots up rather than crowding out the next one.
-            markUncaptured(&turns, at: current, sessionID: sessionID)
-            return
-        }
-        store(turns, for: sessionID)
-    }
-
-    public func recordAgentWrite(to path: WorkspacePath, sessionID: CodeSessionID) async {
-        var turns = journal(for: sessionID)
-        guard let current = turns.indices.last,
-              let index = turns[current].files.firstIndex(where: { $0.path == path })
-        else { return }
-        // Unreadable now leaves the last known state in place, which a later
-        // rewind reads as a change it did not make and asks about — the safe
-        // direction to be wrong in.
-        guard let after = (try? readDisk(path, hashOnly: true))?.state,
-              turns[current].files[index].after != after
-        else { return }
-        turns[current].files[index].after = after
-        store(turns, for: sessionID)
     }
 
     // MARK: - Reading
@@ -272,7 +375,7 @@ public actor TurnCheckpointStore: TurnCheckpointing {
         for snapshot in TurnCheckpoint.netChanges(of: turns[index...]) {
             // Unreadable is treated as changed by someone else: a restore must
             // ask before overwriting what it cannot see.
-            let current = (try? readDisk(snapshot.path, hashOnly: true))?.state
+            let current = currentState(of: snapshot.path)
             guard let current else {
                 pending.append(PendingRestore(
                     file: TurnRestoreFile(path: snapshot.path, change: .revert, hasDiverged: true),
@@ -297,16 +400,21 @@ public actor TurnCheckpointStore: TurnCheckpointing {
 
     // MARK: - Limits
 
-    private func enforceLimits(_ turns: inout [TurnCheckpoint]) {
+    /// Prunes the oldest turns holding snapshots until the session is within
+    /// its limits. Returns whether any was pruned, so the caller deletes the
+    /// bytes they held.
+    private func enforceLimits(_ turns: inout [TurnCheckpoint]) -> Bool {
+        var pruned = false
         while true {
             let holding = turns.indices.filter { !turns[$0].files.isEmpty }
             guard holding.count > limits.maximumTurns
                 || snapshotBytes(turns) > limits.maximumBytes
-            else { return }
+            else { return pruned }
             // Never the newest turn: it is the one being captured.
-            guard let oldest = holding.first, oldest < turns.count - 1 else { return }
+            guard let oldest = holding.first, oldest < turns.count - 1 else { return pruned }
             turns[oldest].files = []
             turns[oldest].gap = .pruned
+            pruned = true
         }
     }
 
@@ -334,25 +442,20 @@ public actor TurnCheckpointStore: TurnCheckpointing {
 
     // MARK: - Disk
 
-    /// The path's state, and its bytes unless only the digest is wanted. Nil
-    /// for a directory.
-    private func readDisk(
-        _ path: WorkspacePath,
-        hashOnly: Bool = false
-    ) throws -> (state: TurnFileState, data: Data?)? {
-        let url = try access.resolveForMutation(path)
+    /// The path's state as it is now. Nil for a directory, or when it cannot
+    /// be read.
+    private func currentState(of path: WorkspacePath) -> TurnFileState? {
+        guard let url = try? access.resolveForMutation(path) else { return nil }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-            return (.absent, nil)
+            return .absent
         }
-        guard !isDirectory.boolValue else { return nil }
-        let data = try Data(contentsOf: url)
-        let state = TurnFileState.file(
+        guard !isDirectory.boolValue, let data = try? Data(contentsOf: url) else { return nil }
+        return .file(
             sha256: Digests.sha256Hex(data),
             byteCount: data.count,
             permissions: Self.permissions(at: url)
         )
-        return (state, hashOnly ? nil : data)
     }
 
     private func apply(

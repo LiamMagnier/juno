@@ -28,7 +28,10 @@ final class TurnCheckpointStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
-    private func rebuild(limits: TurnCheckpointStore.Limits) {
+    private func rebuild(
+        limits: TurnCheckpointStore.Limits,
+        serviceMaximumFileBytes: Int = FileOperationService.defaultMaximumFileBytes
+    ) {
         turns = TurnCheckpointStore(
             directoryURL: baseURL.appendingPathComponent("turns"),
             access: access,
@@ -39,9 +42,18 @@ final class TurnCheckpointStoreTests: XCTestCase {
             checkpoints: CheckpointStore(
                 directoryURL: baseURL.appendingPathComponent("checkpoints"),
                 access: access
-            )
+            ),
+            maximumFileBytes: serviceMaximumFileBytes
         )
         agent = TurnCapturingFileOperations(base: service, turns: turns)
+    }
+
+    private var blobsURL: URL {
+        baseURL.appendingPathComponent("turns/\(sessionID.value)/blobs")
+    }
+
+    private func storedBlobs() -> Set<String> {
+        Set((try? FileManager.default.contentsOfDirectory(atPath: blobsURL.path)) ?? [])
     }
 
     private func path(_ value: String) throws -> WorkspacePath {
@@ -139,6 +151,83 @@ final class TurnCheckpointStoreTests: XCTestCase {
 
         let preview = try await turns.preview(sessionID: sessionID, toTurn: "turn-1")
         XCTAssertTrue(preview.isEmpty)
+        let recorded = await turns.turns(for: sessionID)
+        XCTAssertEqual(recorded.first?.files, [], "a refused write is no file the turn edited")
+        XCTAssertTrue(storedBlobs().isEmpty, "and costs no stored bytes")
+    }
+
+    /// The file service refuses anything over its limit before touching the
+    /// disk. A refused delete of a large log must cost the turn nothing: not
+    /// its restorability, not the snapshots it already took.
+    func testARefusedDeleteOfAFileTooLargeToKeepLeavesTheTurnRestorable() async throws {
+        rebuild(
+            limits: .init(maximumTurns: 100, maximumBytes: 1_024 * 1_024, maximumFileBytes: 64),
+            serviceMaximumFileBytes: 32
+        )
+        try put("notes.txt", "v0\n")
+        try put("build.log", String(repeating: "x", count: 100))
+        await open("turn-1")
+        try await agentWrite("notes.txt", "v1\n")
+
+        do {
+            _ = try await agent.delete(path("build.log"), sessionID: sessionID)
+            XCTFail("the service refuses a file over its limit")
+        } catch {}
+        try await agentWrite("notes.txt", "v2\n")
+
+        let recorded = await turns.turns(for: sessionID)
+        XCTAssertNil(recorded.first?.gap, "nothing changed that could not be put back")
+        XCTAssertEqual(recorded.first?.files.map(\.path.value), ["notes.txt"])
+        try await turns.restore(sessionID: sessionID, toTurn: "turn-1", force: false)
+        XCTAssertEqual(try read("notes.txt"), "v0\n")
+        XCTAssertTrue(exists("build.log"))
+    }
+
+    /// Between the service's limit and the store's, the pre-image is read —
+    /// but a refused operation must not keep it, count it against the cap, or
+    /// list the file as one the turn edited.
+    func testARefusedOperationOnAFileTheStoreCouldKeepStoresNothing() async throws {
+        rebuild(
+            limits: .init(maximumTurns: 100, maximumBytes: 1_024 * 1_024, maximumFileBytes: 1_024),
+            serviceMaximumFileBytes: 32
+        )
+        try put("fixture.json", String(repeating: "y", count: 100))
+        await open("turn-1")
+
+        do {
+            _ = try await agent.applyPatch(
+                path("fixture.json"),
+                patch: TextPatch(target: "y", replacement: "z"),
+                expectedBase: nil,
+                sessionID: sessionID
+            )
+            XCTFail("the service refuses a file over its limit")
+        } catch {}
+
+        let recorded = await turns.turns(for: sessionID)
+        XCTAssertEqual(recorded.first?.files, [])
+        XCTAssertNil(recorded.first?.gap)
+        XCTAssertTrue(storedBlobs().isEmpty)
+    }
+
+    /// The other side: a file too large to keep that a tool did change cannot
+    /// be put back, so the turn says so rather than restoring half of itself.
+    func testAChangedFileTooLargeToKeepMakesTheTurnUnrestorable() async throws {
+        rebuild(limits: .init(maximumTurns: 100, maximumBytes: 1_024 * 1_024, maximumFileBytes: 16))
+        try put("notes.txt", "v0\n")
+        try put("data.txt", String(repeating: "z", count: 100))
+        await open("turn-1")
+        try await agentWrite("notes.txt", "v1\n")
+        try await agentWrite("data.txt", "small now\n")
+
+        let recorded = await turns.turns(for: sessionID)
+        XCTAssertEqual(recorded.first?.gap, .notCaptured)
+        do {
+            _ = try await turns.preview(sessionID: sessionID, toTurn: "turn-1")
+            XCTFail("a turn missing a pre-image cannot be restored")
+        } catch let TurnCheckpointError.incomplete(gap) {
+            XCTAssertEqual(gap, .notCaptured)
+        }
     }
 
     // MARK: - Restore
@@ -281,6 +370,11 @@ final class TurnCheckpointStoreTests: XCTestCase {
 
         let recorded = await turns.turns(for: sessionID)
         XCTAssertEqual(recorded.map(\.gap), [.pruned, nil, nil])
+        XCTAssertEqual(
+            storedBlobs(),
+            [Digests.sha256Hex("v1\n"), Digests.sha256Hex("v2\n")],
+            "the pruned turn's bytes leave the disk with it"
+        )
         do {
             _ = try await turns.preview(sessionID: sessionID, toTurn: "turn-1")
             XCTFail("a pruned turn cannot be restored")
@@ -300,9 +394,7 @@ final class TurnCheckpointStoreTests: XCTestCase {
         let recorded = await turns.turns(for: sessionID)
         XCTAssertEqual(recorded.first?.gap, .notCaptured)
         XCTAssertEqual(recorded.first?.files, [])
-        let blobs = baseURL.appendingPathComponent("turns/\(sessionID.value)/blobs")
-        let stored = (try? FileManager.default.contentsOfDirectory(atPath: blobs.path)) ?? []
-        XCTAssertTrue(stored.isEmpty, "the bytes that did not fit are not kept")
+        XCTAssertTrue(storedBlobs().isEmpty, "the bytes that did not fit are not kept")
     }
 
     func testForgettingTurnsDropsThemAndTheirBytes() async throws {
