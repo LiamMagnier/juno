@@ -758,7 +758,12 @@ public final class SessionController {
                     }
                 },
                 controls: live.subagentControls,
-                fallbackResolver: live.fallbackResolver
+                fallbackResolver: live.fallbackResolver,
+                // Read as each child starts, so a rule the reader added with
+                // "Always allow" or a settings edit mid-session carries over.
+                parentRules: { [permissions = live.permissions] in
+                    await permissions.permissionRules
+                }
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -781,7 +786,10 @@ public final class SessionController {
                     modelID: contract.modelID,
                     reasoningEffort: contract.reasoningEffort,
                     parentSystemPrompt: systemPrompt,
-                    fallbackResolver: live.fallbackResolver
+                    fallbackResolver: live.fallbackResolver,
+                    parentRules: { [permissions = live.permissions] in
+                        await permissions.permissionRules
+                    }
                 )
             )
         }
