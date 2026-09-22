@@ -41,6 +41,14 @@ die() { printf '\033[1;31m[fail] %s\033[0m\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || die "run as the deploy user, not root — the runner inherits this user's pm2, ~/juno and sudo rights"
 sudo -n true 2>/dev/null || die "$USER needs passwordless sudo (deploy.yml already relies on it for nginx and svc.sh needs it here)"
 [ "$(uname -m)" = "x86_64" ] || die "this installs the linux-x64 runner, but this machine is $(uname -m)"
+# deploy.yml's jobs need several GB: the typecheck alone peaks near 2.6 GB.
+# The production VM (892 MB) was tried in September 2026 and every job
+# thrashed the live site, so a runner is only registered on a machine that can
+# build without starving whatever else runs on it.
+mem_mb=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
+if [ "$MODE" = register ] && [ "$mem_mb" -lt 3800 ]; then
+  die "this machine has ${mem_mb} MB of RAM; building Juno needs about 4 GB. Register the runner on a bigger machine."
+fi
 
 if [ "$MODE" = register ]; then
 say "Docker (the migrations job runs postgres:16 as a service container)"
