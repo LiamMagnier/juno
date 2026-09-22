@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { List, Plus, Search, X } from "lucide-react";
+import { History, List, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -18,13 +18,14 @@ import { cn } from "@/lib/utils";
  * character to return a subset of what is already on the page. The server
  * parameter stays for callers that are not this page.
  *
- * THE VIEW SWITCH IS NOT A PREFERENCE. Topics and the flat list answer
- * different questions — "what does Juno think I'm like" and "what did it learn
- * yesterday" — so the switch is on the toolbar where the question is being
- * asked, not buried in settings.
+ * THE VIEW SWITCH IS NOT A PREFERENCE. The three readings answer different
+ * questions — "what does Juno think I'm like" (Topics), "what did it learn,
+ * newest first" (All facts) and "what changed lately" (Recap) — so the switch
+ * is on the toolbar where the question is being asked, not buried in settings.
+ * The search applies to all three.
  */
 
-export type MemoryView = "topics" | "list";
+export type MemoryView = "topics" | "list" | "recap";
 
 interface MemoryToolbarProps {
   view: MemoryView;
@@ -133,6 +134,7 @@ export function MemoryToolbar({
           options={[
             { value: "topics", label: "Topics", icon: <MemoryIcons.topic className="size-3.5" />, count: topicCount },
             { value: "list", label: "All facts", icon: <List className="size-3.5" />, count: factCount },
+            { value: "recap", label: "Recap", icon: <History className="size-3.5" /> },
           ]}
         />
 

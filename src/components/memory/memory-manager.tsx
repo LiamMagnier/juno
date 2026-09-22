@@ -14,6 +14,7 @@ import { MemoryStats } from "@/components/memory/memory-stats";
 import { ImportDialog } from "@/components/memory/import-dialog";
 import { MemoryToolbar, type MemoryView } from "@/components/memory/memory-toolbar";
 import { TopicsView } from "@/components/memory/topics-view";
+import { RecapView } from "@/components/memory/recap-view";
 import { useMemory } from "@/components/memory/use-memory";
 import { groupMemoriesByTopic, isRetired, type Memory } from "@/components/memory/memory-model";
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_META, isMemoryCategory } from "@/lib/memory-categories";
@@ -182,6 +183,18 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
               onForget={(entry) => void memory.forgetMemory(entry)}
               onDelete={(entry) => void memory.deleteMemory(entry)}
               onImport={() => setImportOpen(true)}
+            />
+          ) : view === "recap" ? (
+            <RecapView
+              // Every row, suppressions included: "what Juno let go of" is
+              // built from the block-list's own dates.
+              memories={memory.memories}
+              busyIds={memory.busyIds}
+              paused={memory.paused}
+              query={query}
+              onEdit={memory.editMemory}
+              onForget={(entry) => void memory.forgetMemory(entry)}
+              onDelete={(entry) => void memory.deleteMemory(entry)}
             />
           ) : (
             <EntryList
