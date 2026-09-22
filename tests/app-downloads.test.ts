@@ -2,12 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  UPDATER_DOWNLOAD_HOSTS,
   compareReleaseVersions,
   isNotarized,
   isStableRelease,
+  isUpdaterDownloadUrl,
   manifestAsset,
   parseReleaseManifest,
   releaseVersion,
+  signedUrlExpiry,
 } from "@/lib/app-downloads";
 
 test("download menus never expose draft or prerelease builds", () => {
@@ -117,4 +120,66 @@ test("no surface links at the deleted self-signed installer", () => {
     assert.doesNotMatch(source, /href: "\/downloads\/Juno\.dmg"/);
     assert.match(source, /"\/download"/);
   }
+});
+
+/*
+ * A private repository's assets go out as signed URLs, and two facts about one
+ * decide whether it is safe to hand out: whether an installed Mac will fetch it
+ * at all, and when it stops working.
+ */
+
+test("the server's host list is the one compiled into every installed Mac app", () => {
+  // v1.5.4's updater cannot be changed, so the server is what has to agree.
+  const swift = readFileSync(
+    new URL("../native/Packages/JunoNativeKit/Sources/JunoCore/JunoUpdateFeed.swift", import.meta.url),
+    "utf8",
+  );
+  const literal = /let allowed = \[([^\]]*)\]/.exec(swift)?.[1];
+  assert.ok(literal, "JunoUpdateFeed.validateOrigin still declares its allow-list");
+  const hosts = [...literal.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(hosts, [...UPDATER_DOWNLOAD_HOSTS]);
+});
+
+test("only HTTPS on a GitHub release host counts as a URL the updater will fetch", () => {
+  assert.equal(
+    isUpdaterDownloadUrl(
+      "https://release-assets.githubusercontent.com/github-production-release-asset/1/x?sig=a%2Bb&se=2026-09-22T21%3A36%3A11Z",
+    ),
+    true,
+  );
+  assert.equal(isUpdaterDownloadUrl("https://objects.githubusercontent.com/x"), true);
+  assert.equal(isUpdaterDownloadUrl("https://github.com/LiamMagnier/juno/releases/download/v1.5.4/Juno-1.5.4.dmg"), true);
+  assert.equal(isUpdaterDownloadUrl("http://release-assets.githubusercontent.com/x"), false);
+  assert.equal(isUpdaterDownloadUrl("https://release-assets.githubusercontent.com.evil.example/x"), false);
+  assert.equal(isUpdaterDownloadUrl("https://githubXcom/x"), false);
+  assert.equal(isUpdaterDownloadUrl("not a url"), false);
+});
+
+const jwtWith = (payload: unknown) =>
+  ["eyJhbGciOiJIUzI1NiJ9", Buffer.from(JSON.stringify(payload)).toString("base64url"), "c2ln"].join(".");
+
+test("a signed URL expires at the earliest clock it carries", () => {
+  const base = "https://release-assets.githubusercontent.com/github-production-release-asset/1/x";
+  const jwtExpiry = Date.parse("2026-09-22T21:17:06Z");
+  // The shape observed on 2026-09-22: a JWT half an hour out beside a SAS fifty minutes out.
+  assert.equal(signedUrlExpiry(`${base}?se=2026-09-22T21%3A36%3A11Z&sig=a&jwt=${jwtWith({ exp: jwtExpiry / 1000 })}`), jwtExpiry);
+  assert.equal(
+    signedUrlExpiry(`${base}?se=2026-09-22T21%3A00%3A00Z&jwt=${jwtWith({ exp: jwtExpiry / 1000 })}`),
+    Date.parse("2026-09-22T21:00:00Z"),
+  );
+  // The older S3 presign on objects.githubusercontent.com.
+  assert.equal(
+    signedUrlExpiry("https://objects.githubusercontent.com/x?X-Amz-Date=20260922T204706Z&X-Amz-Expires=300&X-Amz-Signature=a"),
+    Date.parse("2026-09-22T20:52:06Z"),
+  );
+});
+
+test("an expiry that cannot be read is dropped rather than trusted", () => {
+  const base = "https://release-assets.githubusercontent.com/x";
+  assert.equal(signedUrlExpiry(`${base}?sig=a`), null);
+  assert.equal(signedUrlExpiry(`${base}?se=soon&jwt=not.a-jwt.at-all&X-Amz-Date=yesterday&X-Amz-Expires=300`), null);
+  assert.equal(signedUrlExpiry(`${base}?jwt=${jwtWith({ exp: "later" })}`), null);
+  // One garbled clock does not hide a readable one.
+  assert.equal(signedUrlExpiry(`${base}?se=soon&jwt=${jwtWith({ exp: 1_790_000_000 })}`), 1_790_000_000_000);
+  assert.equal(signedUrlExpiry("not a url"), null);
 });

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MENU_W_WIDE } from "@/components/ui/menu-recipe";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { detectPlatform, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
+import { detectPlatform, downloadHref, type AppDownload, type DownloadPlatform } from "@/lib/app-downloads";
 import { cn, formatBytes } from "@/lib/utils";
 
 /**
@@ -191,7 +191,12 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
   // line instead of sitting on the name it belongs to. The disabled row keeps
   // its glyph at full row ink: the item's own `data-disabled` dim already
   // halves it, and a second `opacity-40` on top put the mark at a fifth.
-  if (!download.available || !download.url) {
+  //
+  // The link is `downloadHref`, never `download.url`: the feed is fetched once
+  // per page, the menu can be reopened an hour later, and a private release's
+  // URL is signed for minutes.
+  const href = downloadHref(download);
+  if (!href) {
     return (
       <DropdownMenuItem disabled className="h-auto items-start gap-2.5 px-2.5 py-2">
         <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
@@ -205,7 +210,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
       {/* A plain link with `download`: the browser owns the transfer, so it
           resumes, reports progress in the place people look for it, and survives
           the tab being closed. */}
-      <a href={download.url} download>
+      <a href={href} download>
         <ActionIcons.download className="mt-0.5 size-4 shrink-0" />
         {body}
       </a>
