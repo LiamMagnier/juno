@@ -818,26 +818,21 @@ struct StudioToolsSettings: View {
     }
 
     private func hooksSection(_ extensions: CodeWorkspaceExtensions) -> some View {
-        Section("Hooks") {
-            if extensions.hooks.hooks.isEmpty {
-                Text("No hooks. Add .juno/hooks.json, or hooks in .claude/settings.json.")
-                    .foregroundStyle(Studio.Ink.tertiary)
-            }
-            ForEach(extensions.hooks.hooks) { hook in
-                Toggle(isOn: Binding(
-                    get: { defaults.isHookEnabled(hook.id) },
-                    set: { defaults.setHook(hook.id, enabled: $0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(hook.event.rawValue)
-                        Text(hook.command)
-                            .font(Studio.Font.monoSmall)
-                            .foregroundStyle(Studio.Ink.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
+        StudioHooksSettings(
+            hooks: extensions.hooks,
+            policy: extensions.hookPolicy,
+            setAllowed: { setHooksAllowed($0, shown: extensions.hooks) }
+        )
+    }
+
+    /// Allows exactly the hooks the reader is looking at: if a file changed
+    /// after the page loaded, the new version is not what they approved.
+    private func setHooksAllowed(_ allowed: Bool, shown: HookDiscoveryResult) {
+        guard let workbench, let project else { return }
+        Task {
+            guard let context = await workbench.context(for: project.id) else { return }
+            _ = try? context.setRepositoryHooksAllowed(allowed, discovered: shown)
+            extensions = await CodeWorkspaceExtensions.discover(in: context)
         }
     }
 

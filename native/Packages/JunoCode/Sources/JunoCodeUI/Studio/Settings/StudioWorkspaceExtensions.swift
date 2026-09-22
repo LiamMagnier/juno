@@ -15,6 +15,9 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
     public var mcpServers: [MCPServerConfiguration] = []
     public var mcpConfigurationError: String?
     public var hooks: HookDiscoveryResult = HookDiscoveryResult()
+    /// The reader's trust decision for the project's hooks, from private
+    /// storage.
+    public var hookPolicy: HookExecutionPolicy = .denyAll
     public var skills: SkillDiscoveryResult = SkillDiscoveryResult()
     public var agents: [CustomAgentDefinition] = []
     /// Tools each connected MCP server reports, by server name, when a live
@@ -35,7 +38,13 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
             extensions.mcpServers.filter(context.mcpPolicyStore.allows).map(\.consentDigest)
         )
         extensions.mcpConfigurationError = context.mcpConfigurationError
-        extensions.hooks = HookDiscovery(access: context.access).discover()
+        extensions.hooks = HookDiscovery(
+            access: context.access,
+            userSettingsDirectory: context.userSettingsDirectory
+        ).discover()
+        // The mode does not matter to what the page shows — whether each hook
+        // is allowed — so any will do.
+        extensions.hookPolicy = context.hookPolicyStore.load(permissionMode: .readOnly)
         extensions.skills = SkillDiscovery(access: context.access).discover()
         extensions.agents = CustomAgentDiscovery(access: context.access).discover()
         if let registry = context.mcpRegistry {
