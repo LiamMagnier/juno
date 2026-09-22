@@ -47,7 +47,7 @@ struct StudioRewindButton: View {
 // MARK: - The flow
 
 /// One rewind, start to finish: what it would change, the reader's choice,
-/// and — when a file changed after Juno wrote it — the second question.
+/// and — when a file holds an edit Juno did not make — the second question.
 struct StudioRewindFlow: View {
     let controller: SessionController
     let turnID: String
@@ -113,8 +113,8 @@ struct StudioRewindPanel: View {
     enum Phase: Equatable {
         case choosing
         case working(RewindScope)
-        /// The reader chose `scope`, and these files changed after Juno last
-        /// wrote them. Nothing was touched.
+        /// The reader chose `scope`, and these files hold edits Juno did not
+        /// make. Nothing was touched.
         case diverged(RewindScope, paths: [String])
         case failed(String)
     }
@@ -331,8 +331,8 @@ struct StudioRewindPanel: View {
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 Text(
                     paths.count == 1
-                        ? "A file changed after Juno last wrote it"
-                        : "\(paths.count) files changed after Juno last wrote them"
+                        ? "A file was edited outside Juno"
+                        : "\(paths.count) files were edited outside Juno"
                 )
                 .font(Studio.Font.labelEmphasis)
                 .foregroundStyle(Studio.Ink.primary)

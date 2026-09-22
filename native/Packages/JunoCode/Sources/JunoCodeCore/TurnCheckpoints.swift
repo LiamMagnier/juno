@@ -50,11 +50,37 @@ public struct TurnFileSnapshot: Hashable, Codable, Sendable {
     /// someone else — the reader, another tool — changed the file since, and a
     /// rewind must ask before discarding that.
     public var after: TurnFileState
+    /// Someone else changed the file between two of the agent's writes — in
+    /// this turn or, on an entry ``TurnCheckpoint/netChanges(of:)`` merged,
+    /// between two turns: it did not hold what the agent had last left when
+    /// the agent wrote it again. `after` then includes that edit, so matching
+    /// the disk against `after` alone would let a rewind discard it without
+    /// asking.
+    public var hasOutsideEdits: Bool
 
-    public init(path: WorkspacePath, before: TurnFileState, after: TurnFileState) {
+    public init(
+        path: WorkspacePath,
+        before: TurnFileState,
+        after: TurnFileState,
+        hasOutsideEdits: Bool = false
+    ) {
         self.path = path
         self.before = before
         self.after = after
+        self.hasOutsideEdits = hasOutsideEdits
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path, before, after, hasOutsideEdits
+    }
+
+    /// Journals written before `hasOutsideEdits` existed read as having none.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        path = try values.decode(WorkspacePath.self, forKey: .path)
+        before = try values.decode(TurnFileState.self, forKey: .before)
+        after = try values.decode(TurnFileState.self, forKey: .after)
+        hasOutsideEdits = try values.decodeIfPresent(Bool.self, forKey: .hasOutsideEdits) ?? false
     }
 }
 
@@ -103,6 +129,13 @@ public struct TurnCheckpoint: Hashable, Codable, Sendable, Identifiable {
     /// means undoing all of them, so a path touched in three turns goes back
     /// to what it was before the first. The *latest* post-state wins too,
     /// because that is what the agent left on disk last.
+    ///
+    /// A later turn's pre-image is not simply dropped: it is the only record
+    /// of the file between two turns. When it differs from what the earlier
+    /// turn left, someone changed the file in between — the reader by hand,
+    /// or a command — and the merged entry says so, because restoring the
+    /// earliest pre-image discards that edit even though the disk may still
+    /// match the agent's last write.
     public static func netChanges<Turns: Collection>(
         of turns: Turns
     ) -> [TurnFileSnapshot] where Turns.Element == TurnCheckpoint {
@@ -111,6 +144,9 @@ public struct TurnCheckpoint: Hashable, Codable, Sendable, Identifiable {
         for turn in turns {
             for file in turn.files {
                 if var existing = merged[file.path] {
+                    if file.hasOutsideEdits || !file.before.hasSameContent(as: existing.after) {
+                        existing.hasOutsideEdits = true
+                    }
                     existing.after = file.after
                     merged[file.path] = existing
                 } else {
@@ -137,8 +173,9 @@ public struct TurnRestoreFile: Hashable, Sendable, Identifiable {
     public var id: String { path.value }
     public let path: WorkspacePath
     public let change: Change
-    /// The file changed after the agent last wrote it, so restoring it
-    /// discards someone else's edit.
+    /// The file holds an edit the agent's file tools did not make — since the
+    /// agent last wrote it, or between two of its writes — so restoring it
+    /// discards someone else's work.
     public let hasDiverged: Bool
 
     public init(path: WorkspacePath, change: Change, hasDiverged: Bool) {
@@ -154,8 +191,9 @@ public enum TurnCheckpointError: Error, Equatable, Sendable {
     case notRecorded
     /// This turn, or a later one, cannot be restored whole.
     case incomplete(TurnSnapshotGap)
-    /// These files changed after the agent last wrote them. Restoring again
-    /// with `force` is the reader's explicit "Restore Anyway".
+    /// These files hold edits the agent's file tools did not make (see
+    /// ``TurnRestoreFile/hasDiverged``). Restoring again with `force` is the
+    /// reader's explicit "Restore Anyway".
     case diverged(paths: [String])
     case restoreFailed(path: String, message: String)
 }

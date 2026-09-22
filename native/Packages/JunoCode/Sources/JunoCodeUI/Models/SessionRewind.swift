@@ -84,7 +84,7 @@ public struct RewindPreview: Equatable, Sendable {
         return scope.detail
     }
 
-    /// Files that changed after Juno last wrote them.
+    /// Files holding edits Juno's own tools did not make.
     public var divergedPaths: [String] {
         files.filter(\.hasDiverged).map(\.path.value)
     }
@@ -94,8 +94,8 @@ public struct RewindPreview: Equatable, Sendable {
 public enum RewindOutcome: Equatable, Sendable {
     /// Done. `restoredPaths` are the files a code restore changed.
     case rewound(restoredPaths: [String])
-    /// These files changed after Juno last wrote them, and nothing was touched.
-    /// Rewinding again with `force` is the reader's "Restore Anyway".
+    /// These files hold edits Juno's tools did not make, and nothing was
+    /// touched. Rewinding again with `force` is the reader's "Restore Anyway".
     case diverged(paths: [String])
     case failed(message: String)
 }
@@ -107,8 +107,10 @@ enum RewindCopy {
     static let running = "Juno is working. Stop it before rewinding."
     static let preview = "Preview mode does not rewind."
     /// The limit every rewind shares with Claude Code's: Juno sees the files
-    /// its own tools write, and nothing a command writes.
-    static let untracked = "Edits made by shell commands aren't tracked and stay as they are."
+    /// its own tools write, and nothing a command writes. The exception is a
+    /// file its tools also changed, which goes back whole — a command's edit
+    /// to it included, once the divergence question has been answered.
+    static let untracked = "Edits made by shell commands aren't tracked and stay as they are, unless Juno's tools also changed that file: restoring it undoes those edits too."
 
     static func message(for error: TurnCheckpointError) -> String {
         switch error {
@@ -119,7 +121,9 @@ enum RewindCopy {
         case .incomplete(.notCaptured):
             "A file changed after this message was too large to snapshot, so code can't go back this far."
         case let .diverged(paths):
-            "\(paths.count == 1 ? "A file" : "\(paths.count) files") changed after Juno last wrote \(paths.count == 1 ? "it" : "them")."
+            paths.count == 1
+                ? "A file was edited outside Juno."
+                : "\(paths.count) files were edited outside Juno."
         case let .restoreFailed(path, message):
             "Could not restore \(path): \(message)"
         }

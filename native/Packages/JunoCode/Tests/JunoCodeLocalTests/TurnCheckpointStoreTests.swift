@@ -326,6 +326,56 @@ final class TurnCheckpointStoreTests: XCTestCase {
         XCTAssertEqual(try read("notes.txt"), "v0\n")
     }
 
+    /// The reader edits a file between two turns and the second turn's agent
+    /// patches elsewhere in it. The disk then matches the agent's last write,
+    /// but rewinding to the first turn would still discard the reader's edit.
+    func testAnEditBetweenTurnsNeedsAnExplicitConfirm() async throws {
+        try put("a.swift", "line 1\nline 2\n")
+        await open("turn-1")
+        try await agentWrite("a.swift", "line 1 (agent)\nline 2\n")
+        try put("a.swift", "line 1 (agent)\nline 2 (reader)\n")
+        await open("turn-2")
+        try await agentWrite("a.swift", "line 1 (agent, again)\nline 2 (reader)\n")
+
+        let preview = try await turns.preview(sessionID: sessionID, toTurn: "turn-1")
+        XCTAssertEqual(preview.map(\.hasDiverged), [true])
+        do {
+            try await turns.restore(sessionID: sessionID, toTurn: "turn-1", force: false)
+            XCTFail("the reader's edit must not go without asking")
+        } catch let TurnCheckpointError.diverged(paths) {
+            XCTAssertEqual(paths, ["a.swift"])
+        }
+        XCTAssertEqual(try read("a.swift"), "line 1 (agent, again)\nline 2 (reader)\n")
+
+        // Rewinding only the second turn keeps the reader's edit, so it asks
+        // nothing.
+        let later = try await turns.preview(sessionID: sessionID, toTurn: "turn-2")
+        XCTAssertEqual(later.map(\.hasDiverged), [false])
+
+        try await turns.restore(sessionID: sessionID, toTurn: "turn-1", force: true)
+        XCTAssertEqual(try read("a.swift"), "line 1\nline 2\n")
+    }
+
+    /// The same inside one turn: an edit between two of the agent's writes is
+    /// folded into its last one, and has to be remembered — across a relaunch
+    /// too — for the rewind to ask.
+    func testAnEditBetweenTwoWritesInOneTurnNeedsAnExplicitConfirm() async throws {
+        try put("a.swift", "v0\n")
+        await open("turn-1")
+        try await agentWrite("a.swift", "v1\n")
+        try put("a.swift", "v1 and the reader's line\n")
+        try await agentWrite("a.swift", "v2 and the reader's line\n")
+
+        rebuild(limits: .standard)
+
+        let preview = try await turns.preview(sessionID: sessionID, toTurn: "turn-1")
+        XCTAssertEqual(preview.map(\.hasDiverged), [true])
+        do {
+            try await turns.restore(sessionID: sessionID, toTurn: "turn-1", force: false)
+            XCTFail("the reader's edit must not go without asking")
+        } catch TurnCheckpointError.diverged {}
+    }
+
     func testARefusalLeavesEveryFileAlone() async throws {
         try put("a.txt", "a0\n")
         try put("b.txt", "b0\n")
@@ -448,5 +498,32 @@ final class TurnCheckpointStoreTests: XCTestCase {
         let merged = TurnCheckpoint.netChanges(of: [first, second])
 
         XCTAssertEqual(merged, [TurnFileSnapshot(path: path, before: states[0], after: states[2])])
+        XCTAssertFalse(merged[0].hasOutsideEdits, "turn 2 found what turn 1 left")
+    }
+
+    func testNetChangesRememberAnEditBetweenTurns() throws {
+        let path = try WorkspacePath("a.txt")
+        let states = (0...3).map {
+            TurnFileState.file(sha256: "sha\($0)", byteCount: 1, permissions: nil)
+        }
+        let first = TurnCheckpoint(
+            id: "1",
+            sessionID: sessionID,
+            openedAt: Date(),
+            files: [TurnFileSnapshot(path: path, before: states[0], after: states[1])]
+        )
+        // Turn 2 found sha2, not the sha1 turn 1 left.
+        let second = TurnCheckpoint(
+            id: "2",
+            sessionID: sessionID,
+            openedAt: Date(),
+            files: [TurnFileSnapshot(path: path, before: states[2], after: states[3])]
+        )
+
+        let merged = TurnCheckpoint.netChanges(of: [first, second])
+
+        XCTAssertEqual(merged.map(\.before), [states[0]])
+        XCTAssertEqual(merged.map(\.after), [states[3]])
+        XCTAssertEqual(merged.map(\.hasOutsideEdits), [true])
     }
 }

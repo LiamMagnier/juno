@@ -2021,7 +2021,7 @@ public final class SessionController {
     /// edited and sent again.
     ///
     /// Refused while a run is active, since the run owns the history it is
-    /// appending to. A file edited after Juno last wrote it is never
+    /// appending to. A file edited outside Juno since it wrote it is never
     /// overwritten on the first attempt: the result is `.diverged`, and
     /// `force` is the reader's second, explicit answer — the same shape as
     /// Restore Anyway on a single file.

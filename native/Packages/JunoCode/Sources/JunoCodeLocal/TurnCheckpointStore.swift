@@ -14,7 +14,9 @@ import JunoCodeCore
 /// fact that it did not exist. A tool the file service refuses changes
 /// nothing and records nothing. Changes made by commands the agent runs are
 /// not captured — the shell writes files Juno never sees, which is the same
-/// boundary Claude Code draws.
+/// boundary Claude Code draws — but a command's edit to a file the agent's
+/// tools also change is noticed when the tools next touch it, and a rewind
+/// asks before discarding it.
 ///
 /// **What is kept.** Snapshots for the most recent ``Limits/maximumTurns``
 /// turns that changed anything, and no more than ``Limits/maximumBytes`` of
@@ -128,9 +130,21 @@ public actor TurnCheckpointStore: TurnCheckpointing {
     /// tool refuses before touching anything (a directory, a path outside the
     /// workspace).
     func capturePreImage(of path: WorkspacePath, sessionID: CodeSessionID) -> PreImage? {
-        let turns = journal(for: sessionID)
+        var turns = journal(for: sessionID)
         guard let current = turns.indices.last, turns[current].gap == nil else { return nil }
-        guard !turns[current].files.contains(where: { $0.path == path }) else { return nil }
+        if let index = turns[current].files.firstIndex(where: { $0.path == path }) {
+            // Already recorded this turn. The disk should hold what the agent
+            // last left; when it does not, someone else edited the file between
+            // two of the agent's writes, and the next write folds that edit
+            // into `after`, where a rewind would no longer see it.
+            if !turns[current].files[index].hasOutsideEdits,
+               let now = currentState(of: path),
+               !now.hasSameContent(as: turns[current].files[index].after) {
+                turns[current].files[index].hasOutsideEdits = true
+                store(turns, for: sessionID)
+            }
+            return nil
+        }
 
         let turnID = turns[current].id
         guard let url = try? access.resolveForMutation(path) else {
@@ -264,7 +278,8 @@ public actor TurnCheckpointStore: TurnCheckpointing {
     /// turns created removed, files they deleted recreated.
     ///
     /// Refuses with ``TurnCheckpointError/diverged(paths:)`` when any of those
-    /// files changed after the agent last wrote it, unless `force` — the
+    /// files holds an edit the agent's tools did not make — after the agent
+    /// last wrote it, or between two of its writes — unless `force`, the
     /// reader's explicit answer to that question. All-or-nothing: a failure
     /// part-way puts back what this call already changed.
     ///
@@ -386,11 +401,15 @@ public actor TurnCheckpointStore: TurnCheckpointing {
             if current.matches(snapshot.before) { continue }
             let change: TurnRestoreFile.Change =
                 !snapshot.before.exists ? .remove : (current.exists ? .revert : .recreate)
+            // Edited since the agent last wrote it, or between two of its
+            // writes: either way restoring it discards work the agent's tools
+            // did not do.
             pending.append(PendingRestore(
                 file: TurnRestoreFile(
                     path: snapshot.path,
                     change: change,
-                    hasDiverged: !current.hasSameContent(as: snapshot.after)
+                    hasDiverged: snapshot.hasOutsideEdits
+                        || !current.hasSameContent(as: snapshot.after)
                 ),
                 before: snapshot.before
             ))
