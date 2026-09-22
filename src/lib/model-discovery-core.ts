@@ -20,6 +20,13 @@ export const DEFAULT_DISCOVERY_TIMEOUT_MS = 2500;
 // Discovery keeps the LATEST id per family, so without this the nightly sync
 // could quietly promote the training-on tier over the standard one and move
 // users' conversations onto it. Opting into that is a decision for a human.
+//
+// One such id is now curated (`meta:muse-spark-1.3-contributor`), which does
+// NOT retire this rule — it is what the rule was protecting. A human read the
+// terms and registered one version, flagged `trainsOnPrompts` so no automatic
+// router can reach for it; the nightly sync must still not add the next one by
+// itself. The curated entry is unaffected: `curate` filters the PROVIDER's
+// list, not the registry.
 export const JUNK_RE =
   /(robot|antigravity|embed|tts|whisper|audio|speech|dall|image|imagen|veo|video|moderation|rerank|guard|safety|aqa|tuning|learnlm|gemma|banana|live|realtime|computer-use|vision-?only|ocr|distill|deprecat|legacy|contributor|^ada|babbage|davinci|curie|sora|moderation)/i;
 
@@ -100,8 +107,11 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
   ],
   meta: [
     // family "muse-spark" matches the curated slug on purpose: when Meta ships
-    // 1.3, latestPerFamily has to see it as the same line as the curated 1.2 and
-    // collapse them, instead of the picker listing two Sparks.
+    // 1.4, latestPerFamily has to see it as the same line as the curated 1.3 and
+    // collapse them, instead of the picker listing two Sparks. (1.3 landed and
+    // did exactly that.) The `-contributor` siblings never reach this rule —
+    // JUNK_RE drops them before `curate` consults the families — so a match
+    // here can only ever be a standard-tier id.
     { label: "Muse Spark", family: "muse-spark", match: /^muse-spark/i, minPlan: "PRO", vision: true },
     { label: "Llama 4 Maverick", family: "llama-maverick", match: /^llama-4-maverick/i, minPlan: "PRO", vision: true },
     { label: "Llama 4 Scout", family: "llama-scout", match: /^llama-4-scout/i, minPlan: "FREE", vision: true },

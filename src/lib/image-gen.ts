@@ -196,15 +196,22 @@ async function editOpenAICompatImage(
   // Image edits are also non-idempotent; retries must be explicit and metered.
   const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 0 });
 
+  // A mask only travels when the provider can read one. This path is shared by
+  // "mask" providers (OpenAI, xAI, Z.ai) and, since Muse Image, by a "prompt"
+  // one — and Meta's /v1/images/edits documents a prompt plus reference images,
+  // no `mask` field. Posting one anyway is a multipart part the endpoint never
+  // asked for, and it would silently take the place of the region instruction
+  // that IS the only way to scope an edit there.
+  const usableMask = imageEditSupport(model.provider) === "mask" ? opts.maskPng : undefined;
   // Without a pixel mask the region constraint has to travel in the prompt.
-  const fullPrompt = !opts.maskPng && opts.region ? `${prompt}\n\n${regionInstruction(opts.region)}` : prompt;
+  const fullPrompt = !usableMask && opts.region ? `${prompt}\n\n${regionInstruction(opts.region)}` : prompt;
   const params: OpenAI.Images.ImageEditParams = {
     model: model.providerModel,
     image: await toFile(source.bytes, `source.${extFor(source.mimeType)}`, { type: source.mimeType }),
     prompt: fullPrompt,
     n: 1,
   };
-  if (opts.maskPng) params.mask = await toFile(opts.maskPng, "mask.png", { type: "image/png" });
+  if (usableMask) params.mask = await toFile(usableMask, "mask.png", { type: "image/png" });
 
   const result = await client.images.edit(params);
   const item = result.data?.[0];

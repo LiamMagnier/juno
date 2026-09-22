@@ -8,9 +8,12 @@ import {
   isAutoModelId,
   isWorkCapableModel,
   isWorkModelAllowed,
+  pickWorkModel,
   workModelLocked,
   workModelOptions,
+  WORK_MIN_INTELLIGENCE,
 } from "@/lib/work/models";
+import { averageRequestCostMicroUsd, getModelMetrics } from "@/lib/model-metrics";
 import { canUseModel } from "@/lib/plans";
 import { DEFAULT_MODEL, MODEL_LIST, resolveModel, type ModelInfo } from "@/lib/models";
 
@@ -241,4 +244,85 @@ test("a richer plan never falls back to something a poorer one could not have", 
   const max = cheapestWorkModel(MODEL_LIST, "MAX20");
   assert.ok(pro && max);
   assert.ok(max.cost <= pro.cost);
+});
+
+/*
+ * The tier whose discount is paid for with your prompts.
+ *
+ * Meta sells `muse-spark-1.3-contributor` at $0.10/$0.20 against the standard
+ * tier's $1.25/$4.25 — the same weights, discounted in exchange for the right
+ * to train on what is sent to it. Every automatic chooser in this codebase
+ * ranks cheapest-first, so the cheapest tier on the catalog wins by
+ * construction, and it would win silently: a Work run picks its own model, and
+ * nobody is watching when it does.
+ *
+ * The line drawn here is between "may a reader choose this" (yes, it is a real
+ * option and it is in the picker) and "may Juno choose it for them" (no). That
+ * is why the exclusion sits on `cheapestWorkModel` and `pickWorkModel` rather
+ * than on `isWorkCapableModel`, which answers the first question.
+ */
+const TRAINING_TIER = "meta:muse-spark-1.3-contributor";
+
+test("a training tier is offered to pick, because it is a real choice", () => {
+  const training = MODEL_LIST.find((model) => model.id === TRAINING_TIER);
+  assert.ok(training, "the contributor tier is in the catalog");
+  assert.equal(training.trainsOnPrompts, true);
+  assert.ok(isWorkCapableModel(training), "nothing about it stops the runtime driving it");
+  assert.ok(
+    workModelOptions(MODEL_LIST, { providers: null }).some((model) => model.id === TRAINING_TIER),
+    "the picker must still offer it — hiding a choice is not the same as not making it"
+  );
+});
+
+test("but nothing picks a training tier on the reader's behalf", () => {
+  for (const plan of ["FREE", "PRO", "MAX20", "OWNER"] as const) {
+    assert.notEqual(
+      cheapestWorkModel(MODEL_LIST, plan)?.id,
+      TRAINING_TIER,
+      `the ${plan} fallback must not be the tier that trains on prompts`
+    );
+    const picked = pickWorkModel({ goal: "tidy up the repo", plan, models: MODEL_LIST, providers: null });
+    assert.notEqual(picked?.model.id, TRAINING_TIER, `the ${plan} automatic pick must not be it either`);
+  }
+
+  // And the exclusion has to be doing real work. `pickWorkModel` ranks
+  // cheapest-first among models clearing WORK_MIN_INTELLIGENCE, and inside
+  // that pool the contributor tier is both the cheapest thing a PRO account
+  // can reach AND the most capable of the cheap ones — it wins on every
+  // tiebreak the ranking has. Free flash tiers undercut it on price, but they
+  // do not clear the floor, so they never stand between it and the default.
+  // Asserting that here keeps this file from passing for the wrong reason the
+  // day Meta reprices the tier.
+  const training = MODEL_LIST.find((model) => model.id === TRAINING_TIER);
+  assert.ok(training);
+  const overFloor = MODEL_LIST.filter(
+    (model) =>
+      isWorkCapableModel(model) &&
+      canUseModel("PRO", model.id) &&
+      getModelMetrics(model).intelligence >= WORK_MIN_INTELLIGENCE
+  );
+  const cheaperOverFloor = overFloor.filter(
+    (model) =>
+      model.id !== TRAINING_TIER &&
+      averageRequestCostMicroUsd(model) < averageRequestCostMicroUsd(training)
+  );
+  assert.deepEqual(
+    cheaperOverFloor.map((model) => model.id),
+    [],
+    "the contributor tier is the cheapest option above Work's floor — the exclusion is load-bearing"
+  );
+});
+
+test("the catalog prices the contributor tier as the contributor tier", () => {
+  // `pickWorkModel` ranks on these numbers, so a metrics rule that matched the
+  // cheap id against the standard row would not merely display a wrong price —
+  // it would change which model runs.
+  const byId = new Map(MODEL_LIST.map((model) => [model.id, model]));
+  const training = byId.get(TRAINING_TIER);
+  const standard = byId.get("meta:muse-spark-1.3");
+  assert.ok(training && standard);
+  assert.equal(getModelMetrics(training).inputUsdPerMTok, 0.1);
+  assert.equal(getModelMetrics(training).outputUsdPerMTok, 0.2);
+  assert.equal(getModelMetrics(standard).inputUsdPerMTok, 1.25);
+  assert.equal(getModelMetrics(standard).outputUsdPerMTok, 4.25);
 });

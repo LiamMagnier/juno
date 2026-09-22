@@ -25,6 +25,8 @@ export interface SelectableModel {
   cost: number;
   modality: string;
   comingSoon?: boolean;
+  /** See `ModelInfo.trainsOnPrompts` — structural, so the real type fits. */
+  trainsOnPrompts?: boolean;
 }
 
 export type SelectionReason =
@@ -77,6 +79,17 @@ export interface SelectionInputs<M extends SelectableModel> {
  * model per request — silently, on the path taken precisely when something has
  * already gone wrong. Nobody chose that model, so nobody should be billed as
  * though they had.
+ *
+ * "Nobody chose it" is also why a model the provider trains on can never be
+ * the answer here, and why the exclusion lives in this function rather than in
+ * the caller's `isEligible`. That predicate does double duty in `selectModel`
+ * — it validates the model that WAS asked for as well as ranking the ones that
+ * were not — so excluding the tier there would have made an explicit choice of
+ * it unselectable. Here it only removes it from the ranking, which is the
+ * whole distinction: Meta's `-contributor` tier is the cheapest thing on the
+ * catalog, so every cheapest-first fallback would land on it, and a reader who
+ * had chosen a frontier model would find their prompt on a training endpoint
+ * because a provider went unhealthy. See `ModelInfo.trainsOnPrompts`.
  */
 export function cheapestEligible<M extends SelectableModel>(
   catalogue: readonly M[],
@@ -84,7 +97,10 @@ export function cheapestEligible<M extends SelectableModel>(
   isProviderHealthy?: (provider: string) => boolean
 ): M | null {
   const candidates = catalogue.filter(
-    (model) => isEligible(model) && (!isProviderHealthy || isProviderHealthy(model.provider))
+    (model) =>
+      model.trainsOnPrompts !== true &&
+      isEligible(model) &&
+      (!isProviderHealthy || isProviderHealthy(model.provider))
   );
   if (candidates.length === 0) return null;
   return [...candidates].sort((a, b) => a.cost - b.cost)[0];

@@ -3998,6 +3998,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Allowed. Juno will not ask again before this action on this connector."
   },
   {
+    "id": "37140f7392c84d8e",
+    "source": "Meta's agentic image model — reasons before it renders, composes up to 10 references, $0.01 an image."
+  },
+  {
     "id": "372e824bd71acab1",
     "source": "Older Plus generation."
   },
@@ -13404,6 +13408,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b8fbf194aea9cf26",
     "source": "MiMo V2.5 Pro"
+  },
+  {
+    "id": "b90f0e03f2731b0a",
+    "source": "Muse Spark 1.3 at a 12x discount — Meta trains on the prompts and completions you send it."
   },
   {
     "id": "b92014d12975b1ef",

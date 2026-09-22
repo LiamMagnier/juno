@@ -8,7 +8,7 @@
 
 import type { Plan } from "@prisma/client";
 import { canUseModel } from "@/lib/plans";
-import { MODEL_LIST, type ModelId, type ModelInfo } from "@/lib/models";
+import { MODEL_LIST, trainsOnPrompts, type ModelId, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import {
   averageRequestCostMicroUsd,
@@ -310,6 +310,13 @@ function isEligibleChatModel(m: ModelInfo, plan: Plan, needsVision: boolean, nee
   if (m.modality !== "chat") return false;
   if (m.comingSoon) return false;
   if (m.status === "deprecated") return false;
+  // Auto ranks cheapest-first, and the cheapest tier on this catalog is the one
+  // whose discount is paid for with the reader's prompts (Meta's
+  // `-contributor` ids). Ranking would hand it almost every turn, and the
+  // reader would never see the trade they had made. Excluded from the pool
+  // rather than penalised in the sort: a data decision is not a price the
+  // ranking can weigh. Choosing it by hand still works.
+  if (trainsOnPrompts(m)) return false;
   if (!isProviderConfigured(m.provider)) return false;
   if (!canUseModel(plan, m.id)) return false;
   if (needsVision && !m.vision) return false;

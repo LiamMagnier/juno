@@ -170,3 +170,75 @@ test("cheapestEligible ignores health when no health predicate is given", () => 
   assert.equal(cheapestEligible(CATALOGUE, allEligible, () => false), null);
   assert.equal(cheapestEligible([], allEligible), null);
 });
+
+/*
+ * A model the provider trains on is never what a fallback lands on.
+ *
+ * Meta's `muse-spark-1.3-contributor` is the same weights as the standard tier
+ * at a twelfth of the price, bought with the right to train on the prompts and
+ * completions sent to it — so it is the cheapest thing on the catalog, and
+ * every cheapest-first path in this file would otherwise end there. The
+ * exclusion sits in `cheapestEligible` rather than in the caller's `isEligible`
+ * precisely so it cannot leak into the other job that predicate does: telling
+ * `selectModel` whether the model a reader ASKED for may answer.
+ */
+const trainingTier: SelectableModel = {
+  id: "training", provider: "meta", name: "Training Tier", cost: 0, modality: "chat",
+  trainsOnPrompts: true,
+};
+const WITH_TRAINING = [frontier, mid, cheap, trainingTier];
+
+test("a training tier never wins a cheapest-first fallback, however cheap it is", () => {
+  assert.equal(cheapestEligible(WITH_TRAINING, allEligible, allHealthy)?.id, "cheap");
+
+  const selection = selectModel({
+    requestedId: "unknown",
+    requested: null,
+    catalogue: WITH_TRAINING,
+    isEligible: allEligible,
+    isProviderHealthy: allHealthy,
+    allowSubstitution: true,
+  });
+  assert.equal(selection.model?.id, "cheap", "Auto's fallback skips the training tier");
+});
+
+test("an unhealthy provider is never rerouted onto a training tier", () => {
+  const selection = selectModel({
+    requestedId: "frontier",
+    requested: frontier,
+    catalogue: WITH_TRAINING,
+    isEligible: allEligible,
+    isProviderHealthy: (provider) => provider !== "anthropic",
+    allowSubstitution: true,
+  });
+  assert.equal(selection.model?.id, "cheap");
+});
+
+test("a spend ceiling degrades to the cheapest model that is not a training tier", () => {
+  const selection = selectModel({
+    requestedId: "frontier",
+    requested: frontier,
+    catalogue: WITH_TRAINING,
+    isEligible: allEligible,
+    isProviderHealthy: allHealthy,
+    budgetExhausted: true,
+    allowSubstitution: true,
+  });
+  assert.equal(selection.model?.id, "cheap");
+  assert.equal(selection.reason, "budget_degraded");
+});
+
+test("but choosing a training tier on purpose still works", () => {
+  // The whole point of the split: Juno may not pick it, a reader may.
+  const selection = selectModel({
+    requestedId: "training",
+    requested: trainingTier,
+    catalogue: WITH_TRAINING,
+    isEligible: allEligible,
+    isProviderHealthy: allHealthy,
+    allowSubstitution: false,
+  });
+  assert.equal(selection.model?.id, "training");
+  assert.equal(selection.reason, "requested");
+  assert.equal(selection.warning, null);
+});
