@@ -20,21 +20,29 @@ name: Deploy to VM
 #     bigger hosted runners for exactly this reason — watch `free -h` and
 #     `pm2 status` during the first few self-hosted runs.
 #
-# The existing `concurrency` group below already serializes every
-# deploy-capable run onto one slot, which matters more now than it did on
-# hosted runners: two builds running at once on the same small VM would
-# starve each other rather than just queuing on GitHub's infrastructure.
-#
-# This workflow also runs on every `pull_request` (see the trigger below) —
-# fine for a private, single-owner repo with no forks, but if this repo ever
-# gains outside contributors or goes public, a PR from an untrusted branch
-# would execute on this same runner with this same access. Re-scope the
-# `pull_request` trigger (e.g. to `pull_request_target` with a path/author
-# allowlist, or drop it back to hosted runners) before that changes.
+# The VM is several times slower than a hosted runner (the `runner` job took
+# 4.5 min on it against ~20 s hosted) and every job competes with the live
+# app for it, so three things keep it from spending its whole day on CI:
+#   - Pull requests run on GitHub-hosted runners, never on the VM. Until the
+#     monthly minutes reset they fail to start; that is a red check on a PR,
+#     not a slow production site.
+#   - Gate jobs cancel when a newer push to main arrives (per-job
+#     `concurrency` below). A burst of merges builds the last one once
+#     instead of every one back to back. The deploy job is the exception:
+#     it is never cancelled mid-flight — see its own `concurrency`.
+#   - Pushes that only touch native/, docs/ or artifacts/ don't deploy the
+#     web app at all (`paths-ignore`). native.yml still gates those.
+# The runner's systemd unit is also deprioritised (nice, CPU/IO weight,
+# MemoryHigh) by deploy/setup-self-hosted-runner.sh, so production wins any
+# contention, and timeouts below are sized for the VM, not a hosted runner.
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "native/**"
+      - "docs/**"
+      - "artifacts/**"
   pull_request: # gate every PR on the same checks that gate main
   workflow_dispatch: {} # manual "Run workflow" button
 
@@ -52,22 +60,26 @@ permissions:
 # --delete over the live VM tree and runs `prisma migrate deploy` against
 # production: a superseding run could sever that mid-flight.
 #
-# Deliberately NOT `deploy-${{ github.ref }}`: all production-capable runs share
-# one serialized slot, while the deploy job below separately restricts manual
-# dispatches to the main branch.
-# Every deploying run therefore shares one serialised slot and queues; only PR
-# gating is per-branch and disposable.
+# That is still the rule for the deploy job, which carries the one shared,
+# never-cancelled `deploy-vm` slot itself (see build-and-deploy).
+#
+# PRs keep their per-branch, cancel-on-push group here. Everything else gets a
+# group of its own at the workflow level and is serialized per JOB instead:
+# the gates cancel superseded runs, the deploy job queues and is never killed.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('deploy-pr-{0}', github.ref) || 'deploy-vm' }}
+  group: ${{ github.event_name == 'pull_request' && format('deploy-pr-{0}', github.ref) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: [self-hosted, juno-vm]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'juno-vm' }}
+    concurrency:
+      group: gate-test-${{ github.ref }}
+      cancel-in-progress: true
     # Green runs take about 1m40s. Every job in this workflow is capped because
     # deploying runs now queue instead of cancelling one another: without a cap,
     # one hung job holds the single deploy slot for GitHub's 360-minute default.
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -194,9 +206,12 @@ jobs:
   # A real service container rather than `continue-on-error`: a step that cannot
   # fail is not a gate, it is a green tick.
   migrations:
-    runs-on: [self-hosted, juno-vm]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'juno-vm' }}
+    concurrency:
+      group: gate-migrations-${{ github.ref }}
+      cancel-in-progress: true
     # Green runs take about 1m10s.
-    timeout-minutes: 15
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -410,9 +425,12 @@ jobs:
   # too. It is deliberately not path filtered: `runner/agent-core` is outside the
   # root tsconfig, so nothing else in CI compiles it.
   runner:
-    runs-on: [self-hosted, juno-vm]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'juno-vm' }}
+    concurrency:
+      group: gate-runner-${{ github.ref }}
+      cancel-in-progress: true
     # Green runs take about 20s.
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -473,13 +491,19 @@ jobs:
     # from any branch.
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: [self-hosted, juno-vm]
+    # One deploy at a time, and never cancelled once started: it rsyncs over
+    # the live tree and runs `prisma migrate deploy` against production. A
+    # newer run's deploy waits here; a newer-still one replaces it in line.
+    concurrency:
+      group: deploy-vm
+      cancel-in-progress: false
     # Production secrets and deployment approval belong to the protected GitHub
     # environment, never to an unscoped repository secret.
     environment: Production
     # Deploys now queue rather than cancel each other (see `concurrency` above),
     # so a hung ssh/rsync would otherwise hold the single deploy slot for
     # GitHub's 360-minute default. Healthy runs finish well inside this.
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
