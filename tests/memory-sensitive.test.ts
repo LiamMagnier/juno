@@ -307,8 +307,12 @@ test("the opt-in list fails closed when Settings cannot be read", () => {
 });
 
 test("the extractor is told not to ask for the subjects the account refused", () => {
+  // The prompt lives in src/lib/memory-extraction.ts so the recall benchmark
+  // measures the same one; memory.ts hands it the refused topics' labels.
   const body = src("src/lib/memory.ts");
-  assert.match(body, /NEVER extract anything touching these subjects/);
+  assert.match(body, /offLimitsLabels: offLimits\.map\(\(topic\) => SENSITIVE_TOPIC_META\[topic\]\.label\.toLowerCase\(\)\)/);
+  const prompt = src("src/lib/memory-extraction.ts");
+  assert.match(prompt, /NEVER extract anything touching these subjects/);
 });
 
 test("the settings route stores only ids this build recognises", () => {

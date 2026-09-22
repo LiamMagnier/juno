@@ -45,6 +45,12 @@ import {
   projectSummaryIsEmpty,
 } from "@/lib/memory-project-summary";
 import { checkProjectAccess } from "@/lib/project-collaboration";
+import {
+  EXTRACTION_KNOWN_FACTS,
+  extractionSystemPrompt,
+  extractionUserMessage,
+  parseExtraction,
+} from "@/lib/memory-extraction";
 import { CODING_MEMORY_CATEGORIES, selectCodingMemories } from "@/lib/code-memory-prompt";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
@@ -938,22 +944,6 @@ export async function sweepExpiredMemories(userId: string, now: Date = new Date(
 const CHUNK_MESSAGES = 40; // user messages per extraction call
 const CHUNK_CHARS = 12_000;
 
-function parseExtraction(text: string): { facts: string[]; digest: string | null } | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try {
-    const obj = JSON.parse(text.slice(start, end + 1));
-    const facts = Array.isArray(obj.facts)
-      ? obj.facts.filter((f: unknown): f is string => typeof f === "string" && !!f.trim()).map((f: string) => f.trim().slice(0, 500)).slice(0, 12)
-      : [];
-    const digest = typeof obj.digest === "string" && obj.digest.trim() ? obj.digest.trim().slice(0, 300) : null;
-    return { facts, digest };
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Distill unprocessed user messages of one conversation into memory facts.
  * Advances the conversation's high-water mark chunk by chunk, so partial
@@ -1058,7 +1048,7 @@ export async function extractConversationMemory(opts: {
     prisma.memoryEntry.findMany({
       where: { userId: opts.userId, kind: "FACT", projectId: convo.projectId ?? null },
       orderBy: { createdAt: "desc" },
-      take: 40,
+      take: EXTRACTION_KNOWN_FACTS,
       select: { content: true },
     }),
     getSuppressions(opts.userId),
@@ -1072,11 +1062,11 @@ export async function extractConversationMemory(opts: {
   // difference between the content having been sent to a provider and not.
   const offLimits = SENSITIVE_TOPICS.filter((topic) => !allowedSensitiveTopics.includes(topic));
 
-  const system = `You maintain a long-term memory of durable facts about a user. From the chat messages below (all written BY the user), extract NEW durable facts worth remembering — identity, role, location, preferences, tools and languages they use, ongoing projects, goals, recurring themes. Ignore one-off task details, questions that reveal nothing durable, and anything already known. Never extract secrets, passwords, or API keys.
-${offLimits.length ? `NEVER extract anything touching these subjects, even when the user states it plainly — ${offLimits.map((topic) => SENSITIVE_TOPIC_META[topic].label.toLowerCase()).join(", ")}. Leave them out entirely rather than paraphrasing around them.\n` : ""}${suppressions.length ? `The user asked to FORGET the following — never extract anything about them:\n${suppressions.map((s) => `- ${s}`).join("\n")}\n` : ""}Already known:
-${recentFacts.length ? recentFacts.map((f) => `- ${f.content}`).join("\n") : "(nothing yet)"}
-
-Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one line: what this chat is about>"} — facts may be empty.`;
+  const system = extractionSystemPrompt({
+    offLimitsLabels: offLimits.map((topic) => SENSITIVE_TOPIC_META[topic].label.toLowerCase()),
+    suppressions,
+    known: recentFacts.map((f) => f.content),
+  });
 
   // Loaded once per invocation, not per chunk: the policy cannot change
   // half-way through an extraction, and re-reading it would be a query per
@@ -1088,9 +1078,7 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
   let processed = 0;
   const toProcess = chunks.slice(0, maxChunks);
   for (const chunk of toProcess) {
-    const userMsg = `Chat title: ${convo.title}\nUser messages (oldest to newest):\n${chunk
-      .map((m) => `- ${m.content}`)
-      .join("\n")}\n\nReturn the JSON.`;
+    const userMsg = extractionUserMessage({ title: convo.title, messages: chunk.map((m) => m.content) });
 
     const { result } = await runUtilityPrompt({
       system,
