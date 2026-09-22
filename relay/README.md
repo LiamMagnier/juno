@@ -31,8 +31,8 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 |---|---|---|
 | `AUTH_SECRET` | yes | MUST equal the Juno backend's `AUTH_SECRET` (verifies the short-lived tokens minted by `/api/voice/relay-token`). |
 | `OPENAI_API_KEY` | per provider | enables `openai` |
-| `GEMINI_LIVE_API_KEY` | per provider | enables `gemini` — must be a CLASSIC AI Studio key (`AIza…`); the newer `AQ.…`-format keys are rejected by the Live API. Falls back to `GOOGLE_API_KEY`. |
-| `GOOGLE_API_KEY` | per provider | fallback for `gemini` when `GEMINI_LIVE_API_KEY` is unset (same `AIza…` requirement) |
+| `GEMINI_LIVE_API_KEY` | per provider | enables `gemini`. A classic `AIza…` key is used directly; a newer `AQ.…` key is not accepted as a query key by the Live socket, so the relay exchanges it for a short-lived token and connects with that. Falls back to `GOOGLE_API_KEY`. Run `npm run gemini:live-auth` to see which paths a given key can actually open. |
+| `GOOGLE_API_KEY` | per provider | fallback for `gemini` when `GEMINI_LIVE_API_KEY` is unset |
 | `DASHSCOPE_API_KEY` | per provider | enables `qwen` (international/Singapore endpoint) |
 | `MINIMAX_API_KEY` | per provider | enables `minimax` (composed pipeline; TTS may also need a Group ID on some accounts) |
 | `ALLOWED_ORIGINS` | prod | comma-separated browser origins; an empty value rejects browser origins (native apps send no Origin and pass) |
@@ -43,6 +43,7 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 | `RELAY_GEMINI_MODEL` | no | default `gemini-3.8-live` — used when thinking is OFF. Live model ids get retired; if `gemini` fails to start, the error names the model and quotes the server's close reason, so set a current id here. |
 | `RELAY_GEMINI_THINKING_MODEL` | no | default `gemini-3.8-live-extended-thinking` — used when thinking is ON. |
 | `RELAY_GEMINI_LIVE_URL` | no | override the Live API WebSocket endpoint (regional endpoints, tests) |
+| `RELAY_GEMINI_REST_URL` | no | override the host the ephemeral-token exchange calls (tests) |
 | `RELAY_QWEN_MODEL` | no | default `qwen3.5-omni-flash-realtime` |
 | `RELAY_QWEN_REALTIME_URL` | no | default `wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime` |
 | `RELAY_MINIMAX_MODEL` / `RELAY_MINIMAX_TTS_MODEL` | no | defaults `MiniMax-M2.7-highspeed` / `speech-2.6-turbo` |
