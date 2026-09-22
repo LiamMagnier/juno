@@ -35,6 +35,10 @@ public struct RunCommandTool: CodeTool {
         move_file) can be undone from the transcript. Prefer those for edits \
         you intend to be reviewable, and use a command when running one is the \
         point.
+
+        Commands usually run in a sandbox that writes only inside the \
+        workspace, the temporary folder and package-manager caches. Give \
+        xcodebuild a -derivedDataPath inside the workspace.
         """
     public var inputSchema: JSONValue {
         [
