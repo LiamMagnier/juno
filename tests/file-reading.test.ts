@@ -176,3 +176,69 @@ test("a PDF with a text layer reads without needing any fallback", async () => {
   assert.equal(ladder?.status, "ok");
   assert.match(textOf(ladder), /committee published its findings/);
 });
+
+test("rendering a page does not destroy the document it rendered from", async () => {
+  /*
+   * The same transfer bug as above, in the module that draws pages. pdf.js
+   * takes the buffer it is handed, so a caller that renders a thumbnail and
+   * then wants to read the file — or render a second page — was left holding
+   * a detached, zero-length array. Rendering a page must not be a way of
+   * losing the document.
+   */
+  const { renderDocumentPage } = await import("@/lib/media/raster");
+  const bytes = buildPdf("Quarterly Report");
+  const before = bytes.byteLength;
+
+  const first = await renderDocumentPage({ bytes, page: 1, targetWidth: 200 });
+  if (!first) return; // no canvas binding on this platform; nothing to assert
+  assert.equal(bytes.byteLength, before, "the caller's buffer must survive rendering");
+
+  // And the proof that it is not merely present but usable: render again, and
+  // read the text out of the very same array.
+  const second = await renderDocumentPage({ bytes, page: 1, targetWidth: 200 });
+  assert.ok(second, "a second render of the same buffer must work");
+  assert.match(textOf(await extractDocument({ bytes, fileName: "r.pdf", mimeType: "application/pdf" })), /Quarterly Report/);
+});
+
+test("an oversized document is not base64-inlined into the request", async () => {
+  /*
+   * Base64 inflates by a third, and Anthropic caps a Messages request at
+   * 32 MB — so a 24 MB PDF is already at the limit before the conversation is
+   * added, and an unguarded inline fails the whole TURN rather than the one
+   * attachment. No adapter checked. The ceiling has to leave room for
+   * everything else in the request, and for the stricter partner platforms
+   * (Bedrock 20 MB).
+   */
+  const { MAX_INLINE_DOCUMENT_BYTES, canInlineDocument, oversizeDocumentNote } = await import(
+    "@/lib/attachment-bytes"
+  );
+  assert.ok(MAX_INLINE_DOCUMENT_BYTES * (4 / 3) < 20 * 1024 * 1024, "must clear Bedrock's 20 MB once encoded");
+  assert.equal(canInlineDocument(1024), true);
+  assert.equal(canInlineDocument(MAX_INLINE_DOCUMENT_BYTES + 1), false);
+  assert.equal(canInlineDocument(0), false, "an empty object is not something to send");
+
+  // The note must send the model somewhere, not just apologise — an apology
+  // alone invites it to answer from the filename.
+  assert.match(oversizeDocumentNote("big.pdf", 40 * 1024 * 1024, false), /read_document|inspect_image/);
+  assert.match(oversizeDocumentNote("big.pdf", 40 * 1024 * 1024, false), /Do not describe its contents/);
+});
+
+test("a PDF a browser mislabelled is still recognised as one", async () => {
+  /*
+   * Browsers send `application/octet-stream` for a PDF whenever no reader is
+   * installed, and every adapter tested `mimeType === "application/pdf"`
+   * before taking the raw-bytes path. So a mislabelled PDF silently lost the
+   * one path that lets Claude and Gemini read a scan.
+   */
+  const { sniffDocumentMime } = await import("@/lib/uploads");
+  const { isPdfAttachment } = await import("@/lib/attachment-bytes");
+
+  assert.equal(sniffDocumentMime(buildPdf("hello")), "application/pdf");
+  assert.equal(sniffDocumentMime(new Uint8Array(Buffer.from("not a pdf"))), null);
+
+  // Rows already in the database were stored before sniffing existed, so the
+  // name is the evidence that survives for them.
+  assert.equal(isPdfAttachment({ mimeType: "application/octet-stream", fileName: "td1.pdf" }), true);
+  assert.equal(isPdfAttachment({ mimeType: "application/pdf", fileName: "td1" }), true);
+  assert.equal(isPdfAttachment({ mimeType: "application/octet-stream", fileName: "notes.bin" }), false);
+});

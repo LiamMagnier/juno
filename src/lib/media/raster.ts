@@ -115,9 +115,14 @@ export async function renderDocumentPage(input: {
     // ~1.6 MB into the server graph of every route that transitively touches
     // this file — including the ones that never render a page.
     const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
-    // `verbosity: 0` — pdf.js narrates every repair it makes, and a Library
-    // scroll would otherwise turn the server log into pdf.js's.
-    const pdf = await getDocumentProxy(input.bytes, { verbosity: 0 });
+    /*
+     * `.slice()`: pdf.js TRANSFERS the buffer it is handed, so passing the
+     * caller's array leaves them holding a detached, zero-length view. The
+     * same defect cost OCR its bytes for the whole of this function's life
+     * one directory over (see `extract/index.ts`); rendering a page must not
+     * be a way of destroying the document you rendered it from.
+     */
+    const pdf = await getDocumentProxy(input.bytes.slice(), { verbosity: 0 });
     if (page > pdf.numPages) return null;
 
     const viewport = (await pdf.getPage(page)).getViewport({ scale: 1 });

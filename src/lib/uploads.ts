@@ -70,6 +70,33 @@ export function attachmentKind(mime: string): "IMAGE" | "FILE" {
   return IMAGE_MIME.includes(mime) ? "IMAGE" : "FILE";
 }
 
+/**
+ * The real type of a document, read from its bytes rather than its label.
+ *
+ * WHY A PDF NEEDS SNIFFING AT ALL. `planAttachmentUpload` trusts the browser's
+ * declared type for everything that is not an image, and browsers routinely
+ * declare nothing: a machine with no PDF reader installed, a drag from a
+ * zip, a native client posting a raw body — all send
+ * `application/octet-stream`. The row is then stored with that type, and every
+ * provider adapter tests `att.mimeType === "application/pdf"` before taking the
+ * raw-bytes path. So a perfectly ordinary PDF, mislabelled by the sender,
+ * silently lost the one path that lets Claude and Gemini read a scan. It also
+ * missed `selectExtractor`'s MIME lookup, surviving only if the FILE NAME
+ * happened to end in .pdf.
+ *
+ * Only the signature is trusted, and only to *upgrade* octet-stream — never to
+ * override a sender who said something specific, and never to make a file
+ * servable inline (`storedContentType` stays octet-stream regardless).
+ */
+export function sniffDocumentMime(bytes: Uint8Array): string | null {
+  // "%PDF-" — the header every PDF opens with. A few producers emit junk
+  // before it, so the check spans the leading bytes rather than just offset 0,
+  // which is the same tolerance the extractor's own header check applies.
+  const head = Buffer.from(bytes.subarray(0, 1024)).toString("latin1");
+  if (head.includes("%PDF-")) return "application/pdf";
+  return null;
+}
+
 /** Whether we should extract and store UTF-8 text for model context. */
 export function isTextExtractable(mime: string): boolean {
   return mime.startsWith("text/") || DOC_MIME.includes(mime) ? mime !== "application/pdf" : false;
