@@ -375,15 +375,25 @@ public final class CodeRemoteBrowserModel {
         let fresh = page.filter { $0.seq > cursor }.sorted { $0.seq < $1.seq }
         guard !fresh.isEmpty else { return }
         var expected = cursor + 1
+        var journal = events
         for event in fresh {
-            // A missing event is not an aesthetic issue: it can separate an
-            // approval from the tool action it authorises. Refuse to advance
-            // across a hole; the caller can reload a durable detail snapshot
-            // instead of rendering fiction.
-            guard event.seq == expected else { throw CodeRemoteError.malformedResponse }
-            expected += 1
+            if CodeRemoteThread.restartsTranscript(event) {
+                // The host rewound the session and its transcript starts again
+                // here, numbered past everything before: the jump is the cut,
+                // not a hole, and what this phone holds is replaced by what
+                // follows.
+                journal = []
+            } else {
+                // A missing event is not an aesthetic issue: it can separate an
+                // approval from the tool action it authorises. Refuse to advance
+                // across a hole; the caller can reload a durable detail snapshot
+                // instead of rendering fiction.
+                guard event.seq == expected else { throw CodeRemoteError.malformedResponse }
+            }
+            journal.append(event)
+            expected = event.seq + 1
         }
-        events.append(contentsOf: fresh)
+        events = journal
         cursor = events.last?.seq ?? cursor
     }
 

@@ -13,6 +13,7 @@ public struct StudioSessionView: View {
     let beginDictation: (() -> Void)?
 
     @State private var slashCommands: CodeSlashCommandLibrary = .builtIn
+    @State private var isRewindPickerPresented = false
     @FocusState private var composerFocused: Bool
 
     private var preferences: StudioPreferences { .shared }
@@ -88,6 +89,24 @@ public struct StudioSessionView: View {
         .onChange(of: isRunning) { _, running in
             if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
         }
+        // A rewind of the conversation puts the message back in the composer,
+        // and the reader's next move is to edit it.
+        .onChange(of: controller.rewindGeneration) {
+            composerFocused = true
+        }
+        .sheet(isPresented: $isRewindPickerPresented) {
+            StudioRewindPicker(controller: controller) {
+                isRewindPickerPresented = false
+            }
+            .junoSheetSurface(.fitted)
+        }
+    }
+
+    /// The rewind picker, from esc esc or `/rewind`. Not while a run is active:
+    /// the run owns the history a rewind would cut.
+    private var openRewindPicker: (() -> Void)? {
+        guard !isRunning, !controller.rewindTurns.isEmpty else { return nil }
+        return { isRewindPickerPresented = true }
     }
 
     private var composer: some View {
@@ -110,6 +129,7 @@ public struct StudioSessionView: View {
             isRunning: isBusy,
             send: { Task { await controller.send() } },
             stop: { Task { await controller.stop() } },
+            rewind: openRewindPicker,
             focus: $composerFocused
         ) {
             StudioModeChip(mode: mode, select: select, isEnabled: !isBusy)
@@ -175,6 +195,15 @@ public struct StudioSessionView: View {
                 return accepted
             case .review:
                 openReview(nil)
+                return true
+            case .rewind:
+                // The picker, or the reason there is none, answers the
+                // command, so the field is cleared either way.
+                if let openRewindPicker {
+                    openRewindPicker()
+                } else {
+                    controller.explainRewindUnavailable()
+                }
                 return true
             }
         }

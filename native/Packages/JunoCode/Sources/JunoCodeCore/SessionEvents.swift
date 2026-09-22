@@ -50,6 +50,38 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// The model context was folded down. Recorded so the transcript can say,
     /// quietly and in place, that older turns now reach the model as a summary.
     case compaction(CompactionEvent)
+    /// The reader rewound the session, and the transcript restarts here. Only
+    /// ever the first event of a transcript; see ``TranscriptRewoundEvent``.
+    case transcriptRewound(TranscriptRewoundEvent)
+
+    /// Whether this event replaces everything before it in the stream, so a
+    /// reader keeping its place by sequence drops what it holds and rebuilds
+    /// from here rather than treating the jump in numbering as a hole.
+    public var restartsTranscript: Bool {
+        if case .transcriptRewound = self { return true }
+        return false
+    }
+}
+
+/// The transcript was cut back to just before one of the reader's messages,
+/// and starts again from this event.
+///
+/// A rewind is the one change to a transcript that is not an append, and the
+/// sequence number is how every reader of one keeps its place: a phone, or
+/// `juno events`, asks for what came after the last sequence it saw. So a cut
+/// transcript is never numbered from zero again. It opens with this event,
+/// numbered past everything the session ever held, and the events it kept
+/// follow it, renumbered after it. Whatever cursor a reader holds, this is the
+/// next event it receives, and it says to drop what came before; a number the
+/// reader has already seen is never given to an event it would then skip.
+public struct TranscriptRewoundEvent: Hashable, Codable, Sendable {
+    /// The transcript event of the message the session was rewound to, which
+    /// is no longer in the transcript.
+    public let turnID: String
+
+    public init(turnID: String) {
+        self.turnID = turnID
+    }
 }
 
 public struct SessionCreatedEvent: Hashable, Codable, Sendable {
@@ -114,9 +146,19 @@ public struct TurnConfigurationEvent: Hashable, Codable, Sendable {
 
 public struct UserPromptEvent: Hashable, Codable, Sendable {
     public let text: String
+    /// Where this prompt's message sits in the model-facing conversation: the
+    /// number of messages that preceded it when it was sent.
+    ///
+    /// This is the rewind point. The transcript and the conversation are two
+    /// records of the same session, and only this ties a row the reader can
+    /// point at to the message a rewind has to cut before. Nil on prompts
+    /// recorded before rewind existed, which the synthesized `Codable` reads
+    /// with `decodeIfPresent`, so older transcripts still load.
+    public let conversationIndex: Int?
 
-    public init(text: String) {
+    public init(text: String, conversationIndex: Int? = nil) {
         self.text = text
+        self.conversationIndex = conversationIndex
     }
 }
 
@@ -153,9 +195,15 @@ public struct UserInstructionEvent: Hashable, Codable, Sendable, Identifiable {
 /// The event sequence is therefore also the authoritative delivery order.
 public struct UserInstructionAppliedEvent: Hashable, Codable, Sendable {
     public let instructionID: String
+    /// Where the instruction's message landed in the model-facing
+    /// conversation. Recorded here rather than on the instruction itself,
+    /// because an instruction is accepted long before it is applied and only
+    /// application fixes its place — see ``UserPromptEvent/conversationIndex``.
+    public let conversationIndex: Int?
 
-    public init(instructionID: String) {
+    public init(instructionID: String, conversationIndex: Int? = nil) {
         self.instructionID = instructionID
+        self.conversationIndex = conversationIndex
     }
 }
 

@@ -574,13 +574,28 @@ public final class WorkbenchModel {
         )
     }
 
-    /// Returns the durable transcript sequence without constructing or attaching
-    /// a presentation controller. Hosts use this for inventory summaries, so a
-    /// CLI session listing cannot wake screen capture or other UI-only work —
-    /// and, read from the transcript summary, cannot decode every transcript
-    /// on the Mac to count them either.
+    /// How many events a session's transcript holds, without constructing or
+    /// attaching a presentation controller — read from the transcript summary,
+    /// so it cannot decode every transcript on the Mac to count them either.
     public func eventCount(for sessionID: CodeSessionID) async -> Int {
         await sessionStore.transcriptSummary(for: sessionID)?.eventCount ?? 0
+    }
+
+    /// Returns the durable transcript sequence without constructing or attaching
+    /// a presentation controller. Hosts use this for inventory summaries, so a
+    /// CLI session listing cannot wake screen capture or other UI-only work,
+    /// and it is read from the transcript summary rather than the transcript.
+    ///
+    /// The last event's protocol (one-based) sequence, not the number of
+    /// events: a rewound transcript is numbered on from where it was, so it
+    /// holds fewer events than the sequence it has reached, and a client
+    /// comparing this with its cursor must see the newer number.
+    public func lastEventSequence(for sessionID: CodeSessionID) async -> Int {
+        guard let last = await sessionStore.transcriptSummary(for: sessionID)?.lastSequence else {
+            return 0
+        }
+        // The protocol numbers from one: see CodeSessionStoreProtocolAdapter.
+        return last + 1
     }
 
     /// The live controller for a session, created on first use.
@@ -777,7 +792,8 @@ public final class WorkbenchModel {
         }
     }
 
-    /// Stops one session, removes its checkpoints and erases its record.
+    /// Stops one session, removes its checkpoints — per file and per turn — and
+    /// erases its record.
     private func discard(_ session: CodeSession) async throws {
         let controller = controllers[session.id]
         if let controller {
@@ -788,12 +804,20 @@ public final class WorkbenchModel {
         if let workspaceID = session.workspaceID {
             if let context = contexts[workspaceID] {
                 try await context.checkpoints.removeCheckpoints(for: session.id)
+                try await context.turnCheckpoints.removeSession(session.id)
             } else {
                 try CheckpointStore.removePersistedCheckpoints(
                     for: session.id,
                     directoryURL: dependencies.storageRootURL
                         .appendingPathComponent("checkpoints")
                         .appendingPathComponent(workspaceID.value)
+                )
+                try TurnCheckpointStore.removePersisted(
+                    sessionID: session.id,
+                    directoryURL: WorkspaceContext.turnCheckpointDirectory(
+                        storageRoot: dependencies.storageRootURL,
+                        workspaceID: workspaceID
+                    )
                 )
             }
         }

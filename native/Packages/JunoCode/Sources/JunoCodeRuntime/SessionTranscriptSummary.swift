@@ -5,17 +5,28 @@ import JunoCodeCore
 ///
 /// Every list surface reads the session record (`session.json`: title,
 /// project, status, dates) and nothing else. A few callers also need facts
-/// that only the transcript knows: how many events it holds — which is the
-/// next sequence number, and the cursor a thin client resumes from — how many
+/// that only the transcript knows: how many events it holds, the next sequence
+/// number and the last one — the cursor a thin client resumes from — how many
 /// messages were exchanged, when it last moved, and how much code it changed.
 /// Each of those used to be answered by decoding the whole of `events.jsonl`,
 /// at launch, for every session. This is the same answer kept beside the
-/// transcript and updated as it grows.
+/// transcript and updated as it grows, and rebuilt when a rewind cuts it.
 public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
     /// Lines in `events.jsonl`, readable or not. A line that no longer decodes
-    /// still consumed a sequence number when it was written, so it is counted:
-    /// this is the sequence the next event receives.
+    /// still consumed a sequence number when it was written, so it is counted.
     public private(set) var eventCount: Int
+    /// The highest sequence a line carries, read from the line even when the
+    /// rest of it no longer decodes; nil for a transcript with none.
+    ///
+    /// Not `eventCount - 1` once a rewind has cut the transcript: the cut
+    /// transcript opens with a restart numbered past every sequence the
+    /// session ever used, and what it keeps is numbered on from there, so it
+    /// holds fewer lines than the numbers it has handed out.
+    public private(set) var lastSequence: Int?
+    /// The sequence the next event receives: one past the highest a line
+    /// carries, and never less than the line count, so a torn line that took
+    /// a number before its sequence reached the disk is not given it again.
+    public var nextSequence: Int { max(eventCount, (lastSequence ?? -1) + 1) }
     /// Prompts, instructions sent while working, and replies — the turns the
     /// thread shows as speech rather than as machine work.
     public private(set) var messageCount: Int
@@ -31,6 +42,7 @@ public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
 
     public static let empty = SessionTranscriptSummary(
         eventCount: 0,
+        lastSequence: nil,
         messageCount: 0,
         lastEventAt: nil,
         linesAdded: 0,
@@ -40,6 +52,7 @@ public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
 
     private init(
         eventCount: Int,
+        lastSequence: Int?,
         messageCount: Int,
         lastEventAt: Date?,
         linesAdded: Int,
@@ -47,6 +60,7 @@ public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
         changedPaths: Set<String>
     ) {
         self.eventCount = eventCount
+        self.lastSequence = lastSequence
         self.messageCount = messageCount
         self.lastEventAt = lastEventAt
         self.linesAdded = linesAdded
@@ -55,9 +69,13 @@ public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
     }
 
     /// Folds one transcript line in. `event` is nil for a line that did not
-    /// decode, which still counts toward the sequence and nothing else.
-    mutating func absorb(_ event: SessionEvent?) {
+    /// decode, which still counts as a line, and toward the sequence when
+    /// `sequence` could be read from it; nothing else.
+    mutating func absorb(_ event: SessionEvent?, sequence: Int? = nil) {
         eventCount += 1
+        if let sequence = event?.sequence ?? sequence {
+            lastSequence = max(lastSequence ?? sequence, sequence)
+        }
         guard let event else { return }
         lastEventAt = event.timestamp
         switch event.payload {
@@ -70,6 +88,18 @@ public struct SessionTranscriptSummary: Hashable, Codable, Sendable {
         default:
             break
         }
+    }
+}
+
+extension SessionTranscriptSummary {
+    /// Folds in one line as read from the file. A line that does not decode as
+    /// an event is asked for its sequence alone, so a payload this build cannot
+    /// read still says which number it took.
+    @discardableResult
+    mutating func absorbLine(_ line: Data, decoder: SessionEventLineDecoder) -> SessionEvent? {
+        let event = decoder.decode(line)
+        absorb(event, sequence: event == nil ? TranscriptFiles.sequence(ofLine: line) : nil)
+        return event
     }
 }
 
@@ -102,7 +132,10 @@ struct SessionEventLineDecoder: Sendable {
 /// means the summary describes a file that no longer exists, and it is rebuilt
 /// from the transcript.
 struct TranscriptIndex: Equatable, Sendable {
-    static let formatVersion = 1
+    /// 2 since the summary records the highest sequence as well as the line
+    /// count; a version 1 summary is rebuilt rather than trusted to number a
+    /// transcript that a rewind may have cut.
+    static let formatVersion = 2
     /// How much of the covered range the fingerprint spans: more than the
     /// shortest event line, so a file cut back and regrown to the same length
     /// does not match by the accident of one repeated line, and little enough
@@ -135,7 +168,7 @@ struct TranscriptIndex: Equatable, Sendable {
     /// file ended in a cut-off one.
     mutating func absorb(_ bytes: Data, decoder: SessionEventLineDecoder) {
         for line in bytes.split(separator: 0x0A) {
-            summary.absorb(decoder.decode(Data(line)))
+            summary.absorbLine(Data(line), decoder: decoder)
         }
         advance(over: bytes)
     }
@@ -214,14 +247,16 @@ enum TranscriptFiles {
     }
 
     /// The sequence the next event appended to this transcript receives — the
-    /// `eventCount` that `loadIndex` would arrive at — found by counting lines
-    /// rather than decoding them.
+    /// `nextSequence` that `loadIndex` would arrive at — found by counting
+    /// lines and reading the last line's sequence rather than decoding them.
     ///
     /// For the interruption repair at launch, which has to number an event or
     /// two before the session list can be shown and has no use for the rest of
     /// the summary. With an intact saved summary it counts only the lines
     /// written after it; without one it counts them all, which is a scan for
-    /// newlines rather than a decode of every event.
+    /// newlines rather than a decode of every event. The count alone would
+    /// hand a rewound transcript numbers it has already used, so the sequence
+    /// its newest line carries is read as well, from the end of the file.
     static func nextSequence(eventsURL: URL, summaryURL: URL) -> Int {
         let length = regularFileLength(eventsURL) ?? 0
         if let saved = verifiedSavedIndex(
@@ -230,16 +265,39 @@ enum TranscriptFiles {
             length: length
         ) {
             if saved.byteCount == length {
-                return saved.summary.eventCount
+                return saved.summary.nextSequence
             }
             if saved.endsOnLineBoundary,
                 let appended = lineCount(of: eventsURL, in: saved.byteCount..<length)
             {
-                return saved.summary.eventCount + appended
+                let last = lastSequence(in: eventsURL) ?? saved.summary.lastSequence
+                return max(saved.summary.eventCount + appended, (last ?? -1) + 1)
             }
         }
         // Unreadable counts as empty, as it does for a rebuilt index.
-        return lineCount(of: eventsURL, in: 0..<length) ?? 0
+        let lines = lineCount(of: eventsURL, in: 0..<length) ?? 0
+        return max(lines, (lastSequence(in: eventsURL) ?? -1) + 1)
+    }
+
+    /// The sequence the newest line that carries one holds — the highest in
+    /// the transcript, since sequences only go up — read backwards from the
+    /// end of the file; nil when no line says.
+    static func lastSequence(in eventsURL: URL) -> Int? {
+        var found: Int?
+        forEachLineFromEnd(in: eventsURL) { line in
+            found = sequence(ofLine: line)
+            return found == nil
+        }
+        return found
+    }
+
+    /// The sequence a line carries, decoding nothing else, so a line whose
+    /// payload this build cannot read still says which number it took.
+    static func sequence(ofLine line: Data) -> Int? {
+        struct Numbered: Decodable {
+            let sequence: Int
+        }
+        return try? JSONDecoder().decode(Numbered.self, from: line).sequence
     }
 
     /// The saved summary, when the transcript still holds the bytes it was
@@ -340,9 +398,9 @@ enum TranscriptFiles {
         }
         var events: [SessionEvent] = []
         for line in data.split(separator: 0x0A) {
-            let event = decoder.decode(Data(line))
-            index.summary.absorb(event)
-            if let event { events.append(event) }
+            if let event = index.summary.absorbLine(Data(line), decoder: decoder) {
+                events.append(event)
+            }
         }
         index.byteCount = data.count
         index.tail = Data(data.suffix(TranscriptIndex.fingerprintLength))
@@ -360,35 +418,45 @@ enum TranscriptFiles {
         limit: Int,
         decoder: SessionEventLineDecoder
     ) -> [SessionEvent] {
-        guard limit > 0,
-            regularFileLength(eventsURL) != nil,
+        guard limit > 0 else { return [] }
+        var newestFirst: [SessionEvent] = []
+        forEachLineFromEnd(in: eventsURL) { line in
+            if let event = decoder.decode(line) {
+                newestFirst.append(event)
+            }
+            return newestFirst.count < limit
+        }
+        return newestFirst.reversed()
+    }
+
+    /// Hands `body` each non-empty line of the transcript, newest first, read
+    /// backwards from the end of the file a chunk at a time, until it returns
+    /// false — so a long transcript costs a chunk or two.
+    private static func forEachLineFromEnd(in eventsURL: URL, _ body: (Data) -> Bool) {
+        guard regularFileLength(eventsURL) != nil,
             let handle = try? FileHandle(forReadingFrom: eventsURL)
-        else { return [] }
+        else { return }
         defer { try? handle.close() }
-        guard var offset = try? handle.seekToEnd(), offset > 0 else { return [] }
+        guard var offset = try? handle.seekToEnd(), offset > 0 else { return }
 
         let chunkLength: UInt64 = 64 * 1_024
-        var newestFirst: [SessionEvent] = []
         // The front of the previous chunk, which may be the end of a line that
         // began further back.
         var carried = Data()
-        while offset > 0, newestFirst.count < limit {
+        while offset > 0 {
             let start = offset > chunkLength ? offset - chunkLength : 0
             guard (try? handle.seek(toOffset: start)) != nil,
                 let read = try? handle.read(upToCount: Int(offset - start))
-            else { break }
+            else { return }
             var buffer = read
             buffer.append(carried)
             offset = start
             var lines = buffer.split(separator: 0x0A, omittingEmptySubsequences: false)
             carried = start > 0 ? Data(lines.removeFirst()) : Data()
             for line in lines.reversed() where !line.isEmpty {
-                guard let event = decoder.decode(Data(line)) else { continue }
-                newestFirst.append(event)
-                if newestFirst.count == limit { break }
+                guard body(Data(line)) else { return }
             }
         }
-        return newestFirst.reversed()
     }
 
     static func save(_ index: TranscriptIndex, to summaryURL: URL) throws {

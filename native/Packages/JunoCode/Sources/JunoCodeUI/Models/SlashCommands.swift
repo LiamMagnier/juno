@@ -52,6 +52,9 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         case compact
         /// Open the review pane.
         case review
+        /// Choose one of the reader's messages to go back to: `/rewind`, the
+        /// typed twin of esc esc.
+        case rewind
     }
 
     /// The verb this command performs, or nil for an ordinary saved prompt.
@@ -291,6 +294,12 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
             prompt: "",
             action: .compact,
             argumentHint: "what to keep"
+        ),
+        CodeSlashCommand(
+            name: "rewind",
+            summary: "Go back to before one of your messages",
+            prompt: "",
+            action: .rewind
         ),
         CodeSlashCommand(
             name: "commit",

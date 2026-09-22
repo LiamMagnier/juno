@@ -168,6 +168,66 @@ final class StudioSnapshotTests: XCTestCase {
         }
     }
 
+    func testRenderRewind() async throws {
+        let fixture = CodePreviewData.fixture(for: .transcript)
+        let controller = SessionController(previewFixture: fixture)
+        let turn = try XCTUnwrap(controller.rewindTurns.last)
+        let preview = RewindPreview(
+            turn: turn,
+            files: [
+                TurnRestoreFile(path: try WorkspacePath("Sources/Parser/Tokenizer.swift"), change: .revert, hasDiverged: false),
+                TurnRestoreFile(path: try WorkspacePath("Sources/Parser/Recovery.swift"), change: .remove, hasDiverged: false),
+                TurnRestoreFile(path: try WorkspacePath("Tests/ParserTests.swift"), change: .revert, hasDiverged: true),
+            ],
+            codeUnavailable: nil,
+            conversationUnavailable: nil
+        )
+        let phases: [(String, StudioRewindPanel.Phase)] = [
+            ("choosing", .choosing),
+            ("diverged", .diverged(.codeAndConversation, paths: ["Tests/ParserTests.swift"])),
+        ]
+        for (name, phase) in phases {
+            for dark in [false, true] {
+                try await render(
+                    StudioRewindPanel(
+                        preview: preview,
+                        phase: phase,
+                        isRunning: false,
+                        choose: { _ in },
+                        restoreAnyway: { _ in },
+                        cancel: {},
+                        stop: {}
+                    )
+                    .padding(JunoSpace.regular)
+                    .frame(width: 380)
+                    .background(Studio.Surface.raised),
+                    size: CGSize(width: 380, height: 460),
+                    dark: dark,
+                    name: "rewind-\(name)-\(dark ? "dark" : "light")"
+                )
+            }
+        }
+        try await render(
+            StudioUserMessage(text: turn.text) { _ in
+                StudioRewindButton(controller: controller, turnID: turn.id, isRowHovered: true)
+            }
+            .padding(JunoSpace.section)
+            .background(Studio.Surface.canvas),
+            size: CGSize(width: 760, height: 140),
+            dark: false,
+            name: "rewind-row-hovered"
+        )
+        for dark in [false, true] {
+            try await render(
+                StudioRewindPicker(controller: controller, dismiss: {})
+                    .background(Studio.Surface.raised),
+                size: CGSize(width: 480, height: 420),
+                dark: dark,
+                name: "rewind-picker-\(dark ? "dark" : "light")"
+            )
+        }
+    }
+
     func testRenderSettings() async throws {
         for section in [StudioSettingsSection.general, .permissions, .agent, .appearance] {
             try await render(

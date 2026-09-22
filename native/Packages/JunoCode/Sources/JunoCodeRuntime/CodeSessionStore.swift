@@ -12,12 +12,18 @@ public enum SessionStoreError: Error, Equatable, Sendable {
 ///
 /// Layout under the store directory:
 /// `sessions/<id>/session.json` — the session record;
-/// `sessions/<id>/events.jsonl` — append-only transcript events;
+/// `sessions/<id>/events.jsonl` — append-only transcript events, cut back only
+/// by a rewind the reader asked for (`rewindConversation`);
 /// `sessions/<id>/summary.json` — what the transcript amounts to (see
 /// `SessionTranscriptSummary`), derived from `events.jsonl` and rebuilt from
 /// it whenever it cannot be trusted;
 /// `sessions/<id>/conversation.json` — resumable model context with ephemeral
 /// screenshot bytes redacted before they reach disk.
+///
+/// Sequence numbers only ever go up. The next event takes one past the highest
+/// sequence the transcript holds, which is its line count until a rewind cuts
+/// lines away without giving their numbers back; the summary keeps both, so
+/// numbering an append never needs the transcript decoded.
 ///
 /// Launch reads the session records and nothing else. Every list surface is
 /// drawn from them, and a transcript can run to tens of thousands of events,
@@ -33,7 +39,8 @@ public actor CodeSessionStore {
     private var sessions: [CodeSessionID: CodeSession] = [:]
     /// The transcript summaries this store has read, rebuilt or kept up to date
     /// since launch. A session without an entry has not been needed yet; the
-    /// background pass started by `loadIfNeeded()` fills them in.
+    /// background pass started by `loadIfNeeded()` fills them in. Each one's
+    /// `nextSequence` is the sequence that session's next event takes.
     private var transcripts: [CodeSessionID: TranscriptIndex] = [:]
     /// Summaries that changed in memory since they were last written.
     private var unsavedTranscripts: Set<CodeSessionID> = []
@@ -326,7 +333,9 @@ public actor CodeSessionStore {
         var index = TranscriptIndex.empty
         let (event, line) = try writeEvent(sessionID: sessionID, payload: payload) { end in
             index = transcriptIndex(for: sessionID, fileLength: end)
-            return index.summary.eventCount
+            // Not the line count: after a rewind the transcript holds fewer
+            // lines than the numbers it has handed out.
+            return index.summary.nextSequence
         }
         index.absorb(event, writtenAs: line)
         transcripts[sessionID] = index
@@ -340,13 +349,13 @@ public actor CodeSessionStore {
     /// repair write succeeds, so this must not re-enter it through the public
     /// `appendEvent` API.
     ///
-    /// Numbered from a count of the transcript's lines rather than from its
-    /// summary. The session list waits for this, and the summary is the one
-    /// thing launch must not have to build: for a session saved before
-    /// summaries existed, or whose summary a crash cut short, building it means
-    /// decoding the whole transcript. None is installed, then; the launch pass
-    /// that follows catches the saved one up with these events, or rebuilds
-    /// it, off the actor like every other.
+    /// Numbered from a count of the transcript's lines and the sequence its
+    /// last line carries, rather than from its summary. The session list waits
+    /// for this, and the summary is the one thing launch must not have to
+    /// build: for a session saved before summaries existed, or whose summary a
+    /// crash cut short, building it means decoding the whole transcript. None
+    /// is installed, then; the launch pass that follows catches the saved one
+    /// up with these events, or rebuilds it, off the actor like every other.
     private func appendRepairEvents(
         sessionID: CodeSessionID,
         payloads: [SessionEventPayload]
@@ -618,6 +627,112 @@ public actor CodeSessionStore {
     public func loadConversation(sessionID: CodeSessionID) -> [ModelMessage] {
         guard let data = try? Data(contentsOf: conversationURL(sessionID)) else { return [] }
         return (try? JSONDecoder().decode([ModelMessage].self, from: data)) ?? []
+    }
+
+    // MARK: - Rewind
+
+    /// What rewinding the session to just before `turnID` would keep, with
+    /// nothing changed. Throws ``ConversationRewindError`` when it cannot be
+    /// rewound there.
+    public func conversationRewindPlan(
+        sessionID: CodeSessionID,
+        to turnID: String
+    ) async throws -> ConversationRewindPlan {
+        try await rewindReading(sessionID: sessionID, to: turnID).plan
+    }
+
+    /// The rewind plan, and the transcript length it was made from.
+    ///
+    /// The transcript is read whole, off the actor, as `events(for:)` reads
+    /// it, and that read is also its summary: the plan numbers the restart
+    /// from the summary's `nextSequence`, one past the highest sequence the
+    /// session ever used, which a transcript rewound before holds fewer lines
+    /// than.
+    private func rewindReading(
+        sessionID: CodeSessionID,
+        to turnID: String
+    ) async throws -> (plan: ConversationRewindPlan, length: Int) {
+        try loadIfNeeded()
+        guard sessions[sessionID] != nil else {
+            throw SessionStoreError.sessionNotFound(id: sessionID.value)
+        }
+        let url = eventsURL(sessionID)
+        let length = TranscriptFiles.regularFileLength(url) ?? 0
+        let decoder = eventDecoder
+        let read = await Task.detached(priority: .userInitiated) {
+            TranscriptFiles.events(in: url, length: length, decoder: decoder)
+        }.value
+        let plan = try ConversationRewind.plan(
+            rewindingTo: turnID,
+            events: read.events,
+            conversation: loadConversation(sessionID: sessionID),
+            nextSequence: read.index.summary.nextSequence
+        )
+        return (plan, length)
+    }
+
+    /// Cuts the conversation and the transcript back to just before `turnID`.
+    ///
+    /// The one place the transcript is rewritten rather than appended to, and
+    /// only because the reader asked for exactly that. Sequence numbers still
+    /// only go up: the cut transcript opens with a ``TranscriptRewoundEvent``
+    /// numbered past everything before it, so a reader polling from any
+    /// cursor (`protocolEvents(after:)`) receives the restart next rather
+    /// than skipping new events whose numbers it has already seen. Observers
+    /// in this process are told only that the session changed; a controller
+    /// showing this session reloads its events.
+    ///
+    /// The conversation is written before the transcript. Cut short between
+    /// the two, the model has forgotten turns the reader can still see, and a
+    /// second rewind refuses as out of sync — rather than the reverse, where
+    /// the model would quietly remember turns the reader has removed.
+    ///
+    /// The transcript is read off the actor, so appends can land while the
+    /// plan is made. It is written only if the file is still the length that
+    /// was read — checked on the actor, with nothing between the check and the
+    /// write — since writing the plan over a longer file would drop what was
+    /// appended meanwhile. The summary is then rebuilt from the events
+    /// written: the counts, the last activity and the lines and files changed
+    /// describe the kept transcript, and `nextSequence` carries on from the
+    /// restart.
+    @discardableResult
+    public func rewindConversation(
+        sessionID: CodeSessionID,
+        to turnID: String
+    ) async throws -> ConversationRewindPlan {
+        let (plan, length) = try await rewindReading(sessionID: sessionID, to: turnID)
+        guard (TranscriptFiles.regularFileLength(eventsURL(sessionID)) ?? 0) == length else {
+            throw SessionStoreError.persistenceFailed(
+                message: "The session changed while it was being rewound. Try again."
+            )
+        }
+        try saveConversation(sessionID: sessionID, messages: plan.messages)
+        var index = TranscriptIndex.empty
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var data = Data()
+            for event in plan.events {
+                var line = try encoder.encode(event)
+                line.append(0x0A)
+                index.absorb(event, writtenAs: line)
+                data.append(line)
+            }
+            try data.write(to: eventsURL(sessionID), options: .atomic)
+        } catch {
+            throw SessionStoreError.persistenceFailed(message: String(describing: error))
+        }
+        transcripts[sessionID] = index
+        scheduleTranscriptSave(for: sessionID)
+        _ = try updateSession(id: sessionID) { session in
+            session.status = plan.status
+            session.hasPendingApproval = false
+            session.goal = plan.goal
+            if plan.status != .failed {
+                session.lastErrorSummary = nil
+            }
+        }
+        return plan
     }
 
     // MARK: - Persistence

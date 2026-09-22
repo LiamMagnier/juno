@@ -162,6 +162,47 @@ final class CodeSessionProtocolTests: XCTestCase {
         }
     }
 
+    /// A rewound transcript restarts with an event numbered past everything
+    /// before it. That jump is the cut, not a hole, from any cursor — but only
+    /// a restart may make it.
+    func testEventPlannerTakesTheJumpToATranscriptRestartAndNoOtherGap() throws {
+        let sessionID = CodeSessionID(value: "session-a")
+        let restart = CodeSessionEventEnvelope(
+            id: "restart",
+            sessionID: sessionID,
+            sequence: 151,
+            occurredAt: timestamp,
+            payload: .transcriptRewound(TranscriptRewoundEvent(turnID: "prompt-40"))
+        )
+        let kept = [
+            envelope(sessionID: sessionID, sequence: 152, id: "kept-1"),
+            envelope(sessionID: sessionID, sequence: 153, id: "kept-2"),
+        ]
+
+        for cursor in [0, 40, 150] {
+            let plan = try CodeSessionEventAppendPlanner.plan(
+                persistedThrough: cursor,
+                for: sessionID,
+                incoming: [restart] + kept
+            )
+            XCTAssertEqual(plan.accepted.map(\.id), ["restart", "kept-1", "kept-2"], "from \(cursor)")
+            XCTAssertEqual(plan.lastSequence, 153)
+        }
+
+        XCTAssertThrowsError(
+            try CodeSessionEventAppendPlanner.plan(
+                persistedThrough: 150,
+                for: sessionID,
+                incoming: [restart, envelope(sessionID: sessionID, sequence: 155, id: "after-a-hole")]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? CodeSessionEventAppendError,
+                .sequenceGap(expected: 152, received: 155)
+            )
+        }
+    }
+
     func testCommandEnvelopeKeepsIdempotencyKeyAcrossRetriesAndExpiresClosed() throws {
         let command = CodeSessionCommandEnvelope(
             id: "command-1",

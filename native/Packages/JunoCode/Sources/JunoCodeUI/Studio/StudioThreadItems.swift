@@ -111,6 +111,11 @@ enum StudioThreadItems {
                  .approvalResolved, .userInstructionApplied, .toolProposed, .toolCompleted:
                 continue
 
+            // Where a rewound transcript starts. What was cut is gone, and
+            // the prompt is back in the composer; the thread says nothing.
+            case .transcriptRewound:
+                continue
+
             case let .fileChanged(change):
                 totals.files.insert(change.path.value)
                 totals.added += change.linesAdded

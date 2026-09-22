@@ -79,12 +79,19 @@ public actor AgentOrchestrator {
     private let reasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
     private let fallbackResolver: (any ModelFallbackResolver)?
+    /// Told when each of the reader's messages opens a turn, so the files the
+    /// turn's tools change can be snapshotted against it. Nil where there is no
+    /// workspace to snapshot.
+    private let turnCheckpoints: (any TurnCheckpointing)?
     private let verificationEngine: VerificationEngine
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
     private struct PendingInstruction: Sendable {
         let event: UserInstructionEvent
+        /// The transcript event the reader sees for this instruction. It names
+        /// the turn the instruction opens once applied.
+        let rowEventID: String
         let modelPrompt: String
         let images: [ModelImage]
     }
@@ -135,7 +142,8 @@ public actor AgentOrchestrator {
         modelID: String,
         reasoningEffort: ReasoningEffort?,
         lifecycleHooks: (any AgentLifecycleHooks)? = nil,
-        fallbackResolver: (any ModelFallbackResolver)? = nil
+        fallbackResolver: (any ModelFallbackResolver)? = nil,
+        turnCheckpoints: (any TurnCheckpointing)? = nil
     ) {
         self.sessionID = sessionID
         self.model = model
@@ -148,6 +156,7 @@ public actor AgentOrchestrator {
         self.reasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
         self.fallbackResolver = fallbackResolver
+        self.turnCheckpoints = turnCheckpoints
         self.verificationEngine = VerificationEngine(store: store)
     }
 
@@ -259,15 +268,24 @@ public actor AgentOrchestrator {
         // workspace context. Keeping those two representations separate avoids
         // dumping source files into the visible conversation.
         let turnText = modelPrompt ?? prompt
+        let conversationIndex = conversation.count
         conversation.append(images.isEmpty ? .user(turnText) : .userWithImages(turnText, images))
-        try await store.appendEvent(
+        let promptEvent = try await store.appendEvent(
             sessionID: sessionID,
-            payload: .userPrompt(UserPromptEvent(text: prompt))
+            payload: .userPrompt(
+                UserPromptEvent(text: prompt, conversationIndex: conversationIndex)
+            )
         )
         // Persist the model history before the asynchronous run begins. If the
         // process exits while the transport is connecting, the transcript and
         // resumable context still agree that this prompt was submitted.
         try await store.saveConversation(sessionID: sessionID, messages: conversation)
+        // Before the run starts, so no tool can write ahead of its turn.
+        await turnCheckpoints?.openTurn(
+            id: promptEvent.id,
+            sessionID: sessionID,
+            openedAt: promptEvent.timestamp
+        )
         try await store.setStatus(id: sessionID, status: .running)
         let task = Task { [weak self] in
             guard let self else { return }
@@ -320,13 +338,14 @@ public actor AgentOrchestrator {
         guard !visible.isEmpty || !images.isEmpty else { return "" }
         try await prepare()
         let event = UserInstructionEvent(text: prompt, kind: kind)
-        _ = try await store.appendEvent(
+        let row = try await store.appendEvent(
             sessionID: sessionID,
             payload: .userInstruction(event)
         )
         pendingInstructions.append(
             PendingInstruction(
                 event: event,
+                rowEventID: row.id,
                 modelPrompt: modelPrompt ?? prompt,
                 images: images
             )
@@ -377,6 +396,7 @@ public actor AgentOrchestrator {
                 else { return nil }
                 return PendingInstruction(
                     event: value,
+                    rowEventID: event.id,
                     modelPrompt: value.text,
                     images: []
                 )
@@ -1015,8 +1035,10 @@ public actor AgentOrchestrator {
         let selectedIDs = Set(selected.map(\.event.id))
         pendingInstructions.removeAll { selectedIDs.contains($0.event.id) }
 
+        var conversationIndexes: [Int] = []
         for instruction in selected {
             let text = instruction.modelPrompt
+            conversationIndexes.append(conversation.count)
             if instruction.images.isEmpty {
                 conversation.append(.user(text))
             } else {
@@ -1024,12 +1046,23 @@ public actor AgentOrchestrator {
             }
         }
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
-        for instruction in selected {
-            _ = try? await store.appendEvent(
+        // Each applied instruction is a turn of its own, so a rewind can
+        // return to any one of them. The last one opened is the one this
+        // batch's tools write under.
+        for (instruction, conversationIndex) in zip(selected, conversationIndexes) {
+            let applied = try? await store.appendEvent(
                 sessionID: sessionID,
                 payload: .userInstructionApplied(
-                    UserInstructionAppliedEvent(instructionID: instruction.event.id)
+                    UserInstructionAppliedEvent(
+                        instructionID: instruction.event.id,
+                        conversationIndex: conversationIndex
+                    )
                 )
+            )
+            await turnCheckpoints?.openTurn(
+                id: instruction.rowEventID,
+                sessionID: sessionID,
+                openedAt: applied?.timestamp ?? Date()
             )
         }
         return true

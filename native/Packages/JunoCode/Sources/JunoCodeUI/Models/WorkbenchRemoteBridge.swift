@@ -78,7 +78,7 @@ public final class WorkbenchRemoteBridge:
         var summaries: [CodeSessionSummary] = []
         summaries.reserveCapacity(sessions.count)
         for session in sessions {
-            let eventCount = await model.eventCount(for: session.id)
+            let lastSequence = await model.lastEventSequence(for: session.id)
             summaries.append(
                 CodeSessionSummary(
                     id: session.id,
@@ -88,7 +88,7 @@ public final class WorkbenchRemoteBridge:
                     status: session.status,
                     modelID: session.configuration.modelID,
                     reasoningEffort: session.configuration.reasoningEffort,
-                    lastEventSequence: eventCount,
+                    lastEventSequence: lastSequence,
                     updatedAt: session.updatedAt
                 )
             )

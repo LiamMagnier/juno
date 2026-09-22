@@ -239,6 +239,12 @@ public struct CodeSessionEventAppendPlan: Equatable, Sendable {
 /// Pure event-stream folding rules shared by hosts and transports. It makes a
 /// reconnect/retry idempotent while refusing holes, so a client never renders
 /// an incomplete transcript as complete.
+///
+/// The one jump it accepts is to a transcript restart
+/// (``SessionEventPayload/restartsTranscript``): a rewound transcript opens
+/// with that event, numbered past everything before it, and a client that
+/// applies it drops what it held. The skipped numbers belonged to events the
+/// rewind removed, so nothing is missing.
 public enum CodeSessionEventAppendPlanner {
     public static func plan(
         persistedThrough lastSequence: Int,
@@ -273,14 +279,14 @@ public enum CodeSessionEventAppendPlanner {
             guard seenNewSequences.insert(event.sequence).inserted else {
                 throw CodeSessionEventAppendError.duplicateSequence(event.sequence)
             }
-            guard event.sequence == expected else {
+            guard event.sequence == expected || event.payload.restartsTranscript else {
                 throw CodeSessionEventAppendError.sequenceGap(
                     expected: expected,
                     received: event.sequence
                 )
             }
             accepted.append(event)
-            expected += 1
+            expected = event.sequence + 1
         }
 
         return CodeSessionEventAppendPlan(

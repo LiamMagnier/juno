@@ -292,9 +292,13 @@ enum AtomicFileWriter {
     /// Writes text atomically: full content to a temporary file in the same
     /// directory, then an atomic replace.
     static func write(_ content: String, to url: URL) throws {
+        try write(Data(content.utf8), to: url)
+    }
+
+    static func write(_ data: Data, to url: URL) throws {
         let directory = url.deletingLastPathComponent()
         let temporary = directory.appendingPathComponent(".juno-tmp-\(UUID().uuidString)")
-        try Data(content.utf8).write(to: temporary, options: [])
+        try data.write(to: temporary, options: [])
         _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
     }
 }

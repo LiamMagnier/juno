@@ -32,11 +32,12 @@ public struct StudioThreadView: View {
 
     public var body: some View {
         let items = self.items
+        let turnIDs = Set(controller.rewindTurns.map(\.id))
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                     ForEach(items) { item in
-                        row(item)
+                        row(item, rewindable: turnIDs.contains(item.id))
                             .id(item.id)
                             .transition(.opacity)
                     }
@@ -112,14 +113,25 @@ public struct StudioThreadView: View {
         )
     }
 
+    /// - Parameter rewindable: the row is one of the reader's messages that
+    ///   opened a turn. A steer or queued message the run never took in is
+    ///   not, and offers no rewind.
     @ViewBuilder
-    private func row(_ item: StudioThreadItem) -> some View {
+    private func row(_ item: StudioThreadItem, rewindable: Bool) -> some View {
         switch item {
-        case let .user(_, text):
-            StudioUserMessage(text: text)
-                .padding(.top, JunoSpace.snug)
-        case let .instruction(_, text, kind):
-            StudioUserMessage(text: text, caption: kind == .steer ? "Sent while working" : "Queued")
+        case let .user(id, text):
+            StudioUserMessage(text: text) { hovered in
+                if rewindable {
+                    StudioRewindButton(controller: controller, turnID: id, isRowHovered: hovered)
+                }
+            }
+            .padding(.top, JunoSpace.snug)
+        case let .instruction(id, text, kind):
+            StudioUserMessage(text: text, caption: kind == .steer ? "Sent while working" : "Queued") { hovered in
+                if rewindable {
+                    StudioRewindButton(controller: controller, turnID: id, isRowHovered: hovered)
+                }
+            }
         case let .assistant(_, text):
             StudioAssistantMessage(text: text)
         case let .reasoning(id, text):

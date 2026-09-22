@@ -99,6 +99,63 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .failed)
     }
 
+    /// A host that rewinds a session restarts its transcript with an event
+    /// numbered past everything it ever sent, and never reuses a number. The
+    /// phone has to take that jump — refusing it as a hole would freeze the
+    /// thread — and drop the turns the rewind removed rather than keep them
+    /// above what follows.
+    func testARewoundTranscriptReplacesWhatThePhoneHeld() async throws {
+        let restart = """
+        {"seq":6,"kind":"canonical_session_event","createdAt":"2026-07-22T10:00:06.000Z",
+         "payload":{"event":{"payload":{"transcriptRewound":{"_0":{"turnID":"p2"}}}}}}
+        """
+        let transport = BrowserTransport(responses: [
+            .ok("""
+            {"events":[
+              {"seq":1,"kind":"user_message","payload":{"text":"First"},"createdAt":"2026-07-22T10:00:01.000Z"},
+              {"seq":2,"kind":"text_delta","payload":{"text":"One."},"createdAt":"2026-07-22T10:00:02.000Z"},
+              {"seq":3,"kind":"user_message","payload":{"text":"Second"},"createdAt":"2026-07-22T10:00:03.000Z"}
+            ]}
+            """),
+            // Events 4 and 5 were written and then cut by the rewind before
+            // the phone asked again; the restart is what comes after 3 now.
+            .ok("""
+            {"events":[
+              \(restart),
+              {"seq":7,"kind":"user_message","payload":{"text":"First"},"createdAt":"2026-07-22T10:00:01.000Z"},
+              {"seq":8,"kind":"text_delta","payload":{"text":"One."},"createdAt":"2026-07-22T10:00:02.000Z"}
+            ]}
+            """),
+            .ok("""
+            {"events":[
+              {"seq":9,"kind":"user_message","payload":{"text":"Second, again"},"createdAt":"2026-07-22T10:00:09.000Z"}
+            ]}
+            """),
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+        XCTAssertEqual(model.cursor, 3)
+
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+
+        XCTAssertEqual(model.phase, .ready, "the jump to a restart is not a hole")
+        XCTAssertEqual(model.events.map(\.seq), [6, 7, 8], "the rewound turn is gone")
+        XCTAssertEqual(model.cursor, 8)
+        XCTAssertEqual(userMessages(in: model.thread), ["First"])
+
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+        XCTAssertEqual(model.events.map(\.seq), [6, 7, 8, 9])
+        XCTAssertEqual(userMessages(in: model.thread), ["First", "Second, again"])
+    }
+
+    private func userMessages(in thread: CodeRemoteThread) -> [String] {
+        thread.items.compactMap { item in
+            if case let .userMessage(_, text, _) = item { return text }
+            return nil
+        }
+    }
+
     func testWatchEventsFoldsTheLiveStreamInOrder() async throws {
         let transport = StreamingBrowserTransport(body:
             "event: events\ndata: {\"type\":\"events\",\"events\":[{\"seq\":1,\"kind\":\"user_message\",\"payload\":{},\"createdAt\":\"2026-07-22T10:00:00.000Z\"},{\"seq\":2,\"kind\":\"completed\",\"payload\":{},\"createdAt\":\"2026-07-22T10:00:01.000Z\"}],\"lastSeq\":2}\n\n"
