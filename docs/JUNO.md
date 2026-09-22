@@ -1075,24 +1075,68 @@ verdict is **recomputed from content on every read, never stored** — so rows w
 before the gate existed are flagged exactly like new ones, and widening a pattern later
 covers the whole history.
 
+**Forgetting** reaches every surface. In a chat, "forget that I work at Acme" makes
+the model emit `<juno:forget>statement</juno:forget>`; `forgetStatements` retires every
+active fact the statement covers (by the block-list's own rule, `factsCoveredByForget`)
+and writes the suppression, in one transaction, behind the same untrusted-content
+guard as saving. The consolidated summary is the subtle part: it quotes facts in prose
+and is injected whole, so a summary older than the newest suppression is **benched**
+(`summaryPredatesForget`) and the ranked facts stand in until the next consolidation,
+which `maybeConsolidate` now also triggers on a forget or an expiry — neither changes
+the fact count it used to key on. Per-row edits, forgets and deletes on the memory page
+rebuild the summary in `after()`. `stripMemoryTags` is the one stripper for render,
+read-aloud, both copy actions and a tag still streaming in.
+
+**Beyond chat.** A Work run reads the same profile a chat turn does, ranked against the
+task and scoped to its project, as one more source inside the runtime's
+untrusted-content envelope (`src/lib/work/memory-context.ts`). A Code run's prompt is
+stored and shipped to its runner — on a cloud run, a GitHub Actions machine — so it
+gets only `workflows`, `preferences` and `projects` facts, never a sensitive or
+project-scoped one, ranked lexically so the task text is not sent to an embeddings
+provider, folded into the agent prompt and never the transcript
+(`src/lib/code-memory-prompt.ts`).
+
+**Import** (`src/lib/memory-import.ts`) is paste-based, as neither ChatGPT nor Claude
+exports memory as a file: Juno hands over a prompt, the user pastes the other
+assistant's answer back. The paste is parsed **deterministically and never shown to a
+model** — it is another product's output — then reviewed row by row: new facts ticked,
+sensitive ones unticked unless opted in, known ones unticked, forgotten ones and
+anything carrying a password or key not tickable at all (and dropped again
+server-side). Committed as `MANUAL` with `sourceRef: "import"`. Juno's own `.json`
+export round-trips.
+
+**Recap** (`src/lib/memory-recap.ts`) is a third reading of the page over 7, 30 or 90
+days: what was learned (correctable in place), what changed, what was let go of, what
+the chats were about and what Juno leaned on. Dates come from the data's meaning — a
+replacement's creation dates a change, a suppression dates a forget — never from
+`updatedAt`, which every chat turn moves by stamping `lastUsedAt`.
+
+**Dreaming** (`scripts/memory-dreamer.ts`, PM2 `juno-memory-dreamer`) reads older
+conversations nobody asked Juno to read, a few accounts per ten-minute tick and two
+chats per account, through the same extractor a chat turn uses. It runs only while
+memory is on, `Settings.memoryBackgroundLearning` is on (default), the account has been
+idle for ten minutes, and its usage windows have room (`src/lib/memory-dreaming.ts`).
+`/api/memory/backfill` — the manual "read now" — refuses a paused account server-side.
+
 **API** (`/api/memory`): `GET` (facts + summary, optional `?q=` search), `POST` (add a
 manual fact), `DELETE` (full reset in a transaction), `PATCH`/`DELETE /[id]` (rewrite,
 forget, delete — forget also writes the block-list entry), `/backfill` (resumable batch
 distillation of past chats, two per call), `/consolidate` (regenerate the summary),
 `/edit` + `/edit/apply` (translate a natural-language instruction — "forget my old job"
 — into a reviewable, undoable set of add/suppress/update/remove operations with a
-staleness guard), and `/edits` (the ledger).
+staleness guard), `/edits` (the ledger), `/import/preview` + `/import` (parse, then
+commit, an import), and `/recap` (the period's conversation themes).
 
 **UI** (`src/app/(app)/memory/page.tsx`, `src/components/memory/`): `useMemory` holds
 the whole state machine and is the only thing that knows how the page talks to the
 server. The page shows a stats strip with the resumable "learn from past chats" job,
 the consolidated summary with its natural-language instruction bar, the review queue
-with per-edit diffs and Undo, a search + Topics/All-facts switch, and the rows
+with per-edit diffs and Undo, a search + Topics / All facts / Recap switch, and the rows
 themselves — each carrying its category, sensitivity, project scope, confidence,
 status, provenance link and last-used time, with inline rewrite / forget / delete.
-Below it, the privacy strip (pause · export · hold-to-reset). The settings section
-carries the toggles that decide what Juno is *allowed* to learn, including the six
-sensitive-subject switches. `tests/memory-sensitive.test.ts` additionally pins the
+Below it, the privacy strip (pause · import · export · hold-to-reset). The settings
+section carries the toggles that decide what Juno is *allowed* to learn: background
+learning and the six sensitive-subject switches. `tests/memory-sensitive.test.ts` additionally pins the
 wiring: every `/api/…` string the memory components fetch must resolve to a real route
 file, no component in the folder may be unreachable, and pausing must write through
 `useSettingsSave` rather than the provider's local-only setter.
@@ -2307,7 +2351,7 @@ current revision + tombstone), `SyncCompaction` (single `global` row, monotonic 
 `MutationReceipt` (idempotency).
 
 **Conversations & messages.** `Settings` (theme/accent/defaultModel/customInstructions/
-responseLanguage/uiLocale/personality/memoryEnabled/memorySensitiveTopics/voiceId/favoriteModels/email opt-ins).
+responseLanguage/uiLocale/personality/memoryEnabled/memorySensitiveTopics/memoryBackgroundLearning/voiceId/favoriteModels/email opt-ins).
 `Folder`. `Conversation` (title + `titleSource`, `model`, `kind` chat|code, `origin`,
 `clientRequestId`, pin/`archivedAt`, `folderId`/`projectId`/`forkedFromId`,
 `activeConnectors`, code-workspace attribution). `Project` (name + `nameSource`,

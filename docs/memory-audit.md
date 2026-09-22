@@ -104,6 +104,13 @@ to read it.
 | Export | ✅ account export | ✅ | ✅ | ✅ |
 | Incognito / temporary chat | ✅ | ✅ | ✅ | ✅ |
 | Learn from past chats on demand | ✅ Dreaming (automatic) | ➖ | ❌ *API only* | ✅ one press, resumable, progress |
+| Learn from past chats automatically | ✅ Dreaming | ✅ | ❌ | ✅ between sessions, within usage limits, switchable |
+| Forget by saying so in a chat | ✅ | ➖ | ❌ | ✅ with a receipt, guarded against injected content |
+| Forgetting reaches the next chat at once | ✅ | ✅ | ❌ *stale summary kept quoting it* | ✅ stale summary benched until rebuilt |
+| Import from another assistant | ➖ | ✅ | ❌ | ✅ reviewed row by row, never shown to a model |
+| Recap of what changed | ➖ | ✅ Monthly Recap | ❌ | ✅ 7 / 30 / 90 days, correctable in place |
+| Memory in the agent surface | ✅ | ✅ Cowork | ❌ | ✅ Work (full) · Code (coding facts only) |
+| Memory in voice mode | ✅ | ➖ | ❌ | ❌ *next — see §4* |
 | Why a fact is believed (provenance) | ❌ | ❌ | ✅ API only | ✅ source chat, date, confidence |
 | What changed and why (supersession trail) | ❌ | ❌ | ✅ API only | ✅ "what Juno stopped believing" |
 | Receipt of what was used this turn | ❌ | ❌ | ✅ | ✅ |
@@ -111,7 +118,7 @@ to read it.
 
 ---
 
-## 3. What changed in this branch
+## 3. What changed in the first pass
 
 **The three regressions, fixed.** `useMemory` (`src/components/memory/use-memory.ts`) is
 now the single place that knows how this page talks to the server: it drafts through
@@ -173,24 +180,44 @@ against the original defect and pass against the fix.
 **Ahead of both** on: provenance (why a fact is believed, and which chat taught it),
 the supersession trail (what Juno stopped believing and why), the reviewable-and-undoable
 edit model, per-turn receipts naming the facts used, project-scoped isolation enforced
-in SQL, and the background-provider policy — none of which ChatGPT or Claude expose at
-all.
+in SQL, the background-provider policy, an import that never shows the pasted text to a
+model, and a Code surface that is sent only the facts a CI runner has any business
+seeing — none of which ChatGPT or Claude expose at all.
 
 **At parity** on: topic grouping, per-entry editing and deletion, sensitive subjects,
-pause/reset, incognito, export, manual add.
+pause/reset, incognito, export, manual add, in-chat forget, automatic learning from
+history, import, a recap, and memory in the agent surface.
 
 **Still behind:**
 
-- **Automatic background consolidation at ChatGPT's scale.** Juno consolidates on a
-  fact-count change with a 5-minute floor, and backfill is user-initiated. Dreaming
-  reprocesses years of history unprompted. Juno's backfill is now one press, but it is
-  still a press.
-- **Import from another assistant.** Claude accepts a ChatGPT export. Juno's importer
-  (`/api/import`) handles Juno's own format only; the `importSourceId` column is already
-  there for it.
-- **A recap surface.** Claude's Monthly Recap has no Juno equivalent. The data exists —
-  `ConversationMemory.digest` is a one-line topic per chat.
-- **Memory across surfaces.** Claude unified chat and Cowork in August. Juno's Code and
-  Work sessions do not read the memory profile.
+- **Voice mode.** Realtime voice runs on a fixed instruction string in the relay
+  (`relay/src/session.ts`) and reads no memory; ChatGPT's voice mode does. It needs a
+  memory field on the relay's `session.start` message, folded into the instructions
+  inside the untrusted-context framing `relay/src/voice-context.ts` already uses, plus
+  the client sending it — a cross-service protocol change that should be exercised
+  against a live realtime provider before it ships.
+- **Re-synthesis at Dreaming's depth.** Juno's dreamer distils conversations it has not
+  read yet and rebuilds the summary; it does not re-read history it has already
+  distilled to re-judge old beliefs, which is what ChatGPT reports lifting recall from
+  41.5% to 82.8%. Juno has no recall benchmark to compare against yet — building one
+  (`scripts/eval-juno.ts` is the natural home) should come before tuning toward it.
+- **Per-project summaries.** Claude gives each project its own summary. Juno scopes
+  project facts correctly but consolidates only an account-wide summary, so a project
+  chat reads ranked facts and no prose profile.
 
-These are the obvious next four, in that order.
+## 5. Correctness fixes made along the way
+
+Found while building the above, and fixed in the same branch:
+
+- **"Forget" did not reach the next chat.** The summary is injected whole and was
+  rebuilt only when the fact *count* changed, which forgetting does not do.
+- **Temporary facts outlived their moment in the summary**, for the same reason: an
+  expiry does not change the count either.
+- **The sensitive-subject classifier shipped wrong in both directions** — it missed 9 of
+  9 plainly sensitive facts (no pattern could match a plural or an open stem) and
+  refused 11 of 12 innocent ones, mostly developer English ("race conditions",
+  "progressive web app", "broke the build"). Rewritten, with both lists pinned as tests.
+- **Copying a reply pasted the user's memory tags with it.**
+- **The manual backfill route trusted a disabled button to enforce a pause.**
+- **The generated i18n catalog was ignored in intent but tracked in fact**, dirtying the
+  tree on every dev run.
