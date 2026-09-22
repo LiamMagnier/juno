@@ -37,8 +37,12 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 | `MINIMAX_API_KEY` | per provider | enables `minimax` (composed pipeline; TTS may also need a Group ID on some accounts) |
 | `ALLOWED_ORIGINS` | prod | comma-separated browser origins; an empty value rejects browser origins (native apps send no Origin and pass) |
 | `RELAY_MAX_SESSION_SEC` | no | relay-wide hard cap for one voice call, default 3600 seconds; never exceeds a provider's own cap and survives provider switches |
-| `RELAY_OPENAI_MODEL` | no | default `gpt-realtime-2` (`gpt-realtime-mini` = ~10x cheaper) |
-| `RELAY_GEMINI_MODEL` | no | default `gemini-3.1-flash-live-preview` |
+| `RELAY_OPENAI_MODEL` | no | default `gpt-live-1`. A `gpt-realtime*` id here switches the provider back to the older Realtime protocol (different URL and handshake), which is the supported fallback if GPT-Live is not enabled on the account. |
+| `RELAY_OPENAI_BACKEND_MODEL` | no | default `gpt-5.6-luna` — the Responses model GPT-Live delegates reasoning and tools to. Billed separately from the voice layer. |
+| `RELAY_OPENAI_LIVE_URL` | no | override the GPT-Live WebSocket endpoint (tests) |
+| `RELAY_GEMINI_MODEL` | no | default `gemini-3.8-live` — used when thinking is OFF. Live model ids get retired; if `gemini` fails to start, the error names the model and quotes the server's close reason, so set a current id here. |
+| `RELAY_GEMINI_THINKING_MODEL` | no | default `gemini-3.8-live-extended-thinking` — used when thinking is ON. |
+| `RELAY_GEMINI_LIVE_URL` | no | override the Live API WebSocket endpoint (regional endpoints, tests) |
 | `RELAY_QWEN_MODEL` | no | default `qwen3.5-omni-flash-realtime` |
 | `RELAY_QWEN_REALTIME_URL` | no | default `wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime` |
 | `RELAY_MINIMAX_MODEL` / `RELAY_MINIMAX_TTS_MODEL` | no | defaults `MiniMax-M2.7-highspeed` / `speech-2.6-turbo` |

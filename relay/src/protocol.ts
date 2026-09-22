@@ -4,6 +4,14 @@
  * Mirrors: src/lib/voice-relay-protocol.ts (web) and VoiceRelayProtocol.swift
  * (iOS). Change all three together.
  *
+ * ONE DELIBERATE EXCEPTION: the `thinking` fields below are carried by the
+ * relay and the web client only. Swift's decoder ignores JSON keys it has no
+ * CodingKey for, so iOS keeps working untouched — it simply never asks for the
+ * reasoning variant and never reads which one it got. Mirroring them needs
+ * `sessionReady` to grow a payload, which changes an enum case every
+ * exhaustive switch in the iOS app matches on; that belongs in a change that
+ * can build and test Swift.
+ *
  * Transport: one WebSocket per voice session, authenticated with a short-lived
  * HMAC token minted by the Juno backend (?token= query param).
  *
@@ -28,6 +36,9 @@ export interface ProviderCapabilities {
   /** Provider needs the CLIENT to transcribe the user (send input.text with
    *  final utterances instead of relying on server transcripts). */
   needsClientTranscript: boolean;
+  /** The caller may choose whether this provider reasons before answering.
+   *  Where false, `thinking` on session.start/switch is ignored. */
+  thinkingChoice: boolean;
   /** Hard provider session ceiling, seconds. Relay closes with
    *  reason "session-limit" when reached. */
   maxSessionSec: number;
@@ -49,8 +60,10 @@ export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 
 // ---- client -> relay ----
 export type ClientMessage =
-  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
-  | { type: "session.switch"; provider: VoiceProviderId }
+  /** `thinking` asks for the reasoning variant of a provider that has one. It
+   *  is a request, not a fact: the relay answers with what it actually got. */
+  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[]; thinking?: boolean }
+  | { type: "session.switch"; provider: VoiceProviderId; thinking?: boolean }
   /** Final user utterance from on-device speech recognition (MiniMax mode). */
   | {
       type: "input.text";
@@ -70,7 +83,9 @@ export type ClientMessage =
 
 // ---- relay -> client ----
 export type ServerMessage =
-  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
+  /** `thinking` is the EFFECTIVE state, not the request: a provider with no
+   *  reasoning variant reports false however it was asked. */
+  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities; thinking: boolean }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   /** Model output was cancelled (user barge-in). Client must flush its

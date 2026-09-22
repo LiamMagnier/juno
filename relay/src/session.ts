@@ -108,10 +108,10 @@ export class RelaySession {
           this.userTurnAnchor = -1;
           this.historySeeded = true;
         }
-        await this.startProvider(msg.provider);
+        await this.startProvider(msg.provider, msg.thinking === true);
         return;
       case "session.switch":
-        await this.startProvider(msg.provider);
+        await this.startProvider(msg.provider, msg.thinking === true);
         return;
       case "input.text": {
         const text = String(msg.text ?? "").trim().slice(0, VOICE_INPUT_MAX_CHARS);
@@ -145,7 +145,7 @@ export class RelaySession {
     this.provider?.sendAudio(pcm16k);
   }
 
-  private async startProvider(id: VoiceProviderId): Promise<void> {
+  private async startProvider(id: VoiceProviderId, thinking: boolean): Promise<void> {
     if (this.sessionLimitReached) {
       this.send({ type: "error", message: "This voice session reached its time limit. Start a new session to continue." });
       return;
@@ -171,7 +171,10 @@ export class RelaySession {
       }
       if (this.sessionTimer) clearTimeout(this.sessionTimer);
 
-      const session = factory.create();
+      // A provider with no reasoning variant is not given one to ignore:
+      // the effective state is what gets reported back, never the request.
+      const effectiveThinking = thinking && factory.capabilities.thinkingChoice;
+      const session = factory.create({ thinking: effectiveThinking });
       const events = this.makeEvents(id, session);
       await session.connect(
         { instructions: VOICE_INSTRUCTIONS, transcript: this.transcript.slice(-30) },
@@ -188,7 +191,12 @@ export class RelaySession {
         return;
       }
       this.sessionTimer = setTimeout(() => this.endAtSessionLimit(), remainingSec * 1000);
-      this.send({ type: "session.ready", provider: id, capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec } });
+      this.send({
+        type: "session.ready",
+        provider: id,
+        capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec },
+        thinking: effectiveThinking,
+      });
     } catch (err) {
       this.send({
         type: "error",

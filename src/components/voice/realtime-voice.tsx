@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, MonitorUp, MonitorX, MoreHorizontal, PhoneOff, Square } from "lucide-react";
+import { Brain, Mic, MicOff, MonitorUp, MonitorX, MoreHorizontal, PhoneOff, Square } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -177,6 +177,25 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   {provider === voice.provider && <StatusIcons.success className="size-3.5 text-primary" />}
                 </DropdownMenuItem>
               ))}
+              {/* Reasoning is a different model on both providers that offer it,
+                  so choosing it re-opens the call. Shown only where there is a
+                  choice to make — a row that cannot change anything is
+                  furniture. */}
+              {voice.capabilities?.thinkingChoice && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      voice.setThinking(!voice.thinking);
+                    }}
+                  >
+                    <Brain className="size-4" />
+                    <span className="flex-1">{voice.thinking ? "Thinking on" : "Thinking off"}</span>
+                    {voice.thinking && <StatusIcons.success className="size-3.5 text-primary" />}
+                  </DropdownMenuItem>
+                </>
+              )}
               {/* Screen share lived in two places at once — an inline button and
                   this row — with different labels and different breakpoints. */}
               {voice.capabilities?.screenInput && (

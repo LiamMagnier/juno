@@ -3,8 +3,13 @@ import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./t
 import { requiredEnv } from "./types.js";
 import { providerText } from "../voice-context.js";
 
-const LIVE_URL =
+const DEFAULT_LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+
+/** Read per call, not at import: tests point this at a local server. */
+function liveUrl(): string {
+  return process.env.RELAY_GEMINI_LIVE_URL || DEFAULT_LIVE_URL;
+}
 
 /**
  * Gemini Live API (native audio) over its stateful WebSocket.
@@ -27,7 +32,23 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private suppressAssistantOutput = false;
   private userTranscriptPending = false;
   private setupResolve: (() => void) | null = null;
-  private model = process.env.RELAY_GEMINI_MODEL || "gemini-3.1-flash-live-preview";
+  private readonly thinking: boolean;
+  private readonly model: string;
+
+  /**
+   * Thinking is a MODEL here, not a parameter. Gemini 3.8 Live answers at
+   * conversational latency; Extended Thinking is turn-based and reasons while
+   * it speaks, narrating over the pause instead of leaving one. Both publish
+   * the same per-minute audio rate, but Extended Thinking bills its reasoning
+   * as output tokens, so a minute of it costs several times more than the
+   * duration-based estimate below suggests.
+   */
+  constructor(options: { thinking?: boolean } = {}) {
+    this.thinking = options.thinking === true;
+    this.model = this.thinking
+      ? process.env.RELAY_GEMINI_THINKING_MODEL || "gemini-3.8-live-extended-thinking"
+      : process.env.RELAY_GEMINI_MODEL || "gemini-3.8-live";
+  }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.seed = seed;
@@ -40,7 +61,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
     // accepts (a classic AI Studio API key). New "AQ."-format keys only work
     // on the OpenAI-compat surface — mint a standard key and set it here.
     const key = process.env.GEMINI_LIVE_API_KEY || requiredEnv("GOOGLE_API_KEY");
-    const ws = new WebSocket(LIVE_URL, { headers: { "x-goog-api-key": key } });
+    const ws = new WebSocket(liveUrl(), { headers: { "x-goog-api-key": key } });
     this.ws = ws;
 
     await new Promise<void>((resolve, reject) => {
@@ -67,9 +88,43 @@ export class GeminiLiveSession implements VoiceProviderSession {
     });
     ws.on("error", (err) => this.events?.onError(`gemini: ${err.message}`));
 
+    // Gemini rejects a setup frame by CLOSING the socket, and this promise
+    // used to settle on exactly two things: setupComplete, or a 15s timer. A
+    // retired model id, a key the Live surface will not take, and a genuinely
+    // mute server therefore all printed the same sentence — "gemini setup
+    // timed out" — while the close carrying the real reason went to the relay
+    // log and no further. Settle on the close too, and quote the server: that
+    // sentence is the one that names the fix.
     const setupDone = new Promise<void>((resolve, reject) => {
-      this.setupResolve = resolve;
-      setTimeout(() => reject(new Error("gemini setup timed out")), 15_000);
+      let settle = (err?: Error) => {
+        void err;
+      };
+      const onSetupClose = (code: number, reason: Buffer) => {
+        const detail = reason?.toString().trim().slice(0, 200);
+        settle(
+          new Error(
+            `gemini refused the session setup for model "${this.model}" (close ${code}${detail ? `: ${detail}` : ""}). ` +
+              `Check that the model id exists on the Live API and that the key is a classic AI Studio key; ` +
+              `override the id with RELAY_GEMINI_MODEL.`
+          )
+        );
+      };
+      const onSetupError = (err: Error) => settle(new Error(`gemini setup failed: ${err.message}`));
+      const timer = setTimeout(
+        () => settle(new Error(`gemini setup timed out after 15s (model "${this.model}", no reply to the setup frame)`)),
+        15_000
+      );
+      settle = (err?: Error) => {
+        clearTimeout(timer);
+        ws.off("close", onSetupClose);
+        ws.off("error", onSetupError);
+        this.setupResolve = null;
+        if (err) reject(err);
+        else resolve();
+      };
+      ws.on("close", onSetupClose);
+      ws.on("error", onSetupError);
+      this.setupResolve = () => settle();
     });
 
     this.send({

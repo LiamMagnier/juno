@@ -128,6 +128,7 @@ import {
   type ComposerQuote,
 } from "@/lib/quote-context";
 import type { ModelId } from "@/lib/models";
+import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import type {
   PendingPreflightClarification,
   PreflightClarificationAnswer,
@@ -296,8 +297,11 @@ interface ComposerProps {
   onClearQuote?: () => void;
   placeholder?: string;
   privateMode?: boolean;
-  /** Realtime voice is live: keep this surface focused on text + images only. */
+  /** Realtime voice is live: keep this surface focused on the turn being spoken. */
   voiceActive?: boolean;
+  /** The live voice provider accepts image frames. Files ride with the turn as
+   * resolved text either way, so this gates pictures alone. */
+  voiceCanSeeImages?: boolean;
   /** Temporarily block edits/submission without turning the primary action into
    * the normal chat Stop button (voice image conversion/transcript saving). */
   sendLocked?: boolean;
@@ -347,7 +351,6 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
   connectors: "Connectors",
 };
 
-const MAX_VOICE_IMAGES = 4;
 /** The composer's four states, on the shared primary action's faces. */
 const PRIMARY_FACES = {
   checking: "busy",
@@ -624,6 +627,7 @@ export function Composer({
   placeholder: customPlaceholder,
   privateMode = false,
   voiceActive = false,
+  voiceCanSeeImages = true,
   sendLocked = false,
   hideDisclaimer = false,
   selectedProjectId = null,
@@ -949,7 +953,6 @@ export function Composer({
   const paletteAnchorRef = React.useRef<HTMLDivElement>(null);
   const paletteListRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const imageInputRef = React.useRef<HTMLInputElement>(null);
   const {
     uploads,
     addFiles,
@@ -974,23 +977,27 @@ export function Composer({
   const addComposerFiles = React.useCallback(
     (files: FileList | File[]) => {
       const list = Array.from(files);
-      const matching = voiceActive
-        ? list.filter((file) => file.type.startsWith("image/"))
-        : list;
+      // A document reaches the model as resolved text, which every provider
+      // can receive. Only a picture needs a provider that can see — so that
+      // is the only thing a sightless provider takes away.
+      const matching =
+        voiceActive && !voiceCanSeeImages
+          ? list.filter((file) => !file.type.startsWith("image/"))
+          : list;
       if (voiceActive && matching.length !== list.length)
-        toast.error("Voice mode accepts image attachments only.");
+        toast.error("This voice provider can’t view images. Files still work.");
       const remaining = voiceActive
-        ? Math.max(0, MAX_VOICE_IMAGES - uploads.length)
+        ? Math.max(0, VOICE_ATTACHMENT_LIMIT - uploads.length)
         : matching.length;
       const allowed = matching.slice(0, remaining);
       if (voiceActive && matching.length > remaining) {
         toast.error(
-          `Voice mode accepts up to ${MAX_VOICE_IMAGES} images in one turn.`,
+          `Voice mode accepts up to ${VOICE_ATTACHMENT_LIMIT} attachments in one turn.`,
         );
       }
       if (allowed.length > 0) addFiles(allowed);
     },
-    [addFiles, uploads.length, voiceActive],
+    [addFiles, uploads.length, voiceActive, voiceCanSeeImages],
   );
 
   // Screen capture, resolved after mount so the server render and the first
@@ -1036,23 +1043,24 @@ export function Composer({
   }, [addComposerFiles]);
   const addComposerAttachments = React.useCallback(
     (attachments: ClientAttachment[]) => {
-      const matching = voiceActive
-        ? attachments.filter((attachment) => attachment.kind === "IMAGE")
-        : attachments;
+      const matching =
+        voiceActive && !voiceCanSeeImages
+          ? attachments.filter((attachment) => attachment.kind !== "IMAGE")
+          : attachments;
       if (voiceActive && matching.length !== attachments.length)
-        toast.error("Voice mode accepts images from your library only.");
+        toast.error("This voice provider can’t view images. Files still work.");
       const remaining = voiceActive
-        ? Math.max(0, MAX_VOICE_IMAGES - uploads.length)
+        ? Math.max(0, VOICE_ATTACHMENT_LIMIT - uploads.length)
         : matching.length;
       const allowed = matching.slice(0, remaining);
       if (voiceActive && matching.length > remaining) {
         toast.error(
-          `Voice mode accepts up to ${MAX_VOICE_IMAGES} images in one turn.`,
+          `Voice mode accepts up to ${VOICE_ATTACHMENT_LIMIT} attachments in one turn.`,
         );
       }
       if (allowed.length > 0) addAttachments(allowed);
     },
-    [addAttachments, uploads.length, voiceActive],
+    [addAttachments, uploads.length, voiceActive, voiceCanSeeImages],
   );
 
   // Enforce the per-chat connector limit even for conversations saved by an
@@ -1064,10 +1072,6 @@ export function Composer({
     );
     excess.forEach((id) => onToggleConnector(id));
   }, [connectorsEnabled, onToggleConnector, voiceActive]);
-
-  React.useEffect(() => {
-    if (voiceActive) setLibraryOpen(false);
-  }, [voiceActive]);
 
   const { supported: speechSupported } = useSpeechRecognition();
   const [dictating, setDictatingInner] = React.useState(false);
@@ -2838,13 +2842,27 @@ export function Composer({
   const plusSections: PlusMenuSection[] = voiceActive
     ? [
         [
+          // Files reach a live call as resolved text and photos as frames, so
+          // the voice sheet offers the same row the chat sheet does — narrowed
+          // to photos only where the provider has no eyes to use them.
           {
             kind: "action",
-            id: "photos",
-            label: "Add photos",
-            icon: ComposerIcons.photos,
+            id: voiceCanSeeImages ? "files" : "voice-files",
+            label: voiceCanSeeImages ? "Add files or photos" : "Add files",
+            icon: ComposerIcons.attach,
+            detail: attachShortcut,
             disabled: !canAttach,
-            onSelect: () => imageInputRef.current?.click(),
+            note: attachNote,
+            onSelect: () => fileInputRef.current?.click(),
+          },
+          {
+            kind: "action",
+            id: "library",
+            label: "Add from library",
+            icon: AppIcons.library,
+            disabled: !canAttach,
+            note: attachNote,
+            onSelect: () => setLibraryOpen(true),
           },
         ],
         researchRow ? [researchRow] : [],
@@ -3687,19 +3705,6 @@ export function Composer({
             )}
 
             <input
-              ref={imageInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                if (!privateMode && e.target.files?.length)
-                  addComposerFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
-
-            <input
               ref={fileInputRef}
               type="file"
               multiple
@@ -3712,7 +3717,7 @@ export function Composer({
               }}
             />
 
-            {!voiceActive && !privateMode && features.storage && (
+            {!privateMode && features.storage && (
               <LibraryPicker
                 open={libraryOpen}
                 onOpenChange={setLibraryOpen}
