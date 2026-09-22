@@ -168,17 +168,20 @@ const MARK: Record<State, string> = {
 };
 
 /**
- * Gemini Live's surface is pickier than Gemini's.
+ * Whether the Gemini key is in a shape voice knows how to use.
  *
- * This script asks each provider whether the key works, and for Google it asks
- * the OpenAI-compat surface — which the newer "AQ." keys DO authenticate
- * against. So an AQ key passes here, ships, and then fails only when someone
- * opens voice mode, because the Live WebSocket takes classic AI Studio keys
- * and nothing else. That is exactly how one reached production on 2026-09-22.
+ * This started out asserting the key had to be a classic "AIza" one, because
+ * the Live socket refuses an "AQ." key passed as `?key=`. Both halves of that
+ * were wrong as a DEPLOY gate. AI Studio issues nothing but "AQ." keys now, so
+ * the rule failed every correctly-configured deployment and sent the reader to
+ * mint a key that cannot be minted; and the relay answers that refusal itself,
+ * by exchanging the key for a short-lived token (relay/src/providers/
+ * gemini-live.ts). Both formats reach the Live API, by different routes.
  *
- * The shape is checkable without a network call and without printing the key,
- * so check it: a voice relay configured with a key its Live surface cannot use
- * is a broken feature, and the deploy is where that should be said.
+ * What is left is genuinely checkable here: a value in NEITHER format is not a
+ * Gemini key at all, and no route will save it. Everything about whether a
+ * well-formed key is ACCEPTED is a question for the network, which the probes
+ * above and `npm run gemini:live-auth` already ask.
  */
 function checkGeminiLiveKey(): string | null {
   const relayConfigured = !!(process.env.VOICE_RELAY_URL || process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
@@ -187,13 +190,9 @@ function checkGeminiLiveKey(): string | null {
   const key = explicit || process.env.GOOGLE_API_KEY;
   if (!key) return null;
   const name = explicit ? "GEMINI_LIVE_API_KEY" : "GOOGLE_API_KEY";
-  if (key.startsWith("AIza")) return null;
-  const kind = key.startsWith("AQ.")
-    ? 'an "AQ." key, which authenticates only against the OpenAI-compat surface'
-    : "not a classic AI Studio key";
+  if (key.startsWith("AIza") || key.startsWith("AQ.")) return null;
   return (
-    `${name} is ${kind} — Gemini Live voice will fail to start with it. ` +
-    `Mint a classic AI Studio key (it starts "AIza") and set GEMINI_LIVE_API_KEY. ` +
+    `${name} is in neither Gemini key format ("AIza…" or "AQ.…"), so voice cannot use it by any route. ` +
     `New key: https://aistudio.google.com/apikey`
   );
 }
