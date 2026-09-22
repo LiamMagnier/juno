@@ -112,6 +112,23 @@ final class CodeSettingsTrustTests: XCTestCase {
         XCTAssertNil(path("escape/Library/LaunchAgents", .project))
     }
 
+    /// Only the reader's own files speak in the reader's voice. Approving a
+    /// checked-in file puts its settings in force; its prose stays the
+    /// repository's.
+    func testInstructionsAreSortedByWhoWroteThem() {
+        func resolve(localApproved: Bool) -> ResolvedCodeSettings {
+            ResolvedCodeSettings.resolve([
+                CodeSettingsLayer(CodeSettingsFile(instructions: "Mine."), origin: .user),
+                CodeSettingsLayer(CodeSettingsFile(instructions: "The team's."), origin: .project, isApproved: true),
+                CodeSettingsLayer(CodeSettingsFile(instructions: "Just here."), origin: .local, isApproved: localApproved),
+            ])
+        }
+        XCTAssertEqual(resolve(localApproved: true).instructions, ["Mine.", "Just here."])
+        XCTAssertEqual(resolve(localApproved: true).repositoryInstructions, ["The team's."])
+        XCTAssertEqual(resolve(localApproved: false).instructions, ["Mine."])
+        XCTAssertEqual(resolve(localApproved: false).repositoryInstructions, ["The team's.", "Just here."])
+    }
+
     func testOnlyWideningFilesAskForApproval() {
         XCTAssertTrue(hostile.loosensAnything)
         XCTAssertFalse(

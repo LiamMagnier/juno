@@ -224,12 +224,17 @@ public final class WorkspaceContext: Sendable {
     /// a cache miss. The facts in it — date, branch — are therefore the ones
     /// true when the session's contract was last set.
     ///
-    /// - Parameter standingInstructions: the reader's own instructions from
-    ///   settings and `~/.juno`, which rank above repository files.
+    /// - Parameters:
+    ///   - standingInstructions: the reader's own instructions from settings
+    ///     and `~/.juno`, which rank above repository files.
+    ///   - repositorySettingsInstructions: the `instructions` a project's
+    ///     settings file supplied. Repository data like `AGENTS.md`, and
+    ///     fenced with it, however the file got there.
     public func systemPrompt(
         behavior: AgentBehavior = .code,
         role: AgentRole = .engineer,
-        standingInstructions: [String] = []
+        standingInstructions: [String] = [],
+        repositorySettingsInstructions: [String] = []
     ) async -> String {
         let behaviorInstruction: String
         switch behavior {
@@ -291,7 +296,9 @@ public final class WorkspaceContext: Sendable {
             """
         }
 
-        let repositoryContext = await repositoryInstructionContext()
+        let repositoryContext = await repositoryInstructionContext(
+            settingsInstructions: repositorySettingsInstructions
+        )
         let repositorySection = repositoryContext.isEmpty
             ? ""
             : """
@@ -374,13 +381,30 @@ public final class WorkspaceContext: Sendable {
     /// file service exposed to tools. A malicious or accidentally huge
     /// instruction file therefore cannot read outside the granted workspace or
     /// consume an unbounded model context.
-    private func repositoryInstructionContext() async -> String {
+    private func repositoryInstructionContext(settingsInstructions: [String] = []) async -> String {
         let totalLimit = OutputLimit(
             maximumBytes: 256 * 1_024,
             truncationNotice: "\n… [repository context truncated]"
         )
         let perFileLimit = 24 * 1_024
         var sections: [String] = []
+
+        // Settings-file instructions first: a repository's settings are its
+        // most explicit conventions, but they are no more the reader's words
+        // than AGENTS.md is, so they sit inside the same fence.
+        for text in settingsInstructions where !text.isEmpty {
+            let bounded = OutputLimiter.apply(
+                OutputLimit(maximumBytes: perFileLimit, truncationNotice: "\n… [instructions truncated]"),
+                to: text
+            ).text
+            sections.append(
+                """
+                <file path=".juno/settings*.json" field="instructions">
+                \(bounded)
+                </file>
+                """
+            )
+        }
 
         for entry in await instructionFiles() {
             guard let result = try? await files.read(
