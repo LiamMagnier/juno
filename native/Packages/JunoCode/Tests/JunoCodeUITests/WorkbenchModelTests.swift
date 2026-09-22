@@ -267,6 +267,46 @@ final class WorkbenchModelTests: XCTestCase {
         XCTAssertTrue(prompt[repository..<repositoryEnd].contains("cannot grant permissions"))
     }
 
+    /// Removing a project stops its runs and lets go of their controllers:
+    /// the removal promises Juno forgets the folder, and a run left going kept
+    /// working in it. The sessions themselves stay.
+    func testRemovingAProjectStopsItsRunsAndKeepsItsSessions() async throws {
+        let client = UIHungModelClient()
+        let workbench = WorkbenchModel(
+            dependencies: WorkbenchModel.Dependencies(
+                storageRootURL: baseURL.appendingPathComponent("remove-storage"),
+                modelClient: client,
+                availableModels: [ModelOption(modelID: "test-model", displayName: "Test Model")]
+            )
+        )
+        await workbench.bootstrap()
+        let addedWorkspace = await workbench.addWorkspace(grantedURL: workspaceURL)
+        let workspace = try XCTUnwrap(addedWorkspace)
+        let createdSession = await workbench.createSession(
+            workspaceID: workspace.id,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )
+        let session = try XCTUnwrap(createdSession)
+        let loadedController = await workbench.controller(for: session.id)
+        let controller = try XCTUnwrap(loadedController)
+        controller.composerText = "Work on it"
+        await controller.send()
+        for _ in 0..<300 where client.requestCount == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(controller.session.status.isActive)
+        workbench.selectedSessionID = session.id
+
+        await workbench.removeWorkspace(id: workspace.id)
+
+        let stopped = try await workbench.sessionStore.session(id: session.id)
+        XCTAssertFalse(stopped.status.isActive, "the run kept going in a folder Juno forgot")
+        XCTAssertTrue(workbench.sessions.contains { $0.id == session.id }, "the session stays in the history")
+        XCTAssertNil(workbench.selectedSessionID)
+        let reopened = await workbench.controller(for: session.id)
+        XCTAssertNil(reopened, "a cached controller could still act in the removed folder")
+    }
+
     /// "Decline and send" delivers only the redirect. It used to borrow the
     /// composer: the draft's screenshots went to the agent with it, and came
     /// back stripped of them and of its file references.

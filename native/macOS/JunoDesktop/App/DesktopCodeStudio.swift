@@ -478,6 +478,13 @@ struct DesktopCodeSidebar: View {
         let waiting = DesktopCodeNavigationState.filtered(all, by: .needsYou)
         let local = all.filter { if case .session = $0.item { return true } else { return false } }
         let conversations = sorted(local.filter { $0.workspaceID == nil })
+        // Sessions of a project removed from Juno. They stay in the history,
+        // as the removal promises; listed nowhere else, they had vanished
+        // from the column.
+        let knownProjects = Set(workbench.workspaces.map(\.id))
+        let removedProjects = sorted(local.filter { run in
+            run.workspaceID.map { !knownProjects.contains($0) } ?? false
+        })
         let elsewhere = sorted(all.filter { if case .task = $0.item { return true } else { return false } })
 
         return List(selection: $selection) {
@@ -533,6 +540,12 @@ struct DesktopCodeSidebar: View {
                 }
             }
 
+            if !removedProjects.isEmpty {
+                Section("Removed projects") {
+                    ForEach(removedProjects) { row($0, showsPlace: false) }
+                }
+            }
+
             if !elsewhere.isEmpty {
                 Section("Cloud") {
                     ForEach(elsewhere) { row($0, showsPlace: true) }
@@ -585,10 +598,13 @@ struct DesktopCodeSidebar: View {
             presenting: projectPendingRemoval
         ) { record in
             Button("Remove Project", role: .destructive) {
+                // A thread left on screen would have no row to return to and
+                // no folder to act in once the project is gone.
+                if isInProject(selection, record.id) { selection = .draft }
                 Task { await workbench.removeWorkspace(id: record.id) }
             }
         } message: { _ in
-            Text("The folder and its files stay on disk. Juno forgets its access; the sessions stay in your history.")
+            Text("The folder and its files stay on disk. Juno stops its running sessions and forgets its access; the sessions stay in your history.")
         }
     }
 
@@ -671,6 +687,18 @@ struct DesktopCodeSidebar: View {
             }
         default:
             EmptyView()
+        }
+    }
+
+    /// Whether a selection is a project, or one of its sessions.
+    private func isInProject(_ item: DesktopCodeSidebarItem?, _ id: WorkspaceID) -> Bool {
+        switch item {
+        case .repository(let selected):
+            return selected == id
+        case .session(let sessionID):
+            return workbench.sessions.first { $0.id == sessionID }?.workspaceID == id
+        default:
+            return false
         }
     }
 
