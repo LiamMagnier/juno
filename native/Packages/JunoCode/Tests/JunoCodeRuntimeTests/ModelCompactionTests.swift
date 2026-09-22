@@ -87,6 +87,25 @@ private final class ObservedCalls: @unchecked Sendable {
     }
 }
 
+/// Returns a page of about 650 characters, the size of an ordinary file read.
+private struct PageTool: CodeTool {
+    let name = "read_file"
+    let description = "Returns a page of source."
+    let inputSchema: JSONValue = [
+        "type": "object",
+        "properties": ["path": ["type": "string"]],
+        "required": ["path"],
+        "additionalProperties": false,
+    ]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Read a page" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        ToolResult(content: CompactionFixtures.page(input["path"]?.stringValue ?? "page"))
+    }
+}
+
 final class ModelCompactionTests: XCTestCase {
     private var baseURL: URL!
     private var store: CodeSessionStore!
@@ -109,21 +128,24 @@ final class ModelCompactionTests: XCTestCase {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
-    /// A 100-token window: a turn that reports 90 tokens makes the next
-    /// iteration compact, which is how a real run reaches the threshold.
+    /// A 100-token window by default: a turn that reports 90 tokens makes the
+    /// next iteration compact, which is how a real run reaches the threshold.
     private func makeOrchestrator(
         _ model: CompactingModelClient,
-        summary: CompactionSummarizer.Limits? = .standard
+        summary: CompactionSummarizer.Limits? = .standard,
+        contextWindowTokens: Int = 100,
+        maximumConversationBytes: Int = 16_384,
+        tools: [any CodeTool] = []
     ) -> AgentOrchestrator {
         AgentOrchestrator(
             sessionID: session.id,
             model: model,
-            registry: ToolRegistry(tools: []),
+            registry: ToolRegistry(tools: tools),
             permissions: PermissionCoordinator(sessionID: session.id, mode: .fullAccess),
             store: store,
             configuration: AgentOrchestrator.Configuration(
-                contextWindowTokens: 100,
-                maximumConversationBytes: 16_384,
+                contextWindowTokens: contextWindowTokens,
+                maximumConversationBytes: maximumConversationBytes,
                 compactionSummary: summary,
                 systemPrompt: "You are Juno Code."
             ),
@@ -340,7 +362,120 @@ final class ModelCompactionTests: XCTestCase {
         XCTAssertEqual(model.summaryRequests.count, 1)
         XCTAssertNil(events.last?.fallbackReason)
         // The notes fold the model's summary in rather than losing it.
-        XCTAssertTrue(events.last?.summary.contains("Earlier summary: First summary.") == true)
+        XCTAssertTrue(events.last?.summary.contains(
+            ConversationCompactor.modelSummaryHeader + "\nFirst summary.\n\n" + ConversationCompactor.notesSinceSummaryHeader
+        ) == true)
+    }
+
+    /// The guard path at real sizes. The model writes a summary of about ten
+    /// thousand characters; one step later the window is full again, so the
+    /// next compaction writes notes without asking the model — over a step
+    /// of twenty parallel reads, more notes than their budget holds. The
+    /// summary must come through whole: it is the only record of the
+    /// request's first half.
+    func testNotesRightAfterAModelSummaryCarryItWhole() async throws {
+        let summary = CompactionFixtures.realisticSummary
+        func read(_ id: String) -> (id: String, name: String, input: JSONValue) {
+            (id: id, name: "read_file", input: ["path": .string("Sources/Parser/\(id).swift")])
+        }
+        let full: [ModelStreamEvent] = [.usage(inputTokens: 45_000, outputTokens: 20)]
+        let model = CompactingModelClient(
+            turns: [
+                // The first request: six steps, the third a batch of twenty reads.
+                .toolCalls([read("s1")], text: "Reading the lexer."),
+                .toolCalls([read("s2")], text: "Reading the parser."),
+                .toolCalls((0..<20).map { read("batch\($0)") }, text: "Reading every token source."),
+                .toolCalls([read("s4")], text: "Reading the errors."),
+                .toolCalls([read("s5")], text: "Reading the tests."),
+                .toolCalls([read("s6")], text: "Reading the fixtures."),
+                .events([.textDelta("Read everything.")] + full + [.turnCompleted(.endTurn)]),
+                // The second: one step that fills the window again, then done.
+                .events([.toolCallRequested(id: "t1", name: "read_file", input: ["path": .string("Sources/Parser/t1.swift")])]
+                    + full + [.turnCompleted(.toolUse)]),
+                .text("ParserError stays public."),
+            ],
+            summaries: [CompactingModelClient.summary(summary)]
+        )
+        let orchestrator = makeOrchestrator(
+            model,
+            contextWindowTokens: 50_000,
+            maximumConversationBytes: 4 * 1_024 * 1_024,
+            tools: [PageTool()]
+        )
+
+        try await orchestrator.submit(prompt: "Add line numbers to parser errors")
+        await orchestrator.awaitCompletion()
+        try await orchestrator.submit(prompt: "Keep the old error type public")
+        await orchestrator.awaitCompletion()
+
+        let events = await compactions()
+        XCTAssertEqual(events.map(\.summarySource), [.model, .structural])
+        XCTAssertEqual(model.summaryRequests.count, 1, "the second compaction is the guard's, not a failure")
+        let notes = try XCTUnwrap(events.last)
+        XCTAssertNil(notes.fallbackReason)
+        XCTAssertEqual(ConversationCompactor.carriedMemory(from: notes.summary).summary, summary)
+        XCTAssertTrue(notes.summary.contains("older notes dropped"), "the batch overflowed the notes' budget")
+        XCTAssertTrue(notes.summary.contains("batch19"), "the newest notes are kept")
+
+        // What the model is sent next holds the whole summary.
+        let last = try XCTUnwrap(model.turns.receivedRequests.last)
+        XCTAssertTrue(anchorText(of: last.messages)?.contains(summary) == true)
+        XCTAssertTrue(ConversationIntegrity.isValid(last.messages))
+        let persisted = await store.loadConversation(sessionID: session.id)
+        XCTAssertTrue(anchorText(of: persisted)?.contains(summary) == true)
+        XCTAssertTrue(ConversationIntegrity.isValid(persisted))
+    }
+
+    /// The failure path at real sizes: a history the model already
+    /// summarised, twenty large steps since, and a summary call that fails.
+    /// The notes carry the earlier summary whole, and the next summary the
+    /// model writes starts from all of it rather than from nothing.
+    func testAFailedSummaryAfterAModelSummaryCarriesItWhole() async throws {
+        let summary = CompactionFixtures.realisticSummary
+        var original: [ModelMessage] = [.user("Add line numbers to parser errors")]
+        original += CompactionFixtures.largeSteps(3)
+        original.append(.user("Keep the old error type public"))
+        let first = try XCTUnwrap(ConversationCompactor.plan(original, maximumBytes: 1, recentTurns: 1, force: true))
+        let history = first.result(modelSummary: summary).messages
+            + CompactionFixtures.largeSteps(20, from: 100)
+            + [.assistant("Read all of them.")]
+        try await store.saveConversation(sessionID: session.id, messages: history)
+        let model = CompactingModelClient(
+            turns: [.text("Noted.")],
+            summaries: [
+                .failure(AgentModelClientError.transport(message: "503 overloaded")),
+                CompactingModelClient.summary("Folded again."),
+            ]
+        )
+        // A window large enough that nothing but `/compact` folds.
+        let orchestrator = makeOrchestrator(
+            model,
+            contextWindowTokens: 200_000,
+            maximumConversationBytes: 400_000
+        )
+
+        let failedEvent = await orchestrator.compactNow()
+        let failed = try XCTUnwrap(failedEvent)
+
+        XCTAssertEqual(failed.summarySource, .structural)
+        XCTAssertEqual(failed.fallbackReason, "the model call failed")
+        XCTAssertEqual(ConversationCompactor.carriedMemory(from: failed.summary).summary, summary)
+        XCTAssertTrue(failed.summary.contains("older notes dropped"), "the span overflowed the notes' budget")
+        let persisted = await store.loadConversation(sessionID: session.id)
+        XCTAssertTrue(anchorText(of: persisted)?.contains(summary) == true)
+        XCTAssertTrue(ConversationIntegrity.isValid(persisted))
+
+        try await orchestrator.submit(prompt: "Now the error messages")
+        await orchestrator.awaitCompletion()
+        let foldedEvent = await orchestrator.compactNow()
+        let folded = try XCTUnwrap(foldedEvent)
+
+        XCTAssertEqual(folded.summarySource, .model)
+        guard model.summaryRequests.count == 2, case let .user(prompt) = model.summaryRequests[1].messages.first else {
+            return XCTFail("expected a second summary request")
+        }
+        XCTAssertTrue(prompt.contains("<earlier-summary>"))
+        XCTAssertTrue(prompt.contains(summary))
     }
 
     // MARK: - /compact

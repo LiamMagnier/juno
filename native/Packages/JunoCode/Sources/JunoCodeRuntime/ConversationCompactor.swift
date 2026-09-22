@@ -59,15 +59,26 @@ public struct ConversationCompactionPlan: Equatable, Sendable {
 ///
 /// **What the notes keep.** The newest, when they do not all fit: the recent
 /// past is what the next step needs. A second compaction folds the first
-/// one's memory in — notes or a model summary — rather than stacking another
-/// block onto the anchor.
+/// one's memory in rather than stacking another block onto the anchor: notes
+/// carry over as notes, and a model summary is carried whole, as its own
+/// block ahead of the notes written since (see ``carriedMemory(from:)``).
 public enum ConversationCompactor {
     public static let defaultRecentTurns = 6
     public static let defaultMaximumSummaryCharacters = 12_000
 
+    /// How much of an earlier model summary the structural notes carry. The
+    /// summarizer's own ceiling, so any summary it accepted is carried whole;
+    /// only a store written by something else is ever cut.
+    static let maximumCarriedSummaryCharacters =
+        CompactionSummarizer.Limits.standard.maximumSummaryCharacters
+
     static let retainedContextMarker = "[Juno retained context]"
     static let structuralHeader = "Earlier conversation memory:"
     static let modelSummaryHeader = "Summary of the earlier conversation:"
+    /// Heads the notes that follow a carried model summary. It is always
+    /// written, and last, which is what lets a later compaction find where the
+    /// summary ends whatever the summary itself says.
+    static let notesSinceSummaryHeader = "Notes on the steps since that summary:"
 
     /// Compacts when the encoded conversation exceeds the byte guard, or
     /// unconditionally when force is true (used after a provider reports that
@@ -190,28 +201,53 @@ public enum ConversationCompactor {
         return (original, memory.isEmpty ? nil : memory)
     }
 
-    /// The notes an earlier memory contributes to a structural summary.
+    /// What an earlier memory contributes to a structural summary: the model
+    /// summary it holds, if any, and its notes.
     ///
-    /// Structural notes carry over line for line. A model-written summary is
-    /// prose with its own headings, which the note format cannot hold, so it
-    /// becomes one clipped note: lossy, but only on the path where the model
-    /// has already failed once, and still the oldest note, dropped first when
-    /// the budget is tight — the same rule every other note follows.
-    private static func carriedNotes(from memory: String?, maximumCharacters: Int) -> [String] {
-        guard let memory else { return [] }
+    /// Notes carry over line for line, to be dropped oldest first like any
+    /// other. A model summary is different: it is the only record of
+    /// everything before the compaction that wrote it — every request,
+    /// decision and file — so it is carried whole, as its own block with its
+    /// own budget, never squeezed into a note or dropped to make room. This
+    /// path is common, not exceptional: a compaction soon after the last one
+    /// writes notes without asking the model, and any failed summary call
+    /// falls back here.
+    ///
+    /// A memory holding both reads: the structural header, the model summary
+    /// header, the summary, then ``notesSinceSummaryHeader`` and the notes.
+    /// The first two lines tell it from notes alone, which never have a second
+    /// line that is not a note, and from a model summary alone, which starts
+    /// with its own header. The summary ends at the *last* notes header:
+    /// notes are single lines, so none of them can contain one, while the
+    /// summary — model-written, from tool output — may say anything.
+    static func carriedMemory(from memory: String?) -> (summary: String?, notes: [String]) {
+        guard let memory else { return (nil, []) }
+        func notes(in text: Substring) -> [String] {
+            text.split(separator: "\n").map(String.init).filter { $0.hasPrefix("- ") }
+        }
+        func summary(_ text: Substring) -> String? {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        let carriedPrefix = structuralHeader + "\n" + modelSummaryHeader + "\n"
+        if memory.hasPrefix(carriedPrefix) {
+            let rest = memory.dropFirst(carriedPrefix.count)
+            guard let range = rest.range(of: "\n\n" + notesSinceSummaryHeader, options: .backwards) else {
+                return (summary(rest), [])
+            }
+            return (summary(rest[..<range.lowerBound]), notes(in: rest[range.upperBound...]))
+        }
         if memory.hasPrefix(structuralHeader) {
-            return memory
-                .split(separator: "\n")
-                .map(String.init)
-                .filter { $0.hasPrefix("- ") }
+            return (nil, notes(in: memory[...]))
         }
-        var body = memory
+        // A model summary alone — or a memory no format here recognises,
+        // which is safer kept whole than parsed as notes.
+        var body = memory[...]
         if body.hasPrefix(modelSummaryHeader) {
-            body = String(body.dropFirst(modelSummaryHeader.count))
+            body = body.dropFirst(modelSummaryHeader.count)
         }
-        let line = singleLine(body)
-        guard !line.isEmpty else { return [] }
-        return ["- Earlier summary: " + clip(line, max(maximumCharacters / 3, 200))]
+        return (summary(body), [])
     }
 
     private static func summarize(
@@ -219,7 +255,8 @@ public enum ConversationCompactor {
         earlierMemory: String?,
         maximumCharacters: Int
     ) -> String {
-        var notes = carriedNotes(from: earlierMemory, maximumCharacters: maximumCharacters)
+        let carried = carriedMemory(from: earlierMemory)
+        var notes = carried.notes
         for message in messages {
             let line: String
             switch message {
@@ -247,6 +284,7 @@ public enum ConversationCompactor {
             notes.append("- " + singleLine(line))
         }
 
+        // The budget is the notes' alone; a carried summary has its own.
         var total = structuralHeader.count + notes.reduce(0) { $0 + $1.count + 1 }
         var dropped = 0
         while total > maximumCharacters, !notes.isEmpty {
@@ -254,11 +292,29 @@ public enum ConversationCompactor {
             dropped += 1
         }
         var lines = [structuralHeader]
+        if let summary = carried.summary {
+            lines += [
+                modelSummaryHeader,
+                clippedAtLine(summary, maximumCharacters: maximumCarriedSummaryCharacters),
+                "",
+                notesSinceSummaryHeader,
+            ]
+        }
         if dropped > 0 {
             lines.append("… \(dropped) older note\(dropped == 1 ? "" : "s") dropped")
         }
         lines += notes
         return lines.joined(separator: "\n")
+    }
+
+    /// Whole lines from the start, up to the limit, then a line saying more
+    /// was cut. A summary is written under headings; half a line reads as a
+    /// claim, and a summary joined into one line loses its structure.
+    static func clippedAtLine(_ text: String, maximumCharacters: Int) -> String {
+        guard text.count > maximumCharacters else { return text }
+        let prefix = text.prefix(maximumCharacters)
+        let cut = prefix.lastIndex(of: "\n").map { prefix[..<$0] } ?? prefix
+        return String(cut) + "\n…"
     }
 
     private static func clip(_ value: String, _ limit: Int) -> String {

@@ -114,8 +114,15 @@ public enum CompactionSummarizer {
             "<original-request>\n" + clip(plan.originalRequest, 8_000) + "\n</original-request>"
         )
         if let earlier = plan.earlierSummary {
+            // An earlier memory is at most a carried model summary of this
+            // ceiling plus the notes written since, so twice the ceiling
+            // passes it whole; the clip is for a store written by anything
+            // else, and keeps both ends — the oldest requests and the newest
+            // notes.
             sections.append(
-                "<earlier-summary>\n" + clip(earlier, limits.maximumSummaryCharacters) + "\n</earlier-summary>"
+                "<earlier-summary>\n"
+                    + clipKeepingEnds(earlier, 2 * limits.maximumSummaryCharacters)
+                    + "\n</earlier-summary>"
             )
         }
         sections.append(
@@ -220,12 +227,9 @@ public enum CompactionSummarizer {
         let body = reply[open.upperBound..<close.lowerBound]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return nil }
-        guard body.count > maximumCharacters else { return body }
         // Longer than asked but complete: keep whole lines up to the limit
         // rather than discard a summary the model did finish.
-        let prefix = body.prefix(maximumCharacters)
-        let cut = prefix.lastIndex(of: "\n").map { prefix[..<$0] } ?? prefix
-        return String(cut) + "\n…"
+        return ConversationCompactor.clippedAtLine(body, maximumCharacters: maximumCharacters)
     }
 
     // MARK: - The call

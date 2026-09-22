@@ -315,6 +315,55 @@ final class CompactionSummarizerTests: XCTestCase {
     }
 }
 
+/// Material shaped like a real long run, for the tests that are only
+/// meaningful at real sizes.
+enum CompactionFixtures {
+    /// A model summary of about ten thousand characters under the headings
+    /// the summarizer asks for, bullets and all.
+    static let realisticSummary: String = {
+        let headings = [
+            "1. Requests and intent", "2. Key decisions", "3. Files and code",
+            "4. Errors and fixes", "5. Open tasks", "6. Current work", "7. Next step",
+        ]
+        var lines: [String] = []
+        for (section, heading) in headings.enumerated() {
+            lines.append("## \(heading)")
+            for item in 0..<10 {
+                lines.append(
+                    "- Section \(section + 1), point \(item): `Sources/Parser/Lexer\(item).swift` keeps "
+                        + "`Token.position` as a `SourceLocation`, so `ParserError` reports line \(item * 7 + section)."
+                )
+            }
+            lines.append("")
+        }
+        lines.append("The next step rests on \"keep the old error type public\": run `swift test --filter ParserTests`.")
+        return lines.joined(separator: "\n")
+    }()
+
+    /// `count` steps of the kind that fill a window: a line of prose, two
+    /// reads in parallel, and two results of about 650 characters each.
+    static func largeSteps(_ count: Int, from start: Int = 0) -> [ModelMessage] {
+        var messages: [ModelMessage] = []
+        for step in start..<(start + count) {
+            messages.append(.assistant("Step \(step): reading the lexer and its tests."))
+            messages.append(.toolCall(
+                id: "l\(step)", name: "read_file", input: ["path": .string("Sources/Parser/Lexer\(step).swift")]
+            ))
+            messages.append(.toolCall(
+                id: "t\(step)", name: "read_file", input: ["path": .string("Tests/ParserTests/Lexer\(step)Tests.swift")]
+            ))
+            messages.append(.toolResult(id: "l\(step)", content: page("lexer\(step)"), isError: false))
+            messages.append(.toolResult(id: "t\(step)", content: page("test\(step)"), isError: false))
+        }
+        return messages
+    }
+
+    /// About 650 characters of source.
+    static func page(_ name: String) -> String {
+        (0..<20).map { "let \(name)Token\($0) = lexer.next()" }.joined(separator: "\n")
+    }
+}
+
 /// The cut itself, which both summaries share.
 final class CompactionPlanTests: XCTestCase {
     /// Parallel calls, reasoning between them, steers after a batch: wherever
@@ -349,8 +398,8 @@ final class CompactionPlanTests: XCTestCase {
         }
     }
 
-    /// When the model has failed once, the structural fallback still folds its
-    /// earlier summary in, as one bounded note, under one marker.
+    /// When the notes follow a model summary, they fold it in whole, ahead of
+    /// the notes, under one marker.
     func testAStructuralFallbackFoldsAnEarlierModelSummaryIn() throws {
         var messages: [ModelMessage] = [.user("Task")]
         for step in 0..<8 {
@@ -366,9 +415,121 @@ final class CompactionPlanTests: XCTestCase {
         guard case let .user(anchor) = fallback.messages[0] else { return XCTFail("anchor") }
         XCTAssertTrue(anchor.hasPrefix("Task"))
         XCTAssertEqual(anchor.components(separatedBy: ConversationCompactor.retainedContextMarker).count, 2)
-        XCTAssertTrue(fallback.summary.hasPrefix(ConversationCompactor.structuralHeader))
-        XCTAssertTrue(fallback.summary.contains("- Earlier summary: ## Current work Wiring the table lookup."))
-        XCTAssertTrue(fallback.summary.contains("answer 8"))
+        XCTAssertTrue(fallback.summary.hasPrefix(
+            ConversationCompactor.structuralHeader + "\n" + ConversationCompactor.modelSummaryHeader
+                + "\n## Current work\nWiring the table lookup.\n\n" + ConversationCompactor.notesSinceSummaryHeader
+        ))
+        XCTAssertTrue(fallback.summary.contains("- Assistant: answer 8"))
         XCTAssertTrue(ConversationIntegrity.isValid(fallback.messages))
+    }
+
+    /// A model summary of real size, then notes over a span far larger than
+    /// their budget — twelve steps of two ~650-character reads — and then
+    /// the same again. The notes are dropped oldest first; the summary is
+    /// carried whole, headings and all, every time. Before, it became one
+    /// line clipped to 4,000 characters and was the first note dropped.
+    func testARealisticModelSummarySurvivesNotesOverALargeSpan() throws {
+        let summary = CompactionFixtures.realisticSummary
+        XCTAssertGreaterThan(summary.count, 9_000)
+        var messages: [ModelMessage] = [.user("Add line numbers to parser errors")]
+        messages += CompactionFixtures.largeSteps(4)
+        messages.append(.user("Keep the old error type public"))
+        let first = try XCTUnwrap(ConversationCompactor.plan(messages, maximumBytes: 1, recentTurns: 1, force: true))
+        let afterModel = first.result(modelSummary: summary)
+
+        let continued = afterModel.messages + CompactionFixtures.largeSteps(12, from: 100) + [.assistant("Read them all.")]
+        let fallback = try XCTUnwrap(ConversationCompactor.compact(continued, maximumBytes: 1, recentTurns: 1, force: true))
+
+        let carried = ConversationCompactor.carriedMemory(from: fallback.summary)
+        XCTAssertEqual(carried.summary, summary)
+        XCTAssertTrue(fallback.summary.contains("\n## 7. Next step\n"), "the summary keeps its lines")
+        XCTAssertTrue(fallback.summary.contains("older notes dropped"), "the span overflowed the notes' budget")
+        XCTAssertTrue(fallback.summary.contains("- Assistant: Step 111: reading the lexer and its tests."))
+        XCTAssertFalse(carried.notes.contains { $0.hasPrefix("- Section") }, "the summary's bullets are not notes")
+        guard case let .user(anchor) = fallback.messages[0] else { return XCTFail("anchor") }
+        XCTAssertTrue(anchor.hasPrefix("Add line numbers to parser errors"))
+        XCTAssertTrue(anchor.contains(summary))
+        XCTAssertEqual(anchor.components(separatedBy: ConversationCompactor.retainedContextMarker).count, 2)
+        XCTAssertTrue(ConversationIntegrity.isValid(fallback.messages))
+
+        // Notes again, over another large span: still whole.
+        let again = fallback.messages + CompactionFixtures.largeSteps(12, from: 200) + [.assistant("Read them again.")]
+        let second = try XCTUnwrap(ConversationCompactor.compact(again, maximumBytes: 1, recentTurns: 1, force: true))
+        XCTAssertEqual(ConversationCompactor.carriedMemory(from: second.summary).summary, summary)
+        XCTAssertTrue(second.summary.contains("- Assistant: Step 211: reading the lexer and its tests."))
+        XCTAssertFalse(second.summary.contains("Step 100:"), "older notes go first")
+        XCTAssertEqual(second.summary.components(separatedBy: ConversationCompactor.modelSummaryHeader).count, 2)
+        XCTAssertTrue(ConversationIntegrity.isValid(second.messages))
+
+        // And the next model summary starts from all of it.
+        let plan = try XCTUnwrap(ConversationCompactor.plan(
+            second.messages + [.user("Now the error messages")], maximumBytes: 1, recentTurns: 1, force: true
+        ))
+        let request = CompactionSummarizer.request(
+            for: plan, focus: nil, sessionID: CodeSessionID(), modelID: "m", limits: .standard
+        )
+        guard case let .user(prompt) = request.messages.first else { return XCTFail("request") }
+        XCTAssertTrue(prompt.contains(summary))
+    }
+
+    /// A model summary may quote the notes' own headers — it is written from
+    /// transcripts that contain them. Where it ends is still found exactly,
+    /// and nothing it quotes is taken for a note.
+    func testASummaryQuotingTheNoteHeadersIsCarriedExactly() throws {
+        let summary = """
+            ## Requests and intent
+            - The user pasted an old anchor, which read:
+
+            \(ConversationCompactor.structuralHeader)
+            - User: a quoted note
+
+            \(ConversationCompactor.notesSinceSummaryHeader)
+            - User: another quoted note
+
+            ## Next step
+            Run the tests.
+            """
+        var messages: [ModelMessage] = [.user("Task")]
+        for step in 0..<4 {
+            messages.append(.user("turn \(step)"))
+            messages.append(.assistant("answer \(step)"))
+        }
+        let first = try XCTUnwrap(ConversationCompactor.plan(messages, maximumBytes: 1, recentTurns: 1, force: true))
+        var history = first.result(modelSummary: summary).messages
+        for round in 0..<3 {
+            history += [.assistant("answer \(round)a"), .user("turn \(round)b")]
+            let next = try XCTUnwrap(ConversationCompactor.compact(history, maximumBytes: 1, recentTurns: 1, force: true))
+            let carried = ConversationCompactor.carriedMemory(from: next.summary)
+            XCTAssertEqual(carried.summary, summary, "round \(round)")
+            XCTAssertFalse(carried.notes.contains { $0.contains("quoted note") }, "round \(round)")
+            XCTAssertTrue(carried.notes.contains("- Assistant: answer \(round)a"), "round \(round)")
+            history = next.messages
+        }
+    }
+
+    /// Only a summary longer than the summarizer would ever accept is cut, and
+    /// then at a line, keeping its structure.
+    func testAnOverlongCarriedSummaryIsCutAtALine() throws {
+        let summary = (0..<2_000).map { "## Heading \($0)\nPoint \($0) about the parser." }.joined(separator: "\n")
+        XCTAssertGreaterThan(summary.count, ConversationCompactor.maximumCarriedSummaryCharacters)
+        let first = try XCTUnwrap(ConversationCompactor.plan(
+            [.user("Task"), .user("turn 0"), .assistant("answer 0"), .user("turn 1")],
+            maximumBytes: 1, recentTurns: 1, force: true
+        ))
+        let history = first.result(modelSummary: summary).messages + [.assistant("answer 1"), .user("turn 2")]
+
+        let fallback = try XCTUnwrap(ConversationCompactor.compact(history, maximumBytes: 1, recentTurns: 1, force: true))
+
+        let carried = try XCTUnwrap(ConversationCompactor.carriedMemory(from: fallback.summary).summary)
+        XCTAssertLessThanOrEqual(carried.count, ConversationCompactor.maximumCarriedSummaryCharacters + 2)
+        XCTAssertTrue(carried.hasPrefix("## Heading 0\nPoint 0 about the parser.\n## Heading 1\n"))
+        XCTAssertTrue(carried.hasSuffix("\n…"))
+        XCTAssertFalse(carried.contains("## Heading 1999"))
+        // Every line kept is a whole line of the original.
+        let original = Set(summary.split(separator: "\n"))
+        for line in carried.split(separator: "\n").dropLast() {
+            XCTAssertTrue(original.contains(line), "a cut line: \(line)")
+        }
+        XCTAssertTrue(fallback.summary.contains("- Assistant: answer 1"))
     }
 }
