@@ -37,6 +37,7 @@ import {
   type SensitiveTopic,
 } from "@/lib/memory-sensitive";
 import { MEMORY_CONTENT_LIMIT, normalizeStatement } from "@/lib/memory-suppression";
+import { CODING_MEMORY_CATEGORIES, selectCodingMemories } from "@/lib/code-memory-prompt";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
 // through, deliberately: a second way of turning usage into money is how an
@@ -1385,6 +1386,52 @@ export async function getMemoryProfile(
     usedTokens: result.usedTokens,
     droppedForBudget: result.droppedForBudget,
   };
+}
+
+/**
+ * The narrow slice of memory a Juno Code run is shown — see
+ * src/lib/code-memory-prompt.ts for why it is narrow.
+ *
+ * Lexical ranking only, deliberately: `getMemoryProfile` may embed the query,
+ * and here the query is the task text, which would be one more copy of the
+ * user's code request sent to an embeddings provider at the moment they
+ * pressed Run. The candidates are a few dozen short preferences; token overlap
+ * and recency rank them well enough, and the task text stays where it is.
+ *
+ * Empty when memory is paused. `lastUsedAt` is stamped on what was shown, for
+ * the same reason chat stamps it: "used" on the memory page has to mean used.
+ */
+export async function getCodingMemory(userId: string, query: string): Promise<string[]> {
+  try {
+    const [settings, rows] = await Promise.all([
+      prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } }),
+      prisma.memoryEntry.findMany({
+        where: {
+          userId,
+          kind: "FACT",
+          status: "active",
+          projectId: null,
+          category: { in: [...CODING_MEMORY_CATEGORIES] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: LIFECYCLE_SELECT,
+      }),
+    ]);
+    if (settings?.memoryEnabled === false) return [];
+    const selected = selectCodingMemories(rows, { query });
+    if (selected.length > 0) {
+      await prisma.memoryEntry
+        .updateMany({ where: { userId, id: { in: selected.map((m) => m.id) } }, data: { lastUsedAt: new Date() } })
+        .catch(() => {});
+    }
+    return selected.map((m) => m.content);
+  } catch (error) {
+    // A Code run without its background is a Code run; one that fails to
+    // start because memory could not be read is a bug.
+    console.error("[memory] coding memory unavailable:", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,8 @@ import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from
 import { CODE_PERMISSION_MODES, isCodePermissionMode, type CodePermissionMode } from "@/lib/code-environments";
 import { codeRunLockKey } from "@/lib/code-run-lock";
 import { foldAttachmentsIntoPrompt } from "@/lib/code-attachment-prompt";
+import { foldMemoryIntoPrompt } from "@/lib/code-memory-prompt";
+import { getCodingMemory } from "@/lib/memory";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { isUsableGitRef, MAX_REF_LENGTH } from "@/lib/code-branches";
@@ -319,9 +321,15 @@ export async function POST(req: Request) {
     }
   }
 
-  // Agent-facing prompt includes extracted text from attachments when present.
-  // The USER message stores the raw composer text so the transcript stays clean.
-  const agentPrompt = await enrichPromptWithAttachments(prompt, attachmentIds, user.id);
+  // Agent-facing prompt includes extracted text from attachments when present,
+  // then the narrow slice of memory a Code run may see (how the user works, what
+  // they are building — never identity, people or anything sensitive; see
+  // lib/code-memory-prompt.ts). The USER message stores the raw composer text so
+  // the transcript stays clean — neither fold ever appears in the chat.
+  const agentPrompt = foldMemoryIntoPrompt(
+    await enrichPromptWithAttachments(prompt, attachmentIds, user.id),
+    await getCodingMemory(user.id, prompt)
+  );
 
   // Persist a linked prompt as one transaction with its attachment claims and
   // session timestamp. Cloud tasks call this BEFORE dispatching a runner, so a
