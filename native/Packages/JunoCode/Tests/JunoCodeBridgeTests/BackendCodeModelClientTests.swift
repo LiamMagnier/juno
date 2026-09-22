@@ -678,5 +678,84 @@ final class BackendCodeModelClientTests: XCTestCase {
             return XCTFail("Expected quotaExhausted error, got \(clientError)")
         }
     }
+
+    // MARK: - Thinking block binding
+
+    private static let endTurn = """
+    data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+
+    data: {"type":"message_stop"}
+
+    """
+
+    /// Opus 5.5 and Fable 5.1 reject a replayed thinking block whose earlier
+    /// messages changed, and the runtime changes them (images become text,
+    /// compaction). Every thinking request asks for the stale block to be
+    /// dropped, and carries the beta that field needs.
+    func testAThinkingRequestAsksForStaleBlocksToBeDroppedAndCarriesTheBeta() async throws {
+        let streamer = FakeByteStreamer(canned: .init(body: Data(Self.endTurn.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        _ = await collect(
+            client,
+            makeRequest(
+                messages: [
+                    .user("Look at this\n[1 attached image omitted from the session record.]"),
+                    .assistantThinking(text: "", signature: "sig-bound-to-the-image"),
+                    .toolCall(id: "t1", name: "read_file", input: ["path": "a.swift"]),
+                    .toolResult(id: "t1", content: "contents", isError: false),
+                ],
+                modelID: "anthropic:claude-opus-5-5"
+            )
+        )
+        let request = try XCTUnwrap(streamer.lastRequest)
+        XCTAssertEqual(request.headers["anthropic-beta"], "thinking-binding-controls-2026-08-01")
+        let json = try JSONDecoder().decode(JSONValue.self, from: try XCTUnwrap(request.body))
+        XCTAssertEqual(json["thinking"]?["type"]?.stringValue, "adaptive")
+        XCTAssertEqual(
+            json["thinking"]?["block_binding"]?["prefix_mismatch_behavior"]?.stringValue,
+            "drop_block"
+        )
+    }
+
+    /// The field and its beta travel together: either one alone is a 400.
+    func testTheBindingFieldAndItsBetaAreNeverSentApart() {
+        func body(_ model: String, _ effort: ReasoningEffort?) -> JSONValue {
+            AnthropicRequestBuilder.body(
+                for: ModelTurnRequest(
+                    sessionID: CodeSessionID(),
+                    systemPrompt: "sys",
+                    messages: [.user("Hi")],
+                    tools: [],
+                    modelID: "anthropic:\(model)",
+                    reasoningEffort: effort
+                ),
+                providerModelID: model,
+                maxTokens: 8_192
+            )
+        }
+        let cases: [(String, ReasoningEffort?, Bool)] = [
+            ("claude-opus-5-5", .high, true),
+            ("claude-fable-5-1", .medium, true),
+            // Thinks when `thinking` is omitted, so it still replays signed
+            // blocks: sent the adaptive it runs anyway, carrying the setting.
+            ("claude-fable-5-1", nil, true),
+            ("claude-opus-5-5", nil, true),
+            ("claude-haiku-4-5", .high, true),
+            // Disabled or genuinely absent thinking has nothing to bind.
+            ("claude-sonnet-5", nil, false),
+            ("claude-haiku-4-5", nil, false),
+            ("claude-opus-4-8", nil, false),
+        ]
+        for (model, effort, binds) in cases {
+            let json = body(model, effort)
+            XCTAssertEqual(json["thinking"]?["block_binding"] != nil, binds, "\(model) / \(String(describing: effort))")
+            XCTAssertEqual(
+                AnthropicRequestBuilder.betas(for: json),
+                binds ? ["thinking-binding-controls-2026-08-01"] : [],
+                "\(model) / \(String(describing: effort))"
+            )
+        }
+        XCTAssertEqual(body("claude-sonnet-5", nil)["thinking"]?["type"]?.stringValue, "disabled")
+    }
 }
 

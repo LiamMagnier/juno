@@ -242,21 +242,26 @@ public struct BackendCodeModelClient: AgentModelClient {
                     let bearer: NativeBearerRequest
                     switch route.wireProtocol {
                     case .anthropicMessages:
+                        let body = AnthropicRequestBuilder.body(
+                            for: request,
+                            providerModelID: route.providerModelID,
+                            maxTokens: maxTokens
+                        )
+                        var headers = [
+                            "Accept": "text/event-stream",
+                            "Content-Type": "application/json",
+                            "anthropic-version": "2023-06-01",
+                        ]
+                        // The proxy forwards this header to Anthropic as is.
+                        let betas = AnthropicRequestBuilder.betas(for: body)
+                        if !betas.isEmpty {
+                            headers["anthropic-beta"] = betas.joined(separator: ",")
+                        }
                         bearer = try NativeBearerRequest(
                             path: "/api/agent/\(route.providerID)/v1/messages",
                             method: .post,
-                            headers: try HTTPHeaders([
-                                "Accept": "text/event-stream",
-                                "Content-Type": "application/json",
-                                "anthropic-version": "2023-06-01",
-                            ]),
-                            body: try JSONEncoder().encode(
-                                AnthropicRequestBuilder.body(
-                                    for: request,
-                                    providerModelID: route.providerModelID,
-                                    maxTokens: maxTokens
-                                )
-                            )
+                            headers: try HTTPHeaders(headers),
+                            body: try JSONEncoder().encode(body)
                         )
                     case .openAIChat:
                         bearer = try NativeBearerRequest(
@@ -615,7 +620,7 @@ enum AnthropicRequestBuilder {
             "messages": .array(messages),
             "stream": .bool(true),
         ]
-        if let thinking = bits.thinking {
+        if let thinking = Self.bindingTolerant(bits.thinking, providerModelID: providerModelID) {
             object["thinking"] = thinking
         }
         if let outputConfig = bits.outputConfig {
@@ -633,6 +638,51 @@ enum AnthropicRequestBuilder {
             object["tools"] = .array(tools.map(JSONValue.object))
         }
         return .object(object)
+    }
+
+    /// The beta that lets a request say what happens to a thinking block whose
+    /// conversation has changed since it was produced.
+    static let thinkingBindingBeta = "thinking-binding-controls-2026-08-01"
+
+    /// The `thinking` object, told to drop a replayed block whose conversation
+    /// no longer matches rather than fail the request.
+    ///
+    /// Opus 5.5 and Fable 5.1 bind each thinking signature to the system
+    /// prompt, the tools and every earlier message as they were when the block
+    /// was produced; for accounts created on or after 2026-08-31 a replay after
+    /// any of those changed is a 400 that no retry clears. The runtime changes
+    /// them on purpose — attached images and screenshots become text once a
+    /// turn has used them, compaction folds old turns into a memory while
+    /// keeping recent reasoning, and a change of mode, computer use or MCP
+    /// servers rebuilds the tools and system prompt for the same conversation —
+    /// so one such rewrite failed the run and every later turn of the session.
+    /// `drop_block` has the API drop the stale block and every thinking block
+    /// after it for that request only, so it is sent on every request. Models
+    /// that do not enforce the check accept it.
+    ///
+    /// A model that thinks when `thinking` is omitted still replays signed
+    /// blocks, so it is sent an explicit `adaptive`, which is what it runs
+    /// with anyway, to carry the setting. Disabled or absent thinking on any
+    /// other model has nothing to bind.
+    static func bindingTolerant(_ thinking: JSONValue?, providerModelID: String) -> JSONValue? {
+        var thinking = thinking
+        if thinking == nil, CodeThinkingWire.thinksWhenOmitted(providerModelID) {
+            thinking = .object(["type": .string("adaptive")])
+        }
+        guard case var .object(fields)? = thinking,
+              let type = fields["type"]?.stringValue,
+              type == "adaptive" || type == "enabled"
+        else { return thinking }
+        fields["block_binding"] = .object(["prefix_mismatch_behavior": .string("drop_block")])
+        return .object(fields)
+    }
+
+    /// The `anthropic-beta` values a body built here needs.
+    ///
+    /// Read off the body rather than decided beside it: `block_binding`
+    /// without its beta is a 400, and so is the beta's absence with the field.
+    static func betas(for body: JSONValue) -> [String] {
+        body["thinking"]?["block_binding"] == nil ? [] : [thinkingBindingBeta]
     }
 
     /// Puts the rolling breakpoint on the conversation's final block.
