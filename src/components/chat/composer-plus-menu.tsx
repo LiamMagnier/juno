@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronRight, Plus } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { composerIconButtonClass } from "@/components/ui/composer-shell";
@@ -60,7 +60,7 @@ export type PlusMenuItem =
       kind: "action";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       onSelect: () => void;
       disabled?: boolean;
       /** A short mono figure after the label — e.g. the row's shortcut. */
@@ -72,7 +72,7 @@ export type PlusMenuItem =
       kind: "toggle";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       checked: boolean;
       onToggle: () => void;
       disabled?: boolean;
@@ -84,7 +84,7 @@ export type PlusMenuItem =
       kind: "sub";
       id: string;
       label: string;
-      icon: LucideIcon;
+      icon: IconComponent;
       /** What is currently chosen inside, shown before the chevron. */
       detail?: string;
       /** The flyout's body: rows, and whatever sits between them. */
@@ -108,7 +108,7 @@ export type PlusMenuSection = PlusMenuItem[];
 export const plusMenuRowClass = menuRowClass;
 
 /** The 16px glyph slot at the head of a row. */
-export function PlusMenuGlyph({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
+export function PlusMenuGlyph({ icon: Icon, className }: { icon: IconComponent; className?: string }) {
   // No size and no ink stated: the row's recipe supplies both (16px, muted) and
   // does it for every menu in the product, so a glyph here and a glyph in a row
   // kebab cannot drift apart again. `className` still wins where a call site
@@ -130,7 +130,7 @@ export function PlusMenuSeparator({ className }: { className?: string }) {
 export const PlusMenuRow = React.forwardRef<
   React.ElementRef<typeof DropdownMenuItem>,
   Omit<React.ComponentPropsWithoutRef<typeof DropdownMenuItem>, "onSelect"> & {
-    icon?: LucideIcon;
+    icon?: IconComponent;
     checked?: boolean;
     selected?: boolean;
     note?: string;

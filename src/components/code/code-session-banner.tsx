@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

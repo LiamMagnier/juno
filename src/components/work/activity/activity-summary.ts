@@ -16,7 +16,7 @@ import { str, type Payload } from "@/components/work/work-payload";
  * built from, and the classes are then tallied. `work-payload.ts` has already
  * reconciled the two executors' shapes by the time anything here runs.
  *
- * This module is deliberately free of React, of lucide and of the vocabulary
+ * This module is deliberately free of React, of the icon set and of the vocabulary
  * component — it takes plain records and returns a string, so the one piece of
  * logic in this feature that can be wrong in a way nobody notices (a count) is
  * a pure function of its input.

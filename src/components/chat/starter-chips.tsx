@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
  * /work — rather than the generic "brainstorm / summarize" filler that would
  * describe any chat product.
  */
-const CHIPS: ReadonlyArray<{ label: string; icon: LucideIcon; seed: string }> = [
+const CHIPS: ReadonlyArray<{ label: string; icon: IconComponent; seed: string }> = [
   {
     label: "Research",
     icon: AppIcons.research,

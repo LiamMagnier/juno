@@ -16,7 +16,7 @@ import {
   Bot,
   Wrench,
   X,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { staggerDelay } from "@/lib/motion";

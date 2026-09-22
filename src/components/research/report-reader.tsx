@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { PanelRightClose, PanelRightOpen, Printer } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Printer } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";

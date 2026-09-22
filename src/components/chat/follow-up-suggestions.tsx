@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, Plus } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 

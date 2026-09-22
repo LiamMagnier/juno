@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { DotField } from "@/components/signature/dot-field";
 import { Button } from "@/components/ui/button";

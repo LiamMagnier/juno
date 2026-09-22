@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Code2 } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,18 +26,7 @@ export interface DiffRow {
   text: string;
 }
 
-const DiffIcon = () => (
-  <svg className="aicss-cb-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-    <path
-      d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const DiffIcon = () => <Code2 className="aicss-cb-icon size-4" />;
 
 export function FileDiff({ file, rows, className }: { file: string; rows: DiffRow[]; className?: string }) {
   const added = rows.filter((r) => r.type === "add").length;

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "@/components/ui/icons";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
 import { AppIcons } from "@/lib/app-icons";

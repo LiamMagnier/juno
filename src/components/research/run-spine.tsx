@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 import { stageForState, type ResearchStage, type ResearchState } from "@/lib/research/domain";
 

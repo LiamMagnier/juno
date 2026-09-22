@@ -1,6 +1,6 @@
 "use client";
 
-import { CornerDownRight } from "lucide-react";
+import { CornerDownRight } from "@/components/ui/icons";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import { readEvent, str } from "@/components/work/work-payload";
 import { workTimeAgo } from "@/components/work/work-vocabulary";

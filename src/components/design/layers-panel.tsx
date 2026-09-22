@@ -42,7 +42,7 @@ import {
   Plus,
   Square,
   Zap,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons, DesignIcons, type DesignIconName } from "@/lib/app-icons";
 import {
   DropdownMenu,

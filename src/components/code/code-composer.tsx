@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AudioLines, Mic } from "lucide-react";
+import { AudioLines, Mic } from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import {

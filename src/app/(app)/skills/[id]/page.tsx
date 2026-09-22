@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { History, Loader2 } from "lucide-react";
+import { History, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

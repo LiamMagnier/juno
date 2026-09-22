@@ -10,7 +10,7 @@ import {
   useReducedMotion,
   type AnimationPlaybackControls,
 } from "framer-motion";
-import { ArrowUp, AudioLines, Loader2, Square } from "lucide-react";
+import { ArrowUp, AudioLines, Loader2, Square } from "@/components/ui/icons";
 
 import { ActionIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -292,9 +292,9 @@ export function ComposerArmedMark({
       aria-label={openLabel}
       className="inline-flex min-w-0 items-center gap-1.5 rounded-md py-0.5 pl-1.5 pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {/* A fixed box, so a brand logo and a Lucide glyph put their labels on
+      {/* A fixed box, so a brand logo and a Juno mark put their labels on
           the same edge. `[&_svg]:size-4` reaches the mark whether it arrived as
-          a `<GitHubMark>` or as a lucide component. */}
+          a `<GitHubMark>` or as an icon from the set. */}
       <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
         {icon}
       </span>

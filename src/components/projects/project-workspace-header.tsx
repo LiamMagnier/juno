@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Pin, NotebookPen } from "lucide-react";
+import { Pin, NotebookPen } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";

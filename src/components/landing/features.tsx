@@ -1,4 +1,4 @@
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/landing/section";

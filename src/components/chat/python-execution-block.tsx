@@ -9,7 +9,7 @@ import {
   FileCode2,
   Terminal,
   XCircle,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import type { PythonExecutionResult } from "@/lib/sandbox/python";
 import { DataTableBlock } from "@/components/chat/data-table-block";
 import { DataChartBlock } from "@/components/chat/data-chart-block";

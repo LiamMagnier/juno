@@ -35,7 +35,7 @@ import {
   AlignVerticalDistributeCenter,
   Link2,
   Link2Off,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import {
   CheckboxField,
   ColorField,

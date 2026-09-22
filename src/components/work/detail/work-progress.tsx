@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Minus, X } from "lucide-react";
+import { Loader2, Minus, X } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import type { PlanStep, PlanStepState } from "@/components/work/work-timeline";
 import { cn } from "@/lib/utils";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Archive } from "lucide-react";
+import { Archive } from "@/components/ui/icons";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";

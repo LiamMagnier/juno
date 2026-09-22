@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import {
   AUDIT_COPY,

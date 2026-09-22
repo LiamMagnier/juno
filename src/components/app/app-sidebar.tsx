@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, ChevronUp, Pin, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, ChevronUp, Pin, Plus } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { UserAvatar, UserMenu } from "@/components/app/user-menu";

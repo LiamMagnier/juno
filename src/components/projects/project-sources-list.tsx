@@ -14,7 +14,7 @@ import {
   Boxes,
   Loader2,
   Download,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, Globe } from "lucide-react";
+import { ExternalLink, Globe } from "@/components/ui/icons";
 import { SourceFavicon, hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ResearchSourceView } from "@/components/research/use-research-run";

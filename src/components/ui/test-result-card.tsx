@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Clock, ChevronDown, ChevronRight } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 export interface TestCase {

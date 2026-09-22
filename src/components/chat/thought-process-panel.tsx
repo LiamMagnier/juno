@@ -11,7 +11,7 @@
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";

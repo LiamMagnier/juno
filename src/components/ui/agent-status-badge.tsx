@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, CheckCircle2, AlertTriangle, XCircle, Clock, ShieldAlert, Cpu, Terminal, Bot } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, XCircle, Clock, ShieldAlert, Cpu, Terminal, Bot } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 export type AgentRunStatus =

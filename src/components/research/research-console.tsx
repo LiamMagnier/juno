@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Pause, Play, Square, X } from "lucide-react";
+import { ChevronDown, Pause, Play, Square, X } from "@/components/ui/icons";
 import { EvidencePanel } from "./evidence-panel";
 import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
 import { workingElapsedMs } from "./run-clock";

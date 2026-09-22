@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ChevronUp } from "@/components/ui/icons";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import { cn } from "@/lib/utils";
 
@@ -138,16 +139,7 @@ export function ThinkingReasoning({
             <ThinkingState className="aicss-tr-label">{label}</ThinkingState>
           )}
           {done && (
-            <svg className="aicss-tr-chevron" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
-              <path
-                d="m4.5 15.75 7.5-7.5 7.5 7.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <ChevronUp className="aicss-tr-chevron size-3" />
           )}
         </button>
       )}

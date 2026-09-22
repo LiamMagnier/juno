@@ -24,10 +24,10 @@
  */
 
 import * as React from "react";
-// `TextSearch` is a raw lucide glyph like the three it joins: the registry names
+// `TextSearch` is a raw mark like the three it joins: the registry names
 // concepts the product draws in more than one place, and "point at this sentence
 // in the text above" is drawn here and nowhere else.
-import { ChevronDown, TextSearch } from "lucide-react";
+import { ChevronDown, TextSearch } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import {

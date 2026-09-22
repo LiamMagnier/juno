@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { FolderOpen, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { FilePreview } from "@/components/chat/file-preview";
 import {

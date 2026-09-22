@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Check, Copy } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -23,17 +24,6 @@ import { cn } from "@/lib/utils";
 /** Blocks longer than this get the numbered gutter. */
 const GUTTER_MIN_LINES = 8;
 
-const CopyIcon = () => (
-  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="9" y="9" width="11" height="11" rx="2.5" />
-    <path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2" />
-  </svg>
-);
-const CheckIcon = () => (
-  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m4.5 12.75 6 6 9-13.5" />
-  </svg>
-);
 /**
  * Split already-highlighted content into per-line node lists.
  *
@@ -158,7 +148,7 @@ export function AicssCodeBlock({
         {label ? <span className="aicss-cb-lang">{label}</span> : null}
         {action ?? (
           <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} className="aicss-cb-copy">
-            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
         )}

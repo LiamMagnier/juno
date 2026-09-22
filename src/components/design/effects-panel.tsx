@@ -33,7 +33,7 @@
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Plus } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,

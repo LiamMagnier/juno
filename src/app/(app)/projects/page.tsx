@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "lucide-react";
+import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

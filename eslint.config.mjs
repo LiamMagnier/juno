@@ -106,6 +106,38 @@ const config = [
       },
     },
     rules: {
+      /*
+       * The interface draws from one set, and this is what keeps it to one.
+       *
+       * Every glyph in the product is `@/components/ui/icons` — Juno's own
+       * marks, on the optical stroke ladder and wired into the hover
+       * choreography in globals.css. The failure mode is not someone deciding
+       * to change icon library; it is a single file importing one Lucide or
+       * Heroicons mark for a control the set has no name for yet, which is
+       * exactly how the `aicss/` blocks ended up carrying a second family at
+       * two hard-coded stroke weights. Adding the mark to the set is the
+       * cheaper fix and it is the one this rule leaves open.
+       *
+       * Not a blanket ban on the package: `canvas/sandbox-frame.tsx` matches
+       * `lucide-react` inside artifact CODE and answers it with a runtime
+       * factory. It never imports the module, so it never trips this.
+       */
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "lucide-react",
+              message:
+                "Use @/components/ui/icons. If the mark you need is missing, draw it into src/components/ui/icons/glyphs-*.ts — see create-icon.tsx for the grid, radius and clearance rules.",
+            },
+            {
+              name: "@heroicons/react",
+              message: "Use @/components/ui/icons — the product ships one icon set.",
+            },
+          ],
+        },
+      ],
       "design-system/no-arbitrary-radius": [
         "error",
         {

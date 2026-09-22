@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Plus, Sun } from "lucide-react";
+import { Monitor, Moon, Plus, Sun } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { Slider } from "@/components/ui/slider";

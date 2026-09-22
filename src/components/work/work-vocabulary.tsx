@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Ban, Cloud, Laptop } from "lucide-react";
+import { Ban, Cloud, Laptop } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { describeCapability, type WorkCapability, type WorkDegradation, type WorkRiskLevel, type WorkStatus } from "@/lib/work/domain";
 /*

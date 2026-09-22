@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search } from "@/components/ui/icons";
 import type { StructuredDataFrame } from "@/lib/sandbox/python";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

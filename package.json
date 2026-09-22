@@ -126,7 +126,6 @@
     "jose": "^6.2.3",
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
-    "lucide-react": "^1.22.0",
     "next": "^15.5.25",
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.0",

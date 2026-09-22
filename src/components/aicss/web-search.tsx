@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { ArrowUp, CheckCircle2, ChevronUp, CircleDashed, Search } from "@/components/ui/icons";
 import { cn, truncate } from "@/lib/utils";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -89,31 +90,16 @@ function Globe({ still }: { still?: boolean }) {
   );
 }
 
-const SearchGlyph = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-  </svg>
-);
-const Caret = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m4.5 15.75 7.5-7.5 7.5 7.5" />
-  </svg>
-);
-const ArrowUp = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
-  </svg>
-);
-const DashedRing = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true">
-    <circle cx="12" cy="12" r="9" strokeWidth="1.8" strokeDasharray="1.8 3.6" strokeLinecap="round" />
-  </svg>
-);
-const Check = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-  </svg>
-);
+/*
+ * The rest of this block's marks are Juno's, not one-off drawings.
+ *
+ * They used to be five inline SVGs carrying Heroicons geometry and hard-coded
+ * stroke widths (1.6 and 1.8) at 10, 14 and 16px — a second icon family living
+ * inside the product, at sizes the optical ladder has no rung for. Sizing is
+ * now a `size-*` class for exactly that reason: the ladder keys on one, so the
+ * mark gets the right EFFECTIVE stroke for the box instead of the 24px
+ * reference weight scaled down to a hairline.
+ */
 
 /** Render-time reduced-motion, for the one decision CSS cannot make (see Globe). */
 function useReducedMotion() {
@@ -162,7 +148,7 @@ export function WebSearchBlock({
     <div className={cn("aicss-ws", className)}>
       {query && (
         <div className="aicss-ws-row">
-          <SearchGlyph />
+          <Search className="size-3.5" />
           <span className="aicss-ws-label">
             <ThinkingState settled={settled} tone="strong">
               {settled ? "Searched" : "Searching"} <span className="aicss-ws-quote">“{truncate(query, 72)}”</span>
@@ -176,7 +162,7 @@ export function WebSearchBlock({
                 aria-controls={listId}
                 onClick={() => setOpen((v) => !v)}
               >
-                <Caret />
+                <ChevronUp className="size-3" />
               </button>
             )}
           </span>
@@ -195,13 +181,13 @@ export function WebSearchBlock({
                         move as a source resolves. */}
                     <span className="aicss-ws-bullet">
                       <span className="aicss-ws-dots">
-                        <DashedRing />
+                        <CircleDashed className="size-4" />
                       </span>
                       <span className="aicss-ws-globe">
                         <Globe still={reducedMotion} />
                       </span>
                       <span className="aicss-ws-check">
-                        <Check />
+                        <CheckCircle2 className="size-4" />
                       </span>
                     </span>
                     {/* Only a read source is a link: a pending row points at a
@@ -217,7 +203,7 @@ export function WebSearchBlock({
                         <span className="aicss-ws-sep">·</span>
                         <span className="aicss-ws-url">{site.label}</span>
                         <span className="aicss-ws-arrow">
-                          <ArrowUp />
+                          <ArrowUp className="size-3" />
                         </span>
                       </a>
                     ) : (

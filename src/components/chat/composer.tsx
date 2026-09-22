@@ -19,8 +19,8 @@ import {
   SquareDashedMousePointer,
   SquarePen,
   TextQuote,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+} from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { toast } from "sonner";
 import {
   ActionIcons,
@@ -327,7 +327,7 @@ type SlashCommand = {
   group: PaletteGroup;
   /** Brand mark for connector rows; `icon` covers everything else. */
   connectorId?: string;
-  icon?: LucideIcon;
+  icon?: IconComponent;
   /** Defined ⇒ the row is an on/off tool and renders its state. */
   on?: boolean;
   /** Trailing note for a row that can't toggle right now ("not connected"). */
@@ -544,7 +544,7 @@ function PaletteEyebrow({
  * Uniform icon slot — a SLOT, not a plate.
  *
  * It was a 24px bordered tile with its own fill, on the argument that brand
- * marks need a surface to read on and a shared tile keeps lucide glyphs,
+ * marks need a surface to read on and a shared tile keeps interface glyphs,
  * provider logos and connector marks on one baseline. The second half is the
  * real requirement and a fixed-size box delivers it on its own; the border and
  * the fill were the part that made ten rows read as ten plates, which is
@@ -572,7 +572,7 @@ type ArmedMark = {
    * box around it.
    *
    * The optical stroke ladder in globals.css is written as
-   * `svg.lucide.size-4 { stroke-width: 2.25 }`, so a mark sized through a
+   * `svg.juno-icon.size-4 { stroke-width: 2.25 }`, so a mark sized through a
    * parent selector draws at 16px carrying the 24px REFERENCE weight — the
    * same bug that once had the sidebar rendering hairline glyphs at the right
    * size. `ComposerArmedMark`'s box keeps a `[&_svg]:size-4` floor so a caller

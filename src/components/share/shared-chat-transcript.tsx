@@ -1,4 +1,4 @@
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";

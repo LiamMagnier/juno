@@ -4,7 +4,7 @@ import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, MessageSquare, Pin, SearchX } from "lucide-react";
+import { ArrowLeft, MessageSquare, Pin, SearchX } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";

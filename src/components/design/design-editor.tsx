@@ -34,7 +34,7 @@ import {
   Type,
   Undo2,
   Zap,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";

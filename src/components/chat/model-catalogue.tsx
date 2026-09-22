@@ -46,8 +46,8 @@ import {
   SearchX,
   Star,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -174,7 +174,7 @@ function EmptyBlock({
   body,
   action,
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   title: string;
   body: string;
   action?: React.ReactNode;

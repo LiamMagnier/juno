@@ -10,7 +10,7 @@ import {
   Eye,
   Bot,
   Clock,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

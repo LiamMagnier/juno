@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ChevronRight, Loader2, Pause, Play } from "lucide-react";
+import { ChevronRight, Loader2, Pause, Play } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import { parseCodeRoutineConfig } from "@/lib/work/code-routine";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Mic, Plus } from "lucide-react";
+import { Loader2, Mic, Plus } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {

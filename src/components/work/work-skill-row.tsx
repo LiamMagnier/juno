@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Wrench } from "lucide-react";
+import { ChevronRight, Wrench } from "@/components/ui/icons";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";

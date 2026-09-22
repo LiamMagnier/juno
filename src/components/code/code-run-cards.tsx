@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";

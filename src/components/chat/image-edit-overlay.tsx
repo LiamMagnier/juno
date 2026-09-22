@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Crop, ImageIcon, ImageOff, MousePointer2 } from "lucide-react";
+import { Crop, ImageIcon, ImageOff, MousePointer2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";

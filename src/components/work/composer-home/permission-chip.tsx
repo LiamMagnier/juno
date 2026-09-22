@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Hand } from "lucide-react";
+import { ChevronDown, Hand } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,

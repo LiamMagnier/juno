@@ -4,7 +4,7 @@ import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { GitFork, GripVertical, Loader2 } from "lucide-react";
+import { GitFork, GripVertical, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";

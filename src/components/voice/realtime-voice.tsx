@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "lucide-react";
+import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Settings2, Square } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";

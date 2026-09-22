@@ -26,7 +26,7 @@
  */
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { ColorField } from "@/components/design/effects-panel";
 import { EasingEditor, InlineNumber, SmallSelect, fieldClass } from "@/components/design/motion-panel";

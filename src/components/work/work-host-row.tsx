@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/ui/icons";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkHostState } from "@/lib/work/domain";
 import { HOST_STATE_LABEL, hostUnavailableReason } from "@/components/work/work-transport";

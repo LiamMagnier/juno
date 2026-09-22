@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import nextDynamic from "next/dynamic";
-import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "lucide-react";
+import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "@/components/ui/icons";
 import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import type { ConsoleEntry, RunStatus } from "@/components/canvas/sandbox-frame";

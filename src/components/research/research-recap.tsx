@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ShieldCheck } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { SourceRail } from "@/components/research/source-rail";

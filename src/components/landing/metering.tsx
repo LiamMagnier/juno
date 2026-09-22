@@ -1,4 +1,4 @@
-import { ReceiptText } from "lucide-react";
+import { ReceiptText } from "@/components/ui/icons";
 import { getModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { eurPerUsd } from "@/lib/spend";

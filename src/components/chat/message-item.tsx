@@ -6,7 +6,7 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";

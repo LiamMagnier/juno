@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/icons";
 
 import { cn } from "@/lib/utils";
 
@@ -28,7 +28,7 @@ export function EmptyState({
   size = "page",
   className,
 }: {
-  icon?: LucideIcon;
+  icon?: IconComponent;
   title: React.ReactNode;
   /** One or two sentences. Say what would put something here, not just that it is empty. */
   description?: React.ReactNode;

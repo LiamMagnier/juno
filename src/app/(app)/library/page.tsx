@@ -10,8 +10,8 @@ import {
   List as ListIcon,
   MessageCircle,
   Search,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
@@ -192,7 +192,7 @@ function ItemAction({
   tone,
   motion = "lift",
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   label: string;
   onClick: () => void;
   tone?: "danger";

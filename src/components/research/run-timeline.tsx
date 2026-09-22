@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/components/ui/icons";
 import { WebSearchBlock, type WebSearchSite } from "@/components/aicss/web-search";
 import { hostOf, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { formatMicroUsd } from "@/components/research/run-format";

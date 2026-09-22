@@ -673,8 +673,9 @@
   }
 
   /* One optical weight for interface glyphs. Product/connector marks use their
-     own SVGs and are intentionally outside this Lucide-only rule. */
-  svg.lucide {
+     own SVGs and are intentionally outside this rule, which governs the Juno
+     mark set (`src/components/ui/icons`) only. */
+  svg.juno-icon {
     stroke-width: 1.75;               /* 24px reference — the house weight, unchanged */
     shape-rendering: geometricPrecision;
   }
@@ -685,17 +686,164 @@
      0.875px, i.e. sub-pixel. Effective stroke has to grow sub-linearly as the box
      shrinks; the 24px row keeps today's exact value so the weight is not being
      redefined, only held steady across sizes. */
-  svg.lucide.h-3,    svg.lucide.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
-  svg.lucide.h-3\.5, svg.lucide.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
-  svg.lucide.h-4,    svg.lucide.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
-  svg.lucide.h-4\.5, svg.lucide.size-4\.5 { stroke-width: 2.10; }  /* 18px → 1.575px */
-  svg.lucide.h-5,    svg.lucide.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
-  svg.lucide.h-6,    svg.lucide.size-6    { stroke-width: 1.75; }  /* reference      */
-  svg.lucide.h-7,    svg.lucide.size-7    { stroke-width: 1.60; }
-  svg.lucide.h-8,    svg.lucide.size-8    { stroke-width: 1.50; }
-  svg.lucide.h-9,    svg.lucide.size-9    { stroke-width: 1.42; }
-  svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
-  svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
+  svg.juno-icon.h-3,    svg.juno-icon.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
+  svg.juno-icon.h-3\.5, svg.juno-icon.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
+  svg.juno-icon.h-4,    svg.juno-icon.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
+  svg.juno-icon.h-4\.5, svg.juno-icon.size-4\.5 { stroke-width: 2.10; }  /* 18px → 1.575px */
+  svg.juno-icon.h-5,    svg.juno-icon.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
+  svg.juno-icon.h-6,    svg.juno-icon.size-6    { stroke-width: 1.75; }  /* reference      */
+  svg.juno-icon.h-7,    svg.juno-icon.size-7    { stroke-width: 1.60; }
+  svg.juno-icon.h-8,    svg.juno-icon.size-8    { stroke-width: 1.50; }
+  svg.juno-icon.h-9,    svg.juno-icon.size-9    { stroke-width: 1.42; }
+  svg.juno-icon.h-10,   svg.juno-icon.size-10   { stroke-width: 1.35; }
+  svg.juno-icon.h-12,   svg.juno-icon.size-12   { stroke-width: 1.25; }
+
+  /*
+   * GLYPH MOTION.
+   *
+   * The set that was here before had its per-icon hover choreography removed,
+   * for a good reason that is worth restating: fifteen bespoke performances —
+   * a bookshelf that dealt itself out, a clock hand sweeping 200 degrees, a
+   * cord that charged — meant fifteen different answers to "what does hovering
+   * do here", on rows whose labels already said where they went.
+   *
+   * This is the opposite construction, and it is why it can exist without
+   * bringing that back. There are FIVE rules, not fifteen: they key on what a
+   * part IS, not on which icon it belongs to, and every mark in the set opts in
+   * by naming its parts. So the answer to "what does hovering do here" is the
+   * same everywhere — an arrow goes the way it sends you, a rotor turns, a lid
+   * lifts, an accent twinkles — and a new glyph inherits it by construction
+   * rather than by someone writing it a performance.
+   *
+   * The amplitudes are in viewBox units, so they scale with the mark: 1.4 units
+   * is 0.9px at the 16px a sidebar row draws and 2.3px at 40px in an empty
+   * state. Nothing here moves a layout, changes a colour, or runs longer than a
+   * press.
+   */
+  /*
+   * THE BASELINE, which every mark gets and no mark opts into.
+   *
+   * The part gestures below are meaning — an arrow travels because it sends you
+   * somewhere. But only about a quarter of the set carries a part, so before
+   * this rule three marks in four answered a hover with nothing at all, and a
+   * row's icon sat dead while its label and background moved. That reads as
+   * unfinished far more than it reads as restraint.
+   *
+   * So: a lift of 4%, on the whole mark, everywhere. It is deliberately below
+   * the threshold at which you would call it an animation — at 16px it is two
+   * thirds of a pixel — and it is the thing that makes a toolbar feel like it
+   * is made of buttons rather than printed on the page.
+   *
+   * WHY `scale:` AND NOT `transform:`. They are separate properties, and the
+   * independent one composes instead of overriding. Several glyphs are turned
+   * by their own component — the disclosure chevrons rotate -90deg when their
+   * section is shut — and writing this as `transform: scale(...)` would win
+   * that cascade on hover and snap every one of them upright mid-gesture. With
+   * `scale` the browser applies both: the chevron stays rotated AND lifts.
+   */
+  /* No transform-box here. On the root <svg> the default origin is already the
+     centre of the element box, which is what a lift wants; `fill-box` would
+     re-reference it to the drawn bounding box, and a mark whose ink does not
+     fill its viewBox — most of them — would then grow off-centre. */
+  .juno-icon {
+    transition:
+      scale var(--dur-base) var(--ease-out-back),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  @media (hover: hover) {
+    :is(a, button, summary, label, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], .group):is(:hover, :focus-visible) .juno-icon {
+      scale: 1.04;
+    }
+  }
+  /* The press. An icon that lifts on approach and gives under the finger is the
+     whole of what "tactile" means on a flat surface, and it costs one rule.
+     Faster than the lift in both directions: a press is acknowledged now or it
+     is not acknowledged. */
+  :is(a, button, [role="button"], [role="menuitem"], [role="tab"]):active .juno-icon {
+    scale: 0.92;
+    transition-duration: var(--dur-fast);
+  }
+
+  .juno-icon [data-part] {
+    /* --ease-out-back overshoots ~4% and settles. On a 1.4-unit travel that is
+       a hair past the mark and back, which is the difference between a glyph
+       that moves and one that feels sprung. */
+    transition:
+      transform var(--dur-base) var(--ease-out-back),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+  /* The resting half of a two-state mark. Outside the hover query on purpose:
+     a touch device never matches it, and if the alternate defaulted to visible
+     there it would sit stacked on top of the base state permanently. */
+  .juno-icon [data-part="alt"] { opacity: 0; }
+  /* Rotors turn about the MARK's centre, not their own bounding box: a clock
+     hand's own centre is halfway down the hand, and pivoting there is a hand
+     spinning in place rather than time passing. */
+  .juno-icon [data-part="rotor"] {
+    transform-box: view-box;
+    transform-origin: 12px 12px;
+  }
+  /* Accents twinkle in place, so those DO pivot on themselves. */
+  .juno-icon [data-part="accent"] {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  @media (hover: hover) {
+    /* The trigger is the control, not the glyph: a 16px arrow inside a 36px
+       button should answer to the button, or the motion only fires when the
+       pointer happens to cross the mark itself. */
+    :is(a, button, summary, label, [role="button"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], .group):is(:hover, :focus-visible) .juno-icon :is([data-part^="arrow"], [data-part="rotor"], [data-part="accent"], [data-part="lid"], [data-part="swing"], [data-part="pulse"], [data-part="base"], [data-part="alt"]) {
+      /* Declared per part below; this rule exists so the selector list is
+         written once. */
+      transform: var(--glyph-gesture, none);
+      opacity: var(--glyph-fade, 1);
+    }
+    .juno-icon [data-part="arrow-up"]    { --glyph-gesture: translateY(-1.4px); }
+    .juno-icon [data-part="arrow-down"]  { --glyph-gesture: translateY(1.4px); }
+    .juno-icon [data-part="arrow-left"]  { --glyph-gesture: translateX(-1.4px); }
+    .juno-icon [data-part="arrow-right"] { --glyph-gesture: translateX(1.4px); }
+    .juno-icon [data-part="arrow-ne"]    { --glyph-gesture: translate(1.1px, -1.1px); }
+    .juno-icon [data-part="rotor"]       { --glyph-gesture: rotate(-18deg); }
+    .juno-icon [data-part="accent"]      { --glyph-gesture: rotate(16deg) scale(1.22); }
+    .juno-icon [data-part="lid"]         { --glyph-gesture: translateY(-1.3px); }
+    /* Hinged at the top edge, so a bell rings from its mount rather than
+       skidding sideways. */
+    .juno-icon [data-part="swing"]       { --glyph-gesture: rotate(9deg); transform-box: view-box; transform-origin: 12px 5px; }
+    .juno-icon [data-part="pulse"]       { --glyph-gesture: scale(1.18); transform-box: fill-box; transform-origin: center; }
+
+    /*
+     * The two-state marks: `base` leaves as `alt` arrives, in one box.
+     *
+     * `create-icon.tsx` has described this since the set was drawn and nothing
+     * implemented it, so the one glyph that needed it — the folder that opens
+     * on the sidebar — carried a hand-written copy of the behaviour instead.
+     * Written here once, any mark can hold a second state by naming two parts.
+     */
+    .juno-icon [data-part="base"] { --glyph-fade: 0; }
+    .juno-icon [data-part="alt"]  { --glyph-fade: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Tier C: this is enrichment. It reports nothing the label does not, so it
+       is removed outright rather than shortened — including the baseline lift
+       and the press, which are the same enrichment applied to every mark. */
+    .juno-icon {
+      transition: none;
+      scale: none;
+    }
+    /* `transform` is cleared on the PARTS only. The svg itself is transformed
+       by its own component in a few places — the disclosure chevrons again —
+       and that rotation states which way a section is folded, so it survives
+       the preference. */
+    .juno-icon [data-part] {
+      transition: none;
+      transform: none;
+    }
+    /* The one exception: a two-state mark must still SWAP, or the glyph is
+       simply wrong about what it is showing. It cuts instead of crossfading. */
+    .juno-icon [data-part="alt"] { transition: opacity 1ms linear; }
+  }
 
   /* No film grain. Claude and ChatGPT ship clean paper; the fractal-noise
      overlay that used to sit here at 2% read as texture on a 5K display and
@@ -933,11 +1081,11 @@
   /* …and the matching optical weight for that 1rem.
      The ladder above keys on a size class present ON the svg, which an icon
      sized by its BUTTON never has — that is the whole point of the rule above.
-     So those icons kept `svg.lucide`'s 24px-reference 1.75 while an identical
+     So those icons kept `svg.juno-icon`'s 24px-reference 1.75 while an identical
      16px icon that spelled `size-4` out got 2.25: the same glyph, two visibly
      different stroke weights, decided by whether the author happened to write
      the size. Same value as the `size-4` row, and it must move with it. */
-  .ui-button svg.lucide:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
+  .ui-button svg.juno-icon:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
     stroke-width: 2.25;
   }
 

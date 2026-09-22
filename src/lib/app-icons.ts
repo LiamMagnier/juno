@@ -70,8 +70,8 @@ import {
   UserPen,
   X,
   Workflow,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 
 export const AppIcons = {
   /** Home — the assistant surface, whose default landing is `/chat`.
@@ -179,7 +179,7 @@ export const AppIcons = {
    *  is wrong. The same mark in two tones would read as "something needs your
    *  attention" on a row that is simply where the settings live. */
   permissions: ShieldCheck,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type AppIconName = keyof typeof AppIcons;
 
@@ -220,7 +220,7 @@ export const CodeIcons = {
   external: ArrowUpRight,
   /** A file: an attachment chip, a changed file in a run. */
   file: FileText,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type CodeIconName = keyof typeof CodeIcons;
 
@@ -268,7 +268,7 @@ export const ComposerIcons = {
   artifactsTool: LayoutTemplate,
   /** Memory: what Juno keeps about you between conversations. */
   memory: NotebookPen,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type ComposerIconName = keyof typeof ComposerIcons;
 
@@ -310,7 +310,7 @@ export const DesignIcons = {
   path: PenTool,
   text: Type,
   image: ImageIcon,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type DesignIconName = keyof typeof DesignIcons;
 
@@ -350,7 +350,7 @@ export const StatusIcons = {
   verified: BadgeCheck,
   /** A security or permission problem, as distinct from a plain failure. */
   security: ShieldAlert,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type StatusIconName = keyof typeof StatusIcons;
 
@@ -386,7 +386,7 @@ export const ActionIcons = {
    *  of "adjust the knobs", as opposed to `AppIcons.settings`, which is the
    *  application's own preferences. */
   parameters: SlidersHorizontal,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type ActionIconName = keyof typeof ActionIcons;
 
@@ -428,6 +428,6 @@ export const SettingsIcons = {
   account: User,
   /** What you pay. */
   billing: CreditCard,
-} as const satisfies Record<string, LucideIcon>;
+} as const satisfies Record<string, IconComponent>;
 
 export type SettingsIconName = keyof typeof SettingsIcons;

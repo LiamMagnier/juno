@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   ComposerPrimaryAction,

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { BookmarkPlus } from "lucide-react";
+import { BookmarkPlus } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

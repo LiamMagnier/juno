@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, ShieldCheck, Sigma, Timer } from "lucide-react";
+import { Coins, ShieldCheck, Sigma, Timer } from "@/components/ui/icons";
 import {
   WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,

@@ -29,7 +29,7 @@
  */
 
 import * as React from "react";
-import { EyeOff, Pause, Play, Plus, Repeat, SkipBack } from "lucide-react";
+import { EyeOff, Pause, Play, Plus, Repeat, SkipBack } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   ANIMATABLE_PROPERTIES,

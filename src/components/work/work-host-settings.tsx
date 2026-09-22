@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Folder, Link2, Plug } from "lucide-react";
+import { Folder, Link2, Plug } from "@/components/ui/icons";
 import { CodeIcons } from "@/lib/app-icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";

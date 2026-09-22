@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Check, MicOff } from "lucide-react";
+import { ArrowUp, Check, MicOff } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";

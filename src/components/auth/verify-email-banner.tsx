@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, MailWarning } from "lucide-react";
+import { Loader2, MailWarning } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 
 interface VerificationStatus {

@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/components/ui/icons";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { WebSearchBlock } from "@/components/aicss/web-search";
 import {

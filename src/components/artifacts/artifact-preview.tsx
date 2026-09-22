@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import type { ArtifactType } from "@/lib/message-content";
 import { cn } from "@/lib/utils";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AudioLines, FileUp, Loader2, Wrench } from "lucide-react";
+import { AudioLines, FileUp, Loader2, Wrench } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";

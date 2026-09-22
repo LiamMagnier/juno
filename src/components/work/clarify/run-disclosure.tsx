@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "@/components/ui/icons";
 import {
   WORK_APPROVAL_MODE_SUMMARY,
   type WorkEffectiveTarget,

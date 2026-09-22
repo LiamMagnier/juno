@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { ChevronRight, Circle } from "lucide-react";
+import { ChevronRight, Circle } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import {
   menuGlyphInkClass,

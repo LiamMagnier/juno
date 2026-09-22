@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { GitPullRequestDraft } from "lucide-react";
+import { GitPullRequestDraft } from "@/components/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";

@@ -21,7 +21,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "@/components/ui/icons";
 import { renderPageSvg } from "@/lib/design/render";
 import { rgbaToCss } from "@/lib/design/variables";
 import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";

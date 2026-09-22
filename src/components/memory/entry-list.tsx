@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare } from "lucide-react";
+import { ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

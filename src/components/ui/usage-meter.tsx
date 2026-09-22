@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowUpRight } from "lucide-react";
+import { AlertTriangle, ArrowUpRight } from "@/components/ui/icons";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
+import { Link2, Link2Off, Loader2, Plug, Search } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

@@ -16,7 +16,7 @@
  */
 
 import * as React from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";

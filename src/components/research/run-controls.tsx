@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Link2, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Link2, Plus, X } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { RESEARCH_EFFORT_COPY } from "./effort-copy";
 import { formatMicroUsd } from "./run-format";

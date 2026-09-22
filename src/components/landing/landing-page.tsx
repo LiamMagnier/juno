@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Menu } from "lucide-react";
+import { ArrowRight, Menu } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { staggerDelay } from "@/lib/motion";

@@ -1,4 +1,4 @@
-import { Plug } from "lucide-react";
+import { Plug } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /*

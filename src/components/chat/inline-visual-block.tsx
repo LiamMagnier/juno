@@ -13,7 +13,7 @@ import {
   ListChecks,
   Maximize2,
   Table2,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { stepLabFromLegacySteps } from "@/lib/step-lab";

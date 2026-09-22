@@ -3,8 +3,8 @@ import {
   FolderOpen,
   PanelLeft,
   PanelLeftClose,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@/components/ui/icons";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ export type SidebarMotionIconKind =
  * a new mark is never inert, it just has no per-part choreography until someone
  * writes it.
  */
-const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
+const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
   new: AppIcons.new,
   home: AppIcons.home,
   code: AppIcons.code,
@@ -112,7 +112,7 @@ export function SidebarMotionIcon({
   const Icon = ICONS[kind];
   const opens = OPENS_ON_HOVER.has(kind);
   // The size lands on the <svg> itself, not only on the wrapper: the optical
-  // stroke ladder is written as `svg.lucide.size-4 { stroke-width: 2.25 }`, so
+  // stroke ladder is written as `svg.juno-icon.size-4 { stroke-width: 2.25 }`, so
   // a glyph sized through a parent (the old `size-full`) drew at the 24px
   // reference weight however small it actually rendered.
   const glyphCls = cn("sidebar-motion-icon__glyph", DEFAULT_GLYPH_SIZE, className);

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, FileCode, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, FileCode, Copy, Check } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

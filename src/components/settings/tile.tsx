@@ -9,7 +9,7 @@
  * its name because three sections import it by that path.
  */
 import * as React from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 
 import { cn } from "@/lib/utils";

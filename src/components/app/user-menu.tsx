@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { LogOut, ShieldCheck, User } from "lucide-react";
+import { LogOut, ShieldCheck, User } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,

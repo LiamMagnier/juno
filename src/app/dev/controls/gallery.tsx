@@ -13,7 +13,7 @@ import {
   Scan,
   Search,
   Trash2,
-} from "lucide-react";
+} from "@/components/ui/icons";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,7 @@ import { cn } from "@/lib/utils";
  * the product and reported as a regression, which is exactly what a gallery
  * that paraphrases will always produce.
  *
- * So: icons come from the registry, never from a fresh `lucide-react` import,
+ * So: icons come from the registry, never from a fresh `@/components/ui/icons` import,
  * and the rows mirror `composer.tsx` group for group. Anything this file
  * cannot mirror honestly belongs in the live section below it instead.
  */

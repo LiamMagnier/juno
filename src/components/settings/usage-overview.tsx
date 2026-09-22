@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Flame, RefreshCw } from "lucide-react";
+import { Flame, RefreshCw } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ProviderLogo } from "@/components/brand/provider-logo";

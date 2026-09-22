@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronUp, MessageSquare } from "lucide-react";
+import { ChevronUp, MessageSquare } from "@/components/ui/icons";
 import { Card } from "@/components/ui/card";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { STATUS_META, CATEGORY_LABEL, type RoadmapRequest } from "@/lib/roadmap";

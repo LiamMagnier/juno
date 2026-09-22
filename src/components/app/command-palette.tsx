@@ -14,7 +14,7 @@ import {
   NotebookPen,
   CreditCard,
   Sun,
-} from "lucide-react";
+} from "@/components/ui/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
 import { ActionIcons, AppIcons, CodeIcons } from "@/lib/app-icons";

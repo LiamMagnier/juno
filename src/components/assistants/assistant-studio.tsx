@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Plus, Save, Trash2 } from "@/components/ui/icons";
 import type { JunoAssistantConfig, CreateAssistantInput } from "@/lib/assistants";
 import { MODEL_LIST } from "@/lib/models";
 import { AppIcons } from "@/lib/app-icons";

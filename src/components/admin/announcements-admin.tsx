@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "lucide-react";
+import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";

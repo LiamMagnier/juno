@@ -16,7 +16,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, Plus, Trash2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Code2, Plus, Search, FolderCode } from "lucide-react";
+import { Code2, Plus, Search, FolderCode } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight, Search, Users as UsersIcon } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Search, Users as UsersIcon } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import type { Plan, SubStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";

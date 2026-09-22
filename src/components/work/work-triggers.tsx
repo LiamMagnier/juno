@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Plus, Radio } from "lucide-react";
+import { Clock, Plus, Radio } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Maximize2 } from "lucide-react";
+import { ArrowUp, Loader2, Maximize2 } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

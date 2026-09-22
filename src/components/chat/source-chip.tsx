@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Globe } from "lucide-react";
+import { Globe } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { cn } from "@/lib/utils";

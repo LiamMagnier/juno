@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import Image from "next/image";
-import { KeyRound, Loader2, LogOut, Mail, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Mail, ShieldCheck } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
