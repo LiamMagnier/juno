@@ -46,6 +46,8 @@ export interface PendingPreflightClarification {
    */
   deepResearch?: boolean;
   researchEffort?: "quick" | "standard" | "deep" | "max";
+  /** The skill that was armed when the questions interrupted the send. */
+  skillSlug?: string;
 }
 
 export interface PreflightClarificationContext {

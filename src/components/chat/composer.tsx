@@ -135,6 +135,8 @@ import type {
   PreflightClarificationAnswerValue,
 } from "@/lib/preflight-clarification";
 import type { SendOptions, SendResult } from "@/hooks/use-chat";
+import { readSkillInvocation, useChatSkills } from "@/components/chat/use-chat-skills";
+import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import {
   MAX_CHAT_CONNECTORS,
   detectConnectorsFromPrompt,
@@ -316,7 +318,7 @@ interface ComposerProps {
 // One palette serves both composer triggers: "/" (commands, e.g. "/model") and
 // "@" (tools + connectors, e.g. "@notion"). Rows are grouped for rendering but
 // stay ONE flat, ordered list so the keyboard cursor is a single index.
-type PaletteGroup = "commands" | "tools" | "navigate" | "connectors";
+type PaletteGroup = "commands" | "skills" | "tools" | "navigate" | "connectors";
 
 type SlashCommand = {
   id: string;
@@ -346,6 +348,10 @@ type SlashState =
 
 const GROUP_LABELS: Record<PaletteGroup, string> = {
   commands: "Commands",
+  // Between the commands and the tools, because that is what a skill is from
+  // here: something you type a slash and a name to reach, like /model, that
+  // then changes how this one message is answered, like the tools below it.
+  skills: "Skills",
   tools: "Tools",
   navigate: "Go to",
   connectors: "Connectors",
@@ -700,6 +706,30 @@ export function Composer({
   // the "@" palette must not offer rows it has no data for either.
   const showConnectors =
     !!onToggleConnector && !privateMode && !voiceActive && modality === "chat";
+  /*
+   * ── The skill this message is sent under ──────────────────────────────────
+   *
+   * Per-send, exactly like deep research, and cleared on every successful send
+   * below. A skill that stuck would keep shaping answers after the reader had
+   * forgotten it was on, and the symptom — an answer that quietly followed
+   * somebody else's method — is one nobody thinks to look for.
+   *
+   * A slug rather than the skill object: the library reloads, a skill can be
+   * renamed or switched off between arming and sending, and the slug is what
+   * the route resolves. Holding the row would mean holding a copy of a row that
+   * may no longer be true.
+   */
+  const [skillSlug, setSkillSlug] = React.useState<string | null>(null);
+  /*
+   * The library is fetched only once somebody asks for it.
+   *
+   * This composer is mounted on every conversation in the product, so a read on
+   * mount would put a request on the critical path of every chat for a control
+   * most of them never open. `skillsWanted` flips when the "/" palette or the
+   * add menu opens — or when a skill is already armed, because the pill has to
+   * be able to name it after a reload.
+   */
+  const [skillsWanted, setSkillsWanted] = React.useState(false);
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   const [research, setResearch] = React.useState(initialResearch);
@@ -717,12 +747,42 @@ export function Composer({
     [isAuto, resolved, reasoningEffort, proMode]
   );
   const researchAvailable = !privateMode && modality === "chat";
+  /*
+   * ── Skills ────────────────────────────────────────────────────────────────
+   *
+   * Available in private mode, unlike research and tasks. A skill is the
+   * reader's own stored instructions; nothing about applying one persists a row
+   * or reaches a third party, which is the whole of what private mode withholds.
+   * A voice turn is excluded because a skill's method is written to be read, and
+   * an image model has no method to shape.
+   */
+  const skillsAvailable = !voiceActive && modality === "chat";
+  // `loading` is deliberately not read: the flyout below distinguishes its
+  // states on `skillLibrary === null` instead, which is also true for the frame
+  // before the fetch this hook starts has begun — and that frame is the one a
+  // `loading` flag gets wrong.
+  const { skills: skillLibrary, failed: skillsFailed, reload: reloadSkills } =
+    useChatSkills(skillsAvailable && (skillsWanted || skillSlug !== null));
+  /**
+   * The armed skill as a row, or null.
+   *
+   * Resolved against the library every render rather than stored, so a skill
+   * switched off in another tab stops being armed here the moment the list
+   * reloads — the pill cannot go on naming something the route would refuse.
+   * `undefined` while the library is still in flight is deliberately treated as
+   * "not yet known" rather than "gone": the slug still goes out, and the server
+   * is the thing that decides.
+   */
+  const armedSkill: ClientWorkSkill | null =
+    skillSlug === null ? null : (skillLibrary ?? []).find((entry) => entry.slug === skillSlug) ?? null;
+  const skillArmed = skillsAvailable && skillSlug !== null;
   const sendOptions = React.useMemo<SendOptions | undefined>(
-    () =>
-      research && researchAvailable
-        ? { deepResearch: true, researchEffort }
-        : undefined,
-    [research, researchAvailable, researchEffort],
+    () => {
+      const armed = skillArmed && skillSlug ? { skillSlug } : null;
+      if (research && researchAvailable) return { deepResearch: true, researchEffort, ...armed };
+      return armed ?? undefined;
+    },
+    [research, researchAvailable, researchEffort, skillArmed, skillSlug],
   );
   const outgoingOptions = React.useMemo<SendOptions | undefined>(
     () =>
@@ -1428,8 +1488,26 @@ export function Composer({
   const dispatchTask = React.useCallback(
     async (goal: string): Promise<boolean> => {
       if (!onDelegate) return false;
+      /*
+       * An armed skill reaches the run through the goal, not through a field.
+       *
+       * `applySkill` parses a leading `/slug` out of a Work goal at run start,
+       * which is the mechanism Work has always had — so prefixing it is how a
+       * pill armed in the composer becomes the skill the run uses. The
+       * alternative was to let the two arm independently and drop the skill at
+       * dispatch, which is the quietest kind of wrong this composer can be: the
+       * pill says the skill is on, the run never sees it, and nothing says so.
+       *
+       * Only when the goal does not already begin with one — somebody who typed
+       * `/tidy-inbox …` AND picked it from the palette must not send
+       * `/tidy-inbox /tidy-inbox …`.
+       */
+      const goalWithSkill =
+        skillArmed && skillSlug && !readSkillInvocation(goal, skillLibrary)
+          ? `/${skillSlug} ${goal}`
+          : goal;
       const started = await onDelegate({
-        goal,
+        goal: goalWithSkill,
         attachments: sendAttachments,
         connectorIds: [...connectorsEnabled],
         permissionPolicy: taskApprovalMode,
@@ -1438,6 +1516,7 @@ export function Composer({
       setText("");
       setDraftExpanded(false);
       setTask(false);
+      setSkillSlug(null);
       setTaskApprovalMode(DEFAULT_WORK_PERMISSION_POLICY);
       clear();
       onClearQuote?.();
@@ -1452,6 +1531,9 @@ export function Composer({
       clear,
       onClearQuote,
       autoresize,
+      skillArmed,
+      skillSlug,
+      skillLibrary,
     ]
   );
 
@@ -1499,19 +1581,54 @@ export function Composer({
       // Keep the user's raw words: when a clarification intercepts this send,
       // cancel must restore the pre-serialization draft (the quote chip is
       // still attached, so restoring the serialized block would double-wrap).
-      interceptedDraftRef.current = trimmedDraft;
+      /*
+       * `/slug …` typed straight into the draft.
+       *
+       * Converted HERE, in the client, into an armed skill plus the request
+       * that follows it — which is what lets the route take an explicit
+       * `skillSlug` and never parse a message for a leading slash (see
+       * `chatBodySchema.skillSlug`). It only ever fires for a slug that names a
+       * real skill on this account, so `/Users/liam/Downloads is a mess` and
+       * `/usr/local` stay the sentences they are.
+       *
+       * The token itself does not go to the model: it is addressed to Juno, and
+       * a message beginning with a command the model was never given is one it
+       * has to decide what to do with. A bare `/slug` with nothing after it is
+       * not a message at all — it arms the pill and leaves the cursor where it
+       * was, which is the same thing picking the row out of the palette does.
+       */
+      const typedSkill = skillsAvailable ? readSkillInvocation(trimmedDraft, skillLibrary) : null;
+      if (typedSkill && !typedSkill.remainder) {
+        setSkillSlug(typedSkill.skill.slug);
+        setText("");
+        setDraftExpanded(false);
+        requestAnimationFrame(autoresize);
+        return;
+      }
+      const draftForSend = typedSkill ? typedSkill.remainder : trimmedDraft;
+      if (typedSkill) setSkillSlug(typedSkill.skill.slug);
+      // State set this tick is not readable this tick, so the send carries the
+      // slug explicitly rather than through the memo above.
+      const skillForSend = typedSkill ? typedSkill.skill.slug : skillArmed ? skillSlug : null;
+
+      interceptedDraftRef.current = draftForSend;
       const outgoing = quote
-        ? serializeQuote(quote, trimmedDraft)
-        : trimmedDraft;
+        ? serializeQuote(quote, draftForSend)
+        : draftForSend;
       const connectorsForSend = await resolveSendConnectors(outgoing);
       const result = await onSend(outgoing, sendAttachments, {
         ...outgoingOptions,
+        // A canvas modify drops `outgoingOptions` wholesale — it is its own
+        // output protocol and a skill would be a third one — so the skill is
+        // spread only where the rest of the per-send options survive.
+        ...(quote?.mode === "modify" || !skillForSend ? null : { skillSlug: skillForSend }),
         ...(connectorsForSend ? { connectors: connectorsForSend } : null),
       });
       if (result && result.accepted === false) return;
       setText("");
       setDraftExpanded(false);
       setResearch(false); // per-send: research never sticks to the next message
+      setSkillSlug(null); // per-send, for the same reason research is
       clear();
       onClearQuote?.();
       requestAnimationFrame(autoresize);
@@ -1565,6 +1682,7 @@ export function Composer({
         }
         setText("");
         setResearch(false); // per-send: research never sticks to the next message
+        setSkillSlug(null);
         clear();
         onClearQuote?.();
         requestAnimationFrame(autoresize);
@@ -1664,6 +1782,34 @@ export function Composer({
           router.push("/chat");
         },
       },
+      /*
+       * One row per skill, typed the way it is stored.
+       *
+       * Right after the commands and before the tools: `/model` and
+       * `/tidy-inbox` are the same gesture, and a skill is a tool for this one
+       * message in the way `/search` is. Picking one ARMS it rather than
+       * sending — the reader still has a request to type — which is the same
+       * thing the typed `/slug` form does at submit.
+       *
+       * `match` carries the name as well as the slug, because a skill called
+       * "File the invoices" is stored as `file-the-invoices` and somebody
+       * hunting for it types "invoice", which shares no prefix with the slug.
+       * An untrusted skill is listed like any other: trust gates whether Juno
+       * may REACH for a skill unasked, and this is the reader naming one.
+       */
+      ...(skillsAvailable
+        ? (skillLibrary ?? []).map((entry) => ({
+            id: `skill:${entry.slug}`,
+            key: entry.slug,
+            label: `/${entry.slug}`,
+            hint: entry.description || entry.name,
+            group: "skills" as const,
+            icon: AppIcons.skills,
+            on: skillSlug === entry.slug,
+            match: `${entry.name.toLowerCase()} ${entry.description.toLowerCase()}`,
+            run: () => setSkillSlug((current) => (current === entry.slug ? null : entry.slug)),
+          }))
+        : []),
       {
         id: "search",
         key: "search",
@@ -1723,6 +1869,9 @@ export function Composer({
       research,
       onOpenVoiceMode,
       router,
+      skillsAvailable,
+      skillLibrary,
+      skillSlug,
     ],
   );
 
@@ -1894,6 +2043,21 @@ export function Composer({
     }
     return null;
   }, [text, models, commands, mentions, mentionAt]);
+
+  /*
+   * The first "/" is what asks for the skill library.
+   *
+   * The palette is built from `commands`, and a skill row can only be in it if
+   * the list has been read — so the read has to start before the palette opens
+   * rather than when it does. Typing a slash is the earliest honest signal that
+   * somebody is looking for one, and it costs a chat that never types a slash
+   * nothing at all. The rows appear when the fetch lands, which is how every
+   * other filtered list in this composer behaves.
+   */
+  React.useEffect(() => {
+    if (!skillsAvailable || skillsWanted) return;
+    if (/^\s*\//.test(text)) setSkillsWanted(true);
+  }, [text, skillsAvailable, skillsWanted]);
 
   const [slashIndex, setSlashIndex] = React.useState(0);
   /*
@@ -2440,6 +2604,7 @@ export function Composer({
   // the menu agree.
   const armedToolsInGroup = [
     taskArmed ? `task, ${runApprovalPhrase(taskApprovalMode)}` : null,
+    skillArmed ? `the ${armedSkill?.name ?? skillSlug} skill` : null,
     researchArmed ? "deep research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
     settings.memoryEnabled ? "memory" : null,
@@ -2484,6 +2649,25 @@ export function Composer({
           openLabel: `This message runs as a task, and ${runApprovalPhrase(taskApprovalMode)}. Opens the add menu.`,
           removeLabel: "Don’t run this as a task",
           remove: () => setTask(false),
+        }]
+      : []),
+    /* The skill, first among the "how this is answered" marks and directly
+       after Task, because it is the one that changes the method rather than the
+       reach. An untrusted skill says so on the mark: it is the fact that decides
+       how its instructions reach the model, and the reader deserves to see it at
+       the moment they send rather than only on the skill's page. */
+    ...(skillArmed
+      ? [{
+          id: "skill",
+          icon: <AppIcons.skills className="size-4" />,
+          label: armedSkill?.name ?? `/${skillSlug}`,
+          detail: armedSkill && !trustPermitsAutoSelection(armedSkill.trust) ? "not trusted" : undefined,
+          tooltip: armedSkill
+            ? armedSkill.description || `Sent under /${armedSkill.slug}.`
+            : `Sent under /${skillSlug}.`,
+          openLabel: `This message is sent under the ${armedSkill?.name ?? skillSlug} skill. Opens the add menu.`,
+          removeLabel: "Don’t use this skill for this message",
+          remove: () => setSkillSlug(null),
         }]
       : []),
     ...(researchArmed
@@ -2761,6 +2945,84 @@ export function Composer({
     </>
   );
 
+  /**
+   * The skills flyout.
+   *
+   * A list of radio-ish rows: picking one arms it, picking the armed one again
+   * clears it. Not checkboxes, because a message runs under one skill —
+   * Claude Code stacks up to six, which makes sense for a shell agent
+   * composing a pipeline and does not for a single chat turn, where two sets
+   * of method for one answer is a contradiction the model resolves silently.
+   *
+   * The failure state is carried rather than swallowed, on the same argument
+   * the connectors panel beside it makes: "you have no skills" and "Juno could
+   * not find out" are different sentences and only the second deserves a Retry.
+   */
+  const skillsPanel = () => (
+    <>
+      <div className="max-h-56 overflow-y-auto overscroll-contain">
+        {/* `skillLibrary === null` rather than `skillsLoading`: the fetch is
+            kicked off by this flyout opening, so for the first frame nothing is
+            loading AND nothing has loaded — and the empty branch below would
+            flash "Write or import a skill" at somebody who has twelve. */}
+        {skillLibrary === null && !skillsFailed ? (
+          <div className="flex flex-col gap-1 p-1">
+            {[0, 1, 2].map((row) => (
+              <span key={row} className="skeleton h-9 rounded-control" />
+            ))}
+          </div>
+        ) : skillsFailed && skillLibrary === null ? (
+          <div className="px-2.5 py-3 text-center">
+            <p className="text-caption text-muted-foreground">Couldn’t load your skills.</p>
+            <button
+              type="button"
+              onClick={() => reloadSkills()}
+              className="mt-1 text-caption font-medium text-primary-ink underline-offset-2 hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        ) : (skillLibrary ?? []).length === 0 ? (
+          <PlusMenuRow icon={AppIcons.skills} onSelect={() => router.push("/skills")}>
+            Write or import a skill
+          </PlusMenuRow>
+        ) : (
+          (skillLibrary ?? []).map((entry) => (
+            <PlusMenuRow
+              key={entry.id}
+              selected={skillSlug === entry.slug}
+              icon={AppIcons.skills}
+              description={entry.description || undefined}
+              onSelect={() => setSkillSlug((current) => (current === entry.slug ? null : entry.slug))}
+            >
+              {entry.name}
+            </PlusMenuRow>
+          ))
+        )}
+      </div>
+      <PlusMenuSeparator />
+      <PlusMenuRow icon={AppIcons.skills} onSelect={() => router.push("/skills")}>
+        Manage skills
+      </PlusMenuRow>
+    </>
+  );
+
+  const skillRow: PlusMenuItem | null = skillsAvailable
+    ? {
+        kind: "sub",
+        id: "skill",
+        label: "Use a skill",
+        icon: AppIcons.skills,
+        // Only while one is armed, like the research row's depth: a name on an
+        // unarmed row reads as the state rather than as what it would be.
+        detail: skillArmed ? armedSkill?.name ?? `/${skillSlug}` : undefined,
+        render: skillsPanel,
+        onOpenChange: (open: boolean) => {
+          if (open) setSkillsWanted(true);
+        },
+      }
+    : null;
+
   /*
    * Arming is exclusive, and the exclusion is real rather than tidy. A deep
    * research turn is a generation this conversation waits for; a task is a run
@@ -2943,6 +3205,11 @@ export function Composer({
         // (src/lib/chat/system-prompt.ts), so there is nothing for a user to
         // switch and nothing that can be left switched off by accident.
         [
+          // First in the group: a skill decides HOW the answer is made, which
+          // the rows under it then modify. It is also the only row here that
+          // can carry somebody else's instructions, and burying it under three
+          // toggles is how a reader stops noticing which one is lit.
+          ...(skillRow ? [skillRow] : []),
           ...(researchRow ? [researchRow] : []),
           // Beside Deep research, because they are the same kind of decision
           // about the same sentence: how far Juno should go with it. The mode

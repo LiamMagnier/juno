@@ -45,6 +45,10 @@ const ALLOWED_AUDIT_KEYS: ReadonlySet<string> = new Set([
   "executorId",
   "connectorId",
   "requestId",
+  // The generation a chat turn was served under. An opaque id, and the only
+  // thing that joins a `skill_applied` row to the message it shaped — without
+  // it the log can say a skill ran and not which answer it ran on.
+  "generationId",
   "eventKey",
   "idempotencyKey",
   "model",
@@ -112,6 +116,11 @@ const ALLOWED_AUDIT_KEYS: ReadonlySet<string> = new Set([
   "lastSeq",
   "fileCount",
   "matchCount",
+  // How many of a skill's declared capabilities the run did NOT have. A count,
+  // never the names: which tools a skill asked for is on its version row, and
+  // repeating them into a five-year retention bucket buys nothing the row does
+  // not already answer.
+  "withheldCount",
   "byteSize",
   "activeRunCount",
   "queuedRunCount",

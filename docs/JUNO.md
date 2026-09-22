@@ -156,7 +156,8 @@ Key `src/lib` modules: `auth.ts` / `session.ts` / `native-auth*.ts` (auth),
 `models.ts` / `model-metrics.ts` / `pricing.ts` / `auto-model.ts` (model registry),
 `memory.ts`, `connectors.ts` / `mcp.ts` / `mcp-oauth.ts`, `code-remote*.ts` /
 `cloud-code*.ts` / `github-oidc.ts` (Code), `work/*` (the Work vocabulary, store, relay,
-skills, connectors and approvals — §9b), `plans.ts` / `usage.ts` / `spend.ts` /
+skills, connectors and approvals — §9b), `skills/*` (the `SKILL.md` reader, the GitHub
+importer and the shared create path — §9b.6), `plans.ts` / `usage.ts` / `spend.ts` /
 `stripe.ts` / `rate-limit.ts` (billing), `moderation*.ts`, `storage.ts`,
 `message-crypto.ts` (at-rest encryption), `sync-*.ts` (native sync).
 
@@ -590,7 +591,8 @@ reply-intent / inline learning-block grammar (non-voice) → Canvas artifact gra
 summary + recent facts) → project context → personality preset → the user's custom
 instructions (after the preset, so the user always wins) → response language → voice
 no-markdown rule. A web-search nudge and either the targeted artifact-edit prompt or a
-selection anchor are appended per turn.
+selection anchor are appended per turn, and — last of all — the block of the skill this
+message was sent under, if there is one (§5.9).
 
 ### 5.3 Model routing, Auto & thinking
 
@@ -815,6 +817,80 @@ another tab or served by another process still lands. The poll routes the
 result back through `cancelGeneration`, which marks the generation `stopped` —
 that is what makes the terminal state "user stopped" (partial kept, charge
 kept) rather than an error (refunded).
+
+### 5.9 A skill on a chat turn
+
+**Armed, never inferred.** `chatBodySchema.skillSlug` is an explicit per-send field;
+the route does **not** parse a leading `/slug` out of the message. The composer is where
+people paste things, and a message that becomes a skill run because it happened to start
+with a slash is a surface where pasted text picks up instructions nobody chose. The
+composer converts the typed form (`readSkillInvocation`, `use-chat-skills.ts`) into the
+armed pill — only ever for a slug that names a real skill on the account, so
+`/Users/liam/Downloads is a mess` stays the sentence it is — strips the token, and sends
+the slug in the field. It is cleared on every successful send, like the research flag and
+for the same reason.
+
+**What chat grants.** `src/lib/chat/skills.ts` is an adapter, not a second
+implementation: `selectSkillBySlug`, `resolveSkillPermissions` and `skillSystemSuffix`
+come from `work/skills.ts` unchanged. `chatSkillGrantLayer` builds **one** grant layer
+from what this turn actually has — `useWebSearch` (which carries `browser_agent` with
+it), `canvasOn`, the two `attachmentToolToggles`, and the resolved `activeConnectors`.
+One layer and not none: `narrowestGrant` refuses an empty list explicitly, because the
+intersection of no sets is everything. `apps` and `domains` are empty and stay empty —
+chat has no app surface and no per-domain allowlist to intersect against, so a skill
+asking to reach a host is told it did not get it rather than granted something Juno
+cannot enforce. The policy is `conservative`: a chat turn grants no approval authority.
+
+**What was withheld is said.** Most skills on GitHub are written for an agent with a
+shell, so `Bash`, `Read` and `Write` are withheld on every chat turn that runs one. The
+block names them and tells the model to do the parts of the method that apply, do the
+rest itself, and say which steps it could not carry out — appended **after** the
+envelope, because a caveat written inside the untrusted markers is one the model is
+explicitly told to disregard.
+
+**The envelope is load-bearing, and so is reporting it.** `ChatSkillApplication.untrusted`
+is folded into `untrustedContentInTurn`, which is what puts `UNTRUSTED_CONTENT_RULE` in
+the prompt — markers with no rule above them look like a boundary and are not one — and
+what stops the turn writing durable memory from text Juno did not author. Neither is a
+special case for skills; an imported skill is outside content like a fetched page.
+
+**Narrowing, never widening.** `narrowRuntimeToolsForSkill` filters
+`chatRuntimeToolAllowlist`, so a tool the turn did not have cannot appear however the
+skill declares it. A skill that declares **no** tools narrows nothing — the empty
+declaration is the common shape (`allowed-tools` is experimental in the spec and most
+authors omit it), and reading it as "wants nothing" would silently strip web search from
+every turn that invoked a skill. That is the opposite reading from
+`resolveSkillPermissions`, deliberately: there the question is what the SKILL may use and
+the safe default is nothing; here it is what the TURN may use, and the turn's answer is
+already the reader's.
+
+**Refusals are not errors.** A skill that is switched off, whose current version the
+scanner blocked, or whose permission surface changed and has not been re-approved simply
+does not apply; the message is still answered and the reason is recorded. Failing the
+generation would charge the reader for a sentence they never got. Version-level checks
+read the version about to be used rather than trusting `WorkSkill.enabled`, which a later
+PATCH can flip back on.
+
+**Both streaming paths, including private mode.** A skill is the reader's own stored
+instructions and nothing about applying one persists a row or reaches a third party, so
+the reason private mode withholds canvas edits and regenerates does not reach it. The
+private branch writes **no** audit row: a slug is not content, but private mode's promise
+is that the turn leaves no trace. The saved path writes one `skill_applied` row carrying
+the id, the slug, the **version**, whether the instructions were enveloped and how many
+declarations were withheld — `untrusted` is recorded rather than recomputed, because
+`WorkSkill.trust` is a column the user can change and reading it back later would rewrite
+the history of every turn that used the skill.
+
+**A delegated task carries it too.** Arming a skill is not exclusive with "Do this as a
+task" — they answer different questions — so `dispatchTask` prefixes the goal with
+`/slug` unless the reader already typed one. That is the mechanism Work has always had
+(`applySkill` parses a leading `/slug` out of the goal at run start, §9b.5), rather than a
+second field; the alternative was letting the two arm independently and dropping the skill
+at dispatch, where the pill says it is on and the run never sees it.
+
+**Known boundary.** A regenerate does not carry the skill: the slug is per-send and is
+not persisted on the message, so re-rolling a skill-armed answer produces an ordinary
+turn. Arming it again and sending is the way to re-run it under the same skill.
 
 ---
 
@@ -1685,6 +1761,66 @@ project's. A slash invocation still reaches the whole library: the user typed th
 is written on create (`/skills/new`, and the capture dialog files a captured skill where the
 run was) and re-written by `PATCH /api/work/skills/{id}`, where `projectId: null` unfiles it —
 without that, a skill filed in the wrong project could only be fixed by deleting it.
+
+### 9b.6 A skill can come from a repository
+
+**The unit is a repository, not a file.** That is what both ecosystems converged on —
+Claude Code's `/plugin marketplace add owner/repo` treats the repo as the marketplace with
+no publishing step in between — and what people actually hold: the skill they want is a
+folder inside one, next to twenty others. `docs/skills-audit.md` is the audit this was
+built from. `POST /api/skills/import/github` therefore has two steps in one route: a body
+with no `paths` **previews** (walk the tree, read every `SKILL.md`, report what is in it),
+and a body with `paths` **imports** those. The import takes paths, never content — a
+client that could post instructions would be posting arbitrary text into a row the model
+later reads as method — and carries the preview's `commit` so it reads the exact bytes the
+reader was shown rather than whatever the branch points at by then.
+
+**Reading the artefact.** `src/lib/skills/skill-md.ts` parses `SKILL.md`: YAML
+frontmatter, then a Markdown body. It accepts the six keys the published specification
+defines (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`)
+**and** Claude Code's superset, and it *records* unknown keys rather than refusing them —
+a reader that enforced either list could not read skills written for the other, and the
+superset is where most real skills live. `ignoredKeys` and `hostKeys` are what the preview
+shows, so a dropped field is visible instead of silent. It is not a YAML library: the
+input is a file from a stranger's repository, everything below the fences is bounded, and
+nothing in it can construct anything but a string, a string list or a string map.
+`allowed-tools` maps onto `requestedTools` — a REQUEST the resolver intersects, never an
+allowance; the rename is load-bearing, and the argument-pattern forms Claude Code writes
+(`Bash(git add *)`) are kept verbatim so they resolve to nothing rather than being widened
+into `Bash`.
+
+**Walking the repo.** `src/lib/skills/github.ts` takes the forms people paste
+(`owner/repo`, a repo URL, a `tree` URL at a ref and path, a `blob` URL at one
+`SKILL.md`), resolves the ref to a **commit** — a branch is not a version — and walks the
+tree once. A `tree/<ref>/<path>` URL cannot distinguish a branch called `release/2026`
+from a path, so `resolveRef` asks the API, trying progressively longer candidates only
+when the first 404s. A **truncated** tree is refused rather than served: a partial walk
+reports "3 skills" for a repository with 30, and a wrong answer that looks like a right
+one is the worst outcome available. 403 is split into `rate_limited` and `unauthorized` on
+the rate-limit headers, because one is fixed by connecting an account and the other by
+waiting. `fetch` is injected, so `tests/skills-github.test.ts` drives the whole path
+against a scripted transport.
+
+**Level 3 is deliberately not imported.** A skill folder may also hold `scripts/`,
+`references/` and `assets/` — read by an agent with a filesystem and a shell, which a chat
+turn is not. The tree listing already says what else the folder held, so the preview
+reports "also ships 4 scripts, not imported" without a single extra request and without
+ever holding the bytes. Anthropic's own security note names skills that fetch external
+content as the particular risk; this is that shape, declined.
+
+**Everything lands untrusted, and provenance is recorded.** `origin: "imported"` is passed
+as a constant and never read from the body, so `trustForOrigin` makes it `untrusted`: Juno
+will not reach for it unprompted and its instructions reach the model inside the envelope.
+`createSkillWithFirstVersion` (`src/lib/skills/store.ts`) is the one implementation of
+that write — shared with `POST /api/work/skills`, so the trust derivation, the scan, the
+`autoSelect` clamp and the single transaction that mints the head row with version 1 exist
+once. Where the skill came from goes on the **version's** contract as `provenance`
+(`source.owner`, `source.commit`, `source.path`, a permalink at the commit), which is why
+`SKILL_CONTRACT_VERSION` is 3: on the version rather than the head row, because a
+re-import from a newer commit would otherwise overwrite the record of which commit
+produced *these* instructions. It is **not** part of the permission surface and never
+reaches `SkillSecurityInput` — provenance grants nothing, and folding it into the
+fingerprint would demand a consent press for a change that widens nothing.
 
 ---
 

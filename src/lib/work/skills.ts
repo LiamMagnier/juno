@@ -240,7 +240,21 @@ export function parseSkillInvocation(text: string): SkillInvocation | null {
  * real shapes in this codebase and a stricter pattern would only mean the
  * grant side and the request side disagree about which of them is a name.
  */
-const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
+export const SKILL_CAPABILITY_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/;
+
+/**
+ * Exported so an importer can tell a declaration Juno can carry from one it
+ * cannot, BEFORE the write rather than as a 400 afterwards.
+ *
+ * Claude Code writes `allowed-tools` with argument patterns —
+ * `Bash(git add *) Read` — and `Bash(git add *)` is not a name by this rule and
+ * never will be: Juno matches capabilities by exact string equality, so a
+ * pattern stored here could only ever match nothing. An import drops it and
+ * says so in the preview, which is a sentence the reader can act on, rather
+ * than failing the whole skill over a field the specification itself marks
+ * experimental.
+ */
+const NAME_PATTERN = SKILL_CAPABILITY_NAME_PATTERN;
 
 const nameSchema = z.string().trim().regex(NAME_PATTERN);
 
@@ -277,6 +291,40 @@ export const skillExampleSchema = z.object({
 });
 
 export type WorkSkillExample = z.infer<typeof skillExampleSchema>;
+
+/**
+ * How many provenance entries a version may carry, and how long each may be.
+ *
+ * A provenance record is a handful of identifiers — a repo, a ref, a commit, a
+ * path, a URL. These bounds are what stop a pasted contract from carrying an
+ * unbounded map into the JSONB column; they are not a statement about what a
+ * source may be called.
+ */
+const MAX_PROVENANCE_ENTRIES = 16;
+const MAX_PROVENANCE_KEY_CHARS = 60;
+const MAX_PROVENANCE_VALUE_CHARS = 500;
+
+/**
+ * Reads a provenance map out of whatever the column held.
+ *
+ * Total, and lenient one entry at a time: a non-string value is dropped, an
+ * over-long one is cut, and anything that is not an object at all becomes the
+ * empty map. Nothing here can fail, which is the point — see the field's own
+ * note on `skillContractSchema`.
+ */
+function normalizeProvenance(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Object.keys(out).length >= MAX_PROVENANCE_ENTRIES) break;
+    const name = key.trim().slice(0, MAX_PROVENANCE_KEY_CHARS);
+    if (!name || typeof value !== "string") continue;
+    const text = value.trim().slice(0, MAX_PROVENANCE_VALUE_CHARS);
+    if (!text) continue;
+    out[name] = text;
+  }
+  return out;
+}
 
 const budgetSchema = z.object({
   maxCostMicroUsd: z.number().int().min(0).max(MAX_BUDGET_MICRO_USD).default(0),
@@ -333,6 +381,38 @@ export const skillContractSchema = z.object({
     .array(z.string().trim().min(1).max(MAX_ID_CHARS))
     .max(MAX_SKILL_RESOURCES)
     .default([]),
+  /**
+   * Where this version's instructions came from, when they came from anywhere.
+   *
+   * A flat string map — `source.owner`, `source.commit`, `source.url` for a
+   * GitHub import (`@/lib/skills/github`), empty for a skill somebody typed.
+   * It is the answer to "where did this come from", asked months later about a
+   * skill whose behaviour has become interesting, and the only moment it can be
+   * recorded is the moment the version is minted.
+   *
+   * On the VERSION's contract rather than on the head row, and that is the same
+   * argument `skillExampleSchema` makes one field up: a head row has one
+   * origin and a skill re-imported from a newer commit would silently rewrite
+   * it, so the record of which commit produced THESE instructions would be lost
+   * exactly when somebody needed to compare the two.
+   *
+   * NOT part of the permission surface and deliberately absent from
+   * `SkillSecurityInput`. Provenance grants nothing and asks for nothing;
+   * folding it into the fingerprint would make re-importing the same skill from
+   * a newer commit a "permission expansion" demanding a consent press about a
+   * change that widens nothing — and a product that asks for those teaches
+   * people to click through the ones that matter.
+   *
+   * Never parsed strictly: entries are dropped one at a time, like
+   * `parseRequestedTools` and for the same reason. A malformed provenance key
+   * says nothing about the declarations beside it, and falling back to the
+   * empty contract over one would throw away a skill's tool list to protect a
+   * label.
+   */
+  provenance: z
+    .unknown()
+    .transform((raw) => normalizeProvenance(raw))
+    .default({}),
   preferredTarget: z.enum(WORK_TARGETS).nullable().default(null),
   preferredModel: z.string().trim().min(1).max(MAX_MODEL_ID_CHARS).nullable().default(null),
   requestedPolicy: z.enum(WORK_PERMISSION_POLICIES).nullable().default(null),
@@ -620,12 +700,14 @@ export interface WorkSkillVersionContent {
 /**
  * The contract-shape version this build writes.
  *
- * 2 since `resourceAttachmentIds` joined the shape. The number is stamped on
- * the row rather than inferred from it so a reader of an old version knows the
- * empty resource list is a shape that had no such field, not an author who
- * removed every file — `parseSkillContract` cannot tell those apart, and the
- * question is asked exactly when somebody is working out why a version stopped
- * producing the document it used to.
+ * 3 since `provenance` joined the shape; 2 was `resourceAttachmentIds`. The
+ * number is stamped on the row rather than inferred from it so a reader of an
+ * old version knows the empty resource list is a shape that had no such field,
+ * not an author who removed every file — `parseSkillContract` cannot tell those
+ * apart, and the question is asked exactly when somebody is working out why a
+ * version stopped producing the document it used to. The same reading applies
+ * to an empty `provenance` on a v2 row: nobody erased where it came from, the
+ * shape had nowhere to write it.
  *
  * "This build writes" and not "every row carries": a RESTORE copies an older
  * version's content verbatim and keeps that version's own stamp, because the
@@ -633,7 +715,7 @@ export interface WorkSkillVersionContent {
  * contract as a v2 one with an empty file list — which is the inference above,
  * drawn wrong.
  */
-export const SKILL_CONTRACT_VERSION = 2;
+export const SKILL_CONTRACT_VERSION = 3;
 
 /**
  * The number a newly minted version takes.
@@ -1743,6 +1825,7 @@ export function skillContractToJson(contract: WorkSkillContract): Prisma.InputJs
     requestedApps: [...contract.requestedApps],
     requestedDomains: [...contract.requestedDomains],
     resourceAttachmentIds: [...contract.resourceAttachmentIds],
+    provenance: { ...contract.provenance },
     preferredTarget: contract.preferredTarget,
     preferredModel: contract.preferredModel,
     requestedPolicy: contract.requestedPolicy,
