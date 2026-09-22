@@ -158,7 +158,18 @@ public final class WorkbenchModel {
     }
 
     public private(set) var workspaces: [WorkspaceRecord] = []
-    public private(set) var sessions: [CodeSession] = []
+    public private(set) var sessions: [CodeSession] = [] {
+        didSet { sessionsObserver?(sessions) }
+    }
+    /// Told every change to the session list, for the lifetime of the
+    /// workbench rather than of any window: the app hands it to
+    /// `StudioRunMonitor`, whose keep-awake assertion and "finished" and
+    /// "needs you" notifications matter most when no Code window is showing.
+    /// Handed the current list when set, and an empty one at shutdown.
+    @ObservationIgnored
+    public var sessionsObserver: (@MainActor ([CodeSession]) -> Void)? {
+        didSet { sessionsObserver?(sessions) }
+    }
     public var selectedSessionID: CodeSessionID?
     public var sessionSearchText = ""
     public private(set) var lastError: String?
@@ -682,6 +693,10 @@ public final class WorkbenchModel {
         }
         contexts.removeAll()
         selectedSessionID = nil
+        // Nothing of this account is running any more: whoever watches the
+        // list lets go of the Mac's keep-awake assertion now.
+        sessionsObserver?([])
+        sessionsObserver = nil
     }
 
     public func renameSession(id: CodeSessionID, title: String) async {

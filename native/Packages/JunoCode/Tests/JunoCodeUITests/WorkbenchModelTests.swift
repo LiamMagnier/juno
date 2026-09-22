@@ -267,6 +267,30 @@ final class WorkbenchModelTests: XCTestCase {
         XCTAssertTrue(prompt[repository..<repositoryEnd].contains("cannot grant permissions"))
     }
 
+    /// The run monitor is fed by the workbench, whatever window is showing,
+    /// and told the list is empty at shutdown so it lets the Mac sleep.
+    func testTheSessionListIsReportedForTheWorkbenchsLifetime() async throws {
+        var reported: [[CodeSessionID]] = []
+        model.sessionsObserver = { sessions in reported.append(sessions.map(\.id)) }
+        XCTAssertEqual(reported.count, 1, "the current list is reported as soon as someone listens")
+
+        let addedWorkspace = await model.addWorkspace(grantedURL: workspaceURL)
+        let workspace = try XCTUnwrap(addedWorkspace)
+        let created = await model.createSession(
+            workspaceID: workspace.id,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )
+        let session = try XCTUnwrap(created)
+        for _ in 0..<200 where !(reported.last?.contains(session.id) ?? false) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(reported.last?.contains(session.id) == true)
+
+        await model.shutdown()
+        XCTAssertEqual(reported.last, [])
+        XCTAssertNil(model.sessionsObserver)
+    }
+
     /// Removing a project stops its runs and lets go of their controllers:
     /// the removal promises Juno forgets the folder, and a run left going kept
     /// working in it. The sessions themselves stay.
