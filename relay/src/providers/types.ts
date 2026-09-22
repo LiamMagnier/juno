@@ -84,6 +84,12 @@ export interface VoiceProviderSession {
   close(): Promise<void>;
 }
 
+/** What the caller asked for when opening or switching to this provider. */
+export interface VoiceProviderOptions {
+  /** Prefer the reasoning variant. Ignored where `thinkingChoice` is false. */
+  thinking: boolean;
+}
+
 export interface VoiceProviderFactory {
   id: VoiceProviderId;
   capabilities: ProviderCapabilities;
@@ -92,7 +98,7 @@ export interface VoiceProviderFactory {
    * rates display-only — pricing both would bill the same audio twice. */
   pricing: { audioInPerSec: number; audioOutPerSec: number; tokens?: TokenRates };
   available(): boolean;
-  create(): VoiceProviderSession;
+  create(options: VoiceProviderOptions): VoiceProviderSession;
 }
 
 export function requiredEnv(name: string): string {

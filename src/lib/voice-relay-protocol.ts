@@ -11,6 +11,8 @@ export interface ProviderCapabilities {
   screenInput?: boolean;
   trueS2S: boolean;
   needsClientTranscript: boolean;
+  /** The caller may choose whether this provider reasons before answering. */
+  thinkingChoice: boolean;
   maxSessionSec: number;
 }
 
@@ -26,8 +28,8 @@ export const VOICE_HISTORY_MAX_TURN_CHARS = 2_000;
 export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 
 export type VoiceClientMessage =
-  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
-  | { type: "session.switch"; provider: VoiceProviderId }
+  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[]; thinking?: boolean }
+  | { type: "session.switch"; provider: VoiceProviderId; thinking?: boolean }
   | {
       type: "input.text";
       text: string;
@@ -41,7 +43,7 @@ export type VoiceClientMessage =
   | { type: "ping" };
 
 export type VoiceServerMessage =
-  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
+  | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities; thinking: boolean }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   | { type: "interrupted" }
