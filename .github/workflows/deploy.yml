@@ -67,8 +67,16 @@ jobs:
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
 
+      # `npm run typecheck`, not a bare `npx tsc --noEmit`: V8 sizes its default
+      # old-space from the host, which on a GitHub runner lands near 2 GB, and
+      # a cold check of this project peaks around 2.6 GB of RSS — so the gate
+      # stopped failing on type errors and started dying on
+      # "Ineffective mark-compacts near heap limit" instead (runs 844 and 845,
+      # both exit 134 at ~57s). The script carries the heap size so CI, the
+      # pre-push routine in CONTRIBUTING.md and anyone running it locally are
+      # all measuring the same thing.
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Test
         run: npm test

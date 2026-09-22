@@ -2360,13 +2360,23 @@ cancel-in-progress. A superseding run must never sever a deploy midway through i
 `migrations` and `runner` jobs; only `build-and-deploy` is skipped, guarded on
 `github.event_name != 'pull_request'`:
 
-1. **`test` job** — `npm ci` → `npm run i18n:extract` → `npx tsc --noEmit` →
+1. **`test` job** — `npm ci` → `npm run i18n:extract` → `npm run typecheck` →
    `npm test` → `npm run lint`. The catalog step is needed because
    `src/lib/i18n-catalog.generated.ts` is generated rather than tracked. A
    failure here blocks the deploy. (This is the real type-check gate; the production
    `next build` itself ignores type errors so it can finish on the VM's RAM budget.)
    Runs in roughly 90–100 seconds; a "15-minute" run is a job that never got a
    runner, not a slow suite.
+
+   The step is the **script**, not a bare `npx tsc --noEmit`, and the difference
+   is a whole class of failure. V8 sizes its default old-space from the host, so
+   the bare command gets ~2 GB on a runner and several times that on a
+   workstation — while a cold check of this project peaks near 2.6 GB of RSS.
+   The gate therefore stopped reporting type errors and started dying with
+   "Ineffective mark-compacts near heap limit" (exit 134, ~57 s in), on a commit
+   whose types were fine and on every commit after it, and it passed locally the
+   whole time. `npm run typecheck` carries `--max-old-space-size=8192`, so CI and
+   a laptop are measuring the same thing.
 2. **`migrations` job** — boots a Postgres 16 service container, replays the
    migrations and diffs the result against `prisma/schema.prisma`, so a migration
    that does not reproduce the schema fails the build.
@@ -2613,6 +2623,7 @@ Local dev: `npm install`, `cp .env.example .env`, `npx prisma migrate dev`, `npm
 `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787`.
 
 > **Build note:** `next.config.mjs` no longer sets `typescript.ignoreBuildErrors` or
-> `eslint.ignoreDuringBuilds`; the type gate is still `npx tsc --noEmit` (CI runs it on
-> every pull request, and `npm run build` sets `--max-old-space-size=4096` for the
-> type-check worker), so run it locally before pushing.
+> `eslint.ignoreDuringBuilds`; the type gate is `npm run typecheck` (CI runs it on
+> every pull request; `npm run build` separately sets `--max-old-space-size=4096`
+> for its own type-check worker), so run it locally before pushing. Both carry a
+> heap size deliberately — see §20.3.

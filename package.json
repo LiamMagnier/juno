@@ -10,6 +10,7 @@
     "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=4096 next build",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint .",
+    "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
     "test": "tsx --test tests/*.test.ts && tsx scripts/test-auth.ts && tsx scripts/test-message-crypto.ts && npm run test:moderation",
     "postinstall": "prisma generate",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",

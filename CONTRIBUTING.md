@@ -30,14 +30,20 @@ For voice, run the relay with `RELAY_ENABLE_MOCK=1` and set
 
 ```bash
 npm run i18n:extract   # regenerates src/lib/i18n-catalog.generated.ts (not tracked)
-npx tsc --noEmit       # the real type gate — `next build` deliberately skips it
+npm run typecheck      # the real type gate — `next build` deliberately skips it
 npm run lint
 npm test
 ```
 
 CI runs exactly these on every pull request. `next build` type-checks too, but
-it is the slowest and least legible place to find out — run `tsc --noEmit`
+it is the slowest and least legible place to find out — run `npm run typecheck`
 first; it is the gate CI enforces and the one that names the file.
+
+Use the script rather than a bare `npx tsc --noEmit`: it raises Node's heap,
+and a cold check of this project peaks near 2.6 GB. V8 sizes its default
+old-space from the host, so the bare command passes on a large workstation and
+dies with "Ineffective mark-compacts near heap limit" on a CI runner — a
+failure that says nothing about your types.
 
 Touching `native/` or `contracts/`? `native.yml` additionally builds both apps
 and checks that the generated Swift contract has not drifted

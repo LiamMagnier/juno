@@ -3,8 +3,9 @@
 # points git at this directory. Bypass with `git commit --no-verify`.
 #
 # Deliberately fast: lint only, on the staged files. The full gate — the i18n
-# catalog, `tsc --noEmit`, and `npm test` — runs in CI on every pull request,
-# and typechecking the whole project on every commit is too slow to survive.
+# catalog, `npm run typecheck`, and `npm test` — runs in CI on every pull
+# request, and typechecking the whole project on every commit is too slow to
+# survive.
 set -e
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|mjs|js)$' || true)
