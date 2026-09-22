@@ -30,6 +30,12 @@ VM="${JUNO_VM:-liammgnr@20.91.138.96}"
 KEY="${JUNO_SSH_KEY:-$HOME/Developer/KEY/chatliamsdev.pem}"
 PUBLIC_URL="${JUNO_PUBLIC_URL:-https://chat.liams.dev}"
 IMAGE="node:24-bookworm"
+# Where the container builds. Next bakes this absolute path into .next and
+# deploy.sh rewrites it, as plain text, to the release directory — so it must
+# be a path that occurs nowhere else in the build. `/app` was not: it is also
+# the start of "/app-auth", "/apple-icon.png" and a user-agent regex, and the
+# rewrite broke every request on the new release.
+BUILD_ROOT="/opt/juno-release-build"
 REF="origin/main"
 SKIP_CHECKS=0
 
@@ -113,12 +119,12 @@ build_start=$SECONDS
 docker run --rm -i --platform linux/amd64 \
   -v juno-npm-cache:/root/.npm \
   -v "$WORK/build.env:/run/juno-build.env:ro" \
-  -e SKIP_CHECKS="$SKIP_CHECKS" -e CI=1 \
+  -e SKIP_CHECKS="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
   "$IMAGE" bash -c '
     set -Eeuo pipefail
     exec 3>&1 1>&2
     step() { printf "\n\033[1;36m--> %s\033[0m\n" "$*"; }
-    mkdir /app && cd /app && gzip -cd | tar -x
+    mkdir -p "$BUILD_ROOT" && cd "$BUILD_ROOT" && gzip -cd | tar -x
     step "npm ci"
     npm ci --no-audit --no-fund
     step "vendored runner core"
@@ -179,7 +185,7 @@ echo "Uploaded in $(elapsed "$upload_start")"
 
 # —— Release transaction (same as deploy.yml) ——————————————————————————————————
 say "Activating ${SHA:0:12} (deploy.sh: migrate, reload, health check, auto-rollback)"
-vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='/app' bash -s" <<'REMOTE'
+vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='$BUILD_ROOT' bash -s" <<'REMOTE'
 set -euo pipefail
 LIVE_ROOT="$HOME/juno"
 ARCHIVE="/tmp/juno-${GIT_SHA_TO_DEPLOY}.tar.gz"

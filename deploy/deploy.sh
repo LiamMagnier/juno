@@ -128,13 +128,38 @@ normalize_next_build_paths() {
   require_command perl
 
   local file
+  local files=()
   while IFS= read -r -d '' file; do
-    if grep -Iq -- "$BUILD_ROOT" "$file"; then
-      BUILD_ROOT="$BUILD_ROOT" \
-        RUNTIME_ROOT="$runtime_root" \
-        perl -pi -e 's/\Q$ENV{BUILD_ROOT}\E/$ENV{RUNTIME_ROOT}/g' "$file"
+    if grep -IqF -- "$BUILD_ROOT" "$file"; then
+      files+=("$file")
     fi
   done < <(find "$directory/.next" -path "$directory/.next/cache" -prune -o -type f -print0)
+  (( ${#files[@]} > 0 )) || return 0
+
+  # This is a text substitution, so it is only safe if every occurrence of the
+  # build root in the build IS the build root. A root that also begins longer
+  # names is not: a build made in /app had "/app" inside "/app-auth",
+  # "/apple-icon.png" and a user-agent regex (/\/applecoremedia\//), and the
+  # rewritten release booted, then failed every request on "Invalid regular
+  # expression flags". Refuse it while the release is still staged — before
+  # migrations run and before anything is switched on.
+  local collision
+  collision="$(BUILD_ROOT="$BUILD_ROOT" perl -ne '
+    chomp;
+    if (/\Q$ENV{BUILD_ROOT}\E[A-Za-z0-9_.-]/) {
+      my $from = $-[0] > 40 ? $-[0] - 40 : 0;
+      print "$ARGV: ", substr($_, $from, 80 + length($ENV{BUILD_ROOT}));
+      exit;
+    }
+  ' "${files[@]}")"
+  [[ -z "$collision" ]] \
+    || fail "Build root $BUILD_ROOT is also part of longer names in the build, so rewriting it would corrupt the release. Build in a directory whose path occurs nowhere else. First collision: $collision"
+
+  for file in "${files[@]}"; do
+    BUILD_ROOT="$BUILD_ROOT" \
+      RUNTIME_ROOT="$runtime_root" \
+      perl -pi -e 's/\Q$ENV{BUILD_ROOT}\E/$ENV{RUNTIME_ROOT}/g' "$file"
+  done
 }
 
 validate_release() {

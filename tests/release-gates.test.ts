@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const DEPLOY_WORKFLOW = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const PRODUCTION_SMOKE = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
 const DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy.sh", import.meta.url), "utf8");
+const MAC_DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy-from-mac.sh", import.meta.url), "utf8");
 const PM2_SERVICE_STARTER = readFileSync(new URL("../scripts/reconcile-pm2-service.mjs", import.meta.url), "utf8");
 
 function sectionAfter(source: string, marker: string, nextMarker: string): string {
@@ -236,6 +240,68 @@ test("manual deployment requires a direct schema connection and never mutates th
   assert.match(DEPLOY_SCRIPT, /mkdir -p -- "\$PERSISTENT_DATA_ROOT\/\.uploads" "\$PERSISTENT_DATA_ROOT\/logs"/);
   assert.match(DEPLOY_SCRIPT, /ln -s -- "\$PERSISTENT_DATA_ROOT\/\.uploads" "\$STAGING_DIR\/\.uploads"/);
   assert.match(DEPLOY_SCRIPT, /ln -s -- "\$PERSISTENT_DATA_ROOT\/logs" "\$STAGING_DIR\/logs"/);
+});
+
+// Runs deploy.sh's own normalize_next_build_paths over a fake .next, so these
+// tests exercise the shipped function rather than a description of it.
+function normalizeNextBuild(buildRoot: string, files: Record<string, string>) {
+  const releaseDir = mkdtempSync(path.join(tmpdir(), "juno-normalize-"));
+  const runtimeRoot = "/home/deploy/juno/releases/0123456789ab-20260922000000-42";
+  try {
+    for (const [name, content] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(releaseDir, ".next", name)), { recursive: true });
+      writeFileSync(path.join(releaseDir, ".next", name), content);
+    }
+    const start = DEPLOY_SCRIPT.indexOf("normalize_next_build_paths() {");
+    assert.notEqual(start, -1, "deploy.sh no longer defines normalize_next_build_paths");
+    const harness = [
+      "set -Eeuo pipefail",
+      'fail() { printf "%s\\n" "$*" >&2; exit 1; }',
+      'require_command() { command -v "$1" >/dev/null; }',
+      DEPLOY_SCRIPT.slice(start, DEPLOY_SCRIPT.indexOf("\n}\n", start) + 2),
+      'BUILD_ROOT="$1"',
+      'normalize_next_build_paths "$2" "$3"',
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", harness, "bash", buildRoot, releaseDir, runtimeRoot], { encoding: "utf8" });
+    const after = Object.fromEntries(
+      Object.keys(files).map((name) => [name, readFileSync(path.join(releaseDir, ".next", name), "utf8")]),
+    );
+    return { status: result.status, stderr: result.stderr, after, runtimeRoot };
+  } finally {
+    rmSync(releaseDir, { recursive: true, force: true });
+  }
+}
+
+// The chunk that took the 08d62f80 release down: a user-agent regex and route
+// names that merely start with "/app", beside one real build path.
+function serverChunk(root: string): string {
+  return [
+    String.raw`var ua=[/\((ipad);[-\w\),; ]+apple/i,/\/applecoremedia\/[\w\.]+ \((ipad)/i];`,
+    `var routes=["/app-auth","/apple-icon.png","/api/v1/billing/app-store"];`,
+    `var appDir="${root}/src/app";`,
+  ].join("\n");
+}
+
+test("a build root that is also part of other names is refused before anything is rewritten", () => {
+  const original = serverChunk("/app");
+  const { status, stderr, after } = normalizeNextBuild("/app", { "server/chunks/6423.js": original });
+  assert.notEqual(status, 0, "rewriting /app would corrupt the regex and the route names");
+  assert.match(stderr, /part of longer names/);
+  assert.equal(after["server/chunks/6423.js"], original, "nothing may be rewritten once a collision is found");
+});
+
+test("the Mac deploy builds in a root the rewrite can use, and hands deploy.sh that same root", () => {
+  const buildRoot = MAC_DEPLOY_SCRIPT.match(/^BUILD_ROOT="([^"]+)"$/m)?.[1];
+  assert.ok(buildRoot, "deploy-from-mac.sh must name its build root in one place");
+  assert.match(MAC_DEPLOY_SCRIPT, /-e BUILD_ROOT="\$BUILD_ROOT"/);
+  assert.match(MAC_DEPLOY_SCRIPT, /cd "\$BUILD_ROOT"/);
+  assert.match(MAC_DEPLOY_SCRIPT, /JUNO_BUILD_ROOT='\$BUILD_ROOT'/);
+
+  const { status, stderr, after, runtimeRoot } = normalizeNextBuild(buildRoot, {
+    "server/chunks/6423.js": serverChunk(buildRoot),
+  });
+  assert.equal(status, 0, stderr);
+  assert.equal(after["server/chunks/6423.js"], serverChunk(runtimeRoot), "only the real build path may change");
 });
 
 test("deploy script builds before atomic activation and has an application rollback path", () => {
