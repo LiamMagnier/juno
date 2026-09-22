@@ -3,6 +3,10 @@ import JunoCodeCore
 
 public enum SessionStoreError: Error, Equatable, Sendable {
     case sessionNotFound(id: String)
+    /// A caller-chosen id already names a session. Refused rather than
+    /// overwritten: an id arriving from another device must never be able to
+    /// replace a transcript that is already here.
+    case sessionAlreadyExists(id: String)
     case goalAlreadyExists(sessionID: String)
     case goalNotFound(sessionID: String)
     case persistenceFailed(message: String)
@@ -66,7 +70,11 @@ public actor CodeSessionStore {
     ///     notified and still readable by id — a hidden session that could not
     ///     be opened would be a session the reader could never inspect or
     ///     delete.
+    ///   - id: the session's identity, when the caller must choose it — a
+    ///     session a phone asked for is opened under the id the phone already
+    ///     shows. Every other caller lets the store mint one.
     public func createSession(
+        id: CodeSessionID = CodeSessionID(),
         workspaceID: WorkspaceID?,
         executionRootPath: String? = nil,
         workspaceName: String?,
@@ -76,8 +84,12 @@ public actor CodeSessionStore {
         parentSessionID: CodeSessionID? = nil
     ) throws -> CodeSession {
         try loadIfNeeded()
+        guard sessions[id] == nil else {
+            throw SessionStoreError.sessionAlreadyExists(id: id.value)
+        }
         let now = Date()
         let session = CodeSession(
+            id: id,
             workspaceID: workspaceID,
             executionRootPath: executionRootPath,
             parentSessionID: parentSessionID,
@@ -313,6 +325,14 @@ public actor CodeSessionStore {
         eventCounts[sessionID] = sequence + 1
         notify(.eventAppended(event))
         return event
+    }
+
+    /// How many events the session's transcript holds — equally, the sequence
+    /// the next one will get. Read from the index, so it costs nothing, where
+    /// `events(for:).count` decodes the whole file to answer the same question.
+    public func eventCount(for sessionID: CodeSessionID) -> Int {
+        try? loadIfNeeded()
+        return eventCounts[sessionID] ?? 0
     }
 
     public func events(for sessionID: CodeSessionID) -> [SessionEvent] {

@@ -1107,6 +1107,30 @@ public final class SessionController {
             }
             return
         }
+        do {
+            try await startTurn(
+                prompt: prompt,
+                modelPrompt: modelPrompt,
+                images: pendingAttachments.map(\.image),
+                live: live
+            )
+            composerText = ""
+            composerFileReferences = []
+            pendingAttachments = []
+        } catch OrchestratorError.sessionAlreadyRunning {
+            transientError = "The agent is already running; stop it first."
+        } catch {
+            transientError = "Could not start the run: \(error)"
+        }
+    }
+
+    /// Starts a turn: the turn's contract, then the prompt.
+    private func startTurn(
+        prompt: String,
+        modelPrompt: String,
+        images: [ModelImage],
+        live: Live
+    ) async throws {
         liveAssistantText = ""
         let configuration = session.configuration
         // Written before the prompt, so the transcript reads contract-then-turn
@@ -1123,20 +1147,68 @@ public final class SessionController {
                 )
             )
         )
-        do {
-            try await currentOrchestrator(live).submit(
-                prompt: prompt,
-                modelPrompt: modelPrompt,
-                images: pendingAttachments.map(\.image)
+        try await currentOrchestrator(live).submit(
+            prompt: prompt,
+            modelPrompt: modelPrompt,
+            images: images
+        )
+        runStartedAt = Date()
+    }
+
+    /// Why a prompt from another device was not delivered.
+    public struct RemotePromptRefusal: LocalizedError, Equatable, Sendable {
+        public let message: String
+        public var errorDescription: String? { message }
+    }
+
+    /// Delivers a prompt that arrived from another device, leaving the
+    /// composer alone.
+    ///
+    /// Remote used to write into `composerText` and press Send. That replaced
+    /// whatever the reader at the Mac was drafting, sent their pending
+    /// attachments and `@file` references along with a message they never
+    /// wrote, and reported success when the send had failed. This takes the
+    /// same path as `send()` — the same turn contract, the same orchestrator,
+    /// the same approvals — with nothing of the local draft, and throws when
+    /// the prompt did not arrive.
+    ///
+    /// - Parameter instruction: how to deliver it while a run is active; nil
+    ///   follows the reader's own choice for follow-ups.
+    public func deliverRemotePrompt(
+        _ text: String,
+        as instruction: UserInstructionKind? = nil
+    ) async throws {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else {
+            throw RemotePromptRefusal(message: "The message was empty.")
+        }
+        if let lifecycle = session.goal?.lifecycle, lifecycle == .paused || lifecycle == .blocked {
+            throw RemotePromptRefusal(
+                message: lifecycle == .paused
+                    ? "This session's goal is paused. Resume it on the Mac before sending another turn."
+                    : "This session's goal is blocked. Resolve or resume it on the Mac first."
             )
-            runStartedAt = Date()
-            composerText = ""
-            composerFileReferences = []
-            pendingAttachments = []
+        }
+        guard let live else {
+            throw RemotePromptRefusal(message: "This session cannot run on this Mac right now.")
+        }
+        if session.status.isActive {
+            do {
+                let current = await currentOrchestrator(live)
+                switch instruction ?? activeInstructionKind {
+                case .steer: try await current.steer(prompt: prompt)
+                case .queue: try await current.queue(prompt: prompt)
+                }
+                return
+            } catch OrchestratorError.sessionNotRunning {
+                // The run finished between the check and the delivery; the
+                // prompt starts the next turn instead of being lost.
+            }
+        }
+        do {
+            try await startTurn(prompt: prompt, modelPrompt: prompt, images: [], live: live)
         } catch OrchestratorError.sessionAlreadyRunning {
-            transientError = "The agent is already running; stop it first."
-        } catch {
-            transientError = "Could not start the run: \(error)"
+            throw RemotePromptRefusal(message: "The agent is already running in this session.")
         }
     }
 

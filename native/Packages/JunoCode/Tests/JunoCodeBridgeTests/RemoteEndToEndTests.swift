@@ -181,6 +181,8 @@ final class RemoteEndToEndTests: XCTestCase {
             acks.allSatisfy { $0.commandID == "c-1" },
             "both acknowledgements are for the same command"
         )
+        let performed = await runtime.performed
+        XCTAssertEqual(performed, ["stop"], "the host's ledger answers the redelivery; it does not run again")
     }
 
     // MARK: - Failure paths

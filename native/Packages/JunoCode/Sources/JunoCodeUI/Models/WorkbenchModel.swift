@@ -443,11 +443,19 @@ public final class WorkbenchModel {
     /// - Parameter isolatedWorktree: create a Git worktree beside the checkout
     ///   and root the session in it, so its edits never touch the branch the
     ///   reader has open. Ignored for a folder that is not a repository.
+    /// - Parameter sessionID: the id to open it under, when it was chosen
+    ///   elsewhere — a session a phone asked for keeps the id the phone
+    ///   already shows.
+    /// - Parameter select: whether the window moves to it. A session started
+    ///   from another device must not pull the reader at this Mac away from
+    ///   what they are looking at.
     @discardableResult
     public func createSession(
         workspaceID: WorkspaceID?,
         configuration: AgentConfiguration,
-        isolatedWorktree: Bool = false
+        isolatedWorktree: Bool = false,
+        sessionID: CodeSessionID? = nil,
+        select: Bool = true
     ) async -> CodeSession? {
         var context: WorkspaceContext?
         if let workspaceID {
@@ -471,6 +479,7 @@ public final class WorkbenchModel {
                 }
             }
             let session = try await sessionStore.createSession(
+                id: sessionID ?? CodeSessionID(),
                 workspaceID: workspaceID,
                 executionRootPath: executionRootPath,
                 workspaceName: context?.record.descriptor.displayName,
@@ -478,7 +487,7 @@ public final class WorkbenchModel {
                 configuration: configuration,
                 gitBranch: branch
             )
-            selectedSessionID = session.id
+            if select { selectedSessionID = session.id }
             return session
         } catch {
             lastError = "Could not create the session: \(error)"
@@ -547,7 +556,7 @@ public final class WorkbenchModel {
     /// a presentation controller. Hosts use this for inventory summaries, so a
     /// CLI session listing cannot wake screen capture or other UI-only work.
     public func eventCount(for sessionID: CodeSessionID) async -> Int {
-        await sessionStore.events(for: sessionID).count
+        await sessionStore.eventCount(for: sessionID)
     }
 
     /// The live controller for a session, created on first use.
