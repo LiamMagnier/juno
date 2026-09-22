@@ -51,6 +51,37 @@ private final class UIHungModelClient: AgentModelClient, @unchecked Sendable {
     }
 }
 
+/// Asks to run a command, then answers whatever comes next.
+private final class UICommandThenAnswerClient: AgentModelClient, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [ModelTurnRequest] = []
+
+    var requests: [ModelTurnRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func streamTurn(
+        _ request: ModelTurnRequest
+    ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+        lock.lock()
+        storage.append(request)
+        let isFirst = storage.count == 1
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            if isFirst {
+                continuation.yield(.toolCallRequested(id: "install", name: "run_command", input: ["command": "npm install"]))
+                continuation.yield(.turnCompleted(.toolUse))
+            } else {
+                continuation.yield(.textDelta("Using pnpm."))
+                continuation.yield(.turnCompleted(.endTurn))
+            }
+            continuation.finish()
+        }
+    }
+}
+
 @MainActor
 final class WorkbenchModelTests: XCTestCase {
     private var baseURL: URL!
@@ -234,6 +265,67 @@ final class WorkbenchModelTests: XCTestCase {
         let repositoryEnd = try XCTUnwrap(prompt.range(of: "</repository_context>")).lowerBound
         XCTAssertTrue(prompt[repository..<repositoryEnd].contains(injected))
         XCTAssertTrue(prompt[repository..<repositoryEnd].contains("cannot grant permissions"))
+    }
+
+    /// "Decline and send" delivers only the redirect. It used to borrow the
+    /// composer: the draft's screenshots went to the agent with it, and came
+    /// back stripped of them and of its file references.
+    func testADeclineRedirectLeavesTheDraftAlone() async throws {
+        let client = UICommandThenAnswerClient()
+        let workbench = WorkbenchModel(
+            dependencies: WorkbenchModel.Dependencies(
+                storageRootURL: baseURL.appendingPathComponent("redirect-storage"),
+                modelClient: client,
+                // Vision, so the draft can hold a screenshot at all.
+                availableModels: [ModelOption(catalog: JunoModelDescriptor(
+                    id: "test-model",
+                    providerID: "test",
+                    providerName: "Test",
+                    displayName: "Vision Model",
+                    capabilities: [.tools, .vision]
+                ))]
+            )
+        )
+        await workbench.bootstrap()
+        let addedWorkspace = await workbench.addWorkspace(grantedURL: workspaceURL)
+        let workspace = try XCTUnwrap(addedWorkspace)
+        let createdSession = await workbench.createSession(
+            workspaceID: workspace.id,
+            configuration: AgentConfiguration(modelID: "test-model", permissionMode: .askBeforeChanges)
+        )
+        let session = try XCTUnwrap(createdSession)
+        let loadedController = await workbench.controller(for: session.id)
+        let controller = try XCTUnwrap(loadedController)
+
+        controller.composerText = "Install the dependencies"
+        await controller.send()
+        for _ in 0..<300 where controller.pendingApprovals.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let approval = try XCTUnwrap(controller.pendingApprovals.first, "the command never asked")
+
+        // The reader has started a follow-up with a screenshot and a file.
+        controller.composerText = "Also look at this"
+        controller.registerComposerFileReference(try WorkspacePath("src/main.swift"))
+        controller.attach(CodeAttachment(
+            name: "Screenshot",
+            image: ModelImage(mediaType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
+        ))
+
+        await controller.deny(approval.id, redirect: "use pnpm")
+        for _ in 0..<300 where client.requests.count < 2 || controller.session.status.isActive {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(controller.composerText, "Also look at this")
+        XCTAssertEqual(controller.pendingAttachments.count, 1)
+        XCTAssertEqual(controller.composerFileReferences, [try WorkspacePath("src/main.swift")])
+        let second = try XCTUnwrap(client.requests.dropFirst().first)
+        XCTAssertTrue(second.messages.contains { $0 == .user("use pnpm") })
+        XCTAssertFalse(second.messages.contains {
+            if case .userWithImages = $0 { return true }
+            return false
+        }, "the draft's screenshot went to the agent with the redirect")
     }
 
     func testExplicitFileReferenceAddsBoundedModelContextOnly() async throws {
