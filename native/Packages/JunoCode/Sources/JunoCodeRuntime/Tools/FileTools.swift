@@ -55,11 +55,27 @@ public struct ReadFileTool: CodeTool {
         bytes you were not shown is not a base you can safely overwrite from. \
         Edit a truncated file with apply_patch, which matches an exact block \
         rather than replacing the file.
+
+        Long files return their first \(ReadFileTool.defaultLineLimit) lines. \
+        Pass "offset" (1-based first line) and "limit" (line count) to read \
+        another window; the header's "first_line", "last_line" and \
+        "total_lines" say where you are. A windowed read is partial, so it \
+        carries no "base_sha256" either.
         """
+
+    /// Lines returned when the caller does not ask for a window. Enough for
+    /// almost every source file whole; a generated file or a log is paged
+    /// instead of landing in the context window in one piece.
+    static let defaultLineLimit = 2_000
+
     public var inputSchema: JSONValue {
         [
             "type": "object",
-            "properties": ["path": ["type": "string", "description": "Workspace-relative file path"]],
+            "properties": [
+                "path": ["type": "string", "description": "Workspace-relative file path"],
+                "offset": ["type": "integer", "description": "1-based line to start from"],
+                "limit": ["type": "integer", "description": "Number of lines to return"],
+            ],
             "required": ["path"],
         ]
     }
@@ -73,7 +89,39 @@ public struct ReadFileTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let path = try workspacePath(from: input)
         let result = try await files.read(path, limit: .fileRead)
-        return ToolResult(content: ReadFileTool.render(result))
+        let offset = input["offset"]?.intValue
+        let limit = input["limit"]?.intValue
+        return ToolResult(content: ReadFileTool.render(result, offset: offset, limit: limit))
+    }
+
+    /// The read, narrowed to a window of lines when one was asked for or the
+    /// file is longer than the default.
+    static func render(_ result: FileReadResult, offset: Int?, limit: Int?) -> String {
+        let lines = result.content.split(separator: "\n", omittingEmptySubsequences: false)
+        let total = lines.count
+        let start = max(1, offset ?? 1)
+        let count = max(1, limit ?? defaultLineLimit)
+        guard offset != nil || limit != nil || total > count else {
+            return render(result)
+        }
+        guard start <= total else {
+            return "{\"path\":\(quoted(result.path.value)),\"total_lines\":\(total),\"note\":\"offset is past the end of the file\"}\n"
+        }
+        let end = min(total, start + count - 1)
+        let window = lines[(start - 1)..<end].joined(separator: "\n")
+        var header: [String] = [
+            "\"path\":\(quoted(result.path.value))",
+            "\"first_line\":\(start)",
+            "\"last_line\":\(end)",
+            "\"total_lines\":\(total)",
+            "\"truncated\":\(end < total || start > 1 || result.wasTruncated)",
+        ]
+        if start == 1, end == total, !result.wasTruncated {
+            header.append("\"base_sha256\":\(quoted(result.fingerprint.sha256))")
+        } else if end < total {
+            header.append("\"note\":\"partial read; pass offset \(end + 1) to continue\"")
+        }
+        return "{\(header.joined(separator: ","))}\n" + window
     }
 
     /// The machine-readable read contract: one line of JSON, a newline, then

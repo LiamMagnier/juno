@@ -98,10 +98,13 @@ struct DesktopSidebarAccountRow: View {
                         .junoRowLabel()
                         .junoInk()
                         .lineLimit(1)
-                    Text("Owner · Pro")
+                    // The address, not a plan name: this row has no plan to
+                    // read, and it used to say "Owner · Pro" to every account.
+                    Text(session.profile.email)
                         .junoCaption()
                         .junoMetaInk()
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
                 Spacer(minLength: JunoSpace.hairline)
                 if case .ready = updater.phase {

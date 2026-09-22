@@ -14,13 +14,17 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     /// the classifier above works on the *text* of a command and can be spelled
     /// around, so without a profile there is no boundary at all.
     private let sandbox: CommandSandboxProfile?
+    /// Settings-driven variables and network access, read per command.
+    private let overrides: CommandRuntimeOverrides?
 
     public init(
         workspaceRootURL: URL,
-        sandbox: CommandSandboxProfile? = nil
+        sandbox: CommandSandboxProfile? = nil,
+        overrides: CommandRuntimeOverrides? = nil
     ) {
         self.workspaceRootURL = workspaceRootURL
         self.sandbox = sandbox
+        self.overrides = overrides
     }
 
     /// Creates a contained executor: writes confined to the workspace, with
@@ -33,10 +37,11 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
         workspaceRootURL: URL,
         allowsNetwork: Bool = false,
         allowsLocalhost: Bool = false,
-        additionalWritablePaths: [String] = []
+        additionalWritablePaths: [String] = [],
+        overrides: CommandRuntimeOverrides? = nil
     ) -> CommandExecutionService {
         guard CommandSandboxProfile.isAvailable else {
-            return CommandExecutionService(workspaceRootURL: workspaceRootURL)
+            return CommandExecutionService(workspaceRootURL: workspaceRootURL, overrides: overrides)
         }
         return CommandExecutionService(
             workspaceRootURL: workspaceRootURL,
@@ -46,8 +51,24 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
                 allowsNetwork: allowsNetwork,
                 allowsLocalhost: allowsLocalhost,
                 additionalWritablePaths: CommandSandboxProfile.defaultWritablePaths
+                    + CommandSandboxProfile.toolchainCachePaths
                     + additionalWritablePaths
-            )
+            ),
+            overrides: overrides
+        )
+    }
+
+    /// The profile for the next command: the base one, with the reader's
+    /// network choice and extra writable folders applied.
+    private var effectiveSandbox: CommandSandboxProfile? {
+        guard let sandbox else { return nil }
+        guard let overrides else { return sandbox }
+        return CommandSandboxProfile(
+            workspaceRoot: sandbox.workspaceRoot,
+            filesystem: sandbox.filesystem,
+            allowsNetwork: sandbox.allowsNetwork && overrides.allowsNetwork,
+            allowsLocalhost: sandbox.allowsLocalhost,
+            additionalWritablePaths: sandbox.additionalWritablePaths + overrides.writablePaths
         )
     }
 
@@ -73,14 +94,19 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             // Under a profile the kernel enforces the workspace boundary; the
             // shell is still zsh, wrapped rather than replaced, so a command
             // behaves identically right up to the point it tries to leave.
-            let invocation = sandbox?.wrap(command: commandLine)
+            let invocation = effectiveSandbox?.wrap(command: commandLine)
                 ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
             process.executableURL = URL(fileURLWithPath: invocation.executable)
             process.arguments = invocation.arguments
             process.currentDirectoryURL = workspaceRootURL
-            process.environment = Self.minimalEnvironment(
-                workspaceRoot: workspaceRootURL.path
-            )
+            var environment = Self.minimalEnvironment(workspaceRoot: workspaceRootURL.path)
+            // The reader's own variables win over the defaults, except the two
+            // that would move the command out of its workspace or its toolchain.
+            for (name, value) in overrides?.environment ?? [:]
+            where name != "PWD" && name != "HOME" {
+                environment[name] = value
+            }
+            process.environment = environment
 
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()

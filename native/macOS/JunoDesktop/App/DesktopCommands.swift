@@ -171,13 +171,13 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
-                Button("Toggle Review") { codeActions?.toggleReview() }
+                Button("Changes") { codeActions?.toggleReview() }
                     .keyboardShortcut("r", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Console") { codeActions?.toggleConsole() }
-                    .keyboardShortcut("c", modifiers: [.command, .option])
+                Button("Terminal") { codeActions?.toggleConsole() }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Context Rail") { codeActions?.toggleInspector() }
+                Button("Toggle Side Panel") { codeActions?.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
                 Button("Toggle Preview") { codeActions?.togglePreview() }

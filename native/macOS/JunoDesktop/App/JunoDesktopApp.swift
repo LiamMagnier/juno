@@ -14,6 +14,10 @@ enum JunoDesktopWindow {
     static let incognitoID = "juno.incognito"
     /// The ⌘/ list of every shortcut the app answers.
     static let shortcutsID = "juno.shortcuts"
+    /// Juno Code's own settings: permissions, environment, instructions, agent,
+    /// Git, tools, appearance. A window of its own because a coding agent's
+    /// configuration is page-sized, and it opens beside the session it tunes.
+    static let codeSettingsID = "juno.code.settings"
     /// The File menu's item that opens another main window. Named here because
     /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
     /// with no window at all.
@@ -194,6 +198,13 @@ struct JunoDesktopApp: App {
             DesktopSettingsWindow(configuration: configuration)
                 .junoAccountAppearance(configuration)
         }
+
+        Window("Juno Code Settings", id: JunoDesktopWindow.codeSettingsID) {
+            DesktopCodeSettingsWindow(configuration: configuration)
+                .junoAccountAppearance(configuration)
+        }
+        .defaultSize(width: 880, height: 640)
+        .windowResizability(.contentMinSize)
 
         Window("Keyboard Shortcuts", id: JunoDesktopWindow.shortcutsID) {
             DesktopShortcutsWindow()

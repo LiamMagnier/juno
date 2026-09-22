@@ -460,8 +460,11 @@ public final class WorkbenchModel {
             if let context, context.record.descriptor.isGitRepository {
                 branch = try? await context.git.status().branch
                 if isolatedWorktree {
+                    let prefix = CodeSettingsStore()
+                        .resolved(projectRoot: context.access.rootURL)
+                        .branchPrefix
                     let worktree = try await context.worktrees.create(
-                        branch: Self.worktreeBranchName(base: branch)
+                        branch: Self.worktreeBranchName(base: branch, prefix: prefix)
                     )
                     executionRootPath = worktree.rootPath
                     branch = worktree.branch
@@ -485,13 +488,13 @@ public final class WorkbenchModel {
 
     /// `juno/<base>-<stamp>`: recognisable as Juno's, unique per session, and
     /// safe for `git worktree add`.
-    static func worktreeBranchName(base: String?, now: Date = Date()) -> String {
+    static func worktreeBranchName(base: String?, prefix: String = "juno/", now: Date = Date()) -> String {
         let stamp = Int(now.timeIntervalSince1970) % 1_000_000
         let cleaned = (base ?? "task")
             .lowercased()
             .map { $0.isLetter || $0.isNumber ? $0 : "-" }
         let slug = String(cleaned).split(separator: "-").joined(separator: "-")
-        return "juno/\(slug.isEmpty ? "task" : String(slug.prefix(24)))-\(stamp)"
+        return "\(prefix)\(slug.isEmpty ? "task" : String(slug.prefix(24)))-\(stamp)"
     }
 
     /// Lines added, lines removed and files touched over a session's whole

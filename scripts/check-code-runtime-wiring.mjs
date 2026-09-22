@@ -35,12 +35,16 @@ requireText("native/macOS/JunoDesktop/project.yml", [
 
 requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "SessionController",
-  "CodeSessionInspector(",
+  // The session's thread and composer, and the side panel beside it.
+  "StudioSessionView(",
+  "StudioSidePanel(",
   "controller: controller,",
-  "openPreview: openPreview,",
-  "if inspectorPresentation.wrappedValue {",
-  ".frame(width: JunoInspectorMetrics.ideal)",
-  "computerUseIndicator(controller)",
+  ".inspector(isPresented: panelPresentation)",
+  // Screen control stays visible and stoppable while it runs.
+  "if controller.computerUseActive {",
+  "await controller.stopComputerUse()",
+  // Runs that finish or wait while the reader is elsewhere say so.
+  "StudioRunMonitor.shared.observe(",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkspaceContext.swift", [
@@ -70,4 +74,4 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/ToolScheduler.swif
   "lifecycleHooks?.afterTool",
 ]);
 
-console.log("[code-runtime] shipping JunoDesktop composes MCP, hooks, computer use, subagents, terminal, Work, and the native inspector");
+console.log("[code-runtime] shipping JunoDesktop composes MCP, hooks, computer use, subagents, terminal, Work, and the session side panel");

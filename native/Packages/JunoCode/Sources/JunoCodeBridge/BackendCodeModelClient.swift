@@ -304,7 +304,10 @@ public struct BackendCodeModelClient: AgentModelClient {
                         let lowerMessage = message.lowercased()
                         if response.statusCode == 401 || response.statusCode == 403 {
                             throw AgentModelClientError.unauthorized
-                        } else if response.statusCode == 402 || lowerMessage.contains("quota") || lowerMessage.contains("exceeded your current quota") {
+                        } else if response.statusCode == 402 {
+                            // The Juno proxy's budget and usage-window wall.
+                            throw AgentModelClientError.planLimitReached(message: message)
+                        } else if lowerMessage.contains("quota") || lowerMessage.contains("exceeded your current quota") {
                             throw AgentModelClientError.quotaExhausted(message: message)
                         } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
                             throw AgentModelClientError.rateLimited
@@ -508,7 +511,24 @@ enum AnthropicRequestBuilder {
                     )
                 }
             case let .assistant(text):
+                // An empty text block is a 400; a turn that was only reasoning
+                // and tool calls has nothing to say here.
+                guard !text.isEmpty else { continue }
                 append(role: "assistant", block: .object(["type": "text", "text": .string(text)]))
+            case let .assistantThinking(text, signature):
+                append(
+                    role: "assistant",
+                    block: .object([
+                        "type": "thinking",
+                        "thinking": .string(text),
+                        "signature": .string(signature),
+                    ])
+                )
+            case let .assistantRedactedThinking(data):
+                append(
+                    role: "assistant",
+                    block: .object(["type": "redacted_thinking", "data": .string(data)])
+                )
             case let .toolCall(id, name, input), let .toolCallWithExtra(id, name, input, _):
                 append(
                     role: "assistant",
@@ -567,10 +587,31 @@ enum AnthropicRequestBuilder {
             maxTokens: maxTokens,
             effort: request.reasoningEffort
         )
+        // Prompt caching. An agent loop resends the same prefix — tool schemas,
+        // system prompt, every earlier turn — on each of its dozens of
+        // requests, so without breakpoints every step is billed and processed
+        // from token zero. Three of the four allowed breakpoints:
+        //
+        // 1. the last tool: schemas change only when the tool set does;
+        // 2. the system prompt: changes with goal or skills, not per step;
+        // 3. the newest block of the conversation: each request writes the
+        //    prefix the next one reads, which is the incremental pattern
+        //    Anthropic documents for multi-turn tool use.
+        //
+        // Below the model's minimum cacheable length a breakpoint is a no-op,
+        // so short sessions pay nothing for it.
+        let ephemeral: JSONValue = .object(["type": .string("ephemeral")])
+        Self.markLastCacheableBlock(in: &messages, with: ephemeral)
         var object: [String: JSONValue] = [
             "model": .string(providerModelID),
             "max_tokens": .number(Double(bits.maxTokens)),
-            "system": .string(request.systemPrompt),
+            "system": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string(request.systemPrompt),
+                    "cache_control": ephemeral,
+                ]),
+            ]),
             "messages": .array(messages),
             "stream": .bool(true),
         ]
@@ -580,17 +621,43 @@ enum AnthropicRequestBuilder {
         if let outputConfig = bits.outputConfig {
             object["output_config"] = outputConfig
         }
-        let tools = request.tools.map { tool -> JSONValue in
-            .object([
+        var tools = request.tools.map { tool -> [String: JSONValue] in
+            [
                 "name": .string(tool.name),
                 "description": .string(tool.description),
                 "input_schema": tool.inputSchema,
-            ])
+            ]
         }
         if !tools.isEmpty {
-            object["tools"] = .array(tools)
+            tools[tools.count - 1]["cache_control"] = ephemeral
+            object["tools"] = .array(tools.map(JSONValue.object))
         }
         return .object(object)
+    }
+
+    /// Puts the rolling breakpoint on the conversation's final block.
+    ///
+    /// Walks back past blocks that cannot carry one — thinking blocks refuse
+    /// `cache_control` — so a turn that ends in reasoning still caches.
+    static func markLastCacheableBlock(in messages: inout [JSONValue], with marker: JSONValue) {
+        for messageIndex in messages.indices.reversed() {
+            guard case var .object(message) = messages[messageIndex],
+                  case var .array(blocks) = message["content"]
+            else { continue }
+            for blockIndex in blocks.indices.reversed() {
+                guard case var .object(block) = blocks[blockIndex] else { continue }
+                if case let .string(type) = block["type"],
+                   type == "thinking" || type == "redacted_thinking"
+                {
+                    continue
+                }
+                block["cache_control"] = marker
+                blocks[blockIndex] = .object(block)
+                message["content"] = .array(blocks)
+                messages[messageIndex] = .object(message)
+                return
+            }
+        }
     }
 }
 
@@ -608,7 +675,45 @@ enum OpenAIChatRequestBuilder {
             ]),
         ]
 
+        // One assistant message per model turn: its text and *all* of its tool
+        // calls together. Chat Completions requires every `tool` message to
+        // answer a call on the assistant message immediately before it, so a
+        // turn of three parallel calls written as three assistant messages
+        // is rejected outright.
+        var pendingText = ""
+        var pendingCalls: [JSONValue] = []
+        func flushAssistant() {
+            guard !pendingText.isEmpty || !pendingCalls.isEmpty else { return }
+            var assistant: [String: JSONValue] = [
+                "role": .string("assistant"),
+                "content": pendingText.isEmpty ? .null : .string(pendingText),
+            ]
+            if !pendingCalls.isEmpty {
+                assistant["tool_calls"] = .array(pendingCalls)
+            }
+            messages.append(.object(assistant))
+            pendingText = ""
+            pendingCalls = []
+        }
+
+        // Screenshots returned by tools ride on a user message, which may only
+        // follow the *whole* run of tool results — one wedged between two
+        // results orphans the second.
+        var pendingImageMessages: [JSONValue] = []
+
         for message in request.messages {
+            switch message {
+            case .assistant, .assistantThinking, .assistantRedactedThinking,
+                 .toolCall, .toolCallWithExtra:
+                messages.append(contentsOf: pendingImageMessages)
+                pendingImageMessages = []
+            case .toolResult, .toolResultWithImages:
+                flushAssistant()
+            case .user, .userWithImages:
+                flushAssistant()
+                messages.append(contentsOf: pendingImageMessages)
+                pendingImageMessages = []
+            }
             switch message {
             case let .user(text):
                 messages.append(.object([
@@ -638,23 +743,17 @@ enum OpenAIChatRequestBuilder {
                     "content": .array(parts),
                 ]))
             case let .assistant(text):
-                messages.append(.object([
-                    "role": .string("assistant"),
-                    "content": .string(text),
-                ]))
+                pendingText += pendingText.isEmpty ? text : "\n\n" + text
+            case .assistantThinking, .assistantRedactedThinking:
+                // Anthropic's signed reasoning means nothing to these labs.
+                break
             case let .toolCall(id, name, input):
-                messages.append(.object([
-                    "role": .string("assistant"),
-                    "content": .null,
-                    "tool_calls": .array([
-                        .object([
-                            "id": .string(id),
-                            "type": .string("function"),
-                            "function": .object([
-                                "name": .string(name),
-                                "arguments": .string(jsonString(input)),
-                            ]),
-                        ]),
+                pendingCalls.append(.object([
+                    "id": .string(id),
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(name),
+                        "arguments": .string(jsonString(input)),
                     ]),
                 ]))
             case let .toolCallWithExtra(id, name, input, extraContent):
@@ -672,11 +771,7 @@ enum OpenAIChatRequestBuilder {
                 if providerID == "google", let obj = extraContent.objectValue, obj["google"] != nil {
                     toolCallDict["extra_content"] = extraContent
                 }
-                messages.append(.object([
-                    "role": .string("assistant"),
-                    "content": .null,
-                    "tool_calls": .array([.object(toolCallDict)]),
-                ]))
+                pendingCalls.append(.object(toolCallDict))
             case let .toolResult(id, content, _):
                 messages.append(.object([
                     "role": .string("tool"),
@@ -690,7 +785,7 @@ enum OpenAIChatRequestBuilder {
                     "content": .string(content),
                 ]))
                 if !images.isEmpty {
-                    messages.append(.object([
+                    pendingImageMessages.append(.object([
                         "role": .string("user"),
                         "content": .array(images.map { image in
                             .object([
@@ -705,6 +800,8 @@ enum OpenAIChatRequestBuilder {
                 }
             }
         }
+        flushAssistant()
+        messages.append(contentsOf: pendingImageMessages)
 
         var object: [String: JSONValue] = [
             "model": .string(providerModelID),
@@ -776,12 +873,15 @@ enum OpenAIResponsesRequestBuilder {
                     ]),
                 ]))
             case let .assistant(text):
+                guard !text.isEmpty else { continue }
                 input.append(.object([
                     "role": .string("assistant"),
                     "content": .array([
                         .object(["type": .string("output_text"), "text": .string(text)]),
                     ]),
                 ]))
+            case .assistantThinking, .assistantRedactedThinking:
+                break
             case let .toolCall(id, name, arguments), let .toolCallWithExtra(id, name, arguments, _):
                 input.append(.object([
                     "type": .string("function_call"),
@@ -944,7 +1044,16 @@ struct AnthropicStreamDecoder {
 
     // Tool-call assembly, keyed by content block index.
     private var toolBlocks: [Int: ToolBlock] = [:]
+    // Reasoning assembly, keyed the same way. The text streams out as it
+    // arrives for the reader; the block is emitted whole at its stop, with the
+    // signature, because that is the form the next request must carry back.
+    private var thinkingBlocks: [Int: ThinkingBlock] = [:]
     private var stopReason: ModelStopReason?
+
+    private struct ThinkingBlock {
+        var text: String
+        var signature: String
+    }
 
     private struct ToolBlock {
         let id: String
@@ -1016,13 +1125,28 @@ struct AnthropicStreamDecoder {
             // billed prompt — system, tools and the conversation so far — which is
             // exactly the number a context meter wants.
             guard let usage = wire.message?.usage else { return [] }
-            return [.usage(inputTokens: usage.inputTokens, outputTokens: usage.outputTokens)]
+            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
         case "ping":
             return []
         case "content_block_start":
             guard let index = wire.index, let block = wire.contentBlock else { return [] }
-            if block.type == "tool_use", let id = block.id, let name = block.name {
-                toolBlocks[index] = ToolBlock(id: id, name: name, partialJSON: "")
+            switch block.type {
+            case "tool_use":
+                if let id = block.id, let name = block.name {
+                    toolBlocks[index] = ToolBlock(id: id, name: name, partialJSON: "")
+                }
+            case "thinking":
+                thinkingBlocks[index] = ThinkingBlock(
+                    text: block.thinking ?? "",
+                    signature: block.signature ?? ""
+                )
+            case "redacted_thinking":
+                // Arrives complete; there are no deltas to wait for.
+                if let data = block.data, !data.isEmpty {
+                    return [.redactedThinking(data: data)]
+                }
+            default:
+                break
             }
             return []
         case "content_block_delta":
@@ -1035,7 +1159,13 @@ struct AnthropicStreamDecoder {
                 return []
             case "thinking_delta":
                 if let thinking = delta.thinking, !thinking.isEmpty {
+                    thinkingBlocks[index]?.text += thinking
                     return [.reasoningSummary(thinking)]
+                }
+                return []
+            case "signature_delta":
+                if let signature = delta.signature {
+                    thinkingBlocks[index]?.signature += signature
                 }
                 return []
             case "input_json_delta":
@@ -1047,9 +1177,14 @@ struct AnthropicStreamDecoder {
                 return []
             }
         case "content_block_stop":
-            guard let index = wire.index, let block = toolBlocks.removeValue(forKey: index) else {
-                return []
+            guard let index = wire.index else { return [] }
+            if let thinking = thinkingBlocks.removeValue(forKey: index) {
+                // A block without a signature cannot be replayed, and sending
+                // one back unsigned is a 400. Its text already reached the reader.
+                guard !thinking.signature.isEmpty else { return [] }
+                return [.thinkingBlock(text: thinking.text, signature: thinking.signature)]
             }
+            guard let block = toolBlocks.removeValue(forKey: index) else { return [] }
             let input = Self.parseToolInput(block.partialJSON)
             return [.toolCallRequested(id: block.id, name: block.name, input: input)]
         case "message_delta":
@@ -1057,7 +1192,7 @@ struct AnthropicStreamDecoder {
                 stopReason = Self.mapStopReason(reason)
             }
             guard let usage = wire.usage else { return [] }
-            return [.usage(inputTokens: usage.inputTokens, outputTokens: usage.outputTokens)]
+            return [.usage(inputTokens: usage.promptTokens, outputTokens: usage.outputTokens)]
         case "message_stop":
             return [.turnCompleted(stopReason ?? .endTurn)]
         case "error":
@@ -1093,16 +1228,21 @@ private struct StreamEventWire: Decodable {
         let type: String
         let id: String?
         let name: String?
+        let thinking: String?
+        let signature: String?
+        /// The encrypted payload of a `redacted_thinking` block.
+        let data: String?
     }
     struct Delta: Decodable {
         let type: String?
         let text: String?
         let thinking: String?
+        let signature: String?
         let partialJSON: String?
         let stopReason: String?
 
         private enum CodingKeys: String, CodingKey {
-            case type, text, thinking
+            case type, text, thinking, signature
             case partialJSON = "partial_json"
             case stopReason = "stop_reason"
         }
@@ -1116,10 +1256,27 @@ private struct StreamEventWire: Decodable {
     struct Usage: Decodable {
         let inputTokens: Int?
         let outputTokens: Int?
+        let cacheReadInputTokens: Int?
+        let cacheCreationInputTokens: Int?
 
         private enum CodingKeys: String, CodingKey {
             case inputTokens = "input_tokens"
             case outputTokens = "output_tokens"
+            case cacheReadInputTokens = "cache_read_input_tokens"
+            case cacheCreationInputTokens = "cache_creation_input_tokens"
+        }
+
+        /// The whole prompt this turn carried.
+        ///
+        /// With caching on, `input_tokens` counts only the uncached tail, so on
+        /// its own it would tell the context meter a 150K conversation weighs
+        /// a few hundred tokens — and compaction would never trigger.
+        var promptTokens: Int? {
+            guard inputTokens != nil || cacheReadInputTokens != nil
+                || cacheCreationInputTokens != nil
+            else { return nil }
+            return (inputTokens ?? 0) + (cacheReadInputTokens ?? 0)
+                + (cacheCreationInputTokens ?? 0)
         }
     }
     struct Message: Decodable {

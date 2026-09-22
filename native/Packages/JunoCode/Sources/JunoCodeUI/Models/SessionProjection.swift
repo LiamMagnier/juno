@@ -163,8 +163,15 @@ public final class SessionProjection {
         }
     }
 
+    /// When the event being applied happened. Groups close at *this* time,
+    /// not at the wall-clock moment the projection happens to run — replaying
+    /// a stored session used to stamp every group with "now", so a stretch of
+    /// work from yesterday read as having taken a day.
+    private var eventTime = Date()
+
     /// Folds one transcript event into the projection.
     public func apply(event: SessionEvent) {
+        eventTime = event.timestamp
         switch event.payload {
         case let .statusChanged(change):
             applyStatus(change.status)
@@ -436,7 +443,7 @@ public final class SessionProjection {
               narrativeGroups[index].status == .running
         else { return }
         narrativeGroups[index].status = status
-        narrativeGroups[index].completedAt = Date()
+        narrativeGroups[index].completedAt = max(eventTime, narrativeGroups[index].startedAt)
         // A call still open when the group closes was interrupted with it.
         for position in narrativeGroups[index].toolCallRecords.indices
         where narrativeGroups[index].toolCallRecords[position].status == .proposed

@@ -1,0 +1,126 @@
+import Foundation
+import JunoCodeCore
+
+/// Reads one web page as text: documentation, a changelog, an issue.
+///
+/// Network access is a `critical` action — a URL can carry data out as easily
+/// as bring it in — so it asks below Full Access, and a
+/// `WebFetch(domain:docs.swift.org)` rule is how a reader stops being asked
+/// about a site they trust. Only `http` and `https`; nothing is executed, and
+/// the page's markup is reduced to text before the model sees it.
+public struct WebFetchTool: CodeTool {
+    public static let maximumDownloadBytes = 2 * 1_024 * 1_024
+    public static let defaultCharacters = 40_000
+
+    private let session: URLSession
+
+    public init(session: URLSession = WebFetchTool.makeSession()) {
+        self.session = session
+    }
+
+    public static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.httpAdditionalHeaders = ["User-Agent": "JunoCode/1.0 (+https://juno)"]
+        return URLSession(configuration: configuration)
+    }
+
+    public let name = "web_fetch"
+    public let description = """
+        Fetch a web page over HTTP(S) and return its readable text. Use it for \
+        documentation, changelogs, issues and API references the task needs. \
+        Pass the full URL. Long pages are cut; pass max_characters to ask for \
+        more or less.
+        """
+
+    public var inputSchema: JSONValue {
+        [
+            "type": "object",
+            "properties": [
+                "url": ["type": "string", "description": "An http or https URL"],
+                "max_characters": ["type": "integer", "description": "Upper bound on returned text"],
+            ],
+            "required": ["url"],
+        ]
+    }
+
+    public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
+
+    public func summary(input: JSONValue) -> String {
+        let text = input["url"]?.stringValue ?? "?"
+        return "Fetch " + (URL(string: text)?.host ?? text)
+    }
+
+    public func precheck(input: JSONValue) -> ToolError? {
+        guard let text = input["url"]?.stringValue,
+              let url = URL(string: text),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false
+        else {
+            return .invalidInput(message: "web_fetch needs a full http or https URL.")
+        }
+        return nil
+    }
+
+    public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        guard let text = input["url"]?.stringValue, let url = URL(string: text) else {
+            throw ToolError.invalidInput(message: "Missing 'url'.")
+        }
+        let limit = min(max(input["max_characters"]?.intValue ?? Self.defaultCharacters, 1_000), 200_000)
+
+        let (bytes, response) = try await session.bytes(from: url)
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count >= Self.maximumDownloadBytes { break }
+        }
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        let contentType = http?.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        let body = String(decoding: data, as: UTF8.self)
+        let readable = contentType.contains("html") || body.prefix(512).lowercased().contains("<html")
+            ? Self.text(fromHTML: body)
+            : body
+        let clipped = readable.count > limit
+            ? String(readable.prefix(limit)) + "\n… [page truncated at \(limit) characters]"
+            : readable
+        let finalURL = response.url?.absoluteString ?? url.absoluteString
+        return ToolResult(
+            content: "URL: \(finalURL)\nStatus: \(status)\n\n" + clipped,
+            isError: !(200..<400).contains(status)
+        )
+    }
+
+    /// Markup to reading text: scripts, styles and tags out; block elements
+    /// become line breaks; common entities decoded; whitespace collapsed.
+    static func text(fromHTML html: String) -> String {
+        var text = html
+        for element in ["script", "style", "noscript", "svg", "head"] {
+            text = text.replacingOccurrences(
+                of: "<\(element)[^>]*>[\\s\\S]*?</\(element)>",
+                with: " ",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+        text = text.replacingOccurrences(
+            of: "<(br|/p|/div|/li|/h[1-6]|/tr|/pre|/section|/article)[^>]*>",
+            with: "\n",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        text = text.replacingOccurrences(of: "<li[^>]*>", with: "\n• ", options: [.regularExpression, .caseInsensitive])
+        text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        for (entity, value) in [
+            ("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+            ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"), ("&mdash;", "—"), ("&ndash;", "–"),
+        ] {
+            text = text.replacingOccurrences(of: entity, with: value)
+        }
+        text = text.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+        text = text.replacingOccurrences(of: "\\n\\s*\\n\\s*\\n+", with: "\n\n", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

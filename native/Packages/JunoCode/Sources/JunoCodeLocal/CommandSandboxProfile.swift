@@ -77,6 +77,24 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         "/dev/random",
     ]
 
+    /// Package-manager and build caches under the home folder.
+    ///
+    /// `npm install`, `cargo build`, `swift build` and `pod install` all write
+    /// to a cache outside the project first; without these the first
+    /// dependency install of every session failed inside the sandbox, which
+    /// taught readers to turn containment off. Caches, not config: `~/.ssh`,
+    /// shell profiles and credentials stay unwritable.
+    public static var toolchainCachePaths: [String] {
+        let home = NSHomeDirectory()
+        return [
+            "/Library/Caches", "/.cache", "/.npm", "/.pnpm-store", "/Library/pnpm",
+            "/.yarn", "/.bun", "/.cargo/registry", "/.cargo/git", "/.rustup/tmp",
+            "/.gradle/caches", "/.m2/repository", "/go/pkg", "/.swiftpm",
+            "/Library/org.swift.swiftpm", "/Library/Developer/Xcode/DerivedData",
+            "/Library/Developer/CoreSimulator/Caches", "/.cocoapods", "/.deno",
+        ].map { home + $0 }
+    }
+
     /// The SBPL profile text.
     ///
     /// Default-deny, then the narrowest set of allowances that lets an ordinary

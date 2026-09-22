@@ -149,7 +149,13 @@ public struct DelegateTaskTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    /// A write-capable child is a write, and the parent's mode decides it
+    /// like any other: an Ask-before-changes session is asked, a read-only one
+    /// refuses. Investigation stays a read.
+    public func assessRisk(input: JSONValue) -> ActionRisk {
+        let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
+        return specs.contains { $0.mode == .workspaceWrite } ? .write : .read
+    }
 
     public func summary(input: JSONValue) -> String {
         let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []

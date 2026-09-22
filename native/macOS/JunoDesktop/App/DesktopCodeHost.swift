@@ -41,12 +41,18 @@ private final class DesktopQueuedCodeExecutor {
         guard let selectedModel else { throw DesktopQueuedCodeError.noModelAvailable }
 
         let behavior: AgentBehavior = task.permissionMode == .plan ? .plan : .code
-        let permission: PermissionMode = switch task.permissionMode {
+        let requested: PermissionMode = switch task.permissionMode {
         case .plan: .readOnly
         case .ask: .askBeforeChanges
         case .autoEdit: .workspaceWrite
         case .full: .fullAccess
         }
+        // Nobody may be at this Mac. What a phone asks for is capped at what
+        // the reader allowed remote sessions here, which by default still asks
+        // before every change.
+        let permission = requested.capped(
+            at: CodeSettingsModel.remoteCeiling(forProjectAt: workspace.descriptor.localPathHint)
+        )
         let configuration = AgentConfiguration(
             modelID: selectedModel,
             reasoningEffort: task.reasoningEffort.flatMap(ReasoningEffort.init(rawValue:)),

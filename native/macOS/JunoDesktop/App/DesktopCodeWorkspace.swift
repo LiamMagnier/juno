@@ -12,25 +12,16 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Code window: one navigation split view, a thread, and one optional
-/// trailing context rail.
+/// The Code window: the session column, the thread, and one side panel.
 ///
-/// Two stability constraints are honoured deliberately:
+/// Three regions and no more. The column lists sessions by project; the
+/// centre is the landing composer or a session's thread; the side panel holds
+/// the session's changes and a terminal, and is the window's inspector so the
+/// platform draws its divider and remembers its width.
 ///
-/// 1. Every `ToolbarItem` is always present and uses `.disabled()`. A toolbar item
-///    that appears and disappears makes SwiftUI rebuild the AppKit toolbar under a
-///    live window.
-/// 2. Column visibility is restored by hand, because
-///    `NavigationSplitViewVisibility` is not `RawRepresentable` and cannot be put
-///    in `@SceneStorage` directly.
-///
-/// **Review is the session's, not the window's.** This shell used to keep a
-/// `@SceneStorage` flag for the review and mirror it against
-/// `ReviewModel.isPresented` in both directions; the two disagreed, and the audit
-/// found it. There is one flag now, on the review the whole session shares, and
-/// the toolbar toggle, ⌥⌘R, the Changes list, the completion card and Open
-/// Quickly all write it. The review opens *beside* the thread as a resizable
-/// pane — see ``CodeSessionCanvas`` — never in place of it.
+/// Two stability rules from `MACOS_ARCHITECTURE.md` hold here: every toolbar
+/// item is always present and disables rather than disappears, and every
+/// anchored popover declares an explicit frame.
 struct DesktopCodeWorkspace: View {
     let workbenchModel: WorkbenchModel
     let codeModel: NativeCodeModel
@@ -45,15 +36,12 @@ struct DesktopCodeWorkspace: View {
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    @SceneStorage("juno.desktop.code.inspector.v4") private var inspectorVisible = true
-    @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
+    @SceneStorage("juno.desktop.code.panel") private var panelVisible = false
+    @SceneStorage("juno.desktop.code.panel-tab") private var storedPanelTab = StudioPanelTab.changes.rawValue
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
-    @SceneStorage("juno.desktop.code.filter") private var storedFilter =
-        DesktopCodeSessionFilter.all.rawValue
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var controller: SessionController?
-    @State private var inspectorReady = false
     @State private var isBootstrapping = true
     @State private var isStartingSession = false
     @State private var isChoosingRepository = false
@@ -63,10 +51,8 @@ struct DesktopCodeWorkspace: View {
     @State private var showingPalette = false
     @State private var isCreatingPullRequest = false
     /// A prompt handed in from the quick-entry panel or the menu bar item,
-    /// consumed by the next New task screen.
+    /// consumed by the next landing screen.
     @State private var pendingPrompt: String?
-    /// The environment the rail's "Local ▾" picker asked the next task to run
-    /// in, consumed by the next New task screen.
     @State private var pendingEnvironment: CodeEnvironmentChoice?
     @State private var simulatorHost = DesktopSimulatorHost()
     @State private var isDictating = false
@@ -76,34 +62,17 @@ struct DesktopCodeWorkspace: View {
     @State private var plan: DesktopUsagePlan?
     @State private var planReadAt: Date?
     @State private var registry = DesktopWorkbenchRegistry.shared
-    @FocusState private var sidebarSearchFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let planReadFloor: TimeInterval = 60
-
-    private var sessionSearchText: Binding<String> {
-        Binding(
-            get: { workbenchModel.sessionSearchText },
-            set: { workbenchModel.sessionSearchText = $0 }
-        )
-    }
-
-    private var filter: Binding<DesktopCodeSessionFilter> {
-        Binding(
-            get: { DesktopCodeSessionFilter(rawValue: storedFilter) ?? .all },
-            set: { storedFilter = $0.rawValue }
-        )
-    }
 
     // MARK: - Selection
 
     private var selection: Binding<DesktopCodeSidebarItem?> {
         Binding(
             get: {
-                if let previewSessionID {
-                    return .session(previewSessionID)
-                }
+                if let previewSessionID { return .session(previewSessionID) }
                 return DesktopCodeNavigationState.decode(storedSelection)
             },
             set: { storedSelection = DesktopCodeNavigationState.encode($0) }
@@ -112,24 +81,24 @@ struct DesktopCodeWorkspace: View {
 
     private var previewSessionID: CodeSessionID? {
         #if DEBUG
-        guard CommandLine.arguments.contains("--juno-preview-code-session") else {
-            return nil
-        }
+        guard CommandLine.arguments.contains("--juno-preview-code-session") else { return nil }
         return workbenchModel.selectedSessionID ?? workbenchModel.sessions.first?.id
         #else
         return nil
         #endif
     }
 
-    private var inspectorPresentation: Binding<Bool> {
+    private var panelTab: Binding<StudioPanelTab> {
         Binding(
-            get: {
-                guard case .session = selection.wrappedValue else {
-                    return false
-                }
-                return inspectorVisible && inspectorReady && controller != nil
-            },
-            set: { inspectorVisible = $0 }
+            get: { StudioPanelTab(rawValue: storedPanelTab) ?? .changes },
+            set: { storedPanelTab = $0.rawValue }
+        )
+    }
+
+    private var panelPresentation: Binding<Bool> {
+        Binding(
+            get: { panelVisible && controller != nil && selectedSessionID != nil },
+            set: { panelVisible = $0 }
         )
     }
 
@@ -144,9 +113,7 @@ struct DesktopCodeWorkspace: View {
     }
 
     private var selectedRemote: (deviceID: String, sessionID: String)? {
-        guard case .remote(let deviceID, let sessionID) = selection.wrappedValue else {
-            return nil
-        }
+        guard case .remote(let deviceID, let sessionID) = selection.wrappedValue else { return nil }
         return (deviceID, sessionID)
     }
 
@@ -155,35 +122,14 @@ struct DesktopCodeWorkspace: View {
         return remoteModel.sessions.first { $0.sessionID == selectedRemote.sessionID }
     }
 
-    private var detailTitle: String {
-        switch selection.wrappedValue {
-        case .session(let id):
-            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code"
-        case .repository, .draft, .none:
-            return "New task"
-        case .task(let id):
-            return codeModel.tasks.first { $0.id == id }?.title ?? "Cloud task"
-        case .remote(_, let id):
-            return remoteModel.sessions.first { $0.sessionID == id }?.title ?? "Remote session"
-        case .allProjects, .explore: return "Explore"
-        case .pulls: return "Pull requests"
-        case .design: return "Design"
-        case .scheduled: return "Scheduled"
-        case .plugins: return "Plugins"
-        case .security: return "Security"
-        }
-    }
-
-    /// The repository the next session belongs in: the one the reader is looking
-    /// at, or failing that the most recently opened one.
+    /// The repository the next session belongs in: the one the reader is
+    /// looking at, or the most recently opened one.
     private var targetRepository: WorkspaceRecord? {
         switch selection.wrappedValue {
         case .repository(let id):
             return workbenchModel.workspaces.first { $0.id == id }
         case .session(let id):
-            guard let session = workbenchModel.sessions.first(where: { $0.id == id }) else {
-                break
-            }
+            guard let session = workbenchModel.sessions.first(where: { $0.id == id }) else { break }
             return workbenchModel.workspaces.first { $0.id == session.workspaceID }
         default:
             break
@@ -191,9 +137,38 @@ struct DesktopCodeWorkspace: View {
         return workbenchModel.workspaces.first
     }
 
-    /// Whether the review pane is open on the selected session.
-    private var reviewPresented: Bool {
-        controller?.review.isPresented ?? false
+    private var title: String {
+        switch selection.wrappedValue {
+        case .session(let id):
+            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code"
+        case .task(let id):
+            return codeModel.tasks.first { $0.id == id }?.title ?? "Cloud run"
+        case .remote(_, let id):
+            return remoteModel.sessions.first { $0.sessionID == id }?.title ?? "Remote session"
+        case .pulls:
+            return "Pull requests"
+        default:
+            return "New session"
+        }
+    }
+
+    /// "project · branch", under the title.
+    private var subtitle: String {
+        switch selection.wrappedValue {
+        case .session:
+            guard let controller else { return "" }
+            var parts: [String] = []
+            if controller.context != nil { parts.append(controller.workspaceDisplayName) }
+            if let branch = controller.gitStatus?.branch ?? controller.session.gitBranch { parts.append(branch) }
+            if controller.session.executionRootPath != nil { parts.append("worktree") }
+            return parts.joined(separator: " · ")
+        case .task:
+            return selectedTask.map { [$0.whereItRuns, $0.baseRef].compactMap { $0 }.joined(separator: " · ") } ?? ""
+        case .remote:
+            return selectedRemoteSummary?.workspaceName ?? ""
+        default:
+            return ""
+        }
     }
 
     // MARK: - Body
@@ -207,44 +182,46 @@ struct DesktopCodeWorkspace: View {
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
                 product: $product,
-                filter: filter,
                 isBootstrapping: isBootstrapping,
                 session: session,
                 avatarModel: configuration?.avatarModel,
                 syncModel: configuration?.syncModel,
                 plan: plan,
                 openRepository: { isChoosingRepository = true },
-                newSession: { selection.wrappedValue = .repository($0) },
+                newSession: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
                 rename: beginRename,
-                searchText: sessionSearchText,
-                openPalette: { showingPalette = true },
-                beginVoice: {
-                    startVoice(
-                        modelID: controller?.session.configuration.modelID
-                            ?? workbenchModel.availableModels.first?.modelID ?? "",
-                        projectID: targetRepository?.id.value
-                    )
-                },
-                openHelp: { openWindow(id: JunoDesktopWindow.shortcutsID) }
+                openSettings: openSettings
             )
             .junoSidebarColumn()
         } detail: {
-            editorCanvas
-                .junoReadingCanvas()
-                .navigationTitle(detailTitle)
-                .toolbar { detailToolbar }
+            canvas
+                .background(Studio.Surface.canvas)
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
+                .toolbar { toolbar }
         }
-        .inspector(isPresented: inspectorPresentation) {
-            if inspectorPresentation.wrappedValue {
-                inspector
-                    .frame(width: JunoInspectorMetrics.ideal)
-                    .background(Color.junoCanvas)
+        .inspector(isPresented: panelPresentation) {
+            Group {
+                if let controller {
+                    StudioSidePanel(
+                        controller: controller,
+                        tab: panelTab,
+                        createPullRequest: { isCreatingPullRequest = true },
+                        close: { panelVisible = false }
+                    )
+                } else {
+                    Color.clear
+                }
             }
+            .inspectorColumnWidth(
+                min: Studio.Metrics.panelMinimum,
+                ideal: Studio.Metrics.panelIdeal,
+                max: Studio.Metrics.panelMaximum
+            )
         }
         .overlay {
             if showingPalette {
-                palette
-                    .transition(.junoOverlay)
+                palette.transition(.junoOverlay)
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: showingPalette)
@@ -256,11 +233,7 @@ struct DesktopCodeWorkspace: View {
             allowsMultipleSelection: false,
             onCompletion: grantRepository
         )
-        .fileDialogMessage(
-            Text(
-                "Choose the folder Juno Code may read and write in — or make a new one."
-            )
-        )
+        .fileDialogMessage(Text("Choose the folder Juno may read and write in."))
         .fileDialogConfirmationLabel(Text("Open Project"))
         .sheet(isPresented: $isOpeningQuickly) {
             if let controller {
@@ -276,19 +249,40 @@ struct DesktopCodeWorkspace: View {
                     .junoSheetSurface(.fitted)
             }
         }
+        .sheet(isPresented: Binding(
+            get: { controller?.review.openDocument != nil },
+            set: { if !$0 { controller?.review.closeDocument() } }
+        )) {
+            if let controller {
+                StudioDocumentSheet(controller: controller)
+                    .frame(minWidth: 720, minHeight: 520)
+            }
+        }
         .alert("Rename Session", isPresented: renameBinding) {
             TextField("Title", text: $renameText)
             Button("Rename") { commitRename() }
             Button("Cancel", role: .cancel) { renamingSession = nil }
         }
+        .alert(
+            "Voice unavailable",
+            isPresented: Binding(get: { voiceUnavailable != nil }, set: { if !$0 { voiceUnavailable = nil } })
+        ) {
+            Button("OK", role: .cancel) { voiceUnavailable = nil }
+        } message: {
+            Text(voiceUnavailable ?? "Juno could not start voice mode.")
+        }
         .task { await bootstrap() }
         .task(id: liveRunCount) { await readPlan() }
-        .task(id: selectedSessionID) {
-            inspectorReady = false
-            await resolveController()
-            guard controller != nil else { return }
-            await Task.yield()
-            inspectorReady = true
+        .task(id: selectedSessionID) { await resolveController() }
+        .task(id: selectedTask?.id) { followSelectedTask() }
+        .task(id: remoteDeviceID) { await loadRemoteSessions() }
+        .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
+        .onChange(of: workbenchModel.sessions.map(\.monitorKey), initial: true) { _, _ in
+            StudioRunMonitor.shared.observe(workbenchModel.sessions)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: StudioRunMonitor.openSessionNotification)) { note in
+            guard let id = note.object as? CodeSessionID else { return }
+            selection.wrappedValue = .session(id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
             guard let target = notification.object as? CodePreviewTarget,
@@ -296,54 +290,39 @@ struct DesktopCodeWorkspace: View {
                   target.workspaceRootPath == controller?.context?.access.rootURL.path,
                   previewTarget == nil
             else { return }
-            withAnimation(
-                JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
-            ) {
+            withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
                 simulatorHost.closePane()
                 previewTarget = target
             }
         }
-        .onChange(of: targetRepository?.id) { _, _ in
-            simulatorHost.tearDown()
-            closePreview()
-        }
         .onChange(of: selectedSessionID) { _, _ in
             simulatorHost.tearDown()
-            closePreview()
+            previewTarget = nil
         }
-        .task(id: selectedTask?.id) { followSelectedTask() }
-        .task(id: remoteDeviceID) { await loadRemoteSessions() }
-        .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
-        // Requests from outside the window: the menu bar item, the quick-entry
-        // panel. Consumed exactly once, on the next frame after they land.
+        .onChange(of: controller?.review.isPresented) { _, presented in
+            // The thread's "Review" actions set the review's flag; here that
+            // means the side panel, on its Changes tab.
+            guard presented == true else { return }
+            panelTab.wrappedValue = .changes
+            panelVisible = true
+            controller?.review.isPresented = false
+        }
         .onChange(of: registry.pendingRequest, initial: true) { _, request in
             guard let request else { return }
             consume(request)
-        }
-        .alert(
-            "Voice unavailable",
-            isPresented: Binding(
-                get: { voiceUnavailable != nil },
-                set: { if !$0 { voiceUnavailable = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { voiceUnavailable = nil }
-        } message: {
-            Text(voiceUnavailable ?? "Juno could not start voice mode.")
         }
         .onChange(of: codeModel.devices) { _, devices in
             selectDefaultRemoteDevice(from: devices)
         }
         .onChange(of: workbenchModel.sessions.count) { _, _ in
             guard case .session(let id) = selection.wrappedValue,
-                !workbenchModel.sessions.contains(where: { $0.id == id })
+                  !workbenchModel.sessions.contains(where: { $0.id == id })
             else { return }
             selection.wrappedValue = nil
         }
         .onAppear {
-            if storedColumnVisibility == "detailOnly" {
-                columnVisibility = .detailOnly
-            }
+            StudioRunMonitor.shared.install()
+            if storedColumnVisibility == "detailOnly" { columnVisibility = .detailOnly }
         }
         .onDisappear {
             simulatorHost.tearDown()
@@ -356,171 +335,36 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    private var editorCanvas: some View {
-        VStack(spacing: 0) {
-            threadHeader
+    // MARK: - Canvas
 
-            DesktopCodePreviewDock(
-                target: previewTarget,
-                close: closePreview,
-                openInWindow: {
-                    guard let previewTarget else { return }
-                    openPreviewWindow(previewTarget)
+    private var canvas: some View {
+        DesktopCodePreviewDock(
+            target: previewTarget,
+            close: { previewTarget = nil },
+            openInWindow: {
+                guard let previewTarget else { return }
+                openPreviewWindow(previewTarget)
+            }
+        ) {
+            DesktopSimulatorDock(
+                model: simulatorHost.isOpen ? simulatorHost.model : nil,
+                close: {
+                    withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+                        simulatorHost.closePane()
+                    }
                 }
             ) {
-                DesktopSimulatorDock(
-                    model: simulatorHost.isOpen ? simulatorHost.model : nil,
-                    close: {
-                        withAnimation(
-                            JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
-                        ) {
-                            simulatorHost.closePane()
-                        }
-                    }
-                ) {
-                    detail
-                }
+                detail
             }
         }
     }
-
-    /// The thread's title bar: project mark, title, its own menu; status and
-    /// elapsed; Share and the rail toggles. One strip for every transport.
-    @ViewBuilder
-    private var threadHeader: some View {
-        switch selection.wrappedValue {
-        case .session:
-            if let controller {
-                CodeThreadHeader(
-                    controller: controller,
-                    stop: stop,
-                    share: shareSession,
-                    rails: threadRails
-                ) {
-                    Button("Rename…") { beginRename(controller.session) }
-                        .contentShape(.rect)
-                    Button(controller.session.isFavorite ? "Remove from Favorites" : "Add to Favorites") {
-                        Task { await workbenchModel.toggleFavorite(id: controller.sessionID) }
-                    }
-                    .contentShape(.rect)
-                    if let workspaceID = controller.session.workspaceID {
-                        Button("New Task in This Project") {
-                            selection.wrappedValue = .repository(workspaceID)
-                        }
-                        .contentShape(.rect)
-                    }
-                    Divider()
-                    Button("Open File…") { isOpeningQuickly = true }
-                        .contentShape(.rect)
-                        .disabled(controller.context == nil)
-                    Button("Reveal in Finder") {
-                        guard let root = controller.context?.access.rootURL else { return }
-                        NSWorkspace.shared.activateFileViewerSelecting([root])
-                    }
-                    .contentShape(.rect)
-                    .disabled(controller.context == nil)
-                    Button("Compact Context") {
-                        Task { await controller.compactConversation() }
-                    }
-                    .contentShape(.rect)
-                    Divider()
-                    Button("Delete Thread", role: .destructive) {
-                        let id = controller.sessionID
-                        selection.wrappedValue = nil
-                        Task { await workbenchModel.deleteSession(id: id) }
-                    }
-                    .contentShape(.rect)
-                }
-            }
-        case .task:
-            if let task = selectedTask {
-                CodeThreadHeader(
-                    CodeThreadContext(
-                        title: task.title,
-                        project: task.whereItRuns,
-                        branch: task.baseRef,
-                        environment: task.target == .cloud ? "Cloud" : "Device",
-                        status: CodeRunStatus(task.status)
-                    ),
-                    stop: stop
-                )
-            }
-        case .remote:
-            if let summary = selectedRemoteSummary {
-                CodeThreadHeader(
-                    CodeThreadContext(
-                        title: summary.title,
-                        project: summary.workspaceName ?? "Connected computer",
-                        branch: summary.activeBranch,
-                        environment: "Remote",
-                        status: CodeRunStatus(summary)
-                    ),
-                    stop: stop
-                )
-            }
-        default:
-            EmptyView()
-        }
-    }
-
-    /// The review pane and the context rail, as the title bar's toggles.
-    private var threadRails: [CodeThreadRailToggle] {
-        [
-            CodeThreadRailToggle(
-                id: "review",
-                icon: .fileDiff,
-                label: "Review",
-                help: reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)",
-                isOn: reviewPresented,
-                isEnabled: controller != nil,
-                toggle: toggleReview
-            ),
-            CodeThreadRailToggle(
-                id: "environment",
-                icon: .sliders,
-                label: "Environment rail",
-                help: inspectorPresentation.wrappedValue ? "Hide the environment rail (⌥⌘I)" : "Show the environment rail (⌥⌘I)",
-                isOn: inspectorPresentation.wrappedValue,
-                isEnabled: controller != nil,
-                toggle: { inspectorPresentation.wrappedValue.toggle() }
-            ),
-        ]
-    }
-
-    /// Copies the thread as text — every prompt and reply — to the pasteboard,
-    /// which is the one share every session can honour. A pull request link,
-    /// when the session has one, is what the Repository pane shares.
-    private func shareSession() {
-        guard let controller else { return }
-        var lines: [String] = ["# \(controller.session.title)", ""]
-        for event in controller.events {
-            switch event.payload {
-            case let .userPrompt(prompt):
-                lines.append("**You:** \(prompt.text)")
-                lines.append("")
-            case let .assistantMessage(message):
-                lines.append(message.text)
-                lines.append("")
-            default:
-                continue
-            }
-        }
-        if let url = controller.lastPullRequestURL {
-            lines.append("Pull request: \(url)")
-        }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(lines.joined(separator: "\n"), forType: .string)
-    }
-
-    // MARK: - Detail column
 
     @ViewBuilder
     private var detail: some View {
         switch selection.wrappedValue {
         case .session:
             if let controller {
-                localSession(controller)
+                session(controller)
             } else if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -555,152 +399,66 @@ struct DesktopCodeWorkspace: View {
                 remote: remoteModel
             )
 
-        case .allProjects, .explore:
-            DesktopCodeAllProjects(
-                workbench: workbenchModel,
-                isLoading: isBootstrapping,
-                open: { selection.wrappedValue = .repository($0) },
-                newSession: { selection.wrappedValue = .repository($0) },
-                addProject: { isChoosingRepository = true },
-                revealInFinder: { path in
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: path)
-                    ])
-                }
-            )
-
-        case .scheduled:
-            scheduledPage
-
-        case .plugins:
-            CodeSettingsView(
-                workbench: workbenchModel,
-                availableModels: workbenchModel.availableModels,
-                scope: .plugins
-            ) { EmptyView() }
-
-        case .security:
-            CodeSettingsView(
-                workbench: workbenchModel,
-                availableModels: workbenchModel.availableModels,
-                scope: .security
-            ) {
-                DesktopCodeRemoteHostTile(host: configuration?.codeHostModel)
-            }
-
-        case .draft:
-            draft(nil)
-
         case .pulls:
             NativePullsView(
                 client: pullsClient,
                 accountID: accountID,
-                openConnections: openConnections
+                openConnections: configuration?.connectorModel == nil
+                    ? nil
+                    : { DesktopSettingsRouter.open(.connections) }
             )
 
-        case .design:
-            designPage
-
         case .repository(let id):
-            draft(workbenchModel.workspaces.first { $0.id == id })
+            landing(workbenchModel.workspaces.first { $0.id == id })
 
-        case nil:
+        case .draft:
+            landing(nil)
+
+        // Retired destinations from older builds: their pages moved to Code
+        // settings or back to Chat, and a restored selection lands here.
+        case .allProjects, .explore, .plugins, .security, .scheduled, .design, nil:
             if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                draft(workbenchModel.workspaces.first)
+                landing(workbenchModel.workspaces.first)
             }
         }
     }
 
-    /// Connections lives in the Settings window now; the pull request list's
-    /// "connect GitHub" button opens it there.
-    private var openConnections: (() -> Void)? {
-        guard configuration?.connectorModel != nil else { return nil }
-        return { DesktopSettingsRouter.open(.connections) }
-    }
-
-    /// The account's scheduled tasks, as the Tasks screen draws them.
-    @ViewBuilder
-    private var scheduledPage: some View {
-        if let configuration, let model = configuration.scheduledTaskModel {
-            DesktopTasksScreen(
-                model: model,
-                modelOptions: configuration.conversationModel?.selectableModels ?? [],
-                openConversation: { _ in product = .chat }
-            )
-        } else {
-            JunoEmptyState(
-                title: "Scheduled",
-                message: "The scheduled-task service is unavailable.",
-                icon: .clock
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var designPage: some View {
-        if let session, let configuration, let model = configuration.artifactModel {
-            DesktopDesignScreen(
-                model: model,
-                accountID: session.profile.id,
-                requestSender: configuration.requestSender,
-                syncModel: configuration.syncModel
-            )
-        } else {
-            JunoEmptyState(title: "Design", message: "The synchronized artifact store is unavailable.", icon: .error)
-        }
-    }
-
-    private func draft(_ record: WorkspaceRecord?) -> some View {
-        DesktopCodeNewTaskScreen(
-            record: record,
+    private func landing(_ record: WorkspaceRecord?) -> some View {
+        StudioLanding(
             workbench: workbenchModel,
             code: codeModel,
-            isStartingLocal: isStartingSession,
-            startLocal: start,
-            openTask: { task in
-                selection.wrappedValue = .task(task.id)
-            },
-            addProject: { isChoosingRepository = true },
-            selectProject: { id in
-                consoleVisible = false
-                selection.wrappedValue = id.map { .repository($0) } ?? .draft
-            },
-            beginVoice: { modelID in
-                startVoice(modelID: modelID, projectID: record?.id.value)
-            },
-            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
+            project: record,
+            isStarting: isStartingSession,
             initialPrompt: pendingPrompt,
-            initialEnvironment: pendingEnvironment
+            initialEnvironment: pendingEnvironment,
+            selectProject: { id in selection.wrappedValue = id.map { .repository($0) } ?? .draft },
+            addProject: { isChoosingRepository = true },
+            startLocal: start,
+            openTask: { task in selection.wrappedValue = .task(task.id) }
         )
-        .junoVoiceField(voiceColumn)
+        .junoVoiceColumn(voiceColumn)
     }
 
-    // MARK: - The session surface
-
-    private func localSession(_ controller: SessionController) -> some View {
-        CodeSessionCanvas(
+    private func session(_ controller: SessionController) -> some View {
+        StudioSessionView(
             controller: controller,
-            model: workbenchModel,
-            showsConsole: $consoleVisible,
-            beginDictation: JunoSpeechService.isSupported
-                ? {
-                    withAnimation(JunoMotion.fast) { isDictating = true }
-                }
-                : nil,
-            beginVoice: {
-                startVoice(for: controller)
+            models: workbenchModel.availableModels,
+            openReview: { path in
+                panelTab.wrappedValue = .changes
+                panelVisible = true
+                if let path { controller.review.focusedPath = path }
             },
-            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
-            voiceField: voiceColumn?.erasedField
+            beginDictation: JunoSpeechService.isSupported
+                ? { withAnimation(JunoMotion.fast) { isDictating = true } }
+                : nil
         )
+        .junoVoiceColumn(voiceColumn)
         .overlay(alignment: .bottom) {
             if isDictating {
                 DesktopDictation(
-                    onCancel: {
-                        withAnimation(JunoMotion.fast) { isDictating = false }
-                    },
+                    onCancel: { withAnimation(JunoMotion.fast) { isDictating = false } },
                     onStop: { transcript in
                         appendDictated(transcript, to: controller)
                         withAnimation(JunoMotion.fast) { isDictating = false }
@@ -712,123 +470,116 @@ struct DesktopCodeWorkspace: View {
                     }
                 )
                 .padding(JunoSpace.regular)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.junoInline)
             }
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .top) {
             if controller.computerUseActive {
-                JunoDesktopGlass(spacing: JunoSpace.snug) {
-                    computerUseIndicator(controller)
+                HStack(spacing: JunoSpace.snug) {
+                    Circle().fill(Studio.Ink.danger).frame(width: 7, height: 7)
+                    Text("Juno is controlling the screen")
+                        .font(Studio.Font.label)
+                    Button("Stop") { Task { await controller.stopComputerUse() } }
+                        .buttonStyle(StudioSecondaryButtonStyle())
+                        .accessibilityIdentifier("juno.code.computer-use.stop")
                 }
-                .padding(JunoSpace.regular)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .background(Capsule().fill(Studio.Surface.raised))
+                .overlay(Capsule().strokeBorder(Studio.Surface.hairline))
+                .padding(.top, JunoSpace.snug)
+                .transition(.junoOverlay)
             }
         }
     }
 
-    private var voiceColumn: DesktopVoiceColumn? {
-        guard let voiceSession,
-            let configuration,
-            let session
-        else { return nil }
-        return DesktopVoiceColumn(
-            sessionID: voiceSession.id,
-            controller: voiceSession.controller,
-            saveTranscript: { sessionID, turns in
-                guard let client = configuration.voiceTranscriptClient else {
-                    throw DesktopVoiceError.unavailable
-                }
-                let saved = try await client.save(
-                    sessionID: sessionID,
-                    conversationID: nil,
-                    modelID: voiceSession.modelID,
-                    projectID: voiceSession.projectID,
-                    connectors: [],
-                    turns: turns,
-                    for: session.profile.id
-                )
-                await configuration.syncModel?.refresh()
-                return saved.conversationID
-            },
-            close: { self.voiceSession = nil }
-        )
-    }
+    // MARK: - Toolbar
 
-    private func startVoice(for controller: SessionController) {
-        startVoice(
-            modelID: controller.session.configuration.modelID,
-            projectID: controller.session.workspaceID?.value
-        )
-    }
-
-    private func startVoice(modelID: String, projectID: String?) {
-        guard voiceSession == nil else { return }
-        guard let configuration, let session, let sender = configuration.requestSender else {
-            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
-            return
-        }
-        guard configuration.voiceTranscriptClient != nil else {
-            voiceUnavailable = "Voice is unavailable for this account."
-            return
-        }
-        guard !modelID.isEmpty else {
-            voiceUnavailable = "Choose a model before starting voice mode."
-            return
-        }
-
-        let initialProvider = JunoVoiceProvider.productionDefault
-        let started = DesktopVoiceSession(
-            controller: JunoRealtimeVoiceController(
-                authorization: JunoDesktopVoiceAuthorization(
-                    sender: sender,
-                    accountID: session.profile.id
-                ),
-                provider: initialProvider
-            ),
-            modelID: modelID,
-            conversationID: nil,
-            projectID: projectID
-        )
-        voiceSession = started
-        Task { await started.controller.start(provider: initialProvider) }
-    }
-
-    @ViewBuilder
-    private var inspector: some View {
-        Group {
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
             if let controller {
-                CodeSessionInspector(
-                    controller: controller,
-                    openPreview: openPreview,
-                    openSources: { isOpeningQuickly = true },
-                    openWorkspace: {
-                        guard let root = controller.context?.access.rootURL else { return }
-                        NSWorkspace.shared.activateFileViewerSelecting([root])
-                    },
-                    createPullRequest: { isCreatingPullRequest = true },
-                    startTask: { environment in
-                        pendingEnvironment = environment
-                        newSession()
-                    }
-                )
+                DesktopCodeRunClock(controller: controller)
             } else {
-                JunoEmptyState(
-                    title: "Nothing to inspect",
-                    message: """
-                        Select a session on this Mac to see its changes, activity \
-                        and repository.
-                        """,
-                    icon: .code
-                )
+                Color.clear.frame(width: 1, height: 1)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button(action: newSession) {
+                Label("New session", systemImage: "square.and.pencil")
+            }
+            .help("New session (⌘N)")
+            .accessibilityIdentifier("juno.code.new-session")
+
+            Button { togglePanel(.changes) } label: {
+                Label("Changes", systemImage: "plusminus")
+            }
+            .disabled(controller == nil)
+            .help("Changes (⌥⌘R)")
+            .accessibilityIdentifier("juno.code.review.toggle")
+
+            Button { togglePanel(.terminal) } label: {
+                Label("Terminal", systemImage: "terminal")
+            }
+            .disabled(controller?.context == nil)
+            .help("Terminal (⌥⌘T)")
+            .accessibilityIdentifier("juno.code.terminal.toggle")
+
+            Menu {
+                Button("Preview", action: openPreview)
+                    .disabled(controller?.context == nil)
+                Button("Run in Simulator", action: openSimulator)
+                    .disabled(targetRepository == nil)
+                Button("Open File…") { isOpeningQuickly = true }
+                    .disabled(controller?.context == nil)
+                Divider()
+                Button("Create Pull Request…") { isCreatingPullRequest = true }
+                    .disabled(controller?.pullRequestUnavailableReason != nil)
+                Button("Compact Context") {
+                    Task { await controller?.compactConversation() }
+                }
+                .disabled(controller == nil)
+                Divider()
+                Button(controller?.computerUseActive == true ? "Stop Screen Control" : "Start Screen Control",
+                       action: toggleComputerUse)
+                    .disabled(controller?.computerUseUnavailableReason != nil)
+                Button("Voice Conversation") {
+                    startVoice(
+                        modelID: controller?.session.configuration.modelID
+                            ?? workbenchModel.availableModels.first?.modelID ?? "",
+                        projectID: targetRepository?.id.value
+                    )
+                }
+                Divider()
+                Button("Rename…") { if let session = controller?.session { beginRename(session) } }
+                    .disabled(controller == nil)
+                Button("Reveal in Finder") {
+                    guard let root = controller?.context?.access.rootURL else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([root])
+                }
+                .disabled(controller?.context == nil)
+                Button("Copy Transcript", action: copyTranscript)
+                    .disabled(controller == nil)
+                Divider()
+                Button("Delete Session", role: .destructive) {
+                    guard let id = controller?.sessionID else { return }
+                    selection.wrappedValue = nil
+                    Task { await workbenchModel.deleteSession(id: id) }
+                }
+                .disabled(controller == nil)
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+            .accessibilityIdentifier("juno.code.more")
+        }
     }
 
     // MARK: - Command palette
 
     private var palette: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(0.18)
+            Color.black.opacity(0.12)
                 .ignoresSafeArea()
                 .onTapGesture { showingPalette = false }
                 .accessibilityHidden(true)
@@ -844,61 +595,31 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Everything ⌘K can reach, assembled from what the window knows.
     private var paletteItems: [CodePaletteItem] {
-        var items: [CodePaletteItem] = []
-        items.append(CodePaletteItem(id: "action.new-task", kind: .action, title: "New task", icon: .new, shortcut: "⌘N"))
-        items.append(CodePaletteItem(id: "action.open-folder", kind: .action, title: "Open folder…", icon: .projects, shortcut: "⌘O"))
-        items.append(CodePaletteItem(id: "action.pulls", kind: .action, title: "Pull requests", icon: .pulls))
-        items.append(CodePaletteItem(id: "action.scheduled", kind: .action, title: "Scheduled", icon: .clock))
-        items.append(CodePaletteItem(id: "action.plugins", kind: .action, title: "Plugins", icon: .blocks))
-        items.append(CodePaletteItem(id: "action.security", kind: .action, title: "Security", icon: .shield))
-        items.append(CodePaletteItem(id: "action.projects", kind: .action, title: "Explore projects", icon: .compass))
-        items.append(CodePaletteItem(id: "action.settings", kind: .action, title: "Code settings…", icon: .sliders, shortcut: "⌘,"))
-        if controller != nil {
-            items.append(CodePaletteItem(id: "action.review", kind: .action, title: reviewPresented ? "Close review" : "Review changes", icon: .branch, shortcut: "⌥⌘R"))
-            items.append(CodePaletteItem(id: "action.console", kind: .action, title: consoleVisible ? "Hide console" : "Show console", icon: .terminal, shortcut: "⌥⌘C"))
-            items.append(CodePaletteItem(id: "action.inspector", kind: .action, title: inspectorVisible ? "Hide context rail" : "Show context rail", icon: .sliders, shortcut: "⌥⌘I"))
-            items.append(CodePaletteItem(id: "action.preview", kind: .action, title: previewTarget == nil ? "Open preview" : "Hide preview", icon: .canvas, shortcut: "⌥⌘P"))
-            items.append(CodePaletteItem(id: "action.open-file", kind: .action, title: "Open file…", icon: .search, shortcut: "⇧⌘O"))
-            if controller?.pullRequestUnavailableReason == nil {
+        var items: [CodePaletteItem] = [
+            CodePaletteItem(id: "action.new-task", kind: .action, title: "New session", icon: .compose, shortcut: "⌘N"),
+            CodePaletteItem(id: "action.open-folder", kind: .action, title: "Open project…", icon: .projects, shortcut: "⌘O"),
+            CodePaletteItem(id: "action.pulls", kind: .action, title: "Pull requests", icon: .pulls),
+            CodePaletteItem(id: "action.settings", kind: .action, title: "Code settings…", icon: .settings),
+        ]
+        if let controller {
+            items += [
+                CodePaletteItem(id: "action.review", kind: .action, title: "Changes", icon: .diff, shortcut: "⌥⌘R"),
+                CodePaletteItem(id: "action.terminal", kind: .action, title: "Terminal", icon: .terminal, shortcut: "⌥⌘T"),
+                CodePaletteItem(id: "action.preview", kind: .action, title: previewTarget == nil ? "Preview" : "Hide preview", icon: .canvas),
+                CodePaletteItem(id: "action.open-file", kind: .action, title: "Open file…", icon: .fileSearch),
+            ]
+            if controller.pullRequestUnavailableReason == nil {
                 items.append(CodePaletteItem(id: "action.pull-request", kind: .action, title: "Create pull request…", icon: .pulls))
             }
-            if controller?.session.status.isActive == true {
-                items.append(CodePaletteItem(id: "action.stop", kind: .action, title: "Stop the run", icon: .stop, shortcut: "⌘."))
+            if controller.session.status.isActive {
+                items.append(CodePaletteItem(id: "action.stop", kind: .action, title: "Stop", icon: .stop, shortcut: "⌘."))
             }
-            for mode in PermissionMode.allCases {
-                items.append(
-                    CodePaletteItem(
-                        id: "permission.\(mode.rawValue)",
-                        kind: .permission,
-                        title: PermissionModeLabel.text(for: mode),
-                        subtitle: PermissionModeLabel.explanation(for: mode),
-                        icon: PermissionModeLabel.junoIcon(for: mode)
-                    )
-                )
+            for mode in StudioMode.ladder {
+                items.append(CodePaletteItem(id: "mode.\(mode.rawValue)", kind: .permission, title: mode.title, subtitle: mode.detail, icon: mode.icon))
             }
             for model in workbenchModel.availableModels {
-                items.append(
-                    CodePaletteItem(
-                        id: "model.\(model.modelID)",
-                        kind: .model,
-                        title: model.displayName,
-                        subtitle: model.modelID,
-                        icon: .models
-                    )
-                )
-            }
-            for command in CodeSlashCommandLibrary.builtIn.commands {
-                items.append(
-                    CodePaletteItem(
-                        id: "slash.\(command.name)",
-                        kind: .slashCommand,
-                        title: "/\(command.name)",
-                        subtitle: command.summary,
-                        icon: .terminal
-                    )
-                )
+                items.append(CodePaletteItem(id: "model.\(model.modelID)", kind: .model, title: model.displayName, subtitle: model.modelID, icon: .models))
             }
         }
         for record in workbenchModel.workspaces {
@@ -908,7 +629,7 @@ struct DesktopCodeWorkspace: View {
                     kind: .project,
                     title: record.descriptor.displayName,
                     subtitle: (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath,
-                    icon: record.descriptor.isGitRepository ? .branch : .projects
+                    icon: .projects
                 )
             )
         }
@@ -918,11 +639,9 @@ struct DesktopCodeWorkspace: View {
                     id: "session.\(session.id.value)",
                     kind: .session,
                     title: session.title,
-                    subtitle: [
-                        workbenchModel.workspaceName(for: session.workspaceID),
-                        session.gitBranch,
-                        CodeRunStatus(session.status, hasPendingApproval: session.hasPendingApproval).label,
-                    ].compactMap { $0 }.joined(separator: " · "),
+                    subtitle: [workbenchModel.workspaceName(for: session.workspaceID), session.gitBranch]
+                        .compactMap { $0 }
+                        .joined(separator: " · "),
                     icon: .conversation,
                     keywords: [session.gitBranch ?? ""]
                 )
@@ -938,39 +657,22 @@ struct DesktopCodeWorkspace: View {
         case ("action", "new-task"): newSession()
         case ("action", "open-folder"): isChoosingRepository = true
         case ("action", "pulls"): selection.wrappedValue = .pulls
-        case ("action", "scheduled"): selection.wrappedValue = .scheduled
-        case ("action", "plugins"): selection.wrappedValue = .plugins
-        case ("action", "security"): selection.wrappedValue = .security
-        case ("action", "projects"): selection.wrappedValue = .explore
-        case ("action", "settings"): DesktopSettingsRouter.open(.code)
-        case ("action", "review"): toggleReview()
-        case ("action", "console"): toggleConsole()
-        case ("action", "inspector"): inspectorPresentation.wrappedValue.toggle()
+        case ("action", "settings"): openSettings()
+        case ("action", "review"): togglePanel(.changes)
+        case ("action", "terminal"): togglePanel(.terminal)
         case ("action", "preview"): openPreview()
         case ("action", "open-file"): isOpeningQuickly = true
         case ("action", "pull-request"): isCreatingPullRequest = true
         case ("action", "stop"): stop()
-        case ("permission", let raw):
-            guard let mode = PermissionMode(rawValue: raw), let controller else { return }
-            Task { await controller.setPermissionMode(mode) }
+        case ("mode", let raw):
+            guard let mode = StudioMode(rawValue: raw), let controller else { return }
+            Task {
+                await controller.setBehavior(mode.behavior)
+                if mode.behavior == .code { await controller.setPermissionMode(mode.permission) }
+            }
         case ("model", let id):
             guard let controller else { return }
             Task { await controller.setModelID(id) }
-        case ("slash", let name):
-            guard let controller,
-                  let command = CodeSlashCommandLibrary.builtIn.command(named: name)
-            else { return }
-            if let action = command.action {
-                switch action {
-                case .compact: Task { await controller.compactConversation() }
-                case .review: controller.review.present()
-                }
-            } else {
-                controller.composerText = command.expanded(argument: "")
-                if let behavior = command.behavior {
-                    Task { await controller.setBehavior(behavior) }
-                }
-            }
         case ("project", let id):
             selection.wrappedValue = .repository(WorkspaceID(value: id))
         case ("session", let id):
@@ -980,214 +682,13 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    // MARK: - Floating status controls
-
-    @ViewBuilder
-    private func computerUseIndicator(_ controller: SessionController) -> some View {
-        if controller.computerUseActive {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.permission, size: 15)
-                    .foregroundStyle(Color.junoDanger)
-                Text("Screen control active").junoRowLabel()
-                Button("Stop") {
-                    Task { await controller.stopComputerUse() }
-                }
-                .buttonStyle(.borderless)
-                .tint(Color.junoDanger)
-                .accessibilityLabel("Stop screen control")
-                .accessibilityIdentifier("juno.code.computer-use.stop")
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: JunoRadius.well)
-            .accessibilityElement(children: .contain)
-        }
-    }
-
-    // MARK: - Toolbar
-
-    @ToolbarContentBuilder
-    private var detailToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button(action: newSession) {
-                JunoIconLabel(verbatim: "New task", icon: .new, size: 15)
-            }
-            .junoToolbarMetrics()
-            .help("Start a new task (⌘N)")
-            .accessibilityIdentifier("juno.code.new-session")
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button(action: toggleReview) {
-                JunoIconLabel(
-                    verbatim: "Review",
-                    icon: .branch,
-                    size: 15
-                )
-            }
-            .junoToolbarMetrics()
-            .disabled(controller == nil)
-            .help(reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)")
-            .accessibilityIdentifier("juno.code.review.toggle")
-            .accessibilityValue(reviewPresented ? "Open" : "Closed")
-
-            // Review and Commands share a group: both are ways of looking at
-            // the thread, and three groups is the most a title bar reads as
-            // grouped rather than as a row of icons.
-            Button {
-                showingPalette = true
-            } label: {
-                JunoIconLabel(verbatim: "Commands", icon: .search, size: 15)
-            }
-            .junoToolbarMetrics()
-            .help("Command palette (⌘K)")
-            .accessibilityIdentifier("juno.code.palette")
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItemGroup(placement: .primaryAction) {
-            Menu {
-                Section("Session") {
-                    Button(action: openPreview) {
-                        JunoIconLabel(
-                            verbatim: previewTarget == nil ? "Preview" : "Hide preview",
-                            icon: .canvas,
-                            size: 14
-                        )
-                    }
-                    .disabled(controller == nil)
-
-                    Button {
-                        inspectorPresentation.wrappedValue.toggle()
-                    } label: {
-                        JunoIconLabel(
-                            verbatim: inspectorPresentation.wrappedValue ? "Hide context rail" : "Show context rail",
-                            icon: .sliders,
-                            size: 14
-                        )
-                    }
-                    .disabled(controller == nil)
-
-                    Button(action: toggleConsole) {
-                        JunoIconLabel(
-                            verbatim: consoleVisible ? "Hide console" : "Show console",
-                            icon: .terminal,
-                            size: 14
-                        )
-                    }
-                    .disabled(controller == nil)
-
-                    Button {
-                        isCreatingPullRequest = true
-                    } label: {
-                        JunoIconLabel(verbatim: "Create pull request…", icon: .pulls, size: 14)
-                    }
-                    .disabled(controller?.pullRequestUnavailableReason != nil)
-                }
-
-                Section("Workspace") {
-                    Button(action: openSimulator) {
-                        JunoIconLabel(verbatim: "Run in Simulator", icon: .device, size: 14)
-                    }
-                    .disabled(targetRepository == nil)
-
-                    Button { isChoosingRepository = true } label: {
-                        JunoIconLabel(verbatim: "Open folder…", icon: .projects, size: 14)
-                    }
-
-                    Button { isOpeningQuickly = true } label: {
-                        JunoIconLabel(verbatim: "Open file…", icon: .search, size: 14)
-                    }
-                    .disabled(controller?.context == nil)
-                }
-
-                Divider()
-
-                Button(action: toggleComputerUse) {
-                    JunoIconLabel(
-                        verbatim: controller?.computerUseActive == true
-                            ? "Stop screen control" : "Start screen control",
-                        icon: .permission,
-                        size: 14
-                    )
-                }
-                .disabled(!supportsComputerUse)
-                .help(computerUseHelp)
-            } label: {
-                JunoIconLabel(verbatim: "Task actions", icon: .ellipsis, size: 15)
-            }
-            .junoToolbarMetrics()
-            .accessibilityIdentifier("juno.code.more")
-            .accessibilityLabel("Task actions")
-            .accessibilityRepresentation {
-                HStack(spacing: 0) {
-                    Button(
-                        previewTarget == nil ? "Open preview" : "Hide preview",
-                        action: openPreview
-                    )
-                    .disabled(controller == nil)
-                    .accessibilityIdentifier("juno.code.preview.toggle")
-
-                    Button(
-                        inspectorPresentation.wrappedValue ? "Hide context rail" : "Show context rail",
-                        action: { inspectorPresentation.wrappedValue.toggle() }
-                    )
-                    .disabled(controller == nil)
-                    .accessibilityIdentifier("juno.code.inspector.toggle")
-
-                    Button(
-                        consoleVisible ? "Hide console" : "Show console",
-                        action: toggleConsole
-                    )
-                    .disabled(controller == nil)
-                    .accessibilityIdentifier("juno.code.console.toggle")
-                }
-            }
-        }
-    }
-
-    private func openSimulator() {
-        guard let repository = targetRepository else { return }
-        withAnimation(
-            JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
-        ) {
-            closePreview()
-            simulatorHost.open(
-                workspaceKey: repository.id.value,
-                workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
-            )
-        }
-    }
-
-    private var supportsComputerUse: Bool {
-        controller?.computerUseUnavailableReason == nil
-    }
-
-    private var computerUseHelp: String {
-        guard let controller else {
-            return "Screen control is only available for a session running on this Mac."
-        }
-        if let reason = controller.computerUseUnavailableReason {
-            return reason
-        }
-        return controller.computerUseActive
-            ? "Immediately stop screen capture and input control"
-            : "Let this session capture and control the main display"
-    }
-
     // MARK: - Menu bar
 
     private var workspaceActions: DesktopWorkspaceActions {
         DesktopWorkspaceActions(
             newItem: newSession,
             newChat: newChat,
-            openSearch: {
-                columnVisibility = .all
-                sidebarSearchFocused = true
-            },
+            openSearch: { columnVisibility = .all },
             switchProduct: { product = $0 },
             currentProduct: product
         )
@@ -1198,9 +699,9 @@ struct DesktopCodeWorkspace: View {
             openPalette: { showingPalette = true },
             previousSession: { step(-1) },
             nextSession: { step(1) },
-            toggleReview: toggleReview,
-            toggleConsole: toggleConsole,
-            toggleInspector: { inspectorPresentation.wrappedValue.toggle() },
+            toggleReview: { togglePanel(.changes) },
+            toggleConsole: { togglePanel(.terminal) },
+            toggleInspector: { panelVisible.toggle() },
             togglePreview: openPreview,
             openFile: { isOpeningQuickly = true },
             openFolder: { isChoosingRepository = true },
@@ -1211,8 +712,6 @@ struct DesktopCodeWorkspace: View {
         )
     }
 
-    /// ⌘⇧[ and ⌘⇧]: the session before or after the selected one, in the
-    /// column's own order. Wraps.
     private func step(_ delta: Int) {
         let ordered = workbenchModel.visibleSessions.sorted { $0.updatedAt > $1.updatedAt }
         guard !ordered.isEmpty else { return }
@@ -1221,27 +720,23 @@ struct DesktopCodeWorkspace: View {
         selection.wrappedValue = .session(ordered[next].id)
     }
 
-    private func toggleReview() {
-        guard let controller else { return }
-        if controller.review.isPresented {
-            controller.review.dismiss()
-        } else {
-            controller.review.present()
-        }
-    }
-
-    private func toggleConsole() {
-        withAnimation(
-            JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
-        ) {
-            consoleVisible.toggle()
-        }
-    }
-
     // MARK: - Actions
 
+    private func togglePanel(_ tab: StudioPanelTab) {
+        guard controller != nil else { return }
+        if panelVisible, panelTab.wrappedValue == tab {
+            panelVisible = false
+        } else {
+            panelTab.wrappedValue = tab
+            panelVisible = true
+        }
+    }
+
+    private func openSettings() {
+        openWindow(id: JunoDesktopWindow.codeSettingsID)
+    }
+
     private func newSession() {
-        consoleVisible = false
         if let record = targetRepository {
             selection.wrappedValue = .repository(record.id)
         } else {
@@ -1249,7 +744,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// A request from the menu bar item or the quick-entry panel.
     private func consume(_ request: DesktopWorkbenchRegistry.Request) {
         switch request.kind {
         case .newCodeTask(let prompt):
@@ -1258,9 +752,6 @@ struct DesktopCodeWorkspace: View {
         case .openSession(let id):
             selection.wrappedValue = .session(id)
         case .newChat:
-            // Chat's, not ours. `JunoDesktopWorkspaceView` switches product
-            // and hands the prompt across; this window only sees the request
-            // because it was on screen when it landed.
             return
         }
         registry.consume(request)
@@ -1269,26 +760,66 @@ struct DesktopCodeWorkspace: View {
     private func openPreview() {
         guard let root = controller?.context?.access.rootURL else { return }
         if previewTarget != nil {
-            closePreview()
+            previewTarget = nil
             return
         }
         simulatorHost.closePane()
-        previewTarget = CodePreviewTarget(
-            workspaceRoot: root,
-            sessionID: controller?.sessionID
-        )
-    }
-
-    private func closePreview() {
-        previewTarget = nil
+        previewTarget = CodePreviewTarget(workspaceRoot: root, sessionID: controller?.sessionID)
     }
 
     private func openPreviewWindow(_ target: CodePreviewTarget) {
         openWindow(id: CodePreviewScene.windowID, value: target)
     }
 
-    /// Creates and starts the local run described by the New task screen.
-    private func start(_ draft: DesktopLocalCodeDraft) {
+    private func openSimulator() {
+        guard let repository = targetRepository else { return }
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            previewTarget = nil
+            simulatorHost.open(
+                workspaceKey: repository.id.value,
+                workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
+            )
+        }
+    }
+
+    private func toggleComputerUse() {
+        guard let controller else { return }
+        Task {
+            if controller.computerUseActive {
+                await controller.stopComputerUse()
+            } else {
+                if !controller.session.configuration.computerUseEnabled {
+                    await controller.setComputerUseEnabled(true)
+                }
+                await controller.activateComputerUse()
+            }
+        }
+    }
+
+    private func copyTranscript() {
+        guard let controller else { return }
+        var lines: [String] = ["# \(controller.session.title)", ""]
+        for event in controller.events {
+            switch event.payload {
+            case let .userPrompt(prompt):
+                lines.append("**You:** \(prompt.text)")
+                lines.append("")
+            case let .assistantMessage(message):
+                lines.append(message.text)
+                lines.append("")
+            default:
+                continue
+            }
+        }
+        if let url = controller.lastPullRequestURL {
+            lines.append("Pull request: \(url)")
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+    }
+
+    /// Creates and starts the local session the landing screen describes.
+    private func start(_ draft: StudioDraft) {
         guard !isStartingSession else { return }
         isStartingSession = true
         pendingPrompt = nil
@@ -1298,17 +829,11 @@ struct DesktopCodeWorkspace: View {
             guard let session = await workbenchModel.createSession(
                 workspaceID: draft.workspaceID,
                 configuration: draft.configuration,
-                isolatedWorktree: draft.usesIsolatedWorktree
+                isolatedWorktree: draft.isolatedWorktree
             ) else { return }
-            await workbenchModel.renameSession(
-                id: session.id,
-                title: DesktopLocalCodeDraft.title(from: draft.prompt)
-            )
-            consoleVisible = false
+            await workbenchModel.renameSession(id: session.id, title: draft.title)
             selection.wrappedValue = .session(session.id)
-            guard let created = await workbenchModel.controller(for: session.id) else {
-                return
-            }
+            guard let created = await workbenchModel.controller(for: session.id) else { return }
             for path in draft.fileReferences {
                 created.registerComposerFileReference(path)
             }
@@ -1335,26 +860,10 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    private func toggleComputerUse() {
-        guard let controller else { return }
-        Task {
-            if controller.computerUseActive {
-                await controller.stopComputerUse()
-            } else {
-                if !controller.session.configuration.computerUseEnabled {
-                    await controller.setComputerUseEnabled(true)
-                }
-                await controller.activateComputerUse()
-            }
-        }
-    }
-
     private func grantRepository(_ result: Result<[URL], any Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         Task {
-            guard let record = await workbenchModel.addWorkspace(grantedURL: url) else {
-                return
-            }
+            guard let record = await workbenchModel.addWorkspace(grantedURL: url) else { return }
             selection.wrappedValue = .repository(record.id)
         }
     }
@@ -1372,10 +881,7 @@ struct DesktopCodeWorkspace: View {
     }
 
     private var renameBinding: Binding<Bool> {
-        Binding(
-            get: { renamingSession != nil },
-            set: { if !$0 { renamingSession = nil } }
-        )
+        Binding(get: { renamingSession != nil }, set: { if !$0 { renamingSession = nil } })
     }
 
     private func commitRename() {
@@ -1385,24 +891,73 @@ struct DesktopCodeWorkspace: View {
         Task { await workbenchModel.renameSession(id: session.id, title: title) }
     }
 
+    // MARK: - Voice
+
+    private var voiceColumn: DesktopVoiceColumn? {
+        guard let voiceSession, let configuration, let session else { return nil }
+        return DesktopVoiceColumn(
+            sessionID: voiceSession.id,
+            controller: voiceSession.controller,
+            saveTranscript: { sessionID, turns in
+                guard let client = configuration.voiceTranscriptClient else {
+                    throw DesktopVoiceError.unavailable
+                }
+                let saved = try await client.save(
+                    sessionID: sessionID,
+                    conversationID: nil,
+                    modelID: voiceSession.modelID,
+                    projectID: voiceSession.projectID,
+                    connectors: [],
+                    turns: turns,
+                    for: session.profile.id
+                )
+                await configuration.syncModel?.refresh()
+                return saved.conversationID
+            },
+            close: { self.voiceSession = nil }
+        )
+    }
+
+    private func startVoice(modelID: String, projectID: String?) {
+        guard voiceSession == nil else { return }
+        guard let configuration, let session, let sender = configuration.requestSender else {
+            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            return
+        }
+        guard configuration.voiceTranscriptClient != nil else {
+            voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+        guard !modelID.isEmpty else {
+            voiceUnavailable = "Choose a model before starting voice mode."
+            return
+        }
+        let provider = JunoVoiceProvider.productionDefault
+        let started = DesktopVoiceSession(
+            controller: JunoRealtimeVoiceController(
+                authorization: JunoDesktopVoiceAuthorization(sender: sender, accountID: session.profile.id),
+                provider: provider
+            ),
+            modelID: modelID,
+            conversationID: nil,
+            projectID: projectID
+        )
+        voiceSession = started
+        Task { await started.controller.start(provider: provider) }
+    }
+
     // MARK: - Lifecycle
 
     private func bootstrap() async {
         await workbenchModel.bootstrap()
         isBootstrapping = false
         selectDefaultRemoteDevice(from: codeModel.devices)
-
         #if DEBUG
-        if CommandLine.arguments.contains("--juno-preview-inspector") {
-            inspectorVisible = true
-        }
         if previewSessionID != nil {
             await resolveController()
-            inspectorReady = controller != nil
             return
         }
         #endif
-
         let validated = DesktopCodeNavigationState.validate(
             selection.wrappedValue,
             sessions: workbenchModel.visibleSessions.map(\.id),
@@ -1437,13 +992,8 @@ struct DesktopCodeWorkspace: View {
     private func followSelectedRemoteSession() async {
         guard let selectedRemote else { return }
         remoteModel.openSession(selectedRemote.sessionID)
-        await remoteModel.watchEvents(
-            deviceID: selectedRemote.deviceID,
-            sessionID: selectedRemote.sessionID
-        )
+        await remoteModel.watchEvents(deviceID: selectedRemote.deviceID, sessionID: selectedRemote.sessionID)
     }
-
-    // MARK: - Plan meters
 
     private var liveRunCount: Int {
         workbenchModel.sessions.filter(\.status.isActive).count
@@ -1452,23 +1002,55 @@ struct DesktopCodeWorkspace: View {
 
     private func readPlan() async {
         guard let sender = configuration?.requestSender, let session else { return }
-        if plan != nil, let planReadAt,
-            Date().timeIntervalSince(planReadAt) < Self.planReadFloor
-        {
+        if plan != nil, let planReadAt, Date().timeIntervalSince(planReadAt) < Self.planReadFloor {
             return
         }
-        let snapshot = await NativeUsageClient(sender: sender)
-            .load(range: .month, for: session.profile.id)
+        let snapshot = await NativeUsageClient(sender: sender).load(range: .month, for: session.profile.id)
         guard let loaded = snapshot.plan else { return }
         planReadAt = Date()
         withAnimation(JunoMotion.standard) { plan = loaded }
     }
 
     private func selectDefaultRemoteDevice(from devices: [NativeCodeDevice]) {
-        guard remoteDeviceID.isEmpty || !devices.contains(where: { $0.id == remoteDeviceID })
-        else { return }
+        guard remoteDeviceID.isEmpty || !devices.contains(where: { $0.id == remoteDeviceID }) else { return }
         remoteDeviceID = devices.first(where: \.online)?.id ?? devices.first?.id ?? ""
     }
+}
+
+/// The title bar's quiet run status: "Working 1m 12s" while a run is live,
+/// "Needs you" while it waits. Nothing at rest.
+private struct DesktopCodeRunClock: View {
+    let controller: SessionController
+
+    private var status: StudioStatus {
+        StudioStatus(controller.session.status, hasPendingApproval: !controller.pendingApprovals.isEmpty)
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            if status != .idle {
+                StudioStatusGlyph(status: status, size: 7)
+                if status == .working, let started = controller.runStartedAt {
+                    TimelineView(.periodic(from: started, by: 1)) { context in
+                        Text(StudioFormat.duration(context.date.timeIntervalSince(started)))
+                            .font(Studio.Font.metaDigits)
+                            .foregroundStyle(Studio.Ink.tertiary)
+                    }
+                } else {
+                    Text(status.label)
+                        .font(Studio.Font.meta)
+                        .foregroundStyle(status == .failed ? Studio.Ink.danger : Studio.Ink.tertiary)
+                }
+            }
+        }
+        .frame(minWidth: 1)
+        .animation(JunoMotion.fast, value: status)
+    }
+}
+
+private extension CodeSession {
+    /// What the run monitor needs to notice a change.
+    var monitorKey: String { "\(id.value):\(status.rawValue):\(hasPendingApproval)" }
 }
 
 // MARK: - Cloud and device runs

@@ -52,7 +52,7 @@ final class ToolRegistryTests: XCTestCase {
             "read_file", "list_directory", "find_files", "glob", "grep",
             "create_file", "write_file", "apply_patch", "delete_file", "move_file",
             "run_command", "git_status", "git_diff", "git_log", "git_commit",
-            "run_tests",
+            "run_tests", "web_fetch",
         ]
         XCTAssertEqual(names, expected)
     }
@@ -315,11 +315,11 @@ final class ToolRegistryTests: XCTestCase {
             PermissionPolicy.ruling(mode: .fullAccess, risk: .destructive),
             .requireApproval
         )
-        // …but `run_tests` is pinned, so the risk tier is not the last word on
-        // it. `git_commit`, which is not pinned, is what full access does let
-        // through — the two must not be conflated.
+        // …but `run_tests` and `git_commit` are pinned, so the risk tier is not
+        // the last word on either: both descriptions promise the reader sees
+        // every invocation, and an allow rule is the reader's way out of it.
         XCTAssertEqual(runTests.approvalPolicy, .alwaysRequiresApproval)
-        XCTAssertEqual(gitCommit.approvalPolicy, .byRisk)
+        XCTAssertEqual(gitCommit.approvalPolicy, .alwaysRequiresApproval)
     }
 
     /// The defect end to end: a Full Access session used to run an arbitrary

@@ -58,6 +58,45 @@ public struct NativeCodeAgentTask: Codable, Identifiable, Equatable, Sendable {
     public let subagentsEnabled: Bool
     public let createdAt: String
     public let updatedAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, deviceId, workspacePath, workspaceName, workspaceKey, title, prompt
+        case status, lastSeq, conversationId, target, repoOwner, repoName, baseRef, prUrl
+        case agentRuntime, permissionMode, modelId, reasoningEffort, computerUse
+        case subagentsEnabled, createdAt, updatedAt
+    }
+
+    /// Lenient where the server is: `serializeTask` sends no runtime, model,
+    /// effort, Computer Use or sub-agent fields, leaves `permissionMode` null
+    /// on device tasks and omits `prompt` on list responses. Decoding those
+    /// strictly failed every queued task, so none ever started on the Mac.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId)
+        workspacePath = try container.decodeIfPresent(String.self, forKey: .workspacePath) ?? ""
+        workspaceName = try container.decodeIfPresent(String.self, forKey: .workspaceName) ?? ""
+        workspaceKey = try container.decodeIfPresent(String.self, forKey: .workspaceKey)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+        status = try container.decode(String.self, forKey: .status)
+        lastSeq = try container.decodeIfPresent(Int.self, forKey: .lastSeq) ?? 0
+        conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
+        target = try container.decodeIfPresent(String.self, forKey: .target) ?? "device"
+        repoOwner = try container.decodeIfPresent(String.self, forKey: .repoOwner)
+        repoName = try container.decodeIfPresent(String.self, forKey: .repoName)
+        baseRef = try container.decodeIfPresent(String.self, forKey: .baseRef)
+        prUrl = try container.decodeIfPresent(String.self, forKey: .prUrl)
+        agentRuntime = (try? container.decodeIfPresent(CodeAgentRuntime.self, forKey: .agentRuntime)) ?? .claude
+        // Null means "no preference": the Mac's own gating, which asks.
+        permissionMode = (try? container.decodeIfPresent(CodeAgentPermissionMode.self, forKey: .permissionMode)) ?? .ask
+        modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
+        reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
+        computerUse = try container.decodeIfPresent(Bool.self, forKey: .computerUse) ?? false
+        subagentsEnabled = try container.decodeIfPresent(Bool.self, forKey: .subagentsEnabled) ?? false
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
+    }
 }
 
 public struct NativeCodeTaskEventInput: Codable, Equatable, Sendable {

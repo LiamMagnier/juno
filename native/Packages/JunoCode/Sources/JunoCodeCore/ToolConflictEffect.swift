@@ -65,7 +65,7 @@ public enum ToolEffectClassifier {
             }
             return .readOnly(paths: [])
 
-        case "grep", "glob", "web_search", "fetch_url":
+        case "grep", "glob", "web_search", "fetch_url", "web_fetch":
             return .readOnly(paths: [])
 
         case "git_status", "git_diff", "git_log":

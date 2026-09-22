@@ -205,7 +205,7 @@ final class WorkbenchModelTests: XCTestCase {
 
         let prompt = await context.systemPrompt()
 
-        XCTAssertTrue(prompt.contains("FILE: AGENTS.md"))
+        XCTAssertTrue(prompt.contains("<file path=\"AGENTS.md\">"))
         XCTAssertTrue(prompt.contains("Use the project formatter."))
         XCTAssertTrue(prompt.contains("[instruction file truncated]"))
         XCTAssertFalse(prompt.contains("SHOULD_NOT_REACH_THE_PROMPT"))

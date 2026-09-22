@@ -299,6 +299,59 @@ public final class SessionController {
         /// server switched off in Settings leaves the tool list on the next
         /// turn rather than on the next session.
         let extensionsFingerprint: String
+        /// The settings fixed at an orchestrator's construction — turn limit,
+        /// compaction, fallback, standing instructions. Rules, environment
+        /// and network are applied live and are not part of it.
+        let settingsFingerprint: String
+    }
+
+    /// The settings the next run reads: every settings file layered, with
+    /// defaults filled in. Re-read at the start of each run.
+    public private(set) var settings: ResolvedCodeSettings = .defaults
+    /// A settings file that exists but could not be read, so the reader learns
+    /// their rules are not in force rather than finding out from a prompt.
+    public private(set) var settingsProblem: String?
+    private let settingsStore = CodeSettingsStore()
+
+    /// Re-reads the settings files and applies the parts that take effect
+    /// live: permission rules, the command environment, network access.
+    private func applySettings(_ live: Live) async {
+        let root = live.context?.access.rootURL
+        let resolved = settingsStore.resolved(projectRoot: root)
+        settings = resolved
+        settingsProblem = CodeSettingsStore.Scope.allCases.lazy
+            .compactMap { self.settingsStore.loadError($0, projectRoot: root) }
+            .first
+        await live.permissions.setRules(resolved.rules)
+        live.context?.commandOverrides.update(
+            environment: resolved.environment,
+            allowsNetwork: resolved.allowsNetwork,
+            writablePaths: resolved.writablePaths
+        )
+    }
+
+    private var standingInstructions: [String] {
+        var instructions: [String] = []
+        if let file = settingsStore.userInstructionsFile() {
+            instructions.append(file)
+        }
+        instructions += settings.instructions
+        if settings.coAuthorTrailer {
+            instructions.append(
+                "When you create a Git commit, end its message with a blank line and `Co-authored-by: Juno <juno@users.noreply.github.com>`."
+            )
+        }
+        return instructions
+    }
+
+    private var settingsFingerprint: String {
+        [
+            String(settings.maxTurns),
+            String(settings.autoCompact),
+            String(settings.compactThreshold),
+            String(settings.modelFallback),
+            Digests.sha256Hex(standingInstructions.joined(separator: "\u{1F}")),
+        ].joined(separator: "|")
     }
 
     public let sessionID: CodeSessionID
@@ -563,6 +616,7 @@ public final class SessionController {
     /// replace the orchestrator. Conversation continuity survives it because the
     /// store holds the model context, which the replacement reloads.
     private func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
+        await applySettings(live)
         let contract = TurnContract(
             behavior: session.configuration.behavior,
             modelID: session.configuration.modelID,
@@ -574,7 +628,8 @@ public final class SessionController {
             goalUpdatedAt: session.goal?.updatedAt,
             hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy),
             customAgentID: session.configuration.customAgentID,
-            extensionsFingerprint: Self.extensionsFingerprint()
+            extensionsFingerprint: Self.extensionsFingerprint(),
+            settingsFingerprint: settingsFingerprint
         )
         if let orchestrator, orchestratorContract == contract {
             return orchestrator
@@ -615,7 +670,8 @@ public final class SessionController {
         }
         var systemPrompt = await context.systemPrompt(
             behavior: contract.behavior,
-            role: session.configuration.role
+            role: session.configuration.role,
+            standingInstructions: standingInstructions
         )
         if contract.behavior == .code {
             systemPrompt += goalSystemPrompt
@@ -662,7 +718,11 @@ public final class SessionController {
                 modelID: contract.modelID,
                 reasoningEffort: contract.reasoningEffort,
                 parentSystemPrompt: systemPrompt,
-                executionFactory: { request in
+                executionFactory: { [permissions = live.permissions] request in
+                    // A child never outranks the session that spawned it.
+                    let childMode = PermissionMode.workspaceWrite.capped(
+                        at: await permissions.permissionMode
+                    )
                     let isGit = await context.git.isRepository()
                     if isGit {
                         let worktree = try await context.worktrees.create(
@@ -679,7 +739,7 @@ public final class SessionController {
                             workspaceName: isolated.record.descriptor.displayName,
                             executionRootPath: worktree.rootPath,
                             gitBranch: worktree.branch,
-                            permissionMode: .workspaceWrite,
+                            permissionMode: childMode,
                             finalize: {
                                 try await context.worktrees.finalize(
                                     worktree,
@@ -688,18 +748,12 @@ public final class SessionController {
                             }
                         )
                     } else {
-                        let childRegistry = ToolRegistry(
-                            tools: context.registry.allTools.filter {
-                                !$0.name.hasPrefix("computer_")
-                            }
-                        )
-                        return SubagentExecutionEnvironment(
-                            registry: childRegistry,
-                            workspaceName: context.record.descriptor.displayName,
-                            executionRootPath: context.access.rootURL.path,
-                            gitBranch: nil,
-                            permissionMode: .workspaceWrite,
-                            finalize: { nil }
+                        // No worktree, no isolation: a write-capable child
+                        // would edit the reader's real folder behind the
+                        // parent's back. The tool promises the parent checkout
+                        // is never used for delegated writes, so it is refused.
+                        throw ToolError.denied(
+                            reason: "Write-capable sub-agents need a Git repository to work in an isolated worktree. Delegate read-only, or make the edit in this session."
                         )
                     }
                 },
@@ -760,14 +814,34 @@ public final class SessionController {
             registry: ToolRegistry(tools: tools),
             permissions: live.permissions,
             store: live.store,
-            configuration: AgentOrchestrator.Configuration(
-                contextWindowTokens: live.modelContextWindowTokens(contract.modelID),
+            configuration: orchestratorConfiguration(
+                contract: contract,
+                live: live,
                 systemPrompt: systemPrompt
             ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
             lifecycleHooks: lifecycleHooks,
-            fallbackResolver: live.fallbackResolver
+            // Opt-in: a different lab's model answering under the reader's
+            // chosen one is a surprise unless they asked for it.
+            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil
+        )
+    }
+
+    private func orchestratorConfiguration(
+        contract: TurnContract,
+        live: Live,
+        systemPrompt: String
+    ) -> AgentOrchestrator.Configuration {
+        AgentOrchestrator.Configuration(
+            maximumIterations: settings.maxTurns,
+            // With auto-compaction off the byte ceiling still stands behind it;
+            // only the early, window-relative trigger is switched off.
+            contextWindowTokens: settings.autoCompact
+                ? live.modelContextWindowTokens(contract.modelID)
+                : nil,
+            contextCompactionTriggerFraction: settings.compactThreshold,
+            systemPrompt: systemPrompt
         )
     }
 
@@ -818,13 +892,14 @@ public final class SessionController {
             registry: ToolRegistry(tools: []),
             permissions: live.permissions,
             store: live.store,
-            configuration: AgentOrchestrator.Configuration(
-                contextWindowTokens: live.modelContextWindowTokens(contract.modelID),
+            configuration: orchestratorConfiguration(
+                contract: contract,
+                live: live,
                 systemPrompt: systemPrompt
             ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
-            fallbackResolver: live.fallbackResolver
+            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil
         )
     }
 
@@ -1377,6 +1452,45 @@ public final class SessionController {
     public func approveAllowingFurtherEdits(_ approvalID: String) async {
         await setPermissionMode(.workspaceWrite)
         await approve(approvalID)
+    }
+
+    /// Approves this action and saves the request's suggested rule, so the
+    /// same kind of action runs without asking from now on — here, and in
+    /// every later session in this project.
+    ///
+    /// The rule goes to `.juno/settings.local.json`: it is this reader's trust,
+    /// not the team's, and it stays out of Git. It is also applied to the live
+    /// coordinator first, so a second identical call in the same batch does
+    /// not ask again while the file is being written.
+    public func approveAlways(_ approvalID: String) async {
+        guard let live,
+              let rule = pendingApprovals.first(where: { $0.id == approvalID })?.suggestedRule
+        else {
+            await approve(approvalID)
+            return
+        }
+        await live.permissions.addAllowRule(rule)
+        do {
+            try CodeSettingsModel.rememberAllowRule(rule, projectRoot: live.context?.access.rootURL)
+        } catch {
+            transientError = "Approved once. The rule \(rule) could not be saved: \(error.localizedDescription)"
+        }
+        await approve(approvalID)
+    }
+
+    /// Declines the action and tells the agent what to do instead, as a
+    /// steer that reaches it right after the declined call is answered.
+    public func deny(_ approvalID: String, redirect: String) async {
+        let text = redirect.trimmingCharacters(in: .whitespacesAndNewlines)
+        await deny(approvalID)
+        guard !text.isEmpty else { return }
+        let draft = composerText
+        let kind = activeInstructionKind
+        composerText = text
+        activeInstructionKind = .steer
+        await send()
+        composerText = draft
+        activeInstructionKind = kind
     }
 
     /// Denies approvals that have outlived their expiry.

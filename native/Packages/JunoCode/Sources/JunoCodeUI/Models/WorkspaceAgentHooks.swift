@@ -131,7 +131,7 @@ private struct HookPermissionAuthorizer: HookAuthorizing {
             toolName: "hook",
             actionDigest: digest,
             risk: invocation.hook.risk,
-            summary: "Run (invocation.hook.source.rawValue) hook (invocation.hook.id)",
+            summary: "Run \(invocation.hook.source.rawValue) hook \(invocation.hook.id)",
             approvalPolicy: .alwaysRequiresApproval
         )
         switch outcome {

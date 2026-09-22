@@ -23,6 +23,8 @@ public actor PermissionCoordinator {
 
     private let sessionID: CodeSessionID
     private var mode: PermissionMode
+    /// The reader's standing rules, consulted before the mode ladder.
+    private var rules: PermissionRuleSet = .empty
     private var authorityRevision: UInt64 = 0
     private var pending: [String: CheckedContinuation<PendingResolution, Never>] = [:]
     private var pendingRequests: [String: ApprovalRequest] = [:]
@@ -39,6 +41,19 @@ public actor PermissionCoordinator {
     }
 
     public var permissionMode: PermissionMode { mode }
+
+    public var permissionRules: PermissionRuleSet { rules }
+
+    /// Replaces the standing rules — the settings files, re-read per run.
+    public func setRules(_ newRules: PermissionRuleSet) {
+        rules = newRules
+    }
+
+    /// Adds one allow rule for the rest of this session, on top of whatever
+    /// the files say. What "Always allow" does before it is also written down.
+    public func addAllowRule(_ rule: PermissionRule) {
+        rules = rules.merging(PermissionRuleSet(allow: [rule]))
+    }
 
     public func setMode(_ newMode: PermissionMode) {
         let previousMode = mode
@@ -80,9 +95,16 @@ public actor PermissionCoordinator {
         actionDigest: String,
         risk: ActionRisk,
         summary: String,
-        approvalPolicy: ApprovalPolicy = .byRisk
+        approvalPolicy: ApprovalPolicy = .byRisk,
+        subject: PermissionRuleSubject? = nil
     ) async -> AuthorizationOutcome {
-        switch PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy) {
+        let ruling = Self.ruling(
+            mode: mode,
+            risk: risk,
+            approvalPolicy: approvalPolicy,
+            rule: rules.evaluate(toolName: toolName, subject: subject)
+        )
+        switch ruling {
         case .allow:
             return .allowed
         case let .deny(reason):
@@ -97,7 +119,10 @@ public actor PermissionCoordinator {
                 risk: risk,
                 approvalPolicy: approvalPolicy,
                 requestedAt: now,
-                expiresAt: now.addingTimeInterval(Self.approvalTimeToLiveSeconds)
+                expiresAt: now.addingTimeInterval(Self.approvalTimeToLiveSeconds),
+                suggestedRule: risk == .destructive
+                    ? nil
+                    : PermissionRuleSet.suggestedRule(toolName: toolName, subject: subject)
             )
             pendingRequests[request.id] = request
             notify(.requested(request))
@@ -118,10 +143,11 @@ public actor PermissionCoordinator {
             guard requestAuthorityRevision == authorityRevision else {
                 return .denied(reason: "The permission mode changed before the action ran.")
             }
-            if case let .deny(reason) = PermissionPolicy.ruling(
+            if case let .deny(reason) = Self.ruling(
                 mode: mode,
                 risk: risk,
-                approvalPolicy: approvalPolicy
+                approvalPolicy: approvalPolicy,
+                rule: rules.evaluate(toolName: toolName, subject: subject)
             ) {
                 return .denied(reason: reason)
             }
@@ -129,6 +155,35 @@ public actor PermissionCoordinator {
                 return .denied(reason: "The approval expired before the action ran.")
             }
             return .approved(request)
+        }
+    }
+
+    /// The mode ladder with the reader's rules applied on top.
+    ///
+    /// - A deny rule refuses, whatever the mode.
+    /// - An ask rule prompts, even in Full Access — but cannot turn a
+    ///   read-only session's refusal into an offer.
+    /// - An allow rule proceeds without asking, including past a pinned tool,
+    ///   because saving the rule *was* the reader seeing it. It never silences
+    ///   a destructive action: leaving the granted folder always asks.
+    static func ruling(
+        mode: PermissionMode,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy,
+        rule: PermissionRuleDecision?
+    ) -> PermissionRuling {
+        let ladder = PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy)
+        switch rule {
+        case nil:
+            return ladder
+        case let .deny(rule)?:
+            return .deny(reason: "Blocked by the permission rule \(rule).")
+        case .ask?:
+            if case .deny = ladder { return ladder }
+            return .requireApproval
+        case .allow?:
+            if case .deny = ladder { return ladder }
+            return risk == .destructive ? .requireApproval : .allow
         }
     }
 
@@ -184,13 +239,3 @@ public actor PermissionCoordinator {
     }
 }
 
-private extension PermissionMode {
-    var authorityRank: Int {
-        switch self {
-        case .readOnly: 0
-        case .askBeforeChanges: 1
-        case .workspaceWrite: 2
-        case .fullAccess: 3
-        }
-    }
-}
