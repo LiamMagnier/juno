@@ -686,6 +686,11 @@
      0.875px, i.e. sub-pixel. Effective stroke has to grow sub-linearly as the box
      shrinks; the 24px row keeps today's exact value so the weight is not being
      redefined, only held steady across sizes. */
+  /* 10px is the bottom of the ladder, and it exists because the alternative is
+     what was already happening: a caret that small had no rung, so it was drawn
+     by hand on its own 10-unit grid at a literal stroke width — a one-off mark
+     in a set of 213. A rung is cheaper than a second drawing. */
+  svg.juno-icon.h-2\.5, svg.juno-icon.size-2\.5 { stroke-width: 2.88; }  /* 10px → 1.20px  */
   svg.juno-icon.h-3,    svg.juno-icon.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
   svg.juno-icon.h-3\.5, svg.juno-icon.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
   svg.juno-icon.h-4,    svg.juno-icon.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */

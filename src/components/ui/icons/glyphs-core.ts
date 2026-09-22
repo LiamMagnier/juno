@@ -134,6 +134,28 @@ export const Repeat = icon("repeat", [
 /* — Transport ———————————————————————————————————————————————————————— */
 
 export const Play = icon("play", [p("M8.6 5.9 18.2 12l-9.6 6.1z", "arrow-right")]);
+/**
+ * Play with mass, for the one job the outlined mark cannot do: sitting over an
+ * image. A hairline triangle on a video still has to survive whatever frame is
+ * behind it, and it does not.
+ *
+ * Same geometry as `Play`, filled, and stroked in its own colour so the round
+ * join rounds the three corners — a solid triangle with mitred points is the
+ * sharpest thing on a page of 3.4-unit radii. The stroke width is explicit
+ * rather than inherited BECAUSE it is doing that shaping: the optical ladder
+ * would otherwise retune it per size and the corner radius would drift.
+ */
+export const PlaySolid = icon("play-solid", [
+  [
+    "path",
+    {
+      d: "M8.6 5.9 18.2 12l-9.6 6.1z",
+      fill: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinejoin: "round",
+    },
+  ],
+]);
 export const Pause = icon("pause", [
   rect(8, 5.8, 2.6, 12.4, 1.2),
   rect(13.4, 5.8, 2.6, 12.4, 1.2),

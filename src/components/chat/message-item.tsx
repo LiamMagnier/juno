@@ -6,7 +6,7 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
+import { ChevronDown, ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -625,13 +625,16 @@ function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: R
   );
 }
 
-/** A 10px disclosure caret that rides beside a glyph inside a circular action. */
+/**
+ * A 10px disclosure caret that rides beside a glyph inside a circular action.
+ *
+ * It was drawn here, on its own 10-unit grid at a hard-coded 1.5 stroke, for
+ * the honest reason that the optical ladder had no rung below 12px. It has one
+ * now, so the caret is the set's chevron like every other chevron in the
+ * product, and its weight is chosen by the same table.
+ */
 function ChevronDownMini() {
-  return (
-    <svg viewBox="0 0 10 10" aria-hidden className="-mr-1 size-2.5 opacity-60">
-      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <ChevronDown aria-hidden className="-mr-1 size-2.5 opacity-60" />;
 }
 
 interface MessageItemProps {

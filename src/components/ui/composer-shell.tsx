@@ -683,7 +683,7 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
-                <ArrowUp className="size-4" strokeWidth={2.5} />
+                <ArrowUp className="size-4" />
               </motion.span>
             )}
           </AnimatePresence>

@@ -462,7 +462,6 @@ export function WorkThreadComposer({
                     >
                       <Plus
                         aria-hidden="true"
-                        strokeWidth={1.75}
                         className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
                       />
                     </Button>

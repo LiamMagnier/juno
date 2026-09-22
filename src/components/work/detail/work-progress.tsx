@@ -95,7 +95,6 @@ function StepMark({ state }: { state: PlanStepState }) {
             state === "done" || state === "failed" ? "size-2.5" : "size-3",
             state === "active" && "motion-safe:animate-spin"
           )}
-          strokeWidth={state === "done" || state === "failed" ? 3 : 2}
         />
       )}
     </span>

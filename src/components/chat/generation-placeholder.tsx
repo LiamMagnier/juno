@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ImageGenerationCanvas } from "@/components/aicss/image-generation";
 import { ThinkingState } from "@/components/aicss/thinking-state";
+import { PlaySolid } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -94,9 +95,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
         {isVideo && (
           <div className="generation-media__play">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
-              <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
-            </svg>
+            <PlaySolid className="generation-media__play-icon" />
           </div>
         )}
       </div>

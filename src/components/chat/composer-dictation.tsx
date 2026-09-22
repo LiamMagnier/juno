@@ -544,7 +544,7 @@ export function ComposerDictation({
               "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
             )}
           >
-            <ArrowUp className="size-4" strokeWidth={2.25} />
+            <ArrowUp className="size-4" />
           </button>
         </div>
       </div>

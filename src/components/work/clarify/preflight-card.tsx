@@ -181,7 +181,7 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
                           selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
                         )}
                       >
-                        {selected && <StatusIcons.success className="size-2.5" strokeWidth={3} />}
+                        {selected && <StatusIcons.success className="size-2.5" />}
                       </span>
                       <span className="min-w-0 flex-1 text-ui leading-relaxed">{option.label}</span>
                       {option.recommended && (
