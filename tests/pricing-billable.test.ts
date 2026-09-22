@@ -358,3 +358,64 @@ test("an OpenAI-shaped report, where reasoning is already inside output, is not 
   });
   assert.equal(openai.completionTokens, 5_200);
 });
+
+/*
+ * Meta's two tiers of one model.
+ *
+ * `muse-spark-1.3-contributor` CONTAINS `muse-spark-1.3`, so every price lookup
+ * for it is an ordering question: test the general name first and the cheap
+ * tier is billed at the expensive tier's rate. Meta's published rates are
+ * $1.25/$4.25 per MTok standard with $0.15 cached, and $0.10/$0.20 contributor
+ * with $0.002 cached — so the two lookups differ by 12.5x on input, 21.25x on
+ * output and 75x on a cache hit.
+ */
+const museStandard = {
+  id: "meta:muse-spark-1.3",
+  provider: "meta",
+  providerModel: "muse-spark-1.3",
+  name: "Muse Spark 1.3",
+  family: "muse-spark",
+  status: "current",
+  minPlan: "PRO",
+  cost: 2,
+  reasoning: true,
+  vision: true,
+  contextWindow: 1_048_576,
+  description: "test",
+} as ModelInfo;
+
+const museContributor = {
+  ...museStandard,
+  id: "meta:muse-spark-1.3-contributor",
+  providerModel: "muse-spark-1.3-contributor",
+  name: "Muse Spark 1.3 Contributor",
+  family: "muse-spark-contributor",
+  cost: 1,
+  trainsOnPrompts: true,
+} as ModelInfo;
+
+test("Muse Spark bills each tier at its own published rate", () => {
+  const standard = tokenRate(museStandard);
+  assert.equal(standard.input, 1.25);
+  assert.equal(standard.output, 4.25);
+
+  const contributor = tokenRate(museContributor);
+  assert.equal(contributor.input, 0.1, "the contributor id must not fall through to the standard rate");
+  assert.equal(contributor.output, 0.2);
+  assert.equal(standard.input / contributor.input, 12.5);
+  assert.equal(standard.output / contributor.output, 21.25);
+});
+
+test("Muse Spark cache hits use Meta's published rate, not the generic 0.25x", () => {
+  // $0.15 against $1.25 standard, $0.002 against $0.10 contributor. The
+  // fallback would have billed $0.3125 and $0.025 — 2x and 12.5x over.
+  assert.equal(Number(tokenRate(museStandard).cacheRead.toFixed(4)), 0.15);
+  assert.equal(Number(tokenRate(museContributor).cacheRead.toFixed(4)), 0.002);
+  // Neither tier charges a cache-write premium.
+  assert.equal(tokenRate(museStandard).cacheWrite, tokenRate(museStandard).input);
+});
+
+test("neither Muse tier has a premium serving mode to bill for", () => {
+  assert.equal(tokenRate(museStandard, true).input, tokenRate(museStandard).input);
+  assert.equal(tokenRate(museContributor, true).input, tokenRate(museContributor).input);
+});

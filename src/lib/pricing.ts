@@ -176,12 +176,19 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("pro")) return { input: 2, output: 12 };
       return { input: 0.3, output: 2.5 }; // older flash-class
     case "meta":
-      // Meta Model API standard tier. The muse-spark-1.2-contributor id is a
-      // 12.5x/21x discount paid for by letting Meta train on the prompts and
-      // completions, which is a data decision, not a pricing one — it is not in
-      // the registry, so it only prices here if somebody deliberately sets it.
+      // BEFORE the muse-spark test, which `muse-spark-1.3-contributor` also
+      // matches — the same ordering hazard the Gemini flash-lite rule above
+      // documents, and here it is worth 12.5x on input and 21x on output. The
+      // contributor tier is now a registered, selectable model rather than an
+      // id only a hand-edit could reach, so this branch is no longer
+      // hypothetical: get the order wrong and everyone who picked the cheap
+      // tier is metered at the standard one.
       if (pm.includes("contributor")) return { input: 0.1, output: 0.2 };
       if (pm.includes("muse-spark")) return { input: 1.25, output: 4.25 };
+      // No muse-image row, for the reason model-metrics.ts gives: it bills per
+      // returned image and `mediaRequestCost` is what charges for it, so a
+      // token rate here would only be read by estimators — and a zero would be
+      // rendered as "Free" over a model that costs a cent a shot.
       // Llama API shut down 2026-07-06 — kept for straggler cost display.
       if (pm.includes("maverick")) return { input: 0.35, output: 0.85 };
       if (pm.includes("scout")) return { input: 0.17, output: 0.66 };
@@ -341,6 +348,34 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
       cacheWrite: input * 1.25,
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 1.25,
+    };
+  }
+  if (model.provider === "meta") {
+    /*
+     * Meta prices a cache hit as its own column, and both tiers sit well below
+     * the 0.25x this function otherwise assumes:
+     *
+     *   standard      $0.15   against $1.25   = 12%
+     *   contributor   $0.002  against $0.10   = 2%
+     *
+     * The fallback billed a standard cached token at $0.3125 against a real
+     * $0.15 — 2x — and a contributor one at $0.025 against $0.002, which is
+     * 12.5x. Both land on the longest conversations, because those are the
+     * ones that cache at all.
+     *
+     * The `contributor` test comes first for the same reason it does in
+     * `baseRate`: the cheap id contains the whole of the expensive one's name.
+     * No published cache-WRITE premium, so writes cost plain input — the same
+     * conservative reading the zhipu and mimo branches take.
+     */
+    const pm = model.providerModel.toLowerCase();
+    return {
+      input,
+      output,
+      cacheRead: input * (pm.includes("contributor") ? 0.02 : 0.12),
+      cacheWrite: input,
+      cacheWrite5m: input,
+      cacheWrite1h: input,
     };
   }
   if (model.provider === "mimo") {

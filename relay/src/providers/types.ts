@@ -79,6 +79,13 @@ export interface SessionEstablished {
   thinking: boolean;
   /** Non-fatal; shown to the caller without ending the call. */
   notice?: string;
+  /**
+   * The model actually serving this call. Env pins it, thinking switches it,
+   * and a fallback can change it again — so the only honest source is the
+   * session that connected, and the UI names what it reports rather than
+   * what was asked for.
+   */
+  model?: string;
 }
 
 export interface VoiceProviderSession {

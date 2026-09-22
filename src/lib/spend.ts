@@ -119,7 +119,8 @@ export function modelRatesMicroUsdPerToken(modelId: string): { input: number; ou
  *
  *   image — GPT Image $0.04 · Nano Banana Pro $0.06 · Gemini flash image /
  *           Imagen $0.03 · lite tiers $0.01 · Grok Imagine $0.03 (quality) /
- *           $0.01 (fast) · GLM Image / CogView / MiniMax Image $0.02
+ *           $0.01 (fast) · GLM Image / CogView / MiniMax Image $0.02 ·
+ *           Muse Image $0.01
  *   video — $0.50 per clip, $0.25 for fast/mini tiers, $0.75 for
  *           cost-tier-3 flagships (Veo 3.1, Seedance 2.0, Hailuo 2.3…)
  */
@@ -136,6 +137,11 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video"): numb
   if (id.includes("grok-imagine-image-2.0")) return 40_000;
   if (id.includes("grok-imagine-image")) return id.includes("quality") ? 30_000 : 10_000;
   if (id.includes("glm-image") || id.includes("cogview") || id.includes("image-01")) return 20_000;
+  // Meta bills Muse Image a flat $0.01 per returned image — the same whatever
+  // reasoning_strength it ran at and whether or not it used its built-in web
+  // and image search, neither of which is charged separately. Without this row
+  // it fell to the $0.03 default and every generation was metered at 3x.
+  if (id.includes("muse-image")) return 10_000;
   return 30_000;
 }
 

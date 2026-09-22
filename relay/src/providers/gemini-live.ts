@@ -1,10 +1,31 @@
 import WebSocket from "ws";
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type {
+  ProviderEvents,
+  SessionEstablished,
+  VoiceProviderSession,
+  VoiceSessionSeed,
+} from "./types.js";
 import { requiredEnv } from "./types.js";
 import { providerText } from "../voice-context.js";
 
 const DEFAULT_LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+
+/** The REST host the token exchange talks to; tests point it elsewhere. */
+function restBase(): string {
+  return process.env.RELAY_GEMINI_REST_URL || "https://generativelanguage.googleapis.com";
+}
+
+/**
+ * How hard Extended Thinking may think per turn.
+ *
+ * `low`, `medium` and `high` are the accepted values — `minimal` is rejected,
+ * as is any level at all on the non-thinking model.
+ */
+function thinkingLevel(): string {
+  const requested = (process.env.RELAY_GEMINI_THINKING_LEVEL || "").toLowerCase();
+  return ["low", "medium", "high"].includes(requested) ? requested : "low";
+}
 
 /** Read per call, not at import: tests point this at a local server. */
 function liveUrl(): string {
@@ -23,18 +44,15 @@ function describeGeminiKey(key: string): string {
   const source = process.env.GEMINI_LIVE_API_KEY ? "GEMINI_LIVE_API_KEY" : "GOOGLE_API_KEY";
   if (key.startsWith("AQ.")) {
     return (
-      `${source} holds an "AQ." key, which the Live API does not accept — that surface takes a classic ` +
-      `AI Studio key. Mint one (it starts "AIza") and set GEMINI_LIVE_API_KEY to it.`
+      `${source} holds a new "AQ." key, which this socket does not take as a query key — that is expected, ` +
+      `and the relay answers it by exchanging the key for a short-lived token.`
     );
   }
   if (!key.startsWith("AIza")) {
-    return (
-      `${source} does not hold a classic AI Studio key (those start "AIza"), which is what the Live API ` +
-      `accepts. Mint one and set GEMINI_LIVE_API_KEY to it.`
-    );
+    return `${source} holds a key in neither known format, so nothing can be said about its kind.`;
   }
   return (
-    `${source} does hold a classic AI Studio key, so the shape is right — check that it is enabled for the ` +
+    `${source} holds a classic "AIza" key, so the shape is right — check that it is enabled for the ` +
     `Generative Language API and not restricted by referrer or IP.`
   );
 }
@@ -46,7 +64,9 @@ function describeGeminiKey(key: string): string {
  * credential.
  */
 export function redactKey(message: string): string {
-  return message.replace(/([?&]key=)[^&\s"']+/gi, "$1***");
+  // Both credentials ride in the query now — the key directly, and the
+  // short-lived token it can be exchanged for.
+  return message.replace(/([?&](?:key|access_token)=)[^&\s"']+/gi, "$1***");
 }
 
 /**
@@ -70,6 +90,8 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private suppressAssistantOutput = false;
   private userTranscriptPending = false;
   private setupResolve: (() => void) | null = null;
+  /** Set once the key has been exchanged; the socket then carries this. */
+  private ephemeralToken: string | null = null;
   private readonly thinking: boolean;
   private readonly model: string;
 
@@ -88,16 +110,74 @@ export class GeminiLiveSession implements VoiceProviderSession {
       : process.env.RELAY_GEMINI_MODEL || "gemini-3.8-live";
   }
 
+  established(): SessionEstablished {
+    return { thinking: this.thinking, model: this.model };
+  }
+
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.seed = seed;
     this.events = events;
-    await this.openConnection(seed, /* seedHistory */ true);
+    try {
+      await this.openConnection(seed, /* seedHistory */ true);
+    } catch (err) {
+      // Google is retiring the classic "AIza" keys, and the "AQ." ones that
+      // replaced them are not accepted as a `key` query parameter on this
+      // socket. The documented path for them is to swap the key for a
+      // short-lived token server-side — which is what this process is — and
+      // carry that instead. Only worth trying when the credential is what was
+      // refused; a wrong model id would fail the same way twice.
+      if (!(err as { authRejected?: boolean }).authRejected) throw err;
+      const token = await this.mintEphemeralToken().catch((mintErr: unknown) => {
+        // Report the exchange's own failure, not a second copy of the socket's:
+        // a key that cannot mint a token is a fact about the key, stated plainly.
+        throw new Error(
+          `${err instanceof Error ? err.message : String(err)} Exchanging it for a short-lived token failed too: ` +
+            `${mintErr instanceof Error ? mintErr.message : String(mintErr)}`
+        );
+      });
+      this.ephemeralToken = token;
+      await this.openConnection(seed, /* seedHistory */ true);
+    }
+  }
+
+  /**
+   * Swap the API key for a short-lived Live token.
+   *
+   * `uses: 1` and the two expiries are the shape Google's own example uses:
+   * a minute to open the session, half an hour to hold it. Nothing here is
+   * cached — a token is worth one connection, and reconnects mint their own.
+   */
+  private async mintEphemeralToken(): Promise<string> {
+    const key = process.env.GEMINI_LIVE_API_KEY || requiredEnv("GOOGLE_API_KEY");
+    const now = Date.now();
+    const res = await fetch(`${restBase()}/v1beta/auth_tokens`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "content-type": "application/json" },
+      body: JSON.stringify({
+        uses: 1,
+        expireTime: new Date(now + 30 * 60_000).toISOString(),
+        newSessionExpireTime: new Date(now + 60_000).toISOString(),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      throw new Error(`${res.status} ${res.statusText} — ${redactKey(text).replace(/\s+/g, " ").slice(0, 200)}`);
+    }
+    const name = (JSON.parse(text) as { name?: string }).name;
+    if (!name) throw new Error("the token service answered 200 with no token in it");
+    return name;
   }
 
   private async openConnection(seed: VoiceSessionSeed, seedHistory: boolean): Promise<void> {
-    // The Live API needs a credential the CORE generativelanguage surface
-    // accepts (a classic AI Studio API key). New "AQ."-format keys only work
-    // on the OpenAI-compat surface — mint a standard key and set it here.
+    // This comment used to say that "AQ." keys work only on the OpenAI-compat
+    // surface and that you should mint a classic one instead. Both halves are
+    // now wrong: AI Studio issues nothing but "AQ." keys, so there is no
+    // classic one to mint, and a probe of both surfaces shows the compat one
+    // rejecting an AQ key with "Invalid Auth key" while the native one takes
+    // it. What this socket will not do is accept one as `?key=`, which is what
+    // the token exchange in connect() is for. `npm run gemini:live-auth`
+    // re-runs that probe against whatever key is configured.
     const key = process.env.GEMINI_LIVE_API_KEY || requiredEnv("GOOGLE_API_KEY");
     // The Live socket authenticates by QUERY PARAMETER. `x-goog-api-key` is
     // what the REST surface takes, and it is simply not read on the WebSocket
@@ -106,7 +186,14 @@ export class GeminiLiveSession implements VoiceProviderSession {
     // and is really a credential it never saw. The header stays because
     // ephemeral tokens do travel that way and sending both costs nothing.
     const url = new URL(liveUrl());
-    url.searchParams.set("key", key);
+    if (this.ephemeralToken) {
+      // A token is accepted on the Constrained variant of the method, and as
+      // `access_token` rather than `key`.
+      url.pathname = `${url.pathname}Constrained`;
+      url.searchParams.set("access_token", this.ephemeralToken);
+    } else {
+      url.searchParams.set("key", key);
+    }
     const ws = new WebSocket(url.toString(), { headers: { "x-goog-api-key": key } });
     this.ws = ws;
 
@@ -153,8 +240,13 @@ export class GeminiLiveSession implements VoiceProviderSession {
         // here without asking anyone: the Live surface takes classic AI Studio
         // keys, and the newer "AQ." keys reach only the OpenAI-compat surface.
         const authRejected = code === 1008 || /authenticat|credential|API key|permission/i.test(detail);
+        const fail = (message: string) => {
+          const error = new Error(message) as Error & { authRejected?: boolean };
+          error.authRejected = authRejected;
+          return error;
+        };
         settle(
-          new Error(
+          fail(
             authRejected
               ? `gemini rejected the credential (close ${code}${detail ? `: ${detail}` : ""}). ` +
                 describeGeminiKey(key) +
@@ -187,6 +279,15 @@ export class GeminiLiveSession implements VoiceProviderSession {
         model: `models/${this.model}`,
         generationConfig: {
           responseModalities: ["AUDIO"],
+          // Exactly one of these models wants a thinking level, and the other
+          // refuses one. Extended Thinking fails setup without `thinkingLevel`
+          // ("Thinking level must be specified for this model"), and plain
+          // 3.8 Live fails setup WITH it — so this cannot be a constant, and
+          // sending it to both is as broken as sending it to neither.
+          // "low" keeps a live call conversational: the model narrates while
+          // it reasons either way, and a level above this buys depth with the
+          // one thing a spoken turn cannot spend, which is time.
+          ...(this.thinking ? { thinkingConfig: { thinkingLevel: thinkingLevel() } } : {}),
           ...(seed.voice
             ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: seed.voice } } } }
             : {}),

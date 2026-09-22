@@ -87,6 +87,25 @@ export interface ModelInfo {
   legacy?: boolean;
   /** In the catalog but not yet callable (no live API) — shown disabled. */
   comingSoon?: boolean;
+  /**
+   * The provider trains on the prompts and completions sent to this model, and
+   * charges less because of it.
+   *
+   * Meta's `muse-spark-*-contributor` ids are the case this exists for: byte
+   * for byte the same model as the standard tier, 12.5x cheaper on input and
+   * 21x on output, paid for with the right to train on what you send. That is
+   * a data decision, and the price is the whole problem — every automatic
+   * chooser in this codebase ranks cheapest-first (`pickAutoModel`,
+   * `cheapestWorkModel`, `pickWorkModel`), so the tier that costs least in
+   * dollars would win every unattended routing decision and move
+   * conversations nobody reviewed onto a training endpoint.
+   *
+   * So the flag does one thing: it keeps a model OUT of automatic selection.
+   * It stays fully selectable by hand, in every picker, priced and labelled —
+   * the cheap tier is a real option and a reader who wants it should have it.
+   * What they should not have is Juno choosing it for them.
+   */
+  trainsOnPrompts?: boolean;
   /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
    *  Responses-only Codex snapshots aren't served on /chat/completions). */
   api?: "chat" | "responses";
@@ -208,6 +227,9 @@ interface ModelDef {
   retiresOn?: string; // "YYYY-MM-DD" — the day the provider stops serving it
   replacedBy?: ModelId; // required with retiresOn; where stored ids migrate
   comingSoon?: boolean;
+  /** Provider trains on what is sent here — excluded from automatic routing.
+   *  See the field's note on ModelInfo. */
+  trainsOnPrompts?: boolean;
   api?: "chat" | "responses";
 }
 
@@ -249,8 +271,20 @@ function def(d: ModelDef): ModelInfo {
     contextWindow: d.contextWindow,
     legacy: d.status !== "current",
     comingSoon: d.comingSoon,
+    trainsOnPrompts: d.trainsOnPrompts,
     api: d.api,
   };
+}
+
+/**
+ * Would choosing this model hand the provider the reader's prompts to train on?
+ *
+ * The one reading of `trainsOnPrompts`, so the chat router, the Work router and
+ * anything that ranks by price cannot disagree about which models an automatic
+ * chooser may reach for.
+ */
+export function trainsOnPrompts(model: Pick<ModelInfo, "trainsOnPrompts">): boolean {
+  return model.trainsOnPrompts === true;
 }
 
 /**
@@ -345,7 +379,18 @@ const CURATED: ModelInfo[] = [
   // Anthropic/OpenAI/Google entries this one is curated from Meta's own launch
   // material and OpenRouter's listing, not from a 200 on our own key. Confirm
   // the id, base URL and modalities against a real key before relying on it.
+  //
+  // Meta sells 1.3 as TWO ids for ONE set of weights, and the difference is not
+  // capability — it is what happens to what you send. `muse-spark-1.3` is the
+  // standard tier at $1.25/$4.25 per MTok. `muse-spark-1.3-contributor` is the
+  // same model at $0.10/$0.20, and the discount is paid for by granting Meta
+  // the right to train on the prompts and completions. Both are registered,
+  // because the cheap tier is a legitimate choice for throwaway work — and they
+  // are registered as SEPARATE FAMILIES so neither can shadow the other in a
+  // picker that shows one current row per family. See `trainsOnPrompts` for
+  // what keeps the cheap one out of Auto.
   def({ provider: "meta", id: "muse-spark-1.3", name: "Muse Spark 1.3", family: "muse-spark", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic flagship — ~20% fewer tool calls and ~25% fewer tokens than 1.2." }),
+  def({ provider: "meta", id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", family: "muse-spark-contributor", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 1, contextWindow: 1_048_576, trainsOnPrompts: true, description: "Muse Spark 1.3 at a 12x discount — Meta trains on the prompts and completions you send it." }),
   def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
 
   // —— Zhipu / Z.AI ——
@@ -522,6 +567,19 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "xai", id: "grok-imagine-image-quality", name: "Grok Imagine (Quality)", family: "imagine-image", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's recommended image model — generation and editing." }),
   def({ provider: "xai", id: "grok-imagine-image", name: "Grok Imagine (Fast)", family: "imagine-image-fast", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 1, description: "Fast, low-cost image tier." }),
   def({ provider: "zhipu", id: "glm-image", name: "GLM Image", family: "glm-image", status: "current", released: "2026-01", modality: "image", minPlan: "PRO", cost: 2, description: "Z.AI's flagship image model — posters and in-image text." }),
+  // The id is `muse-image-1.0`, WITH the minor version. Meta's own rate-limit
+  // and image-editing docs spell it that way and every gateway reselling it
+  // (Vercel, ZenMux, LLM Gateway) carries the same string; "muse-image" and
+  // "muse-image-1" are how the launch posts write it in prose, and both are
+  // mapped in RETIRED_MODELS rather than guessed at here — an id this file
+  // gets wrong is a 404 on every generation and the picker cannot tell.
+  //
+  // Reached through the OpenAI-shaped /v1/images/generations and /v1/images/
+  // edits, so `image-gen.ts` needs no Meta-specific path. $0.01 per returned
+  // image, flat: the same price whichever reasoning_strength it runs at and
+  // whether or not it uses its built-in web/image search, which makes it the
+  // cheapest image model in this catalog (see `mediaRequestCost`).
+  def({ provider: "meta", id: "muse-image-1.0", name: "Muse Image", family: "muse-image", status: "current", released: "2026-08", modality: "image", minPlan: "PRO", cost: 1, description: "Meta's agentic image model — reasons before it renders, composes up to 10 references, $0.01 an image." }),
   // cogview-4 removed — POST /images/generations -> 400 code 1211 "模型不存在"
   // ("model does not exist") while glm-image returns 200 on the identical key,
   // so this is model existence, not auth. See RETIRED_MODELS.
@@ -608,6 +666,14 @@ const IMAGE_EDIT_SUPPORT: Partial<Record<Provider, ImageEditSupport>> = {
   zhipu: "mask",
   google: "mask",
   minimax: "prompt",
+  // Muse Image edits through /v1/images/edits, but it takes the region as
+  // INSTRUCTION, not as pixels: the documented surface is a prompt plus up to
+  // ten reference images (`images_list`), and Meta publishes no `mask`
+  // parameter. "prompt" rather than "mask" is therefore the honest answer —
+  // claiming masks would have the overlay offer a brush whose output the model
+  // never receives, and `editOpenAICompatImage` would post a multipart field
+  // the endpoint does not document.
+  meta: "prompt",
 };
 
 export function imageEditSupport(provider: Provider): ImageEditSupport {
@@ -654,6 +720,24 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "meta:muse-max": "meta:muse-spark-1.3",
   "meta:muse-spark": "meta:muse-spark-1.3",
   "meta:muse-flash": "meta:muse-spark-1.3",
+  // The contributor ids migrate WITHIN their own tier, never across to the
+  // standard one, and that direction is the whole point. Sending a stored
+  // `muse-spark-1.2-contributor` to `muse-spark-1.3` would read like a routine
+  // generation bump and would in fact be a 12.5x input / 21x output price rise
+  // charged to somebody who picked the cheap tier on purpose. The reverse
+  // mistake is worse still: nothing above may EVER resolve to a `-contributor`
+  // id, because that would opt a reader into Meta training on their prompts
+  // through a rename they never saw. Two tiers, two ladders, no crossing.
+  "meta:muse-spark-contributor": "meta:muse-spark-1.3-contributor",
+  "meta:muse-spark-1.2-contributor": "meta:muse-spark-1.3-contributor",
+  "meta:muse-spark-1.1-contributor": "meta:muse-spark-1.3-contributor",
+  "meta:muse-spark-1.1": "meta:muse-spark-1.3",
+  // How the launch material spells Muse Image. Neither is an id Meta serves —
+  // `muse-image-1.0` is — and an unmapped id does not fail loudly: `resolveModel`
+  // invents a CHAT model for anything it does not recognise, so a stored
+  // `meta:muse-image-1` would have been sent to /chat/completions as text.
+  "meta:muse-image": "meta:muse-image-1.0",
+  "meta:muse-image-1": "meta:muse-image-1.0",
   "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.3",
   "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.3",
   "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.3",

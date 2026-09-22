@@ -52,6 +52,21 @@ interface MessageListProps {
    *  which fades the transcript region in under the travelling composer. */
   className?: string;
   /**
+   * Settle the transcript in on mount instead of cutting to it.
+   *
+   * Set by the surfaces that KEY this component on the conversation, so a new
+   * mount means a different thread — moving from one chat to another. The
+   * transcript rises 6px and fades on the product's workhorse entrance while
+   * the header, the sidebar and the composer around it stay exactly where they
+   * are, which is what makes the switch read as one column changing rather
+   * than as the window repainting.
+   *
+   * Off during the first-message handoff: that choreography measures the empty
+   * composer's position and travels it down the page (chat-view), and a second
+   * entrance underneath it is two animations describing one event.
+   */
+  entrance?: boolean;
+  /**
    * Which product is drawing the transcript. A Code session renders its
    * tool calls as its own cards (see components/code/code-activity.tsx), so
    * its turns skip the chat's thought-process strip and word their live
@@ -111,6 +126,9 @@ export function MessageList(props: MessageListProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = React.useState(true);
+  // Seeded true when no entrance was asked for, so the class never goes on and
+  // nothing is left waiting for an animationend that will not fire.
+  const [entered, setEntered] = React.useState(!props.entrance);
 
   // Only animate messages that arrive after the initial mount, so opening an
   // existing conversation doesn't replay every entrance. Seed with the initial
@@ -288,10 +306,33 @@ export function MessageList(props: MessageListProps) {
         role="log"
         aria-label="Conversation transcript"
         aria-live="off"
+        /*
+         * The entrance runs on the CONTENT, not on the scroller around it, and
+         * that is the whole reason it is safe.
+         *
+         * A transform on the scroller would make it a containing block for
+         * anything `fixed` inside it for as long as the class is on — the trap
+         * page-transition.tsx documents and drops its class to escape. This box
+         * is inside the scroller and holds nothing but message wrappers, and a
+         * transform on it changes no layout at all, so the layout effect above
+         * can still pin `scrollTop` to the true bottom while the thread slides
+         * the last six pixels into place over it.
+         *
+         * Dropped the moment it has run, for the same reason: one entrance per
+         * mount, no transform left standing.
+         */
+        onAnimationEnd={(e) => {
+          // Only this box's own entrance. Every message wrapper inside runs
+          // `rise-in` too, and each of those bubbles an animationend up here.
+          if (e.target === e.currentTarget) setEntered(true);
+        }}
         // The same column as the composer, and now literally the same gutter
         // as every other surface in the product (`.page-gutter`, globals.css):
         // bubbles' outer edges and the composer's edges are one line.
-        className="page-gutter mx-auto w-full max-w-3xl space-y-6 py-6"
+        className={cn(
+          "page-gutter mx-auto w-full max-w-3xl space-y-6 py-6",
+          !entered && "motion-safe:animate-rise-in",
+        )}
       >
           {messages.map((m, i) => (
             // Scroll anchor for find-in-conversation. A wrapper rather than a
