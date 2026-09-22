@@ -7,11 +7,12 @@ import { defaultReasoning, reasoningCaps } from "../src/lib/model-metrics";
 function model(id: string) { const value = resolveModel(id); assert.ok(value, id); return value; }
 
 test("September models retain exact provider IDs and current status", () => {
-  for (const id of ["anthropic:claude-fable-5-1", "google:gemini-3.8-flash", "xai:grok-4.6"]) {
+  for (const id of ["anthropic:claude-fable-5-1", "google:gemini-3.8-flash", "xai:grok-4.7"]) {
     const entry = model(id);
     assert.equal(entry.id, id);
     assert.equal(entry.status, "current");
   }
+  assert.equal(model("xai:grok-4.6").status, "legacy"); // superseded by Grok 4.7 (2026-09-21)
 });
 test("Fable 5.1 cache discount does not reprice Fable 5", () => {
   assert.deepEqual(tokenRate(model("anthropic:claude-fable-5-1")), {
@@ -28,7 +29,7 @@ test("Gemini Flash promotional rates include cache reads", () => {
   }
 });
 test("Fable and Grok default to high with model-specific effort ladders", () => {
-  for (const id of ["anthropic:claude-fable-5-1", "xai:grok-4.6"]) {
+  for (const id of ["anthropic:claude-fable-5-1", "xai:grok-4.7", "xai:grok-4.6"]) {
     assert.equal(defaultReasoning(model(id)), "high");
   }
   assert.notDeepEqual(reasoningCaps(model("xai:grok-4.6")), reasoningCaps(model("xai:grok-4.5")));
