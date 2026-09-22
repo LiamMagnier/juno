@@ -230,6 +230,11 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
   // trapdoor and matches openai-responses.ts's canDisableViaNoneEffort, which
   // already guards this way.
   if (id.includes("codex")) return model.reasoning && reasoningCaps(model).canDisable;
+  // GPT-6 is split the same way: Sol and Luna list "none" and default to
+  // medium without it, so Instant must be sent; Astra lists no "none" at all.
+  // The caps carry that per-model answer — the substring alone would send
+  // Astra a value it rejects.
+  if (/gpt-6/.test(id)) return model.reasoning && reasoningCaps(model).canDisable;
   return model.reasoning && /gpt-5\.\d/.test(id); // 5.1+ — the original gpt-5 has no "none"
 }
 

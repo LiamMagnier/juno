@@ -5,7 +5,7 @@ are curated; predecessor IDs remain selectable as legacy entries.
 
 | Model | Provider ID | Context | Input / output per million tokens |
 | --- | --- | --- | --- |
-| Claude Opus 5.5 | claude-opus-5-5 | 1,000,000 | $5 / $25 |
+| Claude Opus 5.5 | claude-opus-5-5 | 1,000,000 | $4 / $20 (corrected 2026-09-22 — see below) |
 | Claude Fable 5.1 | claude-fable-5-1 | 1,000,000 | $10 / $50 |
 | Gemini 3.8 Flash | gemini-3.8-flash | 1,048,576 | $0.75 / $3.75 |
 | Grok 4.6 | grok-4.6 | 500,000 | $2 / $6 |
@@ -99,6 +99,13 @@ available in this environment) — only the Console's own model-catalog UI,
 which is generated from Anthropic's live model registry for the signed-in
 account. Recheck against `platform.claude.com/docs` once Anthropic publishes
 a model page.
+
+**Superseded 2026-09-22.** Anthropic published the model page on launch day
+and it differs from the pre-launch Console read above: $4/$20 per MTok, cache
+reads at 0.05x ($0.20), 5m/1h cache writes $5/$8, fast mode $8/$40, default
+effort `medium`, and thinking that cannot be disabled. The registry, pricing
+and thinking wire now follow the published page; see
+[`models-september-22-2026.md`](./models-september-22-2026.md).
 
 Sources:
 - https://platform.claude.com/docs/en/models/fable-5-1/overview

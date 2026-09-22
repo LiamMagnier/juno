@@ -165,10 +165,10 @@ final class CodeThinkingWireTests: XCTestCase {
     }
 
     /// Only the models that reason by default get an explicit disable. Opus
-    /// 4.7/4.8 default OFF when omitted, and Fable/Mythos are always-on and
-    /// REJECT `disabled` — sending it would 400 them.
+    /// 4.7/4.8 default OFF when omitted, and Fable/Mythos/Opus 5.5 are
+    /// always-on and REJECT `disabled` — sending it would 400 them.
     func testOnlyDefaultOnAdaptiveModelsAreExplicitlyDisabled() {
-        for model in ["claude-opus-4-8", "claude-fable-5", "claude-mythos-1"] {
+        for model in ["claude-opus-4-8", "claude-fable-5", "claude-mythos-1", "claude-opus-5-5"] {
             XCTAssertNil(
                 CodeThinkingWire.anthropicBits(
                     providerModelID: model, maxTokens: 8_192, effort: nil
@@ -188,7 +188,7 @@ final class CodeThinkingWireTests: XCTestCase {
     /// GPT-5.5/5.6 default to `medium` when reasoning_effort is absent, so "Off"
     /// has to be sent as "none" rather than omitted.
     func testNoDepthSendsNoneToTheOpenAIModelsThatDefaultToThinking() {
-        for model in ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol"] {
+        for model in ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol", "gpt-6-sol", "gpt-6-luna"] {
             XCTAssertEqual(
                 CodeThinkingWire.chatParameters(
                     providerID: "openai", providerModelID: model, effort: nil
@@ -199,7 +199,8 @@ final class CodeThinkingWireTests: XCTestCase {
         }
         // gpt-5-pro always reasons and the original gpt-5 predates "none";
         // sending it to either is a 400, not a faster answer.
-        for model in ["gpt-5-pro", "gpt-5", "gpt-4o"] {
+        // GPT-6 Astra publishes no "none" at all.
+        for model in ["gpt-5-pro", "gpt-5", "gpt-4o", "gpt-6-astra"] {
             XCTAssertTrue(
                 CodeThinkingWire.chatParameters(
                     providerID: "openai", providerModelID: model, effort: nil

@@ -297,13 +297,14 @@ const CURATED: ModelInfo[] = [
   // —— Anthropic ——
   def({ provider: "anthropic", id: "claude-fable-5-1", name: "Claude Fable 5.1", family: "fable", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
   def({ provider: "anthropic", id: "claude-fable-5", name: "Claude Fable 5", family: "fable", status: "legacy", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
-  // Verified live against the user's own Claude Platform Console (Dashboard →
-  // model card), not provider docs — Anthropic had not published this model
-  // publicly as of this entry. Console showed: claude-opus-5-5, $5/$25 per
-  // MTok (same as Opus 5 — no price change), $6.25 write / $0.50 read prompt
-  // caching, fast mode $10/$50, 1M context, 128K max output, adaptive
-  // thinking, May 2026 knowledge cutoff. See docs/models-september-2026.md.
-  def({ provider: "anthropic", id: "claude-opus-5-5", name: "Claude Opus 5.5", family: "opus", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's most capable Opus — powerful model for complex work." }),
+  // Released 2026-09-22 and now on Anthropic's own model page, which
+  // corrects the pre-launch Console read this entry was first curated from:
+  // $4/$20 per MTok (not Opus 5's $5/$25), cache reads at 0.05x, fast mode
+  // $8/$40, 1M context, 128K output, default effort `medium`. Thinking is
+  // adaptive and ALWAYS ON — `disabled` and manual budgets are 400s, as on
+  // Fable 5.1 — and forced `tool_choice` (`any`/`tool`) is rejected too.
+  // See docs/models-september-22-2026.md.
+  def({ provider: "anthropic", id: "claude-opus-5-5", name: "Claude Opus 5.5", family: "opus", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's newest Opus — long-running agentic coding and knowledge work, always thinking." }),
   def({ provider: "anthropic", id: "claude-opus-5", name: "Claude Opus 5", family: "opus", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Previous-generation Opus, superseded by Opus 5.5." }),
   def({ provider: "anthropic", id: "claude-opus-4-8", name: "Claude Opus 4.8", family: "opus", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Previous-generation Opus, superseded by Opus 5." }),
   def({ provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5", family: "sonnet", status: "current", released: "2026-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Best speed-to-intelligence balance — near-Opus quality for everyday work." }),
@@ -324,12 +325,23 @@ const CURATED: ModelInfo[] = [
   // usable by Chat, Code and Work. Unlike GPT-5.6, Astra does not document a
   // separate reasoning.mode="pro" axis; its deepest setting is effort="max".
   def({ provider: "openai", id: "gpt-6-astra", name: "GPT-6 Astra", family: "gpt-named-flagship", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's most capable model — built for hard end-to-end reasoning, coding, research, and computer-use work." }),
+  // GPT-6 Sol and Luna (2026-09-22), from OpenAI's model pages: exact ids
+  // `gpt-6-sol` / `gpt-6-luna`, 1.05M context (922K input) and 128K output,
+  // text + image in, Chat Completions AND Responses — so, like the 5.6 tiers
+  // they replace, they ride the ordinary chat adapter. Unlike Astra both
+  // document `none`, so Instant is real: effort none|low|medium|high|xhigh|max,
+  // default medium. No `reasoning.mode: "pro"` axis is documented for either.
+  // Each takes its 5.6 predecessor's family, so the picker shows the new one.
+  def({ provider: "openai", id: "gpt-6-sol", name: "GPT-6 Sol", family: "gpt", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_050_000, description: "GPT-6 for complex everyday work — building, reviewing and debugging at half GPT-5.6 Sol's price." }),
+  def({ provider: "openai", id: "gpt-6-luna", name: "GPT-6 Luna", family: "gpt-luna", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_050_000, description: "Fastest, most affordable GPT-6 — summarization, extraction and quick answers with 1M context." }),
   // GPT-5.6 family (GA 2026-07-09): three tiers named Sol / Terra / Luna, all
-  // 1.05M context, vision + reasoning, chat/completions. The bare "gpt-5.6"
-  // API alias routes to Sol (see RETIRED_MODELS mapping below).
-  def({ provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol", family: "gpt", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's flagship — Sol tier for complex professional work, 90%-discount prompt cache." }),
+  // 1.05M context, vision + reasoning, chat/completions. Sol and Luna were
+  // superseded by GPT-6 (above); Terra has no GPT-6 tier and stays current.
+  // The bare "gpt-5.6" API alias routes to Sol at OpenAI; a stored one now
+  // lands on GPT-6 Sol, the current Sol tier (see RETIRED_MODELS below).
+  def({ provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol", family: "gpt", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Previous Sol tier, superseded by GPT-6 Sol." }),
   def({ provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra", family: "gpt-value", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Balanced GPT-5.6 tier — everyday work where cost matters." }),
-  def({ provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna", family: "gpt-luna", status: "current", released: "2026-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Fastest, most affordable GPT-5.6 — high-volume tasks with 1M context." }),
+  def({ provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna", family: "gpt-luna", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Previous Luna tier, superseded by GPT-6 Luna." }),
   def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "legacy", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Previous flagship generation." }),
   def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, api: "responses", description: "OpenAI's most thorough reasoner — slow, expensive, extremely capable (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Previous affordable frontier tier." }),
@@ -349,14 +361,14 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-5.1-codex", name: "GPT-5.1 Codex", family: "gpt-codex", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, api: "responses", description: "Older Codex model (Responses API).", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
   // api:"responses" — same verified 404 on chat/completions as the other Codex snapshots.
   def({ provider: "openai", id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", family: "gpt-codex-mini", status: "deprecated", released: "2025-11", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 400_000, api: "responses", description: "Older small Codex model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
-  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-6 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6-sol" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.4-mini" }),
-  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-6 Sol", retiresOn: "2026-12-11", replacedBy: "openai:gpt-6-sol" }),
   def({ provider: "openai", id: "o3-mini", name: "OpenAI o3-mini", family: "o-series-mini", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, description: "Fast o-series reasoning.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
   def({ provider: "openai", id: "o1", name: "OpenAI o1", family: "o-series", status: "deprecated", released: "2024-12", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "Early reasoning model, two generations behind.", deprecationNote: "Deprecated by OpenAI — use GPT-5.5" }),
-  def({ provider: "openai", id: "gpt-4o", name: "GPT-4o", family: "gpt-4o", status: "deprecated", released: "2024-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 128_000, description: "Classic multimodal GPT-4o.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "gpt-4o", name: "GPT-4o", family: "gpt-4o", status: "deprecated", released: "2024-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 128_000, description: "Classic multimodal GPT-4o.", deprecationNote: "Retires Oct 23, 2026 — use GPT-6 Sol", retiresOn: "2026-10-23", replacedBy: "openai:gpt-6-sol" }),
   def({ provider: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", family: "gpt-4o-mini", status: "deprecated", released: "2024-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Small GPT-4o tier.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
-  def({ provider: "openai", id: "gpt-4-turbo", name: "GPT-4 Turbo", family: "gpt-4", status: "deprecated", released: "2024-04", minPlan: "PRO", vision: true, cost: 2, description: "Legacy GPT-4 flagship.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "gpt-4-turbo", name: "GPT-4 Turbo", family: "gpt-4", status: "deprecated", released: "2024-04", minPlan: "PRO", vision: true, cost: 2, description: "Legacy GPT-4 flagship.", deprecationNote: "Retires Oct 23, 2026 — use GPT-6 Sol", retiresOn: "2026-10-23", replacedBy: "openai:gpt-6-sol" }),
   def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
 
   // —— Google ——
@@ -478,10 +490,11 @@ const CURATED: ModelInfo[] = [
 
   // Grok 4.7 (2026-09-21): same $2/$6 pricing and 500K context as 4.6, on a
   // 2.1T-parameter base (a 40% expansion over 4.6's 1.5T) with a longer
-  // reasoning ladder aimed at multi-hour agent runs. NOT verified live — no
-  // xAI credential in this repo — curated from SpaceXAI's own docs listing
-  // plus independent launch coverage; confirm the id against a real key
-  // before relying on it. See docs/models-september-22-2026.md.
+  // reasoning ladder aimed at multi-hour agent runs. Since confirmed against
+  // xAI's own model page (docs.x.ai): id `grok-4.7`, text + image in, effort
+  // low|medium|high|xhigh defaulting to high, and — like 4.6 — every token
+  // billed at 2x once a prompt reaches 200K (pricing.ts). See
+  // docs/models-september-22-2026.md.
   def({ provider: "xai", id: "grok-4.7", name: "Grok 4.7", family: "grok", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — a larger base built for work that unfolds over many steps." }),
   def({ provider: "xai", id: "grok-4.6", name: "Grok 4.6", family: "grok", status: "legacy", released: "2026-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
   // —— xAI (SpaceXAI) / Grok ——
@@ -711,10 +724,13 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // (the other nine Claude ids return 200 on the same key).
   "anthropic:claude-opus-4-1": "anthropic:claude-opus-5-5",
   // OpenAI — retired ids + ids that never existed in the API.
-  "openai:gpt-5.6": "openai:gpt-5.6-sol", // bare API alias — routes to Sol
-  "openai:gpt-5.5-thinking": "openai:gpt-5.6-sol", // ChatGPT product name, never an API id
+  // A bare "gpt-5.6" is OpenAI's alias for 5.6 Sol. Stored ones land on the
+  // CURRENT Sol row instead (validate:models requires a current target), which
+  // since 2026-09-22 is GPT-6 Sol.
+  "openai:gpt-5.6": "openai:gpt-6-sol",
+  "openai:gpt-5.5-thinking": "openai:gpt-6-sol", // ChatGPT product name, never an API id
   "openai:gpt-5.5-mini": "openai:gpt-5.4-mini", // never existed; current mini is 5.4
-  "openai:o1-preview": "openai:gpt-5.6-sol", // shut down 2025-07-28
+  "openai:o1-preview": "openai:gpt-6-sol", // shut down 2025-07-28
   "openai:o1-mini": "openai:gpt-5.4-mini", // shut down 2025-10-27
   "openai:dall-e-3": "openai:gpt-image-2.5-sunburst", // shut down 2026-05-12
   "openai:dall-e-2": "openai:gpt-image-2.5-flare", // shut down 2026-05-12

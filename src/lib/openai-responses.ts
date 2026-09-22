@@ -165,9 +165,9 @@ function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefin
     return "high"; // pro's own default; it has no none/low
   }
   if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
-  // "max" exists on GPT-5.6 and GPT-6 Astra; older Responses models top out
-  // at xhigh.
-  if (effort === "max" && !id.includes("gpt-5.6") && !id.includes("gpt-6-astra")) return "xhigh";
+  // "max" exists on GPT-5.6 and GPT-6 Astra/Sol/Luna; older Responses models
+  // top out at xhigh.
+  if (effort === "max" && !/gpt-5\.6|gpt-6-(astra|sol|luna)/.test(id)) return "xhigh";
   return effort;
 }
 
@@ -182,7 +182,9 @@ function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefin
  */
 function canDisableViaNoneEffort(model: ModelInfo): boolean {
   const id = model.providerModel.toLowerCase();
-  if (!/gpt-5\.\d/.test(id)) return false;
+  // GPT-6 is here for Sol and Luna, which list "none"; Astra does not, and
+  // its caps say so (canDisable false), so it is still never sent "none".
+  if (!/gpt-5\.\d|gpt-6/.test(id)) return false;
   return model.reasoning && reasoningCaps(model).canDisable;
 }
 

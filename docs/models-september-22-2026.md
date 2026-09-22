@@ -39,6 +39,64 @@ falling through to the generic `grok` catch-all (`source:"provider"`, wrong
 into two single-hint rules carrying the same metric, since 4.5 and 4.6
 genuinely share EU-mid-July pricing and that benchmark run.
 
+## Added later the same day: GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 at launch
+
+Unlike the pass above, these were checked against the providers' own primary
+pages (fetched directly: `developers.openai.com/api/docs/models/gpt-6-sol`,
+`…/gpt-6-luna`, `…/gpt-6-astra`, `platform.claude.com/docs/en/models/opus-5-5/*`,
+`platform.claude.com/docs/en/about-claude/pricing`, `…/build-with-claude/fast-mode`,
+`docs.x.ai/developers/models/grok-4.7` and `…/grok-4.6`).
+
+| Model | Provider ID | Context | Input / output per MTok | Cached input | Thinking |
+| --- | --- | --- | --- | --- | --- |
+| GPT-6 Sol | `gpt-6-sol` | 1,050,000 (922K in, 128K out) | $2 / $10 | $0.20 (writes $2.50) | none · low · medium (default) · high · xhigh · max |
+| GPT-6 Luna | `gpt-6-luna` | 1,050,000 (922K in, 128K out) | $0.10 / $0.50 | $0.01 (writes $0.125) | none · low · medium (default) · high · xhigh · max |
+| Claude Opus 5.5 | `claude-opus-5-5` | 1,000,000 (128K out) | $4 / $20 | $0.20 (5m write $5, 1h $8) | adaptive, always on · low…max · medium default |
+| Grok 4.7 | `grok-4.7` | 500,000 | $2 / $6 (≥200K prompt: $4 / $12) | $0.50 (≥200K: $1) | low · medium · high (default) · xhigh |
+
+**GPT-6 Sol / Luna** replace the GPT-5.6 Sol and Luna tiers in their families
+(`gpt`, `gpt-luna`); both 5.6 rows stay selectable as `legacy`. GPT-5.6 Terra
+has no GPT-6 counterpart and stays current. Both serve Chat Completions and
+Responses, so they use the ordinary chat adapter like the 5.6 tiers. Unlike
+Astra they list `none`, so Instant sends `reasoning_effort: "none"` (it has
+to be explicit — without it they think at `medium`). Long prompts (>272K
+input) bill 2x input/cache and 1.5x output for the whole request, and Fast
+mode (`service_tier: "priority"`, OpenAI's former name for it) is 2x — both
+now metered. Ids that migrated to GPT-5.6 Sol (`gpt-5.6`, `gpt-5.5-thinking`,
+`o1-preview`, and the `replacedBy` of gpt-5 / o3 / gpt-4o / gpt-4-turbo) now
+migrate to GPT-6 Sol, since a migration target has to be `current`.
+
+**Claude Opus 5.5** was already registered from a pre-launch Console read
+(Sept 22 morning); the launch page corrected it. Price is $4/$20, not $5/$25,
+and cache reads are 0.05x rather than 0.1x. More importantly it has four
+breaking changes against Opus 5, three shared with Fable 5.1: thinking can't
+be disabled (`{type: "disabled"}` and manual `budget_tokens` are 400s), forced
+`tool_choice` (`any`/`tool`) is a 400, and thinking blocks are bound to the
+model and conversation; `computer_20251124` is also rejected. Juno sends only
+`auto`/`none` tool choice and no computer-use tool, so the only change needed
+was thinking: Opus 5.5 now takes Fable's always-on path — no Instant option,
+adaptive thinking with `display: "summarized"` on every request, and its own
+`medium` default instead of Fable's `high` — in the web adapter, the vendored
+runner copy (`runner/agent-core/src/providers/thinking.ts`, which had also
+drifted and never asked Opus 5 / 5.5 for summarized thinking) and the native
+Code wire.
+
+**Grok 4.7** is now confirmed on xAI's own page (id, price, context, effort
+ladder). Both 4.6 and 4.7 bill every token at 2x once a prompt reaches 200K
+tokens, which Juno had not been metering; it is now.
+
+**How routing was verified.** `tests/september-22-models.test.ts` pins each id
+from the picker to the provider: it resolves to itself (no migration), goes out
+on its provider's own transport, and the probe request — built from the same
+routing and wire-id boundary as the chat adapters — targets the documented
+endpoint with the documented `model`. Separately, Juno's real `streamChat`
+path was driven with the network stubbed and the outgoing requests captured:
+Opus 5.5 → `api.anthropic.com/v1/messages` with `model: "claude-opus-5-5"` and
+adaptive thinking on every tier (never `disabled`); GPT-6 Sol/Luna →
+`api.openai.com/v1/chat/completions` with their exact ids, `none` for Instant
+and `max` at the top; Grok 4.7 → `api.x.ai/v1/chat/completions` with
+`model: "grok-4.7"`; and a stored `openai:gpt-5.6` → `gpt-6-sol`.
+
 ## Considered and explicitly NOT added
 
 **OpenAI Sora (video)** — Juno has never carried an OpenAI video model. Sora

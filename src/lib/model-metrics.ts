@@ -56,6 +56,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   anthropic: [
     { hints: ["fable"], metric: official(10, 50, 1_000_000, 3, 10) }, // II 59.9 #1 · 61 tok/s but ~122s to first answer
     { hints: ["mythos"], metric: metric(10, 50, 1_000_000, 3, 10) }, // same specs as Fable, invitation-only
+    // BEFORE the generic opus row, which this id also matches: 5.5 is priced
+    // $4/$20. Official price/context; the grades stay positioning estimates
+    // (Opus 5's) until a benchmark covers it.
+    { hints: ["opus-5-5"], metric: official(4, 20, 1_000_000, 4, 9) },
     { hints: ["opus"], metric: official(5, 25, 1_000_000, 4, 9) }, // II 55.7 · 56 tok/s
     { hints: ["sonnet-5"], metric: official(2, 10, 1_000_000, 5, 9) }, // II 53.4 · 79 tok/s · intro pricing, $3/$15 from Sep 1 2026
     { hints: ["sonnet"], metric: metric(3, 15, 1_000_000, 5, 7) },
@@ -63,6 +67,12 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   ],
   openai: [
     { hints: ["gpt-6-astra"], metric: official(10, 50, 1_050_000, 4, 10) }, // official price/context; speed is positioning-based pending benchmark coverage
+    // GPT-6 Sol/Luna (2026-09-22): official price/context; speed and
+    // intelligence carry over from the 5.6 tier each replaces until a
+    // benchmark grades them — deliberately not higher, since Auto and Work
+    // rank on these numbers and Luna is the cheapest model OpenAI sells.
+    { hints: ["gpt-6-sol"], metric: official(2, 10, 1_050_000, 5, 9) },
+    { hints: ["gpt-6-luna"], metric: official(0.1, 0.5, 1_050_000, 9, 8) },
     { hints: ["gpt-5.6-sol"], metric: official(5, 30, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s
     { hints: ["gpt-5.6-terra"], metric: official(2, 12, 1_050_000, 8, 9) }, // II 55.0 · 141 tok/s — repriced 2026-07-30 (was $2.50/$15)
     { hints: ["gpt-5.6-luna"], metric: official(0.2, 1.2, 1_050_000, 9, 8) }, // II 51.2 · 204 tok/s — repriced 2026-07-30, −80% (was $1/$6); best value in the OpenAI lineup
@@ -564,11 +574,15 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 //    none | low | medium | high | xhigh | max. "max" is the deepest effort
 //    (above xhigh); Instant maps to none. Default is medium.
 //    GPT-5.5 / 5.4 stop at xhigh (no max).
+//  - GPT-6 Sol/Luna take the 5.6 ladder, `none` included; GPT-6 Astra has
+//    no `none`, so it alone among the GPT-6 models offers no Instant.
 //  - The gpt-5.x-pro MODELS accept only medium|high|xhigh and cannot be run
 //    non-thinking. On GPT-5.6, by contrast, "pro" is not an effort at all — it is
 //    a separate reasoning.mode axis (see PRO_MODE_MODELS below).
 //  - Claude Haiku 4.5 has NO effort parameter — extended thinking is on/off only.
 //  - Claude Opus 4.5 tops out at high; 4.6 adds max; 4.7+ adds xhigh.
+//  - Claude Opus 5.5, like Fable/Mythos, cannot turn thinking off at all —
+//    `thinking: {type: "disabled"}` is a 400 — and defaults to medium.
 //  - Where "max" is also real outside GPT-5.6: Claude Opus 4.6+/4.7+ and
 //    Sonnet 4.6+; GLM-5.2; DeepSeek v4.
 
@@ -660,6 +674,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Fable/Mythos: adaptive always on; disabled rejected.
       if (/(fable|mythos)-5-1/.test(id)) return caps(LMHXM, false, false, "high");
       if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false);
+      // Opus 5.5: adaptive and always on like Fable 5.1 (disabled → 400), on
+      // the same ladder, but the API's own default is medium rather than high.
+      if (id.includes("opus-5-5")) return caps(LMHXM, false, false, "medium");
       // Opus 4.5: manual budget_tokens only (no adaptive); effort API is
       // supported alongside budget but we still expose LMH for the slider.
       if (id.includes("opus-4-5")) return caps(LMH, true); // no xhigh, no max
@@ -673,6 +690,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Astra: low|medium|high|xhigh|max. The official model page does not
       // list `none`, so do not offer an Instant option that the API rejects.
       if (id.includes("gpt-6-astra")) return caps(LMHXM, false);
+      // GPT-6 Sol/Luna DO list `none` (model pages, 2026-09-22), so unlike
+      // Astra they get a real Instant — the same contract as the 5.6 tiers.
+      if (id.includes("gpt-6-sol") || id.includes("gpt-6-luna")) return caps(LMHXM, true);
       // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
       // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.
       // Verified on /v1/responses: none|minimal|low all 400 with "Supported

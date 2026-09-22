@@ -12,7 +12,7 @@ import type { ReasoningEffort } from "@/types/chat";
 /**
  * - **adaptive** — `thinking: { type: "adaptive" }` + `output_config.effort`.
  *   `type: "enabled"` + `budget_tokens` is rejected (400) on Fable/Mythos/Opus
- *   4.8/4.7/Sonnet 5, and deprecated on Opus 4.6 / Sonnet 4.6.
+ *   5.5/4.8/4.7/Sonnet 5, and deprecated on Opus 4.6 / Sonnet 4.6.
  * - **manual** — `thinking: { type: "enabled", budget_tokens }`. Adaptive is
  *   not supported (Haiku 4.5, Opus 4.5, Sonnet 4.5, earlier).
  */
@@ -55,10 +55,25 @@ export function anthropicThinkingKind(providerModel: string): AnthropicThinkingK
   return "adaptive";
 }
 
-/** Adaptive thinking is always on; `disabled` is rejected (Fable / Mythos). */
+/**
+ * Adaptive thinking is always on; `disabled` is rejected — Fable / Mythos,
+ * and Opus 5.5, whose launch made `{type: "disabled"}` a 400
+ * ("thinking.type.disabled is not supported for this model"). Opus 5 still
+ * accepts it, hence the exact `opus-5-5` rather than `opus-5`.
+ */
 export function adaptiveAlwaysOn(providerModel: string): boolean {
   const id = providerModel.toLowerCase();
-  return id.includes("fable") || id.includes("mythos");
+  return id.includes("fable") || id.includes("mythos") || id.includes("opus-5-5");
+}
+
+/**
+ * The effort an always-on model runs at when the caller asked for none —
+ * the API's own default, so omitting a tier never silently costs more than
+ * the provider would have charged. Opus 5.5 defaults to `medium`; Fable and
+ * Mythos to `high`.
+ */
+function alwaysOnDefaultEffort(providerModel: string): ReasoningEffort {
+  return providerModel.toLowerCase().includes("opus-5-5") ? "medium" : "high";
 }
 
 /**
@@ -139,8 +154,10 @@ export function buildAnthropicThinkingBits(
       }
       return { maxTokens: Math.min(maxTokens, outputCap) };
     }
-    const effort = mapAnthropicEffort(reasoningEffort ?? "high");
-    const headroom = ADAPTIVE_HEADROOM[reasoningEffort ?? "high"];
+    // Reached with no tier only on an always-on model (see wantThinking).
+    const tier = reasoningEffort ?? alwaysOnDefaultEffort(providerModel);
+    const effort = mapAnthropicEffort(tier);
+    const headroom = ADAPTIVE_HEADROOM[tier];
     const total = Math.min(maxTokens + headroom, outputCap);
     const thinking: AnthropicThinkingParam = {
       type: "adaptive",

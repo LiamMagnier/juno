@@ -11,7 +11,7 @@
  *
  * The distinction the matrix encodes is not cosmetic. `thinking: {type:'enabled',
  * budget_tokens}` is rejected outright by the adaptive-era models (Fable,
- * Mythos, Opus 4.7/4.8, Sonnet 5) and `thinking: {type:'adaptive'}` is rejected
+ * Mythos, Opus 5.5/4.8/4.7, Sonnet 5) and `thinking: {type:'adaptive'}` is rejected
  * by the older ones (Haiku 4.5, Opus 4.5, Sonnet 4.5). Sending the wrong one is
  * a hard 400 before a single token, which is precisely the failure this whole
  * change set exists to stop shipping.
@@ -66,10 +66,19 @@ function isManual(providerModel: string): boolean {
   return false;
 }
 
-/** Adaptive thinking cannot be switched off on these; `disabled` is rejected. */
+/**
+ * Adaptive thinking cannot be switched off on these; `disabled` is rejected.
+ * Opus 5.5 joined at launch; Opus 5 still accepts `disabled`, hence the exact id.
+ */
 function adaptiveAlwaysOn(providerModel: string): boolean {
   const id = providerModel.toLowerCase();
-  return id.includes('fable') || id.includes('mythos');
+  return id.includes('fable') || id.includes('mythos') || id.includes('opus-5-5');
+}
+
+/** The API's own default for an always-on model given no tier: Opus 5.5 runs
+ *  at `medium`, Fable and Mythos at `high`. */
+function alwaysOnDefaultEffort(providerModel: string): ReasoningEffort {
+  return providerModel.toLowerCase().includes('opus-5-5') ? 'medium' : 'high';
 }
 
 /** Adaptive is the default when `thinking` is omitted, so Instant must say so. */
@@ -83,6 +92,7 @@ function needsSummarizedDisplay(providerModel: string): boolean {
   return (
     id.includes('fable') ||
     id.includes('mythos') ||
+    id.includes('opus-5') || // claude-opus-5 and claude-opus-5-5 alike
     id.includes('opus-4-8') ||
     id.includes('opus-4-7') ||
     id.includes('sonnet-5')
@@ -116,8 +126,9 @@ export function anthropicThinkingBits(
         ? { maxTokens: Math.min(maxTokens, outputCap), thinking: { type: 'disabled' } }
         : { maxTokens: Math.min(maxTokens, outputCap) };
     }
-    const effort = toAnthropicEffort(reasoningEffort ?? 'high');
-    const headroom = ADAPTIVE_HEADROOM[reasoningEffort ?? 'high'];
+    const tier = reasoningEffort ?? alwaysOnDefaultEffort(providerModel);
+    const effort = toAnthropicEffort(tier);
+    const headroom = ADAPTIVE_HEADROOM[tier];
     return {
       maxTokens: Math.min(maxTokens + headroom, outputCap),
       thinking: {

@@ -62,6 +62,8 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
   ],
   openai: [
     { label: "GPT-6 Astra", family: "gpt-named-flagship", match: /^gpt-6-astra/i, minPlan: "PRO", vision: true },
+    { label: "GPT-6 Sol", family: "gpt", match: /^gpt-6-sol/i, minPlan: "PRO", vision: true },
+    { label: "GPT-6 Luna", family: "gpt-luna", match: /^gpt-6-luna/i, minPlan: "FREE", vision: true },
     { label: "GPT-5.6 Sol", family: "gpt", match: /^gpt-5\.6-sol/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.6 Terra", family: "gpt-value", match: /^gpt-5\.6-terra/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.6 Luna", family: "gpt-luna", match: /^gpt-5\.6-luna/i, minPlan: "FREE", vision: true },

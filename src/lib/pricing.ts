@@ -136,6 +136,9 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "anthropic":
       if (pm.includes("fable") || pm.includes("mythos")) return { input: 10, output: 50 };
       if (pm.includes("opus-4-1")) return { input: 15, output: 75 }; // pre-4.5 Opus pricing
+      // BEFORE the generic opus row, which this id also matches: Opus 5.5 is
+      // the first Opus since 4.5 to move off $5/$25.
+      if (pm.includes("opus-5-5")) return { input: 4, output: 20 };
       if (pm.includes("opus")) return { input: 5, output: 25 };
       if (pm.includes("haiku")) return { input: 1, output: 5 };
       if (pm.includes("sonnet-5")) return { input: 2, output: 10 }; // intro pricing — $3/$15 from Sep 1 2026
@@ -143,6 +146,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
       if (pm.includes("gpt-6-astra")) return { input: 10, output: 50 };
+      if (pm.includes("gpt-6-sol")) return { input: 2, output: 10 };
+      if (pm.includes("gpt-6-luna")) return { input: 0.1, output: 0.5 };
       // Terra/Luna were cut on 2026-07-30 (Terra −20%, Luna −80%) from their
       // 2026-07-09 launch rates of $2.50/$15 and $1/$6. Sol was not repriced.
       if (pm.includes("gpt-5.6-terra")) return { input: 2, output: 12 };
@@ -272,11 +277,13 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
  *
  *  - Anthropic fast mode (`speed:"fast"` + `fast-mode-2026-02-01` beta): Opus 4.8
  *    and Opus 5.5 — 4.7's fast mode is deprecated (removed 2026-07-24) and
- *    4.6/other models error or silently run standard. Priced at 2x ($10/$50
- *    vs $5/$25) on both — confirmed for 5.5 in the Console model card
- *    (Console does not show it for the bare Opus 5 entry).
- *  - OpenAI priority (`service_tier:"priority"`): the 5.6/5.5/5.4 chat tiers.
- *    5.5 is 2.5x, the rest 2x. The -pro line, 5.1 and 4o are NOT priority-eligible.
+ *    4.6/other models error or silently run standard. Priced at 2x on both:
+ *    $10/$50 over 4.8's $5/$25, and $8/$40 over 5.5's $4/$20 (Anthropic's
+ *    fast-mode pricing table, 2026-09-22).
+ *  - OpenAI priority (`service_tier:"priority"`, which OpenAI renamed "Fast
+ *    mode" and still accepts): GPT-6 Astra/Sol/Luna and the 5.6/5.5/5.4 chat
+ *    tiers. 5.5 is 2.5x, the rest 2x. The -pro line, 5.1 and 4o are NOT
+ *    priority-eligible.
  *
  * Keep in sync with supportsFastMode(); both are the single source of truth for
  * which models show the "Fast" toggle and how the premium is billed.
@@ -286,7 +293,7 @@ export function fastModeMultiplier(model: ModelInfo): number | null {
   if (model.provider === "anthropic") return pm.includes("opus-4-8") || pm.includes("opus-5-5") ? 2 : null;
   if (model.provider === "openai") {
     if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
-    if (pm.includes("gpt-6-astra")) return 2;
+    if (/gpt-6-(astra|sol|luna)/.test(pm)) return 2;
     if (pm.includes("gpt-5.6")) return 2; // sol / terra / luna
     if (pm.includes("gpt-5.5")) return 2.5;
     if (pm.includes("gpt-5.4")) return 2;
@@ -302,7 +309,8 @@ export function supportsFastMode(model: ModelInfo): boolean {
 
 /**
  * Full rate incl. cache multipliers.
- * Anthropic: read 0.1×, 5m write 1.25×, 1h write 2×.
+ * Anthropic: read 0.1× (0.025× on Fable/Mythos 5.1, 0.05× on Opus 5.5),
+ * 5m write 1.25×, 1h write 2×.
  * Juno always writes Anthropic system prefixes with ttl:"1h", so the default
  * `cacheWrite` for Anthropic is the **1h** rate (2×).
  * `fastMode` scales base input/output (and derived cache rates).
@@ -316,7 +324,7 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
     return {
       input,
       output,
-      cacheRead: input * (/(fable|mythos)-5-1/.test(model.providerModel) ? 0.025 : 0.1),
+      cacheRead: input * anthropicCacheReadRatio(model.providerModel),
       cacheWrite: input * 2, // default = 1h (what we actually write)
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 2,
@@ -340,7 +348,7 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
   if (
     model.provider === "openai" &&
     (model.providerModel.toLowerCase().includes("gpt-5.6") ||
-      model.providerModel.toLowerCase().includes("gpt-6-astra"))
+      /gpt-6-(astra|sol|luna)/.test(model.providerModel.toLowerCase()))
   ) {
     // GPT-5.6+ family: 90% cached-input discount; cache writes 1.25× uncached.
     return {
@@ -453,6 +461,41 @@ export function toolFeesUsd(
   }
 }
 
+/**
+ * Cache-hit price as a fraction of the base input rate, per Anthropic's
+ * pricing table: 0.1x by default, but the newest models discount reads
+ * further — Fable/Mythos 5.1 to 0.025x ($0.25 on $10) and Opus 5.5 to 0.05x
+ * ($0.20 on $4). Writes keep the standard 1.25x / 2x everywhere.
+ */
+function anthropicCacheReadRatio(providerModel: string): number {
+  const pm = providerModel.toLowerCase();
+  if (/(fable|mythos)-5-1/.test(pm)) return 0.025;
+  if (pm.includes("opus-5-5")) return 0.05;
+  return 0.1;
+}
+
+/**
+ * Whole-request surcharges a lab applies once one prompt crosses a size
+ * threshold. They cannot live in tokenRate: the threshold depends on this
+ * request's usage, not only on the model.
+ *
+ *  - OpenAI GPT-6 Astra, Sol and Luna: more than 272K input tokens bills the
+ *    full request at 2x input and cache rates and 1.5x output.
+ *  - xAI Grok 4.6 and 4.7: a prompt that REACHES 200K tokens bills every
+ *    token in the request at the higher tier — 2x input, cached input and
+ *    output alike ($4 / $1 / $12 against $2 / $0.50 / $6).
+ */
+function longContextMultipliers(model: ModelInfo, totalInput: number): { input: number; output: number } {
+  const pm = model.providerModel.toLowerCase();
+  if (model.provider === "openai" && /gpt-6-(astra|sol|luna)/.test(pm) && totalInput > 272_000) {
+    return { input: 2, output: 1.5 };
+  }
+  if (model.provider === "xai" && /grok-4\.[67]/.test(pm) && totalInput >= 200_000) {
+    return { input: 2, output: 2 };
+  }
+  return { input: 1, output: 1 };
+}
+
 /** Token-only cost (no tool fees). */
 function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
   const n = normalizeUsage(model.provider, u);
@@ -467,15 +510,7 @@ function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
     writeCost = n.cacheWrite * r.cacheWrite;
   }
 
-  // Astra's long-context rate applies to the whole request once input exceeds
-  // 272K tokens: 2x input/cache and 1.5x output. This cannot live in tokenRate
-  // because the threshold depends on request usage, not only the model.
-  const astraLongContext =
-    model.provider === "openai" &&
-    model.providerModel.toLowerCase().includes("gpt-6-astra") &&
-    n.totalInput > 272_000;
-  const inputMultiplier = astraLongContext ? 2 : 1;
-  const outputMultiplier = astraLongContext ? 1.5 : 1;
+  const { input: inputMultiplier, output: outputMultiplier } = longContextMultipliers(model, n.totalInput);
   const cost =
     ((n.freshInput * r.input + n.cacheRead * r.cacheRead + writeCost) * inputMultiplier +
       n.output * r.output * outputMultiplier) /

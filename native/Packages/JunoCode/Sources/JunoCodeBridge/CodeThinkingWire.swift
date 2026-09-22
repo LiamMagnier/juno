@@ -289,9 +289,9 @@ public enum CodeThinkingWire {
     /// Adaptive Claude models that reason when `thinking` is OMITTED, and so
     /// need an explicit disable to actually stop.
     ///
-    /// Sonnet 5 defaults on; Opus 4.7/4.8 default off. Fable and Mythos are
-    /// always-on and reject `disabled` outright, which is why they must not be
-    /// listed here.
+    /// Sonnet 5 defaults on; Opus 4.7/4.8 default off. Fable, Mythos and Opus
+    /// 5.5 are always-on and reject `disabled` outright, which is why they must
+    /// not be listed here.
     static func adaptiveDefaultsOn(_ providerModelID: String) -> Bool {
         let id = providerModelID.lowercased()
         if id.contains("fable") || id.contains("mythos") { return false }
@@ -313,7 +313,9 @@ public enum CodeThinkingWire {
         guard provider == "openai" else { return false }
         if id.contains("-pro") { return false }        // gpt-5-pro always reasons
         // 5.1+ only; the original gpt-5 predates "none" (its floor is "minimal").
-        return id.range(of: #"gpt-5\.\d"#, options: .regularExpression) != nil
+        // GPT-6 Sol and Luna list "none" too; GPT-6 Astra does not, so it is
+        // left out by name rather than matched by generation.
+        return id.range(of: #"gpt-5\.\d|gpt-6-(sol|luna)"#, options: .regularExpression) != nil
     }
 
     /// The on-state spelling for providers that switch thinking with a
