@@ -623,10 +623,15 @@ struct StudioSubagentControls: View {
         .padding(.leading, JunoSpace.cozy + 5)
         .task(id: "\(update.status.rawValue)-\(childID?.value ?? "")") {
             await refresh()
-            // Approvals arrive from the child's own run; while it is waiting,
-            // look again every second until nothing is outstanding.
-            while update.status == .waitingForApproval, !Task.isCancelled {
+            // Approvals arrive from the child's own run. The runtime marks the
+            // row as waiting when one does, but a request must never depend on
+            // that alone: an unanswered one holds the child and the parent's
+            // turn until Stop. So a live child is looked at every second, and a
+            // request that has run out its time is declined on the same tick,
+            // as the session's own approval card does.
+            while !update.status.isTerminal || !pending.isEmpty, let childID, !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
+                await controller.sweepSubagentApprovals(childID)
                 await refresh()
             }
         }
