@@ -580,7 +580,9 @@ const FAKE_PM2 = fileURLToPath(new URL("./fixtures/fake-pm2.mjs", import.meta.ur
 // The runner's own environment, minus anything that would configure deploy.sh.
 function deployEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
   const inherited = Object.entries(process.env).filter(([name]) => !name.startsWith("JUNO_") && name !== "GIT_SHA");
-  return { ...Object.fromEntries(inherited), ...overrides };
+  // Next declares NODE_ENV as a required key of ProcessEnv, which a filtered
+  // copy of the runner's environment cannot promise statically.
+  return { ...Object.fromEntries(inherited), ...overrides } as NodeJS.ProcessEnv;
 }
 
 // Runs `commands` in bash after sourcing DEPLOY_LIBRARY, with `args` as $1...
