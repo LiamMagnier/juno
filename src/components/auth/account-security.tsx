@@ -115,7 +115,11 @@ function TwoStepRow({
         label={
           <span className="flex items-center gap-2">
             Two-step verification
-            {status?.enabled && <Badge variant="secondary">On</Badge>}
+            {status?.enabled && (
+              <Badge variant="secondary" className="font-sans">
+                On
+              </Badge>
+            )}
           </span>
         }
         description={description}

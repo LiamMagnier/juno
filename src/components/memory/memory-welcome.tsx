@@ -57,7 +57,7 @@ export function MemoryWelcome({
         <h2 id="memory-welcome-heading" className="mt-4 text-heading text-foreground">
           Juno hasn’t remembered anything yet
         </h2>
-        <p className="mt-1.5 max-w-md text-pretty text-body text-muted-foreground">
+        <p className="mt-1.5 max-w-md text-balance text-body text-muted-foreground">
           As you chat, Juno keeps the details worth carrying over, like your work, your preferences and how you like
           answers. You can also start it off yourself.
         </p>

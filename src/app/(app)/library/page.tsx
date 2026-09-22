@@ -5,7 +5,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, Search, Upload } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -13,7 +12,7 @@ import { useApp } from "@/components/app/app-provider";
 import { LibraryBrowserSkeleton, LibraryGrid, LibraryList } from "@/components/library/library-browser";
 import { FileVersionsDialog, RenameFileDialog } from "@/components/library/library-dialogs";
 import { LibraryDropOverlay, useFileDrop } from "@/components/library/library-drop-zone";
-import { LibraryStorageCaption, LibraryToolbar } from "@/components/library/library-toolbar";
+import { LibraryStorageCaption, LibraryToolbar, LibraryToolbarSkeleton } from "@/components/library/library-toolbar";
 import type { LibraryItem, LibraryKind, LibrarySort, LibraryView } from "@/components/library/library-types";
 import { useLibrary } from "@/components/library/use-library";
 import { useLibraryUploads } from "@/components/library/use-library-uploads";
@@ -213,7 +212,7 @@ export default function LibraryPage() {
             ) : (
               <>
                 {library.storage && !libraryEmpty && (
-                  <LibraryStorageCaption storage={library.storage} className="hidden sm:block" />
+                  <LibraryStorageCaption storage={library.storage} className="hidden @[40rem]/page:block" />
                 )}
                 <Button variant="secondary" size="sm" onClick={() => switchView(true)}>
                   <ActionIcons.delete className="size-3.5" />
@@ -391,18 +390,6 @@ export default function LibraryPage() {
       </AppPage>
 
       <LibraryDropOverlay open={dragging} />
-    </div>
-  );
-}
-
-/** The toolbar's placeholder, control for control, so the row does not jump when it arrives. */
-function LibraryToolbarSkeleton() {
-  return (
-    <div className="flex flex-wrap items-center gap-2" aria-hidden="true">
-      <Skeleton className="h-9 w-full max-w-xs rounded-field" />
-      <Skeleton className="h-9 w-56 rounded-menu" />
-      <Skeleton className="h-9 w-40 rounded-field" />
-      <Skeleton className="ml-auto h-9 w-36 rounded-menu" />
     </div>
   );
 }

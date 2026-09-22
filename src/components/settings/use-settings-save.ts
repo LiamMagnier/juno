@@ -45,6 +45,8 @@ export function queueSettingsPatch(body: Record<string, unknown>): Promise<Respo
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      // A write that never answers must not hold every later one behind it.
+      signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(20_000) : undefined,
     })
   );
   queue = request.catch(() => undefined);

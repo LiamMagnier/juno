@@ -282,7 +282,7 @@ export function LibraryGallery() {
             lede="Everything you upload or share in chats."
             actions={
               <>
-                <LibraryStorageCaption storage={STORAGE} className="hidden sm:block" />
+                <LibraryStorageCaption storage={STORAGE} className="hidden @[40rem]/page:block" />
                 <Button variant="secondary" size="sm">
                   <ActionIcons.delete className="size-3.5" />
                   Recently deleted

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { useApp } from "@/components/app/app-provider";
-import { useSaveStates } from "@/components/settings/save-status";
+import { useSaveStates, type SaveState } from "@/components/settings/save-status";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageHistory } from "@/components/settings/usage-history";
 import {
@@ -122,7 +122,7 @@ export function BillingSection() {
                 {plan.name}
               </p>
               {generating && (
-                <Badge variant="outline" className="gap-1.5 text-success-ink">
+                <Badge variant="outline" className="gap-1.5 font-sans text-success-ink">
                   <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
                   Active
                 </Badge>
@@ -198,6 +198,8 @@ export function BillingSection() {
               description={
                 nowMs == null ? (
                   "A rolling 5-hour window."
+                ) : windows.session.resetsAtMs <= nowMs ? (
+                  "Resetting now."
                 ) : (
                   <>
                     <span>Resets in</span> <span>{formatCountdown(windows.session.resetsAtMs - nowMs)}</span>
@@ -211,6 +213,8 @@ export function BillingSection() {
               description={
                 nowMs == null ? (
                   "A rolling 7-day window."
+                ) : windows.weekly.resetsAtMs <= nowMs ? (
+                  "Resetting now."
                 ) : (
                   <>
                     <span>Resets</span> <span>{formatResetMoment(windows.weekly.resetsAtMs)}</span>
@@ -266,7 +270,7 @@ function SpendCeilingRow({
   ceilingEur: number | null;
   storedCapEur: number | null;
   sourceNote: string;
-  status: ReturnType<ReturnType<typeof useSaveStates>["status"]>;
+  status: SaveState;
   onSave: (eur: number | null) => Promise<boolean>;
 }) {
   const [draft, setDraft] = React.useState(storedCapEur == null ? "" : String(storedCapEur));

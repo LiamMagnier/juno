@@ -257,6 +257,7 @@ export function GeneralSection() {
           label="Text size"
           description="Scales the whole interface on this device."
           wide
+          status={saves.status("fontSize")}
           control={
             <div className="flex w-full items-center gap-3 @[34rem]/pane:w-60">
               <span className="text-caption text-muted-foreground" aria-hidden="true">
@@ -273,6 +274,9 @@ export function GeneralSection() {
                   setFontSize(next);
                   writeFontSize(next);
                 }}
+                // Confirmed once the thumb is let go, not on every step it
+                // passes while dragged.
+                onValueCommit={() => void saves.track("fontSize", async () => true)}
               />
               <span className="text-body-lg text-muted-foreground" aria-hidden="true">
                 A
@@ -289,7 +293,7 @@ export function GeneralSection() {
       <SettingsGroup title="Language">
         <SettingRow
           label="Interface language"
-          description="Menus and buttons. Replies follow Response language under Personalization."
+          description="Replies follow Response language in Personalization."
           wide
           control={
             <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>

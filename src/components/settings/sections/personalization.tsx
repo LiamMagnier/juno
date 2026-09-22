@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +12,6 @@ import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
-import { toast } from "sonner";
 
 /** Reply languages, stored by their English name, which is what the prompt builder reads. */
 const LANGUAGES: { value: string; label: string }[] = [
@@ -70,6 +70,12 @@ export function PersonalizationSection() {
     });
   };
 
+  // A language set elsewhere (a native app, an older build) still shows as
+  // itself rather than as an empty select.
+  const languages = LANGUAGES.some((l) => l.value === settings.responseLanguage)
+    ? LANGUAGES
+    : [...LANGUAGES, { value: settings.responseLanguage, label: settings.responseLanguage }];
+
   const [instructions, setInstructions] = React.useState(settings.customInstructions);
   const saveInstructions = () => {
     if (instructions === settings.customInstructions) return;
@@ -125,7 +131,7 @@ export function PersonalizationSection() {
           status={saves.status("personality")}
           control={
             <ChoiceMenu
-              ariaLabel="Personality"
+              label="Personality"
               value={activePersonality}
               options={personalityOptions}
               onChange={(personality) => {
@@ -152,7 +158,7 @@ export function PersonalizationSection() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {LANGUAGES.map((l) => (
+                {languages.map((l) => (
                   <SelectItem key={l.value} value={l.value}>
                     {l.label}
                   </SelectItem>

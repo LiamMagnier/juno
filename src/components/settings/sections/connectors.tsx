@@ -172,7 +172,10 @@ export function ConnectorsView({
       .map((c) => ({ id: c.id, label: c.label, account: c.accountLabel, connected: true }));
     const listed = new Set(list.map((r) => r.id));
     for (const id of policy?.blockedConnectors ?? []) {
-      if (!listed.has(id)) list.push({ id, label: id, account: null, connected: false });
+      if (listed.has(id)) continue;
+      // The directory still knows its name when it is merely disconnected.
+      const known = connectors?.find((c) => c.id === id);
+      list.push({ id, label: known?.label ?? id, account: null, connected: false });
     }
     return list;
   }, [connectors, policy?.blockedConnectors]);
@@ -297,7 +300,7 @@ export function ConnectorsView({
               status={status("policy")}
               control={
                 <ChoiceMenu
-                  ariaLabel="When Juno acts in an app"
+                  label="When Juno acts in an app"
                   value={policy.actionApprovalPolicy}
                   options={POLICY_OPTIONS}
                   onChange={onPolicy}

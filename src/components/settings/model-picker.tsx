@@ -250,8 +250,8 @@ export function ModelCombobox({
               >
                 {row.kind === "auto" && <JunoMark className="size-4 shrink-0" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-foreground" translate="no">
-                    {model ? model.name : "Auto"}
+                  <span className="block truncate text-foreground">
+                    {model ? <span translate="no">{model.name}</span> : "Auto"}
                   </span>
                   {row.kind === "auto" && (
                     <span className="block truncate text-caption text-muted-foreground">
@@ -302,8 +302,8 @@ export const ModelTrigger = React.forwardRef<
       ) : (
         <JunoMark className="size-4 shrink-0" />
       )}
-      <span className="min-w-0 flex-1 truncate" translate="no">
-        {model ? model.name : "Auto"}
+      <span className="min-w-0 flex-1 truncate">
+        {model ? <span translate="no">{model.name}</span> : "Auto"}
       </span>
       <ChevronDown
         className="size-4 shrink-0 opacity-60 transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180"

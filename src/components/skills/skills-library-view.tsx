@@ -148,7 +148,9 @@ export function SkillsLibraryView({
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
+      // Not while typing somewhere, and not from under a dialog, whose focus
+      // trap would only hand the focus straight back.
+      if (isTypingTarget(event.target) || document.querySelector('[role="dialog"][data-state="open"]')) return;
       event.preventDefault();
       searchRef.current?.focus();
     };

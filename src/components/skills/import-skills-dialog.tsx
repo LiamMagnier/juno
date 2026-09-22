@@ -172,7 +172,7 @@ export function ImportSkillsFlow({
   };
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence mode="popLayout" initial={false}>
       {step === "source" || discovery === null ? (
         <SkillDialogStep key="source" className="p-5 sm:p-6">
           <SourceStep
@@ -477,7 +477,7 @@ function ChooseStep({
           <p className="min-w-0 flex-1 text-caption text-muted-foreground">
             Imported skills only run when you call them.
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             <Button variant="ghost" onClick={onBack} disabled={installing}>
               Back
             </Button>

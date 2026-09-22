@@ -122,11 +122,11 @@ export function AccountSection() {
                       {...(requiresViewerCredentials(avatar) ? { referrerPolicy: "no-referrer" } : {})}
                     />
                   )}
-                  <AvatarFallback className="text-body">{initials(user.name, user.email)}</AvatarFallback>
+                  <AvatarFallback className="font-sans text-ui">{initials(user.name, user.email)}</AvatarFallback>
                 </Avatar>
                 <span
                   className={cn(
-                    "absolute inset-0 flex items-center justify-center rounded-full bg-scrim text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
+                    "absolute inset-0 flex items-center justify-center rounded-full bg-foreground/60 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
                     uploading && "opacity-100"
                   )}
                   aria-hidden="true"
@@ -155,7 +155,7 @@ export function AccountSection() {
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <p className="truncate text-body font-semibold text-foreground">{user.name || "You"}</p>
-              <Badge variant="secondary" translate="no">
+              <Badge variant="secondary" className="font-sans" translate="no">
                 {plan.name}
               </Badge>
             </div>

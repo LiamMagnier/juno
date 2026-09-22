@@ -95,14 +95,21 @@ export function SettingsRail({
     const el = listRef.current;
     const row = el?.querySelector<HTMLElement>('[data-active="true"]');
     if (!el || !row || el.scrollWidth <= el.clientWidth + 1) return;
-    const left = row.offsetLeft - (el.clientWidth - row.offsetWidth) / 2;
+    // Measured from the two boxes rather than `offsetLeft`, whose parent is
+    // whichever ancestor happens to be positioned, not the strip.
+    const rowBox = row.getBoundingClientRect();
+    const stripBox = el.getBoundingClientRect();
+    const left = el.scrollLeft + (rowBox.left - stripBox.left) - (el.clientWidth - rowBox.width) / 2;
     el.scrollTo({ left: Math.max(0, left), behavior: firstScroll.current || reduce ? "auto" : "smooth" });
     firstScroll.current = false;
   }, [active, reduce]);
 
+  // The strip scrolls, and a scroller clips at its padding box, so it carries
+  // 4px of padding (cancelled by a matching negative margin) for the focus
+  // outline to draw into instead of being cut off above and below the chip.
   const listClass = cn(
     "flex flex-col gap-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-    "@[16rem]/rail:flex-row @[16rem]/rail:gap-1 @[16rem]/rail:overflow-x-auto",
+    "@[16rem]/rail:-m-1 @[16rem]/rail:flex-row @[16rem]/rail:gap-1 @[16rem]/rail:overflow-x-auto @[16rem]/rail:p-1",
     className
   );
   const listStyle: React.CSSProperties | undefined = strip

@@ -51,17 +51,24 @@ interface PromptDockProps {
   onAccept: (edit: MemoryEditRecord) => Promise<void>;
   onUndo: (edit: MemoryEditRecord) => Promise<void>;
   onDiscard: (id: string) => Promise<void>;
+  /**
+   * Edits applied from the dock, and when; each shows "Applied" with its Undo
+   * until the hold runs out. Held by the caller because the dock moves: an
+   * instruction applied from the empty-state welcome lands on the full page,
+   * in the summary panel's dock, and its Undo has to be there too.
+   */
+  justApplied: ReadonlyMap<string, number>;
+  onJustAppliedChange: React.Dispatch<React.SetStateAction<ReadonlyMap<string, number>>>;
   className?: string;
 }
 
 export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(function PromptDock(
-  { edits, busyEditIds, paused, onInstruct, onAccept, onUndo, onDiscard, className },
+  { edits, busyEditIds, paused, onInstruct, onAccept, onUndo, onDiscard, justApplied, onJustAppliedChange, className },
   ref
 ) {
   const [value, setValue] = React.useState("");
   const [drafting, setDrafting] = React.useState<string | null>(null);
-  /** Edits applied from here, and when: they show "Applied" with Undo until the hold runs out. */
-  const [justApplied, setJustApplied] = React.useState<ReadonlyMap<string, number>>(() => new Map());
+  const setJustApplied = onJustAppliedChange;
   const fieldRef = React.useRef<HTMLTextAreaElement>(null);
   const reduceMotion = useReducedMotion() ?? false;
 
@@ -81,7 +88,7 @@ export const PromptDock = React.forwardRef<PromptDockHandle, PromptDockProps>(fu
       });
     }, Math.max(0, next));
     return () => window.clearTimeout(timer);
-  }, [justApplied]);
+  }, [justApplied, setJustApplied]);
 
   const submit = async () => {
     const instruction = value.trim();

@@ -178,7 +178,7 @@ export function UpdateSourceFlow({
         </div>
       </SkillDialogFixed>
 
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="popLayout" initial={false}>
         {state.kind === "checking" ? (
           <SkillDialogStep key="checking" className="border-t border-border/70">
             <div role="status" aria-label="Checking for updates" className="divide-y divide-border/70">
@@ -252,6 +252,8 @@ export function UpdateSourceFlow({
                   <ul className="pb-2">
                     {state.check.removed.map((change) => (
                       <li key={change.path} className="flex items-baseline gap-3 px-5 py-2 sm:px-6">
+                        {/* The checkbox column the rows above have, left empty. */}
+                        <span aria-hidden="true" className="w-[18px] shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-ui text-foreground">{change.name}</span>
                         <span className="shrink-0 text-caption text-muted-foreground">Kept here</span>
                       </li>

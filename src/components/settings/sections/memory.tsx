@@ -153,11 +153,12 @@ export function MemorySection() {
       >
         <SettingRow
           label="Who may read your chats for it"
+          description={backgroundOptions.find((o) => o.value === settings.backgroundProviderMode)?.description}
           wide
           status={saves.status("backgroundProviderMode")}
           control={
             <ChoiceMenu
-              ariaLabel="Who may read your chats for background work"
+              label="Who may read your chats for background work"
               value={settings.backgroundProviderMode}
               options={backgroundOptions}
               onChange={(backgroundProviderMode) => {

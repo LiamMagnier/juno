@@ -125,6 +125,7 @@ export function MemoryManagerView({
   // an instruction drafts: the Rebuild button spins only for a rebuild.
   const [rebuilding, setRebuilding] = React.useState(false);
   const [highlightIds, setHighlightIds] = React.useState<ReadonlySet<string>>(() => new Set());
+  const [justApplied, setJustApplied] = React.useState<ReadonlyMap<string, number>>(() => new Map());
   const dockRef = React.useRef<PromptDockHandle>(null);
 
   // `/memory?project=<id>` is where the project page's "Manage memory" lands.
@@ -186,7 +187,12 @@ export function MemoryManagerView({
     () => scopedMemories.filter((entry) => entry.kind === "FACT" && !removal.hiddenIds.has(entry.id)),
     [scopedMemories, removal.hiddenIds]
   );
-  const activeCount = React.useMemo(() => facts.filter((entry) => !isRetired(entry)).length, [facts]);
+  // Account-wide, not in scope: a project with three facts in an account of
+  // three hundred is not a thin memory.
+  const accountActiveCount = React.useMemo(
+    () => (memory.memories ?? []).filter((entry) => entry.kind === "FACT" && !isRetired(entry)).length,
+    [memory.memories]
+  );
   const anythingRemembered =
     (memory.memories ?? []).some((entry) => entry.kind === "FACT") ||
     !!memory.summary ||
@@ -268,7 +274,7 @@ export function MemoryManagerView({
     !memory.paused &&
     !backfill.dreaming &&
     (backfill.remaining ?? 0) > 0 &&
-    activeCount < THIN_MEMORY;
+    accountActiveCount < THIN_MEMORY;
 
   const dock = (
     <PromptDock
@@ -280,6 +286,8 @@ export function MemoryManagerView({
       onAccept={acceptEdit}
       onUndo={undoEdit}
       onDiscard={memory.deleteEdit}
+      justApplied={justApplied}
+      onJustAppliedChange={setJustApplied}
     />
   );
 

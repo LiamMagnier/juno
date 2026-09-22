@@ -110,7 +110,8 @@ import type {
   PreflightClarificationAnswerValue,
 } from "@/lib/preflight-clarification";
 import type { SendOptions, SendResult } from "@/hooks/use-chat";
-import { readSkillInvocation, useChatSkills } from "@/components/chat/use-chat-skills";
+import { readSkillInvocation, useChatSkills, YOURS_SOURCE_LABEL } from "@/components/chat/use-chat-skills";
+import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import {
   MAX_CHAT_CONNECTORS,
@@ -1608,6 +1609,12 @@ export function Composer({
        * hunting for it types "invoice", which shares no prefix with the slug.
        * An untrusted skill is listed like any other: trust gates whether Juno
        * may REACH for a skill unasked, and this is the reader naming one.
+       *
+       * The library arrives yours-first and then one repository at a time
+       * (`chatSkillsFromLibrary`), so an unfiltered "/" already lists them by
+       * source; the trailing note names it ("Yours", or owner/repo). The armed
+       * row gives the note up for its tick, as a toggled tool row does. The
+       * repository also joins `match`, so "/anthropics" finds its skills.
        */
       ...(skillsAvailable
         ? (skillLibrary ?? []).map((entry) => ({
@@ -1618,7 +1625,13 @@ export function Composer({
             group: "skills" as const,
             icon: AppIcons.skills,
             on: skillSlug === entry.slug,
-            match: `${entry.name.toLowerCase()} ${entry.description.toLowerCase()}`,
+            note:
+              skillSlug === entry.slug
+                ? undefined
+                : entry.yours
+                  ? YOURS_SOURCE_LABEL
+                  : (entry.sourceLabel ?? undefined),
+            match: `${entry.name.toLowerCase()} ${entry.description.toLowerCase()} ${(entry.sourceLabel ?? "").toLowerCase()}`,
             run: () => setSkillSlug((current) => (current === entry.slug ? null : entry.slug)),
           }))
         : []),
@@ -2744,65 +2757,29 @@ export function Composer({
   );
 
   /**
-   * The skills flyout.
+   * The skills flyout (`ComposerSkillsPanel`): grouped by source while
+   * browsing, flat with a source label while filtering, with a filter once the
+   * library is longer than a glance.
    *
-   * A list of radio-ish rows: picking one arms it, picking the armed one again
-   * clears it. Not checkboxes, because a message runs under one skill —
-   * Claude Code stacks up to six, which makes sense for a shell agent
-   * composing a pipeline and does not for a single chat turn, where two sets
-   * of method for one answer is a contradiction the model resolves silently.
+   * Radio-ish rows: picking one arms it, picking the armed one again clears
+   * it. Not checkboxes, because a message runs under one skill — Claude Code
+   * stacks up to six, which makes sense for a shell agent composing a pipeline
+   * and does not for a single chat turn, where two sets of method for one
+   * answer is a contradiction the model resolves silently.
    *
    * The failure state is carried rather than swallowed, on the same argument
    * the connectors panel beside it makes: "you have no skills" and "Juno could
    * not find out" are different sentences and only the second deserves a Retry.
    */
   const skillsPanel = () => (
-    <>
-      <div className="max-h-56 overflow-y-auto overscroll-contain">
-        {/* `skillLibrary === null` rather than `skillsLoading`: the fetch is
-            kicked off by this flyout opening, so for the first frame nothing is
-            loading AND nothing has loaded — and the empty branch below would
-            flash "Write or import a skill" at somebody who has twelve. */}
-        {skillLibrary === null && !skillsFailed ? (
-          <div className="flex flex-col gap-1 p-1">
-            {[0, 1, 2].map((row) => (
-              <span key={row} className="skeleton h-9 rounded-control" />
-            ))}
-          </div>
-        ) : skillsFailed && skillLibrary === null ? (
-          <div className="px-2.5 py-3 text-center">
-            <p className="text-caption text-muted-foreground">Couldn’t load your skills.</p>
-            <button
-              type="button"
-              onClick={() => reloadSkills()}
-              className="mt-1 text-caption font-medium text-primary-ink underline-offset-2 hover:underline"
-            >
-              Try again
-            </button>
-          </div>
-        ) : (skillLibrary ?? []).length === 0 ? (
-          <PlusMenuRow icon={AppIcons.skills} onSelect={() => router.push("/skills")}>
-            Write or import a skill
-          </PlusMenuRow>
-        ) : (
-          (skillLibrary ?? []).map((entry) => (
-            <PlusMenuRow
-              key={entry.id}
-              selected={skillSlug === entry.slug}
-              icon={AppIcons.skills}
-              description={entry.description || undefined}
-              onSelect={() => setSkillSlug((current) => (current === entry.slug ? null : entry.slug))}
-            >
-              {entry.name}
-            </PlusMenuRow>
-          ))
-        )}
-      </div>
-      <PlusMenuSeparator />
-      <PlusMenuRow icon={AppIcons.skills} onSelect={() => router.push("/skills")}>
-        Manage skills
-      </PlusMenuRow>
-    </>
+    <ComposerSkillsPanel
+      skills={skillLibrary}
+      failed={skillsFailed}
+      onRetry={reloadSkills}
+      armedSlug={skillSlug}
+      onPick={(slug) => setSkillSlug((current) => (current === slug ? null : slug))}
+      onManage={() => router.push("/skills")}
+    />
   );
 
   const skillRow: PlusMenuItem | null = skillsAvailable

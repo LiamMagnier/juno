@@ -76,11 +76,20 @@ export function SkillDialogFixed({ children, className }: { children: React.Reac
  * One step's content: out on the exit rung with a small drop, in on the base
  * rung with a small rise, and scale-corrected against the panel's layout
  * animation so its text is never drawn stretched.
+ *
+ * The steps sit under `AnimatePresence mode="popLayout"`, so the leaving step
+ * is lifted out of the flow and fades over the arriving one while the panel
+ * grows to the new step: a cross-fade, not an empty panel between two steps.
+ * popLayout measures the leaving child through its ref, hence `forwardRef`.
  */
-export function SkillDialogStep({ children, className }: { children: React.ReactNode; className?: string }) {
+export const SkillDialogStep = React.forwardRef<
+  HTMLDivElement,
+  { children: React.ReactNode; className?: string }
+>(function SkillDialogStep({ children, className }, ref) {
   const reduce = useReducedMotion() ?? false;
   return (
     <motion.div
+      ref={ref}
       layout="position"
       initial={{ opacity: 0, y: reduce ? 0 : 4 }}
       animate={{ opacity: 1, y: 0, transition: transition.base }}
@@ -90,4 +99,4 @@ export function SkillDialogStep({ children, className }: { children: React.React
       {children}
     </motion.div>
   );
-}
+});

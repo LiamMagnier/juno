@@ -163,7 +163,11 @@ export function SkillsLibraryPage({ importOnOpen = false }: { importOnOpen?: boo
       <UpdateSourceDialog
         source={updating}
         onOpenChange={(open) => {
-          if (!open) setUpdating(null);
+          if (open) return;
+          setUpdating(null);
+          // A check writes what it saw to the source (`latestCommit`), so the
+          // folder's "Update available" marker is re-read on the way out.
+          void reload();
         }}
         onUpdated={(result) => void onUpdated(result)}
       />
@@ -204,8 +208,14 @@ export function RemoveSourceDialog({
             Remove <span translate="no">{shown ? sourceLabel(shown) : ""}</span>?
           </DialogTitle>
           <DialogDescription>
-            {count === 1 ? "Its skill is removed from Juno." : "All of its skills are removed from Juno."} Chats that
-            used them keep their history.
+            {count === 1 ? (
+              "Its skill is removed from Juno."
+            ) : (
+              <>
+                Its <span className="tabular-nums">{count}</span> skills are removed from Juno.
+              </>
+            )}{" "}
+            Chats that used them keep their history.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

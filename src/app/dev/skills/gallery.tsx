@@ -4,6 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Dialog } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { chatSkillsFromLibrary } from "@/components/chat/use-chat-skills";
+import { ComposerSkillsPanel } from "@/components/skills/composer-skills-panel";
 import type { LibrarySkill, LibrarySource, SkillLibrary } from "@/lib/skills/library-contract";
 import { ImportSkillsDialog, ImportSkillsFlow } from "@/components/skills/import-skills-dialog";
 import { SkillDetailView, type SkillUsage } from "@/components/skills/skill-detail-view";
@@ -118,6 +121,8 @@ function View({ view }: { view: SkillsGalleryView }) {
           projectId="proj_1"
         />
       );
+    case "composer":
+      return <ComposerFixture />;
     case "detail-notices":
       return (
         <DetailFixture
@@ -275,5 +280,41 @@ function DetailFixture({
         },
       }}
     />
+  );
+}
+
+/** The composer's "Use a skill" flyout, browsing (grouped) and filtered (flat, labelled). */
+function ComposerFixture() {
+  const skills = chatSkillsFromLibrary({
+    ...FIXTURE_LIBRARY,
+    sources: FIXTURE_LIBRARY.sources.map((source) => ({ ...source, enabled: true })),
+  });
+  const [armed, setArmed] = React.useState<string | null>("pdf");
+  const panel = (initialQuery?: string) => (
+    <ComposerSkillsPanel
+      skills={skills}
+      failed={false}
+      onRetry={() => undefined}
+      armedSlug={armed}
+      onPick={(slug) => setArmed((current) => (current === slug ? null : slug))}
+      onManage={() => toast.message("Would open /skills")}
+      initialQuery={initialQuery}
+    />
+  );
+  return (
+    <div className="flex flex-wrap gap-8 px-8 py-6">
+      {[undefined, "doc"].map((query) => (
+        <div key={query ?? "all"} className="h-[34rem] w-80">
+          <DropdownMenu open modal={false}>
+            <DropdownMenuTrigger className="text-caption text-muted-foreground">
+              {query ? "Filtered" : "Browsing"}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-80" onCloseAutoFocus={(event) => event.preventDefault()}>
+              {panel(query)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ))}
+    </div>
   );
 }

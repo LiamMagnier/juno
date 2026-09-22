@@ -140,7 +140,7 @@ export function SkillDetailView({
                 checked={skill.enabled && !blocked}
                 disabled={busy || blocked}
                 onCheckedChange={actions.onToggle}
-                aria-label="Skill on"
+                aria-label="Use this skill"
               />
             </label>
             <DropdownMenu>
@@ -295,15 +295,19 @@ function SkillMeta({
           Yours
         </span>
       )}
-      <span>
-        Type{" "}
-        <span className="font-mono text-foreground" translate="no">
-          /{skill.slug}
+      {/* One unit, so a narrow column wraps it whole instead of leaving the
+          separator at the end of a line. */}
+      <span className="inline-flex max-w-full items-center gap-x-2 whitespace-nowrap">
+        <span className="min-w-0 truncate">
+          Type{" "}
+          <span className="font-mono text-foreground" translate="no">
+            /{skill.slug}
+          </span>
         </span>
-      </span>
-      <span aria-hidden="true">·</span>
-      <span>
-        Version <span className="tabular-nums">{skill.currentVersion}</span>
+        <span aria-hidden="true">·</span>
+        <span>
+          Version <span className="tabular-nums">{skill.currentVersion}</span>
+        </span>
       </span>
     </div>
   );
@@ -489,7 +493,10 @@ function InstructionsPanel({
       </div>
       <div className="px-5 py-5 sm:px-7 sm:py-6">
         {version.instructions.trim() ? (
-          <Markdown content={version.instructions} />
+          // The page's reading rung rather than the transcript's, and no
+          // leading margin on the first heading: the strip above already opens
+          // the document.
+          <Markdown content={version.instructions} className="text-body [&>:first-child]:mt-0" />
         ) : (
           <p className="text-ui text-muted-foreground">No instructions yet.</p>
         )}
