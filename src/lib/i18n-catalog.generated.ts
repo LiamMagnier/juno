@@ -6266,6 +6266,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Left"
   },
   {
+    "id": "58f6ef64dd82a712",
+    "source": "Call settings"
+  },
+  {
     "id": "58fc730eb106e54c",
     "source": "Settled — no caret"
   },
@@ -6344,10 +6348,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5a23444828db654a",
     "source": "Manage"
-  },
-  {
-    "id": "5a271ba7ed246e2b",
-    "source": "Share screen"
   },
   {
     "id": "5a3686b7f4ac1c81",
@@ -10498,10 +10498,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Dev gallery"
   },
   {
-    "id": "9368e9efe7165b87",
-    "source": "Call options"
-  },
-  {
     "id": "9372c470eeadd5ec",
     "source": "model"
   },
@@ -11284,6 +11280,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9cc358405149db60",
     "source": "DESCRIPTION"
+  },
+  {
+    "id": "9cd9924a180e04e9",
+    "source": "Thinks before answering, and narrates while it does. Slower, and more per minute."
   },
   {
     "id": "9ce78fe395f3890f",
@@ -12642,6 +12642,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add page"
   },
   {
+    "id": "ae8dc05de4b11acb",
+    "source": "Not configured on this relay"
+  },
+  {
     "id": "aea4a04a80426ed8",
     "source": "Rejected"
   },
@@ -13600,6 +13604,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bbedbdbdb01c4206",
     "source": "Juno is waiting for you to allow or refuse one action. Nothing else happens until you decide."
+  },
+  {
+    "id": "bbedc70e985fe0b6",
+    "source": "Sharing"
   },
   {
     "id": "bc18f7068971a44e",
@@ -14706,6 +14714,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sources"
   },
   {
+    "id": "caf96cee672b3a40",
+    "source": "Answers at conversational speed."
+  },
+  {
     "id": "cb129306bc6fd098",
     "source": "Gap"
   },
@@ -15502,10 +15514,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying."
   },
   {
-    "id": "d569ea840f950247",
-    "source": "Thinking on"
-  },
-  {
     "id": "d56f6359d240f69e",
     "source": "apps"
   },
@@ -15828,10 +15836,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d93e9a7a0dc19066",
     "source": "(voir les"
-  },
-  {
-    "id": "d9433eadefb0f10d",
-    "source": "Thinking off"
   },
   {
     "id": "d946067427e930a1",
@@ -17816,10 +17820,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f34c2be0d1c5f562",
     "source": "No project"
-  },
-  {
-    "id": "f350f64921e4012d",
-    "source": "Stop sharing screen"
   },
   {
     "id": "f3577cb543db90ce",
