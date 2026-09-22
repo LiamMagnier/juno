@@ -209,9 +209,11 @@ struct StudioScopeSection: View {
                     .font(Studio.Font.mono)
                     .foregroundStyle(Studio.Ink.tertiary)
                 Spacer()
-                if let url = settings.url(scope) {
+                if settings.url(scope) != nil {
                     Button("Open File") {
-                        StudioFiles.openOrCreate(url)
+                        if let url = settings.fileForEditing(scope) {
+                            NSWorkspace.shared.open(url)
+                        }
                     }
                     .buttonStyle(.link)
                 }
