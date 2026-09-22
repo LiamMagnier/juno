@@ -1,15 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DEPLOY_WORKFLOW = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const PRODUCTION_SMOKE = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
 const DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy.sh", import.meta.url), "utf8");
 const MAC_DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy-from-mac.sh", import.meta.url), "utf8");
-const PM2_SERVICE_STARTER = readFileSync(new URL("../scripts/reconcile-pm2-service.mjs", import.meta.url), "utf8");
 
 function sectionAfter(source: string, marker: string, nextMarker: string): string {
   const start = source.indexOf(marker);
@@ -324,42 +325,308 @@ test("deploy script builds before atomic activation and has an application rollb
   assert.match(DEPLOY_SCRIPT, /trap on_exit EXIT/);
 });
 
-test("production activation verifies every PM2 service, including workers and the relay", () => {
-  const required = [
-    "juno-backend",
-    "juno-scheduler",
-    "juno-work",
-    "juno-work-scheduler",
-    "juno-research",
-    "juno-work-triggers",
-    "juno-import-recovery",
-    "juno-code-sweeper",
-    "juno-voice-relay",
-  ];
-  for (const name of required) {
-    assert.match(DEPLOY_SCRIPT, new RegExp(name));
-    assert.match(DEPLOY_JOB, new RegExp(name));
+// deploy.sh without its closing `main "$@"`. Sourcing this defines every
+// function and resolves the configuration exactly as a deploy does, without
+// running one, so the tests below exercise the shipped code rather than a copy.
+const DEPLOY_LIBRARY = (() => {
+  const entry = '\nmain "$@"\n';
+  assert.ok(DEPLOY_SCRIPT.endsWith(entry), "deploy.sh must end by calling main");
+  return DEPLOY_SCRIPT.slice(0, DEPLOY_SCRIPT.length - entry.length + 1);
+})();
+
+const DEPLOY_SCRIPT_PATH = fileURLToPath(new URL("../deploy/deploy.sh", import.meta.url));
+const PRODUCTION_ECOSYSTEM = fileURLToPath(new URL("../deploy/ecosystem.config.js", import.meta.url));
+const PM2_SERVICE_STARTER_PATH = fileURLToPath(new URL("../scripts/reconcile-pm2-service.mjs", import.meta.url));
+const FAKE_PM2 = fileURLToPath(new URL("./fixtures/fake-pm2.mjs", import.meta.url));
+
+// The runner's own environment, minus anything that would configure deploy.sh.
+function deployEnvironment(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  const inherited = Object.entries(process.env).filter(([name]) => !name.startsWith("JUNO_") && name !== "GIT_SHA");
+  return { ...Object.fromEntries(inherited), ...overrides };
+}
+
+// Runs `commands` in bash after sourcing DEPLOY_LIBRARY, with `args` as $1...
+function runDeployLibrary(directory: string, commands: string, env: Record<string, string>, args: string[] = []) {
+  const library = path.join(directory, "deploy.sh");
+  writeFileSync(library, DEPLOY_LIBRARY);
+  return spawnSync("bash", ["-c", `source "$0"\n${commands}`, library, ...args], {
+    encoding: "utf8",
+    env: deployEnvironment(env),
+  });
+}
+
+type Pm2App = { name: string; status: string };
+
+// Runs deploy.sh's reload_release against tests/fixtures/fake-pm2.mjs, for a
+// release whose ecosystem declares `ecosystem` (app names, or a config's raw
+// source), and returns what PM2 was asked to do and what it ended up running.
+function reloadRelease(options: {
+  ecosystem: string[] | string;
+  running: Pm2App[];
+  failToStart?: string[];
+  failToDelete?: string[];
+  asRollback?: boolean;
+}) {
+  const root = mkdtempSync(path.join(tmpdir(), "juno-reload-"));
+  try {
+    const bin = path.join(root, "bin");
+    const release = path.join(root, "release");
+    const stateFile = path.join(root, "pm2.json");
+    mkdirSync(bin);
+    mkdirSync(path.join(release, "deploy"), { recursive: true });
+    writeFileSync(path.join(bin, "pm2"), `#!/bin/sh\nexec node "${FAKE_PM2}" "$@"\n`);
+    // verify_pm2_ecosystem polls with `sleep 3`; the fake PM2 has nothing to wait for.
+    writeFileSync(path.join(bin, "sleep"), "#!/bin/sh\nexit 0\n");
+    chmodSync(path.join(bin, "pm2"), 0o755);
+    chmodSync(path.join(bin, "sleep"), 0o755);
+    writeFileSync(
+      path.join(release, "deploy", "ecosystem.config.js"),
+      typeof options.ecosystem === "string"
+        ? options.ecosystem
+        : `module.exports = ${JSON.stringify({ apps: options.ecosystem.map((name) => ({ name, script: "server.js" })) })};\n`,
+    );
+    writeFileSync(
+      stateFile,
+      JSON.stringify({
+        running: options.running,
+        dump: null,
+        calls: [],
+        failToStart: options.failToStart ?? [],
+        failToDelete: options.failToDelete ?? [],
+      }),
+    );
+    // rollback_release calls reload_release on the left of `||`, so bash
+    // ignores errexit for everything the function runs.
+    const reload = options.asRollback ? 'reload_release "$1" "$2" || exit "$?"' : 'reload_release "$1" "$2"';
+    const result = runDeployLibrary(
+      root,
+      reload,
+      {
+        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+        FAKE_PM2_STATE: stateFile,
+        JUNO_PM2_SERVICE_STARTER: PM2_SERVICE_STARTER_PATH,
+      },
+      [release, "0123456789abcdef0123456789abcdef01234567"],
+    );
+    const pm2 = JSON.parse(readFileSync(stateFile, "utf8")) as { running: Pm2App[]; dump: string[] | null; calls: string[] };
+    return { ...pm2, status: result.status, stdout: result.stdout, stderr: result.stderr, output: result.stdout + result.stderr };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
-  assert.match(DEPLOY_SCRIPT, /pm2 jlist/);
-  assert.match(DEPLOY_JOB, /pm2 jlist/);
-  assert.match(DEPLOY_SCRIPT, /pm2_env\?\.status === "online"/);
-  assert.match(DEPLOY_JOB, /pm2_env\?\.status === "online"/);
+}
+
+test("production activation verifies every PM2 service, including workers and the relay", () => {
+  // What deploy.sh reads out of the shipped ecosystem is the list it verifies,
+  // repairs and keeps; a juno app missing from it is deleted by the next deploy.
+  const directory = mkdtempSync(path.join(tmpdir(), "juno-ecosystem-"));
+  try {
+    const result = runDeployLibrary(directory, 'declared_pm2_apps "$1"', {}, [PRODUCTION_ECOSYSTEM]);
+    assert.equal(result.status, 0, result.stderr);
+    const declared = JSON.parse(result.stdout) as string[];
+    for (const name of [
+      "juno-backend",
+      "juno-work",
+      "juno-work-scheduler",
+      "juno-research",
+      "juno-work-triggers",
+      "juno-memory-dreamer",
+      "juno-import-recovery",
+      "juno-code-sweeper",
+      "juno-voice-relay",
+    ]) {
+      assert.ok(declared.includes(name), `the ecosystem no longer declares ${name}, so the next deploy would delete it`);
+    }
+    assert.equal(new Set(declared).size, declared.length, "every app needs a name of its own");
+    for (const name of declared) {
+      assert.match(name, /^juno-/, `${name} is outside the juno- namespace: a release that drops it would leave it running`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
-test("production activation repairs a stale PM2 slot with a one-service ecosystem", () => {
-  assert.match(DEPLOY_SCRIPT, /pm2 startOrReload "\$config_file" --update-env/);
-  assert.match(DEPLOY_SCRIPT, /PM2_SERVICE_STARTER/);
-  assert.match(DEPLOY_SCRIPT, /reconcile-pm2-service\.mjs/);
-  assert.match(DEPLOY_SCRIPT, /execFileSync\("node", \[serviceStarter, "--config", configFile, "--service", name\]/);
-  assert.match(PM2_SERVICE_STARTER, /apps: \[app\]/);
-  assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["delete", service\]/);
-  assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["start", tempConfig, "--update-env"\]/);
-  assert.match(PM2_SERVICE_STARTER, /mkdtempSync/);
-  const verificationIndex = DEPLOY_SCRIPT.indexOf('verify_pm2_ecosystem "$config_file"');
-  const saveIndex = DEPLOY_SCRIPT.indexOf("pm2 save", verificationIndex);
-  assert.ok(verificationIndex >= 0, "PM2 services must be verified");
-  assert.ok(saveIndex > verificationIndex, "repaired PM2 services must be saved after verification");
+test("activation repairs a service PM2 failed to start from a one-service ecosystem, and saves it", () => {
+  const run = reloadRelease({
+    ecosystem: ["juno-backend", "juno-work", "juno-voice-relay"],
+    running: [{ name: "juno-backend", status: "online" }],
+    // `startOrReload` throws on a stale PM2 slot before it creates juno-work.
+    failToStart: ["juno-work"],
+  });
+  assert.equal(run.status, 0, run.output);
+  assert.ok(
+    run.calls.includes("startOrReload ecosystem.config.js(juno-backend,juno-work,juno-voice-relay) --update-env"),
+    run.calls.join("\n"),
+  );
+  const repair = run.calls.indexOf("start ecosystem.config.cjs(juno-work) --update-env");
+  assert.ok(repair !== -1, `juno-work must be started from a one-service ecosystem:\n${run.calls.join("\n")}`);
+  assert.ok(repair < run.calls.indexOf("save"), "the repaired service must be saved");
+  assert.deepEqual([...(run.dump ?? [])].sort(), ["juno-backend", "juno-voice-relay", "juno-work"]);
+  assert.match(run.stdout, /PM2 ecosystem healthy: juno-backend, juno-work, juno-voice-relay\n/);
 });
+
+test("apps only a rolled-back release declared are deleted before PM2 saves, not repaired onto the older code", () => {
+  // 2026-09-22: rolling back to c3004795 reloaded its ecosystem, which does not
+  // declare juno-memory-dreamer, and the failed release's dreamer went on
+  // crash-looping against the older code. A deploy that drops an app (as the
+  // one that retired juno-scheduler did) must end the same way.
+  for (const asRollback of [true, false]) {
+    const context = asRollback ? "rollback" : "deploy";
+    const run = reloadRelease({
+      ecosystem: ["juno-backend", "juno-work", "juno-voice-relay"],
+      running: [
+        { name: "juno-backend", status: "online" },
+        { name: "juno-work", status: "online" },
+        { name: "juno-voice-relay", status: "online" },
+        { name: "juno-memory-dreamer", status: "errored" },
+        { name: "pm2-logrotate", status: "online" },
+      ],
+      asRollback,
+    });
+    assert.equal(run.status, 0, `${context}: ${run.output}`);
+    const kept = ["juno-backend", "juno-voice-relay", "juno-work", "pm2-logrotate"];
+    assert.deepEqual(run.running.map((app) => app.name).sort(), kept, context);
+    assert.deepEqual([...(run.dump ?? [])].sort(), kept, `${context}: a reboot must not resurrect it either`);
+    assert.deepEqual(
+      run.calls.filter((call) => call.includes("juno-memory-dreamer")),
+      ["delete juno-memory-dreamer"],
+      `${context}: deleted, never restarted or "repaired"`,
+    );
+    assert.ok(run.calls.indexOf("delete juno-memory-dreamer") < run.calls.indexOf("save"), `${context}: deleted before PM2 saves`);
+    assert.ok(!run.calls.some((call) => call.includes("pm2-logrotate")), `${context}: apps outside the juno- namespace are left alone`);
+    assert.match(run.stdout, /PM2 ecosystem healthy: juno-backend, juno-work, juno-voice-relay\n/, context);
+  }
+});
+
+test("an ecosystem deploy.sh cannot read fails the reload before PM2 is touched", () => {
+  const running = [
+    { name: "juno-backend", status: "online" },
+    { name: "juno-voice-relay", status: "online" },
+  ];
+  for (const ecosystem of [
+    'throw new Error("a half-written release");\n',
+    "module.exports = { apps: [] };\n",
+    'module.exports = { apps: [{ script: "server.js" }] };\n',
+  ]) {
+    // As a rollback runs it, with errexit off: an unread list must not pass
+    // for "declares nothing" and retire every juno app on the box.
+    const run = reloadRelease({ ecosystem, running, asRollback: true });
+    assert.notEqual(run.status, 0, `${ecosystem} must fail the reload`);
+    assert.deepEqual(run.calls, [], `${ecosystem}: PM2 must not be asked to do anything`);
+    assert.deepEqual(run.running, running);
+  }
+});
+
+test("an undeclared juno app PM2 will not delete fails the reload", () => {
+  const run = reloadRelease({
+    ecosystem: ["juno-backend", "juno-voice-relay"],
+    running: [
+      { name: "juno-backend", status: "online" },
+      { name: "juno-voice-relay", status: "online" },
+      { name: "juno-memory-dreamer", status: "errored" },
+    ],
+    failToDelete: ["juno-memory-dreamer"],
+    asRollback: true,
+  });
+  assert.notEqual(run.status, 0, run.output);
+  assert.match(run.stderr, /Could not retire undeclared PM2 apps: still running: juno-memory-dreamer/);
+});
+
+test("every deploy and rollback on a host takes the same lock, whichever stage runs deploy.sh", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "juno-lock-path-"));
+  try {
+    const live = "/home/deploy/juno";
+    const lockFor = (env: Record<string, string>) => runDeployLibrary(directory, 'printf "%s" "$LOCK_FILE"', env).stdout;
+    // Both callers deploy from a per-run source stage and roll back from `current`.
+    const appHomes: Record<string, string> = {
+      "a CI deploy": "/home/deploy/.juno-source-17811234567",
+      "a Mac deploy": "/home/deploy/.juno-source-mac-20260922120000",
+      "a rollback": `${live}/current`,
+    };
+    for (const [caller, appHome] of Object.entries(appHomes)) {
+      assert.equal(lockFor({ JUNO_APP_HOME: appHome, JUNO_CURRENT_LINK: `${live}/current` }), `${live}/.deploy.lock`, caller);
+    }
+    // A checkout that is itself the live root still locks where it always did.
+    assert.equal(lockFor({ JUNO_APP_HOME: live }), `${live}/.deploy.lock`);
+    for (const caller of [DEPLOY_WORKFLOW, MAC_DEPLOY_SCRIPT]) {
+      assert.doesNotMatch(caller, /JUNO_DEPLOY_LOCK/, "a per-caller lock path is how every deploy came to lock its own file");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+const HAS_FLOCK = spawnSync("sh", ["-c", "command -v flock"]).status === 0;
+
+test(
+  "a second deploy or a rollback is refused while a deploy holds the lock, and told who holds it",
+  { skip: !HAS_FLOCK && "flock is not installed here (the VM and CI both have it)" },
+  async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "juno-lock-"));
+    try {
+      // The host as the callers leave it: a live root whose `current` points
+      // at a release, and a source stage per run.
+      const live = path.join(directory, "juno");
+      const bin = path.join(directory, "bin");
+      mkdirSync(path.join(live, "releases", "0123456789ab-20260922000000-42"), { recursive: true });
+      symlinkSync(path.join("releases", "0123456789ab-20260922000000-42"), path.join(live, "current"));
+      for (const run of [1, 2, 3]) mkdirSync(path.join(directory, `.juno-source-${run}`));
+      mkdirSync(bin);
+      // main() checks for pm2 before it reaches the lock.
+      writeFileSync(path.join(bin, "pm2"), "#!/bin/sh\nexit 0\n");
+      chmodSync(path.join(bin, "pm2"), 0o755);
+      const library = path.join(directory, "deploy.sh");
+      writeFileSync(library, DEPLOY_LIBRARY);
+      const env = (appHome: string) =>
+        deployEnvironment({
+          PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+          JUNO_APP_HOME: appHome,
+          JUNO_CURRENT_LINK: path.join(live, "current"),
+          // Were the lock not taken, a deploy would stop here instead.
+          JUNO_ENV_FILE: path.join(directory, "missing.env"),
+        });
+      const takeLock = 'source "$0"\numask 077\nacquire_deploy_lock\necho locked\nread -r _ || true';
+
+      // The first deploy, running from its own source stage, holds the lock
+      // until its stdin closes.
+      const holder = spawn("bash", ["-c", takeLock, library], { env: env(path.join(directory, ".juno-source-1")) });
+      try {
+        await Promise.race([
+          once(holder.stdout, "data"),
+          once(holder, "exit").then(() => {
+            throw new Error("the first deploy could not take the lock");
+          }),
+        ]);
+        const refusal = new RegExp(
+          String.raw`Another deployment is already running \(pid ${holder.pid} since \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\): ` +
+            path.join(live, ".deploy.lock").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        );
+        const contenders: [string, string[], string][] = [
+          ["a second deploy", [], path.join(directory, ".juno-source-2")],
+          ["a rollback", ["--rollback"], path.join(live, "current")],
+        ];
+        for (const [contender, args, appHome] of contenders) {
+          const result = spawnSync("bash", [DEPLOY_SCRIPT_PATH, ...args], { encoding: "utf8", env: env(appHome) });
+          assert.notEqual(result.status, 0, contender);
+          assert.match(result.stderr, refusal, `${contender}:\n${result.stderr}`);
+        }
+      } finally {
+        holder.stdin.end();
+        if (holder.exitCode === null && holder.signalCode === null) await once(holder, "exit");
+      }
+
+      // Released with its holder: the next deploy takes it.
+      const next = spawnSync("bash", ["-c", takeLock, library], {
+        encoding: "utf8",
+        env: env(path.join(directory, ".juno-source-3")),
+        input: "",
+      });
+      assert.equal(next.status, 0, next.stderr);
+      assert.equal(next.stdout, "locked\n");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("external release failures use the same verified rollback transaction", () => {
   const rollbackStep = DEPLOY_JOB.slice(DEPLOY_JOB.indexOf("      - name: Roll back failed application release"));

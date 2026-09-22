@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import {
   DREAM_ACCOUNTS_PER_TICK,
   DREAM_CONVERSATIONS_PER_ACCOUNT,
@@ -122,9 +123,13 @@ test("the worker is deployed, verified by deploy, and runnable by name", () => {
   const ecosystem = src("deploy/ecosystem.config.js");
   assert.match(ecosystem, /name: "juno-memory-dreamer"/);
   assert.match(ecosystem, /args: "run memory:dreamer"/);
-  // deploy.sh checks an explicit list of apps; a worker missing from it is
-  // started once and never repaired.
-  assert.match(src("deploy/deploy.sh"), /"juno-memory-dreamer"/);
+  // deploy.sh verifies, repairs and keeps exactly the apps the ecosystem
+  // declares (tests/release-gates.test.ts), so being declared is what gets the
+  // worker verified. Read it as deploy.sh does, by loading the file.
+  const { apps } = createRequire(import.meta.url)("../deploy/ecosystem.config.js") as {
+    apps: { name: string; args?: string }[];
+  };
+  assert.equal(apps.find((app) => app.name === "juno-memory-dreamer")?.args, "run memory:dreamer");
   const pkg = JSON.parse(src("package.json")) as { scripts: Record<string, string> };
   assert.equal(
     pkg.scripts["memory:dreamer"],

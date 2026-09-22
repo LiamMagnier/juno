@@ -17,7 +17,13 @@ RELEASES_DIR="${JUNO_RELEASES_DIR:-$APP_HOME/releases}"
 CURRENT_LINK="${JUNO_CURRENT_LINK:-$APP_HOME/current}"
 PREVIOUS_LINK="${JUNO_PREVIOUS_LINK:-$APP_HOME/previous}"
 ENV_FILE="${JUNO_ENV_FILE:-$APP_HOME/.env}"
-LOCK_FILE="${JUNO_DEPLOY_LOCK:-$APP_HOME/.deploy.lock}"
+# One lock per live root, never per source tree. Both callers run this script
+# from a per-run stage (JUNO_APP_HOME=~/.juno-source-<RUN_ID>), so a lock under
+# APP_HOME was a new file on every run and never contended: a CI deploy stuck
+# in `pm2 startOrReload` from 2026-08-26 held its private lock for 26 days
+# while other deploys ran beside it. The directory that holds `current` is the
+# one path every deploy and every --rollback on a host shares.
+LOCK_FILE="${JUNO_DEPLOY_LOCK:-$(dirname -- "$CURRENT_LINK")/.deploy.lock}"
 DEPLOY_REF="${JUNO_DEPLOY_REF:-origin/main}"
 DEPLOY_BUNDLE="${JUNO_DEPLOY_BUNDLE:-}"
 DEPLOY_ARCHIVE="${JUNO_DEPLOY_ARCHIVE:-}"
@@ -239,9 +245,15 @@ reload_release() {
   local directory="$1"
   local release_sha_value="$2"
   local config_file="$directory/deploy/ecosystem.config.js"
+  local declared_apps
+  local status=0
   [[ -f "$config_file" ]] || return 1
 
   export GIT_SHA="$release_sha_value"
+  # Every step reports its own failure rather than leaning on `set -e`, which
+  # is off when rollback_release calls this. Nothing touches PM2 until the
+  # list of apps this release declares has been read.
+  declared_apps="$(declared_pm2_apps "$config_file")" || return 1
   # Keep in-memory PM2 in sync with local binary to avoid warning noise on stdout.
   pm2 update 2>/dev/null || true
   # `pm2 start`/`pm2 reload` can throw when an older dump contains a process
@@ -250,22 +262,98 @@ reload_release() {
   # a one-service ecosystem so a stale slot cannot prevent a new relay from
   # being created.
   pm2 startOrReload "$config_file" --update-env || true
-  verify_pm2_ecosystem "$config_file"
-  # Persist any services repaired by verify_pm2_ecosystem so they survive a
-  # reboot and future PM2 reconciliations.
-  pm2 save
+  retire_undeclared_pm2_apps "$declared_apps" || status=1
+  verify_pm2_ecosystem "$config_file" "$declared_apps" || status=1
+  # Persist the reconciled list — retired apps gone, repaired ones present —
+  # so a reboot resurrects this release's ecosystem and nothing else. Saved
+  # even when a step above failed: which apps belong is already settled, and
+  # the dump from before this reload may still name apps that do not.
+  pm2 save || status=1
+  return "$status"
+}
+
+# Prints the names of the apps an ecosystem file declares, as a JSON array:
+# what PM2 must be running once that release is active, no more and no less.
+declared_pm2_apps() {
+  PM2_CONFIG="$1" node -e '
+    const configFile = require("path").resolve(process.env.PM2_CONFIG);
+    const apps = require(configFile).apps;
+    const names = Array.isArray(apps) ? apps.map((app) => app?.name) : [];
+    if (names.length === 0 || !names.every((name) => typeof name === "string" && name !== "")) {
+      console.error(`${configFile} must declare at least one PM2 app, and name every app it declares.`);
+      process.exit(1);
+    }
+    console.log(JSON.stringify(names));
+  '
+}
+
+# PM2 never removes an app because the ecosystem it is given stops declaring
+# it: `startOrReload` starts and reloads the apps the file names and leaves
+# every other process running, with a cwd that now resolves to whichever
+# release `current` points at. A rollback to c3004795 on 2026-09-22 left the
+# failed release's juno-memory-dreamer crash-looping every ~3 s for 40 minutes
+# on `npm error Missing script: "memory:dreamer"`.
+#
+# The juno- prefix is the ecosystem's namespace. Any juno-* app the release
+# being activated does not declare is deleted here, before `pm2 save`, so the
+# dump PM2 resurrects after a reboot agrees. Other PM2 apps are never touched.
+retire_undeclared_pm2_apps() {
+  DECLARED_PM2="$1" node -e '
+    const { execFileSync, spawnSync } = require("child_process");
+    const declared = JSON.parse(process.env.DECLARED_PM2 || "null");
+    if (!Array.isArray(declared) || declared.length === 0) {
+      console.error("Refusing to retire PM2 apps without the list of apps the release declares.");
+      process.exit(1);
+    }
+
+    // jlist prints its JSON on one line; notices PM2 prints around it (such as
+    // "[PM2] Spawning PM2 daemon") are lines of their own.
+    function undeclaredJunoApps() {
+      const lines = execFileSync("pm2", ["jlist"], { encoding: "utf8" }).split("\n").reverse();
+      for (const line of lines) {
+        let rows;
+        try {
+          rows = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(rows)) continue;
+        const names = new Set(rows.map((row) => row?.name));
+        return [...names].filter(
+          (name) => typeof name === "string" && name.startsWith("juno-") && !declared.includes(name),
+        );
+      }
+      throw new Error("pm2 jlist printed no process list");
+    }
+
+    try {
+      for (const name of undeclaredJunoApps()) {
+        console.log(`Retiring PM2 app ${name}: the release being activated does not declare it.`);
+        spawnSync("pm2", ["delete", name], { stdio: "inherit" });
+      }
+      const remaining = undeclaredJunoApps();
+      if (remaining.length > 0) throw new Error(`still running: ${remaining.join(", ")}`);
+    } catch (error) {
+      console.error(`Could not retire undeclared PM2 apps: ${error.message}`);
+      process.exit(1);
+    }
+  '
 }
 
 verify_pm2_ecosystem() {
   local config_file="${1:-}"
-  # "juno-scheduler" is deliberately absent: the ScheduledTask worker is
-  # retired (see deploy/ecosystem.config.js). A host that still has the process
-  # is not failed by this check — the app is simply no longer expected, and
-  # `pm2 delete juno-scheduler` clears it once.
-  local expected='["juno-backend","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-memory-dreamer","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
+  # The apps to verify are the ones the ecosystem being activated declares
+  # (declared_pm2_apps), never a list kept in this script. The script that
+  # runs a rollback is the newer release's own, so a list kept here named the
+  # failed release's new apps and "repaired" them onto the older code.
+  local expected="${2:-}"
   PM2_CONFIG="$config_file" EXPECTED_PM2="$expected" PM2_SERVICE_STARTER="$PM2_SERVICE_STARTER" node -e '
     const { execFileSync, execSync } = require("child_process");
-    const expected = JSON.parse(process.env.EXPECTED_PM2);
+    const expected = JSON.parse(process.env.EXPECTED_PM2 || "null");
+    if (!Array.isArray(expected) || expected.length === 0) {
+      console.error("Refusing to verify PM2 without the list of apps the release declares.");
+      process.exit(1);
+    }
     const configFile = process.env.PM2_CONFIG || "";
     const serviceStarter = process.env.PM2_SERVICE_STARTER || "";
 
@@ -500,6 +588,20 @@ on_exit() {
   exit "$status"
 }
 
+# Held for the whole transaction, deploy or --rollback. The holder writes who
+# it is into the file, so a refused deploy can say which process to look at: a
+# hung deploy is otherwise invisible. The file is opened for append, not
+# truncated, so the refused deploy does not erase that note before reading it.
+acquire_deploy_lock() {
+  exec 9>>"$LOCK_FILE"
+  if ! flock -n 9; then
+    local holder
+    holder="$(cat -- "$LOCK_FILE" 2>/dev/null || true)"
+    fail "Another deployment is already running${holder:+ ($holder)}: $LOCK_FILE"
+  fi
+  printf 'pid %s since %s\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCK_FILE" || true
+}
+
 main() {
   require_command git
   require_command npm
@@ -515,18 +617,15 @@ main() {
     verify_build_artifact "$BUILD_ARTIFACT"
   fi
 
+  umask 077
+  acquire_deploy_lock
+
   if [[ "${1:-}" == "--rollback" ]]; then
-    umask 077
-    exec 9>"$LOCK_FILE"
-    flock -n 9 || fail "Another deployment is already running: $LOCK_FILE"
     require_deploy_environment
     rollback_active_release
     exit 0
   fi
 
-  umask 077
-  exec 9>"$LOCK_FILE"
-  flock -n 9 || fail "Another deployment is already running: $LOCK_FILE"
   trap on_exit EXIT
 
   say "${BLUE}🚀 Starting Juno release deployment...${NC}"
