@@ -111,7 +111,7 @@ public struct CodeModelProviderResolver: Sendable {
         if lowered == "opus" {
             return CodeModelRoute(
                 providerID: "anthropic",
-                providerModelID: "claude-opus-5",
+                providerModelID: "claude-opus-5-5",
                 wireProtocol: .anthropicMessages
             )
         }
