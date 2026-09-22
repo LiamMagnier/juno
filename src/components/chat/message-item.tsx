@@ -82,7 +82,7 @@ const ImageEditOverlay = nextDynamic(
   { ssr: false },
 );
 import { ThinkingDots } from "@/components/signature/thinking-dots";
-import { splitMessageContent } from "@/lib/message-content";
+import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
@@ -889,7 +889,9 @@ export const MessageItem = React.memo(function MessageItem({
   }, [editOnRequest, canEdit, view.content]);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(view.content).catch(() => {});
+    // Stripped, not raw: the stored reply ends in the memory tags the model
+    // wrote, and copying an answer must not paste the user's profile with it.
+    await navigator.clipboard.writeText(stripMemoryTags(view.content).trimEnd()).catch(() => {});
     setCopied(true);
     // The button is its own receipt — the glyph swaps to a check and the
     // tooltip reads "Copied" — so no toast: a corner notification for an act

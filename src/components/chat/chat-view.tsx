@@ -65,7 +65,7 @@ import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
-import { cleanForSpeech } from "@/lib/message-content";
+import { cleanForSpeech, stripMemoryTags } from "@/lib/message-content";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { cn } from "@/lib/utils";
@@ -1322,7 +1322,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         return;
       }
       navigator.clipboard
-        .writeText(last.content)
+        .writeText(stripMemoryTags(last.content).trimEnd())
         .then(() => toast.success("Copied the last response."))
         .catch(() => toast.error("Couldn’t copy."));
     };

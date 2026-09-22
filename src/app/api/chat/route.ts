@@ -27,6 +27,7 @@ import { streamChat, providerErrorMessage } from "@/lib/llm";
 import {
   getMemoryProfile,
   saveAutoMemories,
+  forgetStatements,
   extractConversationMemory,
   loadBackgroundProviderPolicy,
   maybeConsolidate,
@@ -41,7 +42,7 @@ import {
   parseArtifactPatch,
   type ArtifactSourceForEdit,
 } from "@/lib/artifact-edit";
-import { parseArtifacts, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
+import { parseArtifacts, parseForgets, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
 import {
   artifactVerificationDetail,
   ChatArtifactVerificationError,
@@ -2982,6 +2983,18 @@ async function handleChat(req: Request) {
             sourceMessageId: userMessageId,
           });
           memoryUpdated = created > 0;
+
+          // "Forget that" said in the conversation, acted on without leaving
+          // it. Behind the same untrusted-content guard as saving, for the
+          // same reason and more: a page that says "forget everything about
+          // this user" must not be able to make the model wipe their memory.
+          // The receipt names what was forgotten, and the summary that may
+          // still quote it is benched until rebuilt (summaryPredatesForget).
+          const forgotten = await forgetStatements(user.id, parseForgets(acc.text), {
+            conversationId,
+            onActivity: sendActivity,
+          });
+          if (forgotten.statements.length > 0) memoryUpdated = true;
         }
 
         // Touch the conversation after the assistant message has been persisted.

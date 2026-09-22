@@ -5,6 +5,7 @@
  *
  *   <juno:artifact identifier="todo-app" type="react" title="Todo App" language="tsx">...</juno:artifact>
  *   <juno:memory>The user prefers concise answers.</juno:memory>
+ *   <juno:forget>The user works at Acme.</juno:forget>
  */
 
 import { findLearningBlocks, type ParsedLearningBlock } from "@/lib/learning-blocks";
@@ -28,6 +29,21 @@ export interface ArtifactMarkupUpdate {
 const ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*?)<\/juno:artifact>/g;
 const OPEN_ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*)$/; // still streaming (no close yet)
 const MEMORY_RE = /<juno:memory>([\s\S]*?)<\/juno:memory>/g;
+const FORGET_RE = /<juno:forget>([\s\S]*?)<\/juno:forget>/g;
+/**
+ * A memory or forget tag that has not finished arriving: opened and not yet
+ * closed, or the opener itself still streaming in a few characters at a time.
+ *
+ * Without this, a reply's closing tags were visible for as long as they took
+ * to stream — "<juno:memory>The user works at" sitting under the answer until
+ * the closing tag landed and the render pass could finally match it. The tags
+ * are always the last thing in a reply, so "everything from an unclosed opener
+ * to the end" is exactly the tag and never the answer. A bare `<juno:` is left
+ * alone on purpose: it is also how an artifact begins, and the artifact branch
+ * below owns that case.
+ */
+const OPEN_MEMORY_TAIL_RE =
+  /<juno:(?:memory|forget)>[\s\S]*$|<juno:(?:m(?:e(?:m(?:o(?:r(?:y)?)?)?)?)?|f(?:o(?:r(?:g(?:e(?:t)?)?)?)?)?)$/;
 const CLARIFICATION_WIZARD_RE = /:::clarification-wizard[\s\S]*?:::/gi;
 
 function parseAttrs(raw: string): Record<string, string> {
@@ -165,6 +181,39 @@ export function parseMemories(text: string): string[] {
   return out;
 }
 
+/**
+ * The statements the model was asked to forget, one per tag.
+ *
+ * Same shape as `parseMemories` and for the same reason: the model's own
+ * output is the only channel it has for acting on memory, so the parse is the
+ * whole contract. What a statement then MATCHES is decided server-side by the
+ * suppression rule, not here.
+ */
+export function parseForgets(text: string): string[] {
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  FORGET_RE.lastIndex = 0;
+  while ((m = FORGET_RE.exec(text))) {
+    const statement = m[1].trim();
+    if (statement) out.push(statement);
+  }
+  return out;
+}
+
+/**
+ * The reply as the user should see, hear or copy it: memory and forget tags
+ * removed, including one still streaming in.
+ *
+ * One function for every surface on purpose. Rendering stripped the memory tag
+ * and nothing else did — both copy actions put the raw reply on the clipboard,
+ * so pasting an answer anywhere pasted "<juno:memory>The user …</juno:memory>"
+ * with it, the user's own profile in a document they may be sending to
+ * someone else.
+ */
+export function stripMemoryTags(text: string): string {
+  return text.replace(MEMORY_RE, "").replace(FORGET_RE, "").replace(OPEN_MEMORY_TAIL_RE, "");
+}
+
 export type ContentPart =
   | { type: "text"; text: string }
   | {
@@ -199,7 +248,7 @@ function pushTextParts(parts: ContentPart[], text: string) {
 
 /** Split a message into ordered text + artifact-reference parts for rendering. */
 export function splitMessageContent(raw: string): ContentPart[] {
-  const text = raw.replace(MEMORY_RE, "").replace(CLARIFICATION_WIZARD_RE, "");
+  const text = stripMemoryTags(raw).replace(CLARIFICATION_WIZARD_RE, "");
   const parts: ContentPart[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
@@ -243,8 +292,7 @@ export function splitMessageContent(raw: string): ContentPart[] {
 
 /** Strip tags and TTS-unfriendly characters so spoken replies sound natural. */
 export function cleanForSpeech(text: string): string {
-  return text
-    .replace(MEMORY_RE, "")
+  return stripMemoryTags(text)
     .replace(ARTIFACT_RE, " I've added that to the canvas. ")
     .replace(CLARIFICATION_WIZARD_RE, "")
     .replace(
