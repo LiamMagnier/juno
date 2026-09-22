@@ -403,6 +403,13 @@ model Settings {
   // rollback-safe migration, and an id this build does not recognise is
   // dropped on read rather than granting anything.
   memorySensitiveTopics      String[] @default([])
+  // Whether the memory dreamer (scripts/memory-dreamer.ts) may read this
+  // account's older conversations on its own, between sessions — ChatGPT's
+  // "Dreaming", Juno's version. New conversations are distilled after every
+  // turn regardless; this is only about the history nobody pressed "Learn from
+  // past chats" for. On by default, as it is in both products this answers to,
+  // and meaningless while `memoryEnabled` is off.
+  memoryBackgroundLearning   Boolean  @default(true)
   // Where background work — memory extraction, titles, research planning,
   // moderation, consolidation — may be sent. One of the modes in
   // lib/background-provider-policy.ts. Defaults to (and migrates existing rows

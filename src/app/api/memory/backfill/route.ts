@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { backfillMemories, pendingBackfill, utilityModelCandidates } from "@/lib/memory";
 
@@ -20,6 +21,21 @@ export async function GET() {
 export async function POST() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Paused means nothing is learned — enforced here, not only by the disabled
+  // button. The button was the only guard, so any client that called the route
+  // (a stale tab, the native app, a script) distilled a paused account's chats.
+  const settings = await prisma.settings.findUnique({
+    where: { userId: user.id },
+    select: { memoryEnabled: true },
+  });
+  if (settings?.memoryEnabled === false) {
+    return NextResponse.json(
+      { error: "Memory is paused, so Juno isn’t learning from chats. Resume it to read past chats." },
+      { status: 409 }
+    );
+  }
+
   if (utilityModelCandidates().length === 0) {
     return NextResponse.json({ error: "No model provider is configured." }, { status: 503 });
   }

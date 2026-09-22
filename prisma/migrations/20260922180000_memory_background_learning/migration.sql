@@ -1,0 +1,12 @@
+-- Background learning switch for the memory dreamer.
+--
+-- The dreamer (scripts/memory-dreamer.ts) distils an account's older
+-- conversations between sessions, the way ChatGPT's Dreaming does, so history
+-- is learned from without anyone pressing "Learn from past chats". This column
+-- is the account's say in that. Only ever consulted when memory itself is on.
+--
+-- Expand-only (docs/JUNO.md §20.2b): a new column with a default. Every
+-- existing row takes TRUE, which matches what both assistants this feature
+-- answers to do by default when memory is on; nothing is read or rewritten,
+-- and a build that predates the column never selects it.
+ALTER TABLE "Settings" ADD COLUMN "memoryBackgroundLearning" BOOLEAN NOT NULL DEFAULT true;

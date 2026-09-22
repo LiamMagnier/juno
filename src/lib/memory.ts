@@ -1690,16 +1690,30 @@ export async function consolidateWithFallback(
  * showing "updated Nd ago" long after new chats had added facts.)
  */
 export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
-  const [count, summary, forgottenAt] = await Promise.all([
+  const now = new Date();
+  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
     newestSuppressionAt(userId),
+    // The newest moment a temporary fact stopped being true. Indexed on
+    // (userId, expiresAt).
+    prisma.memoryEntry.findFirst({
+      where: { userId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      orderBy: { expiresAt: "desc" },
+      select: { expiresAt: true },
+    }),
   ]);
-  // The count alone missed every forget: retiring a fact leaves its row in
-  // place, so the count does not move and the summary that still quotes the
-  // forgotten fact was never rebuilt.
+  // The count alone missed every change that retires a row rather than
+  // removing it. A forget leaves the row, marked `suppressed`, so the summary
+  // still quoting the forgotten fact was never rebuilt; an expiry leaves it
+  // marked `expired`, so "flying to Berlin this week" sat in the summary's
+  // "top of mind" long after the week was over.
+  const expiredSince = !!summary && !!lastExpiry?.expiresAt && lastExpiry.expiresAt > summary.updatedAt;
   const changed =
-    !summary || summary.entryCount !== count || summaryPredatesForget(summary.updatedAt, forgottenAt);
+    !summary ||
+    summary.entryCount !== count ||
+    summaryPredatesForget(summary.updatedAt, forgottenAt) ||
+    expiredSince;
   // Don't rebuild more than once every few minutes, so rapid-fire messages that
   // each distill a fact don't each trigger a full consolidation.
   const MIN_INTERVAL_MS = 5 * 60 * 1000;

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RollingNumber } from "@/components/ui/micro";
 import { MemoryIcons } from "@/components/memory/memory-icons";
+import { useApp } from "@/components/app/app-provider";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,10 @@ interface MemoryStatsProps {
 const MAX_BATCHES = 40;
 
 export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: MemoryStatsProps) {
+  const { settings } = useApp();
+  // The dreamer only runs while memory is on; paused, it is off whatever the
+  // switch says, and the strip must not claim otherwise.
+  const dreaming = !paused && settings.memoryBackgroundLearning;
   const [remaining, setRemaining] = React.useState<number | null>(null);
   const [running, setRunning] = React.useState(false);
   // The queue length when this run started, so the bar measures progress
@@ -136,8 +141,21 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
             </>
           ) : hasQueue ? (
             <>
+              {/* With background learning on, these are not waiting for the
+                  button — the dreamer reads them between sessions — so the
+                  strip says that, and the button becomes "go faster" rather
+                  than "go". */}
               <span className="hidden font-mono text-caption tabular-nums text-muted-foreground sm:inline">
-                {remaining} unread {remaining === 1 ? "chat" : "chats"}
+                {dreaming ? (
+                  <>
+                    <span>{remaining}</span> <span>{remaining === 1 ? "chat" : "chats"}</span>{" "}
+                    <span>left to read in the background</span>
+                  </>
+                ) : (
+                  <>
+                    {remaining} unread {remaining === 1 ? "chat" : "chats"}
+                  </>
+                )}
               </span>
               <Button
                 variant="outline"
@@ -148,11 +166,11 @@ export function MemoryStats({ activeCount, retiredCount, onLearned, paused }: Me
                 aria-label={
                   paused
                     ? "Learn from past chats — unavailable while memory is paused"
-                    : "Read past chats and learn from them"
+                    : "Read past chats and learn from them now"
                 }
               >
                 <Sparkles className="size-3.5" aria-hidden="true" />
-                Learn from past chats
+                {dreaming ? "Read now" : "Learn from past chats"}
               </Button>
             </>
           ) : remaining === 0 ? (

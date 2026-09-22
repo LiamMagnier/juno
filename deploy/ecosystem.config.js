@@ -266,6 +266,27 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Distils older conversations into memory between sessions — ChatGPT's
+      // "Dreaming", Juno's version (scripts/memory-dreamer.ts). Single
+      // instance: two dreamers would draw the same accounts and double the
+      // model calls. Small by design — a few accounts per ten-minute tick,
+      // only within each account's usage windows.
+      name: "juno-memory-dreamer",
+      cwd: runRoot,
+      script: "npm",
+      args: "run memory:dreamer",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        ...releaseEnv,
+        NODE_ENV: "production",
+      },
+      error_file: "logs/memory-dreamer-err.log",
+      out_file: "logs/memory-dreamer-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       // Reclaims staged/imported objects after a request or VM dies before the
       // relational import transaction can mark them attached. The ledger keeps
       // this safe across restarts and multiple cleanup attempts.

@@ -37,6 +37,11 @@ export interface ClientSettings {
    */
   memorySensitiveTopics: SensitiveTopic[];
   /**
+   * Whether the memory dreamer reads older conversations between sessions.
+   * Consulted only while `memoryEnabled` is on.
+   */
+  memoryBackgroundLearning: boolean;
+  /**
    * Where invisible work on this account's content may be sent — memory
    * extraction and consolidation, titles, moderation. See
    * @/lib/background-provider-policy. Surfaced because a policy that silently
