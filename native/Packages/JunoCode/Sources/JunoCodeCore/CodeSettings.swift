@@ -199,8 +199,15 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
     public var modelFallback: Bool
     public var coAuthorTrailer: Bool
     public var branchPrefix: String
-    /// User-level instructions, then project-level, in that order.
+    /// Instructions the reader wrote: their own file's, then their approved
+    /// personal project file's. These rank above repository files.
     public var instructions: [String]
+    /// Instructions a repository supplied: the checked-in file's, approved
+    /// or not, and a personal project file's the reader has not approved.
+    /// They are repository data, fenced like `AGENTS.md`, never the reader's
+    /// voice: approving a file puts its settings in force, it does not make
+    /// its prose the reader's own.
+    public var repositoryInstructions: [String]
 
     public static let defaults = ResolvedCodeSettings(
         rules: .empty,
@@ -214,7 +221,8 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
         modelFallback: false,
         coAuthorTrailer: true,
         branchPrefix: "juno/",
-        instructions: []
+        instructions: [],
+        repositoryInstructions: []
     )
 
     public static let maxTurnsRange = 10...1_000
@@ -301,7 +309,14 @@ public struct ResolvedCodeSettings: Equatable, Sendable {
             if let text = file.instructions?.trimmingCharacters(in: .whitespacesAndNewlines),
                !text.isEmpty
             {
-                resolved.instructions.append(text)
+                switch layer.origin {
+                case .user:
+                    resolved.instructions.append(text)
+                case .local where layer.isApproved:
+                    resolved.instructions.append(text)
+                case .project, .local:
+                    resolved.repositoryInstructions.append(text)
+                }
             }
         }
         return resolved

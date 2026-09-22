@@ -642,7 +642,9 @@ struct StudioInstructionsSettings: View {
         } header: {
             Text("Standing instructions in settings")
         } footer: {
-            Text("A shorter note kept with the other settings, for a team's shared file or one project.")
+            Text(standingScope == .project
+                ? "A shorter note kept with the other settings. A team's shared file reaches Juno as project context, like AGENTS.md: followed where it applies, never able to grant permissions."
+                : "A shorter note kept with the other settings, for every project or just this one.")
         }
 
         Section("Read from the project automatically") {

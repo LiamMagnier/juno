@@ -118,7 +118,8 @@ final class PermissionRulesTests: XCTestCase {
         XCTAssertFalse(resolved.allowsNetwork)
         XCTAssertEqual(resolved.remoteCeiling, .readOnly)
         XCTAssertEqual(resolved.maxTurns, ResolvedCodeSettings.maxTurnsRange.lowerBound)
-        XCTAssertEqual(resolved.instructions, ["Be brief.", "Use tabs."])
+        XCTAssertEqual(resolved.instructions, ["Be brief."])
+        XCTAssertEqual(resolved.repositoryInstructions, ["Use tabs."])
     }
 
     /// A project's files arrive with a clone and can be written by the agent,

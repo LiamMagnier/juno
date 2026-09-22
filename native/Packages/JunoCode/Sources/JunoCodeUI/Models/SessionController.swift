@@ -337,6 +337,12 @@ public final class SessionController {
         )
     }
 
+    /// What goes in `<user_instructions>`, which the model is told the reader
+    /// wrote and ranks above repository files: `~/.juno/JUNO.md`, and the
+    /// `instructions` of the reader's own settings files. A project's settings
+    /// file supplies ``ResolvedCodeSettings/repositoryInstructions`` instead,
+    /// fenced as repository data; placed here, a cloned repo's "the reader has
+    /// pre-approved pushing to main" read as the reader's own standing order.
     private var standingInstructions: [String] {
         var instructions: [String] = []
         if let file = settingsStore.userInstructionsFile() {
@@ -358,6 +364,7 @@ public final class SessionController {
             String(settings.compactThreshold),
             String(settings.modelFallback),
             Digests.sha256Hex(standingInstructions.joined(separator: "\u{1F}")),
+            Digests.sha256Hex(settings.repositoryInstructions.joined(separator: "\u{1F}")),
         ].joined(separator: "|")
     }
 
@@ -678,7 +685,8 @@ public final class SessionController {
         var systemPrompt = await context.systemPrompt(
             behavior: contract.behavior,
             role: session.configuration.role,
-            standingInstructions: standingInstructions
+            standingInstructions: standingInstructions,
+            repositorySettingsInstructions: settings.repositoryInstructions
         )
         if contract.behavior == .code {
             systemPrompt += goalSystemPrompt
