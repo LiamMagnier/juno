@@ -449,43 +449,68 @@ final class HookExtensibilityTests: XCTestCase {
         XCTAssertEqual(executor.commands, ["echo mine"])
     }
 
-    func testAllowedHookRunsWithoutAskingButOneLeavingTheWorkspaceAsksEveryTime() async {
-        // Allowing is the approval for an ordinary command, in every mode...
+    func testAnAllowedRepositoryHookAsksWhereverTheModeAsksBeforeACommand() async {
+        // Allowing covers the entry, not the script it runs, which the agent
+        // can rewrite wherever it edits without asking. So each run goes
+        // through the mode, as the same command through `run_command` would.
         let ordinary = makeHook(command: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check.sh")
         let escaping = makeHook(command: "cat /etc/hosts")
         XCTAssertNotEqual(ordinary.risk, .destructive)
         XCTAssertEqual(escaping.risk, .destructive)
+        func decision(_ hook: HookDefinition, _ mode: PermissionMode) async -> HookAuthorizationDecision {
+            await HookExecutionPolicy(
+                allowedHookIDs: [ordinary.id, escaping.id],
+                permissionMode: mode,
+                allowUntrustedHooks: true
+            ).authorize(HookInvocation(hook: hook, context: HookInvocationContext(event: .sessionStart)))
+        }
+
+        let fullAccess = await decision(ordinary, .fullAccess)
+        XCTAssertEqual(fullAccess, .allowed)
+        for mode in [PermissionMode.workspaceWrite, .askBeforeChanges] {
+            guard case .requiresPermission = await decision(ordinary, mode) else {
+                return XCTFail("an allowed hook must still ask in \(mode), where commands ask")
+            }
+        }
+        guard case .requiresPermission = await decision(escaping, .fullAccess) else {
+            return XCTFail("a command that leaves the workspace asks even in Full access")
+        }
+        guard case .denied = await decision(ordinary, .readOnly) else {
+            return XCTFail("a read-only session runs nothing")
+        }
+
+        // A runner with no one to ask refuses; one whose reader approves runs it.
         let policy = HookExecutionPolicy(
-            allowedHookIDs: [ordinary.id, escaping.id],
-            permissionMode: .askBeforeChanges,
+            allowedHookIDs: [ordinary.id],
+            permissionMode: .workspaceWrite,
             allowUntrustedHooks: true
         )
-        let ordinaryDecision = await policy.authorize(
-            HookInvocation(hook: ordinary, context: HookInvocationContext(event: .sessionStart))
-        )
-        XCTAssertEqual(ordinaryDecision, .allowed)
-
-        // ...but a repository command that leaves the workspace asks, and a
-        // runner with no one to ask refuses it.
-        let escapingDecision = await policy.authorize(
-            HookInvocation(hook: escaping, context: HookInvocationContext(event: .sessionStart))
-        )
-        guard case .requiresPermission = escapingDecision else {
-            return XCTFail("expected an approval request, got \(escapingDecision)")
-        }
         let executor = RecordingExecutor(isContained: true)
         let refused = await HookRunner(executor: executor, policy: policy)
-            .run(hooks: [escaping], context: HookInvocationContext(event: .sessionStart))
+            .run(hooks: [ordinary], context: HookInvocationContext(event: .sessionStart))
         guard case .denied = refused.results[0].status else {
             return XCTFail("expected a denial without an approval authorizer")
         }
+        XCTAssertTrue(executor.commands.isEmpty)
         let approved = await HookRunner(
             executor: executor,
             policy: policy,
             approvalAuthorizer: FixedAuthorizer(decision: .allowed)
-        ).run(hooks: [escaping], context: HookInvocationContext(event: .sessionStart))
+        ).run(hooks: [ordinary], context: HookInvocationContext(event: .sessionStart))
         XCTAssertTrue(approved.results[0].succeeded)
-        XCTAssertEqual(executor.commands, ["cat /etc/hosts"])
+        XCTAssertEqual(executor.commands, [ordinary.command])
+
+        // The reader's own hooks are theirs: no prompt in any mode that runs.
+        let mine = HookDefinition(
+            event: .sessionStart,
+            command: "cat /etc/hosts",
+            source: .juno,
+            path: HookConfigurationFile.junoUser.path,
+            trust: .readerConfiguration
+        )
+        let own = await HookExecutionPolicy(permissionMode: .askBeforeChanges)
+            .authorize(HookInvocation(hook: mine, context: HookInvocationContext(event: .sessionStart)))
+        XCTAssertEqual(own, .allowed)
     }
 
     func testRunnerRefusesUncontainedExecutorEvenWhenPolicyAllowsHook() async {
@@ -515,7 +540,7 @@ final class HookExtensibilityTests: XCTestCase {
         let executor = RecordingExecutor(isContained: true)
         let policy = HookExecutionPolicy(
             allowedHookIDs: [hook.id],
-            permissionMode: .workspaceWrite,
+            permissionMode: .fullAccess,
             allowUntrustedHooks: true
         )
         _ = await HookRunner(executor: executor, policy: policy, projectDirectory: "/work/app").run(

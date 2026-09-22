@@ -389,9 +389,15 @@ private extension HookInvocationContext {
     }
 }
 
-/// Asks the reader before a repository hook whose command leaves the
-/// workspace. The prompt shows the exact command, since that is what is
-/// being approved.
+/// Asks the reader before a repository hook runs, wherever the mode would ask
+/// before the same command. The prompt shows the exact command, since that is
+/// what is being approved.
+///
+/// The command is ruled as the shell command it is: the reader's `Bash`
+/// rules apply to it (see `PermissionRule.families`), so "Always allow" on
+/// this prompt saves the same rule a `run_command` prompt would, and a hook
+/// the reader has vouched for that way runs without asking — with exactly
+/// the trust that rule already gives the agent's own commands.
 private struct HookPermissionAuthorizer: HookAuthorizing {
     let permissions: PermissionCoordinator
 
@@ -408,7 +414,7 @@ private struct HookPermissionAuthorizer: HookAuthorizing {
             actionDigest: digest,
             risk: invocation.hook.risk,
             summary: invocation.hook.command,
-            approvalPolicy: .alwaysRequiresApproval
+            subject: .command(invocation.hook.command)
         )
         switch outcome {
         case .allowed, .approved:

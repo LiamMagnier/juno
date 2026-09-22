@@ -80,25 +80,29 @@ final class WorkspaceAgentHooksTests: XCTestCase {
         )
     }
 
+    /// Full access by default, where an allowed repository hook runs without
+    /// a prompt; the modes that ask are tested on their own.
     private func adapter(
         _ hooks: [HookDefinition],
         shell: HookShell,
         ledger: HookSessionLedger = HookSessionLedger(),
         policy: HookExecutionPolicy? = nil,
+        permissions: PermissionCoordinator? = nil,
         idleDelay: Duration = .seconds(60),
         record: @escaping @Sendable (CodeSessionID, [HookActivityEvent]) async -> Void = { _, _ in }
     ) -> WorkspaceAgentHooks {
-        WorkspaceAgentHooks(
+        let permissions = permissions ?? PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        return WorkspaceAgentHooks(
             definitions: hooks,
             executor: shell,
-            permissions: PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite),
+            permissions: permissions,
             policy: policy ?? HookExecutionPolicy(
                 allowedHookIDs: Set(hooks.map(\.id)),
                 allowUntrustedHooks: true
             ),
             projectDirectory: "/work/app",
             ledger: ledger,
-            currentPermissionMode: { .workspaceWrite },
+            currentPermissionMode: { await permissions.permissionMode },
             transcriptPath: { "/store/\($0.value)/events.jsonl" },
             idleNotificationDelay: idleDelay,
             recordActivity: record
@@ -122,8 +126,75 @@ final class WorkspaceAgentHooksTests: XCTestCase {
         let payload = shell.calls[0].payload
         XCTAssertEqual(payload["source"]?.stringValue, "startup")
         XCTAssertEqual(payload["transcript_path"]?.stringValue, "/store/\(sessionID.value)/events.jsonl")
-        XCTAssertEqual(payload["permission_mode"]?.stringValue, "acceptEdits")
+        XCTAssertEqual(payload["permission_mode"]?.stringValue, "bypassPermissions")
         XCTAssertEqual(shell.calls[0].environment["CLAUDE_PROJECT_DIR"], "/work/app")
+    }
+
+    func testAnAllowedRepositoryHookAsksBeforeEachRunWhereCommandsAsk() async throws {
+        // Edit automatically: the agent may rewrite the script this entry runs
+        // without asking, so running it must ask, as the command itself would.
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
+        nonisolated(unsafe) var asked: [ApprovalRequest] = []
+        await permissions.addObserver { update in
+            if case let .requested(request) = update {
+                asked.append(request)
+                Task { await permissions.resolve(approvalID: request.id, decision: .approved) }
+            }
+        }
+        let shell = HookShell()
+        let guardHook = hook(.preToolUse, "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.sh")
+        let hooks = adapter([guardHook], shell: shell, permissions: permissions)
+        let call = AgentToolHookInvocation(sessionID: sessionID, toolName: "write_file", input: ["path": "a"])
+
+        _ = await hooks.beforeTool(call)
+        _ = await hooks.beforeTool(call)
+        XCTAssertEqual(asked.count, 2, "allowing the entry is not approval of every run")
+        XCTAssertEqual(shell.calls.count, 2)
+        XCTAssertEqual(asked.first?.toolName, "hook")
+        XCTAssertEqual(asked.first?.summary, guardHook.command)
+        // "Always allow" saves the rule a `run_command` prompt would.
+        XCTAssertEqual(
+            asked.first?.suggestedRule,
+            PermissionRule(tool: "Bash", specifier: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard.sh *")
+        )
+
+        // With that rule, the reader has vouched for the command as they would
+        // for the agent's own, and the hook runs without asking.
+        await permissions.addAllowRule(try XCTUnwrap(asked.first?.suggestedRule))
+        _ = await hooks.beforeTool(call)
+        XCTAssertEqual(asked.count, 2)
+        XCTAssertEqual(shell.calls.count, 3)
+
+        // A declined prompt means the hook does not run, and the thread says so.
+        let declining = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        await declining.addObserver { update in
+            if case let .requested(request) = update {
+                Task { await declining.resolve(approvalID: request.id, decision: .denied) }
+            }
+        }
+        let quiet = HookShell()
+        let refused = await adapter([guardHook], shell: quiet, permissions: declining).beforeTool(call)
+        XCTAssertTrue(quiet.calls.isEmpty)
+        XCTAssertNil(refused.blockReason, "a hook that did not run blocks nothing")
+        XCTAssertEqual(refused.notices.map(\.outcome), [.failed])
+    }
+
+    func testTheReadersOwnHooksNeverAsk() async {
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .askBeforeChanges)
+        nonisolated(unsafe) var asked = 0
+        await permissions.addObserver { update in
+            if case .requested = update { asked += 1 }
+        }
+        let shell = HookShell()
+        // One inside the project, one outside it: the reader wrote both lines.
+        let mine = [
+            hook(.notification, "echo notified", trust: .readerConfiguration),
+            hook(.notification, "cat /etc/hosts", trust: .readerConfiguration),
+        ]
+        _ = await adapter(mine, shell: shell, permissions: permissions)
+            .notify(sessionID: sessionID, kind: .permissionPrompt, message: "Juno needs you")
+        XCTAssertEqual(asked, 0)
+        XCTAssertEqual(Set(shell.calls.map(\.command)), ["echo notified", "cat /etc/hosts"])
     }
 
     func testABlockingPreToolUseHookBecomesADecisionAndANotice() async {
@@ -322,9 +393,27 @@ final class SessionHookTrustTests: XCTestCase {
         await controller.setHooksEnabled(true)
         XCTAssertTrue(controller.hooksAreEnabled)
         controller.composerText = "second"
+        // Edit automatically asks before a command, so it asks before the
+        // hook's: allowing the entry does not vouch for the script it runs.
+        let sending = Task { await controller.send() }
+        let pending = try await waitForApproval(controller)
+        let request = try XCTUnwrap(pending, "the hook must ask first")
+        XCTAssertEqual(request.toolName, "hook")
+        XCTAssertTrue(controller.isSubmitting)
+        XCTAssertTrue(controller.isRunning, "the session reads as working while the hook waits")
+        // A second ↩ while the message's hook decides must not be a second run.
         await controller.send()
+        await controller.approve(request.id)
+        await sending.value
         try await waitForIdle(store, session.id)
+        XCTAssertFalse(controller.isSubmitting)
         XCTAssertTrue(lastPrompt(model).contains("from-the-hook"), "an allowed hook's output is context")
+        let prompts = await store.events(for: session.id).compactMap { event -> String? in
+            if case let .userPrompt(prompt) = event.payload { return prompt.text }
+            return nil
+        }
+        XCTAssertEqual(prompts, ["first", "second"])
+        XCTAssertEqual(model.requests.count, 2)
 
         // Revoking is as immediate as allowing.
         await controller.setHooksEnabled(false)
@@ -337,6 +426,16 @@ final class SessionHookTrustTests: XCTestCase {
     private func lastPrompt(_ model: RecordingModel) -> String {
         guard case let .user(text)? = model.requests.last?.messages.last else { return "" }
         return text
+    }
+
+    private func waitForApproval(_ controller: SessionController) async throws -> ApprovalRequest? {
+        for _ in 0..<200 {
+            if let request = await controller.live?.permissions.pendingApprovals.first {
+                return request
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        return nil
     }
 
     private func waitForIdle(_ store: CodeSessionStore, _ id: CodeSessionID) async throws {

@@ -9,7 +9,10 @@ import JunoDesignSystem
 /// Hooks are commands a repository asks to run around the agent's work, so
 /// the page says plainly which file each came from and what it runs, and the
 /// trust switch is the reader's alone: the repository cannot flip it, and an
-/// edited hook waits here until it is allowed again.
+/// added or edited entry waits here until it is allowed. Allowing is not the
+/// last word, and the switch's subtitle says so: the script an entry runs can
+/// change without the entry changing, so each run still asks wherever the
+/// mode asks before a command.
 struct StudioHooksSettings: View {
     let hooks: HookDiscoveryResult
     let policy: HookExecutionPolicy
@@ -42,7 +45,7 @@ struct StudioHooksSettings: View {
                 Toggle(isOn: Binding(get: { policy.allowUntrustedHooks }, set: { setAllowed($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Run this project's hooks")
-                        Text("They are commands from the repository. Juno runs them in the sandbox, and asks again when one changes.")
+                        Text("They are commands from the repository. Juno runs them in the sandbox, and asks before each run wherever it would ask before a command.")
                             .font(Studio.Font.meta)
                             .foregroundStyle(Studio.Ink.tertiary)
                     }

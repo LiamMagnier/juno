@@ -597,15 +597,22 @@ public protocol HookAuthorizing: Sendable {
 /// Local policy that every hook runner applies before it consults an optional
 /// approval adapter. An empty allowlist is intentional and is the default.
 ///
-/// Allowing a repository hook is the reader's approval of that exact command:
-/// the allowlist holds hook IDs, and an ID is a digest of the command, its
-/// matcher and where it was declared, so an edited hook is a new hook that
-/// has to be allowed again. Because of that, an allowed hook is not asked
-/// about again on every run — a `PreToolUse` hook that prompted before every
-/// tool call would make hooks unusable, and it would be asking the reader a
-/// question they have already answered. Two things still stop it: a
-/// read-only session runs nothing, and a command that leaves the workspace
-/// (`destructive`) asks every time, as it does everywhere else in Juno.
+/// Allowing a repository hook lets its entry run at all: the allowlist holds
+/// hook IDs, and an ID covers the entry's file, event, matcher and command,
+/// so an entry added or edited later waits to be allowed. It does not cover
+/// what the command runs — the script it names, the `package.json` behind
+/// `npm run lint` — and the agent can rewrite those files wherever the mode
+/// lets it edit without asking. So an allowed repository hook still goes
+/// through the permission mode on every run, exactly as the same command
+/// would through `run_command`: Full access runs it, Edit automatically and
+/// Ask before edits ask (unless the reader's own rules allow the command),
+/// and a command that leaves the workspace always asks. Otherwise allowing
+/// one hook would hand the agent every command it can write into that
+/// script, in the very modes that promise commands ask.
+///
+/// The reader's own `~/.juno/settings.json` is spared the prompt. The reader
+/// wrote the line, the agent cannot change that file without asking, and a
+/// notifier that asked before announcing an approval would defeat itself.
 public struct HookExecutionPolicy: HookAuthorizing, Equatable, Codable, Sendable {
     public static let denyAll = HookExecutionPolicy()
 
@@ -680,10 +687,15 @@ public struct HookExecutionPolicy: HookAuthorizing, Equatable, Codable, Sendable
             // The reader's own file is spared the prompt: a notifier in
             // `~/bin` is outside every workspace by definition, and the
             // reader wrote the line that runs it.
-            if risk == .destructive, hook.isUntrusted {
+            guard hook.isUntrusted else { return .allowed }
+            switch PermissionPolicy.ruling(mode: permissionMode, risk: risk) {
+            case .allow:
+                return .allowed
+            case .requireApproval:
                 return .requiresPermission(reason: reason)
+            case let .deny(reason):
+                return .denied(reason: reason)
             }
-            return .allowed
         }
     }
 }

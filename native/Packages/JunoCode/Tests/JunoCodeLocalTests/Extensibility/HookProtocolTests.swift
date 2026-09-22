@@ -383,9 +383,11 @@ final class HookProtocolTests: XCTestCase {
     private func runner(for root: URL, allowing hooks: [HookDefinition]) -> HookRunner {
         HookRunner(
             executor: CommandExecutionService.contained(workspaceRootURL: root),
+            // Full access, where an allowed repository hook runs without a
+            // prompt; the modes that ask have their own test.
             policy: HookExecutionPolicy(
                 allowedHookIDs: Set(hooks.map(\.id)),
-                permissionMode: .workspaceWrite,
+                permissionMode: .fullAccess,
                 allowUntrustedHooks: true
             ),
             projectDirectory: root.path

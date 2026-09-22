@@ -168,9 +168,12 @@ public final class WorkspaceContext: Sendable {
     /// Allows or revokes this project's hooks, as the reader decided.
     ///
     /// Allowing records the IDs of exactly the repository hooks discovered
-    /// now. An ID is a digest of the hook's command and where it was declared,
-    /// so a hook added or edited later — by a collaborator, or by the agent,
-    /// which can write these files — is a new hook that waits to be allowed.
+    /// now. An ID is a digest of the entry — its file, event, matcher and
+    /// command — so an entry added or edited later, by a collaborator or by
+    /// the agent, is a new hook that waits to be allowed. What the command
+    /// runs is not in the digest: a script can change under an unchanged
+    /// entry. That is why an allowed hook still asks before each run wherever
+    /// the permission mode asks before a command (`HookExecutionPolicy`).
     @discardableResult
     public func setRepositoryHooksAllowed(
         _ allowed: Bool,
