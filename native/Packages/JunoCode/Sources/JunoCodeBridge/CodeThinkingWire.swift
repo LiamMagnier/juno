@@ -68,6 +68,7 @@ public enum CodeThinkingWire {
     static func needsSummarizedDisplay(_ id: String) -> Bool {
         let id = id.lowercased()
         return id.contains("fable") || id.contains("mythos")
+            || id.contains("opus-5") // claude-opus-5 and claude-opus-5-5 alike
             || id.contains("opus-4-8") || id.contains("opus-4-7")
             || id.contains("sonnet-5")
     }

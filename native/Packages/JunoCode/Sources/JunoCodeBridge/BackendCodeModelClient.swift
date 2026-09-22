@@ -90,14 +90,14 @@ public struct CodeModelProviderResolver: Sendable {
         if lowered == "flash" || lowered == "fast" {
             return CodeModelRoute(
                 providerID: "google",
-                providerModelID: "gemini-3.7-flash",
+                providerModelID: "gemini-3.8-flash",
                 wireProtocol: .openAIChat
             )
         }
         if lowered == "haiku" {
             return CodeModelRoute(
                 providerID: "anthropic",
-                providerModelID: "claude-haiku-4-5-20251001",
+                providerModelID: "claude-haiku-4-5",
                 wireProtocol: .anthropicMessages
             )
         }
@@ -111,7 +111,7 @@ public struct CodeModelProviderResolver: Sendable {
         if lowered == "opus" {
             return CodeModelRoute(
                 providerID: "anthropic",
-                providerModelID: "claude-opus-5",
+                providerModelID: "claude-opus-5-5",
                 wireProtocol: .anthropicMessages
             )
         }

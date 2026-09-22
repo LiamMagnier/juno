@@ -379,3 +379,53 @@ test("a mislabelled or damaged OpenDocument fails with a reason, not a crash", a
   assert.notEqual(result?.status, "ok");
   assert.ok((result?.reason ?? "").length > 0, "a failure must explain itself");
 });
+
+/* -------------------------------------------------------------------------- */
+/* Bytes Postgres will not store                                               */
+/* -------------------------------------------------------------------------- */
+
+test("a NUL byte in a document does not take the whole insert down", async () => {
+  /*
+   * THE PRODUCTION CRASH, VERBATIM:
+   *
+   *   invalid byte sequence for encoding "UTF8": 0x00
+   *   at prisma.knowledgeBlock.createMany()
+   *
+   * A Postgres `text` column cannot hold a NUL — not escaped, not encoded, at
+   * all — and a document extractor is exactly where NUL comes from: a PDF with
+   * a broken font map yields glyph ids rather than characters, an RTF `\'00`
+   * is a literal NUL, a mislabelled binary decoded as UTF-8 is full of them.
+   * `createMany` is one statement, so a single bad byte anywhere in a 200-page
+   * report meant NOT ONE block of it was stored and the document came back as
+   * though nothing had been read.
+   */
+  const { stripUnstorableCharacters, normalizeBlockText } = await import(
+    "@/lib/knowledge/extract/types"
+  );
+
+  assert.equal(stripUnstorableCharacters("page\u00001 of 4"), "page1 of 4");
+  assert.equal(stripUnstorableCharacters("a\u0001b\u001Fc\u007Fd"), "abcd");
+  // Layout characters survive: they are meaning, and the normaliser owns them.
+  assert.equal(stripUnstorableCharacters("a\tb\nc\r\nd"), "a\tb\nc\r\nd");
+  // A lone surrogate is legal in a JS string and illegal in UTF-8 — the same
+  // rejection with a different message, and easy to produce by cutting a text
+  // run between the halves of an emoji.
+  assert.equal(stripUnstorableCharacters("ok\uD83D"), "ok");
+  assert.equal(stripUnstorableCharacters("\uDE00ok"), "ok");
+  assert.equal(stripUnstorableCharacters("keep \u{1F600} me"), "keep \u{1F600} me");
+
+  // Every extractor funnels through this, so none of them has to remember.
+  assert.equal(normalizeBlockText("Revenue\u0000 rose"), "Revenue rose");
+
+  // And end to end, through a real RTF whose \'00 escape is a literal NUL.
+  const rtf = `{\\rtf1\\ansi \\pard Revenue \\'00 rose to 4.2 million.\\
+}`;
+  const result = await extractDocument({
+    bytes: new Uint8Array(Buffer.from(rtf, "latin1")),
+    fileName: "n.rtf",
+    mimeType: "application/rtf",
+  });
+  const text = textOf(result);
+  assert.match(text, /Revenue/);
+  assert.ok(!text.includes("\u0000"), "no block may carry a byte Postgres refuses");
+});

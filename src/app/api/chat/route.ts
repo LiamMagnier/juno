@@ -140,7 +140,8 @@ import {
   type AttachmentKnowledge,
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
-import { backfillAttachmentText } from "@/lib/knowledge";
+import { isCodeInterpreterConfigured } from "@/lib/agent/code";
+import { ensureAttachmentText } from "@/lib/knowledge";
 import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
@@ -1915,6 +1916,17 @@ async function handleChat(req: Request) {
   // provider choice no longer decides whether a PDF can be understood. Files
   // still in the parser queue are named explicitly below; a filename-only
   // placeholder is not an honest answer to a user who just uploaded a file.
+  /*
+   * Whether this model is handed the document itself rather than its text.
+   *
+   * Declared HERE, above its first use, and not beside the reading below: it
+   * is captured by `needsTextToBeRead` a few lines down, which is CALLED
+   * before the later declaration would have been evaluated. TypeScript does
+   * not see through the closure, so that ordering typechecked cleanly and
+   * threw `Cannot access 'modelSeesDocument' before initialization` at
+   * runtime on every turn carrying an attachment.
+   */
+  const modelSeesDocument = providerReceivesDocumentBytes(modelInfo, !!input.proMode);
   const directAttachments = baseHistory
     .flatMap((message) => message.attachments)
     .filter((attachment) => attachment.projectId == null && !attachment.deletedAt);
@@ -1938,7 +1950,6 @@ async function handleChat(req: Request) {
        * "I cannot read this" about something the model can read perfectly.
        * That is the best case in the product being reported as the worst.
        */
-      const modelSeesDocument = providerReceivesDocumentBytes(modelInfo, !!input.proMode);
       const needsTextToBeRead = (attachment: (typeof directAttachments)[number]) =>
         !(modelSeesDocument && isPdfAttachment(attachment));
       const pendingFiles = directAttachments
@@ -1978,12 +1989,19 @@ async function handleChat(req: Request) {
     .flatMap((message) => message.attachments)
     .filter((attachment) => !attachment.deletedAt);
 
-  // Files indexed before the indexer started writing its text back to the row
-  // would otherwise reach the model as a filename forever — ingest runs once
-  // per set of bytes and is not coming round again. The first turn that
-  // carries one pays for the assembly and patches the rows in place, so this
-  // turn already has the document rather than the next one.
-  await backfillAttachmentText(user.id, allAttachments);
+  /*
+   * READ THE FILES, NOW THAT THERE IS A QUESTION TO READ THEM FOR.
+   *
+   * Uploads store bytes and nothing else, so this is the first moment anything
+   * opens an attached document — and unlike the old upload-time pass, it knows
+   * which model is about to receive it. A provider that takes the raw PDF and
+   * rasterises it internally is handed the file itself and skipped here
+   * entirely: extracting for it would produce a worse copy of what it is
+   * already getting, at the cost of doing the work twice.
+   */
+  await ensureAttachmentText(allAttachments, {
+    skip: (attachment) => modelSeesDocument && isPdfAttachment(attachment),
+  });
 
   /*
    * Whether this turn is carrying anything for the two attachment tools.
@@ -2006,6 +2024,12 @@ async function handleChat(req: Request) {
      * the rescue was withheld from every file that needed rescuing.
      */
     documents: allAttachments.some((attachment) => attachment.kind === "FILE"),
+    /*
+     * Python against the file, when there is a sandbox to run it in. Gated on
+     * a file being present for the same reason the other two are: a tool with
+     * nothing to act on spends a round finding that out.
+     */
+    code: isCodeInterpreterConfigured() && allAttachments.length > 0,
     images:
       modelInfo.vision &&
       allAttachments.some(
@@ -2180,6 +2204,7 @@ async function handleChat(req: Request) {
         webSearch: useWebSearch,
         documentTool: attachmentToolToggles.documents,
         imageTool: attachmentToolToggles.images,
+        codeTool: attachmentToolToggles.code,
         targetedArtifactEditPrompt,
         canvasOn,
       }),
