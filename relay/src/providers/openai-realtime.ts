@@ -1,7 +1,13 @@
 import WebSocket from "ws";
 import { resamplePcm16 } from "../audio.js";
 import type { VoiceProviderId } from "../protocol.js";
-import type { ProviderEvents, TokenUsage, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type {
+  ProviderEvents,
+  SessionEstablished,
+  TokenUsage,
+  VoiceProviderSession,
+  VoiceSessionSeed,
+} from "./types.js";
 import { providerText } from "../voice-context.js";
 
 /**
@@ -128,6 +134,13 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
 
   constructor(private dialect: RealtimeDialect) {
     this.provider = dialect.provider;
+  }
+
+  established(): SessionEstablished {
+    // The dialect builds a URL rather than holding an id, so read it back out
+    // of the URL it would dial — one source, no second copy to drift.
+    const model = new URL(this.dialect.url()).searchParams.get("model");
+    return { thinking: false, ...(model ? { model } : {}) };
   }
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {

@@ -200,6 +200,7 @@ export class RelaySession {
         provider: id,
         capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec },
         thinking: established.thinking,
+        ...(established.model ? { model: established.model } : {}),
         ...(established.notice ? { notice: established.notice } : {}),
       });
     } catch (err) {

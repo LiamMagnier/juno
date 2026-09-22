@@ -174,3 +174,39 @@ test("a voice session that could not honour the request says so without ending t
   assert.match(voiceBar, /!voice\.error && voice\.notice/);
   assert.match(voiceBar, /role="status"/);
 });
+
+test("a reasoning switch that fails to connect can still be switched back", () => {
+  // Every row of the call menu is gated on `capabilities`. Blanking those
+  // mid-switch removed the reasoning control at exactly the moment the new
+  // session failed, so the only way out of a failed "thinking on" had
+  // disappeared and the toggle looked stuck.
+  assert.doesNotMatch(voiceHook, /setProvider\(next\);\n\s+setCapabilities\(null\);/);
+  // And the optimistic state rolls back, so the menu stops describing a
+  // session that never came up.
+  assert.match(voiceHook, /confirmedThinkingRef/);
+  assert.match(voiceHook, /thinkingRef\.current = confirmedThinkingRef\.current/);
+});
+
+test("the call bar separates what you press from what you set", () => {
+  // Screen share is a mid-call action, not a setting: it belongs on the bar,
+  // where a thumb can reach it, not three rows into a menu that also chooses
+  // providers.
+  assert.match(voiceBar, /voice\.capabilities\?\.screenInput && live/);
+  assert.match(voiceBar, /function VoiceSettings/);
+  // Settings are a panel with headings, not a flat verb list — a provider and
+  // "Stop sharing screen" are not the same kind of row.
+  assert.match(voiceBar, /PopoverContent/);
+  assert.match(voiceBar, /<Switch/);
+  assert.doesNotMatch(voiceBar, /DropdownMenuItem/);
+  // The status cluster owns the flexible width so End cannot be pushed off a
+  // narrow screen.
+  assert.match(voiceBar, /min-w-0 flex-1 items-center/);
+});
+
+test("the bar names the model actually answering", () => {
+  // Which model is serving was knowable only from a relay log, so a call that
+  // had fallen back to another protocol looked exactly like one that had not.
+  assert.match(relaySession, /established\.model \? \{ model: established\.model \}/);
+  assert.match(voiceHook, /setModel\(msg\.model \?\? null\)/);
+  assert.match(voiceBar, /voice\.model/);
+});
