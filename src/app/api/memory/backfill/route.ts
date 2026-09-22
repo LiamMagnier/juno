@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { backfillMemories, pendingBackfill, utilityModelCandidates } from "@/lib/memory";
+import { backfillMemories, pendingBackfill, reconcileMemoryTimeline, utilityModelCandidates } from "@/lib/memory";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,5 +44,10 @@ export async function POST() {
     userId: user.id,
     maxConversations: 2,
   });
-  return NextResponse.json({ processedConversations, created, remaining });
+  // History is read newest chat first. Each fact is judged by when it was
+  // said as it arrives, and this settles the rest — rows written before times
+  // were recorded, dated from their messages, judged again with the batch.
+  // Best effort: the batch is saved whether or not this runs.
+  const { changed } = await reconcileMemoryTimeline(user.id).catch(() => ({ changed: 0 }));
+  return NextResponse.json({ processedConversations, created, remaining, rejudged: changed });
 }

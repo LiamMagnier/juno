@@ -39,6 +39,8 @@ interface MemoryToolbarProps {
   /** Adding is refused while memory is paused, like every other write. */
   paused: boolean;
   onAdd: (content: string) => Promise<boolean>;
+  /** What the add field suggests — a project's page suggests something about the project. */
+  addPlaceholder?: string;
 }
 
 export function MemoryToolbar({
@@ -50,6 +52,7 @@ export function MemoryToolbar({
   factCount,
   paused,
   onAdd,
+  addPlaceholder,
 }: MemoryToolbarProps) {
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
@@ -195,7 +198,7 @@ export function MemoryToolbar({
               // Third person, because that is the shape every stored fact
               // takes — showing it in the placeholder is cheaper than
               // explaining it after the classifier has filed it oddly.
-              placeholder="Something durable about you — “I prefer metric units”"
+              placeholder={addPlaceholder ?? "Something durable about you — “I prefer metric units”"}
               aria-label="A new memory"
               className="h-9"
             />

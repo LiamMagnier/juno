@@ -56,6 +56,7 @@
     "work:trigger-poller": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-trigger-poller.ts",
     "research:worker": "NODE_OPTIONS=--conditions=react-server tsx scripts/research-worker.ts",
     "memory:dreamer": "NODE_OPTIONS=--conditions=react-server tsx scripts/memory-dreamer.ts",
+    "memory:bench": "NODE_OPTIONS=--conditions=react-server tsx scripts/memory-bench.ts",
     "import:recovery": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-import-runs.ts",
     "search:check": "NODE_OPTIONS=--conditions=react-server tsx scripts/check-search-providers.ts",
     "validate:models": "tsx scripts/validate-models.ts",

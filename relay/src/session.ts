@@ -17,6 +17,53 @@ import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
 const VOICE_INSTRUCTIONS = `You are Juno, a warm, quick-witted voice assistant. You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
 const VOICE_INPUT_MAX_CHARS = 4_000;
 
+/**
+ * The most memory a call's instructions will carry, whatever the app sends —
+ * the app already caps it (src/lib/voice-memory.ts); this is the relay not
+ * trusting that to hold.
+ */
+export const VOICE_MEMORY_MAX_CHARS = 4_000;
+/** A call must not wait long on memory: past this it starts without it. */
+const MEMORY_FETCH_TIMEOUT_MS = 2_500;
+
+/**
+ * Ask Juno what this call should know about its caller. Server to server,
+ * under a callback token scoped to exactly this purpose (and project) — the
+ * browser never carries memory, so nothing a page does can put words in it.
+ * Any failure is "no memory": a call that cannot reach Juno's memory is still
+ * a call.
+ */
+export async function fetchVoiceMemory(
+  userId: string,
+  grant: { projectId: string | null },
+  fetchImpl: typeof fetch = fetch
+): Promise<string | null> {
+  const appUrl = process.env.JUNO_APP_URL;
+  if (!appUrl) return null;
+  try {
+    const res = await fetchImpl(`${appUrl.replace(/\/$/, "")}/api/voice/memory`, {
+      headers: {
+        Authorization: `Bearer ${mintRelayCallbackToken(userId, 60, "juno.voice.memory", {
+          ...(grant.projectId ? { pid: grant.projectId } : {}),
+        })}`,
+      },
+      signal: AbortSignal.timeout(MEMORY_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { instructions?: unknown } | null;
+    if (typeof body?.instructions !== "string") return null;
+    const text = body.instructions.replace(/\u0000/g, "").trim().slice(0, VOICE_MEMORY_MAX_CHARS);
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The relay's own instructions, with what Juno remembers after them. */
+export function voiceInstructions(memory: string | null): string {
+  return memory ? `${VOICE_INSTRUCTIONS}\n\n${memory}` : VOICE_INSTRUCTIONS;
+}
+
 /** One connected client = one RelaySession. Owns at most one provider session
  *  and the running transcript, which survives provider switches. */
 export class RelaySession {
@@ -81,9 +128,22 @@ export class RelaySession {
    *  report idempotent, so a retried post cannot bill the same seconds twice. */
   readonly sessionId: string = randomUUID();
 
+  /**
+   * What Juno remembers, fetched once when the call starts and kept for its
+   * whole life — a provider switch re-seeds the new provider with the same
+   * memory it re-seeds with the same transcript. `undefined` until asked.
+   */
+  private memory: string | null | undefined;
+
   constructor(
     private ws: WebSocket,
-    readonly userId: string
+    readonly userId: string,
+    private readonly opts: {
+      /** Set when the call's token asked for memory — see RelayGrant. */
+      memory?: { projectId: string | null } | null;
+      /** Test seam: how memory is fetched. */
+      fetchMemory?: (userId: string, grant: { projectId: string | null }) => Promise<string | null>;
+    } = {}
   ) {
     this.usageTimer = setInterval(() => {
       this.pushUsage();
@@ -108,6 +168,7 @@ export class RelaySession {
           this.userTurnAnchor = -1;
           this.historySeeded = true;
         }
+        await this.loadMemory();
         await this.startProvider(msg.provider, msg.thinking === true);
         return;
       case "session.switch":
@@ -139,6 +200,18 @@ export class RelaySession {
         this.send({ type: "pong" });
         return;
     }
+  }
+
+  /** Once per call, and only when the call's token asked for it. */
+  private async loadMemory(): Promise<void> {
+    if (this.memory !== undefined) return;
+    const grant = this.opts.memory;
+    if (!grant) {
+      this.memory = null;
+      return;
+    }
+    const fetchMemory = this.opts.fetchMemory ?? ((userId, g) => fetchVoiceMemory(userId, g));
+    this.memory = await fetchMemory(this.userId, grant).catch(() => null);
   }
 
   handleAudio(pcm16k: Buffer): void {
@@ -177,7 +250,7 @@ export class RelaySession {
       const session = factory.create({ thinking: effectiveThinking });
       const events = this.makeEvents(id, session);
       await session.connect(
-        { instructions: VOICE_INSTRUCTIONS, transcript: this.transcript.slice(-30) },
+        { instructions: voiceInstructions(this.memory ?? null), transcript: this.transcript.slice(-30) },
         events
       );
       this.provider = session;
@@ -200,6 +273,9 @@ export class RelaySession {
         provider: id,
         capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec },
         thinking: established.thinking,
+        // Whether this call knows what Juno remembers — so the client can say
+        // so, rather than the caller finding out by being remembered.
+        memory: !!this.memory,
         ...(established.model ? { model: established.model } : {}),
         ...(established.notice ? { notice: established.notice } : {}),
       });

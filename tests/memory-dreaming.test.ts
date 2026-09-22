@@ -7,6 +7,7 @@ import {
   DREAM_IDLE_MINUTES,
   dreamEligibility,
 } from "@/lib/memory-dreaming";
+import { summaryRebuildDecision } from "@/lib/memory-lifecycle";
 
 /*
  * Dreaming — reading history nobody asked Juno to read.
@@ -149,7 +150,15 @@ test("a paused account cannot be backfilled by calling the route directly", () =
 });
 
 test("an expiry is a reason to rebuild the summary", () => {
+  // The rule lives in the pure `summaryRebuildDecision` now, shared by the
+  // account summary and every project's — so it is tested as behaviour, and
+  // the wiring test only has to show maybeConsolidate hands it the expiry.
+  const summary = { entryCount: 3, updatedAt: minutesAgo(60) };
+  const decide = (newestExpiryAt: Date | null) =>
+    summaryRebuildDecision({ summary, factCount: 3, newestSuppressionAt: null, newestExpiryAt, now });
+  assert.equal(decide(minutesAgo(10)), "rebuild");
+  assert.equal(decide(null), "fresh");
   const body = src("src/lib/memory.ts");
-  const fn = body.slice(body.indexOf("export async function maybeConsolidate"));
-  assert.match(fn.slice(0, 2600), /expiredSince/);
+  const fn = body.slice(body.indexOf("export async function maybeConsolidate("));
+  assert.match(fn.slice(0, 2600), /newestExpiryAt: lastExpiry\?\.expiresAt \?\? null/);
 });

@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { decryptField, encryptField } from "@/lib/field-crypto";
 import { streamChat } from "@/lib/llm";
@@ -23,8 +23,11 @@ import {
   normalizeFact,
   memoryUpdateActivity,
   planFactIngestion,
+  planTimelineReconciliation,
+  coveredBySummary,
   selectMemoriesForContext,
   summaryPredatesForget,
+  summaryRebuildDecision,
   type LifecycleEntry,
   type MemoryUpdateActivity,
   type RetrievalResult,
@@ -37,6 +40,19 @@ import {
   type SensitiveTopic,
 } from "@/lib/memory-sensitive";
 import { MEMORY_CONTENT_LIMIT, normalizeStatement } from "@/lib/memory-suppression";
+import {
+  budgetProjectFacts,
+  projectConsolidationPrompt,
+  projectSummaryIsEmpty,
+} from "@/lib/memory-project-summary";
+import { checkProjectAccess } from "@/lib/project-collaboration";
+import {
+  EXTRACTION_KNOWN_FACTS,
+  EXTRACTOR_VERSION,
+  extractionSystemPrompt,
+  extractionUserMessage,
+  parseExtraction,
+} from "@/lib/memory-extraction";
 import { CODING_MEMORY_CATEGORIES, selectCodingMemories } from "@/lib/code-memory-prompt";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 // The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
@@ -610,6 +626,10 @@ const LIFECYCLE_SELECT = {
   status: true,
   expiresAt: true,
   createdAt: true,
+  // When it was said, and what replaced it — the two things judging a fact
+  // against the timeline needs (planFactIngestion, planTimelineReconciliation).
+  observedAt: true,
+  supersededById: true,
   // The vector space marker only — never the vector itself, which is thousands
   // of floats a duplicate check has no use for. Rows lacking one are the
   // organic backfill queue: refreshing such a row re-embeds it below.
@@ -705,6 +725,15 @@ export interface SaveCandidatesResult {
   /** Stored but not believed: suppressed, or beaten by an explicit fact. */
   rejected: number;
   /**
+   * Stored as history: said before something that now holds its place, or a
+   * temporary fact whose moment had passed by the time it was read. What
+   * re-reading old chats mostly produces, and neither a new belief nor a
+   * refusal.
+   */
+  history: number;
+  /** Facts Juno had stopped believing and believes again, because they were said again later. */
+  reinstated: number;
+  /**
    * Refused because they fall under a sensitive topic this account has not
    * opted into — counted apart from `rejected` because nothing was written at
    * all, and because a user who has just seen "nothing was remembered from
@@ -756,6 +785,12 @@ export async function saveCandidates(
     projectId?: string | null;
     sourceMessageId?: string | null;
     source?: "AUTO" | "MANUAL";
+    /**
+     * When these facts were said — the source message's time. Omitted means
+     * now, which is right for a fact learned during its own chat and wrong for
+     * one read out of history, which is why the extractor always passes it.
+     */
+    observedAt?: Date;
     /** Where embedding this content may be sent; loaded from the account when omitted. */
     policy?: BackgroundProviderPolicy;
     conversationProvider?: string | null;
@@ -780,6 +815,8 @@ export async function saveCandidates(
     refreshed: 0,
     superseded: 0,
     rejected: 0,
+    history: 0,
+    reinstated: 0,
     sensitiveSkipped: 0,
     sensitiveTopics: [],
   };
@@ -802,9 +839,24 @@ export async function saveCandidates(
   const toEmbed: { id: string; content: string }[] = [];
   const createdContents: string[] = [];
 
+  // Supersede an older belief — only if it is still believed, so a race with
+  // another writer can never un-retire a row by overwriting its status.
+  const supersede = async (entryId: string, byId: string, reason: string) => {
+    await prisma.memoryEntry.updateMany({
+      where: { id: entryId, userId, status: "active" },
+      data: { status: "superseded", supersededById: byId, reason },
+    });
+    const older = entries.find((e) => e.id === entryId);
+    if (older && older.status === "active") {
+      older.status = "superseded";
+      older.supersededById = byId;
+    }
+    result.superseded++;
+  };
+
   for (const fact of facts) {
     const plan = planFactIngestion(
-      { content: fact, source, projectId },
+      { content: fact, source, projectId, ...(opts.observedAt ? { observedAt: opts.observedAt } : {}) },
       { entries, suppressions, now, allowedSensitiveTopics }
     );
 
@@ -823,12 +875,24 @@ export async function saveCandidates(
         data: {
           lastVerifiedAt: now,
           ...(plan.revive ? { status: "active", reason: "You mentioned this again, so Juno picked it back up." } : {}),
+          ...(plan.reinstate ? { status: "active", reason: plan.reinstate.reason, supersededById: null } : {}),
           ...(plan.expiresAt !== undefined ? { expiresAt: plan.expiresAt } : {}),
+          ...(plan.observedAt ? { observedAt: plan.observedAt } : {}),
         },
       });
       const known = entries.find((e) => e.id === plan.entryId);
-      if (known && plan.revive) known.status = "active";
+      if (known && (plan.revive || plan.reinstate)) {
+        known.status = "active";
+        if (plan.reinstate) known.supersededById = null;
+      }
+      if (known && plan.expiresAt !== undefined) known.expiresAt = plan.expiresAt;
+      if (known && plan.observedAt) known.observedAt = plan.observedAt;
       if (known && !known.embeddingModel) toEmbed.push({ id: known.id, content: known.content });
+      if (plan.reinstate) {
+        result.reinstated++;
+        if (known) createdContents.push(known.content);
+      }
+      if (plan.supersedes) await supersede(plan.supersedes.entryId, plan.entryId, plan.supersedes.reason);
       result.refreshed++;
       continue;
     }
@@ -847,6 +911,8 @@ export async function saveCandidates(
         status: plan.status,
         reason: plan.reason ?? null,
         expiresAt: plan.expiresAt,
+        observedAt: plan.observedAt,
+        supersededById: plan.supersededById ?? null,
         normalized: plan.normalized,
         lastVerifiedAt: now,
       },
@@ -856,20 +922,14 @@ export async function saveCandidates(
     if (plan.status === "active") {
       result.created++;
       createdContents.push(plan.content);
+    } else if (plan.status === "superseded" || plan.status === "expired") {
+      result.history++;
     } else {
       result.rejected++;
     }
     toEmbed.push({ id: created.id, content: plan.content });
 
-    if (plan.supersedes) {
-      await prisma.memoryEntry.updateMany({
-        where: { id: plan.supersedes.entryId, userId, status: "active" },
-        data: { status: "superseded", supersededById: created.id, reason: plan.supersedes.reason },
-      });
-      const older = entries.find((e) => e.id === plan.supersedes!.entryId);
-      if (older) older.status = "superseded";
-      result.superseded++;
-    }
+    if (plan.supersedes) await supersede(plan.supersedes.entryId, created.id, plan.supersedes.reason);
   }
 
   await embedMemoryEntries({
@@ -881,15 +941,21 @@ export async function saveCandidates(
   });
 
   if (opts.onActivity) {
-    const activity = memoryUpdateActivity(result, createdContents);
+    // A fact believed again is as much an update as a new one — "back in
+    // Madrid" changes what Juno believes, and the receipt should say so.
+    const activity = memoryUpdateActivity(
+      { created: result.created + result.reinstated, superseded: result.superseded },
+      createdContents
+    );
     if (activity) opts.onActivity(activity);
   }
   return result;
 }
 
 /**
- * Back-compat alias for the chat route's model-emitted memory tags: returns the
- * count of NEW facts, which is all the caller uses it for.
+ * Back-compat alias for the chat route's model-emitted memory tags: returns how
+ * many facts this changed into believed ones — new, or believed again — which
+ * is all the caller uses it for.
  */
 export async function saveAutoMemories(
   userId: string,
@@ -903,7 +969,8 @@ export async function saveAutoMemories(
     onActivity?: (event: MemoryUpdateActivity) => void;
   } = {}
 ): Promise<number> {
-  return (await saveCandidates(userId, facts, sourceRef, opts)).created;
+  const result = await saveCandidates(userId, facts, sourceRef, opts);
+  return result.created + result.reinstated;
 }
 
 /**
@@ -929,22 +996,6 @@ export async function sweepExpiredMemories(userId: string, now: Date = new Date(
 
 const CHUNK_MESSAGES = 40; // user messages per extraction call
 const CHUNK_CHARS = 12_000;
-
-function parseExtraction(text: string): { facts: string[]; digest: string | null } | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end <= start) return null;
-  try {
-    const obj = JSON.parse(text.slice(start, end + 1));
-    const facts = Array.isArray(obj.facts)
-      ? obj.facts.filter((f: unknown): f is string => typeof f === "string" && !!f.trim()).map((f: string) => f.trim().slice(0, 500)).slice(0, 12)
-      : [];
-    const digest = typeof obj.digest === "string" && obj.digest.trim() ? obj.digest.trim().slice(0, 300) : null;
-    return { facts, digest };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Distill unprocessed user messages of one conversation into memory facts.
@@ -990,7 +1041,11 @@ export async function extractConversationMemory(opts: {
   // Chunk digests MERGE into the stored one (newest kept when over budget) —
   // a multi-chunk conversation must not end up described by its last chunk only.
   const mergeDigest = (prev: string | null | undefined, next: string | null): string | undefined => {
-    const combined = [prev, next].filter(Boolean).join(" · ");
+    // A chat read again (a re-read after the reader improved) describes itself
+    // the same way twice; the digest says it once.
+    const said = (prev ?? "").split(" · ").map((part) => part.replace(/^…/, "").trim().toLowerCase());
+    const fresh = next && !said.includes(next.trim().toLowerCase()) ? next : null;
+    const combined = [prev, fresh].filter(Boolean).join(" · ");
     if (!combined) return undefined;
     return combined.length > 300 ? `…${combined.slice(-299)}` : combined;
   };
@@ -1007,6 +1062,10 @@ export async function extractConversationMemory(opts: {
         processedAt: upTo,
         digest: merged,
         factCount: createdDelta,
+        // A chat read from its first message by this reader. Continuing an
+        // older one does NOT restamp it: its earlier messages were still read
+        // by the older reader, and `queueRereads` is what brings those back.
+        extractorVersion: EXTRACTOR_VERSION,
       },
       update: {
         processedAt: upTo,
@@ -1040,10 +1099,30 @@ export async function extractConversationMemory(opts: {
   if (current.length) chunks.push(current);
 
   const [recentFacts, suppressions, allowedSensitiveTopics] = await Promise.all([
+    // "Already known" means BELIEVED, IN THIS SCOPE (extractor v2).
+    //
+    // In this scope: the one the facts below will be saved into, and the one
+    // duplicate detection compares against (`findDuplicate` matches on scope
+    // exactly). This listed the newest facts from anywhere, so a project
+    // chat's extractor was shown another project's notes as known — a
+    // cross-project leak into the prompt, and a recall bug: told it already
+    // knew "uses pnpm", the model skipped it, and the project that had just
+    // heard it never learned it.
+    //
+    // Believed: a fact Juno stopped believing is not known, it is news when
+    // said again. Listing replaced facts too meant "I live in Madrid again"
+    // was skipped as already known, and the city that had replaced Madrid
+    // stayed believed. The recall benchmark found that one.
     prisma.memoryEntry.findMany({
-      where: { userId: opts.userId, kind: "FACT" },
+      where: {
+        userId: opts.userId,
+        kind: "FACT",
+        status: "active",
+        projectId: convo.projectId ?? null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       orderBy: { createdAt: "desc" },
-      take: 40,
+      take: EXTRACTION_KNOWN_FACTS,
       select: { content: true },
     }),
     getSuppressions(opts.userId),
@@ -1057,11 +1136,11 @@ export async function extractConversationMemory(opts: {
   // difference between the content having been sent to a provider and not.
   const offLimits = SENSITIVE_TOPICS.filter((topic) => !allowedSensitiveTopics.includes(topic));
 
-  const system = `You maintain a long-term memory of durable facts about a user. From the chat messages below (all written BY the user), extract NEW durable facts worth remembering — identity, role, location, preferences, tools and languages they use, ongoing projects, goals, recurring themes. Ignore one-off task details, questions that reveal nothing durable, and anything already known. Never extract secrets, passwords, or API keys.
-${offLimits.length ? `NEVER extract anything touching these subjects, even when the user states it plainly — ${offLimits.map((topic) => SENSITIVE_TOPIC_META[topic].label.toLowerCase()).join(", ")}. Leave them out entirely rather than paraphrasing around them.\n` : ""}${suppressions.length ? `The user asked to FORGET the following — never extract anything about them:\n${suppressions.map((s) => `- ${s}`).join("\n")}\n` : ""}Already known:
-${recentFacts.length ? recentFacts.map((f) => `- ${f.content}`).join("\n") : "(nothing yet)"}
-
-Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one line: what this chat is about>"} — facts may be empty.`;
+  const system = extractionSystemPrompt({
+    offLimitsLabels: offLimits.map((topic) => SENSITIVE_TOPIC_META[topic].label.toLowerCase()),
+    suppressions,
+    known: recentFacts.map((f) => f.content),
+  });
 
   // Loaded once per invocation, not per chunk: the policy cannot change
   // half-way through an extraction, and re-reading it would be a query per
@@ -1073,9 +1152,7 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
   let processed = 0;
   const toProcess = chunks.slice(0, maxChunks);
   for (const chunk of toProcess) {
-    const userMsg = `Chat title: ${convo.title}\nUser messages (oldest to newest):\n${chunk
-      .map((m) => `- ${m.content}`)
-      .join("\n")}\n\nReturn the JSON.`;
+    const userMsg = extractionUserMessage({ title: convo.title, messages: chunk.map((m) => m.content) });
 
     const { result } = await runUtilityPrompt({
       system,
@@ -1096,6 +1173,12 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
     // notes learned in "Japanese" must not surface in an unrelated work chat.
     const { created: createdInChunk } = await saveCandidates(opts.userId, result.facts, convo.id, {
       projectId: convo.projectId,
+      // When the user said these: the chunk's last message, the same one the
+      // row's sourceMessageId points at. For a chat distilled as it happens
+      // that is moments ago; for history re-read it is when it was said —
+      // which is what lets an old statement lose to a newer one however late
+      // it is read.
+      observedAt: chunk.at(-1)?.createdAt,
       // The extractor returns facts for a bounded group rather than a
       // per-fact source map. Point at the last user message in that group —
       // the conversation id remains the authoritative provenance, and this
@@ -1121,6 +1204,139 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
   }
 
   return { created, chunksProcessed: processed, done: processed >= chunks.length };
+}
+
+// ---------------------------------------------------------------------------
+// Re-reading — history read by an older reader, read again
+// ---------------------------------------------------------------------------
+
+/**
+ * Queue chats an older reader distilled to be read again by this one.
+ *
+ * WHY. Each reader version fixes things the previous one missed — v2 stops
+ * telling the model it "already knows" other scopes' facts and facts Juno no
+ * longer believes, both of which made it skip real ones (see
+ * EXTRACTOR_VERSION). Chats read before that stay short of those facts until
+ * they are read again. ChatGPT's memory re-reads history in the background
+ * for the same reason; this is the part of Juno's dreamer that does.
+ *
+ * WHERE IT STARTS — and why never from the beginning. A reset marks every
+ * chat as read and deletes every fact, precisely so old chats are never
+ * learned from again. Re-reading "from the start" after a reader upgrade
+ * would quietly undo that, and nothing stored says when an account last reset.
+ * But every row a reset leaves is newer than the reset, so the oldest thing
+ * Juno still remembers is a point no reset can be later than: a chat is
+ * re-read only from there. For an account that never reset, that is roughly
+ * when it started remembering; for one that did, it is after the reset.
+ *
+ * Only chats that were actually distilled — a digest or a fact to show for it
+ * — and only in the chat's own scope, like any reading. Chats with nothing
+ * after the restart point are simply stamped as current: there is nothing an
+ * older reader read there that this one should read again.
+ *
+ * Returns how many were queued; the backfill picks them up on its next pass
+ * (they are behind their last message again, which is what "pending" means).
+ */
+export async function queueRereads(userId: string, limit: number): Promise<number> {
+  const [oldest, candidates] = await Promise.all([
+    prisma.memoryEntry.findFirst({ where: { userId }, orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
+    prisma.conversationMemory.findMany({
+      where: {
+        userId,
+        extractorVersion: { lt: EXTRACTOR_VERSION },
+        OR: [{ digest: { not: null } }, { factCount: { gt: 0 } }],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit * 4,
+      select: { id: true, processedAt: true, conversation: { select: { lastMessageAt: true } } },
+    }),
+  ]);
+  let queued = 0;
+  for (const row of candidates) {
+    if (queued >= limit) break;
+    const restartAt = oldest?.createdAt ?? null;
+    const worthReading =
+      restartAt !== null &&
+      row.processedAt.getTime() > restartAt.getTime() &&
+      row.conversation.lastMessageAt.getTime() > restartAt.getTime();
+    await prisma.conversationMemory.updateMany({
+      where: { id: row.id, userId, extractorVersion: { lt: EXTRACTOR_VERSION } },
+      data: worthReading
+        ? { processedAt: restartAt!, extractorVersion: EXTRACTOR_VERSION }
+        : { extractorVersion: EXTRACTOR_VERSION },
+    });
+    if (worthReading) queued++;
+  }
+  return queued;
+}
+
+// ---------------------------------------------------------------------------
+// Re-judging — the timeline, judged again
+// ---------------------------------------------------------------------------
+
+/** Rows dated from their source message per pass — each is a write, and a sync event. */
+const RECONCILE_DATE_BATCH = 200;
+
+/**
+ * Judge what Juno believes against the whole timeline, and fix what the
+ * order of reading got wrong. The rules are planTimelineReconciliation's
+ * (memory-lifecycle.ts); this is the database half.
+ *
+ * First it recovers WHEN undated rows were said. Rows written before
+ * `observedAt` existed carry none, but most carry a sourceMessageId, and that
+ * message's time is the answer. Recovered a bounded batch at a time — each
+ * write is also a native-sync event, and a year of rows rewritten at once
+ * would send every device to re-download all of memory.
+ *
+ * Every change is conditional on the row still being in the state it was
+ * judged in, so a chat writing at the same moment can never be overwritten
+ * by a judgement made about the row as it was a moment ago.
+ */
+export async function reconcileMemoryTimeline(
+  userId: string,
+  now: Date = new Date()
+): Promise<{ changed: number; dated: number }> {
+  const rows = await prisma.memoryEntry.findMany({ where: { userId, kind: "FACT" }, select: LIFECYCLE_SELECT });
+
+  let dated = 0;
+  const undated = rows.filter((row) => !row.observedAt && row.sourceMessageId).slice(0, RECONCILE_DATE_BATCH);
+  if (undated.length > 0) {
+    const messages = await prisma.message.findMany({
+      where: { id: { in: undated.map((row) => row.sourceMessageId!) }, conversation: { userId } },
+      select: { id: true, createdAt: true },
+    });
+    const saidAt = new Map(messages.map((message) => [message.id, message.createdAt]));
+    for (const row of undated) {
+      const at = saidAt.get(row.sourceMessageId!);
+      if (!at) continue;
+      const { count } = await prisma.memoryEntry.updateMany({
+        where: { id: row.id, userId, observedAt: null },
+        data: { observedAt: at },
+      });
+      if (count > 0) {
+        row.observedAt = at;
+        dated++;
+      }
+    }
+  }
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  let changed = 0;
+  for (const change of planTimelineReconciliation(rows, { now })) {
+    const row = byId.get(change.id);
+    if (!row) continue;
+    const { count } = await prisma.memoryEntry.updateMany({
+      where: { id: change.id, userId, status: row.status },
+      data: {
+        status: change.status,
+        reason: change.reason,
+        ...(change.supersededById !== undefined ? { supersededById: change.supersededById } : {}),
+        ...(change.expiresAt ? { expiresAt: change.expiresAt } : {}),
+      },
+    });
+    changed += count;
+  }
+  return { changed, dated };
 }
 
 // ---------------------------------------------------------------------------
@@ -1185,6 +1401,11 @@ export async function getMemorySummary(userId: string): Promise<MemorySummary | 
 
 export interface MemoryProfile {
   summary: string | null;
+  /**
+   * Whose summary `summary` is: the account's, or — for a chat reading in
+   * project isolation — that project's own. The prompt names it accordingly.
+   */
+  summaryScope: "account" | "project";
   /** The selected facts, as the system prompt wants them. */
   recent: string[];
   /**
@@ -1279,12 +1500,13 @@ async function semanticEvidenceFor(opts: {
 /**
  * What to inject into the model context, and a receipt for it.
  *
- * The summary carries the account's settled, globally-scoped memory. On top of
- * it go individual entries the summary cannot represent: facts newer than the
- * last consolidation, and every fact scoped to the project this chat belongs
- * to — those are deliberately excluded from the summary (see
- * gatherMemorySources), because a summary is account-wide and project memory
- * must not be.
+ * TWO SHAPES, by scope. An ordinary chat gets the account's summary — its
+ * settled, account-wide memory — plus the individual facts it cannot yet
+ * represent. A chat filed in a project reads in isolation (the default
+ * whenever a projectId is given): only that project's facts, and that
+ * project's OWN summary (ProjectMemorySummary), never the account's. Either
+ * way a fact rides as a note of its own exactly when its summary does not
+ * already say it — see `coveredBySummary`.
  *
  * Selection is ranked against the current message — semantically when vectors
  * exist for both sides, lexically otherwise — and bounded by a token budget,
@@ -1308,14 +1530,21 @@ export async function getMemoryProfile(
   const projectId = opts.projectId ?? null;
   const isolate = opts.isolateProjectMemory ?? (projectId !== null);
   const now = new Date();
-  const [storedSummary, forgottenAt] = isolate
-    ? [null, null]
-    : await Promise.all([getMemorySummary(userId), newestSuppressionAt(userId)]);
+  // The scope the injected summary speaks for: this project's when the chat
+  // reads in isolation, the account's otherwise. Never the account's inside a
+  // project — that is the isolation.
+  const summaryScope = isolate && projectId ? projectId : null;
+  const [storedSummary, forgottenAt] = await Promise.all([
+    summaryScope ? getProjectMemorySummary(userId, summaryScope) : getMemorySummary(userId),
+    newestSuppressionAt(userId),
+  ]);
   // A summary written before the newest "forget" still says the forgotten
   // thing, in prose, and would be injected whole — so it sits this turn out and
   // the ranked facts, which already exclude everything retired, stand in. The
   // next consolidation rewrites it without the forgotten content and it comes
-  // back. See `summaryPredatesForget` for how this used to leak.
+  // back. See `summaryPredatesForget` for how this used to leak. A forget is
+  // account-wide, so it benches a project's summary exactly as it does the
+  // account's.
   const summary =
     storedSummary && !summaryPredatesForget(storedSummary.updatedAt, forgottenAt) ? storedSummary : null;
 
@@ -1342,10 +1571,9 @@ export async function getMemoryProfile(
   });
 
   // Facts already represented in the summary would otherwise be said twice.
-  // Project-scoped facts are never in it, so they always stay.
-  const candidates = rows.filter(
-    (row) => row.projectId !== null || !summary || row.createdAt > summary.updatedAt
-  );
+  // Only facts of the summary's own scope can be in it — a project fact is
+  // never in the account's summary — so everything else always stays.
+  const candidates = rows.filter((row) => !coveredBySummary(row, summary, summaryScope));
 
   const query = opts.query?.trim();
   const semantic =
@@ -1381,6 +1609,7 @@ export async function getMemoryProfile(
 
   return {
     summary: summary?.content ?? null,
+    summaryScope: summaryScope ? "project" : "account",
     recent: result.selected.map((m) => m.content),
     used: result.selected,
     usedTokens: result.usedTokens,
@@ -1484,8 +1713,13 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
       orderBy: { createdAt: "asc" },
       select: { content: true, createdAt: true, kind: true, status: true, projectId: true, expiresAt: true },
     }),
+    // Digests of chats OUTSIDE projects only. A project chat's digest is part
+    // of that project's memory and goes into that project's summary; here it
+    // put "reworking the thesis methodology" into the "top of mind" of every
+    // unrelated chat — the one path project memory still had out of its
+    // project after its facts were scoped.
     prisma.conversationMemory.findMany({
-      where: { userId, digest: { not: null } },
+      where: { userId, digest: { not: null }, conversation: { projectId: null } },
       orderBy: { updatedAt: "desc" },
       take: 40,
       select: { digest: true },
@@ -1642,7 +1876,12 @@ Rules:
   if (!result) return { status: "failed", transient };
 
   const content = result;
-  const factCount = await prisma.memoryEntry.count({ where: { userId: opts.userId, kind: "FACT" } });
+  // Account-wide facts only: the count is what `maybeConsolidate` compares to
+  // decide the summary is stale, and a fact learned in a project changes that
+  // project's summary, never this one.
+  const factCount = await prisma.memoryEntry.count({
+    where: { userId: opts.userId, kind: "FACT", projectId: null },
+  });
   const sealed = encryptField(content);
   await prisma.memorySummary.upsert({
     where: { userId: opts.userId },
@@ -1682,47 +1921,262 @@ export async function consolidateWithFallback(
 }
 
 /**
- * Background consolidation: regenerate the summary whenever the stored fact
- * count actually changed, so it refreshes as soon as new chats add memories —
+ * Background consolidation: regenerate the summary whenever what it was built
+ * from actually changed, so it refreshes as soon as new chats add memories —
  * throttled to at most once every few minutes so a burst of messages doesn't
  * rebuild it each time. Cheap no-op otherwise — safe to call after every
- * exchange. (Previously gated on a 12h staleness window, which left the summary
- * showing "updated Nd ago" long after new chats had added facts.)
+ * exchange. The rule itself, shared with every project's summary, is
+ * `summaryRebuildDecision`.
+ *
+ * Account-wide facts only. A fact learned inside a project is that project's
+ * business (maybeConsolidateProject); counting it here rebuilt the account
+ * summary — an LLM call — for a change it would never contain.
  */
 export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
   const now = new Date();
   const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
-    prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
+    prisma.memoryEntry.count({ where: { userId, kind: "FACT", projectId: null } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
     newestSuppressionAt(userId),
     // The newest moment a temporary fact stopped being true. Indexed on
     // (userId, expiresAt).
     prisma.memoryEntry.findFirst({
-      where: { userId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      where: { userId, kind: "FACT", projectId: null, expiresAt: { not: null, lte: now } },
       orderBy: { expiresAt: "desc" },
       select: { expiresAt: true },
     }),
   ]);
-  // The count alone missed every change that retires a row rather than
-  // removing it. A forget leaves the row, marked `suppressed`, so the summary
-  // still quoting the forgotten fact was never rebuilt; an expiry leaves it
-  // marked `expired`, so "flying to Berlin this week" sat in the summary's
-  // "top of mind" long after the week was over.
-  const expiredSince = !!summary && !!lastExpiry?.expiresAt && lastExpiry.expiresAt > summary.updatedAt;
-  const changed =
-    !summary ||
-    summary.entryCount !== count ||
-    summaryPredatesForget(summary.updatedAt, forgottenAt) ||
-    expiredSince;
-  // Don't rebuild more than once every few minutes, so rapid-fire messages that
-  // each distill a fact don't each trigger a full consolidation.
-  const MIN_INTERVAL_MS = 5 * 60 * 1000;
-  const recentlyBuilt = summary != null && Date.now() - summary.updatedAt.getTime() < MIN_INTERVAL_MS;
-  if (!changed || recentlyBuilt) return;
-  if (count > 0) {
-    // The CONVERSATION's provider, not the background model's — see
-    // consolidateMemories. Passing the model that is about to do the work would
-    // make `same_provider` a tautology.
-    await consolidateMemories({ userId, conversationProvider }).catch(() => {});
+  const decision = summaryRebuildDecision({
+    summary,
+    factCount: count,
+    newestSuppressionAt: forgottenAt,
+    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    now,
+  });
+  if (decision !== "rebuild") return;
+  // Settle the timeline first, so the summary about to be written from these
+  // facts is written from the right ones.
+  await reconcileMemoryTimeline(userId, now).catch(() => {});
+  // The CONVERSATION's provider, not the background model's — see
+  // consolidateMemories. Passing the model that is about to do the work would
+  // make `same_provider` a tautology.
+  await consolidateMemories({ userId, conversationProvider }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Project summaries — the same distillation, one project at a time
+// ---------------------------------------------------------------------------
+
+/** One person's summary of one project, decrypted. */
+export async function getProjectMemorySummary(userId: string, projectId: string): Promise<MemorySummary | null> {
+  const row = await prisma.projectMemorySummary.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+    select: { content: true, updatedAt: true, entryCount: true },
+  });
+  return row ? { ...row, content: decryptField(row.content) } : null;
+}
+
+export interface ProjectMemorySummaryView extends MemorySummary {
+  projectId: string;
+  projectName: string;
+}
+
+/** Every project summary this person has, most recently rebuilt first. */
+export async function listProjectMemorySummaries(userId: string): Promise<ProjectMemorySummaryView[]> {
+  const rows = await prisma.projectMemorySummary.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      projectId: true,
+      content: true,
+      updatedAt: true,
+      entryCount: true,
+      project: { select: { name: true } },
+    },
+  });
+  return rows.map((row) => ({
+    projectId: row.projectId,
+    projectName: row.project.name,
+    content: decryptField(row.content),
+    updatedAt: row.updatedAt,
+    entryCount: row.entryCount,
+  }));
+}
+
+/**
+ * Regenerate one project's summary from what was learned in it.
+ *
+ * The account summary's machinery, narrowed to a project: its facts, its
+ * chats' digests, its name — and every suppression, because a forget is
+ * account-wide. Same policy-checked provider walk, same encryption at rest,
+ * same outcome union, so a caller can tell "nothing to summarise" from "the
+ * policy refused" from "the models failed". See src/lib/memory-project-summary.ts
+ * for what the model is shown and why.
+ *
+ * Access is re-checked here rather than trusted: someone removed from a shared
+ * project keeps their facts from it (they are theirs), but a summary is
+ * something a chat reads, and they can no longer chat there — so there is
+ * nothing to build, and whatever was built before is removed.
+ */
+export async function consolidateProjectMemory(opts: {
+  userId: string;
+  projectId: string;
+  policy?: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  onDecision?: (record: BackgroundProcessingRecord) => void;
+  llm?: UtilityLlm;
+}): Promise<ConsolidationOutcome> {
+  const { userId, projectId } = opts;
+  const removeSummary = () => prisma.projectMemorySummary.deleteMany({ where: { userId, projectId } });
+
+  const { allowed } = await checkProjectAccess(userId, projectId, "VIEWER");
+  if (!allowed) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const now = new Date();
+  const [project, factRows, suppressions, digestRows] = await Promise.all([
+    // Unguarded, one line after `checkProjectAccess` allowed this reader: a
+    // member reads a project they do not own, and the guard would refuse the
+    // owner-scoped query they cannot make. The same choice listProjectMembers
+    // documents.
+    prismaUnguarded.project.findUnique({ where: { id: projectId }, select: { name: true, instructions: true } }),
+    prisma.memoryEntry.findMany({
+      where: {
+        userId,
+        projectId,
+        kind: "FACT",
+        status: "active",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      orderBy: { createdAt: "asc" },
+      select: { content: true, createdAt: true },
+    }),
+    getSuppressions(userId),
+    prisma.conversationMemory.findMany({
+      where: { userId, digest: { not: null }, conversation: { projectId } },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: { digest: true },
+    }),
+  ]);
+  if (!project) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const sources = {
+    projectName: project.name,
+    instructions: project.instructions,
+    facts: budgetProjectFacts(factRows),
+    digests: digestRows.map((row) => row.digest!).filter(Boolean),
+    suppressions,
+  };
+  if (projectSummaryIsEmpty(sources)) {
+    await removeSummary();
+    return { status: "empty" };
+  }
+
+  const { system, userMsg } = projectConsolidationPrompt(sources);
+  const conversationProvider = opts.conversationProvider ?? (await accountBackgroundProvider(userId));
+  const { result, transient, deniedByPolicy, deniedReason, mode } = await runUtilityPrompt({
+    system,
+    userMsg,
+    maxTokens: 1000,
+    label: "memory/consolidate-project",
+    parse: (text) => (text.trim() ? text.trim() : null),
+    userId,
+    policy: opts.policy ?? (await loadBackgroundProviderPolicy(userId)),
+    conversationProvider,
+    purpose: "memory_consolidation",
+    onDecision: opts.onDecision,
+    llm: opts.llm,
+  });
+
+  if (deniedByPolicy) {
+    return { status: "denied", reason: deniedReason, mode: mode ?? DEFAULT_BACKGROUND_PROVIDER_MODE };
+  }
+  // As for the account: a failure leaves the previous summary in place.
+  if (!result) return { status: "failed", transient };
+
+  const content = result;
+  // Every FACT in the project, whatever its status — the change detector
+  // `maybeConsolidateProject` compares against, exactly as for the account.
+  const factCount = await prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } });
+  const sealed = encryptField(content);
+  await prisma.projectMemorySummary.upsert({
+    where: { userId_projectId: { userId, projectId } },
+    create: { userId, projectId, content: sealed, entryCount: factCount },
+    update: { content: sealed, entryCount: factCount },
+  });
+  return { status: "updated", content };
+}
+
+/**
+ * Rebuild one project's summary if — and only if — something it was built
+ * from changed: the account rule (`summaryRebuildDecision`) over the
+ * project's own facts. Safe to call after every turn in the project.
+ */
+export async function maybeConsolidateProject(
+  userId: string,
+  projectId: string,
+  conversationProvider: string | null
+): Promise<void> {
+  const now = new Date();
+  const [count, summary, forgottenAt, lastExpiry] = await Promise.all([
+    prisma.memoryEntry.count({ where: { userId, projectId, kind: "FACT" } }),
+    prisma.projectMemorySummary.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+      select: { entryCount: true, updatedAt: true },
+    }),
+    newestSuppressionAt(userId),
+    prisma.memoryEntry.findFirst({
+      where: { userId, projectId, kind: "FACT", expiresAt: { not: null, lte: now } },
+      orderBy: { expiresAt: "desc" },
+      select: { expiresAt: true },
+    }),
+  ]);
+  const decision = summaryRebuildDecision({
+    summary,
+    factCount: count,
+    newestSuppressionAt: forgottenAt,
+    newestExpiryAt: lastExpiry?.expiresAt ?? null,
+    now,
+  });
+  if (decision !== "rebuild") return;
+  await reconcileMemoryTimeline(userId, now).catch(() => {});
+  await consolidateProjectMemory({ userId, projectId, conversationProvider }).catch(() => {});
+}
+
+/**
+ * The projects whose summaries may be out of date, for the dreamer: every
+ * project this person has facts in, newest activity first. The staleness test
+ * itself is `maybeConsolidateProject`'s, run per project.
+ */
+export async function projectsWithMemory(userId: string, limit: number): Promise<string[]> {
+  const rows = await prisma.memoryEntry.groupBy({
+    by: ["projectId"],
+    where: { userId, kind: "FACT", projectId: { not: null } },
+    _max: { updatedAt: true },
+    orderBy: { _max: { updatedAt: "desc" } },
+    take: limit,
+  });
+  return rows.map((row) => row.projectId).filter((id): id is string => id !== null);
+}
+
+/**
+ * Rebuild the summaries a change touched, after the response has gone.
+ *
+ * `null` is the account's own summary; any other value is a project's. A row
+ * edited, forgotten, deleted or moved between scopes changes what the summary
+ * of every scope it was ever in should say, and until rebuilt that summary
+ * quotes the old version in prose — the account's to every chat, a project's
+ * to every chat in that project.
+ */
+export async function refreshSummaries(userId: string, scopes: Iterable<string | null>): Promise<void> {
+  for (const scope of new Set(scopes)) {
+    if (scope === null) await consolidateWithFallback(userId).catch(() => {});
+    else await consolidateProjectMemory({ userId, projectId: scope }).catch(() => {});
   }
 }

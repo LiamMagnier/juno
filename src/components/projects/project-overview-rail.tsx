@@ -7,6 +7,9 @@ import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { Pressable } from "@/components/ui/pressable";
+import { Skeleton } from "@/components/ui/skeleton";
+import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { summaryExcerpt, type SummaryData } from "@/components/memory/memory-model";
 import { formatBytes, cn } from "@/lib/utils";
 
 export interface RailFileItem {
@@ -19,6 +22,16 @@ export interface RailFileItem {
 export interface RailMemoryItem {
   id: string;
   content: string;
+}
+
+/**
+ * This project's memory, as `GET /api/projects/[id]/memory` answers it: the
+ * project's own summary, its newest facts, and how many it holds in all.
+ */
+export interface RailProjectMemory {
+  summary: SummaryData | null;
+  facts: RailMemoryItem[];
+  activeCount: number;
 }
 
 /** How many rows a rail section shows before it defers to its full tab. */
@@ -72,7 +85,7 @@ export function ProjectOverviewRail({
   onDeleteFile,
   onViewAllSources,
   uploading = false,
-  memories,
+  memory,
   onManageMemory,
   className,
 }: {
@@ -90,11 +103,15 @@ export function ProjectOverviewRail({
   onDeleteFile: (fileId: string) => void;
   onViewAllSources: () => void;
   uploading?: boolean;
-  memories: RailMemoryItem[];
+  /** null while it loads. */
+  memory: RailProjectMemory | null;
   onManageMemory: () => void;
   className?: string;
 }) {
   const instructionLines = instructions ? instructions.split("\n").length : 0;
+  const memorySummary = memory?.summary ? summaryExcerpt(memory.summary.content) : "";
+  const memoryFacts = memory?.facts ?? [];
+  const memoryCount = memory?.activeCount ?? 0;
 
   return (
     <Card className={cn("overflow-hidden", className)}>
@@ -241,6 +258,7 @@ export function ProjectOverviewRail({
 
         <RailSection
           title="Memory"
+          count={memoryCount}
           icon={NotebookPen}
           action={
             <div className="-mr-2 flex items-center gap-1">
@@ -259,34 +277,61 @@ export function ProjectOverviewRail({
             </div>
           }
         >
-          {memories.length === 0 ? (
+          {memory === null ? (
+            // Holds the section's place while it loads, so the card does not
+            // grow under the reader's eye when the answer lands.
+            <div className="space-y-2" aria-hidden="true">
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-4/5" />
+            </div>
+          ) : !memorySummary && memoryFacts.length === 0 ? (
             // No action. Nothing the reader does here resolves it — memories
-            // arrive from chats, which is what the sentence says.
-            <RailEmpty description="Durable facts Juno picks up from your chats land here, across every project." />
+            // arrive from this project's chats, which is what the sentence
+            // says, along with the boundary a reader most needs to trust.
+            <RailEmpty description="What Juno learns in this project’s chats stays here — your other chats never see it." />
           ) : (
-            <>
-              <ul className="space-y-1.5">
-                {memories.slice(0, MEMORY_PREVIEW).map((memory) => (
-                  <li
-                    key={memory.id}
-                    className="flex gap-2 text-caption leading-relaxed text-muted-foreground"
-                  >
-                    <span aria-hidden="true" className="select-none text-muted-foreground/50">
-                      ·
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{memory.content}</span>
-                  </li>
-                ))}
-              </ul>
+            // One piece, entering once, when the answer arrives.
+            <div className="motion-safe:animate-fade-in">
+              {memorySummary && memory?.summary && (
+                // The project's own summary — what every chat here opens
+                // with. A glimpse of its first section, clamped; the whole of
+                // it is one click away on the memory page.
+                <button
+                  type="button"
+                  onClick={onManageMemory}
+                  className="-mx-2 mb-2 block w-full rounded-control px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
+                >
+                  <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground/85">
+                    {memorySummary}
+                  </p>
+                  <p className="mt-1.5 font-mono text-caption tabular-nums text-muted-foreground/70">
+                    Summary · updated {timeAgo(memory.summary.updatedAt)}
+                  </p>
+                </button>
+              )}
+              {memoryFacts.length > 0 && (
+                <ul className="space-y-1.5">
+                  {memoryFacts.slice(0, MEMORY_PREVIEW).map((fact) => (
+                    <li key={fact.id} className="flex gap-2 text-caption leading-relaxed text-muted-foreground">
+                      <span aria-hidden="true" className="select-none text-muted-foreground/50">
+                        ·
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={fact.content}>
+                        {fact.content}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {/* Only when the list is actually cut. Below the cut this said
                   "Manage memory", which is the pencil 20px above it wearing a
                   word — a second door to one room. */}
-              {memories.length > MEMORY_PREVIEW && (
+              {memoryCount > Math.min(memoryFacts.length, MEMORY_PREVIEW) && (
                 <RailMore onClick={onManageMemory}>
-                  View all {memories.length.toLocaleString()} memories
+                  View all {memoryCount.toLocaleString()} memories
                 </RailMore>
               )}
-            </>
+            </div>
           )}
         </RailSection>
       </div>

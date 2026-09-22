@@ -12,6 +12,7 @@ import {
   factsCoveredByForget,
   memoryForgetActivity,
   summaryPredatesForget,
+  summaryRebuildDecision,
 } from "@/lib/memory-lifecycle";
 
 /*
@@ -169,16 +170,31 @@ test("chat context benches a stale summary instead of injecting it", () => {
 });
 
 test("consolidation treats a forget as a change, not only a new fact count", () => {
+  // Behaviour first: same count, newer forget — rebuild.
+  const now = new Date("2026-09-22T12:00:00Z");
+  const summary = { entryCount: 3, updatedAt: new Date(now.getTime() - 3_600_000) };
+  assert.equal(
+    summaryRebuildDecision({
+      summary,
+      factCount: 3,
+      newestSuppressionAt: new Date(now.getTime() - 60_000),
+      newestExpiryAt: null,
+      now,
+    }),
+    "rebuild"
+  );
+  // …and maybeConsolidate hands the rule the newest forget.
   const body = src("src/lib/memory.ts");
-  const fn = body.slice(body.indexOf("export async function maybeConsolidate"));
-  assert.match(fn.slice(0, 1800), /summaryPredatesForget\(summary\.updatedAt, forgottenAt\)/);
+  const fn = body.slice(body.indexOf("export async function maybeConsolidate("));
+  assert.match(fn.slice(0, 2600), /newestSuppressionAt: forgottenAt/);
 });
 
 test("editing, forgetting or deleting a row rebuilds the summary afterwards", () => {
   const body = src("src/app/api/memory/[id]/route.ts");
-  // Three call sites: forget, rewrite, delete.
-  assert.equal((body.match(/refreshSummaryLater\(user\.id\)/g) ?? []).length, 3);
-  assert.match(body, /after\(\(\) => consolidateWithFallback\(userId\)/);
+  // Three call sites — forget, rewrite-or-move, delete — each naming the
+  // scopes whose summaries the change touched (null is the account's).
+  assert.equal((body.match(/refreshSummariesLater\(user\.id, \[/g) ?? []).length, 3);
+  assert.match(body, /after\(\(\) => refreshSummaries\(userId, scopes\)/);
 });
 
 // ---------------------------------------------------------------------------

@@ -16,11 +16,12 @@
  *
  * It covers every column sealed with the message keyring, not only the message
  * body: `Message.content` / `Message.reasoning` AND the columns added by
- * src/lib/field-crypto.ts — `Message.activity`, `MemorySummary.content` and
- * `ScheduledTask.prompt`. That is the whole reason field-crypto delegates to
- * this keyring instead of owning one: a rotation stays a single operation
- * rather than one per column, and no column can be quietly left behind under a
- * key the operator believes they have retired.
+ * src/lib/field-crypto.ts — `Message.activity`, `MemorySummary.content`,
+ * `ProjectMemorySummary.content` and `ScheduledTask.prompt`. That is the whole
+ * reason field-crypto delegates to this keyring instead of owning one: a
+ * rotation stays a single operation rather than one per column, and no column
+ * can be quietly left behind under a key the operator believes they have
+ * retired.
  *
  *   npm run crypto:rotate:messages -- --dry      # report, write nothing
  *   npm run crypto:rotate:messages               # apply
@@ -293,6 +294,21 @@ async function main(): Promise<void> {
       return rows.map((r) => ({ id: r.id, value: r.content }));
     },
     write: (id, value) => prismaUnguarded.memorySummary.update({ where: { id }, data: { content: value } }),
+  });
+  // Born sealed (consolidateProjectMemory), so there is nothing here for
+  // encrypt-columns to backfill — but a rotation that skipped it would leave
+  // every project's summary under a key the operator is about to retire.
+  await rotateTextColumn("ProjectMemorySummary.content", tally, {
+    page: async (cursor) => {
+      const rows = await prismaUnguarded.projectMemorySummary.findMany({
+        take: BATCH,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+        select: { id: true, content: true },
+      });
+      return rows.map((r) => ({ id: r.id, value: r.content }));
+    },
+    write: (id, value) => prismaUnguarded.projectMemorySummary.update({ where: { id }, data: { content: value } }),
   });
   await rotateTextColumn("ScheduledTask.prompt", tally, {
     page: async (cursor) => {

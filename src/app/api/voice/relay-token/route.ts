@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { signState } from "@/lib/crypto";
 import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
+import { checkProjectAccess } from "@/lib/project-collaboration";
+import { parseVoiceMemoryRequest } from "@/lib/voice-memory";
 
 export const runtime = "nodejs";
 
@@ -34,9 +36,20 @@ function resolveVoiceRelayURL(): string | null {
  * Mints a short-lived token for the voice relay. The relay shares AUTH_SECRET
  * and verifies the same HMAC format (see relay/src/auth.ts) — no DB access on
  * the relay side. Token payload: {"uid", "exp"} (60s window to CONNECT; the
- * WebSocket session itself may run much longer).
+ * WebSocket session itself may run much longer), plus {"mem": 1, "pid"} when
+ * the call should know what Juno remembers.
+ *
+ * MEMORY IS ASKED FOR, never assumed. `?memory=1` (and `&projectId=` for a
+ * project chat) comes from a chat that is not incognito; without it the call
+ * knows nothing, which is what the native apps and every other voice surface
+ * keep until they ask. The request only reaches the token after the project is
+ * shown to be one this person can use — a signed claim to a project they
+ * cannot open would be a way to read its memory. Whether memory is ON, and
+ * what it says, is decided when the relay asks for it
+ * (src/app/api/voice/memory/route.ts), so memory paused after the token was
+ * minted is still honoured.
  */
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -51,7 +64,19 @@ export async function GET() {
   const url = resolveVoiceRelayURL();
   if (!url) return NextResponse.json({ error: "Realtime voice is not configured." }, { status: 503 });
 
-  const token = signState(JSON.stringify({ uid: user.id, exp: Math.floor(Date.now() / 1000) + 60 }));
+  let memory = parseVoiceMemoryRequest(new URL(req.url).searchParams);
+  if (memory?.projectId && !(await checkProjectAccess(user.id, memory.projectId, "VIEWER")).allowed) {
+    // Not a project they can use: no memory at all, rather than the account's
+    // — a project chat reading account memory is the leak isolation prevents.
+    memory = null;
+  }
+  const token = signState(
+    JSON.stringify({
+      uid: user.id,
+      exp: Math.floor(Date.now() / 1000) + 60,
+      ...(memory ? { mem: 1, ...(memory.projectId ? { pid: memory.projectId } : {}) } : {}),
+    })
+  );
 
   // Best-effort provider availability from the relay's /healthz — the client
   // uses it to pick a working default and grey out dead providers. Failure

@@ -1,10 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
+import { extractConversationMemory, maybeConsolidate, maybeConsolidateProject } from "@/lib/memory";
+import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -55,6 +57,42 @@ async function serializeSavedSession(userId: string, sessionId: string) {
     conversationId: saved.conversationId,
     messages: await Promise.all(ordered.map((message) => serializeMessage(message))),
   };
+}
+
+/**
+ * Learn from what was said, once the response has gone — what a typed turn's
+ * after-hook does, for a spoken one.
+ *
+ * Voice turns were saved into the chat and then waited for the background
+ * dreamer (or the "Learn from past chats" button) before anything in them was
+ * remembered, so a fact said aloud was news to the very next typed message.
+ * The same gates as a typed turn: memory paused means nothing, and a project
+ * that turned memory recall off is left alone. Incognito calls never get here
+ * — they are not saved at all.
+ */
+function learnFromVoiceLater(userId: string, conversationId: string) {
+  after(async () => {
+    try {
+      const [settings, convo] = await Promise.all([
+        prisma.settings.findUnique({ where: { userId }, select: { memoryEnabled: true } }),
+        prisma.conversation.findFirst({ where: { id: conversationId, userId }, select: { projectId: true } }),
+      ]);
+      if (settings?.memoryEnabled === false || !convo) return;
+      if (convo.projectId) {
+        const workspace = await prisma.projectWorkspace.findFirst({
+          where: { projectId: convo.projectId, userId },
+          select: { config: true },
+        });
+        if (!workspacePermits(parseWorkspaceConfig(workspace?.config), "memoryRecall")) return;
+      }
+      await extractConversationMemory({ userId, conversationId });
+      await maybeConsolidate(userId, null);
+      if (convo.projectId) await maybeConsolidateProject(userId, convo.projectId, null);
+    } catch (error) {
+      // The transcript is saved either way; the dreamer reads it later.
+      console.error("[voice/transcript] memory update failed", error instanceof Error ? error.message : error);
+    }
+  });
 }
 
 export async function POST(req: Request) {
@@ -194,6 +232,7 @@ export async function POST(req: Request) {
 
     const result = await serializeSavedSession(user.id, input.sessionId);
     if (!result) throw new Error("voice_session_missing_after_save");
+    learnFromVoiceLater(user.id, result.conversationId);
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof AttachmentConflictError) {

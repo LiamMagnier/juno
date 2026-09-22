@@ -33,10 +33,11 @@ async function tick(): Promise<boolean> {
       try {
         const outcome = await dreamForAccount(userId);
         if (outcome.skipped) continue;
-        if (outcome.processedConversations > 0 || outcome.expired > 0) {
+        if (outcome.processedConversations > 0 || outcome.expired > 0 || outcome.rereadQueued > 0 || outcome.rejudged > 0) {
           console.log(
             `[memory-dreamer] account=${userId} read=${outcome.processedConversations} ` +
-              `learned=${outcome.created} expired=${outcome.expired} remaining=${outcome.remaining}`
+              `learned=${outcome.created} expired=${outcome.expired} remaining=${outcome.remaining} ` +
+              `reread_queued=${outcome.rereadQueued} rejudged=${outcome.rejudged}`
           );
         }
       } catch (error) {

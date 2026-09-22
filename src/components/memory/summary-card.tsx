@@ -31,11 +31,24 @@ interface SummaryCardProps {
   paused: boolean;
   consolidating: boolean;
   onRegenerate: () => void;
-  /** Resolve true once the instruction was drafted (or refused) — collapses the composer. */
-  onInstruction: (instruction: string) => Promise<boolean>;
+  /**
+   * Resolve true once the instruction was drafted (or refused) — collapses the
+   * composer. Absent, the pencil is not drawn: a project's summary has no
+   * editor of its own, because the drafting model edits account-wide facts and
+   * an instruction typed here would land outside the project it was typed in.
+   * Its facts are edited in place, below.
+   */
+  onInstruction?: (instruction: string) => Promise<boolean>;
+  /**
+   * Set when the card shows one project's summary rather than the account's.
+   * Only the words change — heading, empty state, the rebuild's label — plus
+   * a key that re-plays the entrance when the reader switches scope, so the
+   * change of subject is seen rather than inferred.
+   */
+  project?: { id: string; name: string } | null;
 }
 
-export function SummaryCard({ summary, paused, consolidating, onRegenerate, onInstruction }: SummaryCardProps) {
+export function SummaryCard({ summary, paused, consolidating, onRegenerate, onInstruction, project }: SummaryCardProps) {
   const [composing, setComposing] = React.useState(false);
   const [value, setValue] = React.useState("");
   const [drafting, setDrafting] = React.useState(false);
@@ -58,7 +71,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const instruction = value.trim();
-    if (!instruction || drafting) return;
+    if (!instruction || drafting || !onInstruction) return;
     setDrafting(true);
     const done = await onInstruction(instruction);
     setDrafting(false);
@@ -70,7 +83,11 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
     }
   };
 
-  const sections = summary ? parseSummarySections(summary.content) : [];
+  const sections = summary
+    ? parseSummarySections(summary.content, project ? "About this project" : "About you")
+    : [];
+  const heading = project ? `${project.name} · project memory` : "Memory summary";
+  const editable = !!onInstruction;
 
   return (
     <section
@@ -84,8 +101,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
         )}
       >
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <h2 id="memory-summary-heading" className="font-mono text-label text-muted-foreground">
-            Memory summary
+          <h2 id="memory-summary-heading" className="min-w-0 truncate font-mono text-label text-muted-foreground">
+            {heading}
           </h2>
           {paused && (
             <Badge variant="muted" className="text-caption">
@@ -101,7 +118,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => setExpanded(true)}
-                aria-label="Expand the memory summary"
+                aria-label={project ? "Expand this project’s summary" : "Expand the memory summary"}
                 title="Expand"
                 className="text-muted-foreground"
               >
@@ -113,7 +130,9 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               size="icon-sm"
               onClick={onRegenerate}
               disabled={consolidating}
-              aria-label="Rebuild the summary from your chats and projects"
+              aria-label={
+                project ? "Rebuild this project’s summary from its chats" : "Rebuild the summary from your chats and projects"
+              }
               title="Rebuild summary"
               className="text-muted-foreground"
             >
@@ -127,15 +146,30 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           // CSS animation (not framer-motion) on purpose: an entrance that runs at
           // page load must finish even when rAF is throttled in a hidden tab.
           <div
-            key={summary.updatedAt}
-            className="scroll-fade-y max-h-[min(34vh,22rem)] space-y-5 overflow-y-auto pb-16 pr-1 motion-safe:animate-rise-in"
+            key={`${project?.id ?? "account"}:${summary.updatedAt}`}
+            className={cn(
+              "scroll-fade-y max-h-[min(34vh,22rem)] space-y-5 overflow-y-auto pr-1 motion-safe:animate-rise-in",
+              // Room for the floating pencil only where there is one.
+              editable ? "pb-16" : "pb-2"
+            )}
           >
             <SummarySections sections={sections} className="space-y-5" />
           </div>
         ) : consolidating ? (
-          <div role="status" className="flex items-center gap-3 pb-14 pt-2 text-ui text-muted-foreground">
+          <div
+            role="status"
+            className={cn("flex items-center gap-3 pt-2 text-ui text-muted-foreground", editable ? "pb-14" : "pb-2")}
+          >
             <ThinkingDots />
-            <span>Reading your chats and projects…</span>
+            <span>{project ? "Reading this project’s chats…" : "Reading your chats and projects…"}</span>
+          </div>
+        ) : project ? (
+          <div key={project.id} className="pb-2 pt-1 motion-safe:animate-fade-in">
+            <p className="font-sans text-heading">Nothing here yet</p>
+            <p className="mt-1 max-w-md text-ui text-muted-foreground">
+              Juno builds this from the chats in {project.name} as you go. Only this project’s chats read it — and
+              they read nothing else Juno remembers about you.
+            </p>
           </div>
         ) : (
           <div className="pb-12 pt-1">
@@ -155,112 +189,114 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           vocabulary covers what the swap actually communicates: something
           grew out of the control you pressed. The return trip is instant on
           purpose; the pencil is the resting state, not an arrival. */}
-      <div className="pointer-events-none absolute inset-x-4 bottom-4 sm:inset-x-5 sm:bottom-5">
-        {composing ? (
-          <form
-            onSubmit={submit}
-            /* Two things here.
-             *
-             * The input inside carries `outline-none` and nothing put the focus
-             * affordance back, so tabbing into the memory composer drew nothing at
-             * all — the only writable control on this card had no focus state.
-             * focus-within on the shell is how the chat and /compare composers do
-             * it, and the ring follows the capsule radius.
-             *
-             * And `shadow-glass`, not `.glass-raised`: Tailwind's ring compiles to
-             * `box-shadow: <offset>, <ring>, var(--tw-shadow)`, so it REPLACES a
-             * components-layer box-shadow outright — the bar would have gone flat
-             * at the exact moment it gained a ring. The utility writes the same
-             * --shadow-glass value into --tw-shadow, so lift and ring compose. */
-            className="pointer-events-auto flex w-full origin-bottom-left items-center gap-1.5 rounded-full border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 shadow-glass backdrop-blur-xl transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-safe:animate-pop-in motion-reduce:transition-none"
-          >
-            <div className="flex min-w-0 flex-1 items-center">
-              {drafting ? (
-                <span role="status" className="flex h-9 min-w-0 flex-1 items-center gap-2.5 text-ui text-muted-foreground">
-                  <ThinkingDots />
-                  <span className="truncate">Drafting the change…</span>
-                </span>
-              ) : (
-                <input
-                  ref={inputRef}
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      setComposing(false);
-                    }
-                  }}
-                  maxLength={600}
-                  placeholder="Tell Juno what to remember, update, or forget…"
-                  aria-label="Memory instruction"
-                  className="h-9 w-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
-                />
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {!drafting && (
+      {editable && (
+        <div className="pointer-events-none absolute inset-x-4 bottom-4 sm:inset-x-5 sm:bottom-5">
+          {composing ? (
+            <form
+              onSubmit={submit}
+              /* Two things here.
+               *
+               * The input inside carries `outline-none` and nothing put the focus
+               * affordance back, so tabbing into the memory composer drew nothing at
+               * all — the only writable control on this card had no focus state.
+               * focus-within on the shell is how the chat and /compare composers do
+               * it, and the ring follows the capsule radius.
+               *
+               * And `shadow-glass`, not `.glass-raised`: Tailwind's ring compiles to
+               * `box-shadow: <offset>, <ring>, var(--tw-shadow)`, so it REPLACES a
+               * components-layer box-shadow outright — the bar would have gone flat
+               * at the exact moment it gained a ring. The utility writes the same
+               * --shadow-glass value into --tw-shadow, so lift and ring compose. */
+              className="pointer-events-auto flex w-full origin-bottom-left items-center gap-1.5 rounded-full border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 shadow-glass backdrop-blur-xl transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-safe:animate-pop-in motion-reduce:transition-none"
+            >
+              <div className="flex min-w-0 flex-1 items-center">
+                {drafting ? (
+                  <span role="status" className="flex h-9 min-w-0 flex-1 items-center gap-2.5 text-ui text-muted-foreground">
+                    <ThinkingDots />
+                    <span className="truncate">Drafting the change…</span>
+                  </span>
+                ) : (
+                  <input
+                    ref={inputRef}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setComposing(false);
+                      }
+                    }}
+                    maxLength={600}
+                    placeholder="Tell Juno what to remember, update, or forget…"
+                    aria-label="Memory instruction"
+                    className="h-9 w-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-muted-foreground"
+                  />
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {!drafting && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-full"
+                    onClick={() => setComposing(false)}
+                    aria-label="Cancel editing"
+                    title="Cancel"
+                  >
+                    <ActionIcons.dismiss className="size-4" />
+                  </Button>
+                )}
                 <Button
-                  type="button"
-                  variant="ghost"
+                  type="submit"
                   size="icon-sm"
                   className="rounded-full"
-                  onClick={() => setComposing(false)}
-                  aria-label="Cancel editing"
-                  title="Cancel"
+                  disabled={drafting || !value.trim()}
+                  aria-label="Send instruction"
+                  title="Send"
                 >
-                  <ActionIcons.dismiss className="size-4" />
+                  {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 </Button>
+              </div>
+            </form>
+          ) : (
+            <button
+              ref={fabRef}
+              type="button"
+              onClick={() => {
+                // Stays focusable while paused so the explanation is discoverable.
+                if (paused) toast.info("Memory is paused — resume it below to make edits.");
+                else setComposing(true);
+              }}
+              aria-disabled={paused}
+              // `.control-primary` already carries the house press (scale .97 on
+              // the press rung, brightness on the fast one, both off under
+              // reduced motion), and the global focus ring applies. This drew
+              // its own ring with a 2px page-coloured offset, which haloed the
+              // button against the card it floats on, and a 95% press.
+              className={cn(
+                "pointer-events-auto flex size-11 items-center justify-center control-primary rounded-full coarse:size-12",
+                // Press feedback only while pressing does something.
+                paused && "opacity-50 active:scale-100"
               )}
-              <Button
-                type="submit"
-                size="icon-sm"
-                className="rounded-full"
-                disabled={drafting || !value.trim()}
-                aria-label="Send instruction"
-                title="Send"
-              >
-                {drafting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <button
-            ref={fabRef}
-            type="button"
-            onClick={() => {
-              // Stays focusable while paused so the explanation is discoverable.
-              if (paused) toast.info("Memory is paused — resume it below to make edits.");
-              else setComposing(true);
-            }}
-            aria-disabled={paused}
-            // `.control-primary` already carries the house press (scale .97 on
-            // the press rung, brightness on the fast one, both off under
-            // reduced motion), and the global focus ring applies. This drew
-            // its own ring with a 2px page-coloured offset, which haloed the
-            // button against the card it floats on, and a 95% press.
-            className={cn(
-              "pointer-events-auto flex size-11 items-center justify-center control-primary rounded-full coarse:size-12",
-              // Press feedback only while pressing does something.
-              paused && "opacity-50 active:scale-100"
-            )}
-            title={paused ? "Memory is paused" : "Edit memory"}
-            aria-label={
-              paused
-                ? "Edit memory — unavailable while memory is paused"
-                : "Edit memory — tell Juno what to remember, update, or forget"
-            }
-          >
-            <ActionIcons.edit className="size-4" />
-          </button>
-        )}
-      </div>
+              title={paused ? "Memory is paused" : "Edit memory"}
+              aria-label={
+                paused
+                  ? "Edit memory — unavailable while memory is paused"
+                  : "Edit memory — tell Juno what to remember, update, or forget"
+              }
+            >
+              <ActionIcons.edit className="size-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Full-summary reading view. */}
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="flex h-[min(85dvh,52rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4">
-            <DialogTitle>Memory summary</DialogTitle>
+            <DialogTitle>{project ? `${project.name} · project memory` : "Memory summary"}</DialogTitle>
             {summary && <DialogDescription>Updated {timeAgo(summary.updatedAt)}</DialogDescription>}
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-6">

@@ -46,7 +46,7 @@ export async function GET(req: Request) {
   const isJuno = format === "juno";
   const date = new Date().toISOString().slice(0, 10);
 
-  const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind] =
+  const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind, projectMemorySummaries] =
     await Promise.all([
       prisma.user.findUnique({ where: { id: user.id }, select: { name: true, email: true, createdAt: true } }),
       getUserPlan(user.id),
@@ -218,6 +218,11 @@ export async function GET(req: Request) {
         where: { userId: user.id },
         _count: true,
         _sum: { costMicroUsd: true },
+      }),
+      prisma.projectMemorySummary.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "asc" },
+        select: { projectId: true, content: true, entryCount: true, createdAt: true, updatedAt: true },
       }),
     ]);
 
@@ -413,6 +418,13 @@ export async function GET(req: Request) {
     // The consolidated profile is encrypted at rest (field-crypto.ts); the
     // export is the one place it is deliberately handed back in cleartext.
     memorySummary: memorySummary ? { ...memorySummary, content: decryptField(memorySummary.content) } : null,
+    // Each project's own summary, likewise sealed at rest and handed back in
+    // cleartext here. Keyed by the same stable project id as `projects`.
+    projectMemorySummaries: projectMemorySummaries.map((summary) => ({
+      ...summary,
+      projectId: stableProjectId.get(summary.projectId) ?? summary.projectId,
+      content: decryptField(summary.content),
+    })),
     projects: projects.map((project) => ({
       ...project,
       id: stableProjectId.get(project.id) ?? project.id,

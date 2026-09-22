@@ -76,6 +76,7 @@ model User {
   memories                    MemoryEntry[]
   memoryEdits                 MemoryEdit[]
   memorySummary               MemorySummary?
+  projectMemorySummaries      ProjectMemorySummary[]
   conversationMemories        ConversationMemory[]
   attachments                 Attachment[]
   usage                       Usage[]
@@ -572,13 +573,14 @@ model Project {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations      Conversation[]
   files              Attachment[]
   workSessions       WorkSession[]
   workSkills         WorkSkill[]
   knowledgeDocuments KnowledgeDocument[]
   memories           MemoryEntry[]
+  memorySummaries    ProjectMemorySummary[]
   workspace          ProjectWorkspace?
   members            ProjectMember[]
 
@@ -976,6 +978,14 @@ model MemoryEntry {
   expiresAt       DateTime?
   lastUsedAt      DateTime?
   lastVerifiedAt  DateTime?
+  // When the person SAID it — the source message's time — as opposed to
+  // createdAt, when Juno wrote it down. Minutes apart for a fact learned in
+  // the chat it came from; months apart for one learned by re-reading history.
+  // Every judgement about time (which of two facts is newer, when a temporary
+  // one stops being true, how fresh a fact is) reads this. Null on rows
+  // written before it existed; readers fall back to createdAt, and the
+  // re-judge pass recovers it from sourceMessageId as it goes.
+  observedAt      DateTime?
   // The entry that replaced this one. Supersession keeps the trail instead of
   // deleting the older belief.
   supersededById  String?
@@ -1054,6 +1064,11 @@ model ConversationMemory {
   processedAt    DateTime // high-water mark: messages createdAt <= this are extracted
   digest         String?  @db.Text // one-line memory digest of the chat
   factCount      Int      @default(0) // facts extracted from this chat so far
+  // Which version of the reader distilled it (EXTRACTOR_VERSION in
+  // src/lib/memory-extraction.ts). When the reader improves, history read by
+  // an older one is worth reading again — the dreamer does, and this is how it
+  // knows which. Existing rows were read by version 1.
+  extractorVersion Int      @default(1)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -1074,6 +1089,32 @@ model MemorySummary {
   updatedAt  DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// The same thing for one project: what Juno has learned inside that project's
+// chats, distilled. A chat filed in a project reads memory in ISOLATION — only
+// that project's facts, never the account's (getMemoryProfile) — so until this
+// existed a project chat had no settled overview at all, just whichever of its
+// facts ranked into the token budget that turn. Encrypted like MemorySummary.
+//
+// Keyed on (userId, projectId) rather than projectId alone, and on purpose:
+// memory is personal. Two members of a shared project each teach Juno their
+// own facts in it (MemoryEntry rows under their own userId), and each gets a
+// summary of their own; neither ever reads the other's.
+model ProjectMemorySummary {
+  id         String   @id @default(cuid())
+  userId     String
+  projectId  String
+  content    String   @db.Text
+  entryCount Int      @default(0) // # of this project's facts the summary was built from
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
 }
 
 // ----------------------------------------------------------------------------

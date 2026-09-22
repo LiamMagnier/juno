@@ -62,6 +62,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ProjectWorkspace", "userId"],
   ["MemoryEntry", "userId"],
   ["MemorySummary", "userId"],
+  // One per (person, project). Keyed and filtered on userId like the account
+  // summary: a shared project's members each have their own, and an unscoped
+  // read would hand one member another's distilled project memory.
+  ["ProjectMemorySummary", "userId"],
   ["ConversationMemory", "userId"],
   // The edit ledger records what a user asked memory to change, so an unscoped
   // read is a leak of instructions, not just rows. Every call site (routes +

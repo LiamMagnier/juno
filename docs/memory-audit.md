@@ -186,24 +186,70 @@ seeing — none of which ChatGPT or Claude expose at all.
 
 **At parity** on: topic grouping, per-entry editing and deletion, sensitive subjects,
 pause/reset, incognito, export, manual add, in-chat forget, automatic learning from
-history, import, a recap, and memory in the agent surface.
+history, import, a recap, memory in the agent surface, per-project summaries, voice
+mode that knows the caller, and re-reading history that has already been read.
+
+### Closed in the third pass
+
+- **Per-project summaries.** Every project now gets its own summary
+  (`ProjectMemorySummary`, per person — two members of a shared project never read each
+  other's), built by the same rule as the account's from that project's facts and chats
+  only, encrypted at rest and rotated with the rest of the keyring. A project chat reads
+  its project's summary and nothing else; the prompt says whose memory it is. The memory
+  page can be narrowed to one project (summary, facts and recap), and the project page's
+  rail shows the project's own summary and facts.
+- **Voice mode reads memory.** A chat's call asks for memory (never incognito); the
+  relay fetches it from the app itself, server to server, under a callback token scoped
+  to memory, so it never passes through the browser. The call gets exactly what a typed
+  turn in that chat would read — the project's own memory in a project, nothing when
+  paused — plain text, capped, told not to recite it, kept across provider switches. The
+  dock says "Memory" once the relay confirms it. Saved voice turns are now distilled
+  straight away instead of waiting for the dreamer. Exercised end to end against the
+  relay's mock provider; the native apps keep calls without memory until they ask.
+- **Re-reading history, measured first.** `npm run memory:bench` scores what Juno
+  believes after reading five ordinary histories (a move, a job change, a trip, a thesis
+  and a side project, a forget, sixty facts of a long-time user) against ground truth. It
+  runs the production extraction prompt, ingestion, forget and retrieval rules; offline a
+  reader that follows the prompt stands in for the model, so CI gates on exact numbers,
+  and `--live` swaps in a real model. Measured before anything changed:
+
+  | reading | recall | still believes outdated | precision | retrieval | leaks |
+  |---|---|---|---|---|---|
+  | as it happens, before | 95.0% | 42.9% | 96.2% | 68.2% | 2 |
+  | as it happens, now | **100%** | **28.6%** | **97.6%** | **81.8%** | **1** |
+  | re-reading history, before | 92.5% | **100%** | 91.4% | 77.3% | 6 |
+  | re-reading history, now | **100%** | **28.6%** | **97.6%** | **81.8%** | **1** |
+  | existing data, repaired | 97.5% → **100%** | 85.7% → **28.6%** | 92.9% → **97.6%** | 86.4% → 81.8% | 5 → **1** |
+
+  Re-reading history — which "Learn from past chats" and the dreamer do newest chat
+  first — handed every conflict to the older statement, so it left Juno believing the
+  old city, the old employer and a trip long over. Facts now carry when they were said
+  (`observedAt`), conflicts are judged by it in whatever order they are read, temporary
+  facts count from when they were said, and saying something again later makes it
+  believed again. A re-judge pass repairs what the old order already decided, dating old
+  rows from their messages a bounded batch at a time. And the reader (v2) no longer
+  tells the model it "already knows" other scopes' facts or facts Juno stopped
+  believing; chats read by v1 are re-read by the dreamer — never from before the oldest
+  thing Juno still remembers, so a reset's erasure cannot be undone.
 
 **Still behind:**
 
-- **Voice mode.** Realtime voice runs on a fixed instruction string in the relay
-  (`relay/src/session.ts`) and reads no memory; ChatGPT's voice mode does. It needs a
-  memory field on the relay's `session.start` message, folded into the instructions
-  inside the untrusted-context framing `relay/src/voice-context.ts` already uses, plus
-  the client sending it — a cross-service protocol change that should be exercised
-  against a live realtime provider before it ships.
-- **Re-synthesis at Dreaming's depth.** Juno's dreamer distils conversations it has not
-  read yet and rebuilds the summary; it does not re-read history it has already
-  distilled to re-judge old beliefs, which is what ChatGPT reports lifting recall from
-  41.5% to 82.8%. Juno has no recall benchmark to compare against yet — building one
-  (`scripts/eval-juno.ts` is the natural home) should come before tuning toward it.
-- **Per-project summaries.** Claude gives each project its own summary. Juno scopes
-  project facts correctly but consolidates only an account-wide summary, so a project
-  chat reads ranked facts and no prose profile.
+- **Beliefs no rule can see are outdated.** Two of the benchmark's seven outdated beliefs
+  survive every setting: a change of taste ("prefers short answers" after "detailed
+  answers now") and a job search that ended when the job started. Nothing structural
+  links them; retiring them needs a model to judge the timeline, which is also what
+  ChatGPT's re-synthesis does. The benchmark names both, so a judge pass can be measured
+  the day it is written.
+- **Retrieval under-weights relevance.** Four of 22 facts a question needs miss the
+  context: two share no words with their question (a semantic match would find them —
+  the offline run is lexical only), and two lose to newer facts because token overlap
+  over a long question is a weak signal next to recency. Measured, not tuned: tuning a
+  ranking to 22 questions is how a benchmark gets overfitted.
+- **Live numbers.** This environment has no model provider keys, so every figure above
+  is the offline run. `npm run memory:bench -- --live` reports the same table with a real
+  model reading the chats.
+- **Native voice.** The iOS and macOS apps call the relay without asking for memory; the
+  token route and relay are ready for them.
 
 ## 5. Correctness fixes made along the way
 
@@ -221,3 +267,20 @@ Found while building the above, and fixed in the same branch:
 - **The manual backfill route trusted a disabled button to enforce a pause.**
 - **The generated i18n catalog was ignored in intent but tracked in fact**, dirtying the
   tree on every dev run.
+
+Third pass:
+
+- **The project page's memory rail was always empty** — it read `/api/memory` as an
+  array, which it has not been for a long time — and had it worked, it would have shown
+  the whole account's facts on every project.
+- **Project chats' topics leaked into the account summary**, the one path project memory
+  still had out of its project after its facts were scoped.
+- **The extractor was told other projects' facts, and facts Juno no longer believed,
+  were "already known"** — a cross-project leak into the prompt, and the reason a
+  project never learned a habit first mentioned elsewhere, or a user's move back home.
+- **Undoing a removed project fact restored it account-wide.**
+- **Importing a Juno export revived forgotten and replaced facts** into a fresh account,
+  and widened project facts to the whole account.
+- **"The user's sister lives in Utrecht" replaced where the user lives.** The single-value
+  rule now checks whose attribute a sentence is about.
+- **Voice turns were never learned from** until the background dreamer reached them.

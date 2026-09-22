@@ -48,6 +48,13 @@ export type VoiceServerMessage =
       provider: VoiceProviderId;
       capabilities: ProviderCapabilities;
       thinking: boolean;
+      /**
+       * True when the call was given what Juno remembers about the caller
+       * (relay-side; the memory itself never reaches the client). Swift's
+       * decoder ignores the key, like `thinking`, until the native apps ask
+       * for memory themselves.
+       */
+      memory?: boolean;
       /** The model actually serving the call, as the provider reports it. */
       model?: string;
       /** Non-fatal note about how the session came up; does not end the call. */

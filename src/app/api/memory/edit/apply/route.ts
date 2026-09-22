@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { consolidateWithFallback, embedMemoryEntries, getMemorySummary } from "@/lib/memory";
+import { consolidateWithFallback, embedMemoryEntries, getMemorySummary, refreshSummaries } from "@/lib/memory";
+import { checkProjectAccess } from "@/lib/project-collaboration";
 import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
 import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
@@ -13,7 +14,15 @@ export const maxDuration = 60;
 // `before` is the fact text the edit was drafted against — verified below so a
 // stale edit can never silently clobber changes made in the meantime.
 const opSchema = z.union([
-  z.object({ op: z.literal("add"), content: z.string().trim().min(1).max(500), suppress: z.boolean().optional() }),
+  z.object({
+    op: z.literal("add"),
+    content: z.string().trim().min(1).max(500),
+    suppress: z.boolean().optional(),
+    // Only ever set by an Undo: restoring a removed fact puts it back in the
+    // scope it was removed from. Without it, undoing the removal of a project
+    // fact restored it account-wide — into every unrelated chat.
+    projectId: z.string().min(1).nullish(),
+  }),
   z.object({ op: z.literal("update"), id: z.string().min(1), before: z.string().max(500), content: z.string().trim().min(1).max(500) }),
   z.object({ op: z.literal("remove"), id: z.string().min(1), before: z.string().max(500) }),
 ]);
@@ -45,7 +54,7 @@ export async function POST(req: Request) {
   const referenced = referencedIds.length
     ? await prisma.memoryEntry.findMany({
         where: { id: { in: referencedIds }, userId: user.id },
-        select: { id: true, content: true, kind: true },
+        select: { id: true, content: true, kind: true, projectId: true },
       })
     : [];
   const byId = new Map(referenced.map((f) => [f.id, f]));
@@ -55,6 +64,24 @@ export async function POST(req: Request) {
       { error: "Your memory changed since this edit was drafted. Delete it and ask again." },
       { status: 409 }
     );
+  }
+
+  // A scope on an add is a claim, like a projectId on any other write. The
+  // project has to still be one this person can use: a fact restored into a
+  // project they have lost is unreachable, and restoring it account-wide
+  // instead would widen what they asked to keep narrow — so the edit is
+  // refused whole rather than either.
+  const addScopes = [
+    ...new Set(ops.flatMap((o) => (o.op === "add" && o.projectId && !o.suppress ? [o.projectId] : []))),
+  ];
+  for (const projectId of addScopes) {
+    const { allowed } = await checkProjectAccess(user.id, projectId, "VIEWER");
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "The project this was remembered in no longer exists, so it can't be put back there." },
+        { status: 409 }
+      );
+    }
   }
 
   const inverse: Operation[] = [];
@@ -100,9 +127,12 @@ export async function POST(req: Request) {
                   kind: op.suppress ? "SUPPRESSION" : "FACT",
                   sourceRef: "edit",
                   category: op.suppress ? "suppression" : fields.category,
+                  // Suppressions are account-wide by definition.
+                  projectId: op.suppress ? null : op.projectId ?? null,
                   confidence: fields.confidence,
                   normalized: fields.normalized,
                   expiresAt: op.suppress ? null : fields.expiresAt,
+                  observedAt: new Date(),
                   lastVerifiedAt: new Date(),
                 },
                 select: { id: true },
@@ -142,6 +172,7 @@ export async function POST(req: Request) {
                   // lexical rather than semantically wrong.
                   embedding: [],
                   embeddingModel: null,
+                  observedAt: new Date(),
                   lastVerifiedAt: new Date(),
                 },
               });
@@ -164,7 +195,12 @@ export async function POST(req: Request) {
           await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
           // Undoing the removal must restore the same KIND (a deleted suppression
           // comes back as a suppression, not as a fact).
-          inverse.push({ op: "add", content: row.content, ...(row.kind === "SUPPRESSION" ? { suppress: true } : {}) });
+          inverse.push({
+            op: "add",
+            content: row.content,
+            ...(row.kind === "SUPPRESSION" ? { suppress: true } : {}),
+            ...(row.kind === "FACT" && row.projectId ? { projectId: row.projectId } : {}),
+          });
         }
       }
     });
@@ -191,6 +227,18 @@ export async function POST(req: Request) {
   // list. If it fails, the facts are still updated and the old summary stays
   // until the next consolidation.
   await consolidateWithFallback(user.id, 3).catch(() => {});
+  // Project summaries the edit touched are rebuilt after the response instead:
+  // the account summary above is what this page shows, and a project's is
+  // only read by that project's next chat.
+  const projectScopes = [
+    ...new Set([
+      ...referenced.flatMap((row) => (row.projectId ? [row.projectId] : [])),
+      ...addScopes,
+    ]),
+  ];
+  if (projectScopes.length > 0) {
+    after(() => refreshSummaries(user.id, projectScopes).then(() => undefined, () => undefined));
+  }
 
   const [memories, summary] = await Promise.all([
     prisma.memoryEntry.findMany({

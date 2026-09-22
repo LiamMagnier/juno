@@ -49,7 +49,7 @@ import {
 import { ProjectWorkDefaults } from "@/components/projects/project-work-defaults";
 import { ProjectWorkspaceHeader } from "@/components/projects/project-workspace-header";
 import { ProjectPageSkeleton } from "@/components/projects/project-page-skeleton";
-import { ProjectOverviewRail } from "@/components/projects/project-overview-rail";
+import { ProjectOverviewRail, type RailProjectMemory } from "@/components/projects/project-overview-rail";
 import { ProjectChatList } from "@/components/projects/project-chat-list";
 import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
 import { ProjectCodeList } from "@/components/projects/project-code-list";
@@ -147,8 +147,9 @@ export default function ProjectDetailPage() {
 
   // Server-backed project star (Project.starred), toggled optimistically.
   const [isStarred, setIsStarred] = React.useState(false);
-  // User memories state
-  const [memories, setMemories] = React.useState<{ id: string; content: string }[]>([]);
+  // This project's memory — its own summary and the facts learned in its
+  // chats. null until it arrives; the rail holds its place meanwhile.
+  const [projectMemory, setProjectMemory] = React.useState<RailProjectMemory | null>(null);
   // Store all projects for moving chats
   const [allProjects, setAllProjects] = React.useState<{ id: string; name: string }[]>([]);
   // Chat pending deletion — a real dialog, matching the project-delete confirm.
@@ -249,13 +250,21 @@ export default function ProjectDetailPage() {
   React.useEffect(() => {
     load();
 
-    // Fetch user memories
-    fetch("/api/memory")
-      .then((res) => res.json())
-      .then((m) => {
-        if (Array.isArray(m)) setMemories(m);
+    // This project's memory — never the account's. A chat here reads only
+    // what was learned here, so that is what the rail shows.
+    //
+    // It used to fetch `/api/memory` and test the answer with `Array.isArray`,
+    // but that route answers `{ memories, summary }` — so the rail was empty
+    // for everyone, always. Had the test passed it would have been worse: the
+    // whole account's facts, every other project's included, on this page.
+    fetch(`/api/projects/${encodeURIComponent(id)}/memory`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((m: RailProjectMemory | null) => {
+        setProjectMemory(
+          m && Array.isArray(m.facts) ? m : { summary: null, facts: [], activeCount: 0 }
+        );
       })
-      .catch(() => {});
+      .catch(() => setProjectMemory({ summary: null, facts: [], activeCount: 0 }));
 
     // Fetch all projects
     fetch("/api/projects")
@@ -889,8 +898,17 @@ export default function ProjectDetailPage() {
                 onDeleteFile={deleteFile}
                 onViewAllSources={() => selectTab("sources")}
                 uploading={uploading}
-                memories={memories}
-                onManageMemory={() => router.push("/memory")}
+                memory={projectMemory}
+                // Straight to this project's slice of the memory page. With
+                // nothing remembered yet there is no slice to open, so the page
+                // opens whole rather than on a scope it would fall back from.
+                onManageMemory={() =>
+                  router.push(
+                    projectMemory && (projectMemory.activeCount > 0 || projectMemory.summary)
+                      ? `/memory?project=${encodeURIComponent(id)}`
+                      : "/memory"
+                  )
+                }
               />
             </div>
           </TabsContent>

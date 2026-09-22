@@ -1720,8 +1720,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         role: message.role === "ASSISTANT" ? ("assistant" as const) : ("user" as const),
         text: message.content,
       }));
-    void realtimeVoice.start(undefined, history);
-  }, [chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, privateMode, realtimeVoice, voiceSaveError]);
+    // What Juno remembers comes along — the same memory a typed turn in this
+    // chat reads (this project's alone, in a project), and none in incognito.
+    void realtimeVoice.start(undefined, history, privateMode ? undefined : { memory: { projectId: activeProjectId } });
+  }, [activeProjectId, chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, privateMode, realtimeVoice, voiceSaveError]);
 
   const closeVoice = React.useCallback(() => {
     if (voiceSavingRef.current) return;

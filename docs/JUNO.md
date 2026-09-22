@@ -1048,32 +1048,60 @@ industry models), `sync:benchmarks` (Artificial Analysis, needs `AA_API_KEY`),
 
 ## 7. Memory
 
-Memory lets Juno remember durable facts about a user across conversations. Four
+Memory lets Juno remember durable facts about a user across conversations. Five
 Prisma models: **`MemoryEntry`** (a `content` string with `kind` = `FACT` or
 `SUPPRESSION`, `source` = `AUTO`/`MANUAL`, `sourceRef`, plus the Memory v2 lifecycle
 columns — `category`, `projectId`, `confidence`, `status`, `reason`, `expiresAt`,
-`lastUsedAt`, `supersededById`, `normalized`, `embedding`), **`MemoryEdit`** (the
+`lastUsedAt`, `supersededById`, `normalized`, `embedding`, and `observedAt`, when the
+person *said* it as opposed to when it was written down), **`MemoryEdit`** (the
 server-synced ledger of natural-language instructions, their operations and their
 inverses), **`ConversationMemory`** (a per-chat high-water mark `processedAt` +
-one-line `digest` + `factCount`, making extraction incremental and resumable), and
-**`MemorySummary`** (a periodically regenerated, deduped markdown summary).
-`Settings.memoryEnabled` is the master toggle; `Settings.memorySensitiveTopics` is the
-sensitive-subject opt-in.
+one-line `digest` + `factCount` + the `extractorVersion` that read it, making
+extraction incremental, resumable and re-readable), **`MemorySummary`** (a
+periodically regenerated, deduped markdown summary of account-wide memory) and
+**`ProjectMemorySummary`** (the same for one project, per person). Both summaries are
+encrypted at rest. `Settings.memoryEnabled` is the master toggle;
+`Settings.memorySensitiveTopics` is the sensitive-subject opt-in.
 
 **Extraction** (`src/lib/memory.ts`) has two paths: inline `<juno:memory>…</juno:memory>`
 tags the model emits during a reply, and a background distillation
-(`extractConversationMemory`) that runs after the answer persists, chunking user
-messages, running a free utility model, and advancing the high-water mark per chunk.
+(`extractConversationMemory`) that runs after the answer persists — and after a voice
+call's transcript is saved — chunking user messages, running a free utility model, and
+advancing the high-water mark per chunk. The prompt lives in
+`src/lib/memory-extraction.ts` so the recall benchmark measures the one production
+sends; its "already known" list holds only what is believed in the chat's own scope
+(reader v2). Each chunk's facts are dated by the message they came from.
 
 **Lifecycle** (`src/lib/memory-lifecycle.ts`, no Prisma so it is unit-testable):
 `planFactIngestion` classifies a candidate into one of nine categories, detects
-duplicates by normalized form, resolves contradictions (newer/explicit wins; the loser
-is annotated `superseded`, never deleted), and gives `temporary` facts a TTL.
+duplicates by normalized form, resolves contradictions (explicit beats inferred, a
+markedly more confident fact beats a less confident one, and otherwise **whichever was
+said later** wins — judged by `observedAt`, so the outcome is the same in whatever
+order chats are read; the loser is annotated `superseded`, never deleted), reinstates a
+retired fact said again later than what replaced it, and gives `temporary` facts a TTL
+counted from when they were said. Single-valued attributes (where you live, where you
+work, your name…) only count when the sentence is about the user, not their sister.
+`planTimelineReconciliation` is the re-judge pass: it replays each single-valued
+attribute in the order it was said and repairs what reading order decided before
+observation times existed, never touching a fact the user typed.
 **Retrieval** (`selectMemoriesForContext`) ranks candidates against the current message
 — reciprocal-rank fusion of cosine similarity and token overlap when vectors exist for
 both sides, lexical overlap when they do not — weighted by recency, confidence,
-category and project scope, then filled to a token budget. Project-scoped facts never
-leave their project, and the turn emits a receipt naming the facts it used.
+category and project scope (recency by when a fact was said), then filled to a token
+budget. Project-scoped facts never leave their project, and the turn emits a receipt
+naming the facts it used.
+
+**Projects** read memory in isolation: a chat filed in a project sees that project's
+facts and that project's own summary, never the account's — the prompt says "from this
+project's chats". The project summary is built from the project's facts and its chats'
+digests only (`src/lib/memory-project-summary.ts` holds the prompt), and the account
+summary no longer reads project chats' digests. `maybeConsolidateProject` rebuilds it
+by the rule the account summary uses (`summaryRebuildDecision`: a changed fact count,
+a newer forget, or a newer expiry, throttled to one rebuild in five minutes); edits,
+forgets, deletes and scope moves rebuild every scope they touched; the chat turn, the
+dreamer and `POST /api/projects/[id]/memory` rebuild it too. Memory is personal in a
+shared project: each member's summary is built from their own facts and read only by
+them.
 
 **Suppression** (`src/lib/memory-suppression.ts`) stores the statement to forget
 verbatim; `guardedMemoryWrite` is the single door every write goes through, so a
@@ -1132,7 +1160,31 @@ conversations nobody asked Juno to read, a few accounts per ten-minute tick and 
 chats per account, through the same extractor a chat turn uses. It runs only while
 memory is on, `Settings.memoryBackgroundLearning` is on (default), the account has been
 idle for ten minutes, and its usage windows have room (`src/lib/memory-dreaming.ts`).
-`/api/memory/backfill` — the manual "read now" — refuses a paused account server-side.
+Once nothing new is left it **re-reads** chats an older reader distilled
+(`queueRereads`), two at a time — never from before the oldest thing Juno still
+remembers, so a reset's erasure is never undone — then runs the re-judge pass
+(`reconcileMemoryTimeline`, which also dates undated rows from their source messages a
+bounded batch at a time) and refreshes the account and project summaries that moved.
+`/api/memory/backfill` — the manual "read now" — refuses a paused account server-side
+and re-judges after each batch.
+
+**Voice.** A chat's realtime call asks `/api/voice/relay-token?memory=1` (and
+`&projectId=` in a project; never in incognito). The token carries a signed grant; the
+relay then fetches the memory block from `/api/voice/memory` itself, server to server,
+under a callback token scoped to memory (`aud: "juno.voice.memory"`), and appends it to
+its voice instructions — once per call, kept across provider switches, and a call that
+cannot reach it starts without it. The route applies every chat rule (paused, project
+isolation, a project's memory-recall switch) and `src/lib/voice-memory.ts` shapes the
+block for speech. `session.ready.memory` tells the dock to say "Memory".
+
+**Measuring it.** `npm run memory:bench` (`src/lib/memory-bench.ts`, histories in
+`src/lib/memory-bench-scenarios.ts`) scores what Juno believes after reading five
+ordinary histories — recall, still-believed outdated facts, forgotten facts, precision,
+retrieval of what a question needs, and leaks across scopes — as they happen, re-read
+newest-first, and as existing data repaired. Offline, a reader that follows the prompt
+stands in for the model so the run is exact; `tests/memory-bench.test.ts` fails if a
+fresh run differs from `tests/fixtures/memory-recall-record.json` or falls below the
+recorded pre-work baseline. `--live` runs it against a real model.
 
 **API** (`/api/memory`): `GET` (facts + summary, optional `?q=` search), `POST` (add a
 manual fact), `DELETE` (full reset in a transaction), `PATCH`/`DELETE /[id]` (rewrite,
@@ -1140,13 +1192,17 @@ forget, delete — forget also writes the block-list entry), `/backfill` (resuma
 distillation of past chats, two per call), `/consolidate` (regenerate the summary),
 `/edit` + `/edit/apply` (translate a natural-language instruction — "forget my old job"
 — into a reviewable, undoable set of add/suppress/update/remove operations with a
-staleness guard), `/edits` (the ledger), `/import/preview` + `/import` (parse, then
-commit, an import), and `/recap` (the period's conversation themes).
+staleness guard; an Undo restores a fact to the project it was removed from),
+`/edits` (the ledger), `/import/preview` + `/import` (parse, then commit, an import),
+and `/recap` (the period's conversation themes). `GET /api/memory` also returns every
+project summary; `GET`/`POST /api/projects/[id]/memory` read and rebuild one project's.
 
 **UI** (`src/app/(app)/memory/page.tsx`, `src/components/memory/`): `useMemory` holds
 the whole state machine and is the only thing that knows how the page talks to the
 server. The page shows a stats strip with the resumable "learn from past chats" job,
-the consolidated summary with its natural-language instruction bar, the review queue
+a scope row (everything, or one project — shown only once a project has memory; a
+project's slice shows its own summary, facts and recap), the consolidated summary with
+its natural-language instruction bar, the review queue
 with per-edit diffs and Undo, a search + Topics / All facts / Recap switch, and the rows
 themselves — each carrying its category, sensitivity, project scope, confidence,
 status, provenance link and last-used time, with inline rewrite / forget / delete.
@@ -2342,7 +2398,7 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 Prisma schema: `prisma/schema.prisma` (95 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
-So are `Message.activity`, `MemorySummary.content` and `ScheduledTask.prompt`, through
+So are `Message.activity`, `MemorySummary.content`, `ProjectMemorySummary.content` and `ScheduledTask.prompt`, through
 `src/lib/field-crypto.ts` — the same keyring and wire format, so one rotation covers
 everything. `Message.activity` stays a `Json` column: the ciphertext is wrapped as
 `{"enc":"enc:v2:…"}` rather than migrated to text.
@@ -2379,7 +2435,8 @@ history). `ChatFirstSubmissionReceipt` (durable first-submission idempotency + l
 
 **Memory.** `MemoryEntry` (FACT/SUPPRESSION — `content` plaintext, because
 `memorySearchSql` tokenises it in Postgres), `MemoryEdit` (the instruction ledger),
-`ConversationMemory` (per-chat high-water), `MemorySummary` (encrypted `content`).
+`ConversationMemory` (per-chat high-water and reader version), `MemorySummary` and
+`ProjectMemorySummary` (encrypted `content`).
 `Settings.memorySensitiveTopics` holds the sensitive-subject opt-in; a fact's own
 sensitivity is derived from its content on read, never stored.
 
