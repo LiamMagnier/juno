@@ -140,6 +140,7 @@ import {
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
 import { backfillAttachmentText } from "@/lib/knowledge";
+import { isPdfAttachment, providerReceivesDocumentBytes } from "@/lib/attachment-bytes";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import {
@@ -1893,11 +1894,24 @@ async function handleChat(req: Request) {
         policy: await loadBackgroundProviderPolicy(user.id, settings),
         conversationProvider: modelInfo.provider,
       });
+      /*
+       * A file whose BYTES this model receives is never listed as unreadable.
+       *
+       * Both notes below instruct the model not to describe the file's
+       * contents. On Claude, Gemini and the Responses API the adapter has
+       * inlined the PDF itself — pages and all — so that instruction lands on
+       * a model that is looking straight at the document, and the user is told
+       * "I cannot read this" about something the model can read perfectly.
+       * That is the best case in the product being reported as the worst.
+       */
+      const modelSeesDocument = providerReceivesDocumentBytes(modelInfo, !!input.proMode);
+      const needsTextToBeRead = (attachment: (typeof directAttachments)[number]) =>
+        !(modelSeesDocument && isPdfAttachment(attachment));
       const pendingFiles = directAttachments
-        .filter((attachment) => isAttachmentParserPending(attachment.parserState))
+        .filter((attachment) => isAttachmentParserPending(attachment.parserState) && needsTextToBeRead(attachment))
         .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
       const unavailableFiles = directAttachments
-        .filter((attachment) => isAttachmentParserUnavailable(attachment.parserState))
+        .filter((attachment) => isAttachmentParserUnavailable(attachment.parserState) && needsTextToBeRead(attachment))
         .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
       if (retrieved || pendingFiles.length > 0 || unavailableFiles.length > 0) {
         attachmentKnowledge = {
@@ -1949,11 +1963,15 @@ async function handleChat(req: Request) {
    * a tool call it must then be told to ignore.
    */
   const attachmentToolToggles = {
-    documents: allAttachments.some(
-      (attachment) =>
-        attachment.kind === "FILE" &&
-        (attachment.parserState === "ready" || attachment.parserState === "degraded"),
-    ),
+    /*
+     * ANY attached file, not only an indexed one — and the change matters most
+     * for the files that look least promising. `read_document` now falls back
+     * to reading the bytes when the index has nothing (see
+     * `knowledge/read-on-demand.ts`), so a PDF the indexer marked `failed` is
+     * exactly the document the tool exists to rescue. Gating on `ready` meant
+     * the rescue was withheld from every file that needed rescuing.
+     */
+    documents: allAttachments.some((attachment) => attachment.kind === "FILE"),
     images:
       modelInfo.vision &&
       allAttachments.some(

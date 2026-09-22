@@ -11,13 +11,15 @@
 import { DOCX_PARSER_VERSION, extractDocx } from "./docx";
 import { PDF_PARSER_VERSION, extractPdf } from "./pdf";
 import { PPTX_PARSER_VERSION, extractPptx } from "./pptx";
+import { ODT_PARSER_VERSION, extractOdt } from "./odt";
+import { RTF_PARSER_VERSION, extractRtf } from "./rtf";
 import { TEXT_PARSER_VERSION, extractTextDocument, textFlavor } from "./text";
 import { XLSX_PARSER_VERSION, extractXlsx } from "./xlsx";
 import { ocrPdf, OCR_VERSION } from "../ocr";
 import { extractPdfWithEngine, PDF_ENGINE, PDF_ENGINE_VERSION } from "./pdf-engine";
 import type { ExtractionResult } from "./types";
 
-export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "text";
+export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "odt" | "rtf" | "text";
 
 /**
  * The version each extractor is currently on, in one place.
@@ -32,6 +34,8 @@ export const PARSER_VERSIONS: Record<ExtractorId, string> = {
   docx: DOCX_PARSER_VERSION,
   pptx: PPTX_PARSER_VERSION,
   xlsx: XLSX_PARSER_VERSION,
+  odt: ODT_PARSER_VERSION,
+  rtf: RTF_PARSER_VERSION,
   text: TEXT_PARSER_VERSION,
 };
 
@@ -43,6 +47,12 @@ const BY_EXTENSION: Record<string, ExtractorId> = {
   pptm: "pptx",
   xlsx: "xlsx",
   xlsm: "xlsx",
+  rtf: "rtf",
+  odt: "odt",
+  ods: "odt",
+  odp: "odt",
+  // The flat-XML variants LibreOffice offers beside them.
+  fodt: "odt",
 };
 
 const BY_MIME: Record<string, ExtractorId> = {
@@ -50,6 +60,14 @@ const BY_MIME: Record<string, ExtractorId> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  // Both spellings. macOS says one, Linux and Windows say the other, and the
+  // file is identical — RTF used to be accepted or refused by operating
+  // system, then indexed as control words when it did get through.
+  "application/rtf": "rtf",
+  "text/rtf": "rtf",
+  "application/vnd.oasis.opendocument.text": "odt",
+  "application/vnd.oasis.opendocument.spreadsheet": "odt",
+  "application/vnd.oasis.opendocument.presentation": "odt",
 };
 
 /**
@@ -117,7 +135,31 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
           const parsed = extractPdf(input);
           // OCR is a fallback only. Preserve embedded text at confidence 1 and
           // add OCR blocks only for pages the native parser could not read.
-          if (parsed.status !== "degraded" || parsed.pageCount === undefined) return parsed;
+          //
+          /*
+           * `failed` FALLS THROUGH TO THE LADDER TOO, and that is the fix for
+           * the class of file this function most often lost.
+           *
+           * The gate here used to be `status !== "degraded"`, which returned
+           * immediately on `failed` — so every rung below was unreachable for
+           * exactly the documents that needed them. The native parser's four
+           * `failed` verdicts are "no PDF header", "password-protected", "no
+           * readable objects" and "no pages Juno could read", and three of
+           * those are judgements a narrow hand-written parser gets wrong on
+           * real files: the `/Encrypt` test is a regex over the trailer region
+           * that a permissions-only PDF (openable with an empty password, and
+           * what most government forms and bank statements are) trips, and a
+           * page tree it cannot walk is routinely one pdf.js walks fine.
+           *
+           * pdf.js is already here, it opens all three, and it was being
+           * skipped. Only `degraded` carries a page count, so a `failed`
+           * document gets no `maxPages` ceiling and the reader reads what it
+           * finds. A file that genuinely is encrypted or corrupt still fails —
+           * it just fails after the engine that could have said otherwise has
+           * actually been asked.
+           */
+          const nativeFailed = parsed.status === "failed";
+          if (!nativeFailed && (parsed.status !== "degraded" || parsed.pageCount === undefined)) return parsed;
 
           /*
            * ── THE PDF.JS RUNG, BETWEEN THE NATIVE PARSER AND OCR ───────────
@@ -137,11 +179,25 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
            * resort, for pages that have no text layer at all — a scan — which
            * is the only thing it was ever the right answer for.
            */
+          /*
+           * A COPY OF THE BYTES, EVERY TIME, and this is not defensive habit.
+           *
+           * pdf.js TRANSFERS the buffer it is given: measured on a real file,
+           * `byteLength` goes 16978 → 0 the moment `getDocumentProxy` returns.
+           * So the engine rung below was destroying the very bytes the OCR
+           * rung is handed three statements later — `ocrPdf` received a
+           * zero-length buffer on every document that reached it, wrote an
+           * empty temp file, and could not have OCR'd a page even on a host
+           * with tesseract installed. The symptom was indistinguishable from
+           * "this scan has no text", which is why it survived: a fallback that
+           * silently receives nothing looks exactly like a fallback that ran
+           * and found nothing.
+           */
           const engine = await extractPdfWithEngine({
-            bytes: input.bytes,
+            bytes: input.bytes.slice(),
             fileName: input.fileName,
-            skipPages: readablePages(parsed),
-            maxPages: parsed.pageCount,
+            skipPages: nativeFailed ? new Set<number>() : readablePages(parsed),
+            ...(parsed.pageCount === undefined ? {} : { maxPages: parsed.pageCount }),
           });
           const enginePages = engine.status === "ok" ? engine.pages : new Set<number>();
           const withEngine =
@@ -150,8 +206,20 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
                   ...parsed,
                   parserVersion: `${PDF_PARSER_VERSION}+${PDF_ENGINE}${PDF_ENGINE_VERSION}`,
                   blocks: [...parsed.blocks, ...engine.blocks],
+                  // The native parser produced nothing and gave a reason that
+                  // has now been contradicted by an engine that read the file.
+                  // Carrying its "password-protected" or "damaged" wording
+                  // forward would put a verdict on the document that the
+                  // evidence no longer supports.
+                  ...(nativeFailed
+                    ? { status: "ok" as const, pageCount: enginePages.size || parsed.pageCount, reason: undefined }
+                    : {}),
                 }
               : parsed;
+
+          // The native parser failed AND the engine could not read it either:
+          // now the failure is real, and the native reason is the honest one.
+          if (nativeFailed && engine.status !== "ok") return parsed;
 
           // Every page accounted for: the document is whole, however it was
           // read, and calling it degraded would send a reader looking for a
@@ -166,7 +234,9 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
           }
 
           const ocr = await ocrPdf({
-            bytes: input.bytes,
+            // A copy again: the engine rung above has already transferred one
+            // buffer, and this is the rung that was silently starved by it.
+            bytes: input.bytes.slice(),
             fileName: input.fileName,
             pageCount: parsed.pageCount,
           });
@@ -198,6 +268,10 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
         return await extractPptx(input);
       case "xlsx":
         return await extractXlsx(input);
+      case "odt":
+        return await extractOdt(input);
+      case "rtf":
+        return extractRtf(input);
       case "text":
         return extractTextDocument(input);
     }

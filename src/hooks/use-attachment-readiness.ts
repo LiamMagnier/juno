@@ -20,39 +20,42 @@ import { isTextExtractable } from "@/lib/uploads";
  * `.txt`, `.md`, `.csv` or `.json` is stored with a flat `extractedText` at
  * upload time and reaches the model whatever the index does, so a failed index
  * on one of those costs citations, not content — warning about it would be a
- * lie. `isTextExtractable` excludes exactly one common type from that flat
- * path: `application/pdf`. A PDF's text is produced by the indexer and nothing
- * else — the indexer now writes it back onto the attachment row, so the model
- * receives the whole document rather than a few retrieved passages, but the
- * dependency is the same one: until indexing settles there is no text, and if
- * it fails there never will be. A PDF is still the file whose index state is
- * the difference between the model reading it and receiving nothing at all.
+ * lie. `isTextExtractable` excludes the binary documents from that flat path:
+ * a PDF, and now a .docx, .xlsx or .pptx, gets its text from the indexer and
+ * from nowhere else.
+ *
+ * IT ASKS WHAT THE MODEL WILL RECEIVE, NOT WHAT THE PARSER CONCLUDED, and the
+ * distance between those two questions is where this hook used to get the
+ * commonest case exactly backwards. A scanned PDF extracts to nothing, which
+ * on the index alone reads as a file Juno "could not read" — and it is nothing
+ * of the kind: its pages draw perfectly (measured: 5 of 7 zero-text PDFs in a
+ * real corpus render a clean page image) and every vision model in the
+ * catalogue reads a page it is shown. `visual` is that case, and telling those
+ * people their file had failed sent them looking for another copy of a
+ * document that was always going to work.
  */
-export type AttachmentReadiness = "reading" | "unreadable" | "partial" | "ready";
+export type AttachmentReadiness = "reading" | "unreadable" | "visual" | "partial" | "ready";
 
 const PENDING = new Set(["queued", "indexing", "extracting", "ocr"]);
 const UNREADABLE = new Set(["failed", "skipped"]);
-/**
- * `degraded` is PARTIAL, not unreadable — and that changed with the indexer.
- *
- * It used to sit beside `failed` because a degraded PDF's text reached the
- * model only as whatever retrieval happened to match, which for a half-read
- * scan was usually nothing. The extracted text of a settled document is now
- * written back onto the attachment itself, degraded ones included, so the
- * pages that DID read come through in full. Calling that "couldn't read this
- * file" would send the person away from a file Juno can largely read.
- */
-const PARTIAL = new Set(["degraded"]);
 
 /** Fast at first, then slower: most files settle in the first second or two. */
 const POLL_MS = [1200, 1200, 1800, 2500, 4000] as const;
 /** After this, stop asking. A state that has not settled is not going to. */
 const MAX_POLLS = 14;
 
+interface AttachmentFacts {
+  state: string;
+  /** Text was extracted, so every adapter has something to send. */
+  readable: boolean;
+  /** Its pages can be drawn, so any model that can see can read it. */
+  visual: boolean;
+}
+
 export function useAttachmentReadiness(
   uploads: readonly PendingUpload[],
 ): Map<string, AttachmentReadiness> {
-  const [states, setStates] = React.useState<Record<string, string>>({});
+  const [facts, setFacts] = React.useState<Record<string, AttachmentFacts>>({});
 
   /*
    * The ids worth asking about: uploaded, not an image, and on the index-only
@@ -82,8 +85,22 @@ export function useAttachmentReadiness(
       try {
         const res = await fetch(`/api/attachments/state?ids=${encodeURIComponent(ids.join(","))}`);
         if (!cancelled && res.ok) {
-          const body = (await res.json()) as { states?: Record<string, string> };
-          if (body.states) setStates((prev) => ({ ...prev, ...body.states }));
+          const body = (await res.json()) as {
+            states?: Record<string, string>;
+            readable?: Record<string, boolean>;
+            visual?: Record<string, boolean>;
+          };
+          if (body.states) {
+            const next: Record<string, AttachmentFacts> = {};
+            for (const [id, state] of Object.entries(body.states)) {
+              next[id] = {
+                state,
+                readable: body.readable?.[id] ?? false,
+                visual: body.visual?.[id] ?? false,
+              };
+            }
+            setFacts((prev) => ({ ...prev, ...next }));
+          }
           // Settled everywhere: stop, rather than polling a row that will not
           // change again until someone re-uploads the file.
           const settled = ids.every((id) => {
@@ -111,10 +128,24 @@ export function useAttachmentReadiness(
 
   const out = new Map<string, AttachmentReadiness>();
   for (const id of watched) {
-    const state = states[id];
-    if (state === undefined || PENDING.has(state)) out.set(id, "reading");
-    else if (UNREADABLE.has(state)) out.set(id, "unreadable");
-    else if (PARTIAL.has(state)) out.set(id, "partial");
+    const fact = facts[id];
+    if (!fact || PENDING.has(fact.state)) {
+      out.set(id, "reading");
+      continue;
+    }
+    /*
+     * The order is the point, and it is read off what the model receives
+     * rather than off what the indexer concluded.
+     *
+     * Text first: a file with extracted text is readable on every provider,
+     * whatever state the parser settled in. Then pictures: a PDF with no text
+     * is a scan, and a scan is a stack of pages a vision model reads fine.
+     * Only a file that is neither — no text, nothing to draw — has actually
+     * failed, and that is now rare enough to be worth saying plainly.
+     */
+    if (fact.readable) out.set(id, fact.state === "degraded" ? "partial" : "ready");
+    else if (fact.visual) out.set(id, "visual");
+    else if (UNREADABLE.has(fact.state) || fact.state === "degraded") out.set(id, "unreadable");
     else out.set(id, "ready");
   }
   return out;

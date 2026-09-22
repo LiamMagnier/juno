@@ -38,7 +38,18 @@ import { inflateSync, inflateRawSync } from "node:zlib";
 import { BlockCollector, EXTRACT_LIMITS, type ExtractedBlock, type ExtractionResult } from "./types";
 
 export const PDF_PARSER = "pdf";
-export const PDF_PARSER_VERSION = "2-ocr1";
+/*
+ * Bumped to 3 for the ladder repair, and the bump IS the migration.
+ *
+ * `planIngest` re-indexes any document whose stored `parserVersion` is behind
+ * the current one, so this constant is the only thing that makes a fix reach
+ * files already in the library. Without it the repairs in `extract/index.ts` —
+ * the pdf.js rung reachable from `failed`, and OCR finally receiving bytes
+ * that have not been transferred out from under it — would apply to new
+ * uploads only, and every PDF that has already been misread would stay
+ * misread until somebody thought to upload it a second time.
+ */
+export const PDF_PARSER_VERSION = "3-ladder";
 
 /** Ceilings. Every one of these is reachable from a 20 KB hand-written file. */
 const MAX_OBJECTS = 100_000;
