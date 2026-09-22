@@ -208,7 +208,9 @@ struct StudioComposer<Leading: View, Trailing: View>: View {
                     .background(Circle().fill(Studio.Ink.primary))
             }
             .buttonStyle(.plain)
-            .keyboardShortcut(".", modifiers: .command)
+            // ⌘. is the host's Stop command (Session › Stop), not a shortcut on
+            // this button: the button gives way to Send once the draft has any
+            // text, and the shortcut used to vanish with it.
             .help("Stop (⌘.)")
             .accessibilityLabel("Stop")
             .accessibilityIdentifier("juno.code.composer.stop")

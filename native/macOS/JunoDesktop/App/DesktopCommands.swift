@@ -42,6 +42,11 @@ struct DesktopCodeActions {
     /// ⌘O: grant a folder as a project.
     var openFolder: () -> Void
     var createPullRequest: (() -> Void)?
+    /// ⌘.: stops the run on screen, or nil when nothing is running. A menu
+    /// command rather than a shortcut on the composer's Stop button, which
+    /// gives way to Send as soon as the draft has any text, taking ⌘. with it
+    /// in exactly the moment a reader typing a correction decides to stop.
+    var stop: (() -> Void)?
     var hasSession: Bool
 }
 
@@ -161,6 +166,11 @@ struct JunoDesktopCommands: Commands {
                 Button("Command Palette…") { codeActions?.openPalette() }
                     .keyboardShortcut("k", modifiers: [.command])
                     .disabled(codeActions == nil)
+            }
+            Section {
+                Button("Stop") { codeActions?.stop?() }
+                    .keyboardShortcut(".", modifiers: [.command])
+                    .disabled(codeActions?.stop == nil)
             }
             Section {
                 Button("Previous Session") { codeActions?.previousSession() }
