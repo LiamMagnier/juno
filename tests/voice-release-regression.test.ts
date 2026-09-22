@@ -13,6 +13,10 @@ const nativeAttachmentModel = readFileSync(
   "utf8",
 );
 const productionSmoke = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
+const voiceHook = readFileSync(new URL("../src/hooks/use-realtime-voice.ts", import.meta.url), "utf8");
+const chatView = readFileSync(new URL("../src/components/chat/chat-view.tsx", import.meta.url), "utf8");
+const chatComposer = readFileSync(new URL("../src/components/chat/composer.tsx", import.meta.url), "utf8");
+const geminiLive = readFileSync(new URL("../relay/src/providers/gemini-live.ts", import.meta.url), "utf8");
 
 test("voice relay verifier resolves ws from the standalone relay package", () => {
   assert.match(relayVerifier, /createRequire\(new URL\(["']\.\.\/relay\/package\.json["']/);
@@ -85,4 +89,43 @@ test("mobile Voice keeps Files independent from vision and preserves library ima
   assert.match(nativeComposer, /voiceImageData\(for:/);
   assert.match(nativeAttachmentModel, /public let isImage: Bool/);
   assert.match(nativeAttachmentModel, /public func voiceImageData\(for attachmentID: UUID\)/);
+});
+
+test("web Voice keeps Files independent from vision and never puts bytes on the socket", () => {
+  // Documents resolve through the authenticated route and ride with the turn
+  // as bounded text, so they do not need a provider that can see.
+  assert.match(voiceHook, /fetch\("\/api\/voice\/context"/);
+  assert.match(voiceHook, /attachmentIds: selected\.map\(/);
+  assert.match(voiceHook, /\.\.\.\(context \? \{ context \} : \{\}\)/);
+  // The vision gate is scoped to images alone. A file must never be refused
+  // for want of a camera.
+  assert.match(voiceHook, /if \(images\.length > 0 && !capsRef\.current\?\.videoInput\)/);
+  assert.doesNotMatch(voiceHook, /attachments\.some\(\(attachment\) => attachment\.kind !== "IMAGE"\)/);
+  // The composer no longer turns documents away before the hook sees them.
+  assert.doesNotMatch(chatView, /not document attachments yet/);
+  // ...nor before the composer will even hold one: the voice sheet offers the
+  // same attach row as chat, and only photos narrow with the provider.
+  assert.match(chatComposer, /voiceActive && !voiceCanSeeImages/);
+  assert.match(chatComposer, /voiceCanSeeImages \? "Add files or photos" : "Add files"/);
+  assert.doesNotMatch(chatComposer, /Voice mode accepts image attachments only/);
+  assert.doesNotMatch(chatComposer, /Voice mode accepts images from your library only/);
+  // One per-turn cap, shared with the route and the relay rather than retyped.
+  assert.match(chatComposer, /VOICE_ATTACHMENT_LIMIT/);
+  assert.doesNotMatch(chatComposer, /MAX_VOICE_IMAGES/);
+});
+
+test("web Voice reports a file whose text was not available instead of answering around it", () => {
+  assert.match(voiceHook, /availability === "pending"/);
+  assert.match(voiceHook, /availability === "unavailable"/);
+  assert.match(chatView, /result\.pendingFiles\?\.length/);
+  assert.match(chatView, /result\.unavailableFiles\?\.length/);
+});
+
+test("a Gemini setup the Live API closes on reports the server's reason", () => {
+  // The setup wait must settle on the close frame, not only on setupComplete
+  // and a timer — otherwise every cause prints the same "timed out".
+  assert.match(geminiLive, /ws\.on\("close", onSetupClose\)/);
+  assert.match(geminiLive, /ws\.on\("error", onSetupError\)/);
+  assert.match(geminiLive, /refused the session setup for model/);
+  assert.match(geminiLive, /RELAY_GEMINI_MODEL/);
 });
