@@ -36,6 +36,17 @@ export interface ClientAttachment {
   url: string;
   width?: number | null;
   height?: number | null;
+  /**
+   * How far the knowledge indexer has got with this file:
+   * `queued | indexing | ready | degraded | failed | skipped`.
+   *
+   * Present from the upload response onward, where it is always `queued` —
+   * indexing is scheduled, not awaited. The composer polls
+   * `/api/attachments/state` until it settles, so "Juno could not read this
+   * file" arrives before the message is sent rather than inside the reply to
+   * it.
+   */
+  parserState?: string;
 }
 
 export interface ClientMessage {

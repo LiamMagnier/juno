@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { deflateSync } from "node:zlib";
 import JSZip from "jszip";
 
 import { extractDocument, selectExtractor } from "@/lib/knowledge/extract";
@@ -450,6 +451,118 @@ test("pdf paragraph breaks follow the vertical gaps on the page", () => {
   const result = extractPdf({ bytes, fileName: "gaps.pdf" });
   const texts = result.blocks.map((b) => b.text);
   assert.deepEqual(texts, ["First line of one. Second line of one.", "A separate paragraph."]);
+});
+
+/* -------------------------------------------------------------------------- */
+/* PDF · the subset-CID case the native parser cannot decode                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A PDF whose text is drawn with a Type0 / Identity-H font, subset the way a
+ * real exporter subsets: glyph ids renumbered from 3 in font order, with no
+ * relation to code points, and a Flate-compressed `/ToUnicode` CMap as the
+ * only way back to characters. This is what LaTeX and InDesign emit, which is
+ * to say it is what a technical report IS.
+ *
+ * `toUnicode: false` drops that map, which makes the page genuinely
+ * undecodable by anything — the case that must still degrade.
+ */
+function cidPdf(lines: string[], options: { toUnicode: boolean }): Uint8Array {
+  const chars = [...new Set(lines.join("").split(""))];
+  const gid = new Map(chars.map((c, i) => [c, i + 3]));
+  const hex = (text: string) =>
+    [...text].map((c) => gid.get(c)!.toString(16).padStart(4, "0")).join("");
+  const content =
+    "BT /F1 12 Tf 72 720 Td " +
+    lines.map((line, i) => `${i ? "0 -16 Td " : ""}<${hex(line)}> Tj `).join("") +
+    "ET";
+  const cmap = [
+    "/CIDInit /ProcSet findresource begin",
+    "12 dict begin",
+    "begincmap",
+    "1 begincodespacerange",
+    "<0000> <FFFF>",
+    "endcodespacerange",
+    ...chars.map((c) => {
+      const g = gid.get(c)!.toString(16).padStart(4, "0");
+      const u = c.codePointAt(0)!.toString(16).padStart(4, "0");
+      return `1 beginbfchar\n<${g}> <${u}>\nendbfchar`;
+    }),
+    "endcmap",
+    "CMapName currentdict /CMap defineresource pop",
+    "end",
+    "end",
+  ].join("\n");
+
+  const zContent = deflateSync(Buffer.from(content, "latin1"));
+  const zCmap = deflateSync(Buffer.from(cmap, "latin1"));
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${zContent.length} /Filter /FlateDecode >>\nstream\n${zContent.toString("latin1")}\nendstream`,
+    "<< /Type /Font /Subtype /Type0 /BaseFont /AAAAAA+DejaVuSans /Encoding /Identity-H /DescendantFonts [6 0 R]" +
+      (options.toUnicode ? " /ToUnicode 8 0 R" : "") +
+      " >>",
+    "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /AAAAAA+DejaVuSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 7 0 R /DW 600 >>",
+    "<< /Type /FontDescriptor /FontName /AAAAAA+DejaVuSans /Flags 4 /FontBBox [-1021 -463 1793 1232] /ItalicAngle 0 /Ascent 928 /Descent -236 /CapHeight 700 /StemV 80 >>",
+    `<< /Length ${zCmap.length} /Filter /FlateDecode >>\nstream\n${zCmap.toString("latin1")}\nendstream`,
+  ];
+
+  let out = "%PDF-1.7\n";
+  const offsets: number[] = [];
+  objs.forEach((body, i) => {
+    offsets.push(Buffer.byteLength(out, "latin1"));
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(out, "latin1");
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) out += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(out, "latin1"));
+}
+
+const CID_LINES = [
+  "K3 Technical Report",
+  "The K3 model is a sparse mixture-of-experts transformer.",
+];
+
+test("a subset-CID pdf the native parser cannot decode is read by the pdf.js rung", async () => {
+  const bytes = cidPdf(CID_LINES, { toUnicode: true });
+
+  // The native parser reports no text layer — and it is not merely incomplete,
+  // it is WRONG about why: this file is not a scan, it is a normal export whose
+  // font it cannot map. That wrong reason is what used to reach the reader.
+  const native = extractPdf({ bytes, fileName: "k3.pdf" });
+  assert.equal(native.status, "degraded");
+  assert.equal(native.blocks.length, 0);
+
+  const result = await extractDocument({ bytes, fileName: "k3.pdf", mimeType: "application/pdf" });
+  assert.ok(result, "a pdf has an extractor");
+  assert.equal(result.status, "ok", result.reason);
+  assert.ok(result.parserVersion.includes("pdfjs"), "the pdf.js rung is named in the version");
+
+  const text = result.blocks.map((b) => b.text).join(" ");
+  assert.match(text, /K3 Technical Report/);
+  assert.match(text, /mixture-of-experts/);
+  for (const block of result.blocks) {
+    assert.equal(block.page, 1, "every block carries the page it came from");
+    // Below the native parser's verified 1, far above OCR: it is the author's
+    // own text, read through a font-decoding layer.
+    assert.equal(block.confidence, 0.9);
+  }
+});
+
+test("a pdf with no way back to characters still degrades rather than indexing glyph ids", async () => {
+  // No /ToUnicode and no standard encoding: the content stream holds glyph
+  // ids, and pdf.js will hand back control and private-use characters for
+  // them. Indexing that would be worse than indexing nothing — it is mojibake
+  // wearing the shape of a document.
+  const bytes = cidPdf(CID_LINES, { toUnicode: false });
+  const result = await extractDocument({ bytes, fileName: "unmappable.pdf", mimeType: "application/pdf" });
+  assert.ok(result);
+  assert.notEqual(result.status, "ok");
+  assert.equal(result.blocks.length, 0);
 });
 
 test("a scanned pdf degrades with an honest reason instead of looking indexed", () => {

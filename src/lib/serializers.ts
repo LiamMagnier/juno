@@ -128,7 +128,11 @@ function serializeActivity(stored: unknown): ClientActivityEvent[] | undefined {
 export type AttachmentForClient = Pick<
   Attachment,
   "id" | "kind" | "fileName" | "mimeType" | "size" | "storageKey" | "width" | "height"
->;
+> &
+  // Optional, because half the callers select the columns above by name and
+  // adding a required field to that list would break every one of them at
+  // once. Absent reads as "not known here", which is the truth.
+  Partial<Pick<Attachment, "parserState">>;
 
 export async function serializeAttachment(att: AttachmentForClient): Promise<ClientAttachment> {
   return {
@@ -140,6 +144,9 @@ export async function serializeAttachment(att: AttachmentForClient): Promise<Cli
     url: await getViewUrl(att.storageKey),
     width: att.width,
     height: att.height,
+    // How far the indexer has got. The composer reads it to say whether the
+    // file can actually be read before you spend a message finding out.
+    parserState: att.parserState ?? undefined,
   };
 }
 
