@@ -6,6 +6,7 @@ import { Loader2 } from "@/components/ui/icons";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import {
   Select,
@@ -101,6 +102,9 @@ export function ProjectWorkDefaults({
 
   const restricted = value.connectorIds !== undefined;
   const chosen = value.connectorIds ?? [];
+  // The same condition that used to mount the list: never beside the retry
+  // line, and only when restricting has something to choose among.
+  const listOpen = !connectorsFailed && restricted && (connectors?.length ?? 0) > 0;
 
   const toggleConnector = (connectorId: string) => {
     const held = chosen.includes(connectorId);
@@ -213,7 +217,7 @@ export function ProjectWorkDefaults({
               aria-label="Restrict which connected apps tasks in this project may reach"
             />
           </div>
-          {connectorsFailed ? (
+          {connectorsFailed && (
             <div className="mt-3 space-y-2">
               <p className="text-caption leading-relaxed text-muted-foreground">
                 Couldn’t read your connected apps, so there is nothing to choose from here.
@@ -222,40 +226,51 @@ export function ProjectWorkDefaults({
                 Retry
               </Button>
             </div>
-          ) : restricted && (connectors?.length ?? 0) > 0 ? (
-            <ul className="mt-3 space-y-0.5 motion-safe:animate-fade-in-up">
-              {(connectors ?? []).map((connector) => {
-                const active = chosen.includes(connector.id);
-                return (
-                  <li key={connector.id}>
-                    <Pressable
-                      kind="row"
-                      size="sm"
-                      role="switch"
-                      aria-checked={active}
-                      disabled={saving}
-                      onClick={() => toggleConnector(connector.id)}
-                    >
-                      <AppIcons.connections
-                        className={cn(
-                          "size-3.5 shrink-0 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-                          active ? "text-primary" : "text-muted-foreground"
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-ui">{connector.label}</span>
-                      <Switch
-                        checked={active}
-                        tabIndex={-1}
-                        aria-hidden
-                        className="pointer-events-none"
-                      />
-                    </Pressable>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
+          )}
+          {/* The list unfolds under the switch and folds back the same way
+              when it is switched off (ICONS_AND_MOTION §2.2 rule 6), where it
+              used to vanish in a frame. The wrapper goes `inert` with the
+              switch, so a row still on screen while the fold plays cannot be
+              pressed — a press there would put the restriction back — and
+              Collapse unmounts the rows after. The gutter (`-mx-1` out,
+              `px-1 pb-1` back in) keeps the rows' focus outlines inside the
+              fold's clip. */}
+          <div className="contents" inert={!listOpen}>
+            <Collapse open={listOpen} className="-mx-1" innerClassName="px-1 pb-1 pt-3">
+              <ul className="space-y-0.5">
+                {(connectors ?? []).map((connector) => {
+                  const active = chosen.includes(connector.id);
+                  return (
+                    <li key={connector.id}>
+                      <Pressable
+                        kind="row"
+                        size="sm"
+                        role="switch"
+                        aria-checked={active}
+                        disabled={saving}
+                        onClick={() => toggleConnector(connector.id)}
+                      >
+                        <AppIcons.connections
+                          className={cn(
+                            "size-3.5 shrink-0 transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+                            active ? "text-primary" : "text-muted-foreground"
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-ui">{connector.label}</span>
+                        <Switch
+                          checked={active}
+                          tabIndex={-1}
+                          aria-hidden
+                          className="pointer-events-none"
+                        />
+                      </Pressable>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Collapse>
+          </div>
           {restricted && chosen.length === 0 ? (
             <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
               Tasks filed here reach no connected app at all. Switch one on, or switch this off

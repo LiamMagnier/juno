@@ -56,6 +56,18 @@ export function PullsList({ account, connected = true }: { account: string | nul
     connected ? { phase: "loading" } : { phase: "disconnected" },
   );
   const [refreshing, setRefreshing] = React.useState(false);
+  /*
+   * Whether the loading skeleton is a fresh arrival or the route's continued.
+   * On a normal visit it follows `loading.tsx`'s identical drawing, so it must
+   * not deal its rows in a second time. After Retry there is no route skeleton
+   * in front of it — it replaces the error state — so it enters as the route's
+   * does. Presentation only: `load` and what it fetches are unchanged.
+   */
+  const [skeletonEnters, setSkeletonEnters] = React.useState(false);
+  const retry = () => {
+    setSkeletonEnters(true);
+    void load();
+  };
 
   const load = React.useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -103,10 +115,11 @@ export function PullsList({ account, connected = true }: { account: string | nul
             phase follows `loading.tsx` on every connected visit, and the two
             used to be different shapes, so the rows jumped up at the hand-off
             and down again when the data landed. No second entrance either —
-            the rows are already on screen. The status line above is `sr-only`
+            the rows are already on screen — except after Retry, where nothing
+            was (see `skeletonEnters`). The status line above is `sr-only`
             (absolutely positioned) and sits outside the skeleton's column, so
             it adds no gap above the header the way a `space-y` sibling did. */}
-        <PullsSkeleton enter={false} />
+        <PullsSkeleton enter={skeletonEnters} />
       </div>
     );
   }
@@ -161,7 +174,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
         title="Couldn’t reach GitHub"
         description="GitHub may be rate-limiting or briefly down — the list is empty because the request failed, not because you have no pull requests."
         action={
-          <Button variant="outline" onClick={() => void load()} className="gap-1.5">
+          <Button variant="outline" onClick={retry} className="gap-1.5">
             <ActionIcons.refresh className="size-4" /> Retry
           </Button>
         }

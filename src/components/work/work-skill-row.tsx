@@ -44,7 +44,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
         // the global focus outline.
         workRowClass,
         workRowEnterClass,
-        "active:bg-secondary",
+        "active:bg-selected",
         !skill.enabled && "opacity-75"
       )}
       style={staggerDelay(index, "tight")}

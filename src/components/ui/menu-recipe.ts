@@ -109,9 +109,12 @@ export const menuRowClass =
  * highlighted (Radix stamps `data-highlighted` whether the pointer or the arrow
  * keys put it there), while its submenu is open (`data-state=open` on a sub
  * trigger), and under hover or keyboard focus for the hosts that are plain
- * links and buttons rather than Radix items (the sidebar's More flyout, the
- * landing nav). The contract's ink rule (ICONS_AND_MOTION.md §1.2): a chrome
- * glyph takes the row's foreground when the row is live.
+ * links and buttons rather than Radix items (the landing nav). Radix rows
+ * (`data-radix-collection-item`) are excluded from the hover/focus pair: their
+ * highlight follows the pointer AND the arrow keys, so a hover rule would leave
+ * a lit glyph on a row the keyboard has already left. The contract's ink rule
+ * (ICONS_AND_MOTION.md §1.2): a chrome glyph takes the row's foreground when
+ * the row is live.
  *
  * The state is read off the ROW, not through `group-data-[…]/menu-item`: this
  * class sits on the row itself, which is also the `group/menu-item`, and a
@@ -125,8 +128,8 @@ export const menuRowClass =
  * ANIMATION timing. And it is written at ZERO specificity
  * (`:where(.row) svg`) on purpose: a glyph with a hover articulation already
  * fades its colour in its own list (`svg.icon[data-motion]`, globals.css), a
- * glyph that states its own `transition-*` means it, and the sidebar
- * flyout's folder mark cross-fades its two drawings on opacity
+ * glyph that states its own `transition-*` means it, and the sidebar's
+ * folder mark cross-fades its two drawings on opacity
  * (`.sidebar-motion-icon__glyph`). Any of those outranks this and keeps its
  * list; only a glyph with no transition of its own picks it up.
  */

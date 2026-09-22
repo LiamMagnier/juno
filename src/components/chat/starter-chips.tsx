@@ -78,7 +78,7 @@ export function StarterChips({ className }: { className?: string }) {
           className={cn(
             "pressable inline-flex h-8 items-center gap-2 rounded-full border border-border",
             "bg-transparent pl-2.5 pr-3 text-ui text-muted-foreground",
-            "hover:border-foreground/15 hover:bg-accent hover:text-foreground active:bg-secondary",
+            "hover:border-foreground/15 hover:bg-accent hover:text-foreground active:bg-selected",
             "coarse:h-10 coarse:px-3.5",
             // Backwards fill so the chip is not painted for one frame before
             // its delay elapses. The 120ms offset lets the greeting land first,

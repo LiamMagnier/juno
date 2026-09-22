@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import { Collapse } from "@/components/ui/collapse";
 import {
   Dialog,
   DialogContent,
@@ -1103,31 +1104,44 @@ export default function ProjectDetailPage() {
                       className="mt-0.5 shrink-0"
                     />
                   </div>
-                  {workspace.allowedTools !== undefined && (
-                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70 motion-safe:animate-fade-in-up">
-                      {WORKSPACE_TOOLS.map((tool) => (
-                        <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
-                          <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
-                          <Switch
-                            checked={workspace.allowedTools?.includes(tool) ?? false}
-                            onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
-                            aria-label={WORKSPACE_TOOL_LABELS[tool]}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                  {/* Under the list, and only when there IS one. With the
-                      switch off there is no restriction to qualify, and the
-                      card's own description two lines up already says what the
-                      switch does — so this was a third sentence explaining the
-                      same control to a reader who had not used it yet. */}
-                  {workspace.allowedTools !== undefined && (
-                    <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
-                      Restrictions narrow what is available while Juno generates in this project.
-                      They do not disconnect anything.
-                    </p>
-                  )}
+                  {/* The list unfolds under the switch and folds back the
+                      same way when it is switched off (ICONS_AND_MOTION §2.2
+                      rule 6), where it used to vanish in a frame. The wrapper
+                      goes `inert` with the switch, so a row still on screen
+                      while the fold plays cannot be toggled — a press there
+                      would put the restriction back — and Collapse unmounts
+                      the rows after. The gutter (`-mx-1` out, `px-1` back in)
+                      keeps the switches' focus outlines inside the fold's clip. */}
+                  <div className="contents" inert={workspace.allowedTools === undefined}>
+                    <Collapse
+                      open={workspace.allowedTools !== undefined}
+                      className="-mx-1"
+                      innerClassName="px-1 pt-4"
+                    >
+                      <div className="divide-y divide-border/70 border-y border-border/70">
+                        {WORKSPACE_TOOLS.map((tool) => (
+                          <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
+                            <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
+                            <Switch
+                              checked={workspace.allowedTools?.includes(tool) ?? false}
+                              onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
+                              aria-label={WORKSPACE_TOOL_LABELS[tool]}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      {/* Under the list, and only when there IS one. With the
+                          switch off there is no restriction to qualify, and the
+                          card's own description two lines up already says what the
+                          switch does — so this was a third sentence explaining the
+                          same control to a reader who had not used it yet. It
+                          folds with the list it qualifies. */}
+                      <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+                        Restrictions narrow what is available while Juno generates in this project.
+                        They do not disconnect anything.
+                      </p>
+                    </Collapse>
+                  </div>
                 </Card>
               </div>
 

@@ -15,6 +15,7 @@ import { ArrowDown, ChevronLeft, ChevronRight, Search } from "@/components/ui/ic
 import { toast } from "sonner";
 import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
+import { Collapse } from "@/components/ui/collapse";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { SourceFavicon, isRenderableSourceUrl } from "@/components/chat/source-chip";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
@@ -1100,62 +1101,59 @@ export function ThoughtProcessPanel({
                 />
                 Details
               </button>
-              <div
-                className={cn(
-                  "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
-                  detailsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                )}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  {detailsOpen && (
-                    <div id={`${id}-details`}>
-                      {detailRows.length > 0 && (
-                        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 pt-2">
-                          {detailRows.map((f) => (
-                            <React.Fragment key={f.label}>
-                              <dt className="text-ui text-muted-foreground">{f.label}</dt>
-                              <dd className="min-w-0 break-words text-ui text-foreground/80">{f.value}</dd>
-                            </React.Fragment>
-                          ))}
-                        </dl>
-                      )}
-                      {memorySteps.length > 0 && (
-                        <>
-                          <h4 className="mt-4 px-2 font-mono text-label text-muted-foreground">
-                            Memory used
-                          </h4>
-                          <ol className="relative mt-1">
-                            {memorySteps.map((step, i) => (
-                              <StepRow
-                                key={step.id}
-                                id={id}
-                                step={step}
-                                index={i}
-                                query=""
-                                streaming={!!streaming}
-                                expanded={open.has(step.id)}
-                                mounted={mounted.has(step.id)}
-                                copied={copied === step.id}
-                                onToggle={() => toggleStep(step.id)}
-                                onCopy={() => void copy(step.id, toStepMarkdown(step))}
-                                onJump={jumpToCitation}
-                                rerunnable={false}
-                                onRerun={askToRunAgain}
-                                memory={{
-                                  forgetting: forgetting === (step.body?.type === "memory" ? step.body.memory.id : ""),
-                                  error:
-                                    memoryError[step.body?.type === "memory" ? step.body.memory.id : ""] ?? null,
-                                  onForget: forgetMemory,
-                                }}
-                              />
-                            ))}
-                          </ol>
-                        </>
-                      )}
-                    </div>
+              {/* Collapse, not `{detailsOpen && …}` inside a hand-rolled grid:
+                  the conditional unmounted the content the moment the button
+                  was pressed, so the rows folded an empty box and the section
+                  snapped shut. Collapse keeps it mounted until the fold has
+                  finished and mounts nothing while closed, so `aria-controls`
+                  above still only ever names something in the document. */}
+              <Collapse open={detailsOpen}>
+                <div id={`${id}-details`}>
+                  {detailRows.length > 0 && (
+                    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 pt-2">
+                      {detailRows.map((f) => (
+                        <React.Fragment key={f.label}>
+                          <dt className="text-ui text-muted-foreground">{f.label}</dt>
+                          <dd className="min-w-0 break-words text-ui text-foreground/80">{f.value}</dd>
+                        </React.Fragment>
+                      ))}
+                    </dl>
+                  )}
+                  {memorySteps.length > 0 && (
+                    <>
+                      <h4 className="mt-4 px-2 font-mono text-label text-muted-foreground">
+                        Memory used
+                      </h4>
+                      <ol className="relative mt-1">
+                        {memorySteps.map((step, i) => (
+                          <StepRow
+                            key={step.id}
+                            id={id}
+                            step={step}
+                            index={i}
+                            query=""
+                            streaming={!!streaming}
+                            expanded={open.has(step.id)}
+                            mounted={mounted.has(step.id)}
+                            copied={copied === step.id}
+                            onToggle={() => toggleStep(step.id)}
+                            onCopy={() => void copy(step.id, toStepMarkdown(step))}
+                            onJump={jumpToCitation}
+                            rerunnable={false}
+                            onRerun={askToRunAgain}
+                            memory={{
+                              forgetting: forgetting === (step.body?.type === "memory" ? step.body.memory.id : ""),
+                              error:
+                                memoryError[step.body?.type === "memory" ? step.body.memory.id : ""] ?? null,
+                              onForget: forgetMemory,
+                            }}
+                          />
+                        ))}
+                      </ol>
+                    </>
                   )}
                 </div>
-              </div>
+              </Collapse>
             </div>
           )}
 
@@ -1509,7 +1507,10 @@ function StepRow({
           expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
-        <div className="min-h-0 overflow-hidden">
+        {/* `inert` while it folds: the body stays mounted for COLLAPSE_MS after
+            the row closes, and a payload the reader just put away must not
+            keep its controls in the tab order while it shrinks to nothing. */}
+        <div className="min-h-0 overflow-hidden" inert={!expanded}>
           {mounted && step.body && (
             <div id={bodyId} className="pb-2 pl-[1.875rem] pr-1">
               {step.body.type === "prose" && <Prose text={step.body.text} className="pt-1" />}

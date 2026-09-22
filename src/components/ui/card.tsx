@@ -36,7 +36,7 @@ const cardVariants = cva(
         // depth without a second material. `active:` is here because hover is
         // not an affordance on touch.
         interactive:
-          "surface-raised hover:border-foreground/20 hover:bg-accent/40 active:bg-secondary focus-within:border-foreground/25",
+          "surface-raised hover:border-foreground/20 hover:bg-accent/40 active:bg-selected focus-within:border-foreground/25",
       },
     },
     defaultVariants: { variant: "default" },

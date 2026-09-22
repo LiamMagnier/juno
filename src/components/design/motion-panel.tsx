@@ -51,6 +51,7 @@ import {
   iconButtonClass,
 } from "@/components/design/effects-panel";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Collapse } from "@/components/ui/collapse";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import type {
   AnimatableProperty,
@@ -350,10 +351,11 @@ export function MotionPanel({
     : null;
 
   return (
-    // Faded in when the dock opens: the canvas above has already made room, so
-    // the only news is what arrived in it.
+    // No entrance of its own: the editor unfolds the dock through `Collapse`,
+    // which fades it in as the canvas gives way, and a second fade here would
+    // compound with that one.
     <section
-      className="flex min-h-0 shrink-0 flex-col border-t border-border/60 bg-card/40 motion-safe:animate-fade-in"
+      className="flex min-h-0 shrink-0 flex-col border-t border-border/60 bg-card/40"
       aria-label="Motion timeline"
       style={{ height }}
     >
@@ -734,63 +736,67 @@ export function MotionPanel({
         </div>
       )}
 
-      {/* The selected keyframe */}
-      {selected && (
-        <div className="flex shrink-0 flex-wrap items-end gap-2 border-t border-border/60 px-2 py-1.5 motion-safe:animate-fade-in">
-          <InlineNumber
-            label="Time"
-            value={Math.round(selected.keyframe.time)}
-            min={0}
-            max={600_000}
-            suffix="ms"
-            disabled={readOnly}
-            onCommit={(value) => editKeyframe(selected.track, selected.index, { time: Math.max(0, Math.round(value)) }, "Move keyframe")}
-          />
-          {typeof selected.keyframe.value === "number" ? (
+      {/* The selected keyframe. It unfolds under the lanes and folds back
+          before it unmounts, so the lanes give way instead of jumping by a
+          row. The fields stay mounted only while a keyframe is selected. */}
+      <Collapse open={selected !== null} className="shrink-0">
+        {selected && (
+          <div className="flex flex-wrap items-end gap-2 border-t border-border/60 px-2 py-1.5">
             <InlineNumber
-              label="Value"
-              value={toDisplay(selected.track.property, selected.keyframe.value)}
-              suffix={propertyInfo(selected.track.property).unit}
+              label="Time"
+              value={Math.round(selected.keyframe.time)}
+              min={0}
+              max={600_000}
+              suffix="ms"
               disabled={readOnly}
-              onCommit={(value) =>
-                editKeyframe(selected.track, selected.index, { value: fromDisplay(selected.track.property, value) }, "Set keyframe value")
-              }
+              onCommit={(value) => editKeyframe(selected.track, selected.index, { time: Math.max(0, Math.round(value)) }, "Move keyframe")}
             />
-          ) : (
-            // `ColorField`, not a bare `<input type="color">`: the OS draws that
-            // control's well and its popup, and this one sat inches from the
-            // Radix animation picker in the same strip.
-            <div className="w-44">
-              <ColorField
+            {typeof selected.keyframe.value === "number" ? (
+              <InlineNumber
                 label="Value"
-                ariaLabel="Keyframe colour"
-                value={rgbaToHex(selected.keyframe.value)}
+                value={toDisplay(selected.track.property, selected.keyframe.value)}
+                suffix={propertyInfo(selected.track.property).unit}
                 disabled={readOnly}
-                onCommit={(hex) => {
-                  const color = hexToRgba(hex);
-                  if (color) editKeyframe(selected.track, selected.index, { value: color }, "Set keyframe colour");
-                }}
+                onCommit={(value) =>
+                  editKeyframe(selected.track, selected.index, { value: fromDisplay(selected.track.property, value) }, "Set keyframe value")
+                }
               />
-            </div>
-          )}
-          <EasingEditor
-            label="Easing out of this keyframe"
-            easing={selected.keyframe.easing}
-            disabled={readOnly}
-            onChange={(easing) => editKeyframe(selected.track, selected.index, { easing }, "Set keyframe easing")}
-          />
-          <div className="flex-1" />
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => deleteKeyframe(selected.track, selected.index)}
-            className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
-          >
-            <ActionIcons.delete className="size-3" aria-hidden />
-            Delete keyframe
-          </button>
-        </div>
-      )}
+            ) : (
+              // `ColorField`, not a bare `<input type="color">`: the OS draws that
+              // control's well and its popup, and this one sat inches from the
+              // Radix animation picker in the same strip.
+              <div className="w-44">
+                <ColorField
+                  label="Value"
+                  ariaLabel="Keyframe colour"
+                  value={rgbaToHex(selected.keyframe.value)}
+                  disabled={readOnly}
+                  onCommit={(hex) => {
+                    const color = hexToRgba(hex);
+                    if (color) editKeyframe(selected.track, selected.index, { value: color }, "Set keyframe colour");
+                  }}
+                />
+              </div>
+            )}
+            <EasingEditor
+              label="Easing out of this keyframe"
+              easing={selected.keyframe.easing}
+              disabled={readOnly}
+              onChange={(easing) => editKeyframe(selected.track, selected.index, { easing }, "Set keyframe easing")}
+            />
+            <div className="flex-1" />
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={() => deleteKeyframe(selected.track, selected.index)}
+              className="pressable flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-micro text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ActionIcons.delete className="size-3" aria-hidden />
+              Delete keyframe
+            </button>
+          </div>
+        )}
+      </Collapse>
     </section>
   );
 }

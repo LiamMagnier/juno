@@ -46,6 +46,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Collapse } from "@/components/ui/collapse";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
 import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
@@ -330,7 +331,11 @@ function PaintListSection({
             // first children of the section — the section's own title bar is —
             // so a CSS first-child rule would draw a hairline under the heading
             // and none between the heading and the first row's neighbours.
-            className={cn("space-y-1.5", index > 0 && "border-t border-border/40 pt-1.5", hidden && "opacity-50")}
+            // No `space-y` here: the paint editor below unfolds through
+            // `Collapse`, and a margin on its grid does not fold with it — the
+            // row would open from, and close to, a 6px step. The gaps are the
+            // top padding of each block under the header instead.
+            className={cn(index > 0 && "border-t border-border/40 pt-1.5", hidden && "opacity-50")}
           >
             <div className="flex items-center gap-1.5">
               {/* The swatch is also the disclosure, so it says when it is open:
@@ -400,29 +405,41 @@ function PaintListSection({
             {/* Indented under the row it belongs to. With the row's own box
                 gone, indentation is what says "these fields are this paint's"
                 rather than another entry in the section. */}
-            {(extra || expanded === index) && (
-              <div className="space-y-1.5 pl-2">
-                {extra?.(index, first, patchAll)}
+            {extra && <div className="pl-2 pt-1.5">{extra(index, first, patchAll)}</div>}
 
-                {expanded === index && (
-                  <PaintEditor
-                    paint={paint}
-                    // Stop editing needs one list to edit. Across a mixed selection
-                    // there is no such list, so the ramp is shown and the stops are
-                    // not — the alternative is a stop editor that silently rewrites
-                    // four layers from a fifth one's ramp.
-                    singleLayer={nodes.length === 1}
-                    disabled={readOnly}
-                    onChange={(next, summary) => setPaint(index, next, summary)}
-                  />
-                )}
-                {expanded === index && gradient === null && paint.type === "image" && (
-                  <p className="text-micro leading-snug text-muted-foreground">
-                    An image fill is placed from the canvas; its asset is not editable here.
-                  </p>
-                )}
-              </div>
-            )}
+            {/* The detail unfolds under its swatch and folds back before it
+                unmounts (docs/design/ICONS_AND_MOTION.md §2.2 rule 6). Still
+                mounted only while open, so the editor's picked stop starts
+                from the first one each time it opens, as it always did.
+                The fold clips at its own box, and the editor's drag handles sit
+                centred on the ramp's and the pads' edges (half a 14px handle
+                past them, plus the 2px + 2px focus outline: 11px). So the fold
+                reaches 12px past the column on each side and gives it back as
+                padding, the content column staying where it was (8px in, flush
+                right). Below, the room is padding that folds with it: the pads
+                end a gradient's editor and need the full 12px, and a solid or
+                image editor needs only its fields' focus outline. */}
+            <Collapse
+              open={expanded === index}
+              className="-ml-1 -mr-3"
+              innerClassName={cn("space-y-1.5 pl-3 pr-3 pt-1.5", gradient ? "pb-3" : "pb-1")}
+            >
+              <PaintEditor
+                paint={paint}
+                // Stop editing needs one list to edit. Across a mixed selection
+                // there is no such list, so the ramp is shown and the stops are
+                // not — the alternative is a stop editor that silently rewrites
+                // four layers from a fifth one's ramp.
+                singleLayer={nodes.length === 1}
+                disabled={readOnly}
+                onChange={(next, summary) => setPaint(index, next, summary)}
+              />
+              {gradient === null && paint.type === "image" && (
+                <p className="text-micro leading-snug text-muted-foreground">
+                  An image fill is placed from the canvas; its asset is not editable here.
+                </p>
+              )}
+            </Collapse>
           </div>
         );
       })}
@@ -467,9 +484,9 @@ function PaintEditor({
   };
 
   return (
-    // Faded in where it opens, rather than cut in: the row above it stays put,
-    // so the only thing to say is that its detail has arrived.
-    <div className="space-y-1.5 border-t border-border/40 pt-1.5 motion-safe:animate-fade-in">
+    // No entrance of its own: the `Collapse` around it unfolds it and fades it
+    // in, and a second fade here would compound with that one.
+    <div className="space-y-1.5 border-t border-border/40 pt-1.5">
       {paint.type !== "image" && (
         <Segmented value={paint.type} options={PAINT_KINDS} disabled={disabled} onChange={changeKind} label="Paint type" />
       )}

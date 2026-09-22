@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronRight, Link2, Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ARTIFACT_EXTENSION, type WorkArtifactKind } from "@/lib/work/domain";
@@ -346,70 +347,71 @@ function DocumentCard({ artifact }: { artifact: ClientWorkArtifact }) {
         </div>
       )}
 
-      {open && (
-        <div className="border-t border-border/60 px-3 py-2.5 motion-safe:animate-fade-in-up">
-          {loading ? (
-            <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Reading its history…
+      {/* The history unfolds under the row and folds back into it. The hairline
+          and padding ride inside the fold (`innerClassName`), so a closed row
+          keeps no border or gap of its own. */}
+      <Collapse open={open} innerClassName="border-t border-border/60 px-3 py-2.5">
+        {loading ? (
+          <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Reading its history…
+          </p>
+        ) : failed ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
+              Couldn’t read this document’s history. The download above is unaffected.
             </p>
-          ) : failed ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
-                Couldn’t read this document’s history. The download above is unaffected.
+            <Button variant="outline" size="sm" onClick={() => void load()} className="h-7 gap-1.5">
+              <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
+            </Button>
+          </div>
+        ) : detail === null ? null : (
+          <div className="space-y-2.5">
+            {!rich && detail.warning !== null && (
+              <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
+                <StatusIcons.warning className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
+                {detail.warning}
               </p>
-              <Button variant="outline" size="sm" onClick={() => void load()} className="h-7 gap-1.5">
-                <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
-              </Button>
-            </div>
-          ) : detail === null ? null : (
-            <div className="space-y-2.5">
-              {!rich && detail.warning !== null && (
-                <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-                  <StatusIcons.warning className="mt-px size-3.5 shrink-0 text-warning" aria-hidden="true" />
-                  {detail.warning}
-                </p>
-              )}
-              <ul className="space-y-2">
-                {detail.versions.map((version) => (
-                  <li key={version.version}>
-                    <div className="flex items-baseline gap-2">
-                      <a
-                        href={workArtifactDownloadUrl(artifact.id, version.version)}
-                        className="shrink-0 font-mono text-micro text-foreground underline-offset-2 hover:underline"
-                      >
-                        v{version.version}
-                      </a>
-                      <span className="min-w-0 flex-1 truncate font-mono text-micro text-muted-foreground">
-                        {formatBytes(version.byteSize)} · {version.origin}
-                        {!version.validated && " · not confirmed to open"}
-                      </span>
-                      <span className="shrink-0 font-mono text-micro text-muted-foreground">
-                        {workTimeAgo(version.createdAt)}
-                      </span>
+            )}
+            <ul className="space-y-2">
+              {detail.versions.map((version) => (
+                <li key={version.version}>
+                  <div className="flex items-baseline gap-2">
+                    <a
+                      href={workArtifactDownloadUrl(artifact.id, version.version)}
+                      className="shrink-0 font-mono text-micro text-foreground underline-offset-2 hover:underline"
+                    >
+                      v{version.version}
+                    </a>
+                    <span className="min-w-0 flex-1 truncate font-mono text-micro text-muted-foreground">
+                      {formatBytes(version.byteSize)} · {version.origin}
+                      {!version.validated && " · not confirmed to open"}
+                    </span>
+                    <span className="shrink-0 font-mono text-micro text-muted-foreground">
+                      {workTimeAgo(version.createdAt)}
+                    </span>
+                  </div>
+                  {version.problems.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 pl-6">
+                      {version.problems.map((problem) => (
+                        <li key={problem} className="text-caption leading-relaxed text-warning-foreground">
+                          {problem}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {/* The rich card already shows the current version's
+                      provenance above; older versions list theirs here. */}
+                  {version.provenance.length > 0 && (!rich || version.version !== artifact.currentVersion) && (
+                    <div className="mt-1 pl-6">
+                      <Provenance version={version} />
                     </div>
-                    {version.problems.length > 0 && (
-                      <ul className="mt-1 space-y-0.5 pl-6">
-                        {version.problems.map((problem) => (
-                          <li key={problem} className="text-caption leading-relaxed text-warning-foreground">
-                            {problem}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {/* The rich card already shows the current version's
-                        provenance above; older versions list theirs here. */}
-                    {version.provenance.length > 0 && (!rich || version.version !== artifact.currentVersion) && (
-                      <div className="mt-1 pl-6">
-                        <Provenance version={version} />
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Collapse>
 
       {/* Mounted unconditionally, and cheap while shut: Radix renders no content
           for a closed dialog, and the previewer downloads nothing until `open`

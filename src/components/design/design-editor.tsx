@@ -57,6 +57,7 @@ import { MotionPanel, type MotionPreview } from "@/components/design/motion-pane
 import { derivePreviewDocument } from "@/components/design/motion-model";
 import { ON_KEY, PanelEmpty } from "@/components/design/effects-panel";
 import { PaneResizer, usePaneSize } from "@/components/design/panel-layout";
+import { Collapse } from "@/components/ui/collapse";
 import {
   useDesignDocument,
   type DesignEditorState,
@@ -246,10 +247,12 @@ export function DesignEditor({
    * would happily let someone save a number the playhead invented.
    */
   const previewDocument = React.useMemo(() => {
-    if (!motionPreview || !visibleDocument) return null;
+    // Not while the dock is closing: it stays mounted through its fold, but the
+    // canvas goes back to the document the moment the dock is dismissed.
+    if (!motionOpen || !motionPreview || !visibleDocument) return null;
     const animation = visibleDocument.animations[motionPreview.animationId];
     return animation ? derivePreviewDocument(visibleDocument, animation, motionPreview.timeMs) : null;
-  }, [motionPreview, visibleDocument]);
+  }, [motionOpen, motionPreview, visibleDocument]);
 
   /** Layers the motion model already has something to say about, so the layers
    *  panel can point at capability that is otherwise invisible until you go
@@ -796,21 +799,27 @@ export function DesignEditor({
               </div>
             )}
           </div>
-          {motionOpen && (
-            <>
-              <PaneResizer label="Resize the motion timeline" orientation="horizontal" pane={timelinePane} />
-              <MotionPanel
-                document={visibleDocument}
-                selection={selection}
-                onSelect={selectNodes}
-                onApply={(operations, summary) => apply(operations, summary)}
-                onPreview={handleMotionPreview}
-                onClose={() => setMotionOpen(false)}
-                readOnly={readOnly || !!state.pending}
-                height={timelinePane.size}
-              />
-            </>
-          )}
+          {/* The dock unfolds from the bottom edge and folds back the way it
+              came before it unmounts, so the canvas gives way continuously
+              instead of jumping by the dock's height. Nothing is mounted once
+              it has folded, so closing it still ends the timeline's playback,
+              and the canvas drops the preview the moment it is dismissed
+              (`previewDocument` above). The grip stays outside the fold as its
+              hit area reaches up over the canvas, which the fold's clip would
+              cut off; it draws nothing at rest, so it can come and go at once. */}
+          {motionOpen && <PaneResizer label="Resize the motion timeline" orientation="horizontal" pane={timelinePane} />}
+          <Collapse open={motionOpen} className="shrink-0">
+            <MotionPanel
+              document={visibleDocument}
+              selection={selection}
+              onSelect={selectNodes}
+              onApply={(operations, summary) => apply(operations, summary)}
+              onPreview={handleMotionPreview}
+              onClose={() => setMotionOpen(false)}
+              readOnly={readOnly || !!state.pending}
+              height={timelinePane.size}
+            />
+          </Collapse>
         </div>
 
         {!inspectorPane.collapsed && (

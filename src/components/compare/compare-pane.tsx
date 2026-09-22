@@ -217,7 +217,9 @@ export function ComparePane({
             onClick={onContinue}
             // `ArrowRight`, not the leaves-Juno arrow: this carries the answer
             // into a chat here, and the arrow nudges the way it goes.
-            className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 font-mono text-caption text-muted-foreground motion-safe:animate-fade-in hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
+            // `animate-fade-in` ungated: it is opacity only, and reduced
+            // motion keeps fades on their timing (§2.2, rule 10).
+            className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-control px-1.5 py-1 font-mono text-caption text-muted-foreground animate-fade-in hover:bg-accent hover:text-foreground motion-reduce:active:scale-100"
           >
             Continue in chat <ArrowRight aria-hidden="true" className="size-3.5" />
           </button>

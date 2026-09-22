@@ -30,7 +30,7 @@ import {
 } from "@/components/code/code-run-cards";
 import { CodeSessionMenu } from "@/components/code/code-session-menu";
 import { RunReviewPane } from "@/components/code/run-review";
-import { useRunDetail } from "@/components/code/use-code-runs";
+import { useRunDetail, type RunDetail } from "@/components/code/use-code-runs";
 import { useCodeChecks } from "@/components/code/use-code-checks";
 import { useCodeAutoFix } from "@/components/code/use-code-auto-fix";
 import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-session-meta";
@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { GitCompare } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { DURATION } from "@/lib/design/tokens.generated";
 import { DEFAULT_MODEL } from "@/lib/models";
 import type { ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
@@ -108,13 +109,57 @@ import type {
  * the travel is dropped and the fade keeps its timing, instead of the column
  * simply appearing with no sign of where it came from.
  *
- * Arrival only. The three columns unmount the frame their state clears, so a
- * matching exit needs the view to hold a closing column for one exit rung —
- * the state chat-view keeps as `closingArtifact` — which is a change to what
- * renders, not to how it moves.
+ * The way out is `DOCK_EXIT`, below.
  */
 const DOCK_ENTER =
   "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in";
+
+/**
+ * How a docked column leaves: the way it came, faster.
+ *
+ * The same 16px toward the edge it docks against, on the exit rung and the
+ * accelerate curve (the reader has already decided), and `absolute` so the
+ * transcript reflows underneath it at once rather than waiting on a column
+ * that is on its way out. The recipe is chat-view's, verbatim, so a dock
+ * closing on either surface is one gesture. The travel is `motion-safe` only:
+ * `slide-out-to-right-4` is a hardcoded translate the reduced tier's
+ * `--motion-shift` cannot reach, so under the preference the column fades in
+ * place instead.
+ *
+ * Only an explicit close plays it. A column EVICTED by another one opening
+ * (the coexistence rule below) goes in a frame, for chat-view's reason: the
+ * reader asked for one thing and should see one thing move, not a column
+ * sliding out across the one sliding in from the same edge.
+ */
+const DOCK_EXIT =
+  "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out motion-safe:slide-out-to-right-4 fill-mode-forwards";
+
+/**
+ * A fullscreened canvas leaves by fading where it stands. Its panel is
+ * `position: fixed` over the whole view, and a transform on any ancestor — the
+ * slide above — would make that ancestor its containing block for the length
+ * of the exit, so the panel would first jump down to the row's box and only
+ * then leave. Opacity does not re-parent a fixed descendant.
+ */
+const DOCK_EXIT_FULLSCREEN =
+  "pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-exit ease-in";
+
+/** How long a closing column is held: `--dur-exit`, plus a frame. */
+const DOCK_EXIT_MS = DURATION.exit + 20;
+
+/**
+ * The column on its way out, held for one exit rung after its own state has
+ * cleared. At most one: at most one dock is ever open (the coexistence rule),
+ * and opening any dock cancels a pending exit.
+ *
+ * The review keeps the run detail it last drew. Its stream is torn down the
+ * moment the dock closes, exactly as before, and a pane that dropped to its
+ * empty state halfway through leaving would read as the diff vanishing.
+ */
+type ClosingDock =
+  | { kind: "thought" }
+  | { kind: "review"; taskId: string; detail: RunDetail }
+  | { kind: "canvas"; artifact: ClientArtifact; fullscreen: boolean };
 
 interface CodeSessionViewProps {
   conversation: ClientConversation;
@@ -620,6 +665,19 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
    */
   const reviewDocked = reviewOpen && !!reviewTaskId;
   const reviewDetail = useRunDetail(reviewDocked ? reviewTaskId : null);
+  // Read by the close paths, which snapshot what the pane last drew (see
+  // `ClosingDock`) without re-subscribing on every streamed frame.
+  const reviewDetailRef = React.useRef(reviewDetail);
+  reviewDetailRef.current = reviewDetail;
+
+  // The column on its way out — see `ClosingDock`. Cleared on the exit rung;
+  // any open clears it sooner.
+  const [closingDock, setClosingDock] = React.useState<ClosingDock | null>(null);
+  React.useEffect(() => {
+    if (!closingDock) return;
+    const t = window.setTimeout(() => setClosingDock(null), DOCK_EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [closingDock]);
 
   /*
    * THE CANVAS, WHICH THIS SURFACE HAD STUBBED OUT.
@@ -643,6 +701,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     // a navigation it would draw the next session's newest diff over a
     // transcript nobody had asked to read it against.
     setReviewOpen(false);
+    // A reset, not a gesture: nothing the reader closed, so nothing leaves.
+    setClosingDock(null);
     // Session identity, exactly as the transcript reset above: `initialArtifacts`
     // is a new array on every parent render, and depending on it would slam the
     // canvas shut mid-read.
@@ -653,10 +713,19 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     () => artifacts.find((a) => a.id === openArtifactId) ?? null,
     [artifacts, openArtifactId],
   );
-  const closeArtifact = React.useCallback(() => {
+  // Two ways to shut the canvas, and only one of them is a gesture. `drop`
+  // is the eviction another dock performs as it opens, and goes in a frame;
+  // `close` is the reader's own press, and leaves on the exit rung.
+  const dropArtifact = React.useCallback(() => {
     setOpenArtifactId(null);
     setArtifactFullscreen(false);
   }, []);
+  const closeArtifact = React.useCallback(() => {
+    if (openArtifact) {
+      setClosingDock({ kind: "canvas", artifact: openArtifact, fullscreen: artifactFullscreen });
+    }
+    dropArtifact();
+  }, [artifactFullscreen, dropArtifact, openArtifact]);
   const openArtifactByIdentifier = React.useCallback(
     (identifier: string, opts?: { fullscreen?: boolean }) => {
       const found = artifacts.find((a) => a.identifier === identifier);
@@ -666,9 +735,11 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       // COEXISTENCE RULE, the same one chat-view states, now over three
       // columns: the canvas, the thought dock and the review dock all want the
       // right-hand side, and transcript + any two of them does not fit. The
-      // newest request wins.
+      // newest request wins, and whatever it displaced — or was still leaving
+      // — goes without an exit (see `DOCK_EXIT`).
       setThoughtOpenId(null);
       setReviewOpen(false);
+      setClosingDock(null);
     },
     [artifacts],
   );
@@ -682,23 +753,47 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
   const openThoughtPanel = React.useCallback(
     (id: string | null) => {
-      setThoughtOpenId(id);
+      // Closing arms the exit; opening (this row's or another's) cancels any,
+      // so a fast toggle never leaves a ghost column sliding out under the one
+      // sliding in. Decided out here rather than in an updater, which React
+      // runs twice under StrictMode.
       if (id) {
-        closeArtifact();
+        setClosingDock(null);
+        dropArtifact();
         setReviewOpen(false);
+      } else if (thoughtOpenId) {
+        setClosingDock({ kind: "thought" });
       }
+      setThoughtOpenId(id);
     },
-    [closeArtifact],
+    [dropArtifact, thoughtOpenId],
   );
+
+  // Hold the review column for its exit, drawing what it last drew. Only a
+  // docked review has a column to hold.
+  const armReviewExit = React.useCallback(() => {
+    if (reviewTaskId) {
+      setClosingDock({ kind: "review", taskId: reviewTaskId, detail: reviewDetailRef.current });
+    }
+  }, [reviewTaskId]);
+  const closeReview = React.useCallback(() => {
+    if (reviewDocked) armReviewExit();
+    setReviewOpen(false);
+  }, [armReviewExit, reviewDocked]);
 
   const toggleReview = React.useCallback(() => {
     setReviewOpen((open) => {
-      if (open) return false;
-      closeArtifact();
+      if (open) {
+        // The reader's own close, from the banner or the tray: it leaves.
+        armReviewExit();
+        return false;
+      }
+      setClosingDock(null);
+      dropArtifact();
       setThoughtOpenId(null);
       return true;
     });
-  }, [closeArtifact]);
+  }, [armReviewExit, dropArtifact]);
   const thoughtPanel = React.useMemo(
     () => ({
       openId: thoughtOpenId,
@@ -725,12 +820,13 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     if (!thoughtOpenId && !reviewOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      setThoughtOpenId(null);
-      setReviewOpen(false);
+      // A close the reader asked for, so it leaves the way the button does.
+      if (thoughtOpenId) openThoughtPanel(null);
+      if (reviewOpen) closeReview();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [thoughtOpenId, reviewOpen]);
+  }, [closeReview, openThoughtPanel, reviewOpen, thoughtOpenId]);
 
   const fileChanges = useSessionFileChanges(session.messages, session.fileChanges);
   /*
@@ -882,6 +978,15 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           ? "Queued — runs when your Mac reconnects."
           : "Queued — waiting for your Mac to pick this up.";
 
+  // What each dock column draws: its open state, or — for one exit rung after
+  // an explicit close — the snapshot `closingDock` holds. Never both.
+  const thoughtLeaving = !thoughtOpenId && closingDock?.kind === "thought";
+  const closingReview = !reviewDocked && closingDock?.kind === "review" ? closingDock : null;
+  const reviewPaneTaskId = reviewDocked ? reviewTaskId : (closingReview?.taskId ?? null);
+  const closingCanvas = !openArtifact && closingDock?.kind === "canvas" ? closingDock : null;
+  const canvasArtifact = openArtifact ?? closingCanvas?.artifact ?? null;
+  const canvasFullscreen = openArtifact ? artifactFullscreen : !!closingCanvas?.fullscreen;
+
   const composer = (
     <CodeSessionComposer
       above={
@@ -1013,8 +1118,11 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
             would depend on stylesheet order.
 
             At most ONE of the three is ever open — see the coexistence rule
-            above — so the branches are exclusive rather than additive. */}
-        <div className="flex min-h-0 flex-1">
+            above — so the branches are exclusive rather than additive.
+
+            `relative` is for the column on its way out (`DOCK_EXIT`), which is
+            absolute against this row while the transcript reflows under it. */}
+        <div className="relative flex min-h-0 flex-1">
           <div
             className={cn(
               "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
@@ -1099,17 +1207,28 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
           {/* The dock itself — a real column, not an overlay: the transcript
               narrows beside it and stays readable and typeable. ActivityTimeline
-              portals the panel in here (see thought-panel-context). */}
-          {thoughtOpenId && (
+              portals the panel in here (see thought-panel-context).
+
+              While it leaves it is inert and hidden from assistive tech: it is
+              on screen for one exit rung and nothing in it may take focus. The
+              panel inside has already gone with its row's `open` (it is
+              ActivityTimeline's to render), so what leaves is the column — the
+              same exit chat-view's dock plays. */}
+          {(thoughtOpenId || thoughtLeaving) && (
             <div
               ref={setThoughtContainer}
+              inert={!thoughtOpenId}
+              aria-hidden={thoughtOpenId ? undefined : true}
               // No z-index. `z-40` was a number picked outside the
               // z-popper/modal/toolbar/toast scale, and it bought nothing: this
               // is an in-flow flex sibling that already paints after the
               // transcript column. Naming a layer here would instead put the
               // dock over the composer's own portalled dropdowns, which sit at
               // z-popper.
-              className={cn(DOCK_ENTER, "relative h-full w-full shrink-0 border-border bg-card @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l")}
+              className={cn(
+                "h-full w-full shrink-0 border-border bg-card @[50rem]/split:w-[30rem] @[50rem]/split:min-w-0 @[50rem]/split:border-l",
+                thoughtOpenId ? cn(DOCK_ENTER, "relative") : DOCK_EXIT,
+              )}
             />
           )}
 
@@ -1122,15 +1241,25 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
               Keyed by task so the pane's per-run state — its persisted notes,
               its file selection — is re-read when a follow-up run becomes the
-              latest one, which is the same rule the run list mounted it under. */}
-          {reviewDocked && (
-            <div className={cn(DOCK_ENTER, "relative h-full w-full shrink-0 border-border bg-card @[52rem]/split:w-[32rem] @[52rem]/split:min-w-0 @[52rem]/split:border-l")}>
+              latest one, which is the same rule the run list mounted it under.
+
+              Leaving, it draws the detail it last had (see `ClosingDock`) and
+              is inert for the length of the exit. */}
+          {reviewPaneTaskId && (
+            <div
+              inert={!reviewDocked}
+              aria-hidden={reviewDocked ? undefined : true}
+              className={cn(
+                "h-full w-full shrink-0 border-border bg-card @[52rem]/split:w-[32rem] @[52rem]/split:min-w-0 @[52rem]/split:border-l",
+                reviewDocked ? cn(DOCK_ENTER, "relative") : DOCK_EXIT,
+              )}
+            >
               <RunReviewPane
-                key={reviewTaskId}
+                key={reviewPaneTaskId}
                 placement="dock"
-                run={{ id: reviewTaskId, title: sessionTitle, conversationId: conversation.id }}
-                detail={reviewDetail}
-                onClose={() => setReviewOpen(false)}
+                run={{ id: reviewPaneTaskId, title: sessionTitle, conversationId: conversation.id }}
+                detail={closingReview ? closingReview.detail : reviewDetail}
+                onClose={closeReview}
                 // The notes land in the tray above the composer rather than
                 // dispatching themselves — see `reviewNotes`. Appended when
                 // there is already a bundle waiting, because a reader who
@@ -1140,7 +1269,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}
                 pullRequest={{
-                  taskId: reviewTaskId,
+                  taskId: reviewPaneTaskId,
                   // THIS run's facts, because the route reads this run's row:
                   // a subject built from the conversation's branch would draw
                   // the control over a run that has pushed nothing.
@@ -1170,21 +1299,32 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               No `onQuote`: quoting a selection back into the prompt needs the
               composer's quote chip, which this composer does not have, and
               CanvasPanel hides every selection affordance when the prop is
-              absent rather than offering a control that would go nowhere. */}
-          {openArtifact && (
+              absent rather than offering a control that would go nowhere.
+
+              Leaving, it keeps the artifact and the fullscreen it was closed
+              in, so the same panel leaves from where it stood — docked, with
+              the slide; fullscreen, fading in place (`DOCK_EXIT_FULLSCREEN`). */}
+          {canvasArtifact && (
             <div
+              inert={!openArtifact}
+              aria-hidden={openArtifact ? undefined : true}
               className={cn(
-                DOCK_ENTER,
-                "relative h-full w-full min-w-0 bg-background",
-                artifactFullscreen ? "flex-1" : "shrink-0 border-border @[54rem]/split:w-[34rem] @[54rem]/split:border-l",
+                "h-full w-full min-w-0 bg-background",
+                canvasFullscreen ? "flex-1" : "shrink-0 border-border @[54rem]/split:w-[34rem] @[54rem]/split:border-l",
+                openArtifact ? cn(DOCK_ENTER, "relative") : canvasFullscreen ? DOCK_EXIT_FULLSCREEN : DOCK_EXIT,
               )}
             >
               <CanvasPanel
-                artifact={openArtifact}
+                artifact={canvasArtifact}
                 onClose={closeArtifact}
                 onArtifactUpdated={handleArtifactUpdated}
-                fullscreen={artifactFullscreen}
-                onToggleFullscreen={() => setArtifactFullscreen((v) => !v)}
+                fullscreen={canvasFullscreen}
+                // A leaving panel still hears Escape through its document
+                // listener; it must not flip the state of a canvas that is
+                // no longer open.
+                onToggleFullscreen={() => {
+                  if (openArtifact) setArtifactFullscreen((v) => !v);
+                }}
                 // Code sessions are ordinary persisted conversations — there is
                 // no incognito variant here, so there is always a row to share.
                 shareable

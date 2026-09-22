@@ -16,6 +16,7 @@
  */
 
 import * as React from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Send } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import { IconSwap } from "@/components/ui/icon-swap";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { NodeId } from "@/lib/design/types";
+import { variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export interface AskJunoBarHandle {
@@ -160,8 +162,27 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           >
             <span className="truncate">{scopeToSelection ? scopeLabel : "Whole design"}</span>
             {/* 12px, the floor of the ladder — it was 10px, below the size the
-                set is drawn to survive at. */}
-            {scopeToSelection && <ActionIcons.dismiss className="size-3 shrink-0" aria-hidden />}
+                set is drawn to survive at. It cross-fades out when the scope
+                is widened rather than vanishing in the frame the label
+                changes, and holds its place while it goes (`sync`, not
+                `popLayout`: a popped mark would fade over the new label or
+                off the end of a narrower pill). The fade and scale live on a
+                wrapper, so the glyph's own hover turn still composes. */}
+            <AnimatePresence initial={false}>
+              {scopeToSelection && (
+                <motion.span
+                  key="scope-dismiss"
+                  variants={variants.swap}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  className="flex shrink-0"
+                  aria-hidden
+                >
+                  <ActionIcons.dismiss className="size-3 shrink-0" aria-hidden />
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         )}
 

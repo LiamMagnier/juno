@@ -281,8 +281,10 @@ export function WorkRunDisclosure({
       >
         {/* The lines fade with the reveal as well as unrolling, so closing
             reads as the detail folding away rather than being cut off by the
-            row above it. */}
+            row above it. Kept mounted so it can fold, and `inert` while shut,
+            so the folded lines are not still read out after the summary. */}
         <div
+          inert={!open}
           className={cn(
             "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
             open ? "opacity-100" : "opacity-0"

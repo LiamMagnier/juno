@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
+import { IconSwap } from "@/components/ui/icon-swap";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { signOutToSignIn } from "@/lib/sign-out";
 
@@ -159,6 +160,29 @@ function TwoStepSetupDialog({
   const [code, setCode] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Presentation only: holds the Copy codes glyph on its check for a beat after
+  // a successful copy (the toast still says it in words), then hands it back.
+  const [copied, setCopied] = React.useState(false);
+  const copiedTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    []
+  );
+
+  const copyCodes = (codes: string[]) => {
+    void navigator.clipboard
+      ?.writeText(codes.join("\n"))
+      .then(() => {
+        toast.success("Recovery codes copied.");
+        setCopied(true);
+        if (copiedTimer.current) clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => toast.error("Couldn’t copy — select and copy them by hand."));
+  };
 
   // Start the enrolment as the dialog opens, so the QR is already there rather
   // than appearing a beat after the user has read the instructions.
@@ -238,16 +262,15 @@ function TwoStepSetupDialog({
               ))}
             </ul>
             <DialogFooter className="gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  void navigator.clipboard
-                    ?.writeText(recoveryCodes.join("\n"))
-                    .then(() => toast.success("Recovery codes copied."))
-                    .catch(() => toast.error("Couldn’t copy — select and copy them by hand."));
-                }}
-              >
-                <ActionIcons.copy className="size-4" />
+              <Button variant="outline" onClick={() => copyCodes(recoveryCodes)}>
+                {/* Copy ⇄ check in one box (IconSwap), back to copy after a
+                    beat. The label stays; the toast is the announcement. */}
+                <IconSwap
+                  curve="spring"
+                  swapped={copied}
+                  from={<ActionIcons.copy className="size-4" />}
+                  to={<StatusIcons.success className="size-4 text-success-ink" />}
+                />
                 Copy codes
               </Button>
               <Button onClick={() => onOpenChange(false)}>I&apos;ve saved them</Button>

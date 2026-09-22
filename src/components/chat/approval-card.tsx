@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronRight, Clock } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 import type {
   ActionApprovalDecision,
@@ -256,6 +257,11 @@ export function ApprovalCard({
   onDecided?: (approval: ClientActionApproval) => void;
 }) {
   const labelId = React.useId();
+  const detailId = React.useId();
+  // Presentation only: whether the argument list is unfolded. It used to be a
+  // native <details>, whose open state the browser kept and which gives no
+  // height to animate, so the list cut in and out under its caret.
+  const [detailOpen, setDetailOpen] = React.useState(false);
   // The server's answer replaces the streamed one once there is one, so the
   // status line and the pills reflect the receipt rather than what the chunk
   // said several seconds ago.
@@ -458,8 +464,15 @@ export function ApprovalCard({
           readable, but never summarised: these are the exact arguments the
           digest was computed over, with credential-shaped keys already redacted
           server-side. */}
-      <details className="group/detail mt-2.5 rounded-field border border-border/50 bg-secondary">
-        <summary
+      <div className="mt-2.5 rounded-field border border-border/50 bg-secondary">
+        {/* A button that owns `aria-expanded`, not a <summary>: the same
+            disclosure to a keyboard (Enter and Space) and to a screen reader
+            ("collapsed" / "expanded"), but one whose content can fold. */}
+        <button
+          type="button"
+          onClick={() => setDetailOpen((v) => !v)}
+          aria-expanded={detailOpen}
+          aria-controls={detailOpen ? detailId : undefined}
           className={cn(
             // min-h-11 rather than padding: this is a real 44px target on touch,
             // and it is the control that decides whether anyone actually reads
@@ -469,43 +482,48 @@ export function ApprovalCard({
             // (globals.css) is authoritative, and a ring here would need
             // outline-none first, which trades a working focus ring for a
             // hand-rolled one.
-            "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-label font-medium text-foreground",
-            // Full accent. This summary sits on the `bg-secondary` details shell,
-            // and accent at 40% over secondary is a 1.4-point step — the control
+            "flex min-h-11 w-full items-center gap-1.5 rounded-field px-3 text-left text-label font-medium text-foreground",
+            // Full accent. This control sits on the `bg-secondary` shell, and
+            // accent at 40% over secondary is a 1.4-point step — the control
             // that decides whether anyone reads the arguments had no hover.
-            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
-            "[&::-webkit-details-marker]:hidden"
+            "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
           )}
         >
           <ChevronRight
             // A turn with both ends on screen: the symmetric curve, on the
             // disclosure rung every other caret in the transcript uses.
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-open/detail:rotate-90 motion-reduce:transition-none"
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              detailOpen && "rotate-90"
+            )}
             aria-hidden="true"
           />
           Exactly what will be sent
-        </summary>
-        {/* Fades in as the disclosure opens rather than cutting in under the
-            caret (native <details> gives no height to animate). */}
-        <div className="border-t border-border/50 px-3 py-2.5 motion-safe:animate-fade-in">
-          {detailRows.length === 0 ? (
-            <p className="text-label leading-relaxed text-muted-foreground">
-              This call sends no arguments.
-            </p>
-          ) : (
-            <dl className="space-y-1.5">
-              {detailRows.map(([key, value]) => (
-                <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
-                  <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 @[24rem]:w-28">{key}</dt>
-                  <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
-                    {formatDetailValue(value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </div>
-      </details>
+        </button>
+        {/* Folds on the grid rows with the caret instead of cutting in under
+            it. The hairline and padding are inside the clip, so they fold too;
+            nothing is mounted while closed. */}
+        <Collapse open={detailOpen}>
+          <div id={detailId} className="border-t border-border/50 px-3 py-2.5">
+            {detailRows.length === 0 ? (
+              <p className="text-label leading-relaxed text-muted-foreground">
+                This call sends no arguments.
+              </p>
+            ) : (
+              <dl className="space-y-1.5">
+                {detailRows.map(([key, value]) => (
+                  <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
+                    <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 @[24rem]:w-28">{key}</dt>
+                    <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
+                      {formatDetailValue(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
+        </Collapse>
+      </div>
 
       {answerable && (
         // Refuse first and at equal weight. A row that leads with a primary

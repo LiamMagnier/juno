@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronDown, Pause, Play, Square } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
+import { Collapse } from "@/components/ui/collapse";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { EvidencePanel } from "./evidence-panel";
 import { ClarifyGate, PlanOutline, PlanReview } from "./run-controls";
@@ -177,22 +178,33 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-4 flex min-h-9 w-full items-center justify-between border-t border-border pt-3 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none">
         {expanded ? CONSOLE_COPY.hide : CONSOLE_COPY.show}<ChevronDown className={cn("size-4 transition-transform duration-base ease-in-out motion-reduce:transition-none", expanded && "rotate-180")} />
       </button>
-      {expanded && <div className="research-tab-body">
-        <nav aria-label="Research view" className="flex gap-4 overflow-x-auto border-b border-border">
-          {[{value:"activity",label:"Activity"},{value:"sources",label:"Sources"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
-        </nav>
-        {/* Every tab says something when it has nothing: a tab opened during
-            planning used to render a bare region, and an empty region under a
-            tab bar reads as a broken tab, not an early one. The empty copy
-            lives here rather than in the panels because the recap mounts the
-            same panels in a stack that relies on them rendering nothing. */}
-        <div key={tab} className="research-tab-body" role="region" aria-label={tab}>
-          {tab === "plan" && (planEmpty ? emptyLine(CONSOLE_COPY.noPlan) : <PlanOutline approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} steps={run.plan.steps ?? []} queries={run.plan.queries} successCriteria={run.plan.successCriteria} risks={run.plan.risks} />)}
-          {tab === "sources" && <SourceDeck sources={run.sources} />}
-          {tab === "activity" && <RunTimeline events={events} live={run.live} empty={emptyLine(CONSOLE_COPY.noActivity)} />}
-          {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} empty={emptyLine(CONSOLE_COPY.noEvidence)} />}
-        </div>
-      </div>}
+      {/* The machinery unfolds under its toggle and folds back the same way
+          (ICONS_AND_MOTION §2.2 rule 6), where it used to vanish in a frame.
+          The wrapper goes `inert` as the toggle closes, so the tabs and links
+          still on screen while the fold plays are out of the tab order;
+          Collapse unmounts them after. The gutter (`-mx-1` out, `px-1 pb-1`
+          back in) keeps focus outlines at the panel's edges inside the fold's
+          clip. `research-tab-body`'s own arrival is dropped here — the fold
+          and its fade are the entrance — and kept on the keyed tab body below,
+          where it marks a tab change. */}
+      <div className="contents" inert={!expanded}>
+        <Collapse open={expanded} className="-mx-1" innerClassName="min-w-0 px-1 pb-1 pt-6">
+          <nav aria-label="Research view" className="flex gap-4 overflow-x-auto border-b border-border">
+            {[{value:"activity",label:"Activity"},{value:"sources",label:"Sources"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui transition-colors duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
+          </nav>
+          {/* Every tab says something when it has nothing: a tab opened during
+              planning used to render a bare region, and an empty region under a
+              tab bar reads as a broken tab, not an early one. The empty copy
+              lives here rather than in the panels because the recap mounts the
+              same panels in a stack that relies on them rendering nothing. */}
+          <div key={tab} className="research-tab-body" role="region" aria-label={tab}>
+            {tab === "plan" && (planEmpty ? emptyLine(CONSOLE_COPY.noPlan) : <PlanOutline approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} steps={run.plan.steps ?? []} queries={run.plan.queries} successCriteria={run.plan.successCriteria} risks={run.plan.risks} />)}
+            {tab === "sources" && <SourceDeck sources={run.sources} />}
+            {tab === "activity" && <RunTimeline events={events} live={run.live} empty={emptyLine(CONSOLE_COPY.noActivity)} />}
+            {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} empty={emptyLine(CONSOLE_COPY.noEvidence)} />}
+          </div>
+        </Collapse>
+      </div>
     </>}
     {(run.error || notice) && <p role="alert" className="mt-4 rounded-field bg-destructive/10 p-3 text-ui text-destructive">{run.error ?? notice}</p>}
   </section>;

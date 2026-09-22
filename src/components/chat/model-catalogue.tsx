@@ -677,7 +677,9 @@ export function ModelCatalogue({
           // it, so a stationary pointer and the arrow keys painted two rows
           // with the identical fill at once.
           "flex h-8 w-full items-center gap-2 rounded-control px-2 text-left outline-none",
-          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          // Colour only, so it keeps its timing under reduced motion (fades
+          // are not travel; ICONS_AND_MOTION.md §2.2, rule 10).
+          "transition-colors duration-fast ease-out-soft",
           "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           cursor && "bg-accent",
           // Locked rows are NOT dimmed: somebody comparing plans has to be able
@@ -829,7 +831,7 @@ export function ModelCatalogue({
                   one decorative home in this popover. The field had neither:
                   the control the popover autofocuses was the one that looked
                   inert. */}
-              <div className="surface-inset flex h-9 items-center gap-2 rounded-control px-2.5 transition-colors duration-fast ease-out-soft focus-within:border-ring motion-reduce:transition-none">
+              <div className="surface-inset flex h-9 items-center gap-2 rounded-control px-2.5 transition-colors duration-fast ease-out-soft focus-within:border-ring">
                 <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                 <input
                   value={query}

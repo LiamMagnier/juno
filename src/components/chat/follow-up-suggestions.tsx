@@ -201,7 +201,11 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                   // chevron, and --border at 40% over --accent computes to a
                   // 1.2-point step — the chevron's own hover was invisible
                   // because it only ever fires on top of the pill's.
-                  "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-border hover:text-foreground coarse:size-8 motion-reduce:transition-none",
+                  // No `motion-reduce:transition-none`: this is a tonal
+                  // cross-fade, and reduced motion keeps fades on their timing
+                  // (ICONS_AND_MOTION.md §2.2, rule 10). The caret's turn
+                  // below is travel, so that one still snaps.
+                  "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-border hover:text-foreground coarse:size-8",
                   // Rides the first line when the pill is a tall wrapped block.
                   isOpen ? "self-start" : "self-center"
                 )}

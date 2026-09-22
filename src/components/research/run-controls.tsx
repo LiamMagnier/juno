@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, Link2, Plus } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { RESEARCH_EFFORT_COPY } from "./effort-copy";
 import { formatMicroUsd } from "./run-format";
 import { staggerDelay } from "@/lib/motion";
@@ -537,27 +538,33 @@ export function PlanReview({
             />
           </button>
 
-          {queriesOpen && (
-            <ol className="mt-2 flex flex-col motion-safe:animate-research-detail-in">
-              {currentQueries.map((query, i) => (
-                <li key={i} className="flex items-center gap-3">
-                  <span aria-hidden className="w-4 shrink-0 text-caption tabular-nums text-muted-foreground/60">
-                    {i + 1}
-                  </span>
-                  <input
-                    value={query}
-                    aria-label={`${PLAN_COPY.search} ${i + 1}`}
-                    onChange={(e) => {
-                      const next = [...currentQueries];
-                      next[i] = e.target.value;
-                      setQueryDraft(next);
-                    }}
-                    className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:bg-secondary focus-visible:text-foreground motion-reduce:transition-none"
-                  />
-                </li>
-              ))}
-            </ol>
-          )}
+          {/* Unfolds under its toggle and folds back the same way
+              (ICONS_AND_MOTION §2.2 rule 6). The wrapper is `inert` the moment
+              the toggle closes, so the fields still on screen while the fold
+              plays are out of the tab order; Collapse unmounts them after. */}
+          <div className="contents" inert={!queriesOpen}>
+            <Collapse open={queriesOpen} innerClassName="pt-2">
+              <ol className="flex flex-col">
+                {currentQueries.map((query, i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <span aria-hidden className="w-4 shrink-0 text-caption tabular-nums text-muted-foreground/60">
+                      {i + 1}
+                    </span>
+                    <input
+                      value={query}
+                      aria-label={`${PLAN_COPY.search} ${i + 1}`}
+                      onChange={(e) => {
+                        const next = [...currentQueries];
+                        next[i] = e.target.value;
+                        setQueryDraft(next);
+                      }}
+                      className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:bg-secondary focus-visible:text-foreground motion-reduce:transition-none"
+                    />
+                  </li>
+                ))}
+              </ol>
+            </Collapse>
+          </div>
         </div>
       )}
 
@@ -578,8 +585,11 @@ export function PlanReview({
           />
         </button>
 
-        {focusOpen && (
-          <div className="mt-3 space-y-4 motion-safe:animate-research-detail-in">
+        {/* The same fold as the searches above. The gutter (`-mx-1` out,
+            `px-1 pb-1` back in) keeps the remove and add buttons' focus
+            outlines inside the fold's clip; the fields sit where they did. */}
+        <div className="contents" inert={!focusOpen}>
+          <Collapse open={focusOpen} className="-mx-1" innerClassName="space-y-4 px-1 pb-1 pt-3">
             <FocusList
               label={PLAN_COPY.focus}
               values={constraintValues}
@@ -609,8 +619,8 @@ export function PlanReview({
               onRemove={(index) => setSourceValues((current) => current.filter((_, i) => i !== index))}
               source
             />
-          </div>
-        )}
+          </Collapse>
+        </div>
       </div>
     </div>
   );

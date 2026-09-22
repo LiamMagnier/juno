@@ -7,6 +7,7 @@ import { ExternalLink, Loader2, Search } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
@@ -397,12 +398,15 @@ function SkillPreviewRow({
       style={staggerDelay(index, "tight")}
     >
       <label className="flex cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
+        {/* The house checkbox rather than the browser's: an inset well that
+            takes the accent fill as the tick springs in, and leaves on the
+            accelerate when it is cleared. The label around it still names it
+            and still toggles it from anywhere on the row. */}
+        <Checkbox
           checked={chosen}
-          onChange={onToggle}
+          onCheckedChange={onToggle}
           disabled={disabled}
-          className="mt-1 size-4 shrink-0 accent-[hsl(var(--primary))]"
+          className="mt-px"
         />
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

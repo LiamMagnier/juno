@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, Clock } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -204,8 +205,11 @@ export function ApprovalCard({
             {showParameters ? "Hide" : "Show"} {parameters.length}{" "}
             {parameters.length === 1 ? "parameter" : "parameters"}
           </Button>
-          {showParameters && (
-            <dl className="mt-1.5 space-y-1 rounded-field bg-warning/10 px-2.5 py-2 motion-safe:animate-fade-in-up">
+          {/* Unfolds under its toggle and folds back the same way; the gap
+              above the list is padding inside the fold, so a closed set
+              leaves none behind. */}
+          <Collapse open={showParameters} innerClassName="pt-1.5">
+            <dl className="space-y-1 rounded-field bg-warning/10 px-2.5 py-2">
               {parameters.map(([key, value]) => (
                 <div key={key} className="flex gap-2 font-mono text-micro leading-relaxed">
                   <dt className="w-20 shrink-0 text-muted-foreground">{key}</dt>
@@ -213,7 +217,7 @@ export function ApprovalCard({
                 </div>
               ))}
             </dl>
-          )}
+          </Collapse>
         </>
       )}
 

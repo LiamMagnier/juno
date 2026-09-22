@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  *
  *   default      `.control-primary` — solid accent fill, no shadow
  *   secondary    `.control-neu` — hairline at rest, tonal fill on hover
- *   ghost        flat at rest, tonal fill on hover, darker while held
+ *   ghost        flat at rest, tonal fill on hover, the on tone while held
  *   outline      hairline at rest, tonal fill on hover
  *   destructive  the primary recipe in the destructive hue
  *   link         text only
@@ -51,15 +51,16 @@ const buttonVariants = cva(
         // destructive red on hover via .danger-hover (globals.css) — the one
         // opt-in for delete/disconnect/remove controls that shouldn't shout.
         "destructive-outline": "danger-hover border-border bg-transparent text-destructive shadow-none",
-        // Flat at rest → tonal fill on hover → a step darker while held. The
-        // hairline darkens with the fill, so the border colour is set here
-        // rather than left to a surface class (a `border-*` utility on the base
-        // would beat the components-layer class).
+        // Flat at rest → tonal fill on hover → the on tone (`--selected`, a
+        // rung past hover in both themes) while held, so a press deepens the
+        // hover instead of paling it. The hairline darkens with the fill, so
+        // the border colour is set here rather than left to a surface class (a
+        // `border-*` utility on the base would beat the components-layer class).
         outline:
-          "border-border bg-transparent shadow-none hover:border-foreground/20 hover:bg-accent active:bg-secondary",
+          "border-border bg-transparent shadow-none hover:border-foreground/20 hover:bg-accent active:bg-selected",
         secondary: "control-neu text-foreground",
         ghost:
-          "border-transparent bg-transparent shadow-none hover:bg-accent hover:text-foreground active:bg-secondary",
+          "border-transparent bg-transparent shadow-none hover:bg-accent hover:text-foreground active:bg-selected",
         link: "border-transparent text-primary underline-offset-4 hover:underline active:text-primary/75",
       },
       // Every size grows to a ~44px hit area on touch devices (coarse:) so a

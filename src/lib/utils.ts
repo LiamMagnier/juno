@@ -102,6 +102,20 @@ const merge = extendTailwindMerge({
           ],
         },
       ],
+      // Mirrors tailwind.config.ts `transitionDuration` / `transitionTimingFunction`.
+      // The same failure a third time: `duration-fast` and `ease-out-soft` are
+      // not values stock tailwind-merge knows, so a caller's `duration-slow
+      // ease-out-expo` passed to a component that already sets the house rungs
+      // kept BOTH, and emit order — not the author — picked the winner.
+      duration: [{ duration: ["press", "fast", "exit", "base", "slow", "emphasis"] }],
+      ease: [
+        {
+          ease: [
+            "out-soft", "out-strong", "out-expo", "in", "in-out",
+            "breathe", "out-back", "spring", "drawer",
+          ],
+        },
+      ],
     },
   },
 });

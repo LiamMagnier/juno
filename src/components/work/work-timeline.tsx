@@ -18,6 +18,7 @@ import {
   X,
 } from "@/components/ui/icons";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { Collapse } from "@/components/ui/collapse";
 import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { staggerDelay } from "@/lib/motion";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
@@ -887,12 +888,14 @@ function FeedMarker({
   );
 }
 
-/**
- * How a disclosure's body arrives. The body is mounted by the press that
- * opens it, so it rises into place on the house entrance rather than
- * appearing in the frame after the caret turns.
+/*
+ * How a disclosure's body arrives and leaves: through `Collapse`, which unfolds
+ * it on the symmetric curve while the caret turns and folds it back before it
+ * unmounts, so closing a fold is the same gesture as opening one rather than a
+ * cut. The spacing between a toggle and its body is padding on Collapse's
+ * inner box (`innerClassName`), never a margin on the body, or the gap would be
+ * the height the fold closes to.
  */
-const DISCLOSED = "motion-safe:animate-fade-in-up";
 
 // ---------------------------------------------------------------------------
 // A run of tool calls, folded
@@ -1080,8 +1083,13 @@ function ActivityBatch({
         )}
       </button>
 
-      {open && (
-        <ol className={cn("mt-2.5 space-y-2.5 border-l border-border/50 pl-4", DISCLOSED)}>
+      {/* The fold clips, and two things inside it reach past the list's own
+          box: each row's rail marker sits 4px left of the rail, and the last
+          row's Detail toggle draws its focus outline below itself. So the clip
+          is widened to the left (`-ml-2` out, `pl-2` back in) and given 4px
+          of floor, rather than shaving the markers or the outline. */}
+      <Collapse open={open} className="-ml-2" innerClassName="pb-1 pl-2 pt-2.5">
+        <ol className="space-y-2.5 border-l border-border/50 pl-4">
           {/* No `arrivals` inside an open fold. These rows mount when the reader
               opens the disclosure, not when the calls happened, so an entrance
               here would be twenty rows cascading in on a click — which is the
@@ -1090,7 +1098,7 @@ function ActivityBatch({
             <ActivityRow key={entry.id} entry={entry} phase={phase} />
           ))}
         </ol>
-      )}
+      </Collapse>
     </li>
   );
 }
@@ -1188,8 +1196,8 @@ function ActivityRow({
             />
             {open ? "Hide detail" : "Detail"}
           </button>
-          {open && (
-            <dl className={cn("mt-1 space-y-0.5 border-l border-border/50 pl-2.5", DISCLOSED)}>
+          <Collapse open={open} innerClassName="pt-1">
+            <dl className="space-y-0.5 border-l border-border/50 pl-2.5">
               {entry.facts.map((fact) => (
                 <div
                   key={`${fact.label}-${fact.value}`}
@@ -1200,7 +1208,7 @@ function ActivityRow({
                 </div>
               ))}
             </dl>
-          )}
+          </Collapse>
         </>
       )}
     </li>

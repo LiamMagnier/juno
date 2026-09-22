@@ -309,7 +309,7 @@ export function CodeSessionBanner({
                   {report ? checksLabel(report) : ""}
                 </span>
                 <PopoverTrigger
-                  className={cn(BANNER_CHIP, "pressable hover:bg-accent data-[state=open]:bg-secondary")}
+                  className={cn(BANNER_CHIP, "pressable hover:bg-accent data-[state=open]:bg-selected")}
                   aria-label={
                     report
                       ? `${checksLabel(report)}. Open checks and auto-fix.`

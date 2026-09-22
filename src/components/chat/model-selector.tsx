@@ -185,7 +185,8 @@ export function ModelSelector({
             onClick={openCatalogue}
             className={cn(
               "group flex h-10 w-full items-center gap-2.5 rounded-control px-2 text-left outline-none",
-              "transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+              // Colour only: reduced motion keeps the cross-fade (§2.2, rule 10).
+              "transition-colors duration-fast ease-out-soft hover:bg-accent",
               "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             )}
           >

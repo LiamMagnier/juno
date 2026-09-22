@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Check, MicOff } from "@/components/ui/icons";
+import { Check, MicOff, Send } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
@@ -456,7 +456,10 @@ export function ComposerDictation({
         // object arriving over the composer, it is the composer listening, so
         // the box must not appear to change.
         "composer-surface relative flex w-full flex-col rounded-composer",
-        "transition-opacity motion-reduce:transition-none",
+        // Opacity only, so no `motion-reduce:transition-none`: reduced motion
+        // drops travel and scale, and fades keep their timing
+        // (ICONS_AND_MOTION.md §2.2, rule 10).
+        "transition-opacity",
         closing ? cn("opacity-0", EXIT_CLASS) : "duration-fast ease-out-soft opacity-100"
       )}
     >
@@ -560,12 +563,19 @@ export function ComposerDictation({
                   // a ring-offset painted a card-coloured halo.
                   "pressable grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
                   "hover:bg-primary/90 disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
-                  "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
+                  // Under reduced motion only the dip goes (scale is
+                  // travel); the fill keeps its cross-fade, as fades do.
+                  "motion-reduce:active:scale-100 coarse:size-11"
                 )}
               >
-                {/* The house weight: the arrow's line is the set's, not a
-                    heavier stroke than every glyph beside it. */}
-                <ArrowUp aria-hidden="true" className="size-4" />
+                {/* The composer's own send mark at the composer's own cut
+                    (ComposerPrimaryAction): Juno's `Send`, bold on the solid
+                    accent disc, where the regular line thins against the fill.
+                    Every "send this" in the product draws it
+                    (ICONS_AND_MOTION.md §1.4), and this circle takes the
+                    place of that one when dictation swaps in, so the mark
+                    must not change as the swap runs. */}
+                <Send weight="bold" aria-hidden="true" className="size-4" />
               </button>
             </TooltipTrigger>
             <TooltipContent>Send</TooltipContent>

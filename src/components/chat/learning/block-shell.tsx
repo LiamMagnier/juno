@@ -227,7 +227,27 @@ export function TextToggle({
   );
 }
 
-/** Height-animated reveal via the grid-rows 0fr -> 1fr trick. */
+/**
+ * Height-animated reveal via the grid-rows 0fr -> 1fr trick.
+ *
+ * The clipped grid item stays bare (`min-h-0 overflow-hidden`) and
+ * `innerClassName` lands on a box INSIDE it — the same nesting
+ * `ui/collapse.tsx` uses. A 0fr track keeps the grid item's own padding and
+ * border as its floor, so padding put on the item itself would never fold:
+ * the reveal would close to that many pixels, not to nothing.
+ *
+ * Reduced motion snaps the rows and keeps the fade, as Collapse does. The
+ * transition is declared once on the base utility, so the duration and curve
+ * tokens govern both modes; the reduced-motion variant narrows only
+ * `transition-property`. (A variant carrying the full arbitrary transition
+ * utility also re-emits Tailwind's 150ms / default-curve fallbacks inside its
+ * media query, and that rule outranks every token beside it.)
+ *
+ * A caller's `duration-*` / `ease-*` replaces the default rather than joining
+ * it: cn()'s tailwind-merge does not know Juno's named motion rungs, so both
+ * would survive and Tailwind's emit order would pick the winner
+ * (`ease-out-soft` is emitted after `ease-out-expo`, so the caller lost).
+ */
 export function Reveal({
   open,
   className,
@@ -238,6 +258,8 @@ export function Reveal({
   open: boolean;
   innerClassName?: string;
 } & React.ComponentPropsWithoutRef<"div">) {
+  const callerDuration = /(?:^|\s)duration-/.test(className ?? "");
+  const callerEase = /(?:^|\s)ease-/.test(className ?? "");
   return (
     <div
       aria-hidden={!open}
@@ -246,13 +268,17 @@ export function Reveal({
       // buttons) stays keyboard-focusable while invisible.
       inert={!open}
       className={cn(
-        "grid motion-safe:transition-[grid-template-rows,opacity] duration-base ease-out-soft",
+        "grid transition-[grid-template-rows,opacity] motion-reduce:[transition-property:opacity]",
+        !callerDuration && "duration-base",
+        !callerEase && "ease-out-soft",
         open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         className
       )}
       {...props}
     >
-      <div className={cn("min-h-0 overflow-hidden", innerClassName)}>{children}</div>
+      <div className="min-h-0 overflow-hidden">
+        <div className={innerClassName}>{children}</div>
+      </div>
     </div>
   );
 }

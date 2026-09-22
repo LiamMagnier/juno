@@ -8,6 +8,7 @@ import { Sparkles } from "@/components/ui/icons";
 import { SidebarMotionIcon, type SidebarMotionIconKind } from "@/components/app/sidebar-motion-icon";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 import { PLANS, planRank } from "@/lib/plans";
 import { spring } from "@/lib/motion";
 import { useTravelSquash } from "@/components/ui/micro";
@@ -145,6 +146,17 @@ function isLocked(product: Product, plan: PlanId | undefined): boolean {
   return planRank(plan) < planRank(product.minPlan);
 }
 
+/**
+ * The chord as this reader's keyboard spells it. `PRODUCTS` writes the Mac
+ * form, and the hook it is bound in (`use-global-shortcuts`) answers to ⌘ or
+ * Ctrl alike, so a Windows or Linux reader was shown a key they do not have
+ * for a chord that works for them as Ctrl⇧1.
+ */
+function useChordLabel(chord: string): string {
+  const mod = useModifierKeyLabel();
+  return chord.replace("⌘", mod);
+}
+
 export function ProductSwitch({
   collapsed = false,
   active,
@@ -272,6 +284,7 @@ function Segment({
   thumbSquash: { scaleX: MotionValue<number>; scaleY: MotionValue<number> };
   onNavigate?: () => void;
 }) {
+  const chord = useChordLabel(product.chord);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -366,7 +379,7 @@ function Segment({
       </TooltipTrigger>
       <TooltipContent side="bottom">
         {product.label}
-        <Kbd className="ml-1.5">{product.chord}</Kbd>
+        <Kbd className="ml-1.5">{chord}</Kbd>
       </TooltipContent>
     </Tooltip>
   );
@@ -383,6 +396,7 @@ function RailItem({
   locked: boolean;
   onNavigate?: () => void;
 }) {
+  const chord = useChordLabel(product.chord);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -429,7 +443,7 @@ function RailItem({
         {locked ? (
           <span className="ml-1.5 text-muted-foreground">{PLANS[product.minPlan].name}</span>
         ) : (
-          <Kbd className="ml-1.5">{product.chord}</Kbd>
+          <Kbd className="ml-1.5">{chord}</Kbd>
         )}
       </TooltipContent>
     </Tooltip>

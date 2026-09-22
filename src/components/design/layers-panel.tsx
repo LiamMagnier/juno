@@ -68,6 +68,7 @@ import {
   iconButtonClass,
 } from "@/components/design/effects-panel";
 import { IconSwap } from "@/components/ui/icon-swap";
+import { Collapse } from "@/components/ui/collapse";
 import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
 import { layoutPage, layoutSubtree } from "@/lib/design/layout";
 import type { DesignViewportHandle } from "@/components/design/design-canvas";
@@ -909,8 +910,13 @@ function ComponentLibrary({
         Components
         <span className="ml-auto font-mono text-micro tabular-nums">{components.length}</span>
       </button>
-      {open && (
-        <ul className="max-h-56 overflow-y-auto pb-1 motion-safe:animate-fade-in">
+      {/* Unfolds under its header and folds back before it unmounts, so the
+          layer tree above gives way continuously instead of jumping. Nothing
+          is mounted while closed, and the pictures above are still drawn only
+          while open: the fold plays the last frame it had, it does not ask
+          for new ones. */}
+      <Collapse open={open}>
+        <ul className="max-h-56 overflow-y-auto pb-1">
           {components.map((component) => {
             const thumbnail = thumbnails.get(component.id);
             return (
@@ -942,7 +948,7 @@ function ComponentLibrary({
             );
           })}
         </ul>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -1097,41 +1103,42 @@ function VariableLibrary({
         </IconButton>
       </div>
 
-      {open && (
-        <div className="pb-1 motion-safe:animate-fade-in">
-          {/* Which mode the values below belong to. Shown only when there is a
-              choice: on a single-mode collection this picker would be a control
-              with one option, which reads as a setting rather than a fact. */}
-          {collections.map((collection) =>
-            collection.modes.length > 1 ? (
-              <div key={collection.id} className="px-2 pb-1">
-                <PanelSelect
-                  ariaLabel={`${collection.name} mode`}
-                  leading={collection.name}
-                  value={activeModeId(doc, collection.id) ?? collection.modes[0].id}
-                  options={collection.modes.map((mode) => ({ value: mode.id, label: mode.name }))}
-                  disabled={readOnly}
-                  onChange={(next) => onApply([{ op: "setVariableMode", collectionId: collection.id, modeId: next }], "Switch mode")}
-                />
-              </div>
-            ) : null
-          )}
+      {/* The same fold as Components above: the list unfolds under its
+          header and folds back before it unmounts, so a row's popover state
+          still starts closed each time the section opens. */}
+      <Collapse open={open} innerClassName="pb-1">
+        {/* Which mode the values below belong to. Shown only when there is a
+            choice: on a single-mode collection this picker would be a control
+            with one option, which reads as a setting rather than a fact. */}
+        {collections.map((collection) =>
+          collection.modes.length > 1 ? (
+            <div key={collection.id} className="px-2 pb-1">
+              <PanelSelect
+                ariaLabel={`${collection.name} mode`}
+                leading={collection.name}
+                value={activeModeId(doc, collection.id) ?? collection.modes[0].id}
+                options={collection.modes.map((mode) => ({ value: mode.id, label: mode.name }))}
+                disabled={readOnly}
+                onChange={(next) => onApply([{ op: "setVariableMode", collectionId: collection.id, modeId: next }], "Switch mode")}
+              />
+            </div>
+          ) : null
+        )}
 
-          {variables.length === 0 && (
-            <p className="px-3 py-3 text-center text-caption text-muted-foreground">
-              No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying.
-            </p>
-          )}
+        {variables.length === 0 && (
+          <p className="px-3 py-3 text-center text-caption text-muted-foreground">
+            No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying.
+          </p>
+        )}
 
-          <ul className="max-h-56 overflow-y-auto">
-            {variables.map((variable) => (
-              <li key={variable.id}>
-                <VariableRow document={doc} variable={variable} onApply={onApply} readOnly={readOnly} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        <ul className="max-h-56 overflow-y-auto">
+          {variables.map((variable) => (
+            <li key={variable.id}>
+              <VariableRow document={doc} variable={variable} onApply={onApply} readOnly={readOnly} />
+            </li>
+          ))}
+        </ul>
+      </Collapse>
     </div>
   );
 }

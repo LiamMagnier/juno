@@ -34,6 +34,15 @@ function themedSource(code: string, dark: boolean): string {
  */
 export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: string }) {
   const [copied, setCopied] = React.useState(false);
+  // The check reverts after 1.5s; the id is held so a second copy restarts the
+  // receipt and an unmount does not leave it to fire into a dead component.
+  const copiedTimer = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
   const [loaded, setLoaded] = React.useState(false);
   // Rendered light-first so the server HTML and the first client paint agree;
   // the effect corrects it before the iframe has finished booting.
@@ -61,7 +70,8 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch {
       toast.error("Couldn’t copy to the clipboard.");
     }

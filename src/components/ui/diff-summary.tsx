@@ -16,6 +16,9 @@ export interface FileDiffItem {
   patch?: string;
 }
 
+/** How long "Copied" holds before the check turns back into copy. */
+const COPIED_REVERT_MS = 1500;
+
 interface DiffSummaryProps {
   files: FileDiffItem[];
   totalAdditions?: number;
@@ -35,6 +38,16 @@ export function DiffSummary({
     files.length === 1 ? files[0].path : null
   );
   const [copiedFile, setCopiedFile] = React.useState<string | null>(null);
+  // The check reverts to copy on the house beat (ICONS_AND_MOTION.md §2.2,
+  // rule 7). One timer, restarted by a second copy and cleared on unmount, so
+  // a revert never lands on a list that has gone.
+  const copiedTimer = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
 
   const calculatedAdditions =
     totalAdditions ?? files.reduce((acc, f) => acc + (f.additions || 0), 0);
@@ -46,7 +59,15 @@ export function DiffSummary({
     navigator.clipboard.writeText(patch);
     setCopiedFile(path);
     toast.success("Diff copied to clipboard");
-    setTimeout(() => setCopiedFile(null), 2000);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => {
+      copiedTimer.current = null;
+      setCopiedFile(null);
+    }, COPIED_REVERT_MS);
+  };
+
+  const toggleFile = (path: string, isExpanded: boolean) => {
+    setExpandedFile(isExpanded ? null : path);
   };
 
   if (!files || files.length === 0) {
@@ -83,17 +104,32 @@ export function DiffSummary({
           return (
             <div key={file.path} className="group/file">
               <div
-                // A custom clickable row: the marker lets its glyphs take the
-                // same hover articulation a button's would.
-                data-icon-trigger={hasPatch ? "" : undefined}
+                // A row with a patch is a disclosure button: it takes focus,
+                // opens on Enter and Space, and says whether it is open. It
+                // stays a <div> with the role rather than becoming a <button>
+                // because it holds block content (a button may only hold
+                // phrasing content). `role="button"` is also one of the
+                // selectors that plays its glyphs' hover articulation. A row
+                // without a patch opens nothing, so it is plain content.
+                role={hasPatch ? "button" : undefined}
+                tabIndex={hasPatch ? 0 : undefined}
+                aria-expanded={hasPatch ? isExpanded : undefined}
                 className={cn(
                   "flex items-center justify-between gap-3 px-3.5 py-2 transition-colors duration-fast ease-out-soft hover:bg-accent/40",
-                  hasPatch && "cursor-pointer",
+                  // Flush inside the card's `overflow-hidden`, so the focus
+                  // outline is drawn inset or its sides are clipped (§2.2 rule 3).
+                  hasPatch && "cursor-pointer focus-visible:-outline-offset-2",
                   isExpanded && "bg-accent/20"
                 )}
                 onClick={() => {
-                  if (hasPatch) {
-                    setExpandedFile(isExpanded ? null : file.path);
+                  if (hasPatch) toggleFile(file.path, isExpanded);
+                }}
+                onKeyDown={(event) => {
+                  if (!hasPatch || event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    // Space would otherwise scroll the page.
+                    event.preventDefault();
+                    toggleFile(file.path, isExpanded);
                   }
                 }}
               >

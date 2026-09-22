@@ -5,11 +5,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * A glyph you can press, as a key: `.control-neu` at `rounded-control` (10) —
- * a hairline at rest, a tonal fill on hover, the deeper `--secondary` fill
- * while held or while `aria-pressed`, and the shared 0.97 dip under the
- * finger. Every size grows to a 44px target on a coarse pointer. The glyph
- * inside plays its own hover articulation (icons.tsx) — a gear turns, an
- * arrow nudges — because this renders a `<button>`.
+ * a hairline at rest, a tonal fill on hover, the `--selected` tone (one rung
+ * past hover) while held or while `aria-pressed`, and the shared 0.97 dip
+ * under the finger. Every size grows to a 44px target on a coarse pointer.
+ * The glyph inside plays its own hover articulation (icons.tsx) — a gear
+ * turns, an arrow nudges — because this renders a `<button>`.
  *
  * Distinct from `<Pressable kind="icon">`, which is the FLAT circular
  * affordance for close/copy/expand glyphs that sit on another surface. This
@@ -29,9 +29,10 @@ const iconButtonVariants = cva(
     variants: {
       variant: {
         default: "control-neu text-foreground",
-        // Flat at rest for dense toolbars; raises on hover, presses when on.
+        // Flat at rest for dense toolbars: the wash on hover, and the on tone
+        // (a rung past it) while held or pressed-in, so ON outranks HOVER.
         ghost:
-          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-secondary aria-pressed:bg-secondary aria-pressed:text-foreground",
+          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-selected aria-pressed:bg-selected aria-pressed:text-foreground",
         primary: "control-primary border-primary/90",
       },
       size: {

@@ -24,9 +24,11 @@ there is information, never texture.
 2. **Shadows leave the page.** Menus, popovers, dialogs, toasts and tooltips
    are the one tier with a throw — a soft, wide, low-alpha one (`--shadow-float`).
    Nothing in the reading column casts a shadow.
-3. **State is tonal.** Hover is `--accent`, selected is `--secondary`, the
-   active sidebar row is `--sidebar-accent`. No surface goes up or down;
-   it changes shade.
+3. **State is tonal, and ranked.** Hover is `--accent`; selected, on and
+   held are `--selected`, one rung past hover; the active sidebar row is
+   `--sidebar-selected` inside its edge. No surface goes up or down; it
+   changes shade, and a state the reader chose is always a deeper shade than
+   one the pointer is merely passing over (darker in light, lighter in dark).
 4. **One accent, used for state.** Coral (or the chosen accent) is the primary
    action, the selected mark, the focus edge on a text field. It is never
    furniture.
@@ -48,14 +50,37 @@ there is information, never texture.
 | `--background` | `48 24% 97.2%` | `30 5% 11.5%` |
 | `--card` | `46 32% 99.2%` | `30 5% 14%` |
 | `--popover` | `46 32% 99.4%` | `30 5% 16.5%` |
-| `--secondary` / `--muted` | `46 20% 93.5%` | `30 5% 18%` |
+| `--secondary` / `--muted` (tonal fill) | `46 20% 93.5%` | `30 5% 18%` |
 | `--accent` (hover fill) | `46 20% 91.5%` | `30 5% 21%` |
+| `--selected` (on, selected, held) | `46 20% 90%` | `30 5% 24%` |
 | `--border` | `44 14% 86.5%` | `30 5% 22.5%` |
 | `--input` (field hairline) | `44 12% 78%` | `30 5% 27%` |
-| `--sidebar` | `46 22% 95.5%` | `30 5% 9.5%` |
+| `--sidebar` | `46 22% 94.6%` | `30 5% 8.8%` |
 
 Every rung stays warm (red ≥ green ≥ blue); the native brand-neutral test
 still gates it.
+
+**Hover, then selected.** `--selected` exists because the on state used to be
+`--secondary`, and `--secondary` sits on the *weaker* side of the hover fill in
+both themes (93.5% against a 91.5% hover in light, 18% against 21% in dark).
+A toggle that was on read paler than one the pointer happened to cross, and a
+hovered button went pale as it was pressed. The ladder is now rest → hover
+(`--accent`) → on (`--selected`), each a step deeper, in both themes.
+`--secondary` keeps its jobs as a tonal *fill* (the user bubble, tracks,
+badges, code blocks, the disabled send disc) and is never a state.
+
+The light step is a point and a half rather than two because a selected tile
+still holds muted captions: `--muted-foreground` measures 4.53:1 on 90% and
+falls under AA at 89.5%. The fill is not the only thing carrying the state:
+`.control-neu` darkens its edge with it, and Pressable adds the accent edge.
+Foreground ink is 13.8:1 on it in light and 9.7:1 in dark. A selected chip's
+label is foreground ink for the same reason: `text-primary-ink` drops to
+4.27:1 on the on tone.
+
+In Tailwind it is `bg-selected` (`active:bg-selected`,
+`aria-pressed:bg-selected`, `data-[state=on]:bg-selected`). The sidebar keeps
+its own pair, `--sidebar-hover` and `--sidebar-selected`, which already rank
+this way.
 
 ### 3.2 Shadows
 
@@ -80,7 +105,7 @@ a token that resolves to "no shadow" is a retune, not a migration.
 | `.surface-raised-lg` | the same with the soft throw — hero cards, the auth card, pricing |
 | `.surface-inset` | `--background` + hairline, no shadow — fields, search, segmented tracks |
 | `.surface-float` | `--popover` + hairline at 90% + `--shadow-float` |
-| `.control-neu` | hairline at rest → `--accent` fill + darker edge on hover → `--secondary` fill while on |
+| `.control-neu` | hairline at rest → `--accent` fill + darker edge on hover → `--selected` fill + the darkest edge while on or held |
 | `.control-primary` | solid accent fill, no shadow; hover brightens 6%, press dips 3% |
 | `.composer-surface` | `--card` + a hairline at the `--input` rung (the one edge on the page that must be found) + one low soft throw; focus darkens the edge to ink/30% |
 
@@ -90,8 +115,10 @@ a token that resolves to "no shadow" is a retune, not a migration.
   flat control; `ghost` and `outline` take the tonal hover. No variant casts
   a shadow. Destructive is the same recipe in the destructive hue, with the
   gradient overlay gone.
-- **Sidebar.** The active row is a `--sidebar-accent` fill at medium weight,
-  not a raised card. Hover is the same fill on inactive rows.
+- **Sidebar.** The active row is `.sidebar-row-selected`: the
+  `--sidebar-selected` fill inside its `--sidebar-selected-border` edge, not a
+  raised card. Hover is `--sidebar-hover`, a lighter step with no edge, so the
+  current row always outranks the one under the pointer.
 - **User bubble.** `--secondary` at `rounded-card`, no border, no shadow —
   the Claude / ChatGPT bubble.
 - **Switch, checkbox, radio, slider, progress, badge, kbd.** Tonal tracks,
@@ -135,9 +162,11 @@ component:
 
 - Delete `hover:shadow-raised`, `active:shadow-pressed`, `shadow-pop` and the
   `[background-image:linear-gradient(…)]` gloss overlays; replace a raised
-  hover with `hover:bg-accent` and a pressed state with `bg-secondary`.
-- A selected row is `bg-accent` (or `bg-sidebar-accent` in the sidebar),
-  never `.surface-raised`.
+  hover with `hover:bg-accent` and a pressed state with `active:bg-selected`.
+- A selected row or an on toggle is `bg-selected` (or `.sidebar-row-selected`
+  in the sidebar), never `bg-secondary` (it is lighter than hover in light
+  and darker in dark, so it reads as the weaker state) and never
+  `.surface-raised`.
 - Keep the hairline. A flat edge still needs 3:1 (WCAG 1.4.11).
 - Nest a rounded box and give it its parent's radius **minus the parent's
   padding**. A 16px card with `p-3` (12) holds 4px wells; the same card with

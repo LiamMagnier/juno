@@ -6,6 +6,7 @@ import { ChevronRight, Loader2, type IconComponent } from "@/components/ui/icons
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { Pressable } from "@/components/ui/pressable";
 import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
@@ -612,20 +613,36 @@ function collectFiles(own: CodeFileChange | null, children: readonly FileTreeNod
   return out;
 }
 
-/** The visible rows, in reading order, given which directories are shut. */
+/** One row of the flat list, and why it may be folded away. */
+interface FileTreeRow {
+  node: FileTreeNode;
+  depth: number;
+  /** Its place among its siblings — the stagger count. */
+  index: number;
+  /** A directory above it is shut. */
+  hidden: boolean;
+}
+
+/**
+ * Every row in reading order — including the ones under a shut directory,
+ * marked `hidden` rather than dropped, so that shutting and reopening a
+ * directory folds rows that are still in the list instead of adding and
+ * removing them. See `renderRow` in the card for why it stays one flat list.
+ */
 function flattenTree(
   nodes: readonly FileTreeNode[],
   collapsed: ReadonlySet<string>,
-  depth = 0
-): { node: FileTreeNode; depth: number }[] {
-  const rows: { node: FileTreeNode; depth: number }[] = [];
-  for (const node of nodes) {
-    rows.push({ node, depth });
-    if (node.children.length > 0 && !collapsed.has(node.key)) {
-      rows.push(...flattenTree(node.children, collapsed, depth + 1));
+  depth = 0,
+  hidden = false,
+  out: FileTreeRow[] = []
+): FileTreeRow[] {
+  nodes.forEach((node, index) => {
+    out.push({ node, depth, index, hidden });
+    if (node.children.length > 0) {
+      flattenTree(node.children, collapsed, depth + 1, hidden || collapsed.has(node.key), out);
     }
-  }
-  return rows;
+  });
+  return out;
 }
 
 /**
@@ -642,12 +659,14 @@ function flattenTree(
  * a keyboard user cannot read the end of, the same argument the approval card's
  * detail well makes.
  */
-function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
+function FileDiffPanel({ path, patch, tabIndex }: { path: string; patch: string; tabIndex: number }) {
   const rows = React.useMemo(() => parseUnifiedDiff(patch), [patch]);
   return (
-    // Mounted by the press that opens it, so it arrives rather than appears:
-    // a short rise on the base rung, the same entrance the rows above it use.
-    <div tabIndex={0} className="mb-1 mt-1 max-h-72 overflow-auto motion-safe:animate-fade-in-up">
+    // No entrance of its own: the `Collapse` around it unfolds it and fades it
+    // in, and a rise inside an unfold is two motions for one press. The
+    // `tabIndex` is the row's — see `rowTabIndex` in the card.
+    // The ring is inset for the same reason as the rows': a `Collapse` clip.
+    <div tabIndex={tabIndex} className="mb-1 mt-1 max-h-72 overflow-auto focus-visible:-outline-offset-2">
       <FileDiff file={path} rows={rows} />
     </div>
   );
@@ -740,6 +759,237 @@ function ChangedFilesCard({
       if (!next.delete(path)) next.add(path);
       return next;
     });
+
+  const renderRowContent = (node: FileTreeNode, depth: number, i: number): React.ReactNode => {
+    const directory = node.children.length > 0;
+    const shut = collapsed.has(node.key);
+    // A leaf opens onto its own diff only when one was transported.
+    // Bound to a local so the narrowing survives into the click
+    // handler — `node.file` is a property read, and TypeScript cannot
+    // keep a property narrowed across a closure.
+    const leaf = node.file;
+    const patch = leaf?.patch ?? null;
+    const diffOpen = !!leaf && openDiffs.has(leaf.path);
+    const row = (
+      <>
+        {/* One caret for both disclosures, turning on the disclosure
+            curve. A directory used to swap a right caret for a down
+            one in a single frame, beside a diff caret one row down
+            that rotated — two rules for one gesture in one list. */}
+        {directory || patch ? (
+          <ChevronRight
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
+              (directory ? !shut : diffOpen) && "rotate-90",
+            )}
+            aria-hidden="true"
+          />
+        ) : (
+          // The same 12px the chevron occupies, so file names line up
+          // with the directory names above them instead of hanging
+          // three pixels to their left.
+          <span className="w-3 shrink-0" aria-hidden="true" />
+        )}
+        {node.file ? (
+          <span className={cn("shrink-0 font-mono", changeTone(node.file.changeKind))}>
+            {node.file.changeKind}
+          </span>
+        ) : (
+          <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+            {node.count}
+          </span>
+        )}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate font-mono",
+            node.file ? "text-foreground" : "text-muted-foreground"
+          )}
+          title={node.file ? node.file.path : `${node.key}/`}
+        >
+          {/* Two spellings of the same fact. The eye reads the folded
+              name and takes the rest from the indentation; a reader
+              who cannot see the indentation gets the whole path. */}
+          <span aria-hidden="true">{node.file ? node.name : `${node.name}/`}</span>
+          <span className="sr-only">{node.file ? node.file.path : `${node.key}/`}</span>
+        </span>
+        {/* Only where the run proved it CAN send hunks. Silence here
+            would read as "this file changed by nothing"; on a run that
+            sends none it would be fifty tags saying the same thing. */}
+        {node.file && !patch && anyPatch && (
+          <span className="shrink-0 font-mono text-caption text-muted-foreground/70">no diff</span>
+        )}
+        {node.file?.churn ? (
+          <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+            {node.file.churn}
+          </span>
+        ) : (
+          // A shut directory must still say how much moved inside it,
+          // otherwise collapsing the tree costs the summary the header
+          // was rebuilt to provide.
+          node.churn && (
+            <span className="shrink-0 font-mono tabular-nums">
+              <span className="text-success">+{node.churn.added}</span>{" "}
+              <span className="text-destructive">−{node.churn.removed}</span>
+            </span>
+          )
+        )}
+      </>
+    );
+
+    const shared = cn(
+      "flex w-full items-baseline gap-2 py-0.5 text-left text-caption",
+      // The focus ring drawn inside the row, not 2px outside it: every row
+      // sits in its own `Collapse`, whose clip is the row's own box and
+      // would otherwise swallow the whole ring.
+      "focus-visible:-outline-offset-2",
+      // Rows are dealt out as the run writes them rather than
+      // repainted. `tight` is the rung for dense rows, and the shared
+      // cap stops a fifty-file run taking two seconds to appear. The
+      // count is the row's place among its siblings, so a directory
+      // opened again deals its rows from the top while it unfolds,
+      // rather than waiting out the delay of wherever it sits in the tree.
+      "[animation-fill-mode:backwards] motion-safe:animate-fade-in-up"
+    );
+    // 6px of inset, then 12px a level — the layers panel's ladder, and
+    // the reason a nested path stays legible at `text-caption`.
+    const indent = { ...staggerDelay(i, "tight"), paddingLeft: 6 + depth * 12 };
+
+    // Out of the tab order while the CARD is shut, for every kind of
+    // row and for an open diff's scroll region. The rows stay in the
+    // document so the collapse has something to animate, and
+    // `aria-hidden` over a focusable control is the one way that trick
+    // goes wrong: Tab lands on a control no screen reader will name.
+    const rowTabIndex = open ? 0 : -1;
+    const diffId = `${listId}-diff-${node.key}`;
+
+    /*
+     * Keep / Revert for one file, or the outcome of the last ask.
+     *
+     * Offered only for a path the host will act on, and it REPLACES
+     * itself with the result the moment one is asked for: leaving the
+     * buttons live under a "Reverted" tag invites a second press that
+     * the store answers `unknown` to, because the first revert takes
+     * the path out of the checkpoint index. The controls return only
+     * if the agent writes the file again, which snapshots it afresh —
+     * which is exactly right.
+     */
+    const fileRollback =
+      leaf && rollback && (!rollbackable || rollbackable.has(leaf.path))
+        ? (newestRollback(rollback.requests, leaf.path) ?? "offer")
+        : null;
+    const actions =
+      !leaf || !rollback || !fileRollback ? null : fileRollback === "offer" ? (
+        <span className="flex shrink-0 items-center gap-0.5">
+          <RowAction
+            icon={StatusIcons.success}
+            label={`Keep changes to ${leaf.path}`}
+            tabIndex={rowTabIndex}
+            onClick={() => rollback.onRequest("accept_change", leaf.path)}
+          />
+          <RowAction
+            icon={ActionIcons.restore}
+            label={`Revert ${leaf.path}`}
+            tabIndex={rowTabIndex}
+            onClick={() => rollback.onRequest("reject_change", leaf.path)}
+          />
+        </span>
+      ) : (
+        <span
+          className={cn("shrink-0 text-caption", rollbackLabel(fileRollback).tone)}
+          title={fileRollback.message ?? undefined}
+        >
+          {rollbackLabel(fileRollback).text}
+        </span>
+      );
+
+    const rowControl = directory ? (
+      <button
+        type="button"
+        aria-expanded={!shut}
+        tabIndex={rowTabIndex}
+        onClick={() => toggleDirectory(node.key)}
+        className={cn(shared, ROW_HOVER)}
+        style={indent}
+      >
+        {row}
+      </button>
+    ) : leaf && patch ? (
+      <button
+        type="button"
+        aria-expanded={diffOpen}
+        aria-controls={diffOpen ? diffId : undefined}
+        tabIndex={rowTabIndex}
+        onClick={() => toggleDiff(leaf.path)}
+        className={cn(shared, ROW_HOVER)}
+        style={indent}
+      >
+        {row}
+      </button>
+    ) : (
+      <span className={shared} style={indent}>
+        {row}
+      </span>
+    );
+
+    return (
+      <>
+        {/* Siblings, never nesting — same reason as the header. The
+            row is already a button for the diff disclosure, and a
+            Revert inside it would be hoisted out by the parser, so
+            pressing Revert would open the diff too. `min-w-0` is what
+            lets the path keep truncating once it shares the line. */}
+        {actions ? (
+          <span className="flex items-center gap-1 pr-1">
+            <span className="min-w-0 flex-1">{rowControl}</span>
+            {actions}
+          </span>
+        ) : (
+          rowControl
+        )}
+        {/* Unmounted while shut rather than kept in the document like
+            the file list above it: that list stays because it is the
+            card's own disclosure and its rows are cheap, whereas this is
+            a parsed 40 KB document per open file and keeping every one
+            ever opened is how a fifty-file run ends up holding fifty
+            parsed diffs. `Collapse` keeps that — it mounts nothing while
+            closed — and adds the fold: the diff unfolds under its caret
+            and folds back before it goes, where it used to vanish in a
+            frame on the press that closed it. */}
+        {leaf && patch && (
+          <Collapse open={diffOpen}>
+            <div id={diffId} style={{ paddingLeft: 6 + depth * 12 }}>
+              <FileDiffPanel path={leaf.path} patch={patch} tabIndex={rowTabIndex} />
+            </div>
+          </Collapse>
+        )}
+      </>
+    );
+  };
+
+  /*
+   * One row of the flat list. A row under a shut directory folds away in its
+   * own `Collapse` rather than dropping out of the list in one frame — and it
+   * stays in the SAME list under the SAME key either way. Nesting each
+   * directory's rows in a `<ul>` of their own would have been the obvious way
+   * to fold them together, but `buildFileTree` re-folds single-child chains as
+   * a run streams: a lone `src/lib/a.ts` is a top-level row until `src/lib/b.ts`
+   * arrives and puts it under a new `src/lib` row. In a nested list that is a
+   * new parent, so React remounts the row — focus drops to the body, an open
+   * diff re-parses and loses its scroll, and the row replays its entrance. In
+   * one flat list it is only moved.
+   *
+   * Hidden, the row builds nothing (the fold plays the last drawn copy), so a
+   * shut directory costs an empty `<li>` per row beneath it. `inert` takes that
+   * `<li>` — and the copy still folding inside it — out of the tab order and
+   * the accessibility tree, so a screen reader neither counts it nor lands in
+   * it. Every row is wrapped, top level included, because a row can change
+   * depth under the same key and a wrapper that came and went would remount it.
+   */
+  const renderRow = ({ node, depth, index, hidden }: FileTreeRow) => (
+    <li key={node.key} inert={hidden}>
+      <Collapse open={!hidden}>{hidden ? null : renderRowContent(node, depth, index)}</Collapse>
+    </li>
+  );
 
   return (
     <section
@@ -849,199 +1099,7 @@ function ChangedFilesCard({
             reads off the row above.
           */}
           <ul id={listId} aria-hidden={!open} className="px-1.5 pb-2 pt-1">
-            {rows.map(({ node, depth }, i) => {
-              const directory = node.children.length > 0;
-              const shut = collapsed.has(node.key);
-              // A leaf opens onto its own diff only when one was transported.
-              // Bound to a local so the narrowing survives into the click
-              // handler — `node.file` is a property read, and TypeScript cannot
-              // keep a property narrowed across a closure.
-              const leaf = node.file;
-              const patch = leaf?.patch ?? null;
-              const diffOpen = !!leaf && openDiffs.has(leaf.path);
-              const row = (
-                <>
-                  {/* One caret for both disclosures, turning on the disclosure
-                      curve. A directory used to swap a right caret for a down
-                      one in a single frame, beside a diff caret one row down
-                      that rotated — two rules for one gesture in one list. */}
-                  {directory || patch ? (
-                    <ChevronRight
-                      className={cn(
-                        "size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
-                        (directory ? !shut : diffOpen) && "rotate-90",
-                      )}
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    // The same 12px the chevron occupies, so file names line up
-                    // with the directory names above them instead of hanging
-                    // three pixels to their left.
-                    <span className="w-3 shrink-0" aria-hidden="true" />
-                  )}
-                  {node.file ? (
-                    <span className={cn("shrink-0 font-mono", changeTone(node.file.changeKind))}>
-                      {node.file.changeKind}
-                    </span>
-                  ) : (
-                    <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                      {node.count}
-                    </span>
-                  )}
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate font-mono",
-                      node.file ? "text-foreground" : "text-muted-foreground"
-                    )}
-                    title={node.file ? node.file.path : `${node.key}/`}
-                  >
-                    {/* Two spellings of the same fact. The eye reads the folded
-                        name and takes the rest from the indentation; a reader
-                        who cannot see the indentation gets the whole path. */}
-                    <span aria-hidden="true">{node.file ? node.name : `${node.name}/`}</span>
-                    <span className="sr-only">{node.file ? node.file.path : `${node.key}/`}</span>
-                  </span>
-                  {/* Only where the run proved it CAN send hunks. Silence here
-                      would read as "this file changed by nothing"; on a run that
-                      sends none it would be fifty tags saying the same thing. */}
-                  {node.file && !patch && anyPatch && (
-                    <span className="shrink-0 font-mono text-caption text-muted-foreground/70">no diff</span>
-                  )}
-                  {node.file?.churn ? (
-                    <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                      {node.file.churn}
-                    </span>
-                  ) : (
-                    // A shut directory must still say how much moved inside it,
-                    // otherwise collapsing the tree costs the summary the header
-                    // was rebuilt to provide.
-                    node.churn && (
-                      <span className="shrink-0 font-mono tabular-nums">
-                        <span className="text-success">+{node.churn.added}</span>{" "}
-                        <span className="text-destructive">−{node.churn.removed}</span>
-                      </span>
-                    )
-                  )}
-                </>
-              );
-
-              const shared = cn(
-                "flex w-full items-baseline gap-2 py-0.5 text-left text-caption",
-                // Rows are dealt out as the run writes them rather than
-                // repainted. `tight` is the rung for dense rows, and the shared
-                // cap stops a fifty-file run taking two seconds to appear.
-                "[animation-fill-mode:backwards] motion-safe:animate-fade-in-up"
-              );
-              // 6px of inset, then 12px a level — the layers panel's ladder, and
-              // the reason a nested path stays legible at `text-caption`.
-              const indent = { ...staggerDelay(i, "tight"), paddingLeft: 6 + depth * 12 };
-
-              // Out of the tab order while the CARD is shut, for both kinds of
-              // row. The rows stay in the document so the collapse has something
-              // to animate, and `aria-hidden` over a focusable control is the
-              // one way that trick goes wrong: Tab lands on a button no screen
-              // reader will name.
-              const rowTabIndex = open ? 0 : -1;
-              const diffId = `${listId}-diff-${node.key}`;
-
-              /*
-               * Keep / Revert for one file, or the outcome of the last ask.
-               *
-               * Offered only for a path the host will act on, and it REPLACES
-               * itself with the result the moment one is asked for: leaving the
-               * buttons live under a "Reverted" tag invites a second press that
-               * the store answers `unknown` to, because the first revert takes
-               * the path out of the checkpoint index. The controls return only
-               * if the agent writes the file again, which snapshots it afresh —
-               * which is exactly right.
-               */
-              const fileRollback =
-                leaf && rollback && (!rollbackable || rollbackable.has(leaf.path))
-                  ? (newestRollback(rollback.requests, leaf.path) ?? "offer")
-                  : null;
-              const actions =
-                !leaf || !rollback || !fileRollback ? null : fileRollback === "offer" ? (
-                  <span className="flex shrink-0 items-center gap-0.5">
-                    <RowAction
-                      icon={StatusIcons.success}
-                      label={`Keep changes to ${leaf.path}`}
-                      tabIndex={rowTabIndex}
-                      onClick={() => rollback.onRequest("accept_change", leaf.path)}
-                    />
-                    <RowAction
-                      icon={ActionIcons.restore}
-                      label={`Revert ${leaf.path}`}
-                      tabIndex={rowTabIndex}
-                      onClick={() => rollback.onRequest("reject_change", leaf.path)}
-                    />
-                  </span>
-                ) : (
-                  <span
-                    className={cn("shrink-0 text-caption", rollbackLabel(fileRollback).tone)}
-                    title={fileRollback.message ?? undefined}
-                  >
-                    {rollbackLabel(fileRollback).text}
-                  </span>
-                );
-
-              const rowControl = directory ? (
-                <button
-                  type="button"
-                  aria-expanded={!shut}
-                  tabIndex={rowTabIndex}
-                  onClick={() => toggleDirectory(node.key)}
-                  className={cn(shared, ROW_HOVER)}
-                  style={indent}
-                >
-                  {row}
-                </button>
-              ) : leaf && patch ? (
-                <button
-                  type="button"
-                  aria-expanded={diffOpen}
-                  aria-controls={diffOpen ? diffId : undefined}
-                  tabIndex={rowTabIndex}
-                  onClick={() => toggleDiff(leaf.path)}
-                  className={cn(shared, ROW_HOVER)}
-                  style={indent}
-                >
-                  {row}
-                </button>
-              ) : (
-                <span className={shared} style={indent}>
-                  {row}
-                </span>
-              );
-
-              return (
-                <li key={node.key}>
-                  {/* Siblings, never nesting — same reason as the header. The
-                      row is already a button for the diff disclosure, and a
-                      Revert inside it would be hoisted out by the parser, so
-                      pressing Revert would open the diff too. `min-w-0` is what
-                      lets the path keep truncating once it shares the line. */}
-                  {actions ? (
-                    <span className="flex items-center gap-1 pr-1">
-                      <span className="min-w-0 flex-1">{rowControl}</span>
-                      {actions}
-                    </span>
-                  ) : (
-                    rowControl
-                  )}
-                  {/* Unmounted while shut rather than height-collapsed, unlike
-                      the file list above it: that list animates because it is
-                      the card's own disclosure and its rows are cheap, whereas
-                      this is a parsed 40 KB document per open file and keeping
-                      every one ever opened in the document is how a fifty-file
-                      run ends up holding fifty parsed diffs. */}
-                  {leaf && patch && diffOpen && (
-                    <div id={diffId} style={{ paddingLeft: 6 + depth * 12 }}>
-                      <FileDiffPanel path={leaf.path} patch={patch} />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+            {rows.map(renderRow)}
           </ul>
           {rollback && (
             /*
@@ -1101,7 +1159,9 @@ function RowAction({
       onClick={onClick}
       // `.pressable` for the dip under the finger; it carries the colour
       // cross-fade itself, so no `transition-colors` beside it.
-      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
+      // The ring is inset because the row around it folds in a `Collapse`,
+      // whose clip is the row's own height.
+      className="pressable rounded-xs p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:-outline-offset-2 motion-reduce:transition-none motion-reduce:active:scale-100 coarse:p-2"
     >
       <Icon className="size-3.5" aria-hidden={true} />
     </button>

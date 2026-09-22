@@ -74,6 +74,13 @@ export function ComposerClarificationPopover({
   const [index, setIndex] = React.useState(0);
   const [answers, setAnswers] = React.useState<AnswerMap>({});
   const [stepKey, setStepKey] = React.useState(0);
+  /**
+   * Which way the last step change went: 1 forward, -1 back. Presentation
+   * only: it picks the side the next step stages in from (`--stage-dx`), so
+   * Back arrives from the left, the way the reader is going, instead of from
+   * the right like Next.
+   */
+  const [stepDir, setStepDir] = React.useState<1 | -1>(1);
   const active = questions[Math.min(index, Math.max(0, questions.length - 1))];
   const currentAnswer = answers[active.id];
   const isFinal = index === questions.length - 1;
@@ -85,6 +92,7 @@ export function ComposerClarificationPopover({
   React.useEffect(() => {
     setIndex(0);
     setAnswers({});
+    setStepDir(1);
     setStepKey((k) => k + 1);
   }, [pending.id]);
 
@@ -170,6 +178,10 @@ export function ComposerClarificationPopover({
   }, [answers, collectAnswers, onAnswersChange]);
 
   const goTo = (nextIndex: number) => {
+    // A rail segment can jump either way, so the direction is read from the
+    // move itself rather than from which button was pressed. Re-selecting the
+    // current step restages it from the right, as it always has.
+    setStepDir(nextIndex < index ? -1 : 1);
     setIndex(nextIndex);
     setStepKey((k) => k + 1);
   };
@@ -218,7 +230,10 @@ export function ComposerClarificationPopover({
         // The floating-layer entrance, same as every other one. The old chain ran
         // 360ms on ease-out-expo, which needs ~440ms to read as anything but a
         // lunge-then-crawl. It grows out of the composer edge it is pinned to.
-        "origin-bottom motion-safe:animate-pop-in motion-reduce:animate-none"
+        // Ungated: `pop-in` reads --motion-shift / --motion-scale-from, so
+        // under reduced motion it is already a fade, and fades keep their
+        // timing (ICONS_AND_MOTION.md §2.2, rule 10).
+        "origin-bottom animate-pop-in"
       )}
     >
       {/* Header */}
@@ -307,10 +322,15 @@ export function ComposerClarificationPopover({
       {/* Body — keyed so each step stages in from the side. `stage-in` is
           the staged-flow entrance on the token ladder, and it multiplies its
           travel by --motion-shift, so reduced motion keeps the fade and drops
-          the slide on its own. */}
+          the slide on its own. `--stage-dx` picks the side: Next and a
+          forward jump arrive from the right, Back and a backward jump from
+          the left (the same parametrised keyframe the step lab uses). The
+          `motion-safe:` gate is gone for that reason: under reduced motion
+          the keyframe is already a fade, and fades keep their timing. */}
       <div
         key={`${pending.id}-${active.id}-${stepKey}`}
-        className="relative flex flex-col gap-3.5 px-3.5 py-3.5 motion-safe:animate-stage-in sm:gap-4 sm:px-5 sm:py-4"
+        className="relative flex flex-col gap-3.5 px-3.5 py-3.5 animate-stage-in sm:gap-4 sm:px-5 sm:py-4"
+        style={{ "--stage-dx": stepDir < 0 ? "-12px" : "12px" } as React.CSSProperties}
       >
         {/* text-heading is the exact 1.125rem this hand-wrote; the sm-only bump
             to an off-ladder 1.25rem is dropped — one size keeps the question the

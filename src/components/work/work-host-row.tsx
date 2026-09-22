@@ -131,7 +131,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
         // the global focus outline.
         workRowClass,
         workRowEnterClass,
-        "active:bg-secondary",
+        "active:bg-selected",
         // Dimmed for the same reason a paused schedule and a switched-off skill
         // are: it is still yours, it is still listed, and it is not going to do
         // anything. The chip is what says which of the two it is.

@@ -48,6 +48,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { ActionIcons, AppIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
@@ -318,6 +319,7 @@ export function ControlsGallery() {
   const [saving, setSaving] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const [pinned, setPinned] = React.useState(false);
+  const [starred, setStarred] = React.useState(true);
   const [open, setOpen] = React.useState(false);
 
   // Dev-only demo timers: a save that takes a beat, a copy that resets.
@@ -531,6 +533,37 @@ export function ControlsGallery() {
           <Pressable kind="tile" selected className="w-40">Selected tile</Pressable>
           <Pressable kind="icon" size="md" aria-label="Add"><Plus className="size-4" /></Pressable>
           <Pressable kind="icon" size="md" selected aria-label="Add"><Plus className="size-4" /></Pressable>
+        </Section>
+
+        <Section
+          title="Tonal state ladder"
+          note="Rest, hover (`--accent`), then on and held (`--selected`), each a step deeper in both themes, so a control that is on never reads weaker than one the pointer is crossing. `--secondary` is a fill, never a state."
+        >
+          {[
+            { label: "rest", className: "bg-card" },
+            { label: "hover", className: "bg-accent" },
+            { label: "on", className: "bg-selected" },
+          ].map(({ label, className }) => (
+            <div key={label} className="flex flex-col items-center gap-1.5">
+              <div className={cn("h-9 w-20 rounded-control border border-border", className)} />
+              <span className="font-mono text-micro text-muted-foreground">{label}</span>
+            </div>
+          ))}
+          <Toggle variant="ghost" size="sm" pressed={starred} onPressedChange={setStarred} aria-label="Star">
+            <Star />
+          </Toggle>
+          <Toggle size="sm" pressed={starred} onPressedChange={setStarred}>
+            Starred
+          </Toggle>
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label="Pinned"
+            aria-pressed={pinned}
+            onClick={() => setPinned((v) => !v)}
+          >
+            <Pin className="size-4" />
+          </IconButton>
         </Section>
 
         <Section title="Badge" note="Not a control — here so its weight can be compared to the chip beside it.">

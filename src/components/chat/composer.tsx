@@ -3,6 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
 import {
   AudioLines,
   Hand,
@@ -113,7 +114,7 @@ import {
   COMPOSER_LONG_TEXT_CHARS,
   sampleLineCount,
 } from "@/lib/prompt-limits";
-import { duration } from "@/lib/motion";
+import { duration, reducedVariants, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   artifactEditRequestFromQuote,
@@ -461,7 +462,10 @@ const paletteRowClass = (selected: boolean) =>
     // `px-2.5` inside the list's `p-1.5` puts the glyph on 16 and `gap-2.5`
     // carries the label to 46 — the shell's grid, shared with ⌘K and the
     // sidebar behind it.
-    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-body transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+    // No `motion-reduce:transition-none`: the fill and the hairline are a
+    // tonal cross-fade, not travel, and reduced motion keeps fades on their
+    // timing (ICONS_AND_MOTION.md §2.2, rule 10).
+    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-body transition-[background-color,box-shadow] duration-fast ease-out-soft",
     selected
       ? "bg-accent ring-1 ring-inset ring-primary/20"
       : "hover:bg-accent/50",
@@ -579,6 +583,54 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
     <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden">
       {children}
     </span>
+  );
+}
+
+/**
+ * The palette's floating shell, kept mounted through its exit.
+ *
+ * It arrives the way every floating layer does (the `pop` pair: 4px toward
+ * the anchor and 0.96, in on the spring curve) and now leaves the same way,
+ * faster and on the accelerate curve, instead of vanishing in a frame when
+ * the token is completed, dismissed or stops matching.
+ *
+ * It sits under an `AnimatePresence` with ONE fixed key, which is what keeps
+ * the listbox id and `paletteListRef` honest: a palette reopened while the
+ * old one is still leaving is the same element turning back, not a second
+ * copy beside it, so there is never a duplicate `composer-palette-listbox`,
+ * and the ref only goes to null when the one element really unmounts (the
+ * measuring effect reads it only while the palette is open anyway).
+ *
+ * While leaving it renders the rows it last showed, which is the point, and
+ * it is `inert` and `aria-hidden` with no pointer events: the field already
+ * reports it collapsed (`aria-expanded` false, no active descendant), and a
+ * row caught by a click mid-fade must not fire.
+ *
+ * Reduced motion: the travel and scale drop out and the fade keeps its timing.
+ */
+function PaletteLayer({ children }: { children: React.ReactNode }) {
+  const isPresent = useIsPresent();
+  const reduce = useReducedMotion() ?? false;
+  return (
+    <motion.div
+      variants={reduce ? reducedVariants.pop : variants.pop}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      inert={!isPresent}
+      aria-hidden={isPresent ? undefined : true}
+      // `.surface-float` draws the throw (no `shadow-*` beside it, or the
+      // utility would replace it). origin-bottom rather than .origin-popper:
+      // this is pinned to the composer's top edge, not Radix popper content,
+      // so the pop scales out of that edge. `z-popper`, the named rung every
+      // floating list in the product stacks on.
+      className={cn(
+        "surface-float overlay-glass absolute bottom-full left-2 right-2 z-popper mb-2 origin-bottom overflow-hidden rounded-popover p-1.5",
+        !isPresent && "pointer-events-none",
+      )}
+    >
+      {children}
+    </motion.div>
   );
 }
 
@@ -3377,7 +3429,7 @@ export function Composer({
                   moment of typing the next one. */}
               {steerMode && steering?.above}
               {dragging && !privateMode && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm animate-fade-in">
                   <ComposerIcons.files aria-hidden="true" className="size-6 text-primary" />
                   <span className="font-mono text-label text-primary">
                     Drop to attach
@@ -3575,17 +3627,12 @@ export function Composer({
 
             {/* Matches the DropdownMenu/Popover surface exactly — this is the same
             kind of object as the + menu and shouldn't read as its own species.
-            No duration or ease utility here: tailwindcss-animate would land it on
-            animate-pop-in's animation- longhands and clobber the pop. origin-bottom
-            rather than .origin-popper because this is not Radix popper content —
-            it's pinned to the composer's top edge, so the pop scales out of it. */}
+            `PaletteLayer` carries the shell and its enter/exit pair; the one
+            fixed key is what lets it leave without a second copy ever sharing
+            the listbox id (see its note). */}
+            <AnimatePresence>
             {slashOpen && slash && (
-              // No `shadow-*` utility here: `.surface-float` already draws the
-              // floating layer's throw, and a utility beats the components
-              // layer — a second shadow would silently replace it and leave this
-              // popover looking unlike the + menu beside it. `z-popper`, the
-              // named rung every floating list in the product stacks on.
-              <div className="surface-float overlay-glass absolute bottom-full left-2 right-2 z-popper mb-2 origin-bottom overflow-hidden rounded-popover p-1.5 motion-safe:animate-pop-in">
+              <PaletteLayer key="composer-palette">
                 {/* Options, not tab stops: the caret never leaves the textarea, so this
                 is a combobox popup, and each row's state is its `aria-checked`
                 rather than a control of its own. */}
@@ -3735,8 +3782,9 @@ export function Composer({
                     ))
                   )}
                 </div>
-              </div>
+              </PaletteLayer>
             )}
+            </AnimatePresence>
 
             {/* Huge drafts render as a compact card above; keep the textarea out of
             the DOM so React never diffs multi-10k controlled values every key. */}

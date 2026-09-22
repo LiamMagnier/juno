@@ -6,6 +6,7 @@ import { Ban, ChevronDown, ChevronLeft, ChevronRight, Loader2, type IconComponen
 import { AppIcons, ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Collapse } from "@/components/ui/collapse";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
@@ -359,13 +360,19 @@ export function ModerationAdmin() {
                         </td>
                         <td className="max-w-[22rem] px-4 py-3 text-caption text-muted-foreground">
                           <p className={cn(!isExpanded && long && "line-clamp-2")}>{f.detail}</p>
-                          {f.messagePreview && isExpanded && (
-                            // rounded-control + the opaque secondary rung: a
-                            // `bg-muted/60` well composites to ~5.7% on pure
-                            // black, which is under the card it sits in.
-                            <p className="mt-1 rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground/85 motion-safe:animate-rise-in">
-                              {f.messagePreview}
-                            </p>
+                          {f.messagePreview && (
+                            // Unfolds and folds back through Collapse rather
+                            // than vanishing in a frame on "Show less"; the
+                            // gap above rides inside the fold (pt-1) so it
+                            // closes with it. rounded-control + the opaque
+                            // secondary rung: a `bg-muted/60` well composites
+                            // to ~5.7% on pure black, which is under the card
+                            // it sits in.
+                            <Collapse open={isExpanded} innerClassName="pt-1">
+                              <p className="rounded-control bg-secondary px-2 py-1 font-mono text-caption text-foreground/85">
+                                {f.messagePreview}
+                              </p>
+                            </Collapse>
                           )}
                           {(long || f.messagePreview) && (
                             // A disclosure, drawn as one: the caret turns with

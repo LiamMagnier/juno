@@ -105,6 +105,29 @@
     --accent: 46 20% 91.5%;
     --accent-foreground: 48 4% 14%;
 
+    /* THE ON TONE: a control that is selected, pressed or held, one rung past
+       the hover fill (docs/design/FLAT_UI.md §3.1).
+
+       This used to be `--secondary`, and in both themes that put it on the
+       wrong side of hover. Here it was 93.5% against a 91.5% hover, so a
+       toggle that was ON was two points LIGHTER than one the pointer happened
+       to be over. A selected key read as weaker than a merely hovered one,
+       and pressing a hovered button made it paler. `--secondary` keeps its
+       jobs as a tonal fill (the user bubble, tracks, badges, code blocks);
+       state moves here:
+
+         rest        the control's own ground
+         hover       --accent     91.5%
+         on / held   --selected   90%     one and a half points past hover
+
+       90% rather than a full two points because a selected tile still holds
+       muted captions (a model's description line), and `--muted-foreground`
+       measures 4.53:1 on 90% and 4.48 on 89.5: the half point is the AA floor.
+       Foreground ink is 13.8:1 on it. The step is small on purpose, because
+       the on state is not carried by the fill alone: `.control-neu` darkens
+       its edge with it and Pressable adds the accent edge. */
+    --selected: 46 20% 90%;
+
     --destructive: 11 51% 48%;
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 11 55% 41%;
@@ -511,6 +534,13 @@
 
     --accent: 30 5% 21%;
     --accent-foreground: 45 12% 96%;
+
+    /* The on tone, the other way up: on charcoal a state rises toward the
+       light, so selected is LIGHTER than the 21% hover. It was `--secondary`
+       at 18%, three points under hover and so again the weaker of the two.
+       24% is the same three-point step `--secondary` → `--accent` takes, and
+       it keeps `--muted-foreground` at 4.64:1 and foreground ink at 9.7:1. */
+    --selected: 30 5% 24%;
 
     --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
@@ -1072,8 +1102,9 @@
        .surface-float      lifted above the page — popovers, dropdowns, dialogs,
                            toasts, tooltips, sheets
        .control-neu        a flat bordered control: hairline at rest, tonal
-                           fill on hover, darker fill while on — secondary
-                           buttons, icon buttons, toggles, chips
+                           fill on hover, the `--selected` tone while on or
+                           held — secondary buttons, icon buttons, toggles,
+                           chips
        .control-primary    the accent action: solid fill, no shadow, no glow
 
      Every one of them draws a hairline; that hairline IS the boundary
@@ -1105,13 +1136,16 @@
     box-shadow: var(--shadow-float);
   }
 
-  /* A control cut from the raised material. At rest it stands proud of the
-     page; while held (`:active`), or while it is ON (`[data-state=on]`,
-     `[aria-pressed=true]`, `[data-selected]`), it goes down INTO the page — the
-     pressed recipe is the inset one at a tighter throw, so the key visibly
-     travels toward the ground rather than merely changing colour. The
-     transform dip runs on --dur-press and everything else on --dur-fast, the
-     split `.pressable` documents. */
+  /* A flat key. A hairline at rest; the `--accent` wash and a darker edge on
+     hover; and while held (`:active`) or while it is ON (`[data-state=on]`,
+     `[aria-pressed=true]`, `[data-selected]`), the `--selected` tone with the
+     darkest edge. Each state is one rung past the one before it, so ON always
+     outranks HOVER — pointing at a key never makes it look more chosen than
+     the key that is chosen, and a hovered key deepens as it is pressed rather
+     than going pale (the retune is explained at `--selected`). The on rule is
+     declared after the hover rule at the same specificity, so a selected key
+     keeps its tone under the pointer. The transform dip runs on --dur-press
+     and everything else on --dur-fast, the split `.pressable` documents. */
   .control-neu {
     background-color: hsl(var(--card));
     color: hsl(var(--foreground));
@@ -1135,7 +1169,7 @@
   .control-neu[data-state="checked"],
   .control-neu[aria-pressed="true"],
   .control-neu[data-selected] {
-    background-color: hsl(var(--secondary));
+    background-color: hsl(var(--selected));
     border-color: hsl(var(--foreground) / .22);
     box-shadow: none;
   }
@@ -1525,51 +1559,6 @@
     height: 100%;
     background: transparent;
     border: 0;
-  }
-
-  /*
-   * The top rung, alive.
-   *
-   * Max is the end of the scale, not one more notch on it: a reply there can
-   * take minutes and cost several times the rung below. This is how the
-   * control says so, with no badge, no second colour and no warning copy.
-   *
-   * IT USED TO BE A SHEEN and the sheen was wrong. A translucent white band
-   * travelling left to right along a coloured bar on a 2.8s loop is the
-   * skeleton-loader gesture — the most copied effect on the web, and one that
-   * means "waiting for data" everywhere it appears. On a control that is not
-   * loading anything it reads as decoration applied because decoration was
-   * available, which is the opposite of what it is for. It also drew the eye
-   * on a timer: something crossed the bar every 2.8 seconds whether or not you
-   * were looking at the bar.
-   *
-   * So: no highlight, no direction, nothing crossing anything. The whole bar
-   * brightens and settles, once every eight seconds — slow enough that
-   * peripheral vision does not catch it, so it reads as alive only if you are
-   * already looking at it. That is the right amount of attention for a control
-   * telling you something about cost rather than asking for input.
-   *
-   * `filter: brightness` on a layer painted in the accent, NOT a swap between
-   * two palette colours. The first attempt breathed `--primary` to
-   * `--primary-ink`, which is the pair the palette already owns and is two
-   * points of lightness apart — measured on the rendered element, the full
-   * swing moved rgb(180,85,54) to rgb(174,82,52). Correct in principle,
-   * invisible in fact. A brightness factor is a proportion, so it holds its
-   * amplitude across all six accents and both themes, where any hand-set
-   * second colour would have to be six pairs.
-   *
-   * `ease-in-out` and a symmetric cycle, because a breath has no beginning.
-   */
-  @keyframes effort-max {
-    0%, 100% { filter: brightness(1); }
-    50%      { filter: brightness(1.1); }
-  }
-  .effort-max {
-    background-color: hsl(var(--primary));
-    animation: effort-max 8s ease-in-out infinite;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .effort-max { animation: none; }
   }
 
   .composer-surface {
@@ -3706,7 +3695,6 @@
   .skeleton,
   .shimmer-text,
   .aicss-shine,
-  .effort-max,
   [class*="animate-icon-breathe"],
   [class*="animate-gen-"],
   [class*="animate-ultra-"] {

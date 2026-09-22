@@ -25,7 +25,11 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { IconSwapSet } from "@/components/ui/icon-swap";
 import { WorkList, workRowEnterClass } from "@/components/work/shell/work-section";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import {
+  WorkLoadError,
+  WorkRefreshGlyph,
+  WorkRowSkeletons,
+} from "@/components/work/shell/work-states";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import {
   deleteWorkSchedule,
@@ -84,6 +88,20 @@ export default function AutomationPage() {
     // about a schedule somebody is deciding whether to trust.
     if (result.kind === "ok") setHistory(result.value);
   }, [id]);
+
+  /**
+   * The history's Refresh, tracked so its mark turns until the runs come back.
+   * The reloads after a save or a Run now go through `loadRuns` directly.
+   */
+  const [refreshingRuns, setRefreshingRuns] = React.useState(false);
+  const refreshRuns = React.useCallback(async () => {
+    setRefreshingRuns(true);
+    try {
+      await loadRuns();
+    } finally {
+      setRefreshingRuns(false);
+    }
+  }, [loadRuns]);
 
   React.useEffect(() => {
     void load();
@@ -263,10 +281,11 @@ export default function AutomationPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void loadRuns()}
+            onClick={() => void refreshRuns()}
+            aria-busy={refreshingRuns}
             className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
           >
-            <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
+            <WorkRefreshGlyph spinning={refreshingRuns} className="size-3" /> Refresh
           </Button>
         </div>
         {history === null ? (
@@ -319,7 +338,7 @@ export default function AutomationPage() {
                       href={row.href}
                       className={cn(
                         "group flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 text-left",
-                        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-secondary motion-reduce:transition-none"
+                        "transition-colors duration-fast ease-out-soft hover:bg-accent active:bg-selected motion-reduce:transition-none"
                       )}
                     >
                       <WorkStatusPill status={row.status} />

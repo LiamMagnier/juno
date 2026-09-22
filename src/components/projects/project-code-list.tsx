@@ -99,7 +99,7 @@ export function ProjectCodeList({
             >
               <Link
                 href={`/chat/${session.id}`}
-                className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/40 active:bg-secondary motion-reduce:transition-none"
+                className="group/tile surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-colors duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent/40 active:bg-selected motion-reduce:transition-none"
               >
                 <div className="flex items-start gap-3">
                   <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover/tile:text-foreground motion-reduce:transition-none">

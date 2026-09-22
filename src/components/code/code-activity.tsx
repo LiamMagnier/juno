@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronRight } from "@/components/ui/icons";
 
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
+import { Collapse } from "@/components/ui/collapse";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type { CodeActivityEvent } from "@/hooks/use-code-session";
@@ -194,17 +195,30 @@ function ToolRow({ event, live }: { event: ClientActivityEvent; live: boolean })
       ) : (
         <div className={ROW}>{body}</div>
       )}
-      {/* Mounted by the press that opens it, so it rises in rather than
-          appearing in a frame under a caret that took 220ms to turn. */}
-      {hasOutput && open && (
+      {/* Unfolds under its caret and folds back before it unmounts, on the
+          caret's own curve — the output used to rise in on open and vanish in
+          a frame on close. Nothing is mounted while shut (see `Collapse`), so
+          the scroll region is never a Tab stop behind a closed row. The
+          inset is the Collapse's inner box, never the clipped grid item, or
+          the fold would stop that many pixels short and then snap.
+
+          Always rendered, and opened on `open && hasOutput` rather than
+          mounted on `hasOutput`: a failed command opens by default, and if
+          its output lands after the row does, a Collapse mounted at that
+          moment would already be open on its first render — which
+          `AnimatePresence initial={false}` shows without any motion. Mounted
+          from the start, the output's arrival is an ordinary open.
+
+          The ring is inset because the clip is flush with the top edge. */}
+      <Collapse open={open && hasOutput} innerClassName="px-2 pb-1.5">
         <pre
           id={outputId}
           tabIndex={0}
-          className="mx-2 mb-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground motion-safe:animate-fade-in-up"
+          className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground focus-visible:-outline-offset-2"
         >
           {detail}
         </pre>
-      )}
+      </Collapse>
     </li>
   );
 }
@@ -228,10 +242,16 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
   const path = space === -1 ? event.title : event.title.slice(space + 1);
   const patch = patchOf(event);
   const [open, setOpen] = React.useState(false);
+  // Whether the diff has ever been asked for. The parse is keyed on this, not
+  // on `open`, so the rows are still there while the pane folds shut — keyed
+  // on `open` they went to null on the press that closes it, and the fold
+  // would have been an empty box.
+  const [opened, setOpened] = React.useState(false);
   const diffId = React.useId();
-  // Parsed once per open, not per render: a 40 KB diff walked line by line
-  // on every streamed token is the surface that streams hardest paying most.
-  const rows = React.useMemo(() => (open && patch ? parseUnifiedDiff(patch) : null), [open, patch]);
+  // Parsed on first open and when the patch itself changes, not per render: a
+  // 40 KB diff walked line by line on every streamed token is the surface that
+  // streams hardest paying most. A row nobody opens is never parsed.
+  const rows = React.useMemo(() => (opened && patch ? parseUnifiedDiff(patch) : null), [opened, patch]);
 
   const body = (
     <>
@@ -257,7 +277,10 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
           type="button"
           aria-expanded={open}
           aria-controls={open ? diffId : undefined}
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            setOpen((v) => !v);
+            setOpened(true);
+          }}
           className={cn(ROW, ROW_BUTTON)}
         >
           {body}
@@ -265,10 +288,20 @@ function WriteRow({ event }: { event: ClientActivityEvent }) {
       ) : (
         <div className={ROW}>{body}</div>
       )}
-      {rows && (
-        <div id={diffId} tabIndex={0} className="mx-2 mb-1.5 max-h-72 overflow-auto motion-safe:animate-fade-in-up">
-          <FileDiff file={path} rows={rows} />
-        </div>
+      {/* The command row's fold, for the same reasons. Mounted on `patch`,
+          not on `rows`: the press that first opens the diff is also the one
+          that parses it, so a Collapse mounted on `rows` would appear already
+          open and, under `AnimatePresence initial={false}`, skip its unfold —
+          the first open, the usual one, landing in a frame under a caret that
+          turns for 220ms. Shut, it mounts nothing, so this costs nothing. */}
+      {patch && (
+        <Collapse open={open} innerClassName="px-2 pb-1.5">
+          {rows && (
+            <div id={diffId} tabIndex={0} className="max-h-72 overflow-auto focus-visible:-outline-offset-2">
+              <FileDiff file={path} rows={rows} />
+            </div>
+          )}
+        </Collapse>
       )}
     </li>
   );

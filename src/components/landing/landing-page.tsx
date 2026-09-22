@@ -1,9 +1,7 @@
 import Link from "next/link";
-import { ArrowRight, Menu, X } from "@/components/ui/icons";
+import { ArrowRight } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
-import { menuGlyphInkClass, menuRowClass, menuShellClass } from "@/components/ui/menu-recipe";
 import { staggerDelay } from "@/lib/motion";
-import { cn } from "@/lib/utils";
 import { JunoMark } from "@/components/brand/logo";
 import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -13,14 +11,16 @@ import { Metering } from "@/components/landing/metering";
 import { Features } from "@/components/landing/features";
 import { Pricing } from "@/components/landing/pricing";
 import { LandingHeader } from "@/components/landing/landing-header";
+import { LandingPhoneMenu } from "@/components/landing/phone-menu";
 import { LandingColumn } from "@/components/landing/section";
 
 /**
  * The public front door (signed-out "/"). Server-rendered: model names, counts
  * and prices are read from the registry at render time, so the page can never
- * disagree with the product. The only client code is two small islands that
- * wrap server markup: the bar's scrolled state (landing-header.tsx) and the
- * scroll reveals below the hero (reveal.tsx).
+ * disagree with the product. The only client code is three small islands:
+ * the bar's scrolled state (landing-header.tsx) and the scroll reveals below
+ * the hero (reveal.tsx), which wrap server markup, and the phone menu's
+ * close behaviour on top of a native <details> (phone-menu.tsx).
  *
  * Reading order: the hero shows one priced reply; Metering explains the
  * receipt; the Lineup says who is in the picker; Features lists the rest;
@@ -102,11 +102,6 @@ const NAV_LINKS = [
 const FOOTER_LINK =
   "block w-fit rounded-xs py-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
 
-/** One face of the mobile menu's Menu/X swap: `icon-swap.tsx`'s FACE, which
- *  owns the opacity/scale transition so the glyph inside keeps its own. */
-const SWAP_FACE =
-  "col-start-1 row-start-1 inline-flex items-center justify-center transition-[opacity,transform] duration-fast ease-out-soft";
-
 /**
  * The two logo lockups (header + footer): one radius, and the product's one
  * press (`.pressable`, scale 0.97 on --dur-press) rather than a private 0.98.
@@ -164,61 +159,11 @@ export function LandingPage({ nonce }: { nonce?: string }) {
             </nav>
             {/* Below `md` the section links used to vanish, so a phone got only
                 Sign in / Create account. A native <details> disclosure keeps
-                them reachable at zero client JS: the summary is the button, the
-                list is a floating menu at the popper rung, and Escape/outside
-                clicks are the browser's to handle. */}
-            <details className="group relative md:hidden">
-              {/* Menu and X overlap and cross-fade on the open state (the
-                  contract's state swap: opacity plus 0.8 to 1 scale on the fast
-                  rung), rather than one glyph replacing the other in a frame.
-                  This is <IconSwap> driven by `group-open` instead of a prop:
-                  the transition sits on the FACE, never on the glyph, because
-                  X carries a hover turn and `svg.icon[data-motion]` would
-                  replace a glyph-level transition list with its own. The
-                  scale reads --motion-scale-from, so reduced motion keeps the
-                  fade and drops the scale. */}
-              <summary
-                aria-label="Sections"
-                className="pressable flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground group-open:bg-accent group-open:text-foreground coarse:size-11 [&::-webkit-details-marker]:hidden"
-              >
-                <span className="inline-grid place-items-center">
-                  <span
-                    className={cn(
-                      SWAP_FACE,
-                      "group-open:opacity-0 group-open:[transform:scale(var(--motion-scale-from,0.8))]"
-                    )}
-                  >
-                    <Menu className="size-4" aria-hidden />
-                  </span>
-                  <span
-                    className={cn(
-                      SWAP_FACE,
-                      "opacity-0 [transform:scale(var(--motion-scale-from,0.8))] group-open:opacity-100 group-open:[transform:none]"
-                    )}
-                  >
-                    <X className="size-4" aria-hidden />
-                  </span>
-                </span>
-              </summary>
-              <nav
-                aria-label="Sections"
-                // The app's menu shell, not a second one drawn to look like
-                // it: this <details> menu is the first menu a visitor opens
-                // and it sat at a different radius, padding and row height
-                // from every menu behind the sign-in wall.
-                className={cn(menuShellClass, "absolute right-0 top-full mt-2 min-w-40 motion-safe:animate-pop-in")}
-              >
-                {NAV_LINKS.map(({ href, label }) => (
-                  <a
-                    key={href}
-                    href={href}
-                    className={cn(menuRowClass, menuGlyphInkClass, "hover:bg-accent focus-visible:bg-accent")}
-                  >
-                    {label}
-                  </a>
-                ))}
-              </nav>
-            </details>
+                them reachable with no client JS; the island (phone-menu.tsx)
+                adds what a menu owes on top of it: it leaves on the recipe's
+                exit, closes when a section is taken, on Escape and on a press
+                outside. */}
+            <LandingPhoneMenu links={NAV_LINKS} />
           </div>
         </LandingColumn>
       </LandingHeader>

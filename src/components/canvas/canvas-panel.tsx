@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Crosshair,
@@ -45,7 +46,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
-import { staggerDelay } from "@/lib/motion";
+import { staggerDelay, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientArtifact, ClientArtifactVersion } from "@/types/chat";
 
@@ -100,6 +101,38 @@ function fileNameFromDisposition(header: string | null): string | null {
   }
   const ascii = /filename="([^"]+)"/i.exec(header);
   return ascii?.[1] ?? null;
+}
+
+/** How long a copy control shows its check before it turns back. */
+const COPY_REVERT_MS = 1500;
+
+/**
+ * A flag that holds for `ms` after `flash()` — the copy → check swap's clock.
+ *
+ * The two copy controls here each used a bare `setTimeout`, so a second press
+ * inside the window was cut short by the first press's timer (the check went
+ * back to copy early, on a press that had just succeeded), and the timer
+ * outlived the panel. One clock per flag, restarted on every press and
+ * cleared on unmount.
+ */
+function useFlash(ms: number): [boolean, () => void] {
+  const [on, setOn] = React.useState(false);
+  const timer = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    []
+  );
+  const flash = React.useCallback(() => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    setOn(true);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      setOn(false);
+    }, ms);
+  }, [ms]);
+  return [on, flash];
 }
 
 /** "Generated" / "Edited" / "Restored" — how a version came to be. */
@@ -212,7 +245,7 @@ export function CanvasPanel({
 
   const [tab, setTab] = React.useState<"preview" | "console" | "code">("preview");
   const [selectedVersion, setSelectedVersion] = React.useState(artifact.currentVersion);
-  const [copied, setCopied] = React.useState(false);
+  const [copied, flashCopied] = useFlash(COPY_REVERT_MS);
   // Editing is not a mode: the Code tab is always writable on the latest
   // version. `draft` is null while clean; the first keystroke stamps it (and
   // the base version the edit started from, for the stale-write guard).
@@ -223,7 +256,7 @@ export function CanvasPanel({
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [compareTarget, setCompareTarget] = React.useState<number | null>(null);
   const [compareBase, setCompareBase] = React.useState<number | null>(null);
-  const [diffCopied, setDiffCopied] = React.useState(false);
+  const [diffCopied, flashDiffCopied] = useFlash(COPY_REVERT_MS);
   const [restoring, setRestoring] = React.useState(false);
   const [inspecting, setInspecting] = React.useState(false);
   const [selectionBar, setSelectionBar] = React.useState<SelectionBarState | null>(null);
@@ -379,9 +412,8 @@ export function CanvasPanel({
   const copyDiff = async () => {
     const text = unifiedDiff(baseContent, targetContent, `v${baseVersion}`, `v${targetVersion}`);
     await navigator.clipboard.writeText(text).catch(() => {});
-    setDiffCopied(true);
+    flashDiffCopied();
     toast.success("Diff copied");
-    setTimeout(() => setDiffCopied(false), 1500);
   };
 
   /** Append a version through the API, reporting stale conflicts honestly. */
@@ -428,9 +460,8 @@ export function CanvasPanel({
 
   const copy = async () => {
     await navigator.clipboard.writeText(displayedContent).catch(() => {});
-    setCopied(true);
+    flashCopied();
     toast.success("Source copied");
-    setTimeout(() => setCopied(false), 1500);
   };
 
   const download = () => {
@@ -910,421 +941,448 @@ export function CanvasPanel({
       </header>
 
       {/* ——— History: version rail + diff ——— */}
-      {historyOpen ? (
-        <div className="flex min-h-0 flex-1 motion-safe:animate-fade-in">
-          <div className="flex w-48 shrink-0 flex-col overflow-y-auto border-r border-border/60">
-            <p className="px-4 pb-1.5 pt-3 font-mono text-caption text-muted-foreground">
-              Versions
-            </p>
-            <div className="space-y-px px-2 pb-2">
-              {[...artifact.versions].reverse().map((v, i) => {
-                const isTarget = v.version === targetVersion;
-                const isBase = v.version === baseVersion;
-                const isCurrent = v.version === artifact.currentVersion;
-                const origin = originLabel(v.origin ?? null);
-                return (
-                  <div
-                    key={v.version}
-                    // Dealt in on the dense-row rung when history opens, newest
-                    // first, rather than repainting as one block. Hover is the
-                    // shared tonal row fill; the target keeps the accent tint,
-                    // because it is state, not a pointer.
-                    style={staggerDelay(i, "tight")}
-                    className={cn(
-                      "group flex items-center rounded-control pr-1.5 transition-colors duration-fast ease-out-soft [animation-fill-mode:backwards] motion-safe:animate-fade-in-up",
-                      isTarget ? "bg-primary/10" : "hover:bg-accent"
-                    )}
-                  >
-                    {/* rounded-control, matching the row it sits flush inside —
-                        rounded-md is 8px against the row's 9px, so the focus ring
-                        traced a shape one pixel tighter than the hover fill. */}
-                    <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 rounded-control px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <span className="flex items-baseline gap-1.5">
-                        <span className={cn("font-mono text-caption font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
-                        {isCurrent && <span className="font-mono text-caption text-muted-foreground">current</span>}
-                      </span>
-                      <span className="block pt-px text-caption text-muted-foreground">
-                        {origin ? `${origin} · ` : ""}
-                        {timeAgo(v.createdAt)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCompareBase(v.version)}
-                      aria-label={`Compare from v${v.version}`}
-                      aria-pressed={isBase}
-                      className={cn(
-                        "pressable shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-caption coarse:min-h-9 coarse:px-2.5",
-                        isBase
-                          ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-border/60 text-muted-foreground opacity-0 hover:border-border hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
-                      )}
-                    >
-                      base
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-              <GitCompare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="font-mono text-caption text-muted-foreground">
-                v{baseVersion} → v{targetVersion}
-              </span>
-              {hasChanges && (
-                <>
-                  <span className="font-mono text-caption tabular-nums text-success">+{addedCount}</span>
-                  <span className="font-mono text-caption tabular-nums text-destructive">−{removedCount}</span>
-                </>
-              )}
-              <div className="flex-1" />
-              <Button variant="ghost" size="sm" onClick={copyDiff} className={contextButton}>
-                <IconSwap
-                  swapped={diffCopied}
-                  from={<ActionIcons.copy className="size-3.5" />}
-                  to={<StatusIcons.success className="size-3.5 text-success" />}
-                />
-                Copy diff
-              </Button>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(false)} aria-label="Close history" className="text-muted-foreground hover:text-foreground">
-                    <ActionIcons.dismiss className="size-4" aria-hidden />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Close history</TooltipContent>
-              </Tooltip>
-            </div>
-
-            <div
-              key={`${baseVersion}-${targetVersion}`}
-              tabIndex={0}
-              role="region"
-              aria-label={`Changes from v${baseVersion} to v${targetVersion}`}
-              className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-safe:animate-fade-in"
-            >
-              {hasChanges ? (
-                <div className="min-w-max py-2 font-mono text-caption leading-relaxed">
-                  {diff.map((line, idx) => (
+      {/* History and the workspace trade places rather than one replacing the
+          other in a frame: the view on its way out fades on the exit rung,
+          then the one coming in fades in on the base rung (`variants.fade`).
+          `wait`, not a cross-fade, because the two are different layouts in
+          one box and overlapping them reads as neither. Opacity only, so the
+          reduced tier plays it unchanged. Nothing here remounts that did not
+          already: the workspace was always rebuilt when history closed, and
+          the view that leaves is drawn as it last was. `initial={false}`, so
+          opening the panel is the dock's entrance and not this one too. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {historyOpen ? (
+          <motion.div
+            key="history"
+            variants={variants.fade}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="flex min-h-0 flex-1"
+          >
+            <div className="flex w-48 shrink-0 flex-col overflow-y-auto border-r border-border/60">
+              <p className="px-4 pb-1.5 pt-3 font-mono text-caption text-muted-foreground">
+                Versions
+              </p>
+              <div className="space-y-px px-2 pb-2">
+                {[...artifact.versions].reverse().map((v, i) => {
+                  const isTarget = v.version === targetVersion;
+                  const isBase = v.version === baseVersion;
+                  const isCurrent = v.version === artifact.currentVersion;
+                  const origin = originLabel(v.origin ?? null);
+                  return (
                     <div
-                      key={idx}
+                      key={v.version}
+                      // Dealt in on the dense-row rung when history opens, newest
+                      // first, rather than repainting as one block. Hover is the
+                      // shared tonal row fill; the target keeps the accent tint,
+                      // because it is state, not a pointer.
+                      style={staggerDelay(i, "tight")}
                       className={cn(
-                        "flex border-l-2",
-                        line.type === "added" ? "border-success bg-success/10" : line.type === "removed" ? "border-destructive/70 bg-destructive/10 opacity-80" : "border-transparent"
+                        "group flex items-center rounded-control pr-1.5 transition-colors duration-fast ease-out-soft [animation-fill-mode:backwards] motion-safe:animate-fade-in-up",
+                        isTarget ? "bg-primary/10" : "hover:bg-accent"
                       )}
                     >
-                      {/* /50 over a black ground composited to ~2.2:1 — the a/b line
-                          numbers that make a diff readable were the least legible thing
-                          in it. /70 clears 4.5:1, and tabular-nums stops the columns
-                          shifting as the digit count changes. */}
-                      <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.aLine ?? ""}</span>
-                      <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.bLine ?? ""}</span>
-                      <span className="whitespace-pre pr-4">{line.text || " "}</span>
+                      {/* rounded-control, matching the row it sits flush inside —
+                          rounded-md is 8px against the row's 9px, so the focus ring
+                          traced a shape one pixel tighter than the hover fill. */}
+                      <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 rounded-control px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        <span className="flex items-baseline gap-1.5">
+                          <span className={cn("font-mono text-caption font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
+                          {isCurrent && <span className="font-mono text-caption text-muted-foreground">current</span>}
+                        </span>
+                        <span className="block pt-px text-caption text-muted-foreground">
+                          {origin ? `${origin} · ` : ""}
+                          {timeAgo(v.createdAt)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCompareBase(v.version)}
+                        aria-label={`Compare from v${v.version}`}
+                        aria-pressed={isBase}
+                        className={cn(
+                          "pressable shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-caption coarse:min-h-9 coarse:px-2.5",
+                          isBase
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border/60 text-muted-foreground opacity-0 hover:border-border hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                        )}
+                      >
+                        base
+                      </button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                // The house empty state at panel scale: one muted glyph, the
-                // fact, the sentence — the same shape every short state in the
-                // product takes, rather than two lines of bare type.
-                <div className="flex h-full items-center justify-center p-6 text-center">
-                  <div className="flex flex-col items-center">
-                    <GitCompare className="size-5 text-muted-foreground" aria-hidden />
-                    <p className="mt-3 font-sans text-heading">No changes</p>
-                    <p className="pt-1 text-body text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
+                <GitCompare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="font-mono text-caption text-muted-foreground">
+                  v{baseVersion} → v{targetVersion}
+                </span>
+                {hasChanges && (
+                  <>
+                    <span className="font-mono text-caption tabular-nums text-success">+{addedCount}</span>
+                    <span className="font-mono text-caption tabular-nums text-destructive">−{removedCount}</span>
+                  </>
+                )}
+                <div className="flex-1" />
+                <Button variant="ghost" size="sm" onClick={copyDiff} className={contextButton}>
+                  <IconSwap
+                    swapped={diffCopied}
+                    from={<ActionIcons.copy className="size-3.5" />}
+                    to={<StatusIcons.success className="size-3.5 text-success" />}
+                  />
+                  Copy diff
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(false)} aria-label="Close history" className="text-muted-foreground hover:text-foreground">
+                      <ActionIcons.dismiss className="size-4" aria-hidden />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Close history</TooltipContent>
+                </Tooltip>
+              </div>
+
+              <div
+                key={`${baseVersion}-${targetVersion}`}
+                tabIndex={0}
+                role="region"
+                aria-label={`Changes from v${baseVersion} to v${targetVersion}`}
+                className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-safe:animate-fade-in"
+              >
+                {hasChanges ? (
+                  <div className="min-w-max py-2 font-mono text-caption leading-relaxed">
+                    {diff.map((line, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "flex border-l-2",
+                          line.type === "added" ? "border-success bg-success/10" : line.type === "removed" ? "border-destructive/70 bg-destructive/10 opacity-80" : "border-transparent"
+                        )}
+                      >
+                        {/* /50 over a black ground composited to ~2.2:1 — the a/b line
+                            numbers that make a diff readable were the least legible thing
+                            in it. /70 clears 4.5:1, and tabular-nums stops the columns
+                            shifting as the digit count changes. */}
+                        <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.aLine ?? ""}</span>
+                        <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.bLine ?? ""}</span>
+                        <span className="whitespace-pre pr-4">{line.text || " "}</span>
+                      </div>
+                    ))}
                   </div>
+                ) : (
+                  // The house empty state at panel scale: one muted glyph, the
+                  // fact, the sentence — the same shape every short state in the
+                  // product takes, rather than two lines of bare type.
+                  <div className="flex h-full items-center justify-center p-6 text-center">
+                    <div className="flex flex-col items-center">
+                      <GitCompare className="size-5 text-muted-foreground" aria-hidden />
+                      <p className="mt-3 font-sans text-heading">No changes</p>
+                      <p className="pt-1 text-body text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {targetVersion !== artifact.currentVersion && (
+                <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
+                  <span className="text-caption text-muted-foreground">Restoring keeps history — v{targetVersion} becomes a new version.</span>
+                  <Button size="sm" onClick={restore} disabled={restoring}>
+                    <ActionIcons.restore className="size-3.5" aria-hidden />
+                    {restoring ? "Restoring…" : `Restore v${targetVersion}`}
+                  </Button>
                 </div>
               )}
             </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="workspace"
+            variants={variants.fade}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "console" | "code")} className="flex min-h-0 flex-1 flex-col">
+              {/* Workspace tab row — view switcher left, view-contextual actions right. */}
+              <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+                <TabsList className="h-8">
+                  <TabsTrigger value="preview" className="gap-1.5">
+                    {rt.mode === "console" ? <Terminal className="size-3.5" aria-hidden /> : null}
+                    {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}
+                  </TabsTrigger>
+                  <TabsTrigger value="code" className="gap-1.5">
+                    Code
+                  </TabsTrigger>
+                  {/* Console appears once it has something to say. */}
+                  {rt.mode === "web" && (consoleEntries.length > 0 || tab === "console") && (
+                    <TabsTrigger value="console" className="gap-1.5">
+                      Console
+                      <span
+                        className={cn(
+                          "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-caption tabular-nums",
+                          errorCount ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {consoleEntries.length}
+                      </span>
+                    </TabsTrigger>
+                  )}
+                </TabsList>
 
-            {targetVersion !== artifact.currentVersion && (
-              <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
-                <span className="text-caption text-muted-foreground">Restoring keeps history — v{targetVersion} becomes a new version.</span>
-                <Button size="sm" onClick={restore} disabled={restoring}>
-                  <ActionIcons.restore className="size-3.5" aria-hidden />
-                  {restoring ? "Restoring…" : `Restore v${targetVersion}`}
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "console" | "code")} className="flex min-h-0 flex-1 flex-col">
-          {/* Workspace tab row — view switcher left, view-contextual actions right. */}
-          <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
-            <TabsList className="h-8">
-              <TabsTrigger value="preview" className="gap-1.5">
-                {rt.mode === "console" ? <Terminal className="size-3.5" aria-hidden /> : null}
-                {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}
-              </TabsTrigger>
-              <TabsTrigger value="code" className="gap-1.5">
-                Code
-              </TabsTrigger>
-              {/* Console appears once it has something to say. */}
-              {rt.mode === "web" && (consoleEntries.length > 0 || tab === "console") && (
-                <TabsTrigger value="console" className="gap-1.5">
-                  Console
-                  <span
-                    className={cn(
-                      "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-caption tabular-nums",
-                      errorCount ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
-                    )}
+                {!isLatest && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVersion(artifact.currentVersion)}
+                    aria-label={`Viewing v${selectedVersion} — back to latest`}
+                    className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-caption text-warning-foreground hover:bg-warning/20"
                   >
-                    {consoleEntries.length}
-                  </span>
-                </TabsTrigger>
-              )}
-            </TabsList>
+                    v{selectedVersion}
+                    {panelWide && <span className="normal-case tracking-normal">· back to latest</span>}
+                  </button>
+                )}
 
-            {!isLatest && (
-              <button
-                type="button"
-                onClick={() => setSelectedVersion(artifact.currentVersion)}
-                aria-label={`Viewing v${selectedVersion} — back to latest`}
-                className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-caption text-warning-foreground hover:bg-warning/20"
-              >
-                v{selectedVersion}
-                {panelWide && <span className="normal-case tracking-normal">· back to latest</span>}
-              </button>
-            )}
+                <div className="flex-1" />
 
-            <div className="flex-1" />
-
-            {/* Contextual actions for the active view only. Markdown renders
-                natively (no sandbox), so run controls would be decorative. */}
-            {canSizePreview && (
-              /* Icon-only, always — the words "Full", "Tablet", "Phone" cost
-                 more of this row than the marks do and say nothing the marks
-                 do not. The labels ride the accessible name and the title. */
-              <SegmentedControl
-                value={previewWidth}
-                onChange={setPreviewWidth}
-                ariaLabel="Preview width"
-                labelHidden
-                className="h-7 shrink-0"
-                optionClassName="px-2"
-                options={[
-                  { value: "full", label: "Fit the panel", icon: <Monitor className="size-3.5" aria-hidden /> },
-                  { value: "tablet", label: "Tablet · 834px", icon: <Tablet className="size-3.5" aria-hidden /> },
-                  { value: "phone", label: "Phone · 390px", icon: <Smartphone className="size-3.5" aria-hidden /> },
-                ]}
-              />
-            )}
-            {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && (
-              <>
-                {canInspect && (
+                {/* Contextual actions for the active view only. Markdown renders
+                    natively (no sandbox), so run controls would be decorative. */}
+                {canSizePreview && (
+                  /* Icon-only, always — the words "Full", "Tablet", "Phone" cost
+                     more of this row than the marks do and say nothing the marks
+                     do not. The labels ride the accessible name and the title. */
+                  <SegmentedControl
+                    value={previewWidth}
+                    onChange={setPreviewWidth}
+                    ariaLabel="Preview width"
+                    labelHidden
+                    className="h-7 shrink-0"
+                    optionClassName="px-2"
+                    options={[
+                      { value: "full", label: "Fit the panel", icon: <Monitor className="size-3.5" aria-hidden /> },
+                      { value: "tablet", label: "Tablet · 834px", icon: <Tablet className="size-3.5" aria-hidden /> },
+                      { value: "phone", label: "Phone · 390px", icon: <Smartphone className="size-3.5" aria-hidden /> },
+                    ]}
+                  />
+                )}
+                {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && (
+                  <>
+                    {canInspect && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setInspecting((v) => !v)}
+                            aria-label={inspecting ? "Exit element selection" : "Select an element"}
+                            aria-pressed={inspecting}
+                            className={cn(contextButton, inspecting && "bg-primary/10 text-primary hover:text-primary")}
+                          >
+                            <Crosshair className="size-3.5" aria-hidden />
+                            {panelWide && <span>{inspecting ? "Selecting…" : "Select"}</span>}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{inspecting ? "Click an element in the preview · Esc to cancel" : "Pick an element to ask about or modify"}</TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="sm" onClick={rerun} aria-label={rt.runVerb === "Run" ? "Run again" : "Reload preview"} className={contextButton}>
+                          {rt.mode === "console" ? <Play className="size-3.5" aria-hidden /> : <ActionIcons.refresh className="size-3.5" aria-hidden />}
+                          {panelWide && <span>{rt.mode === "console" ? "Run" : "Reload"}</span>}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{rt.mode === "console" ? "Run the program again" : "Reload the preview"}</TooltipContent>
+                    </Tooltip>
+                  </>
+                )}
+                {tab === "code" && (
                   <Tooltip>
                     <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
+                        <IconSwap
+                          swapped={copied}
+                          from={<ActionIcons.copy className="size-3.5" />}
+                          to={<StatusIcons.success className="size-3.5 text-success" />}
+                        />
+                        {panelWide && <span>Copy</span>}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy source</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+
+              <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden">
+                {/* A failed newer version never takes the last working preview with it. */}
+                {canOfferLastGood && (
+                  <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-caption text-destructive motion-safe:animate-fade-in">
+                    <span className="min-w-0 flex-1 truncate">This version failed to render.</span>
+                    {rt.mode === "web" && (
+                      <Button variant="ghost" size="sm" onClick={() => setTab("console")} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
+                        Console
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedVersion(lastGood!)} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
+                      View v{lastGood}
+                    </Button>
+                  </div>
+                )}
+                {isDesign ? (
+                  <div key={selectedVersion} className="h-full motion-safe:animate-fade-in">
+                    <DesignEditor
+                      artifactId={artifact.id}
+                      content={versionContent}
+                      readOnly={!isLatest}
+                      editorRef={designRef}
+                      onCommitted={(version) => {
+                        // The editor holds the authoritative document; this only
+                        // keeps the artifact envelope (version rail, history) in step.
+                        if (version <= artifact.currentVersion) return;
+                        onArtifactUpdated({
+                          ...artifact,
+                          currentVersion: version,
+                          versions: [
+                            ...artifact.versions,
+                            { version, content: "", origin: "edit", createdAt: new Date().toISOString() },
+                          ],
+                        });
+                      }}
+                    />
+                  </div>
+                ) : isMarkdown ? (
+                  <div
+                    key={selectedVersion}
+                    ref={previewScrollRef}
+                    onMouseUp={captureSelection}
+                    onKeyUp={captureSelection}
+                    className="h-full overflow-auto px-6 py-8 motion-safe:animate-fade-in"
+                  >
+                    {/* A DOCUMENT GETS A MEASURE. This was full-bleed, so on a
+                        canvas dragged wide a memo set at 900px+ per line — roughly
+                        twice what the eye tracks without losing its place, and the
+                        one artifact type whose whole job is to be read. `max-w-3xl`
+                        is the product's own reading measure (ui/app-page.tsx), so
+                        a document reads the same width here as it does on a page. */}
+                    <div className="mx-auto w-full max-w-3xl">
+                      <Markdown content={versionContent} />
+                    </div>
+                  </div>
+                ) : (
+                  /*
+                   * Pinned to a device measure, the page gets a GUTTER and an edge:
+                   * a 390px column butted against the panel's own background reads
+                   * as a narrow preview rather than as a phone, and the one thing
+                   * you are checking at that width is where the page ends.
+                   */
+                  <div
+                    key={selectedVersion}
+                    className={cn(
+                      "h-full motion-safe:animate-fade-in",
+                      frameWidth && "overflow-auto bg-muted/40 p-4",
+                    )}
+                  >
+                    <div
+                      style={frameWidth ? { width: frameWidth, maxWidth: "100%" } : undefined}
+                      className={cn(
+                        "h-full",
+                        frameWidth && "mx-auto overflow-hidden rounded-card border border-border/60 shadow-raised",
+                      )}
+                    >
+                    <SandboxFrame
+                      type={artifact.type}
+                      content={versionContent}
+                      language={artifact.language}
+                      runNonce={runNonce}
+                      mode={rt.mode}
+                      inspectEnabled={canInspect && inspecting}
+                      onElementSelected={handleElementSelected}
+                      onInspectExit={exitInspect}
+                      onConsole={onConsole}
+                      onStatus={handleRunStatus}
+                    />
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              {rt.mode === "web" && (
+                <TabsContent value="console" className="min-h-0 flex-1 overflow-hidden">
+                  <ConsoleView entries={consoleEntries} onClear={() => setConsoleEntries([])} />
+                </TabsContent>
+              )}
+
+              <TabsContent value="code" className="min-h-0 flex-1 overflow-hidden">
+                <div className="flex h-full flex-col">
+                  {staleConflict && (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-2 text-caption text-warning-foreground motion-safe:animate-fade-in">
+                      <span className="min-w-0 flex-1">
+                        Saved elsewhere as v{staleConflict.currentVersion} while you were editing.
+                      </span>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setInspecting((v) => !v)}
-                        aria-label={inspecting ? "Exit element selection" : "Select an element"}
-                        aria-pressed={inspecting}
-                        className={cn(contextButton, inspecting && "bg-primary/10 text-primary hover:text-primary")}
+                        onClick={() => {
+                          onArtifactUpdated(staleConflict);
+                          discardDraft();
+                        }}
+                        className="h-6 px-2 text-caption"
                       >
-                        <Crosshair className="size-3.5" aria-hidden />
-                        {panelWide && <span>{inspecting ? "Selecting…" : "Select"}</span>}
+                        Discard my draft
                       </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{inspecting ? "Click an element in the preview · Esc to cancel" : "Pick an element to ask about or modify"}</TooltipContent>
-                  </Tooltip>
-                )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={rerun} aria-label={rt.runVerb === "Run" ? "Run again" : "Reload preview"} className={contextButton}>
-                      {rt.mode === "console" ? <Play className="size-3.5" aria-hidden /> : <ActionIcons.refresh className="size-3.5" aria-hidden />}
-                      {panelWide && <span>{rt.mode === "console" ? "Run" : "Reload"}</span>}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{rt.mode === "console" ? "Run the program again" : "Reload the preview"}</TooltipContent>
-                </Tooltip>
-              </>
-            )}
-            {tab === "code" && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
-                    <IconSwap
-                      swapped={copied}
-                      from={<ActionIcons.copy className="size-3.5" />}
-                      to={<StatusIcons.success className="size-3.5 text-success" />}
-                    />
-                    {panelWide && <span>Copy</span>}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy source</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-
-          <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden">
-            {/* A failed newer version never takes the last working preview with it. */}
-            {canOfferLastGood && (
-              <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-caption text-destructive motion-safe:animate-fade-in">
-                <span className="min-w-0 flex-1 truncate">This version failed to render.</span>
-                {rt.mode === "web" && (
-                  <Button variant="ghost" size="sm" onClick={() => setTab("console")} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
-                    Console
-                  </Button>
-                )}
-                <Button variant="ghost" size="sm" onClick={() => setSelectedVersion(lastGood!)} className="h-6 px-2 text-caption text-destructive hover:text-destructive">
-                  View v{lastGood}
-                </Button>
-              </div>
-            )}
-            {isDesign ? (
-              <div key={selectedVersion} className="h-full motion-safe:animate-fade-in">
-                <DesignEditor
-                  artifactId={artifact.id}
-                  content={versionContent}
-                  readOnly={!isLatest}
-                  editorRef={designRef}
-                  onCommitted={(version) => {
-                    // The editor holds the authoritative document; this only
-                    // keeps the artifact envelope (version rail, history) in step.
-                    if (version <= artifact.currentVersion) return;
-                    onArtifactUpdated({
-                      ...artifact,
-                      currentVersion: version,
-                      versions: [
-                        ...artifact.versions,
-                        { version, content: "", origin: "edit", createdAt: new Date().toISOString() },
-                      ],
-                    });
-                  }}
-                />
-              </div>
-            ) : isMarkdown ? (
-              <div
-                key={selectedVersion}
-                ref={previewScrollRef}
-                onMouseUp={captureSelection}
-                onKeyUp={captureSelection}
-                className="h-full overflow-auto px-6 py-8 motion-safe:animate-fade-in"
-              >
-                {/* A DOCUMENT GETS A MEASURE. This was full-bleed, so on a
-                    canvas dragged wide a memo set at 900px+ per line — roughly
-                    twice what the eye tracks without losing its place, and the
-                    one artifact type whose whole job is to be read. `max-w-3xl`
-                    is the product's own reading measure (ui/app-page.tsx), so
-                    a document reads the same width here as it does on a page. */}
-                <div className="mx-auto w-full max-w-3xl">
-                  <Markdown content={versionContent} />
-                </div>
-              </div>
-            ) : (
-              /*
-               * Pinned to a device measure, the page gets a GUTTER and an edge:
-               * a 390px column butted against the panel's own background reads
-               * as a narrow preview rather than as a phone, and the one thing
-               * you are checking at that width is where the page ends.
-               */
-              <div
-                key={selectedVersion}
-                className={cn(
-                  "h-full motion-safe:animate-fade-in",
-                  frameWidth && "overflow-auto bg-muted/40 p-4",
-                )}
-              >
-                <div
-                  style={frameWidth ? { width: frameWidth, maxWidth: "100%" } : undefined}
-                  className={cn(
-                    "h-full",
-                    frameWidth && "mx-auto overflow-hidden rounded-card border border-border/60 shadow-raised",
+                      <Button variant="outline" size="sm" onClick={() => saveEdit(true)} disabled={saving} className="h-6 px-2 text-caption">
+                        Save anyway
+                      </Button>
+                    </div>
                   )}
-                >
-                <SandboxFrame
-                  type={artifact.type}
-                  content={versionContent}
-                  language={artifact.language}
-                  runNonce={runNonce}
-                  mode={rt.mode}
-                  inspectEnabled={canInspect && inspecting}
-                  onElementSelected={handleElementSelected}
-                  onInspectExit={exitInspect}
-                  onConsole={onConsole}
-                  onStatus={handleRunStatus}
-                />
+                  {/* Keyed by artifact only: a save bumps the version, and a
+                      version-keyed remount would eject focus, caret, and scroll
+                      mid-edit. Content swaps in place through the controlled value. */}
+                  <div key={artifact.id} className="min-h-0 flex-1">
+                    <CodeSurface
+                      value={displayedContent}
+                      language={isDesign ? "json" : rt.lang || artifact.language}
+                      // A design document may only change through validated
+                      // operations — a hand-edited body could not be inverted, so
+                      // the source view is a reader, not a second write path.
+                      readOnly={!isLatest || isDesign}
+                      onChange={handleDraftChange}
+                      onSave={isLatest && !isDesign ? () => saveEdit() : undefined}
+                      onSelect={onQuote && isLatest && !dirty ? handleCodeSelect : undefined}
+                      wrap={isMarkdown}
+                      ariaLabel={`${artifact.title} source${isLatest ? "" : ` (v${selectedVersion}, read-only)`}`}
+                    />
+                  </div>
+                  {/* Save bar — rises in only once there is something to save. */}
+                  {dirty && (
+                    <div
+                      // Same rung as the header, and for the same reason: /50 over
+                      // black is a half-step nobody can see, and the save bar has to
+                      // read as chrome sitting on top of the code it belongs to.
+                      className="flex items-center gap-2 border-t border-border/60 bg-card px-3 py-2 motion-safe:animate-rise-in"
+                    >
+                      <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
+                        Unsaved changes · saves as v{artifact.currentVersion + 1}
+                      </span>
+                      <div className="flex-1" />
+                      <Button variant="ghost" size="sm" onClick={discardDraft} disabled={saving}>
+                        Discard
+                      </Button>
+                      <Button size="sm" onClick={() => saveEdit()} disabled={saving}>
+                        {saving ? "Saving…" : "Save version"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-          </TabsContent>
-
-          {rt.mode === "web" && (
-            <TabsContent value="console" className="min-h-0 flex-1 overflow-hidden">
-              <ConsoleView entries={consoleEntries} onClear={() => setConsoleEntries([])} />
-            </TabsContent>
-          )}
-
-          <TabsContent value="code" className="min-h-0 flex-1 overflow-hidden">
-            <div className="flex h-full flex-col">
-              {staleConflict && (
-                <div className="flex flex-wrap items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-2 text-caption text-warning-foreground motion-safe:animate-fade-in">
-                  <span className="min-w-0 flex-1">
-                    Saved elsewhere as v{staleConflict.currentVersion} while you were editing.
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      onArtifactUpdated(staleConflict);
-                      discardDraft();
-                    }}
-                    className="h-6 px-2 text-caption"
-                  >
-                    Discard my draft
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => saveEdit(true)} disabled={saving} className="h-6 px-2 text-caption">
-                    Save anyway
-                  </Button>
-                </div>
-              )}
-              {/* Keyed by artifact only: a save bumps the version, and a
-                  version-keyed remount would eject focus, caret, and scroll
-                  mid-edit. Content swaps in place through the controlled value. */}
-              <div key={artifact.id} className="min-h-0 flex-1">
-                <CodeSurface
-                  value={displayedContent}
-                  language={isDesign ? "json" : rt.lang || artifact.language}
-                  // A design document may only change through validated
-                  // operations — a hand-edited body could not be inverted, so
-                  // the source view is a reader, not a second write path.
-                  readOnly={!isLatest || isDesign}
-                  onChange={handleDraftChange}
-                  onSave={isLatest && !isDesign ? () => saveEdit() : undefined}
-                  onSelect={onQuote && isLatest && !dirty ? handleCodeSelect : undefined}
-                  wrap={isMarkdown}
-                  ariaLabel={`${artifact.title} source${isLatest ? "" : ` (v${selectedVersion}, read-only)`}`}
-                />
-              </div>
-              {/* Save bar — rises in only once there is something to save. */}
-              {dirty && (
-                <div
-                  // Same rung as the header, and for the same reason: /50 over
-                  // black is a half-step nobody can see, and the save bar has to
-                  // read as chrome sitting on top of the code it belongs to.
-                  className="flex items-center gap-2 border-t border-border/60 bg-card px-3 py-2 motion-safe:animate-rise-in"
-                >
-                  <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
-                    Unsaved changes · saves as v{artifact.currentVersion + 1}
-                  </span>
-                  <div className="flex-1" />
-                  <Button variant="ghost" size="sm" onClick={discardDraft} disabled={saving}>
-                    Discard
-                  </Button>
-                  <Button size="sm" onClick={() => saveEdit()} disabled={saving}>
-                    {saving ? "Saving…" : "Save version"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
-      )}
+              </TabsContent>
+            </Tabs>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {shareable && (
         <ShareDialog kind="ARTIFACT" artifactId={artifact.id} open={shareOpen} onOpenChange={setShareOpen} />

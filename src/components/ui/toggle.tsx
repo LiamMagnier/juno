@@ -7,11 +7,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * A two-state control on `.control-neu`: a hairline at rest, a tonal fill on
- * hover, the deeper `--secondary` fill while on. Radix sets
+ * hover, the `--selected` tone (one rung past hover) while on. Radix sets
  * `data-state="on"`, which is one of the selectors the recipe reads, so no
  * compound class is needed for the on look — only the ink changes. `ghost` is
  * the borderless variant for toolbars, where a row of outlined keys would be
- * too loud: nothing at rest, the wash on hover, the secondary fill when on.
+ * too loud: nothing at rest, the wash on hover, the on tone while held or on.
  * Both cross-fade on --dur-fast and dip to 0.97 under the finger (`.pressable`).
  */
 const toggleVariants = cva(
@@ -21,7 +21,7 @@ const toggleVariants = cva(
       variant: {
         default: "control-neu border-border/60 text-muted-foreground",
         ghost:
-          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground",
+          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-selected data-[state=on]:bg-selected data-[state=on]:text-foreground",
       },
       size: {
         default: "h-9 min-w-9 px-3 coarse:h-11 coarse:min-w-11",

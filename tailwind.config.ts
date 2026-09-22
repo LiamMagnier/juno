@@ -72,6 +72,11 @@ const config: Config = {
           DEFAULT: "hsl(var(--accent) / <alpha-value>)",
           foreground: "hsl(var(--accent-foreground) / <alpha-value>)",
         },
+        // The on tone — selected, pressed, held — one rung past the `accent`
+        // hover fill in both themes, so a control that is ON never reads
+        // weaker than one the pointer is merely over. `secondary` is a tonal
+        // fill (bubbles, tracks, badges), not a state. See globals.css.
+        selected: "hsl(var(--selected) / <alpha-value>)",
         popover: {
           DEFAULT: "hsl(var(--popover) / <alpha-value>)",
           foreground: "hsl(var(--popover-foreground) / <alpha-value>)",

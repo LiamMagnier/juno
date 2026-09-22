@@ -153,8 +153,11 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
 2. **Press is physical.** A control under the finger dips to `scale(0.97)` in
    `duration-press` (the `.pressable` class, or `Pressable` / `Button`, which
    already do it). Large surfaces (cards, panels, rows) do not scale; they
-   press tonally instead. `Pressable kind="row"` steps to `bg-secondary` while
-   held, the pressed tone `.control-neu` and the ghost `IconButton` use. A
+   press tonally instead. `Pressable kind="row"` steps to `bg-selected` while
+   held, the pressed tone `.control-neu`, the ghost and outline `Button` and
+   the ghost `IconButton` use. It is one rung past the hover fill in both
+   themes (`FLAT_UI.md` §3.1), so a press deepens the hover rather than
+   paling it, and a control that is ON uses the same tone. A
    component that declares its own `transition` after `.pressable` in the
    same layer replaces the class's list, so it must name `transform` on
    `--dur-press` itself or the dip snaps.
@@ -183,10 +186,24 @@ In framer, use `transition`, `spring`, `variants` and `stagger` from
 7. **State swaps cross-fade.** Copy to check, play to pause, send to stop: the
    two glyphs overlap and swap opacity plus a small scale (0.8 to 1) in
    `duration-fast` rather than one replacing the other in a frame. Use
-   `IconSwap` (§2.3); do not write another.
+   `IconSwap` (§2.3); do not write another. A copy check holds for about
+   1.5s and then turns back into copy; keep the timer in a ref, restart it on
+   a second copy and clear it on unmount (`DiffSummary` is the example).
 8. **Only `transform` and `opacity` travel.** Colour may cross-fade. Width,
    height, top and left never animate (use `grid-rows`, `scale` or framer
    `layout`).
+
+   *The one exception is the composer's field.* `useComposerAutosize`
+   (`src/components/ui/composer-shell.tsx`) springs the textarea's inline
+   `height` as the text crosses a line boundary, because all three
+   alternatives fail on a textarea: its height is not content-sized, so there
+   is no `grid-rows` track to resolve; `scale` squashes the glyphs and the
+   caret mid-growth; and framer `layout` animates by scaling too, and its
+   counter-scale does not reach the text inside a textarea. The cost is
+   bounded (one element, a layout per frame for the ~220ms after a line
+   break, nothing while typing within a line) and reduced motion snaps it.
+   It is an exception, not a precedent: nothing else gets a height tween, and
+   a second one needs the same argument written down here.
 9. **Loops are for live state only.** Thinking, streaming and recording may
    pulse. Nothing idle loops.
 10. **Reduced motion is honoured everywhere.** `motion-safe:` /
@@ -252,8 +269,8 @@ Use these rather than building them again.
 ## 3. What a premium surface looks like here
 - One accent, used for state and the primary action only.
 - Hairline edges (`border-border`, or `border-foreground/10` on floating
-  layers), tonal fills for state, `--shadow-float` only on layers that leave
-  the page.
+  layers), tonal fills for state ranked rest → hover (`bg-accent`) → on and
+  held (`bg-selected`), `--shadow-float` only on layers that leave the page.
 - Radii from the ladder only (`rounded-control`, `rounded-field`,
   `rounded-menu`, `rounded-card`, `rounded-panel`, `rounded-full`). ESLint
   rejects arbitrary values.

@@ -29,6 +29,12 @@ import { cn } from "@/lib/utils";
  * stop — but `autoPlay` is an attribute, so the reduced-motion block in
  * globals.css cannot reach it. Starts false so SSR and the first client render
  * agree, then corrects on mount.
+ *
+ * Deliberately not framer-motion's `useReducedMotion`: that one (12.x) reads
+ * the preference once during the first render (null on the server, so the
+ * `autoPlay`/`controls` attributes could disagree at hydration), never updates
+ * when the setting changes while the page is open, and logs a dev warning
+ * whenever the preference is on. This one does neither of the first two.
  */
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = React.useState(false);

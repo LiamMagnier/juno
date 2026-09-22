@@ -25,6 +25,7 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 import {
   Dialog,
   DialogContent,
@@ -43,16 +44,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  MENU_W,
-  menuGlyphInkClass,
-  menuRowClass,
-  menuSeparatorClass,
-} from "@/components/ui/menu-recipe";
+import { MENU_W } from "@/components/ui/menu-recipe";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { useApp } from "@/components/app/app-provider";
 import { ProductSwitch, type ProductSurface } from "@/components/app/product-switch";
@@ -286,6 +281,9 @@ export function AppSidebar({
   const router = useRouter();
   const pathname = usePathname();
   const reduceMotion = useReducedMotion();
+  // The chord hints print the reader's own modifier: "⌘" on Apple, "Ctrl"
+  // everywhere else, where the same chords answer to Control.
+  const mod = useModifierKeyLabel();
   const {
     conversations,
     updateConversation,
@@ -807,14 +805,14 @@ export function AppSidebar({
                     className={cn("group hidden shrink-0 md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
                     onClick={onToggleCollapse}
                     aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                    aria-keyshortcuts="Meta+Shift+S"
+                    aria-keyshortcuts={mod === "⌘" ? "Meta+Shift+S" : "Control+Shift+S"}
                   >
                     <SidebarMotionIcon kind={collapsed ? "panel-open" : "panel-close"} className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side={collapsed ? "right" : "bottom"} className="flex items-center gap-1.5">
                   {collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  <Kbd>⌘⇧S</Kbd>
+                  <Kbd>{`${mod}⇧S`}</Kbd>
                 </TooltipContent>
               </Tooltip>
             </motion.div>
@@ -1014,7 +1012,7 @@ export function AppSidebar({
                made the one row people press most read as the chunkiest. */
             icon={<SidebarMotionIcon kind="new" />}
             label={isCode ? "New session" : "New chat"}
-            trailing={isCode ? undefined : <Kbd>⌘⇧O</Kbd>}
+            trailing={isCode ? undefined : <Kbd>{`${mod}⇧O`}</Kbd>}
             layoutId="nav-new"
             transition={layoutTransition}
           />
@@ -1928,6 +1926,13 @@ const LIST_ROW_TRANSITION =
  * are destinations, but inside a floating list they are read the way a menu
  * is read — scanned, not browsed — so they take the menu's 13px row and 16px
  * glyph, and the sidebar's 18px destination rung stays in the sidebar.
+ *
+ * AND IT IS A MENU, not a popover wearing `role="menu"`. It announced itself
+ * as a menu and then behaved like a list of tab stops: no arrow keys, no
+ * typeahead, no Home/End, focus left on the trigger. On the Radix
+ * DropdownMenu primitive it gets all of that and the row highlight
+ * (`data-highlighted`) that plays each glyph's gesture, with the same items,
+ * the same shell and the same placement to the right of the column.
  */
 function MoreFlyout({
   collapsed,
@@ -1998,26 +2003,16 @@ function MoreFlyout({
    * hanging off a trigger that had gone pale the moment the pointer left it.
    */
   const selected = open || anyActive;
-  // The recipe's row, plus the interaction state the recipe leaves to its
-  // host: these are links and buttons rather than Radix items, so hover and
-  // keyboard focus are spelled here, on the same fill a highlighted menu row
-  // takes.
-  const rowClass = cn(
-    menuRowClass,
-    menuGlyphInkClass,
-    "w-full text-foreground hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none"
-  );
   // `navRowClass(collapsed, selected)` FIRST, then the fill. The order is the
   // point: the active branch of that recipe drops `hover:bg-sidebar-hover`,
   // so the selected fill has nothing competing with it — bolt the fill onto the
   // inactive recipe instead and the trigger goes pale the moment the pointer
-  // reaches the menu it opened.
+  // reaches the menu it opened. `aria-haspopup` and `aria-expanded` come from
+  // the DropdownMenuTrigger around it.
   const trigger = (
     <button
       type="button"
       aria-label={collapsed ? "More" : undefined}
-      aria-haspopup="menu"
-      aria-expanded={open}
       data-active={selected ? "" : undefined}
       className={cn(navRowClass(collapsed, selected), selected && "sidebar-row-selected")}
     >
@@ -2027,66 +2022,64 @@ function MoreFlyout({
       {!collapsed && <span className="min-w-0 flex-1 truncate text-left">More</span>}
     </button>
   );
+  // The rows' ink and fill are DropdownMenuItem's (the recipe's row, the
+  // muted glyph that lights with it, `focus:bg-accent` on the highlight);
+  // this only keeps the label in full ink at rest, as the flyout always had it.
+  const itemClass = "text-foreground motion-reduce:transition-none";
+  // `modal={false}`: the flyout was a non-modal Popover before it moved onto
+  // DropdownMenu for arrow-key navigation, and the sidebar around it has to
+  // stay live — scrolling the recents or clicking another row while it is
+  // open must not first be swallowed by a modal's pointer lock.
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <motion.div layout="position" transition={t} className={cn(collapsed && "flex justify-center")}>
         {collapsed ? (
+          // The menu trigger OUTSIDE the tooltip trigger, so `data-state` on
+          // the button is the menu's (ICONS_AND_MOTION.md §2.3).
           <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-            </TooltipTrigger>
+            <DropdownMenuTrigger asChild>
+              <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+            </DropdownMenuTrigger>
             <TooltipContent side="right">More</TooltipContent>
           </Tooltip>
         ) : (
-          <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         )}
       </motion.div>
-      {/* `rounded-menu p-1` is the menu shell's own pair (14 − 4 = the rows'
-          10); the popover's material, pop-in and `origin-popper` come from
-          PopoverContent unchanged. */}
-      <PopoverContent
+      {/* The menu shell is DropdownMenuContent's own (`menu-recipe.ts`): the
+          same `rounded-menu p-1` material, pop-in and `origin-popper` the
+          popover was dressed in to look like it. */}
+      <DropdownMenuContent
         side="right"
         align="start"
         sideOffset={12}
         collisionPadding={16}
-        role="menu"
         aria-label="More"
-        className={cn(MENU_W, "rounded-menu p-1")}
+        className={MENU_W}
       >
         {items.map((item) => (
-          <Link
+          <DropdownMenuItem
             key={item.href}
-            href={item.href}
-            role="menuitem"
-            aria-current={item.active ? "page" : undefined}
-            onClick={() => {
-              setOpen(false);
-              onNavigate();
-            }}
+            asChild
+            onSelect={onNavigate}
             // The page you are on: the highlighted row's fill held still, and
             // its glyph in full ink. Not a heavier weight — a label that
             // re-measures when it is chosen visibly re-truncates.
-            className={cn(rowClass, item.active && "bg-accent")}
+            className={cn(itemClass, item.active && "bg-accent")}
           >
-            <SidebarMotionIcon kind={item.kind} className={cn("size-4", item.active && "text-foreground")} />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          </Link>
+            <Link href={item.href} aria-current={item.active ? "page" : undefined}>
+              <SidebarMotionIcon kind={item.kind} className={cn("size-4", item.active && "text-foreground")} />
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            </Link>
+          </DropdownMenuItem>
         ))}
-        <div role="separator" aria-hidden="true" className={menuSeparatorClass} />
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            setOpen(false);
-            onOpenArchived();
-          }}
-          className={cn(rowClass, "text-left")}
-        >
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onOpenArchived} className={itemClass}>
           <Archive className="size-4" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate">{isCode ? "Archived sessions" : "Archived chats"}</span>
-        </button>
-      </PopoverContent>
-    </Popover>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -2633,7 +2626,21 @@ function ProjectRow({
                 }}
                 aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
                 aria-expanded={expanded}
-                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-control text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-foreground/5 hover:text-foreground coarse:-my-3 coarse:size-10"
+                /* THE HIT AREA IS 32×32, the box is 20. The kebab sits flush
+                   against the chevron's right edge, is `relative` and later
+                   in the DOM, and its own `after:` layer starts 2px inside
+                   this box — so it wins every point it overlaps, even at
+                   opacity 0. A layer centred on the caret would lose 8px to
+                   it and fall back to 24 wide. So the layer grows to the
+                   LEFT only: 6px above and below (32 tall on the 20px box),
+                   14px past the left edge — across the `ml-1` gap and the
+                   title link's last 10px, which is trailing space or the
+                   ellipsis — and it stops 2px short of the right edge, where
+                   the kebab's layer begins: [-14px, 18px], 32 wide, none of
+                   it shadowed. The drawn target does not grow and the title
+                   loses no width. Under `coarse:` the box is already 40 and
+                   the layer is not needed. */
+                className="relative ml-1 flex size-5 shrink-0 items-center justify-center rounded-control text-muted-foreground/70 transition-colors duration-fast ease-out-soft after:absolute after:-inset-y-1.5 after:-left-3.5 after:right-0.5 hover:bg-foreground/5 hover:text-foreground coarse:-my-3 coarse:size-10 coarse:after:hidden"
               >
                 <ChevronRight
                   aria-hidden

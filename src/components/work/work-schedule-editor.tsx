@@ -6,6 +6,7 @@ import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
@@ -1157,13 +1158,28 @@ function PolicyGroup<T extends string>({
   onChange: (value: T) => void;
 }) {
   const name = React.useId();
+  const legendId = `${name}-legend`;
   return (
     <fieldset className="min-w-0" disabled={disabled}>
       {/* `text-label`, the register `Label` resolves to. A fieldset legend and a
           field label do the same job on this page and sat two paragraphs apart
           at 12px/0.10em against 12px/0 — one form, two label voices. */}
-      <legend className="font-mono text-label text-muted-foreground">{label}</legend>
-      <div className="mt-1.5 space-y-1.5">
+      <legend id={legendId} className="font-mono text-label text-muted-foreground">
+        {label}
+      </legend>
+      {/* The house radio group rather than bare inputs: the dot grows into the
+          chosen slot on the spring while the old one shrinks away, so the
+          choice visibly moves. Same name, same one-of-n semantics, same arrow
+          keys and Tab stop as the native group; the row's `has-[]` fills read
+          the item's `data-state` because the item is a button, not an input. */}
+      <RadioGroup
+        name={name}
+        value={value}
+        onValueChange={(next) => onChange(next as T)}
+        disabled={disabled}
+        aria-labelledby={legendId}
+        className="mt-1.5 gap-1.5"
+      >
         {options.map((option) => (
           <label
             key={option.value}
@@ -1175,25 +1191,18 @@ function PolicyGroup<T extends string>({
             // row in Work fills with.
             //
             // The focus ring is drawn on the ROW rather than left to the global
-            // outline on the 14px radio inside it. This is the control that
+            // outline on the 18px radio inside it. This is the control that
             // decides what happens to somebody's files at three in the morning,
-            // and a 14px outline inside a full-width row is not where a keyboard
+            // and an 18px outline inside a full-width row is not where a keyboard
             // reader looks to find out where they are. No ring offset: the
             // offset is painted in a named page colour, which on this card is a
             // halo that belongs to no surface underneath it.
             //
             // Hover is the tonal fill every row takes; a chosen row keeps its
             // own fill under the pointer rather than swapping to the hover one.
-            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent has-[:checked]:border-foreground/25 has-[:checked]:bg-secondary has-[:checked]:hover:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring motion-reduce:transition-none"
+            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border hover:bg-accent has-[[data-state=checked]]:border-foreground/25 has-[[data-state=checked]]:bg-secondary has-[[data-state=checked]]:hover:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring motion-reduce:transition-none"
           >
-            <input
-              type="radio"
-              name={name}
-              value={option.value}
-              checked={value === option.value}
-              onChange={() => onChange(option.value)}
-              className="mt-1 size-3.5 shrink-0 accent-primary"
-            />
+            <RadioGroupItem value={option.value} className="mt-px" />
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">{option.label}</span>
               <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
@@ -1202,7 +1211,7 @@ function PolicyGroup<T extends string>({
             </span>
           </label>
         ))}
-      </div>
+      </RadioGroup>
     </fieldset>
   );
 }

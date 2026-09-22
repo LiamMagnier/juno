@@ -13,21 +13,21 @@ import { cn } from "@/lib/utils";
  *
  *   kind="row"   a full-width, left-aligned selectable row — a conversation in
  *                the sidebar, a file, a menu entry. Flat; the affordance is the
- *                hover fill; SELECTED keeps that fill at full strength.
+ *                hover fill; SELECTED is the on tone, a rung past it.
  *   kind="tile"  a bordered card that is one of a set, usually `role="radio"` —
  *                accent swatches, model cards, plan pickers. `.control-neu`:
  *                a hairline at rest, a tonal fill on hover, a deeper one plus
  *                the accent edge when selected.
  *   kind="chip"  a pill-shaped filter or token. `.control-neu`.
  *   kind="icon"  a bare glyph affordance — close, copy, expand. Flat at rest,
- *                a circular tonal fill on hover, the secondary fill when on.
+ *                a circular tonal fill on hover, the on tone when on.
  *
  * Shared behaviour comes from `.pressable` (globals.css): the tonal hover
  * cross-fade on --dur-fast and the 0.97 dip on --dur-press. A ROW does not
  * dip: it is a large surface, and large surfaces never scale
  * (ICONS_AND_MOTION.md §2.2, rule 2) — a full-width row shrinking by 3% moves
  * its edges further than a button's whole dip. It presses TONALLY instead,
- * stepping to the `--secondary` fill while held, the same pressed tone
+ * stepping to the `--selected` tone while held, the same pressed tone
  * `.control-neu` and the ghost IconButton take. Focus is deliberately NOT
  * styled here: the global `:focus-visible` rule is authoritative. A glyph
  * inside any kind plays its own hover articulation (icons.tsx), because every
@@ -37,7 +37,9 @@ import { cn } from "@/lib/utils";
  * selected tile, chip or icon takes the same deeper tone as one being held,
  * and the compound variants below only add the accent edge and ink. That is
  * the flat answer to "selected must not look like hovered": hover is a wash,
- * selection is a bounded, accent-edged fill.
+ * selection is a bounded, accent-edged fill one rung past it (`--selected`,
+ * darker than hover in light and lighter in dark — it used to be
+ * `--secondary`, which sat on the WEAKER side of hover in both themes).
  */
 const pressableVariants = cva(
   // `.pressable` carries the transition and the active:scale(0.97). The
@@ -75,9 +77,9 @@ const pressableVariants = cva(
         // primitive a rung of type below the sidebar that opens them.
         //
         // `active:scale-100` cancels `.pressable`'s dip (a row never scales)
-        // and `active:bg-secondary` is its press: a tonal step, on the same
-        // fast cross-fade as the hover fill.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-secondary",
+        // and `active:bg-selected` is its press: a tonal step past the hover
+        // fill, on the same fast cross-fade.
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 text-left text-body text-foreground/90 hover:bg-accent hover:text-accent-foreground active:scale-100 active:bg-selected",
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
@@ -97,17 +99,25 @@ const pressableVariants = cva(
       },
     },
     compoundVariants: [
-      // A selected row keeps the hover fill at rest, and the hover is pinned
-      // to it so pointing at the selected row does not change it — the
-      // pointer moving across a list must never make the current row flicker.
+      // A selected row holds the on tone, one rung past the hover fill, so
+      // the current row always outranks the one under the pointer; the hover
+      // is pinned to it so pointing at the selected row does not change it —
+      // the pointer moving across a list must never make the current row
+      // flicker.
       {
         kind: "row",
         selected: true,
-        class: "bg-accent text-foreground hover:bg-accent hover:text-foreground",
+        class: "bg-selected text-foreground hover:bg-selected hover:text-foreground",
       },
-      // Tile, chip, icon: `.control-neu[data-selected]` supplies the
-      // secondary fill; these add the accent edge and ink, and pin them
-      // through hover.
+      // Tile and chip: `.control-neu[data-selected]` supplies the on tone;
+      // these add the accent edge and ink, and pin them through hover. The
+      // icon is flat (no `.control-neu`), so it paints the on tone itself.
+      //
+      // A selected chip's words are foreground ink, like the tile's, and the
+      // accent is its edge. `text-primary-ink` measured 4.58:1 on the old
+      // `--secondary` fill but 4.27 on the on tone (4.19 in dark), under the
+      // 4.5 its caption-sized label needs. The icon keeps the accent ink: a
+      // glyph needs 3:1, and it has over 4.
       {
         kind: "tile",
         selected: true,
@@ -116,12 +126,12 @@ const pressableVariants = cva(
       {
         kind: "chip",
         selected: true,
-        class: "border-primary/70 hover:border-primary/70 text-primary-ink hover:text-primary-ink",
+        class: "border-primary/70 hover:border-primary/70 text-foreground hover:text-foreground",
       },
       {
         kind: "icon",
         selected: true,
-        class: "bg-secondary text-primary-ink hover:text-primary-ink",
+        class: "bg-selected text-primary-ink hover:bg-selected hover:text-primary-ink",
       },
 
       // Sizes. Only `icon` and `chip` are size-sensitive; a row and a tile size

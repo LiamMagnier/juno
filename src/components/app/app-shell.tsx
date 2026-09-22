@@ -19,7 +19,7 @@ import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { VerifyEmailBanner } from "@/components/auth/verify-email-banner";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
-import { transition } from "@/lib/motion";
+import { duration, transition } from "@/lib/motion";
 import { titleForPath } from "@/lib/route-title";
 import { cn } from "@/lib/utils";
 
@@ -125,6 +125,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // the ref mirrors it so pointermove handlers never read a stale closure.
   const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
   const [resizing, setResizing] = React.useState(false);
+  /*
+   * KEYBOARD AND DOUBLE-CLICK RESIZES LAND IN ONE FRAME, like a drag does.
+   *
+   * The width sweep is for the column folding and unfolding, an A-to-B the
+   * reader asked to watch. A resize is direct manipulation: a 16px arrow-key
+   * step riding a 220ms curve trailed a held key, and a reset is a drag that
+   * has been finished for you. `resizing` only covers the pointer, so these
+   * two raise this flag for the one commit that changes the width.
+   */
+  const [snapWidth, setSnapWidth] = React.useState(false);
+  const asideRef = React.useRef<HTMLElement>(null);
+  React.useLayoutEffect(() => {
+    if (!snapWidth) return;
+    // Flush the new width while the transition is off. Without this read the
+    // browser can see the width change and the transition's return in one
+    // style pass, and animate anyway.
+    void asideRef.current?.offsetWidth;
+    setSnapWidth(false);
+  }, [snapWidth]);
   /*
    * THE FRAME ANIMATES ONLY ONCE THE PAGE HAS SETTLED.
    *
@@ -283,6 +302,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const resetWidth = React.useCallback(() => {
+    setSnapWidth(true);
     applyWidth(SIDEBAR_DEFAULT);
     persistWidth(SIDEBAR_DEFAULT);
   }, [applyWidth, persistWidth]);
@@ -386,6 +406,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    * panel showing" instead of two that can disagree at the breakpoint.
    */
   const shown = narrow ? narrowOpen : !collapsed;
+  /*
+   * THE OVERLAY LEAVES THE WAY IT ARRIVED: OVER THE PAGE.
+   *
+   * `floating` drops the moment the overlay is dismissed, and what follows is
+   * the frame's 220ms fold. Positioned by `floating`, the panel went back into
+   * the row for the whole of that fold: a 304px column in the flow for a
+   * quarter of a second, shoving the transcript right and letting it back. So
+   * the frame keeps its floating position and elevation until the fold lands
+   * (the width's own `transitionend`; at once where nothing transitions).
+   *
+   * Adjusted during render, not in an effect, so the frame the overlay closes
+   * in is already a held one and never paints in the flow.
+   */
+  const [floatHeld, setFloatHeld] = React.useState(false);
+  const [wasFloating, setWasFloating] = React.useState(floating);
+  if (wasFloating !== floating) {
+    setWasFloating(floating);
+    setFloatHeld(!floating && narrow);
+  }
+  const floatingFrame = floating || (floatHeld && narrow);
+  React.useEffect(() => {
+    if (!floatHeld) return;
+    // Nothing to wait for when the width is not transitioning (reduced
+    // motion, or a frame that has not gone live): the panel is already the
+    // rail, so it rejoins the row now rather than wearing the float shadow.
+    const style = asideRef.current ? window.getComputedStyle(asideRef.current) : null;
+    if (!style || style.transitionProperty === "none" || parseFloat(style.transitionDuration) === 0) {
+      setFloatHeld(false);
+      return;
+    }
+    // Otherwise `transitionend` releases it; this is the backstop for one that
+    // never arrives, with slack past the rung so it never beats the fold.
+    const timer = window.setTimeout(() => setFloatHeld(false), Math.round(duration.base * 1000) + 120);
+    return () => window.clearTimeout(timer);
+  }, [floatHeld]);
   const floatingRef = React.useRef(floating);
   floatingRef.current = floating;
   React.useEffect(() => {
@@ -417,12 +472,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </a>
 
         {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
-            over the content; a click anywhere outside it folds it back. */}
-        {floating && (
+            over the content; a click anywhere outside it folds it back.
+
+            IN FLOW, which is what the sentence above always said and what the
+            spacer was not: it was `absolute`, so while the panel floated
+            `<main>` slid under it to x=0 and the page re-centred 32px to the
+            left, then jumped back when the panel landed. Holding the rail's
+            place in the row is what lets the panel float out and fold home
+            without the content under it moving at all. */}
+        {floatingFrame && (
           /* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
              spacer and app-sidebar's collapsed column — and a mismatch leaves
              a seam of page showing through beside the rail at md–lg. */
-          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-16 shrink-0 bg-sidebar md:block" />
+          <div aria-hidden className="hidden h-full w-16 shrink-0 bg-sidebar md:block" />
         )}
         {/* The scrim fades out as well as in. It used to cut on close while the
             panel it belonged to was still folding away, so the page brightened
@@ -459,10 +521,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             stays the SHORT rung on purpose: `<main>` re-flows on every frame
             of it, so the panel is kept off the 360ms layout spring its rows
             ride. Dropped while dragging so resize follows the pointer 1:1,
+            for the commit of a keyboard or double-click resize (`snapWidth`),
             before the page has settled (see `frameLive`), and under reduced
             motion, where a panel that slides is travel. */}
         <aside
-          data-floating={floating ? "" : undefined}
+          ref={asideRef}
+          data-floating={floatingFrame ? "" : undefined}
+          onTransitionEnd={(e) => {
+            // The fold has landed: the held overlay can rejoin the row.
+            if (e.target === e.currentTarget && e.propertyName === "width") setFloatHeld(false);
+          }}
           className={cn(
             "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
             /* FLOATING MEANS ELEVATED. Over the content the panel had the same
@@ -471,8 +539,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                sitting above the page. The float shadow is the one thing that
                says "this is a layer", and it is the same shadow every other
                floating surface in the product wears. */
-            floating ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative",
-            frameLive && !resizing && "transition-[width] duration-base ease-in-out motion-reduce:transition-none"
+            floatingFrame ? "absolute inset-y-0 left-0 z-40 shadow-float" : "relative",
+            frameLive && !resizing && !snapWidth && "transition-[width] duration-base ease-in-out motion-reduce:transition-none"
           )}
           style={
             {
@@ -498,6 +566,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                   e.preventDefault();
                   const next = clampWidth(widthRef.current + (e.key === "ArrowLeft" ? -16 : 16));
+                  setSnapWidth(true);
                   applyWidth(next);
                   persistWidth(next);
                 } else if (e.key === "Enter") {

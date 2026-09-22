@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +19,11 @@ import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import {
+  WorkLoadError,
+  WorkRefreshGlyph,
+  WorkRowSkeletons,
+} from "@/components/work/shell/work-states";
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { actionVerb } from "@/components/work/approvals/action-verbs";
@@ -82,6 +86,20 @@ export default function PermissionsPage() {
     // poll establishes nothing about the fleet that would justify replacing it.
     setFailed(true);
   }, []);
+
+  /**
+   * The Refresh button's own reload, tracked so its mark turns until the answer
+   * lands. Polls go through `load` directly and do not spin it.
+   */
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   React.useEffect(() => {
     void load();
@@ -160,10 +178,11 @@ export default function PermissionsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => void load()}
+                onClick={() => void refresh()}
+                aria-busy={refreshing}
                 className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
               >
-                <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
+                <WorkRefreshGlyph spinning={refreshing} className="size-3" /> Refresh
               </Button>
             )}
           </div>

@@ -8,6 +8,7 @@ import { SourceRail } from "@/components/research/source-rail";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
 import { reportTitle } from "@/components/research/report-dialog";
 import { Button } from "@/components/ui/button";
+import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
 import { RESEARCH_STATE_MESSAGE, isResearchState, type ResearchState } from "@/lib/research/domain";
 import type { ResearchRunView } from "@/components/research/use-research-run";
@@ -207,7 +208,17 @@ export function ResearchRecap({
               )}
             />
           </button>
-          {workOpen && <div className="mt-4 border-t border-border/50 pt-4 motion-safe:animate-research-detail-in">{work}</div>}
+          {/* Unfolds under its toggle and folds back the same way
+              (ICONS_AND_MOTION §2.2 rule 6). The wrapper goes `inert` as the
+              toggle closes, so what is still on screen while the fold plays
+              is out of the tab order; Collapse unmounts it after. The gutter
+              (`-mx-1` out, `px-1 pb-1` back in) keeps focus outlines at the
+              drawer's edges inside the fold's clip. */}
+          <div className="contents" inert={!workOpen}>
+            <Collapse open={workOpen} className="-mx-1" innerClassName="px-1 pb-1 pt-4">
+              <div className="border-t border-border/50 pt-4">{work}</div>
+            </Collapse>
+          </div>
         </div>
       )}
     </section>

@@ -192,3 +192,48 @@ export function WorkLoadError({
     </WorkStateNote>
   );
 }
+
+/**
+ * The refresh mark on a list's Refresh button, turning while the reload it
+ * started is in flight.
+ *
+ * The mark itself turns rather than a spinner replacing it (ActionIcons.refresh
+ * already means "run again"), so nothing in the button changes width. The
+ * caller owns the flag and it means only "the request this press started has
+ * not answered yet": a background poll does not spin it, because a mark that
+ * turns every few seconds on its own is an idle loop, and loops are for live
+ * state only.
+ *
+ * It FINISHES THE TURN IT IS ON. Dropping `animate-spin` the moment the
+ * answer lands would snap the arrow back to 0deg from wherever it was, which
+ * reads as a glitch at exactly the moment the reader is watching it; instead
+ * it keeps turning until the next iteration boundary (at most one more turn)
+ * and stops where it started. A fast answer therefore still shows one whole
+ * turn, which is the confirmation that the press did something.
+ *
+ * Reduced motion: the bare `animate-spin` class is swapped for the slow fade in
+ * place by the unlayered block at the end of globals.css, and the iteration
+ * boundary still ends it.
+ */
+export function WorkRefreshGlyph({
+  spinning,
+  className,
+}: {
+  /** True while the request this button started is in flight. */
+  spinning: boolean;
+  className?: string;
+}) {
+  const [turning, setTurning] = React.useState(spinning);
+  // Adjusted during render rather than in an effect, so the first frame of a
+  // press already turns.
+  if (spinning && !turning) setTurning(true);
+  return (
+    <ActionIcons.refresh
+      aria-hidden="true"
+      className={cn(className, turning && "animate-spin")}
+      onAnimationIteration={() => {
+        if (!spinning) setTurning(false);
+      }}
+    />
+  );
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion, type Transition } from "framer-motion";
 import { Clock, Plus, Radio } from "@/components/ui/icons";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import {
 } from "@/lib/work/triggers";
 import type { ClientWorkGrant } from "@/lib/work/serializers";
 import type { WorkTriggerDraft } from "@/components/work/work-transport";
+import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /*
@@ -317,6 +319,80 @@ export function describeTrigger(trigger: { kind: string; config: unknown }): str
 // The editor
 // ---------------------------------------------------------------------------
 
+/**
+ * A key per trigger card that survives the list changing around it.
+ *
+ * A draft has no id of its own — it is the object the routes take, and an id
+ * minted here would be sent with it — so the key is attached to the object
+ * instead. `replace` below hands the old card's key to the object that
+ * supersedes it, and removing or adding a card leaves every other object (and
+ * so every other key) where it was. Keyed on the index, removing the first of
+ * three cards re-keyed the other two, so React remounted both and anything
+ * that animates a card's arrival or departure played on the wrong one.
+ *
+ * Module-level and weak: the entries go with the drafts, and the same object
+ * always answers the same key, so a double render in development agrees with
+ * itself. Keys are never rendered, so the server's counter and the browser's
+ * need not match.
+ */
+const TRIGGER_KEYS = new WeakMap<WorkTriggerDraft, string>();
+let triggerSerial = 0;
+
+function triggerKey(trigger: WorkTriggerDraft): string {
+  let key = TRIGGER_KEYS.get(trigger);
+  if (key === undefined) {
+    triggerSerial += 1;
+    key = `trigger-${triggerSerial}`;
+    TRIGGER_KEYS.set(trigger, key);
+  }
+  return key;
+}
+
+/**
+ * One card's slot in the list: it unfolds when a trigger is added and folds
+ * shut when one is removed, the way `Collapse` opens a section — grid rows 0fr
+ * to 1fr on the symmetric curve with a short fade, the fade leaving on the
+ * accelerate. The cards already there when the form opens do not play it
+ * (`initial={false}` on the presence), and the ones below a removal ride up as
+ * the fold closes rather than jumping the card's height in a frame.
+ *
+ * The gap between cards is padding INSIDE the fold, not `space-y` on the list,
+ * so a card that folds away takes its gap with it instead of leaving 10px to
+ * snap shut after it unmounts.
+ *
+ * A leaving card is `inert`. Its controls still hold the index they were
+ * rendered with, which now points at a different trigger — a click on its
+ * switch during the fold would edit the card that took its place.
+ *
+ * Reduced motion: the rows snap and the fade keeps its timing, as in Collapse.
+ */
+function TriggerSlot({ children }: { children: React.ReactNode }) {
+  const present = useIsPresent();
+  const reduce = useReducedMotion() ?? false;
+  const rows: Transition = reduce ? { duration: 0 } : transition.symmetric;
+  return (
+    <motion.div
+      className="grid"
+      inert={!present}
+      initial={{ gridTemplateRows: "0fr", opacity: 0 }}
+      animate={{
+        gridTemplateRows: "1fr",
+        opacity: 1,
+        transition: { gridTemplateRows: rows, opacity: transition.base },
+      }}
+      exit={{
+        gridTemplateRows: "0fr",
+        opacity: 0,
+        transition: { gridTemplateRows: rows, opacity: { duration: duration.exit, ease: ease.in } },
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className="pb-2.5">{children}</div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function TriggerListEditor({
   triggers,
   onChange,
@@ -342,83 +418,86 @@ export function TriggerListEditor({
   disabled: boolean;
 }) {
   const replace = (index: number, next: WorkTriggerDraft) => {
+    // The edited trigger is a new object; it keeps the card it was drawn in.
+    TRIGGER_KEYS.set(next, triggerKey(triggers[index]));
     onChange(triggers.map((trigger, position) => (position === index ? next : trigger)));
   };
 
   return (
-    <div className="space-y-2.5">
-      {triggers.map((trigger, index) => (
-        <div
-          key={`${trigger.kind}-${index}`}
-          className="rounded-field border border-border/60 bg-card px-3.5 py-3"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            {/* `size-4` beside `text-ui`, the row rung of the icon ladder. */}
-            {isTimeTriggerKind(trigger.kind) ? (
-              <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            ) : (
-              <Radio className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            )}
-            {/* `text-ui`, the dense-UI rung. This card is a control panel row
-                rather than a list item — its own detail lines are `micro` — and
-                `text-ui` put it a pixel off the scale between the two. */}
-            <span className="min-w-0 flex-1 text-ui font-medium text-foreground">
-              {triggerLabel(trigger.kind)}
-            </span>
-            <label className="flex shrink-0 items-center gap-2">
-              <span className="font-mono text-micro text-muted-foreground">
-                {trigger.enabled ? "On" : "Off"}
-              </span>
-              <Switch
-                checked={trigger.enabled}
-                disabled={disabled}
-                onCheckedChange={(enabled) => replace(index, { ...trigger, enabled })}
-                aria-label={`${triggerLabel(trigger.kind)} trigger enabled`}
-              />
-            </label>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={disabled || triggers.length === 1}
-              onClick={() => onChange(triggers.filter((_, position) => position !== index))}
-              // The last one cannot go: `createScheduleSchema` requires at least
-              // one trigger, so an empty list is a save that 400s. Refusing the
-              // removal is a clearer answer than accepting it and then failing.
-              //
-              // The advice changes when the last one is a kind this build cannot
-              // fire, because "change this one instead" is then advice the reader
-              // cannot follow — there is no form to change. Such a schedule also
-              // cannot be saved at all until the trigger goes, so the order of
-              // the two steps is the whole of what they need to know.
-              title={
-                triggers.length !== 1
-                  ? "Remove this trigger"
-                  : kindLimit(trigger.kind)
-                    ? "A schedule needs at least one trigger. Add one that works, then remove this."
-                    : "A schedule needs at least one trigger. Change this one instead."
-              }
-              aria-label="Remove this trigger"
-              className="text-muted-foreground hover:text-destructive"
-            >
-              <ActionIcons.delete className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
+    <div>
+      <AnimatePresence initial={false}>
+        {triggers.map((trigger, index) => (
+          <TriggerSlot key={triggerKey(trigger)}>
+            <div className="rounded-field border border-border/60 bg-card px-3.5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* `size-4` beside `text-ui`, the row rung of the icon ladder. */}
+                {isTimeTriggerKind(trigger.kind) ? (
+                  <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                ) : (
+                  <Radio className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                )}
+                {/* `text-ui`, the dense-UI rung. This card is a control panel row
+                    rather than a list item — its own detail lines are `micro` — and
+                    `text-ui` put it a pixel off the scale between the two. */}
+                <span className="min-w-0 flex-1 text-ui font-medium text-foreground">
+                  {triggerLabel(trigger.kind)}
+                </span>
+                <label className="flex shrink-0 items-center gap-2">
+                  <span className="font-mono text-micro text-muted-foreground">
+                    {trigger.enabled ? "On" : "Off"}
+                  </span>
+                  <Switch
+                    checked={trigger.enabled}
+                    disabled={disabled}
+                    onCheckedChange={(enabled) => replace(index, { ...trigger, enabled })}
+                    aria-label={`${triggerLabel(trigger.kind)} trigger enabled`}
+                  />
+                </label>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={disabled || triggers.length === 1}
+                  onClick={() => onChange(triggers.filter((_, position) => position !== index))}
+                  // The last one cannot go: `createScheduleSchema` requires at least
+                  // one trigger, so an empty list is a save that 400s. Refusing the
+                  // removal is a clearer answer than accepting it and then failing.
+                  //
+                  // The advice changes when the last one is a kind this build cannot
+                  // fire, because "change this one instead" is then advice the reader
+                  // cannot follow — there is no form to change. Such a schedule also
+                  // cannot be saved at all until the trigger goes, so the order of
+                  // the two steps is the whole of what they need to know.
+                  title={
+                    triggers.length !== 1
+                      ? "Remove this trigger"
+                      : kindLimit(trigger.kind)
+                        ? "A schedule needs at least one trigger. Add one that works, then remove this."
+                        : "A schedule needs at least one trigger. Change this one instead."
+                  }
+                  aria-label="Remove this trigger"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <ActionIcons.delete className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
 
-          <p className="mt-1 font-mono text-micro text-muted-foreground">
-            {describeTrigger(trigger)}
-          </p>
+              <p className="mt-1 font-mono text-micro text-muted-foreground">
+                {describeTrigger(trigger)}
+              </p>
 
-          <div className="mt-3">
-            <TriggerConfigFields
-              trigger={trigger}
-              grants={grants}
-              runKind={runKind}
-              disabled={disabled}
-              onChange={(config) => replace(index, { ...trigger, config })}
-            />
-          </div>
-        </div>
-      ))}
+              <div className="mt-3">
+                <TriggerConfigFields
+                  trigger={trigger}
+                  grants={grants}
+                  runKind={runKind}
+                  disabled={disabled}
+                  onChange={(config) => replace(index, { ...trigger, config })}
+                />
+              </div>
+            </div>
+          </TriggerSlot>
+        ))}
+      </AnimatePresence>
 
       <AddTriggerMenu
         disabled={disabled}
