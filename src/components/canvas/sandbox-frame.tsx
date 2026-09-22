@@ -11,12 +11,79 @@ const BABEL_CDN = "https://unpkg.com/@babel/standalone/babel.min.js";
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 
-// The preview is an opaque-origin iframe, but scripts can still exfiltrate via
-// fetch/images/forms unless the document also has an enforcing policy. Keep the
-// small, explicitly required CDN set for the existing React/Babel/Python/
-// Mermaid runtimes; artifact code itself gets no arbitrary network, frame,
-// popup, form or object capability.
-const SANDBOX_CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src https://cdn.jsdelivr.net; media-src data: blob:; frame-src 'none'; form-action 'none'; object-src 'none'">`;
+/*
+ * ── WHAT ACTUALLY ISOLATES A PREVIEW, AND WHAT THIS POLICY IS FOR ───────────
+ *
+ * The isolation is the iframe: `sandbox` WITHOUT `allow-same-origin`, so the
+ * document has an opaque origin and artifact code can never read the app's
+ * cookies, storage, DOM or session. Nothing below weakens that, and nothing
+ * below is load-bearing for it. This policy governs which RESOURCES the
+ * preview may pull, and the previous one was picked as if it were the
+ * isolation — with three consequences, all of them visible:
+ *
+ *   1. `script-src` had no `'unsafe-eval'`, and `reactDoc` compiles with Babel
+ *      and runs the output through `eval`. Every React artifact therefore hit
+ *      "Refused to evaluate a string as JavaScript" and rendered a red error
+ *      box instead of a component — the single most common artifact type in
+ *      the product, broken outright. (Verified in Chromium; `new Function`
+ *      goes the same way, which is how Babel's own helpers run.)
+ *   2. `img-src data: blob:` and `font-src data:` meant a generated website
+ *      loaded NO photograph and NO webfont, and `script-src` named three hosts,
+ *      so anything from cdnjs — GSAP, AOS, Swiper, three.js, Chart.js, Alpine —
+ *      silently never arrived. A site with no images and no animation library
+ *      is exactly the "it doesn't load and it doesn't move" that was reported.
+ *   3. The meta was injected immediately before `</head>`, so everything the
+ *      author had ALREADY put in the head — stylesheets, fonts, scripts —
+ *      loaded unpoliced while the body was held to the letter. The policy was
+ *      simultaneously too weak to be a boundary and too strong to be usable.
+ *
+ * SO WHAT IS LEFT OF IT. Exfiltration, honestly accounted for: any policy that
+ * lets a preview show a photograph from the web (`img-src https:`) can also be
+ * used to send a string out in a URL. That is true of every artifact sandbox
+ * that renders real pages, and it is why the origin isolation above — not this
+ * list — is the thing that protects the reader. What this keeps is the
+ * handful of capabilities that are never needed by a preview and are always
+ * needed by an attack: no `object-src` (Flash/plugin content), no `base-uri`
+ * (rewriting every relative URL in the document), and no `form-action` — so a
+ * form can be typed into and handled by its own script, but cannot POST a
+ * password anywhere.
+ */
+const SANDBOX_CSP_META =
+  `<meta http-equiv="Content-Security-Policy" content="` +
+  [
+    "default-src 'none'",
+    // 'unsafe-eval' is not optional: the React runtime below compiles JSX with
+    // Babel standalone and evaluates the result.
+    "script-src 'unsafe-inline' 'unsafe-eval' https: blob:",
+    "style-src 'unsafe-inline' https:",
+    "img-src https: data: blob:",
+    "font-src https: data:",
+    "media-src https: data: blob:",
+    "connect-src https: data: blob:",
+    "frame-src https: data: blob:",
+    "worker-src blob:",
+    "child-src blob:",
+    // The three that a preview never needs and an attack always does.
+    "base-uri 'none'",
+    "form-action 'none'",
+    "object-src 'none'",
+  ].join("; ") +
+  `">`;
+
+/**
+ * The iframe's own capability list.
+ *
+ * `allow-same-origin` is absent and must stay absent — it is the whole
+ * isolation (see the policy above). Everything else here is a thing a real
+ * page does that a preview was silently failing to do: submit a form to its
+ * own handler, open a dialog, save a file it generated, lock the pointer for a
+ * game. `allow-popups` is deliberately NOT here — a popup inheriting an opaque
+ * origin cannot render the site it was opened for, so external links are
+ * handed to the parent instead (`LINK_BRIDGE`), which opens them in a real
+ * tab.
+ */
+export const SANDBOX_ALLOW =
+  "allow-scripts allow-forms allow-modals allow-downloads allow-pointer-lock";
 
 const BASE_STYLE = `<style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;color:#111}</style>`;
 const CLOSE_SCRIPT = /<\/script/gi;
@@ -178,6 +245,37 @@ const CONSOLE_BRIDGE = `<script>
 </${"script"}>`;
 
 /**
+ * External links, handed to the parent.
+ *
+ * A link in a preview used to do nothing at all: the frame has no
+ * `allow-popups`, and it cannot navigate itself to an http(s) URL either —
+ * `frame-src` governs children, not self-navigation, and a top-level load
+ * would replace the preview with somebody else's site inside our chrome. So a
+ * click on an outward link was swallowed, which is a large part of why a
+ * generated page reads as a picture of a website rather than one.
+ *
+ * It is handed up instead, and the parent opens a real tab. Only on a genuine
+ * click — never programmatically — and only http(s), so the bridge cannot be
+ * turned into a redirector for `javascript:` or `data:`.
+ */
+const LINK_BRIDGE = `<script>
+(function(){
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (/^#/.test(href)) return;               // in-page anchor: the page handles it
+    var url;
+    try { url = new URL(a.href, location.href); } catch (err) { return; }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+    e.preventDefault();
+    try { parent.postMessage({ type: 'juno:open', url: url.href }, '*'); } catch (err) {}
+  }, true);
+})();
+</${"script"}>`;
+
+/**
  * Dormant element inspector, appended AFTER the artifact code so a broken
  * artifact can never prevent it from loading. Activated by the parent via
  * postMessage({ type: "juno:inspect", on }); reports clicks back with
@@ -324,13 +422,41 @@ const STATUS_LITE = `<script>
 })();
 </${"script"}>`;
 
+/**
+ * Where the policy goes, and why it is not where it was.
+ *
+ * A `<meta http-equiv>` policy applies from the point the parser reaches it,
+ * so injecting it before `</head>` left everything the author had already put
+ * in the head — stylesheets, fonts, CDN scripts — outside it, and held only
+ * the body to account. It goes in FIRST now: directly after `<head>`, or after
+ * the charset declaration when there is one, because that one is required to
+ * fall inside the document's first 1024 bytes and this policy is ~450 of them.
+ */
+function insertPolicy(doc: string): string {
+  const charset = doc.match(/<meta[^>]+charset[^>]*>/i);
+  if (charset && charset.index !== undefined) {
+    const at = charset.index + charset[0].length;
+    return doc.slice(0, at) + SANDBOX_CSP_META + doc.slice(at);
+  }
+  const head = doc.match(/<head[^>]*>/i);
+  if (head && head.index !== undefined) {
+    const at = head.index + head[0].length;
+    return doc.slice(0, at) + SANDBOX_CSP_META + doc.slice(at);
+  }
+  return SANDBOX_CSP_META + doc;
+}
+
 /** Inject the console bridge (early) + inspector (late) into a web document. */
 function withChrome(doc: string, statusLite = false): string {
-  const head = doc.indexOf("</head>");
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
-  const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE;
-  const out = head !== -1 ? doc.slice(0, head) + SANDBOX_CSP_META + chrome + doc.slice(head) : SANDBOX_CSP_META + chrome + doc;
+  const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE + LINK_BRIDGE;
+  const withPolicy = insertPolicy(doc);
+  const head = withPolicy.indexOf("</head>");
+  const out =
+    head !== -1
+      ? withPolicy.slice(0, head) + chrome + withPolicy.slice(head)
+      : chrome + withPolicy;
   const body = out.lastIndexOf("</body>");
   return body !== -1 ? out.slice(0, body) + INSPECTOR_SCRIPT + out.slice(body) : out + INSPECTOR_SCRIPT;
 }
@@ -621,6 +747,25 @@ export function SandboxFrame({
         });
       } else if (data.type === "juno:inspect-off") {
         onInspectExit?.();
+      } else if (data.type === "juno:open") {
+        /*
+         * An outward link the reader clicked inside the preview.
+         *
+         * Re-validated HERE rather than trusted from the frame: the sender is
+         * artifact code, and the check on its side is a convenience, not a
+         * boundary. Only http(s) opens, and `noopener,noreferrer` keeps the
+         * new tab from reaching back through `window.opener`.
+         */
+        const raw = typeof data.url === "string" ? data.url : "";
+        let href: URL | null = null;
+        try {
+          href = new URL(raw);
+        } catch {
+          href = null;
+        }
+        if (href && (href.protocol === "http:" || href.protocol === "https:")) {
+          window.open(href.href, "_blank", "noopener,noreferrer");
+        }
       } else if (data.type === "juno:console" && onConsole) {
         const level = data.level;
         onConsole({
@@ -649,8 +794,9 @@ export function SandboxFrame({
       onLoad={() => {
         if (inspectEnabled) postInspect(true);
       }}
-      // Opaque origin (no allow-same-origin) so artifact code cannot touch the app, cookies, or storage.
-      sandbox="allow-scripts"
+      // Opaque origin (no allow-same-origin) so artifact code cannot touch the
+      // app, cookies, or storage — see SANDBOX_ALLOW for the rest.
+      sandbox={SANDBOX_ALLOW}
       className={className ?? `size-full border-0 ${isDark ? "bg-[#0b0b0e]" : "bg-white"}`}
     />
   );

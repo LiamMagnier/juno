@@ -635,6 +635,78 @@ fill flying that far — or vanishing mid-flight because its origin scrolled out
 of the well — is a projectile, not a correction. Same recipe, same edge, no
 travel.
 
+## 2e. The preview was a picture of a website — September 2026
+
+*"The preview of a website doesn't work well, it's blocked like the website is
+static, doesn't move and doesn't load."* Every word of that turned out to be
+literally true, and one policy string caused all of it.
+
+### P0 — React artifacts never rendered at all
+
+`reactDoc` compiles JSX with Babel standalone and runs the output through
+`eval`. The sandbox's CSP was `script-src 'unsafe-inline' <three hosts>` with
+no `'unsafe-eval'`, so that line threw:
+
+```
+EvalError: Refused to evaluate a string as JavaScript because 'unsafe-eval'
+is not an allowed source of script in the following Content Security Policy
+directive: "script-src 'unsafe-inline' https://cdn.tailwindcss.com …"
+```
+
+Reproduced in Chromium against the real generated document: status went
+`loading → running → error` and the root filled with that message in red.
+`new Function` goes the same way, which is also how several of Babel's own
+helpers run. The most common artifact type in the product could not render a
+single component.
+
+### P0 — a page with no images, no webfonts and no libraries
+
+`img-src data: blob:` and `font-src data:` meant a generated site loaded **no**
+photograph and **no** webfont. `script-src` named three hosts, so anything from
+cdnjs — GSAP, AOS, Swiper, three.js, Chart.js, Alpine — silently never arrived,
+which is precisely "it doesn't move". `connect-src` was one CDN, so a widget
+that fetched anything failed. The browser reported every one of these as a
+refusal; nothing in the product surfaced them.
+
+### P1 — the policy did not cover the half of the document it was written for
+
+The `<meta http-equiv>` was injected immediately before `</head>`, and a meta
+policy applies from the point the parser reaches it. So everything the author
+had *already* put in the head — stylesheets, fonts, CDN scripts — loaded
+unpoliced, while the body was held to the letter. Verified: a Google Fonts
+stylesheet in the head loaded; the font files it then requested were refused.
+The policy was simultaneously too weak to be a boundary and too strong to be
+usable. It goes in first now, directly after the charset declaration.
+
+**Rule: name the thing that is actually doing the isolating.** Here it is the
+iframe — `sandbox` without `allow-same-origin`, so the document has an opaque
+origin and can never reach the app's cookies, storage, DOM or session. The
+resource policy was being written as though *it* were the boundary, which made
+it both ineffective and expensive: any policy that lets a preview show a
+photograph from the web can also be used to put a string in a URL, so a
+tightened `script-src` bought nothing against a hostile artifact and cost every
+honest one. What is kept is the set a preview never needs and an attack always
+does — `object-src 'none'`, `base-uri 'none'`, and `form-action 'none'`, so a
+form can be typed into and handled by its own script but cannot POST a password
+anywhere.
+
+### P2 — the things a page does that a preview could not
+
+A link went nowhere: the frame has no `allow-popups`, and self-navigating to
+an http(s) URL would replace the preview with somebody else's site inside our
+chrome. Clicks are handed to the parent now, which re-validates the URL and
+opens a real tab with `noopener`. `allow-forms`, `allow-modals`,
+`allow-downloads` and `allow-pointer-lock` join `allow-scripts`; `allow-popups`
+deliberately does not, because a popup inheriting an opaque origin cannot
+render the site it was opened for.
+
+**And a responsive site was only ever judged on its phone layout.** A canvas
+docked beside a transcript is ~500px. The preview can be pinned to 834 or 390 —
+real device widths, centred on a gutter with an edge, so you can see where the
+page ends. **A document had the opposite problem**: full-bleed, so on a canvas
+dragged wide a memo set at 900px+ per line. It takes the product's own reading
+measure now, the same one every page uses.
+
 ## 3. The rules
 
 1. **One question per surface.** A picker picks. It does not also compare,
