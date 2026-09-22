@@ -414,7 +414,25 @@ public final class WorkbenchModel {
         }
     }
 
+    /// Forgets a project: its folder grant and its open context. Its sessions
+    /// stay in the history.
+    ///
+    /// Its runs are stopped and its live controllers let go of first. Removing
+    /// only the record left a running session working in the folder Juno had
+    /// just said it forgot, and a cached controller that could keep acting
+    /// there; without the record, reopening one of those sessions finds no
+    /// folder to act in, which is what removal promises.
     public func removeWorkspace(id: WorkspaceID) async {
+        for session in sessions where session.workspaceID == id {
+            guard let controller = controllers.removeValue(forKey: session.id) else { continue }
+            await controller.stop()
+            await controller.detach()
+        }
+        if let selectedSessionID,
+           sessions.first(where: { $0.id == selectedSessionID })?.workspaceID == id
+        {
+            self.selectedSessionID = nil
+        }
         try? await workspaceDirectory.remove(id: id)
         contexts.removeValue(forKey: id)
         workspaces = await workspaceDirectory.allWorkspaces()
