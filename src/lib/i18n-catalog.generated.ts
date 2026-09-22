@@ -15502,6 +15502,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying."
   },
   {
+    "id": "d569ea840f950247",
+    "source": "Thinking on"
+  },
+  {
     "id": "d56f6359d240f69e",
     "source": "apps"
   },
@@ -15824,6 +15828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d93e9a7a0dc19066",
     "source": "(voir les"
+  },
+  {
+    "id": "d9433eadefb0f10d",
+    "source": "Thinking off"
   },
   {
     "id": "d946067427e930a1",
