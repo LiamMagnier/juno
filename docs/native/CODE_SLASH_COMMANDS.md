@@ -77,8 +77,10 @@ ordinary prompt: a repository may not silently take over a session action.
   truncated reply, 90 seconds without an answer, or Stop), Juno keeps its
   structural notes instead; compaction never fails. Notes written after an
   earlier model summary carry that summary whole, ahead of the notes. The
-  newest steps stay verbatim and every tool call keeps its result. The thread
-  shows one divider, *Context compacted*, that opens onto the summary.
+  newest steps stay verbatim and every tool call keeps its result. The model
+  reads tool output as tool output, escaped inside its own element, so a file
+  or page that says "User: …" cannot become a request in the summary. The
+  thread shows one divider, *Context compacted*, that opens onto the summary.
 - Choosing `/compact` from the menu runs it at once. Typing past the name —
   `/compact keep the parser decisions` — hides the menu, and Return or Send runs
   the verb with that focus instead of sending the line to the model.

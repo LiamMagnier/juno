@@ -475,7 +475,7 @@ final class ModelCompactionTests: XCTestCase {
             return XCTFail("expected a second summary request")
         }
         XCTAssertTrue(prompt.contains("<earlier-summary>"))
-        XCTAssertTrue(prompt.contains(summary))
+        XCTAssertTrue(prompt.contains(CompactionSummarizer.escaped(summary)))
     }
 
     // MARK: - /compact
@@ -498,7 +498,7 @@ final class ModelCompactionTests: XCTestCase {
             return XCTFail("expected a summary request")
         }
         XCTAssertTrue(prompt.contains("the public error type"))
-        XCTAssertTrue(prompt.contains("Tool call read_file"))
+        XCTAssertTrue(prompt.contains("<tool-call name=\"read_file\">"))
 
         let persisted = await store.loadConversation(sessionID: session.id)
         XCTAssertTrue(ConversationIntegrity.isValid(persisted))
