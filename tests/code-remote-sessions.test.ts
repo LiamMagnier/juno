@@ -6,6 +6,7 @@ import {
   MAX_EVENT_BATCH_BYTES,
   MAX_EVENT_FRAME_BYTES,
   MAX_EVENT_PAYLOAD_BYTES,
+  appendedStatusFields,
   checkSessionEventBatch,
   chunkEventFrames,
   decodeCursor,
@@ -197,6 +198,66 @@ test("event append derives the session status from the LAST status_update in the
 test("event append leaves status undefined when no status_update is present", () => {
   const plan = planSessionEventAppend(0, [ev(1), ev(2)]);
   assert.ok(plan.ok && plan.status === undefined);
+});
+
+test("event append reports when the host recorded the status it derives", () => {
+  const plan = planSessionEventAppend(0, [
+    { ...ev(1, "status_update", { status: "running" }), createdAt: "2026-09-22T10:00:00.000Z" },
+    { ...ev(2, "status_update", { status: "completed" }), createdAt: "2026-09-22T10:05:00.000Z" },
+    { ...ev(3), createdAt: "2026-09-22T10:06:00.000Z" },
+  ]);
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(plan.status, "completed");
+    assert.equal(plan.statusAt, "2026-09-22T10:05:00.000Z");
+  }
+});
+
+// A Mac lists a session waiting on the reader as awaiting_approval, and does
+// not journal that wait as a status. Its journal, uploaded after the fact,
+// ends on the run's earlier "running". That must not overwrite the list.
+test("a journal status older than the host's list does not overwrite it", () => {
+  const listedAt = new Date("2026-09-22T10:10:00.000Z");
+  const backfill = planSessionEventAppend(0, [
+    { ...ev(1, "status_update", { status: "running" }), createdAt: "2026-09-22T10:00:00.000Z" },
+    { ...ev(2, "approval_request", { requestId: "a-1" }), createdAt: "2026-09-22T10:09:59.000Z" },
+  ]);
+  assert.ok(backfill.ok);
+  if (backfill.ok) assert.equal(appendedStatusFields(backfill, listedAt), null);
+});
+
+test("a journal status newer than the host's list moves it", () => {
+  const listedAt = new Date("2026-09-22T10:10:00.000Z");
+  const live = planSessionEventAppend(4, [
+    { ...ev(5, "status_update", { status: "completed" }), createdAt: "2026-09-22T10:10:00.000Z" },
+  ]);
+  assert.ok(live.ok);
+  if (live.ok) {
+    assert.deepEqual(appendedStatusFields(live, listedAt), {
+      currentStatus: "completed",
+      isRunning: false,
+      isAwaitingApproval: false,
+    });
+  }
+});
+
+test("a journal status without a time is taken as current, as before", () => {
+  const plan = planSessionEventAppend(0, [ev(1, "status_update", { status: "running" })]);
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(appendedStatusFields(plan, new Date("2030-01-01T00:00:00.000Z"))?.currentStatus, "running");
+  }
+  assert.equal(appendedStatusFields({ status: "bogus", statusAt: undefined }, new Date(0)), null);
+  assert.equal(appendedStatusFields({ status: undefined, statusAt: undefined }, new Date(0)), null);
+});
+
+test("the events route folds status through the list-aware gate", () => {
+  const route = fs.readFileSync(
+    path.join(process.cwd(), "src/app/api/code/devices/[deviceId]/sessions/[sessionId]/events/route.ts"),
+    "utf8",
+  );
+  assert.match(route, /appendedStatusFields\(plan, session\.sessionUpdatedAt\)/);
+  assert.doesNotMatch(route, /deriveSessionStatusFields\(/, "no path folds a journal status without the gate");
 });
 
 test("status fields map running/awaiting/idle and reject unknown states", () => {

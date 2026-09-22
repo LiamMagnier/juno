@@ -6,9 +6,9 @@ import { requireUser } from "@/lib/code-remote";
 import {
   MAX_EVENT_BATCH_BYTES,
   SESSION_EVENT_KINDS,
+  appendedStatusFields,
   checkSessionEventBatch,
   chunkEventFrames,
-  deriveSessionStatusFields,
   planSessionEventAppend,
   serializeSessionEvent,
 } from "@/lib/code-remote-sessions";
@@ -57,7 +57,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
   const plan = planSessionEventAppend(session.lastEventSequence, parsed.data.events);
   if (!plan.ok) return NextResponse.json({ error: plan.error, expectedSeq: plan.expectedSeq }, { status: 409 });
   if (plan.accepted.length) {
-    const statusFields = deriveSessionStatusFields(plan.status);
+    // The host's list is the authority on what a session is doing now; a
+    // status from the journal overrides it only if it is newer.
+    const statusFields = appendedStatusFields(plan, session.sessionUpdatedAt);
     await prisma.$transaction(async (tx) => {
       await tx.codeRemoteSessionEvent.createMany({
         data: plan.accepted.map((event) => ({

@@ -21,8 +21,11 @@ import JunoCore
 ///   re-sent batch as a replay instead of storing it twice, and what lets an
 ///   upload resume from a count.
 /// - **The phone already reads these kinds.** `CodeRemoteThread` folds exactly
-///   this vocabulary, and the relay derives a session's live status from its
-///   `status_update` events, so the list and the thread agree.
+///   this vocabulary. A session's live status is the list's to say, though,
+///   not the journal's: waiting on an approval is never journalled as a status,
+///   so a `status_update` is a record of what the run passed through, and the
+///   relay lets one move the list only when it is newer than the list's own
+///   statement (`appendedStatusFields` in `src/lib/code-remote-sessions.ts`).
 public enum CodeRelayEventProjection {
     /// Bounds per field. A phone renders a paragraph and a terminal tail, not a
     /// log file, and the relay refuses an event over 64 KB.

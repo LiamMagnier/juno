@@ -279,7 +279,14 @@ export function chunkEventFrames<T extends { seq: number }>(
 
 export type SessionEventAppendPlan =
   | { ok: false; error: "missing_events"; expectedSeq: number }
-  | { ok: true; accepted: IncomingSessionEvent[]; lastSeq: number; status: string | undefined };
+  | {
+      ok: true;
+      accepted: IncomingSessionEvent[];
+      lastSeq: number;
+      status: string | undefined;
+      /** When the host recorded that status, if it said. */
+      statusAt: string | undefined;
+    };
 
 /**
  * Deterministic host-append planner (RULE 17). Given the session's persisted
@@ -304,7 +311,29 @@ export function planSessionEventAppend(lastEventSequence: number, events: Incomi
   const lastSeq = accepted.length ? accepted[accepted.length - 1].seq : lastEventSequence;
   const statusEvent = [...accepted].reverse().find((event) => event.kind === "status_update");
   const status = typeof statusEvent?.payload.status === "string" ? statusEvent.payload.status : undefined;
-  return { ok: true, accepted, lastSeq, status };
+  return { ok: true, accepted, lastSeq, status, statusAt: statusEvent?.createdAt };
+}
+
+/**
+ * The live-state columns an accepted batch may set, or null to leave the row.
+ *
+ * The host's session list says what a session is doing as of that session's
+ * `updatedAt`, and a `status_update` is news only if it happened at or after
+ * that moment. A journal uploaded after the fact — Remote switched on mid-run,
+ * a Mac catching up after an outage — carries every status its runs passed
+ * through, and the Mac does not journal "waiting on an approval" as a status at
+ * all. Letting the last of those overwrite the list is how a session waiting on
+ * the reader showed on the phone as working. An event with no time is taken as
+ * current, as it always was.
+ */
+export function appendedStatusFields(
+  plan: { status: string | undefined; statusAt: string | undefined },
+  listedAt: Date,
+): { currentStatus: string; isRunning: boolean; isAwaitingApproval: boolean } | null {
+  const fields = deriveSessionStatusFields(plan.status);
+  if (!fields || !plan.statusAt) return fields;
+  const at = new Date(plan.statusAt).getTime();
+  return Number.isFinite(at) && at < listedAt.getTime() ? null : fields;
 }
 
 export function decodeCursor(cursor: string | null): { updatedAt: Date; id: string } | null {
