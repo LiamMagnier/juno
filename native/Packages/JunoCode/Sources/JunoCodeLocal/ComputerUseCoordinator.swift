@@ -16,8 +16,9 @@ public struct ComputerUseSnapshot: Sendable {
     public let accessibilityPermission: ComputerUsePermissionState
     public let displayBounds: CGRect?
     public let journal: [ComputerUseJournalEntry]
-    /// What the active session's agent last saw, or nil when nothing has been
-    /// captured since screen control started.
+    /// The screenshot the active session's agent last took, which is the last
+    /// image of the screen the model was sent; nil when it has taken none
+    /// since screen control started.
     public let latestCapture: ComputerUseCapture?
 
     public init(
@@ -76,9 +77,15 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
     /// Only one driver operation may be in flight. The token, rather than a
     /// Boolean, prevents an older action's `defer` from clearing a newer one.
     private var inFlightActionID: UUID?
-    /// The last capture an action produced under the current grant. Kept so
-    /// the reader can see what the agent saw; cleared by every path that ends
-    /// the grant, so a screenshot never outlives the consent that took it.
+    /// The last screenshot taken under the current grant. Kept so the reader
+    /// can see what the agent saw; cleared by every path that ends the grant,
+    /// so a screenshot never outlives the consent that took it.
+    ///
+    /// Screenshots only. The captures around a click, a keystroke or a scroll
+    /// go back to the tool, which drops them and tells the model in words, so
+    /// keeping one here would show the reader a screen the model never saw —
+    /// a dialog the click opened, say, while the agent still acts on the
+    /// screen before it.
     private var latestCapture: ComputerUseCapture?
     private let now: @Sendable () -> Date
 
@@ -231,7 +238,6 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
             try requireActiveGrant(sessionID: sessionID, generation: generation)
             let after = try await driver.captureScreen()
             try requireActiveGrant(sessionID: sessionID, generation: generation)
-            keep(after, sessionID: sessionID)
             record(action, sessionID: sessionID, succeeded: true, note: nil)
             return (before, after)
         } catch {

@@ -270,7 +270,7 @@ struct StudioScreenControlCapsule: View {
 
 // MARK: - What the agent saw
 
-/// The agent's latest capture at the height of a control, opening to a
+/// The agent's latest screenshot at the height of a control, opening to a
 /// readable size on click.
 ///
 /// A screen at 45 points wide is a sign of life, not something to read: it

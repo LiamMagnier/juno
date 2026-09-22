@@ -77,14 +77,19 @@ public struct ComputerUsePermissionStatus: Equatable, Sendable {
     public var isReady: Bool { missing.isEmpty }
 }
 
-/// The most recent screen the coordinator captured for a session.
+/// The last screenshot the agent took in a session.
+///
+/// Only a screenshot, never the captures that bracket a click or a
+/// keystroke: those tell the coordinator the action landed, but no tool hands
+/// them to the model, and the reader is shown this as what the agent saw.
 ///
 /// Memory only. It exists so the reader can see what the agent last looked
 /// at while screen control runs, and is dropped the moment it stops; it is
 /// never written to the transcript, the session store or sync.
 public struct ComputerUseCapture: Equatable, Sendable {
     public let sessionID: CodeSessionID
-    /// JPEG, in display points, exactly as the model received it.
+    /// JPEG, in display points: the same bytes the screenshot tool sent the
+    /// model.
     public let imageData: Data
     public let capturedAt: Date
 

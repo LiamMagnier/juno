@@ -464,7 +464,9 @@ public final class SessionController {
         ComputerUsePermissionState = .notDetermined
     public private(set) var computerUseDisplayBounds: CGRect?
     public private(set) var computerUseJournal: [ComputerUseJournalEntry] = []
-    /// What the agent last saw, from the coordinator's own record. Memory
+    /// The last screenshot the agent took, from the coordinator's own record.
+    /// Nothing in the window takes one of its own: the banner calls this what
+    /// Juno saw, so it may only ever be an image the model was sent. Memory
     /// only, and gone the moment screen control stops.
     public private(set) var computerUseLatestCapture: ComputerUseCapture?
     /// The reader asked to start screen control and macOS had not granted
@@ -1435,25 +1437,6 @@ public final class SessionController {
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.computerUseEnabled = enabled
-        }
-        await refreshComputerUse()
-    }
-
-    /// Captures through the coordinator so active-session checks, rate limits,
-    /// journaling, and the emergency-stop boundary are never bypassed.
-    public func captureComputerUseScreenshot() async {
-        guard let context = live?.context else { return }
-        do {
-            // The coordinator keeps the capture itself and the refresh below
-            // reads it back, so a capture the reader takes and one the agent
-            // takes reach the window by the same path.
-            try await context.computerUse.perform(
-                .screenshot,
-                sessionID: sessionID
-            )
-            transientError = nil
-        } catch {
-            transientError = "Screen capture failed: \(error)"
         }
         await refreshComputerUse()
     }
