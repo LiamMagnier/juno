@@ -92,7 +92,9 @@ public struct CodeRemoteSessionUpload: Equatable, Hashable, Sendable {
 public struct CodeRemoteSyncedSession: Equatable, Sendable {
     public let summary: CodeRemoteSessionUpload
     /// The relay sequence the session's uploaded journal should reach: the
-    /// number of events it holds locally.
+    /// number of events it holds locally — or, once a rewind has cut the
+    /// local transcript, the next local sequence, since a rewind never gives
+    /// a number back and the transcript then holds fewer events than that.
     public let eventCount: Int
 
     public init(summary: CodeRemoteSessionUpload, eventCount: Int) {
@@ -244,9 +246,12 @@ public actor InMemoryCodeRemoteSyncStateStore: CodeRemoteSyncStateStoring {
 ///   own append-only record when they are sent, not queued in memory as they
 ///   happen, so an outage or a relaunch loses nothing and there is no queue to
 ///   overflow.
-/// - **Sequences are the host's.** Relay sequence *n* is the session's *n*-th
-///   local event, so a batch sent twice carries the same numbers twice and the
-///   relay stores it once. The cursor is only an optimisation on top of that:
+/// - **Sequences are the host's.** Relay sequence *n* is the session's local
+///   event with sequence *n − 1*, so a batch sent twice carries the same
+///   numbers twice and the relay stores it once. A rewind on the host cuts its
+///   transcript but never reuses a number: it restarts past the last one, so
+///   the journal stays contiguous and every cursor stays valid. The cursor is
+///   only an optimisation on top of that:
 ///   losing it costs one round trip, because the relay answers with the
 ///   sequence it already holds.
 /// - **Explicitly on.** It runs only between `start()` and `stop()`, and checks
