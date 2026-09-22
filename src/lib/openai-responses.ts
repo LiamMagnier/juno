@@ -14,6 +14,7 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
+import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
 import {
   sendableToolImages,
   toDataUrl,
@@ -92,6 +93,41 @@ async function toResponsesInput(
           });
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
+        } else if (isPdfAttachment(att) && vision && embedBinary) {
+          /*
+           * `input_file` — THE PATH THAT WAS NEVER TAKEN.
+           *
+           * The Responses API accepts a PDF as a first-class input and, like
+           * Anthropic and Gemini, rasterises each page alongside its text
+           * layer. Juno never used it: a PDF reached every GPT model as the
+           * bracketed sentence below, so a scanned document was unreadable on
+           * OpenAI no matter how good the file was — and the apology said
+           * "this model does not receive raw PDF bytes", which had stopped
+           * being true of the API long before it stopped being true here.
+           *
+           * The text still rides along when extraction produced any, because
+           * a text layer is cheaper and more exact than reading a rendering
+           * of it, and the two together are what the providers do internally.
+           */
+          const { bytes } = await getObjectBytes(att.storageKey);
+          if (canInlineDocument(bytes.byteLength)) {
+            parts.push({
+              type: "input_file",
+              filename: att.fileName,
+              file_data: `data:application/pdf;base64,${Buffer.from(bytes).toString("base64")}`,
+            });
+          } else {
+            if (att.extractedText) {
+              parts.push({
+                type: "input_text",
+                text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }),
+              });
+            }
+            parts.push({
+              type: "input_text",
+              text: oversizeDocumentNote(att.fileName, bytes.byteLength, !!att.extractedText),
+            });
+          }
         } else if (att.extractedText) {
           parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
         } else {

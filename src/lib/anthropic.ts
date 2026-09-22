@@ -5,6 +5,7 @@ import { attachedFileText } from "@/lib/attachment-context";
 import { attachmentTextBudget } from "@/lib/knowledge/document-text";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { sendableToolImages, withheldImagesNote } from "@/lib/tool-result-images";
+import { canInlineDocument, isPdfAttachment, oversizeDocumentNote } from "@/lib/attachment-bytes";
 import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
@@ -124,17 +125,28 @@ export async function toAnthropicMessages(
               },
             });
           }
-        } else if (att.mimeType === "application/pdf") {
+        } else if (isPdfAttachment(att)) {
           if (!embedBinary && att.extractedText) {
             blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true, maxChars: attachmentTextMaxChars }) });
           } else if (!embedBinary) {
             blocks.push({ type: "text", text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
             const { bytes } = await getObjectBytes(att.storageKey);
-            blocks.push({
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: Buffer.from(bytes).toString("base64") },
-            });
+            // Base64 adds a third: a 40 MB PDF becomes ~53 MB of body and the
+            // provider rejects the whole TURN, so the person loses the answer
+            // and not merely the attachment. None of the four adapters used to
+            // check.
+            if (canInlineDocument(bytes.byteLength)) {
+              blocks.push({
+                type: "document",
+                source: { type: "base64", media_type: "application/pdf", data: Buffer.from(bytes).toString("base64") },
+              });
+            } else {
+              if (att.extractedText) {
+                blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });
+              }
+              blocks.push({ type: "text", text: oversizeDocumentNote(att.fileName, bytes.byteLength, !!att.extractedText) });
+            }
           }
         } else if (att.extractedText) {
           blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { maxChars: attachmentTextMaxChars }) });

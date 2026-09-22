@@ -56,18 +56,43 @@ export interface ReadDocumentParams {
 /** One read's ceiling. Generous — the point is not to ration the document. */
 const READ_MAX_CHARS = 60_000;
 
-function describeDocument(document: DocumentSummary): string {
+function describeDocument(document: ReadableFile): string {
   const pages =
     document.pageCount != null
       ? `${document.pageCount} page${document.pageCount === 1 ? "" : "s"}`
       : `${document.blockCount} section${document.blockCount === 1 ? "" : "s"}`;
   const partial = document.state === "degraded" ? ", partially readable" : "";
-  return `- "${document.fileName}" (${document.mimeType}, ${pages}${partial})`;
+  // Said out loud because it changes what the model should expect: an
+  // unindexed file is read live from its bytes, so `read` works on it but
+  // `outline` has no headings to list and `search` scans rather than looks up.
+  const live = document.documentId ? "" : ", read directly from the file";
+  return `- "${document.fileName}" (${document.mimeType}, ${pages}${partial}${live})`;
+}
+
+/**
+ * A file the model may read, whether or not the indexer made anything of it.
+ *
+ * `documentId` is null for a file with no usable index — the reader then goes
+ * to the bytes. That is the whole point: a tool whose only source is the index
+ * inherits every mistake the index made, and the files a person most needs
+ * read are exactly the ones the indexer got wrong.
+ */
+interface ReadableFile {
+  attachmentId: string;
+  id: string;
+  fileName: string;
+  mimeType: string;
+  storageKey: string;
+  size: number;
+  documentId: string | null;
+  pageCount: number | null;
+  blockCount: number;
+  state: string;
 }
 
 async function availableDocuments(
   context: AgentExecutionContext,
-): Promise<{ documents: DocumentSummary[]; nothingAttached: boolean }> {
+): Promise<{ documents: ReadableFile[]; nothingAttached: boolean }> {
   const { conversationAttachments } = await import("@/lib/agent/attachments");
   const { documentsForAttachments } = await import("@/lib/knowledge/documents");
   const attachments = await conversationAttachments({
@@ -77,19 +102,76 @@ async function availableDocuments(
     kind: "FILE",
   });
   if (attachments.length === 0) return { documents: [], nothingAttached: true };
-  const documents = await documentsForAttachments(
+
+  const indexed = await documentsForAttachments(
     context.userId,
     attachments.map((attachment) => attachment.id),
   );
-  // Ordered as the files were attached, not as the documents were created:
-  // "the second one" means the second thing the person sent.
-  const rank = new Map(attachments.map((attachment, index) => [attachment.id, index]));
-  documents.sort((a, b) => (rank.get(a.attachmentId ?? "") ?? 0) - (rank.get(b.attachmentId ?? "") ?? 0));
+  const byAttachment = new Map<string, DocumentSummary>();
+  for (const document of indexed) {
+    if (document.attachmentId) byAttachment.set(document.attachmentId, document);
+  }
+
+  // Attachment order, not document order: "the second one" means the second
+  // thing the person sent, and an unindexed file still has its place in that.
+  const documents: ReadableFile[] = attachments.map((attachment) => {
+    const document = byAttachment.get(attachment.id);
+    return {
+      attachmentId: attachment.id,
+      id: attachment.id,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      storageKey: attachment.storageKey,
+      size: attachment.size,
+      documentId: document && document.blockCount > 0 ? document.documentId : null,
+      pageCount: document?.pageCount ?? null,
+      blockCount: document?.blockCount ?? 0,
+      state: document?.state ?? attachment.parserState,
+    };
+  });
   return { documents, nothingAttached: false };
 }
 
 function failure(message: string): ToolExecutionResult<never> {
   return { success: false, error: message, summary: message, stdout: message };
+}
+
+/**
+ * Search a file that has no usable index by reading it and scanning the text.
+ *
+ * Linear rather than indexed, and that is an acceptable price for the case it
+ * serves: one file, one query, on the path where the alternative is telling
+ * the model a document does not contain something without ever having opened
+ * it. Matches come back with the line around them so the model can see the
+ * context it is citing.
+ */
+async function searchByReading(
+  file: { storageKey: string; fileName: string; mimeType: string; size: number },
+  query: string,
+): Promise<{ text: string; ordinal: number; page: number | null; slide: number | null; sheet: string | null }[]> {
+  const { readAttachmentOnDemand } = await import("@/lib/knowledge/read-on-demand");
+  const read = await readAttachmentOnDemand(file, { maxChars: 400_000 });
+  if (!read?.text) return [];
+
+  const needle = query.toLowerCase();
+  const out: { text: string; ordinal: number; page: number | null; slide: number | null; sheet: string | null }[] = [];
+  let page: number | null = null;
+  let ordinal = 0;
+  for (const line of read.text.split("\n")) {
+    // The assembled text carries its locators inline as `[page 4]`; reading
+    // them back is what lets an unindexed search still cite a page.
+    const marker = /^\[(page|slide) (\d+)\]$/.exec(line.trim());
+    if (marker) {
+      page = Number(marker[2]);
+      continue;
+    }
+    if (line.toLowerCase().includes(needle)) {
+      out.push({ text: line.trim().slice(0, 1_200), ordinal: ordinal, page, slide: null, sheet: null });
+      if (out.length >= 20) break;
+    }
+    ordinal += 1;
+  }
+  return out;
 }
 
 export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
@@ -161,9 +243,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
       return failure("No files are attached to this conversation, so there is nothing to read.");
     }
     if (documents.length === 0) {
-      return failure(
-        "Files are attached but none of them has been indexed yet — either indexing is still running or no text could be extracted. Say so rather than describing their contents.",
-      );
+      return failure("No readable files are attached to this conversation.");
     }
 
     if (params.action === "list") {
@@ -179,10 +259,7 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
       };
     }
 
-    const { match, ambiguous } = matchAttachment(
-      documents.map((document) => ({ ...document, id: document.attachmentId ?? document.documentId })),
-      params.file,
-    );
+    const { match, ambiguous } = matchAttachment(documents, params.file);
     if (!match) {
       return failure(
         ambiguous.length > 1
@@ -190,14 +267,16 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
           : `No attached file matches "${params.file ?? ""}". Attached: ${nameList(documents)}.`,
       );
     }
-    const document = documents.find((candidate) => candidate.documentId === match.documentId)!;
+    const document = match;
 
     const { readDocumentOutline, readDocumentText, searchDocument } = await import(
       "@/lib/knowledge/documents"
     );
 
     if (params.action === "outline") {
-      const outline = await readDocumentOutline(context.userId, document.documentId);
+      const outline = document.documentId
+        ? await readDocumentOutline(context.userId, document.documentId)
+        : [];
       await emit("Read document outline", document.fileName, "completed");
       if (outline.length === 0) {
         return {
@@ -222,7 +301,15 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
     if (params.action === "search") {
       const query = (params.query ?? "").trim();
       if (!query) return failure("action 'search' needs a query.");
-      const matches = await searchDocument(context.userId, document.documentId, query, 20);
+      /*
+       * An unindexed file is searched by reading it and scanning the text.
+       * Slower than the index and exactly as correct — and the alternative is
+       * telling the model a document contains nothing when the document is
+       * sitting in storage, intact, unread.
+       */
+      const matches = document.documentId
+        ? await searchDocument(context.userId, document.documentId, query, 20)
+        : await searchByReading(document, query);
       await emit("Searched document", `"${query}" in ${document.fileName}`, "completed");
       if (matches.length === 0) {
         return {
@@ -256,17 +343,23 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
       };
     }
 
-    const assembled = await readDocumentText(context.userId, document.documentId, {
-      maxChars: READ_MAX_CHARS,
-      window: {
-        fromPage: params.fromPage ?? null,
-        toPage: params.toPage ?? null,
-        offset: Math.max(0, Math.floor(params.offset ?? 0)),
-      },
-    });
+    const assembled = document.documentId
+      ? await readDocumentText(context.userId, document.documentId, {
+          maxChars: READ_MAX_CHARS,
+          window: {
+            fromPage: params.fromPage ?? null,
+            toPage: params.toPage ?? null,
+            offset: Math.max(0, Math.floor(params.offset ?? 0)),
+          },
+        })
+      : await (await import("@/lib/knowledge/read-on-demand")).readAttachmentOnDemand(document, {
+          maxChars: READ_MAX_CHARS,
+        });
     if (!assembled?.text) {
       return failure(
-        `"${document.fileName}" has no readable text in that range. Try a different page range, or action 'list' to see how long it is.`,
+        canReadAsPagesHint(document.mimeType)
+          ? `"${document.fileName}" has no text layer to read — it is a scan or an image-only PDF. Do not report it as empty or unreadable: use inspect_image with its page number to LOOK at the page instead, which is how this document is meant to be read.`
+          : `"${document.fileName}" has no readable text in that range. Try a different page range, or action 'list' to see how long it is.`,
       );
     }
 
@@ -296,6 +389,11 @@ export const readDocumentTool: ToolDefinition<ReadDocumentParams, unknown> = {
     };
   },
 };
+
+/** PDFs are the format whose pages can be looked at when the text is absent. */
+function canReadAsPagesHint(mimeType: string): boolean {
+  return mimeType.toLowerCase() === "application/pdf";
+}
 
 /** Registry id, so the allowlist and the registration cannot drift apart. */
 export const READ_DOCUMENT_TOOL_ID = readDocumentTool.id;
