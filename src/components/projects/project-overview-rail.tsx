@@ -44,11 +44,13 @@ const MEMORY_PREVIEW = 3;
  * section without one open on the same line — which is what the three
  * hand-written headers could not do.
  *
- * The card's top edge lines up with the top of the chat column beside it (one
- * grid row, one rule across the page); its eyebrow sits the card's own 16px
- * inset below that, as every card in the product insets its content. The
- * alignment that matters is between BLOCKS, and every block on this page now
- * starts on the same line.
+ * The card's top edge is level with the top of the composer beside it — one
+ * grid row, `items-start`, so the rail does not stretch to the left column's
+ * height — and its eyebrow sits the card's own 16px inset below that, as
+ * every card in the product insets its content. Instructions and Sources are
+ * therefore the first things the eye finds beside the field you type into,
+ * which is where a reader who is about to ask the project a question wants to
+ * see what the project already knows.
  *
  * Rows inside a section paint nothing at rest — no border, no fill, no radius
  * — and take a tonal fill on hover, which is the product's list vocabulary
@@ -96,8 +98,13 @@ export function ProjectOverviewRail({
 
   return (
     <Card className={cn("overflow-hidden", className)}>
+      {/* A band, not a picture. At 16/7 the cover was 133px on a 304px rail,
+          which put Instructions that far below the composer it is supposed to
+          sit level with — the decoration outranking the thing the reader came
+          for. 16/5 keeps the project's image present at ~95px and the section
+          content near the top of the card. */}
       {coverUrl && (
-        <div className="group/cover relative aspect-[16/7] w-full overflow-hidden border-b border-border/60 bg-muted">
+        <div className="group/cover relative aspect-[16/5] w-full overflow-hidden border-b border-border/60 bg-muted">
           <img src={coverUrl} className="size-full object-cover" alt="" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
             <Button variant="secondary" size="sm" onClick={onPickCover} disabled={uploadingCover}>

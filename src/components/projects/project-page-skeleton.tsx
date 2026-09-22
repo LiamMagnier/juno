@@ -32,19 +32,20 @@ export function ProjectPageSkeleton() {
       {/* Tab row */}
       <Skeleton className="h-9 w-[26rem] max-w-full rounded-menu" />
 
-      {/* The composer spans the column, above the split — as it does loaded. */}
-      <Skeleton
-        className="mt-6 h-32 w-full rounded-panel [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-        style={staggerDelay(0)}
-      />
-
-      <div className="mt-8 grid gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
-        <div className="min-w-0 space-y-4">
+      {/* The composer sits in the LEFT column and the rail's top edge is level
+          with it, exactly as the loaded page draws them — so the placeholder
+          reserves the room the content actually takes. */}
+      <div className="mt-6 grid items-start gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
+        <div className="min-w-0">
           <Skeleton
-            className="h-9 w-full max-w-sm rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            className="h-28 w-full rounded-panel [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+            style={staggerDelay(0)}
+          />
+          <Skeleton
+            className="mt-8 h-9 w-full max-w-sm rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(1)}
           />
-          <div className="space-y-1">
+          <div className="mt-4 space-y-1">
             {[...Array(4)].map((_, i) => (
               <Skeleton
                 key={i}
@@ -56,7 +57,7 @@ export function ProjectPageSkeleton() {
         </div>
         <Skeleton
           className="h-72 w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-          style={staggerDelay(2)}
+          style={staggerDelay(1)}
         />
       </div>
     </>

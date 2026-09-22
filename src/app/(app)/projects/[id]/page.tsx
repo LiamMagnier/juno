@@ -796,80 +796,82 @@ export default function ProjectDetailPage() {
 
           {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
           <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden">
-            {/*
-              The composer spans the column; the split starts under it.
+            {/* The split starts at the top, and the composer is INSIDE it.
 
-              It used to be the first thing in the LEFT column of the split,
-              which is where two separate misalignments came from. The
-              composer supplies its own `.page-gutter` for the chat dock it
-              normally lives in, so inside an already-guttered page column it
-              was indented a further 16–32px on both edges — its left edge
-              never agreed with the "Chats in this project" eyebrow directly
-              beneath it, and its right edge stopped short of the rail. (It is
-              `frame="inline"` now; see the prop in composer.tsx.) And with
-              the composer opening the left column, the two columns had
-              nothing in common at the top: a 132px input on one side, a
-              section eyebrow on the other.
+                It spanned the whole column for one version, which put the
+                rail's first eyebrow a composer's height below the field and
+                drew the field itself at ~960px wide by ~100px tall — a
+                letterbox, and the widest object on the page for a box most
+                people type one sentence into. A text field's proportions are
+                part of how much it invites you to write in it.
 
-              Full width, then the split, and both columns now open on the
-              same line with the same kind of thing — a section eyebrow — so
-              there is one horizontal rule for the eye to follow across the
-              page instead of two independent stacks.
-            */}
-            <div>
-              <Composer
-                conversationId={null}
-                frame="inline"
-                model={projectModel}
-                onModelChange={(m) => setSelectedModel(m)}
-                onSend={(text, _attachments, options) => handleSend(text, options)}
-                isBusy={false}
-                status="idle"
-                onStop={() => {}}
-                reasoningEffort={reasoningEffort}
-                onReasoningChange={setReasoningEffort}
-                /* The project's own name in the prompt, where it fits. A
-                   composer on a project page asking "How can I help you
-                   today?" is the same sentence the account's home composer
-                   asks, on a surface whose whole content is that this is not
-                   that. Long names fall back rather than filling the field
-                   with a title the reader can already see above it. */
-                placeholder={
-                  data.project.name.length <= 32
-                    ? `Ask anything about ${data.project.name}…`
-                    : "Ask anything about this project…"
-                }
-              />
-            </div>
+                In the left column it is ~690px at the same height, and the
+                rail's top edge is level with the field's, so Instructions and
+                Sources are the first things beside what you type rather than
+                a scroll below it.
 
-            {/* Keyed to the COLUMN, not the window (PREMIUM_AUDIT §2b): the
+                The composer keeps `frame="inline"` (see composer.tsx), which
+                is what makes this position work at all: its dock chrome
+                supplies its own `.page-gutter`, so inside an already-guttered
+                page column it used to indent a further 16–32px on both edges
+                and its left edge never agreed with the eyebrow directly
+                beneath it.
+
+                Keyed to the COLUMN, not the window (PREMIUM_AUDIT §2b): the
                 sidebar takes 256px of the window until the width where it
                 starts floating and then stops taking it, so a `lg:` here —
                 which is what this grid used — split the page at a window size
-                that says nothing about how much room this page actually got. */}
-            <div className="mt-8 grid gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
-              <section className="min-w-0">
-                {/* `min-h-7` is the rail's section-header height, so this
-                    eyebrow and the rail's first eyebrow sit on one line. No
-                    count beside it: the tab above carries one and the list's
-                    own toolbar carries "N of M" 40px below, and three counts
-                    of the same thing on one screen is how a page stops being
-                    read. */}
-                <div className="mb-3 flex min-h-7 items-center">
-                  <CardEyebrow>Chats in this project</CardEyebrow>
-                </div>
-                <ProjectChatList
-                  projectId={data.project.id}
-                  conversations={chats}
-                  allProjects={allProjects}
-                  onTogglePin={togglePin}
-                  onMoveChat={moveChat}
-                  onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
-                  onNewChat={() => {
-                    router.push(`/chat?project=${id}`);
-                  }}
+                that says nothing about how much room this page actually
+                got. */}
+            <div className="grid items-start gap-6 @4xl/page:grid-cols-[minmax(0,1fr)_19rem] @4xl/page:gap-8">
+              <div className="min-w-0">
+                <Composer
+                  conversationId={null}
+                  frame="inline"
+                  model={projectModel}
+                  onModelChange={(m) => setSelectedModel(m)}
+                  onSend={(text, _attachments, options) => handleSend(text, options)}
+                  isBusy={false}
+                  status="idle"
+                  onStop={() => {}}
+                  reasoningEffort={reasoningEffort}
+                  onReasoningChange={setReasoningEffort}
+                  /* The project's own name in the prompt, where it fits. A
+                     composer on a project page asking "How can I help you
+                     today?" is the same sentence the account's home composer
+                     asks, on a surface whose whole content is that this is not
+                     that. Long names fall back rather than filling the field
+                     with a title the reader can already see above it. */
+                  placeholder={
+                    data.project.name.length <= 32
+                      ? `Ask anything about ${data.project.name}…`
+                      : "Ask anything about this project…"
+                  }
                 />
-              </section>
+
+                <section className="mt-8">
+                  {/* `min-h-7` is the rail's section-header height, so this
+                      eyebrow sits on the rail's own header grid. No count
+                      beside it: the tab above carries one and the list's own
+                      toolbar carries "N of M" 40px below, and three counts of
+                      the same thing on one screen is how a page stops being
+                      read. */}
+                  <div className="mb-3 flex min-h-7 items-center">
+                    <CardEyebrow>Chats in this project</CardEyebrow>
+                  </div>
+                  <ProjectChatList
+                    projectId={data.project.id}
+                    conversations={chats}
+                    allProjects={allProjects}
+                    onTogglePin={togglePin}
+                    onMoveChat={moveChat}
+                    onDeleteChat={(chat) => setChatToDelete({ id: chat.id, title: chat.title })}
+                    onNewChat={() => {
+                      router.push(`/chat?project=${id}`);
+                    }}
+                  />
+                </section>
+              </div>
 
               <ProjectOverviewRail
                 coverUrl={coverUrl}
