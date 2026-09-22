@@ -2,7 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -303,6 +314,233 @@ test("the Mac deploy builds in a root the rewrite can use, and hands deploy.sh t
   });
   assert.equal(status, 0, stderr);
   assert.equal(after["server/chunks/6423.js"], serverChunk(runtimeRoot), "only the real build path may change");
+});
+
+// Both callers used to run their own inline VM preflight before uploading, and
+// took no lock to do it. Beside a deploy in flight it deleted that deploy's
+// uploaded archive and build artifact (the deploy then failed its checksum or
+// tar step) and its staged release, and the upload after it overwrote files
+// named for the same commit. It is one script now, deploy/vm-preflight.sh, and
+// these tests run it the way the callers do: piped to `bash -s`.
+const VM_PREFLIGHT = readFileSync(new URL("../deploy/vm-preflight.sh", import.meta.url), "utf8");
+const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+const RUN_ID = "mac-20260922120000-Ab3dE9";
+
+// The VM and CI have util-linux flock; a Mac does not. The stand-in takes the
+// same flock(2) lock on the same inherited descriptor, so the lock outlives it
+// exactly as the real one's does, and two runs contend for real.
+const HAS_SYSTEM_FLOCK = spawnSync("sh", ["-c", "command -v flock"]).status === 0;
+const FLOCK_STAND_IN = [
+  "#!/bin/sh",
+  '[ "$#" -eq 2 ] && [ "$1" = -n ] || { echo "flock stand-in: only flock -n FD" >&2; exit 64; }',
+  `exec perl -MFcntl=:flock -e 'open(my $fh, ">&=", $ARGV[0]) or die "flock: $!\\n"; flock($fh, LOCK_EX | LOCK_NB) or exit 1' "$2"`,
+  "",
+].join("\n");
+
+// A VM in the middle of other runs' deploys, under a temporary root: HOME with
+// ~/juno as the callers leave it, and an upload root standing in for /tmp.
+function fakeVm() {
+  const root = mkdtempSync(path.join(tmpdir(), "juno-vm-"));
+  const home = path.join(root, "home");
+  const live = path.join(home, "juno");
+  const releases = path.join(live, "releases");
+  const uploads = path.join(root, "tmp");
+  const bin = path.join(root, "bin");
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const age = (file: string) => utimesSync(file, twoHoursAgo, twoHoursAgo);
+  const put = (file: string) => {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "x");
+    return file;
+  };
+
+  // A staged release belongs to a transaction in flight; one release is older
+  // than both current and previous.
+  for (const release of ["101-older", "202-previous", "303-current", ".staging-404"]) {
+    put(path.join(releases, release, "package.json"));
+  }
+  symlinkSync(path.join(releases, "303-current"), path.join(live, "current"));
+  symlinkSync(path.join(releases, "202-previous"), path.join(live, "previous"));
+  writeFileSync(path.join(live, ".deploy.lock"), "");
+
+  // Another run's upload: its archive went up over an hour ago, and its build
+  // artifact is still being written.
+  const uploading = path.join(uploads, "juno-upload-17811234567-1");
+  age(put(path.join(uploading, `juno-${COMMIT}.tar.gz`)));
+  put(path.join(uploading, `juno-${COMMIT}.build.tar.gz`));
+  age(uploading);
+  // A run cut off two hours ago.
+  const abandoned = path.join(uploads, "juno-upload-mac-20260922100000-Qx7Lm2");
+  age(put(path.join(abandoned, `juno-${COMMIT}.tar.gz`)));
+  age(abandoned);
+  // Uploads under the old per-commit names, as an older copy of a caller still
+  // writes them: three long abandoned, one still arriving.
+  for (const name of [`juno-${COMMIT}.tar.gz`, `juno-${COMMIT}.tar.gz.sha256`, "juno-17811234567.env"]) {
+    age(put(path.join(uploads, name)));
+  }
+  put(path.join(uploads, "juno-fedcba9876543210fedcba9876543210fedcba98.build.tar.gz"));
+  // Not uploads at all.
+  age(put(path.join(uploads, "juno-nodesource-24.sh")));
+  age(put(path.join(uploads, "backup.tar.gz")));
+
+  mkdirSync(bin);
+  if (!HAS_SYSTEM_FLOCK) {
+    writeFileSync(path.join(bin, "flock"), FLOCK_STAND_IN);
+    chmodSync(path.join(bin, "flock"), 0o755);
+  }
+  return {
+    root,
+    live,
+    releases,
+    uploads,
+    lock: path.join(live, ".deploy.lock"),
+    uploadDir: path.join(uploads, `juno-upload-${RUN_ID}`),
+    env: {
+      ...process.env,
+      HOME: home,
+      UPLOAD_DIR: path.join(uploads, `juno-upload-${RUN_ID}`),
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    },
+  };
+}
+
+function listTree(directory: string): string[] {
+  return readdirSync(directory, { recursive: true, encoding: "utf8" }).sort();
+}
+
+test("the VM preflight changes nothing while a deploy holds the lock, and says who holds it", () => {
+  const vm = fakeVm();
+  // Only what the preflight may clean or create: tools the test runs can leave
+  // caches elsewhere under HOME (Rosetta does, under emulation).
+  const state = () => ({ live: listTree(vm.live), uploads: listTree(vm.uploads) });
+  try {
+    const before = state();
+    // A release transaction holding the host's deploy lock as deploy.sh holds
+    // it: on a descriptor opened for append, with a note of who it is. The
+    // preflight then runs as a process of its own, as the callers run it.
+    const holdTheLockThenPreflight = [
+      'exec 8>>"$1"',
+      "flock -n 8 || exit 97",
+      `printf 'pid %s since %s\\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$1"`,
+      'echo "$$"',
+      "bash -s 8>&-",
+    ].join("\n");
+    const run = spawnSync("bash", ["-c", holdTheLockThenPreflight, "bash", vm.lock], {
+      encoding: "utf8",
+      input: VM_PREFLIGHT,
+      env: vm.env,
+    });
+    const holder = run.stdout.split("\n")[0];
+    assert.match(holder, /^\d+$/, `the stand-in deploy could not take the lock:\n${run.stderr}`);
+    assert.equal(run.status, 1, run.stdout + run.stderr);
+    assert.match(
+      run.stderr,
+      new RegExp(
+        String.raw`^Another deployment is already running \(pid ${holder} since \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\): ` +
+          vm.lock.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
+          "\n$",
+      ),
+    );
+    assert.deepEqual(
+      state(),
+      before,
+      "no staged or older release and no upload may be removed, and no upload directory created",
+    );
+    assert.match(readFileSync(vm.lock, "utf8"), new RegExp(`^pid ${holder} since `), "a refused run must leave the holder's note");
+  } finally {
+    rmSync(vm.root, { recursive: true, force: true });
+  }
+});
+
+test("with the lock free, the VM preflight clears only what no deploy can still need, then claims the run's upload directory", () => {
+  const vm = fakeVm();
+  try {
+    const preflight = () => spawnSync("bash", ["-s"], { encoding: "utf8", input: VM_PREFLIGHT, env: vm.env });
+    const run = preflight();
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+
+    assert.deepEqual(readdirSync(vm.releases).sort(), ["202-previous", "303-current"]);
+    assert.deepEqual(
+      readdirSync(vm.uploads).sort(),
+      [
+        "backup.tar.gz",
+        "juno-fedcba9876543210fedcba9876543210fedcba98.build.tar.gz",
+        "juno-nodesource-24.sh",
+        "juno-upload-17811234567-1",
+        `juno-upload-${RUN_ID}`,
+      ].sort(),
+      "abandoned uploads go; uploads still being written, and files that are not uploads, stay",
+    );
+    assert.deepEqual(
+      readdirSync(path.join(vm.uploads, "juno-upload-17811234567-1")).sort(),
+      [`juno-${COMMIT}.build.tar.gz`, `juno-${COMMIT}.tar.gz`],
+      "an upload in progress stays whole, however long ago it began",
+    );
+    assert.deepEqual(readdirSync(vm.uploadDir), []);
+    assert.equal(statSync(vm.uploadDir).mode & 0o777, 0o700, "the upload holds the production env");
+    assert.match(
+      readFileSync(vm.lock, "utf8"),
+      new RegExp(String.raw`^pid \d+ since \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ, preflight of run ${RUN_ID}\n$`),
+      "while it holds the lock, a refused deploy must be able to say the preflight holds it",
+    );
+    const next = spawnSync("bash", ["-c", 'exec 9>>"$1" && flock -n 9', "bash", vm.lock], { env: vm.env });
+    assert.equal(next.status, 0, "the lock must be free again once the preflight has finished");
+
+    // The directory is taken now, as it is for a run whose upload is in flight.
+    const again = preflight();
+    assert.equal(again.status, 1, again.stdout + again.stderr);
+    assert.match(again.stderr, new RegExp(`already exists: run id ${RUN_ID} is another run's`));
+    assert.ok(statSync(vm.uploadDir).isDirectory(), "a directory the preflight did not create is never removed");
+  } finally {
+    rmSync(vm.root, { recursive: true, force: true });
+  }
+});
+
+const CI_DEPLOY_STEP = sectionAfter(
+  DEPLOY_JOB,
+  "      - name: Deploy the exact reviewed commit through the immutable VM transaction\n",
+  "\n      - name: ",
+);
+
+test("both callers upload only after that preflight, only into the directory it created, and remove only that", () => {
+  const callers = [
+    { caller: "deploy-from-mac.sh", code: withoutCommentLines(MAC_DEPLOY_SCRIPT), dir: "UPLOAD_DIR", runId: "$RUN_ID" },
+    { caller: "deploy.yml", code: withoutCommentLines(CI_DEPLOY_STEP), dir: "upload_dir", runId: "${RUN_ID}" },
+  ];
+  for (const { caller, code, dir, runId } of callers) {
+    assert.ok(code.includes(`${dir}="/tmp/juno-upload-${runId}"`), `${caller}: the upload directory is named for the run`);
+    const preflight = code.indexOf(`"UPLOAD_DIR='$${dir}' bash -s" < deploy/vm-preflight.sh`);
+    const upload = code.indexOf(`:$${dir}/"`);
+    const transaction = code.search(new RegExp(String.raw`UPLOAD_DIR='\$${dir}'[^\n]*bash -s" <<'REMOTE'\n`));
+    assert.notEqual(preflight, -1, `${caller} must run deploy/vm-preflight.sh on the VM, for its own upload directory`);
+    assert.ok(
+      preflight < upload && upload < transaction,
+      `${caller}: the preflight, then the upload into its directory, then the transaction given that directory`,
+    );
+    assert.doesNotMatch(code, /<<'PREFLIGHT'|\/tmp\/juno-\*/, `${caller} must not keep a preflight of its own`);
+
+    const remote = code.slice(transaction).match(/<<'REMOTE'\n([\s\S]*?)\n[ \t]*REMOTE\n/)?.[1] ?? "";
+    assert.notEqual(remote, "", `${caller}: the release transaction block is missing`);
+    for (const file of ["ARCHIVE", "BUILD_ARTIFACT"]) {
+      assert.match(remote, new RegExp(String.raw`^\s*${file}="\$UPLOAD_DIR/juno-`, "m"), `${caller}: ${file}`);
+    }
+    assert.doesNotMatch(remote, /\/tmp\/juno-\$/, `${caller}: no upload is named for the commit any more`);
+    assert.match(remote, /\bcleanup\(\) \{\n\s*rm -rf -- "\$UPLOAD_DIR"\n/, `${caller}: the transaction removes its own upload`);
+    // deploy.sh locks .deploy.lock beside `current`: the lock the preflight takes.
+    assert.match(remote, /^\s*LIVE_ROOT="\$HOME\/juno"$/m, caller);
+    assert.match(remote, /JUNO_CURRENT_LINK="\$LIVE_ROOT\/current"/, caller);
+  }
+
+  // A run id is claimed by creating its directory, so each run needs one of its own.
+  assert.match(CI_DEPLOY_STEP, /RUN_ID: \$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(MAC_DEPLOY_SCRIPT, /^RUN_ID="mac-\$\(date \+%Y%m%d%H%M%S\)-\$\{WORK##\*\.\}"$/m);
+  // The Mac script removes a failed or interrupted upload itself, but must let
+  // go of it before the transaction starts reading it.
+  const mac = withoutCommentLines(MAC_DEPLOY_SCRIPT);
+  const owned = mac.indexOf('VM_UPLOAD_OWNED="$UPLOAD_DIR"');
+  const released = mac.indexOf("VM_UPLOAD_OWNED=''", owned);
+  assert.ok(owned > mac.indexOf("< deploy/vm-preflight.sh"), "only once the preflight has created it");
+  assert.ok(released !== -1 && released < mac.indexOf("<<'REMOTE'"), "never while the transaction may be reading it");
 });
 
 test("deploy script builds before atomic activation and has an application rollback path", () => {
