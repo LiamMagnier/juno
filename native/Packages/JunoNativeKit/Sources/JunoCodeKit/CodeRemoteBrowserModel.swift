@@ -316,12 +316,19 @@ public final class CodeRemoteBrowserModel {
         modelID: String? = nil, permissionMode: String? = nil
     ) async -> String? {
         let sessionID = "remote-\(newIdempotencyKey().lowercased())"
+        // Both spellings of the workspace and the first prompt: a current Mac
+        // reads either, and a Mac from before it learned `workspaceKey` and
+        // `prompt` refused every session this sheet started.
         var payload: [String: JunoJSONValue] = [
             "prompt": .string(prompt),
             "text": .string(prompt),
+            "initialMessage": .string(prompt),
             "title": .string(String(prompt.prefix(80))),
         ]
-        if let workspaceKey { payload["workspaceKey"] = .string(workspaceKey) }
+        if let workspaceKey {
+            payload["workspaceKey"] = .string(workspaceKey)
+            payload["workspaceId"] = .string(workspaceKey)
+        }
         if let workspaceName { payload["workspaceName"] = .string(workspaceName) }
         if let modelID { payload["modelID"] = .string(modelID) }
         if let permissionMode { payload["permissionMode"] = .string(permissionMode) }

@@ -111,6 +111,12 @@ public enum CodeRemoteError: Error, Equatable, LocalizedError, Sendable {
     case invalidEventStream
     case eventStreamUnavailable
     case server(statusCode: Int, message: String, retryable: Bool)
+    /// The relay holds a different amount of this session's journal than the
+    /// host assumed, and names the sequence it needs next. Distinct from a
+    /// plain 409 because it carries the one number that lets the host resume
+    /// instead of failing: a Mac whose saved cursor ran ahead of the relay (a
+    /// restored database, a revoked and re-paired device) rewinds to it.
+    case eventSequenceConflict(expectedSequence: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -120,12 +126,23 @@ public enum CodeRemoteError: Error, Equatable, LocalizedError, Sendable {
         case .invalidEventStream: "Juno returned an invalid Code event stream."
         case .eventStreamUnavailable: "This Juno build cannot open a live Code event stream."
         case .server(_, let message, _): message
+        case .eventSequenceConflict:
+            "Juno's copy of this session is out of step with this Mac."
         }
     }
 
     public var isRetryable: Bool {
         if case .server(_, _, let retryable) = self { return retryable }
         return false
+    }
+
+    /// The HTTP status the relay answered with, when it answered at all.
+    public var statusCode: Int? {
+        switch self {
+        case .server(let statusCode, _, _): statusCode
+        case .eventSequenceConflict: 409
+        default: nil
+        }
     }
 }
 
@@ -353,12 +370,20 @@ public struct NativeCodeRemoteClient: Sendable {
         )
     }
 
+    /// Appends a contiguous run of this host's journal for one session and
+    /// returns the relay's high-water mark after it.
+    ///
+    /// The returned sequence is what makes a retry cheap: a batch the relay had
+    /// already stored comes back as a no-op with the sequence it holds, so a
+    /// host that lost its cursor learns where to resume from the first answer
+    /// instead of re-sending the whole transcript.
+    @discardableResult
     public func postEvents(
         deviceID: String,
         sessionID: String,
         events: [CodeRemoteSessionEvent],
         for accountID: AccountID
-    ) async throws {
+    ) async throws -> Int {
         try validate(deviceID)
         try validate(sessionID)
         let encoded = JunoJSONValue.array(events.map { event in
@@ -366,13 +391,80 @@ public struct NativeCodeRemoteClient: Sendable {
                 "seq": .number(Double(event.seq)),
                 "kind": .string(event.kind),
                 "payload": .object(event.payload),
+                "createdAt": .string(Self.timestamp(event.createdAt)),
             ])
         })
-        _ = try await post(
-            "/api/code/devices/\(deviceID)/sessions/\(sessionID)/events",
-            body: .object(["events": encoded]),
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/code/devices/\(deviceID)/sessions/\(sessionID)/events",
+                method: .post,
+                headers: try HTTPHeaders([
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                ]),
+                body: try JSONEncoder().encode(JunoJSONValue.object(["events": encoded]))
+            ),
             for: accountID
         )
+        // A gap is the relay refusing to store a transcript with a hole in it,
+        // and it names the sequence it needs. Surfacing that number is the
+        // difference between a host that resumes and one that stalls.
+        if response.statusCode == 409,
+            let expected = (try? decodeObject(response))?["expectedSeq"]?.numberValue
+        {
+            throw CodeRemoteError.eventSequenceConflict(expectedSequence: Int(expected))
+        }
+        try require2xx(response)
+        guard let lastSeq = (try? decodeObject(response))?["lastSeq"]?.numberValue else {
+            throw CodeRemoteError.malformedResponse
+        }
+        return Int(lastSeq)
+    }
+
+    /// Replaces the relay's view of which sessions this host lists.
+    ///
+    /// Metadata only — titles, status, model and the workspace's opaque key and
+    /// display name. Transcript content travels through `postEvents`, and never
+    /// through this list. Sessions that leave the list are named explicitly in
+    /// `deletedSessionIDs`: the relay never infers a delete from absence,
+    /// because a partial list must not be able to erase history.
+    public func putSessions(
+        deviceID: String,
+        listVersion: Int,
+        sessions: [CodeRemoteSessionUpload],
+        deletedSessionIDs: [String],
+        for accountID: AccountID
+    ) async throws {
+        try validate(deviceID)
+        for id in deletedSessionIDs { try validate(id) }
+        for session in sessions { try validate(session.sessionID) }
+        let body: JunoJSONValue = .object([
+            "listVersion": .number(Double(max(1, listVersion))),
+            "transcriptPolicy": .string("metadata"),
+            "sessions": .array(sessions.map(\.relayJSON)),
+            "deletedSessionIds": .array(deletedSessionIDs.map(JunoJSONValue.string)),
+        ])
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/code/devices/\(deviceID)/sessions",
+                method: .put,
+                headers: try HTTPHeaders([
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                ]),
+                body: try JSONEncoder().encode(body)
+            ),
+            for: accountID
+        )
+        try require2xx(response)
+    }
+
+    /// Fractional seconds in UTC, which is exactly what the relay's
+    /// `z.string().datetime()` accepts.
+    static func timestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
     }
 
     // MARK: - Transport
@@ -551,11 +643,19 @@ public struct NativeCodeRemoteClient: Sendable {
 /// Small, bounded SSE framing parser kept private to the Code relay contract.
 /// It intentionally ignores comments/unknown fields but rejects malformed UTF-8
 /// and unbounded lines before they can enter a rendered transcript.
-private struct CodeRemoteSSEParser {
+struct CodeRemoteSSEParser {
     struct Frame {
         let name: String
         let data: String
     }
+
+    /// The longest `data:` line accepted. One relay frame is a JSON page of
+    /// events on a single line, and the relay caps a page at 512 KB; the bound
+    /// sits above that so a legitimate page always parses, and still stops a
+    /// runaway stream from growing a buffer without limit. It was 8 KB, which
+    /// the first page carrying a real assistant reply or command output would
+    /// exceed — the live transcript failed exactly when it had something in it.
+    static let maximumLineBytes = 1_024 * 1_024
 
     private var line = Data()
     private var eventName: String?
@@ -563,7 +663,7 @@ private struct CodeRemoteSSEParser {
 
     mutating func consume(_ byte: UInt8) throws -> [Frame] {
         guard byte == 0x0A else {
-            guard line.count < 8_192 else { throw CodeRemoteError.invalidEventStream }
+            guard line.count < Self.maximumLineBytes else { throw CodeRemoteError.invalidEventStream }
             line.append(byte)
             return []
         }

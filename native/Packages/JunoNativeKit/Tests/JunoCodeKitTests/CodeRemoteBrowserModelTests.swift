@@ -85,6 +85,33 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         XCTAssertEqual(payload["approved"] as? Bool, true)
     }
 
+    /// The phone names its session before the Mac has it, so it can follow the
+    /// thread from sequence zero; and it names the workspace and first prompt
+    /// in both spellings a Mac has ever read.
+    func testANewSessionCarriesItsIDAndBothFieldSpellings() async throws {
+        let transport = BrowserTransport(responses: [.ok(commandBody)])
+        let model = CodeRemoteBrowserModel(
+            client: NativeCodeRemoteClient(sender: transport), newIdempotencyKey: { "ABC-123" }
+        )
+        model.start(for: account)
+
+        let id = await model.createSession(
+            deviceID: "d1", workspaceKey: "ws-key", workspaceName: "juno", prompt: "Fix the build"
+        )
+
+        XCTAssertEqual(id, "remote-abc-123")
+        let requests = await transport.requests
+        let body = try XCTUnwrap(requests.first?.body)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["sessionID"] as? String, "remote-abc-123")
+        XCTAssertEqual(object["kind"] as? String, "create_session")
+        let payload = try XCTUnwrap(object["payload"] as? [String: Any])
+        XCTAssertEqual(payload["workspaceKey"] as? String, "ws-key")
+        XCTAssertEqual(payload["workspaceId"] as? String, "ws-key")
+        XCTAssertEqual(payload["prompt"] as? String, "Fix the build")
+        XCTAssertEqual(payload["initialMessage"] as? String, "Fix the build")
+    }
+
     func testEventGapDoesNotAdvanceTheCursor() async throws {
         let transport = BrowserTransport(responses: [
             .ok(#"{"events":[{"seq":2,"kind":"text_delta","payload":{},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#)
