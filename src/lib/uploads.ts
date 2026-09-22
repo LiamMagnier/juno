@@ -5,6 +5,37 @@ export const MAX_ATTACHMENTS = 10;
 
 export const IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
+/**
+ * Binary office documents Juno can read but must never decode as text.
+ *
+ * THESE WERE REFUSED AT THE DOOR FOR NO REASON. `selectExtractor` has claimed
+ * `.docx`, `.xlsx` and `.pptx` by both extension and MIME type for as long as
+ * those extractors have existed, and all three read a real file correctly —
+ * but `isAcceptedMime` did not list them, so the upload was rejected 415 and
+ * the file picker did not even offer them. The capability was built, tested
+ * and walled off: the commonest documents in professional use were the ones
+ * Juno could read and would not accept.
+ *
+ * Kept OUT of `DOC_MIME` deliberately, because that list feeds
+ * `isTextExtractable`, and a .docx is a ZIP — decoding one as UTF-8 at upload
+ * time would store a column of mojibake as the file's "text" and hand it to
+ * the model. Their text comes from the extractors, like a PDF's does.
+ *
+ * Safe to accept for the same reason a PDF is: every non-image upload is
+ * stored as `application/octet-stream` with `Content-Disposition: attachment`
+ * (see `planAttachmentUpload`), so none of them can ever be served back inline.
+ */
+export const OFFICE_MIME = [
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  // The macro-enabled twins. Juno reads the document part and never executes
+  // anything; refusing them only sends the user to re-save the same content.
+  "application/vnd.ms-word.document.macroenabled.12",
+  "application/vnd.ms-excel.sheet.macroenabled.12",
+  "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+];
+
 // Document/text types we accept and can pass to the model. (No text/html — see below.)
 export const DOC_MIME = [
   "application/pdf",
@@ -24,12 +55,14 @@ export const DOC_MIME = [
 const BLOCKED_MIME = ["text/html", "application/xhtml+xml", "image/svg+xml"];
 
 export function isAcceptedMime(mime: string): boolean {
-  if (BLOCKED_MIME.includes(mime)) return false;
+  const normalized = mime.toLowerCase().split(";")[0].trim();
+  if (BLOCKED_MIME.includes(normalized)) return false;
   return (
-    IMAGE_MIME.includes(mime) ||
-    DOC_MIME.includes(mime) ||
-    mime.startsWith("text/") ||
-    mime === "application/octet-stream"
+    IMAGE_MIME.includes(normalized) ||
+    DOC_MIME.includes(normalized) ||
+    OFFICE_MIME.includes(normalized) ||
+    normalized.startsWith("text/") ||
+    normalized === "application/octet-stream"
   );
 }
 
@@ -84,4 +117,16 @@ export function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 120) || "file";
 }
 
-export const ACCEPT_ATTRIBUTE = [...IMAGE_MIME, ...DOC_MIME, ".txt", ".md", ".csv", ".json", ".ts", ".tsx", ".js", ".py"].join(",");
+/*
+ * The extensions ride alongside the MIME types because a browser's idea of a
+ * file's type is not reliable: Windows without Office installed reports a
+ * .docx as `application/octet-stream`, and a picker keyed on MIME alone greys
+ * out the file the user is looking straight at.
+ */
+export const ACCEPT_ATTRIBUTE = [
+  ...IMAGE_MIME,
+  ...DOC_MIME,
+  ...OFFICE_MIME,
+  ".txt", ".md", ".csv", ".json", ".ts", ".tsx", ".js", ".py",
+  ".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm",
+].join(",");

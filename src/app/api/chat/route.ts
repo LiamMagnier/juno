@@ -1949,11 +1949,15 @@ async function handleChat(req: Request) {
    * a tool call it must then be told to ignore.
    */
   const attachmentToolToggles = {
-    documents: allAttachments.some(
-      (attachment) =>
-        attachment.kind === "FILE" &&
-        (attachment.parserState === "ready" || attachment.parserState === "degraded"),
-    ),
+    /*
+     * ANY attached file, not only an indexed one — and the change matters most
+     * for the files that look least promising. `read_document` now falls back
+     * to reading the bytes when the index has nothing (see
+     * `knowledge/read-on-demand.ts`), so a PDF the indexer marked `failed` is
+     * exactly the document the tool exists to rescue. Gating on `ready` meant
+     * the rescue was withheld from every file that needed rescuing.
+     */
+    documents: allAttachments.some((attachment) => attachment.kind === "FILE"),
     images:
       modelInfo.vision &&
       allAttachments.some(
