@@ -232,6 +232,15 @@ final class CommandSandboxTests: XCTestCase {
         XCTAssertEqual(worktree.exitCode, 0, worktree.output)
     }
 
+    /// The reader's own terminal may update them: a `git pull` that changes a
+    /// tracked `.juno/settings.json` is theirs to run.
+    func testTheReadersTerminalProfileLeavesThePolicyFilesWritable() {
+        let agent = CommandSandboxProfile(workspaceRoot: workspaceURL).profileText()
+        let reader = CommandSandboxProfile(workspaceRoot: workspaceURL, protectsPolicyFiles: false).profileText()
+        XCTAssertTrue(agent.contains("settings.local.json"))
+        XCTAssertFalse(reader.contains("(deny file-write*"))
+    }
+
     func testAReadOnlyProfileGrantsNoWriteAtAll() throws {
         let profile = CommandSandboxProfile(workspaceRoot: workspaceURL, filesystem: .readOnly)
         XCTAssertFalse(profile.profileText().contains("file-write*"))
