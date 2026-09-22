@@ -4,83 +4,269 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarClock, Loader2 } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useApp } from "@/components/app/app-provider";
-import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { useSaveStates } from "@/components/settings/save-status";
+import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { UsageHistory } from "@/components/settings/usage-history";
+import {
+  formatCountdown,
+  formatDate,
+  formatEur,
+  formatEurWhole,
+  formatResetMoment,
+} from "@/components/settings/format";
 import { PLANS } from "@/lib/plans";
-import { describeCapSource, type BudgetCapSource } from "@/lib/spend-ceiling";
-import { cn } from "@/lib/utils";
+import { describeCapSource } from "@/lib/spend-ceiling";
 
-/** "4 hr 47 min" / "12 min" / "2 days" — time until a rolling window frees up. */
-function formatCountdown(ms: number): string {
-  if (ms <= 0) return "now";
-  const totalMin = Math.floor(ms / 60_000);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h >= 24) {
-    const d = Math.round(h / 24);
-    return `${d} day${d > 1 ? "s" : ""}`;
-  }
-  if (h > 0) return `${h} hr ${m} min`;
-  return `${m} min`;
+function meterTone(share: number) {
+  return share >= 1 ? "destructive" : share >= 0.9 ? "warning" : "primary";
 }
 
-/** "Fri 6:59 PM" — the moment a rolling window next frees up, in local time. */
-function formatResetMoment(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
-}
-
-/** "May 3, 2026" — an absolute date for billing renewals. */
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-/** Euro amounts, with enough precision to be believed at the low end. */
-function formatEur(amount: number): string {
-  if (amount > 0 && amount < 0.01) return "<0,01 €";
-  return `${amount.toFixed(2).replace(".", ",")} €`;
-}
-
-function Meter({ label, subtitle, pct }: { label: string; subtitle: string; pct: number }) {
-  const shown = Math.min(100, Math.round(pct * 100));
+/** A usage window as a row: what it is and when it frees up, then how full it is. */
+function WindowRow({ label, description, share }: { label: string; description: React.ReactNode; share: number }) {
+  const shown = Math.min(100, Math.round(share * 100));
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="min-w-0 flex-1 basis-40">
-        <div className="text-body font-medium text-foreground">{label}</div>
-        <div className="text-caption text-muted-foreground">{subtitle}</div>
-      </div>
-      <div className="flex min-w-40 flex-1 items-center gap-3">
-        <Progress value={shown} tone={pct >= 1 ? "destructive" : pct >= 0.9 ? "warning" : "primary"} aria-label={label} />
-        <span className="w-16 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
-          {shown}% used
-        </span>
-      </div>
-    </div>
+    <SettingRow
+      label={label}
+      description={description}
+      wide
+      control={
+        <div className="flex w-full items-center gap-3 @[34rem]/pane:w-56">
+          <Progress value={shown} tone={meterTone(share)} aria-label={label} className="h-1.5" />
+          <span className="w-10 shrink-0 text-right text-ui tabular-nums text-muted-foreground">
+            {shown}
+            <span>%</span>
+          </span>
+        </div>
+      }
+    />
+  );
+}
+
+/**
+ * The plan, what it has left this period, the ceiling on it, and a month of
+ * history. "Plan & billing" before, with the account's usage dashboard on a
+ * different section under a second group also called "Usage".
+ */
+export function BillingSection() {
+  const router = useRouter();
+  const { quota, spend, features } = useApp();
+  const saves = useSaveStates();
+  const plan = PLANS[quota.plan];
+  const windows = spend.windows;
+  const unlimited = spend.budgetMicroUsd == null;
+  const generating = quota.plan !== "FREE" && !spend.capDisabled;
+
+  // The Stripe portal holds the subscription, invoices and payment method, so
+  // it is one button. There used to be a second row, "Invoices and payment
+  // method", with no control, pointing back up at this button.
+  const [portalLoading, setPortalLoading] = React.useState(false);
+  const openPortal = async () => {
+    setPortalLoading(true);
+    const res = await fetch("/api/stripe/portal", { method: "POST" }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (res?.ok && data.url) window.location.href = data.url;
+    else {
+      setPortalLoading(false);
+      toast.error("Couldn’t open the billing portal.", data.error ? { description: data.error } : undefined);
+    }
+  };
+
+  // A live clock so the countdowns tick without a reload. Null until mount
+  // so the server render and the first client render agree.
+  const [nowMs, setNowMs] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const eurPerUsd = spend.eurPerUsd > 0 ? spend.eurPerUsd : 1;
+  const spentEur = (spend.spentMicroUsd / 1_000_000) * eurPerUsd;
+  const budgetEur = spend.budgetMicroUsd == null ? null : (spend.budgetMicroUsd / 1_000_000) * eurPerUsd;
+  const heldEur = (spend.reservedMicroUsd / 1_000_000) * eurPerUsd;
+  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur - heldEur);
+  const monthShare = budgetEur && budgetEur > 0 ? Math.min(1, (spentEur + heldEur) / budgetEur) : 0;
+
+  const saveSpendCap = React.useCallback(
+    async (monthlySpendCapEur: number | null) => {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlySpendCapEur }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        toast.error("Couldn’t save the spend ceiling.");
+        return false;
+      }
+      router.refresh();
+      return true;
+    },
+    [router]
+  );
+
+  const renewsAtMs = spend.billing.renewsAtMs;
+
+  return (
+    <>
+      <SettingsGroup>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4 py-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-heading" translate="no">
+                {plan.name}
+              </p>
+              {generating && (
+                <Badge variant="outline" className="gap-1.5 text-success-ink">
+                  <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+                  Active
+                </Badge>
+              )}
+            </div>
+            <p className="mt-0.5 text-ui text-muted-foreground">{plan.tagline}</p>
+            <p className="mt-2 text-ui text-muted-foreground">
+              {plan.price > 0 ? (
+                <>
+                  <span className="tabular-nums text-foreground">{formatEurWhole(plan.price)}</span>{" "}
+                  <span>a month, excluding VAT.</span>
+                </>
+              ) : (
+                <span>Free.</span>
+              )}
+              {renewsAtMs != null && (
+                <>
+                  {" "}
+                  <span>{spend.billing.cancelAtPeriodEnd ? "Access ends" : "Renews"}</span>{" "}
+                  <span>{formatDate(renewsAtMs)}</span>.
+                </>
+              )}
+            </p>
+          </div>
+          {features.billing && (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {quota.plan === "FREE" ? (
+                <Button asChild size="sm">
+                  <Link href="/upgrade">Upgrade</Link>
+                </Button>
+              ) : (
+                <>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/upgrade">Change plan</Link>
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void openPortal()} loading={portalLoading}>
+                    Manage billing
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup title="Usage">
+        {unlimited ? (
+          <p className="py-4 text-ui text-muted-foreground">
+            Nothing is metering this account. A task Juno starts on its own still stops at a small backstop ceiling,
+            so an unattended loop can’t run all night.
+          </p>
+        ) : quota.plan === "FREE" ? (
+          <p className="py-4 text-ui text-muted-foreground">
+            <span>Free includes</span> <span className="tabular-nums">{plan.monthlyMessages ?? 0}</span>{" "}
+            <span>messages a month on the everyday models. Pro unlocks every model and a monthly budget.</span>
+          </p>
+        ) : (
+          <>
+            {budgetEur != null && (
+              <WindowRow
+                label="This month"
+                description={
+                  <>
+                    <span className="tabular-nums">{formatEur(remainingEur ?? 0)}</span> <span>left of</span>{" "}
+                    <span className="tabular-nums">{formatEur(budgetEur)}</span>
+                  </>
+                }
+                share={monthShare}
+              />
+            )}
+            <WindowRow
+              label="Current session"
+              description={
+                nowMs == null ? (
+                  "A rolling 5-hour window."
+                ) : (
+                  <>
+                    <span>Resets in</span> <span>{formatCountdown(windows.session.resetsAtMs - nowMs)}</span>
+                  </>
+                )
+              }
+              share={windows.session.pct}
+            />
+            <WindowRow
+              label="This week"
+              description={
+                nowMs == null ? (
+                  "A rolling 7-day window."
+                ) : (
+                  <>
+                    <span>Resets</span> <span>{formatResetMoment(windows.weekly.resetsAtMs)}</span>
+                  </>
+                )
+              }
+              share={windows.weekly.pct}
+            />
+          </>
+        )}
+      </SettingsGroup>
+
+      <SettingsGroup title="Spend ceiling">
+        {spend.capDisabled ? (
+          <p role="status" className="flex items-start gap-2 py-4 text-ui text-warning-foreground">
+            <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <span>
+              The spend ceiling is switched off for this account, so nothing caps what it can spend on models. Turn
+              it back on before using the account normally.
+            </span>
+          </p>
+        ) : (
+          <SpendCeilingRow
+            ceilingEur={budgetEur}
+            storedCapEur={spend.userCapEur}
+            sourceNote={describeCapSource(spend.capSource)}
+            status={saves.status("cap")}
+            onSave={(eur) => saves.track("cap", () => saveSpendCap(eur))}
+          />
+        )}
+      </SettingsGroup>
+
+      <SettingsGroup title="History" description="Replies per day across chat, code and tasks.">
+        <UsageHistory eurPerUsd={eurPerUsd} showCost={quota.plan !== "FREE"} />
+      </SettingsGroup>
+    </>
   );
 }
 
 /**
  * The spend ceiling, said out loud. Lowering is the operation offered: the
  * effective ceiling is the MINIMUM of the plan's figure and this one, so a
- * bigger number here buys nothing a plan has not already paid for.
+ * bigger number here buys nothing a plan has not already paid for. Saved
+ * with a button rather than on blur, because it decides when Juno stops.
  */
-function SpendCeiling({
+function SpendCeilingRow({
   ceilingEur,
   storedCapEur,
-  capSource,
-  capDisabled,
+  sourceNote,
+  status,
   onSave,
 }: {
   ceilingEur: number | null;
   storedCapEur: number | null;
-  capSource: BudgetCapSource;
-  capDisabled: boolean;
+  sourceNote: string;
+  status: ReturnType<ReturnType<typeof useSaveStates>["status"]>;
   onSave: (eur: number | null) => Promise<boolean>;
 }) {
   const [draft, setDraft] = React.useState(storedCapEur == null ? "" : String(storedCapEur));
@@ -97,39 +283,33 @@ function SpendCeiling({
     event.preventDefault();
     if (!valid || !dirty || saving) return;
     setSaving(true);
-    const ok = await onSave(parsed);
+    await onSave(parsed);
     setSaving(false);
-    if (ok) toast.success("Spend ceiling updated.");
   };
 
-  if (capDisabled) {
-    return (
-      // The warning well every settings warning shares (the permissions
-      // lockdown notice, /upgrade's billing notice): a leading warning mark
-      // on the first line, the text beside it.
-      <div role="status" className="flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4">
-        <StatusIcons.warning className="mt-1 size-4 shrink-0 text-warning" aria-hidden />
-        <div className="min-w-0">
-          <p className="text-body font-medium text-warning-foreground">Spend ceiling is switched off</p>
-          <p className="mt-1 text-ui text-muted-foreground">
-            Nothing is capping what this account can spend on models. This is a development escape hatch — turn
-            it back on before using the account normally.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <form onSubmit={submit}>
-      <p aria-live="polite" className="text-ui text-muted-foreground">
-        {describeCapSource(capSource)}. Juno stops generating once a billing period reaches this figure.
-      </p>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <div className="min-w-40 flex-1">
-          <Label htmlFor="spend-cap" className="mb-1.5 block text-muted-foreground">
-            Your own ceiling, in euros
-          </Label>
+    <SettingRow
+      label="Monthly ceiling"
+      htmlFor="spend-cap"
+      description={
+        valid ? (
+          <>
+            <span>{sourceNote}.</span>{" "}
+            {ceilingEur != null && (
+              <>
+                <span>Juno stops at</span> <span className="tabular-nums">{formatEur(ceilingEur)}</span>{" "}
+                <span>this period. Leave the field empty to use the default; the lower of the two applies.</span>
+              </>
+            )}
+          </>
+        ) : (
+          <span className="text-destructive-ink">Enter a whole number of euros from 0 to 100,000.</span>
+        )
+      }
+      wide
+      status={status}
+      control={
+        <form onSubmit={submit} className="flex w-full items-center gap-2 @[34rem]/pane:w-auto">
           <Input
             id="spend-cap"
             type="number"
@@ -139,247 +319,15 @@ function SpendCeiling({
             step={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Use the default"
+            placeholder="Default"
             aria-invalid={!valid}
-            aria-describedby="spend-cap-help"
+            className="min-w-0 flex-1 @[34rem]/pane:w-32 @[34rem]/pane:flex-none"
           />
-        </div>
-        {/* The label stays in the box while it saves — hidden, not removed —
-            so the button keeps its width and its accessible name, and the
-            spinner turns over it. Swapping the word for the glyph shrank the
-            button by a third and left it nameless for the length of the save. */}
-        <Button type="submit" disabled={!valid || !dirty || saving} aria-busy={saving}>
-          <span className={cn("transition-opacity duration-fast ease-out-soft", saving && "opacity-0")}>Save</span>
-          {saving && <Loader2 className="absolute inset-0 m-auto size-4 motion-safe:animate-spin" aria-hidden />}
-        </Button>
-      </div>
-      <p id="spend-cap-help" className="mt-2 text-caption text-muted-foreground">
-        {valid
-          ? `Currently ${ceilingEur == null ? "unset" : formatEur(ceilingEur)}. Leave it empty to fall back to the default — the lower of the two always wins.`
-          : "Enter a whole number of euros between 0 and 100000."}
-      </p>
-    </form>
-  );
-}
-
-export function BillingSection() {
-  const router = useRouter();
-  const { quota, spend, features } = useApp();
-  const plan = PLANS[quota.plan];
-  const windows = spend.windows;
-  const unlimited = spend.budgetMicroUsd == null;
-  const generating = quota.plan !== "FREE" && !spend.capDisabled;
-
-  // One button to the Stripe portal, not two: "Manage subscription" on the
-  // plan card and "Open portal" on the invoices row led to the same page, and
-  // a reader choosing between them was choosing between nothing. The portal
-  // is where subscription, invoices and payment method all live, so the plan
-  // card keeps it and the invoices row says where to look.
-  const [portalLoading, setPortalLoading] = React.useState(false);
-  const openPortal = async () => {
-    setPortalLoading(true);
-    const res = await fetch("/api/stripe/portal", { method: "POST" });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.url) window.location.href = data.url;
-    else {
-      setPortalLoading(false);
-      toast.error(data.error ?? "Couldn’t open billing portal.");
-    }
-  };
-
-  // Live clock so the rolling-window countdowns tick without a reload. Kept null
-  // until mount so SSR and the first client render agree.
-  const [nowMs, setNowMs] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    setNowMs(Date.now());
-    const id = setInterval(() => setNowMs(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const sessionSubtitle =
-    nowMs == null ? "5-hour window" : `Resets in ${formatCountdown(windows.session.resetsAtMs - nowMs)}`;
-  const weeklySubtitle =
-    nowMs == null ? "7-day window" : `Resets ${formatResetMoment(windows.weekly.resetsAtMs)}`;
-
-  const eurPerUsd = spend.eurPerUsd > 0 ? spend.eurPerUsd : 1;
-  const spentEur = (spend.spentMicroUsd / 1_000_000) * eurPerUsd;
-  const budgetEur = spend.budgetMicroUsd == null ? null : (spend.budgetMicroUsd / 1_000_000) * eurPerUsd;
-  const heldEur = (spend.reservedMicroUsd / 1_000_000) * eurPerUsd;
-  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur - heldEur);
-  const monthPct = budgetEur && budgetEur > 0 ? Math.min(1, (spentEur + heldEur) / budgetEur) : 0;
-
-  const saveSpendCap = React.useCallback(
-    async (monthlySpendCapEur: number | null) => {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monthlySpendCapEur }),
-      });
-      if (!res.ok) {
-        toast.error("Couldn’t save the spend ceiling.");
-        return false;
+          <Button type="submit" variant="outline" disabled={!valid || !dirty} loading={saving}>
+            Save
+          </Button>
+        </form>
       }
-      router.refresh();
-      return true;
-    },
-    [router]
-  );
-
-  const renewsAtMs = spend.billing.renewsAtMs;
-  const cancelAtPeriodEnd = spend.billing.cancelAtPeriodEnd;
-
-  return (
-    <>
-      <SettingsGroup title="Plan">
-        <div className="surface-raised my-3 rounded-card p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-heading">{plan.name}</span>
-                {generating && (
-                  <Badge variant="outline" className="gap-1.5 text-success-ink">
-                    <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
-                    Active
-                  </Badge>
-                )}
-              </div>
-              <p className="mt-1 text-body text-muted-foreground">{plan.tagline}</p>
-              <ul className="mt-3 space-y-1.5">
-                {/* The check in muted ink, not the accent: "included" is not a
-                    state and not an action, and three coral ticks per card was
-                    the accent spent on furniture. Same glyph, size and ink as
-                    the plan cards on /upgrade. */}
-                {plan.features.slice(0, 3).map((feat, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-ui text-muted-foreground">
-                    <StatusIcons.success className="size-4 shrink-0" />
-                    <span className="truncate">{feat}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                {plan.price > 0 ? `${plan.price} € excl. VAT / mo` : "Free"}
-              </span>
-              {features.billing && quota.plan === "FREE" && (
-                <Button asChild size="sm">
-                  <Link href="/upgrade">Upgrade</Link>
-                </Button>
-              )}
-              {features.billing && quota.plan !== "FREE" && (
-                <div className="flex gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/upgrade">Change plan</Link>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void openPortal()}
-                    disabled={portalLoading}
-                    aria-busy={portalLoading}
-                  >
-                    {portalLoading && <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />}
-                    {portalLoading ? "Opening…" : "Manage billing"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-          {renewsAtMs != null && (
-            <p className="mt-4 flex items-center gap-1.5 border-t border-border/60 pt-3 text-caption text-muted-foreground">
-              <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
-              {cancelAtPeriodEnd ? "Access ends" : "Renews"} {formatDate(renewsAtMs)}
-            </p>
-          )}
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup title="Usage" description="What you have spent this period, and the rolling windows that pace it.">
-        <div className="space-y-5 py-3">
-          {unlimited ? (
-            <div>
-              {/* The dot signature at rest, on its own tokens (`dot` /
-                  `dot-gap`). It pulsed, in a stagger that ran for as long as
-                  the pane was open — an idle loop borrowing the loading
-                  gesture on a line whose whole message is that nothing is
-                  happening (PREMIUM_AUDIT rule 14, ICONS_AND_MOTION §2.2.9). */}
-              <div className="flex items-center gap-dot-gap py-1.5" aria-hidden>
-                {Array.from({ length: 32 }).map((_, i) => (
-                  <span key={i} className="size-dot rounded-full bg-primary/75" />
-                ))}
-              </div>
-              {/* No meter at 0%, and now a second sentence, because the
-                  windows became the thing that bounds a delegated run. With
-                  metering off there is no window to run out of — so the reader
-                  who switched it off is told what is still in front of an
-                  unattended loop rather than left to assume it is nothing. */}
-              <p className="mt-2 text-ui text-muted-foreground">
-                Nothing is metering this account right now. A task Juno starts on its own still stops
-                at a small backstop ceiling, so an unattended loop cannot run all night.
-              </p>
-            </div>
-          ) : quota.plan === "FREE" ? (
-            // The truth from plans.ts, not "browse-only": Free is a trial of
-            // messages, counted rather than metered, and the count is what a
-            // free reader is pacing against. Stated from the config so the
-            // number here cannot disagree with the one the gate enforces.
-            <p className="text-body text-muted-foreground">
-              Free includes {plan.monthlyMessages ?? 0} messages a month on the everyday models. Upgrade to Pro for
-              every model and a metered monthly budget instead of a count.
-            </p>
-          ) : (
-            <>
-              {budgetEur != null && (
-                <div>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-heading tabular-nums">
-                      {formatEur(remainingEur ?? 0)}{" "}
-                      <span className="text-caption font-normal text-muted-foreground">left this month</span>
-                    </span>
-                    <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                      {formatEur(spentEur)} of {formatEur(budgetEur)}
-                    </span>
-                  </div>
-                  <Progress
-                    value={Math.round(monthPct * 100)}
-                    tone={monthPct >= 1 ? "destructive" : monthPct >= 0.9 ? "warning" : "primary"}
-                    className="mt-2"
-                    aria-label="Monthly budget used"
-                  />
-                </div>
-              )}
-              <Meter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
-              <Meter label="This week" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
-            </>
-          )}
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup title="Spend ceiling">
-        <SettingBlock
-          label="Monthly spend ceiling"
-          aside={
-            <span className="font-mono text-caption tabular-nums text-muted-foreground">
-              {budgetEur == null ? "—" : formatEur(budgetEur)}
-            </span>
-          }
-        >
-          <SpendCeiling
-            ceilingEur={budgetEur}
-            storedCapEur={spend.userCapEur}
-            capSource={spend.capSource}
-            capDisabled={spend.capDisabled}
-            onSave={saveSpendCap}
-          />
-        </SettingBlock>
-        {plan.price > 0 && (
-          <SettingRow
-            label="Invoices and payment method"
-            description="Both live in the billing portal — use Manage billing on your plan card above."
-            control={!features.billing ? <Badge variant="secondary">Billing off</Badge> : undefined}
-          />
-        )}
-      </SettingsGroup>
-    </>
+    />
   );
 }

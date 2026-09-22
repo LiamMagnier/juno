@@ -51,7 +51,7 @@ export default function CodeCustomizeError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t open your Juno Code settings"
-        description="This screen failed to draw. Nothing here was changed — this page states what your runs use, and it sets none of it."
+        description="This screen failed to draw. Nothing was changed: this page only shows what your runs use, and sets none of it."
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

@@ -2,25 +2,29 @@ import { AppPage, AppPageHeaderSkeleton } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * Name, description, the instructions box, then trust and version history.
+ * The skill page's shape before its data: the header, the source line, the
+ * two usage options, the tab strip and the instructions document.
  *
- * A skeleton rather than a spinner, because the two answer different questions:
- * a spinner says only that something is happening, while a placeholder in the
- * page's own shape says what is about to be there and reserves the room for it,
- * so nothing jumps when the data lands. The rows come up on the shared stagger
- * (see STAGGER in src/lib/motion.ts) rather than repainting as one flat block.
+ * A placeholder in the page's own shape rather than a spinner, so the page
+ * does not step when the skill arrives.
  */
 export default function SkillLoading() {
   return (
-    // role="status" with a label, not aria-hidden: a screen-reader user is owed
-    // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading skill">
-      <AppPageHeaderSkeleton headingWidth="w-44" actions />
-      <div className="space-y-5">
-        <Skeleton className="h-10 w-full rounded-field" />
-        <Skeleton className="h-10 w-full rounded-field" />
-        <Skeleton className="h-56 w-full rounded-field" />
-        <Skeleton className="h-24 w-full rounded-card" />
+      <AppPageHeaderSkeleton headingWidth="w-44" actions className="mb-0 border-b-0 pb-0" />
+      <div className="mb-7 mt-3 flex items-center gap-3 border-b border-border pb-5">
+        <Skeleton className="h-7 w-44 rounded-full" />
+        <Skeleton className="h-4 w-28 rounded-sm" />
+      </div>
+      <div className="space-y-8">
+        <div>
+          <Skeleton className="h-5 w-16 rounded-sm" />
+          <Skeleton className="mt-3 h-[8.5rem] w-full rounded-card" />
+        </div>
+        <div>
+          <Skeleton className="h-9 w-64 rounded-menu" />
+          <Skeleton className="mt-4 h-72 w-full rounded-card" />
+        </div>
       </div>
     </AppPage>
   );

@@ -112,7 +112,9 @@ export default function ProjectsPage() {
         body: JSON.stringify({ starred: next }),
       });
       if (!r.ok) throw new Error();
-      toast.success(next ? "Project pinned!" : "Project unpinned.");
+      // No success toast: the pin turns over under the pointer (IconSwap) and
+      // the row moves in the sidebar, so a corner notification would be a
+      // second voice announcing what the reader just watched happen.
       window.dispatchEvent(new CustomEvent("starred:sync"));
       window.dispatchEvent(new CustomEvent("projects:sync"));
     } catch {
@@ -154,7 +156,7 @@ export default function ProjectsPage() {
       setItems((cur) =>
         cur ? cur.map((p) => (p.id === editingProject.id ? { ...p, name: renameName.trim() } : p)) : null
       );
-      toast.success("Project renamed.");
+      // The new name is on the card the dialog closes onto; no toast.
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setEditingProject(null);
     } catch {
@@ -416,7 +418,7 @@ export default function ProjectsPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create project"}</Button>
+            <Button onClick={create} loading={creating}>Create project</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -443,7 +445,7 @@ export default function ProjectsPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditingProject(null)}>Cancel</Button>
-            <Button onClick={rename} disabled={renaming || !renameName.trim()}>{renaming ? "Renaming…" : "Rename project"}</Button>
+            <Button onClick={rename} loading={renaming} disabled={!renameName.trim()}>Rename project</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -459,7 +461,7 @@ export default function ProjectsPage() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeletingProject(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={deleteProject} disabled={deleting}>{deleting ? "Deleting…" : "Delete project"}</Button>
+            <Button variant="destructive" onClick={deleteProject} loading={deleting}>Delete project</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

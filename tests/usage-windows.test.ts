@@ -316,7 +316,10 @@ test("the windows are enforced and not merely metered", () => {
 
   for (const file of [
     "../src/app/api/chat/route.ts",
-    "../src/app/api/work/sessions/[id]/runs/route.ts",
+    // Where a Work run is started, by the runs route and by the chat model's
+    // `start_task` alike. The route is now a thin wrapper around it, so this is
+    // the file whose gate matters.
+    "../src/lib/work/dispatch.ts",
     // The Run-now button and an `api` trigger's fire URL are ONE implementation
     // (`fireScheduleNow`), so the window is read there rather than in either
     // route. Asserting on the route instead would pass while the public,

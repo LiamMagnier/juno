@@ -6,7 +6,14 @@ import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
-import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
+import {
+  type ActiveConnector,
+  type McpFunctionTool,
+  type McpToolset,
+  type McpToolsetContext,
+  type ToolExecution,
+} from "@/lib/mcp";
+import type { ToolAccess } from "@/lib/tool-access";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError, type ErrorSubject } from "@/lib/provider-error";
 import { noteModelNotServed } from "@/lib/model-capability";
@@ -17,6 +24,55 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export { clampMaxTokens };
+
+/**
+ * A tool the chat route builds for one turn and runs itself.
+ *
+ * Not a registry tool, and deliberately so. `UnifiedAgentRegistry` tools run
+ * through `executeToolCall`, which puts every call that is not a read in front
+ * of the generic approval broker, and their `execute` sees only the arguments.
+ * A native tool is a closure over the turn it belongs to (the account, the
+ * conversation, the user message it answers) and decides for itself when a
+ * person has to be asked. `start_task` (src/lib/chat/task-tool.ts) is the one
+ * that exists.
+ */
+export interface NativeChatTool {
+  tool: McpFunctionTool;
+  /** The name the activity row and the thought-process panel show for it. */
+  label: string;
+  access: ToolAccess;
+  execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolExecution>;
+}
+
+/**
+ * The turn's toolset with the native tools added after everything it already
+ * carries.
+ *
+ * Composed here rather than inside `openUnifiedAgentToolset`, so the registry
+ * and its broker never see these calls, and so a toolset that failed to open
+ * still leaves the native tools usable instead of taking them down with it.
+ * Native tools are dispatched first by name; every other name falls through to
+ * the toolset exactly as before.
+ */
+function withNativeTools(base: McpToolset | undefined, native: readonly NativeChatTool[]): McpToolset | undefined {
+  if (native.length === 0) return base;
+  const byName = new Map(native.map((entry) => [entry.tool.function.name, entry]));
+  return {
+    tools: [...(base?.tools ?? []), ...native.map((entry) => entry.tool)],
+    labelFor: (toolName) => byName.get(toolName)?.label ?? base?.labelFor(toolName) ?? toolName,
+    accessFor: (toolName) => byName.get(toolName)?.access ?? base?.accessFor(toolName) ?? "unknown",
+    execute: (toolName, args, signal, callId) => {
+      const entry = byName.get(toolName);
+      if (entry) return entry.execute(args, signal);
+      if (base) return base.execute(toolName, args, signal, callId);
+      const text = `Unknown tool: ${toolName}`;
+      return Promise.resolve({ text, body: text, ok: false });
+    },
+    close: async () => {
+      if (base) await base.close();
+    },
+  };
+}
 
 /** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
@@ -67,6 +123,12 @@ export async function* streamChat(opts: {
    * refusing — and a receipt with no owner is one nobody can be asked to sign.
    */
   audit?: McpToolsetContext;
+  /**
+   * Tools the route built for this turn (see `NativeChatTool`). Offered after
+   * the connector and registry tools, and only on the saved path: the route
+   * decides whether a turn may carry one, and private turns never do.
+   */
+  nativeTools?: readonly NativeChatTool[];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -120,6 +182,7 @@ export async function* streamChat(opts: {
       toolset = undefined;
     }
   }
+  toolset = withNativeTools(toolset, opts.nativeTools ?? []);
   try {
     const adapter = providerAdapterFor(model, proMode);
     // Every provider call in the product funnels through the switch below, so

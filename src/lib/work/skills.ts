@@ -1735,7 +1735,13 @@ export const mintSkillVersionSchema = z
     { message: "instructions_or_restore_version" }
   );
 
-export const SKILL_LIST_DEFAULT_LIMIT = 50;
+/**
+ * The default is the ceiling. The composer's skill menu and the native clients
+ * ask without a limit and treat the answer as the whole library, and at 50 a
+ * reader with two installed repositories had skills that silently never
+ * appeared. `GET /api/skills` is the view that reports truncation honestly.
+ */
+export const SKILL_LIST_DEFAULT_LIMIT = 200;
 export const SKILL_LIST_MAX_LIMIT = 200;
 
 export interface SkillListQuery {

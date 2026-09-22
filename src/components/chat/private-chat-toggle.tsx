@@ -5,7 +5,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 
 /**
- * The private-chat switch in the chat root's header cluster.
+ * The incognito switch in the chat root's header cluster.
+ *
+ * "Incognito", everywhere the mode is named: the toggle, its tooltip, the
+ * banner and the transcript heading. The same mode used to be "private chat"
+ * on this button and "incognito" on the page it turned on, which read as two
+ * features.
  *
  * THE GHOST IS A BESPOKE JUNO MARK, not an interface glyph, and it is kept on
  * purpose. A stock eye-with-a-slash was tried in its place and rejected: it is
@@ -47,7 +52,7 @@ export function PrivateChatToggle({
         <button
           ref={buttonRef}
           type="button"
-          aria-label={active ? "Leave private chat" : "Start private chat"}
+          aria-label={active ? "Leave incognito" : "Turn on incognito"}
           aria-pressed={active}
           disabled={disabled}
           onClick={onToggle}
@@ -99,7 +104,7 @@ export function PrivateChatToggle({
           </svg>
         </button>
       </TooltipTrigger>
-      <TooltipContent>{active ? "Private chat is on. Nothing is saved." : "Start private chat"}</TooltipContent>
+      <TooltipContent>{active ? "Incognito is on. Nothing is saved." : "Turn on incognito"}</TooltipContent>
     </Tooltip>
   );
 }

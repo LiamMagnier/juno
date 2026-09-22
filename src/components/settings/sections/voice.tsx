@@ -3,33 +3,45 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Loader2, Play, Square } from "@/components/ui/icons";
-import { StatusIcons } from "@/lib/app-icons";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pressable } from "@/components/ui/pressable";
-import { useApp } from "@/components/app/app-provider";
 import { IconSwap } from "@/components/ui/icon-swap";
-import { useRadioGroup } from "@/components/settings/use-radio-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useApp } from "@/components/app/app-provider";
+import { ChoiceMenu } from "@/components/settings/choice-menu";
+import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
-import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
-import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
+import { VOICES, DEFAULT_VOICE, type VoiceId } from "@/lib/voices";
 
-// Short on purpose: a preview is billed per character and the user may audition
-// a dozen voices in a row. Long enough to hear timbre, not a paragraph.
+// Short on purpose: a preview is billed per character and the reader may
+// audition a dozen voices in a row. Long enough to hear timbre.
 const VOICE_PREVIEW_TEXT = "Hi, I'm Juno. This is how I sound when I read an answer aloud.";
 
+const VOICE_OPTIONS = VOICES.map((v) => ({ value: v.id, label: v.label, description: v.description }));
+
+/**
+ * The voice Juno reads answers in.
+ *
+ * One row: the voice as a described menu, and a play button that auditions
+ * the one chosen. It was thirteen bordered tiles with a play button floated
+ * over each, most of the section's height for one choice. The dictation and
+ * voice-mode rows that followed were two badges that could not be changed;
+ * they are one plain sentence now, because they are facts about this server
+ * and plan, not settings.
+ */
 export function VoiceSection() {
   const { settings, quota, features } = useApp();
   const save = useSettingsSave();
+  const saves = useSaveStates();
   const plan = PLANS[quota.plan];
-  const activeVoice = settings.voiceId ?? DEFAULT_VOICE;
+  const activeVoice = (settings.voiceId ?? DEFAULT_VOICE) as VoiceId;
+  const voice = VOICES.find((v) => v.id === activeVoice) ?? VOICES[0];
 
-  // Voice preview: at most one audition at a time — a new click cancels whatever
-  // is loading or playing. `previewSeq` is the ownership token; every stop mints
-  // a fresh one so a slow fetch that lands after its click was superseded can
-  // neither start playing nor touch the UI.
+  // At most one audition at a time. `previewSeq` is the ownership token:
+  // every stop mints a fresh one, so a slow fetch that lands after its click
+  // was superseded can neither start playing nor touch the UI.
   const [preview, setPreview] = React.useState<{ id: string; loading: boolean } | null>(null);
   const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = React.useRef<string | null>(null);
@@ -85,105 +97,82 @@ export function VoiceSection() {
     }
   };
 
-  const voiceOption = useRadioGroup(
-    VOICES,
-    VOICES.findIndex((v) => v.id === activeVoice),
-    (v) => void save({ voiceId: v.id })
-  );
-
   // Every clause removes a way this could be a control that looks alive and
-  // does nothing: serverTts (else the browser fallback speaks in the OS voice),
-  // ttsProvider (the list is OpenAI's), plan.voice (the route 403s without it).
+  // does nothing: serverTts (else the browser speaks in the OS voice),
+  // ttsProvider (the list is OpenAI's), plan.voice (the route refuses without it).
   const pickerAvailable = features.serverTts && features.ttsProvider === "openai" && plan.voice;
+  const playing = preview?.id === activeVoice;
+  const loading = playing && preview.loading;
 
   return (
     <>
-      <SettingsGroup title="Read aloud" description="The voice Juno reads answers in. Press play to hear one.">
+      <SettingsGroup title="Read aloud">
         {pickerAvailable ? (
-          <SettingBlock label="Voice">
-            <div className="grid grid-cols-1 gap-2 @[28rem]/pane:grid-cols-2" role="radiogroup" aria-label="Read-aloud voice">
-              {VOICES.map((v, i) => {
-                const selected = activeVoice === v.id;
-                const active = preview?.id === v.id;
-                const loading = active && preview.loading;
-                return (
-                  <div key={v.id} className="group relative hover:z-10">
-                    <Pressable
-                      kind="tile"
-                      role="radio"
-                      selected={selected}
-                      aria-checked={selected}
-                      aria-label={`Read aloud in the ${v.label} voice`}
-                      onClick={() => void save({ voiceId: v.id })}
-                      className="w-full pr-12"
-                      {...voiceOption(i)}
-                    >
-                      <span className="flex items-center gap-1.5 text-body font-medium">
-                        {v.label}
-                        {selected && <StatusIcons.success className="check-morph size-3.5 shrink-0 text-primary" />}
-                      </span>
-                      <span className="text-ui text-muted-foreground">{v.description}</span>
-                    </Pressable>
-                    {/* Play, stop and the spinner share one cell and cross-fade:
-                        one control changing state, not three glyphs taking
-                        turns. The spinner turns only while it is showing.
-
-                        Centred with `inset-y-0 my-auto`, not a -50% translate:
-                        `.pressable:active` sets `transform: scale(.97)`, which
-                        replaced the translate and dropped the button by half its
-                        height for as long as it was held. */}
+          <SettingRow
+            label="Voice"
+            description={voice.description}
+            wide
+            status={saves.status("voiceId")}
+            control={
+              <div className="flex w-full items-center gap-2 @[34rem]/pane:w-auto">
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button
-                      variant="secondary"
-                      size="icon-sm"
-                      className="absolute inset-y-0 right-3 z-10 my-auto"
-                      onClick={() => void playPreview(v.id)}
-                      aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
-                      title={active ? "Stop preview" : "Preview voice"}
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => void playPreview(activeVoice)}
+                      aria-label={playing ? "Stop the preview" : "Play a preview"}
                     >
-                      {/* Three faces from two swaps: play ⇄ stop inside,
-                          and that pair ⇄ the spinner outside. */}
+                      {/* Three faces from two swaps: play and stop inside, and
+                          that pair against the spinner outside. */}
                       <IconSwap
                         swapped={loading}
-                        from={<IconSwap swapped={active} from={<Play className="size-4" />} to={<Square className="size-4" />} />}
+                        from={<IconSwap swapped={playing} from={<Play className="size-4" />} to={<Square className="size-4" />} />}
                         to={<Loader2 className={cn("size-4", loading && "motion-safe:animate-spin")} />}
                       />
                     </Button>
-                  </div>
-                );
-              })}
-            </div>
-          </SettingBlock>
+                  </TooltipTrigger>
+                  <TooltipContent>{playing ? "Stop" : "Preview"}</TooltipContent>
+                </Tooltip>
+                <ChoiceMenu
+                  ariaLabel="Read-aloud voice"
+                  value={activeVoice}
+                  options={VOICE_OPTIONS}
+                  onChange={(voiceId) => {
+                    if (voiceId === activeVoice) return;
+                    stopPreview();
+                    void saves.track("voiceId", () => save({ voiceId }));
+                  }}
+                  className="flex-1 @[34rem]/pane:w-48 @[34rem]/pane:flex-none"
+                />
+              </div>
+            }
+          />
         ) : (
           <SettingRow
             label="Voice"
             description={
               !plan.voice
-                ? "Voice mode is not on your plan."
+                ? "Choosing a voice needs a plan with voice."
                 : !features.serverTts
-                  ? "Read-aloud uses your browser's built-in voice on this server."
-                  : "This server's speech provider brings its own voice."
+                  ? "Answers are read in your browser’s built-in voice on this server."
+                  : "This server’s speech provider uses its own voice."
             }
-            control={<Badge variant="secondary">{plan.voice ? "Provider default" : "Unavailable"}</Badge>}
           />
         )}
       </SettingsGroup>
 
-      <SettingsGroup title="Dictation" description="Talking to Juno from the composer's microphone button.">
-        <SettingRow
-          label="Transcription"
-          description={
-            features.serverStt
-              ? "Speech is transcribed server-side with a real model, in any language."
-              : "Speech is transcribed by your browser. Accuracy depends on it."
-          }
-          control={<Badge variant="secondary">{features.serverStt ? "Server" : "Browser"}</Badge>}
-        />
-        <SettingRow
-          label="Voice mode"
-          description="Hands-free conversation with a live transcript."
-          control={<Badge variant="secondary">{plan.voice ? "Included" : "Upgrade to unlock"}</Badge>}
-        />
-      </SettingsGroup>
+      <p className="pt-6 text-ui text-muted-foreground">
+        <span>
+          {features.serverStt
+            ? "Dictation is transcribed by Juno, in any language."
+            : "Dictation uses your browser’s speech recognition."}
+        </span>{" "}
+        <span>
+          {plan.voice ? "Voice conversations are included in your plan." : "Voice conversations need a plan with voice."}
+        </span>
+      </p>
     </>
   );
 }

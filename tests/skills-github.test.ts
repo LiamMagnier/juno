@@ -360,3 +360,187 @@ test("a token is sent when there is one, and the request is never anonymous by a
   assert.ok(calls.length > 0);
   for (const call of calls) assert.equal(call.auth, "Bearer ghp_x");
 });
+
+// ---------------------------------------------------------------------------
+// What an installed source needs from a walk
+// ---------------------------------------------------------------------------
+
+const PIN = "c".repeat(40);
+
+test("a pinned walk reads the pinned commit and still records the branch it tracks", async () => {
+  // The import step pins to what its preview read. The source it installs into
+  // has to know which BRANCH to check for updates later, so the ref is still
+  // resolved even though its head is not what gets read.
+  const { fetch: f, seen } = transport([
+    { match: "/repos/o/r/commits/main", json: { sha: "d".repeat(40) } },
+    { match: "/repos/o/r/git/trees/", json: tree(["skills/a/SKILL.md"]) },
+    { match: "/contents/skills/a/SKILL.md", text: SKILL_MD },
+    { match: "/repos/o/r", json: { default_branch: "main" } },
+  ]);
+  const result = await discoverGithubSkills({ fetch: f }, parseGithubSkillSource("o/r")!, { commit: PIN });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.discovery.ref, "main");
+  assert.equal(result.discovery.commit, PIN);
+  assert.ok(seen.some((url) => url.includes(`/git/trees/${PIN}`)), "the tree was not read at the pinned commit");
+  assert.ok(seen.some((url) => url.includes(`ref=${PIN}`)), "the file was not read at the pinned commit");
+  assert.equal(result.discovery.candidates[0].provenance.commit, PIN);
+});
+
+test("a short pinned SHA is resolved before the tree is read", async () => {
+  const { fetch: f, seen } = transport([
+    { match: "/repos/o/r/commits/abc1234", json: { sha: `abc1234${"0".repeat(33)}` } },
+    { match: "/repos/o/r/commits/main", json: { sha: "d".repeat(40) } },
+    { match: "/repos/o/r/git/trees/", json: tree(["a/SKILL.md"]) },
+    { match: "/contents/a/SKILL.md", text: SKILL_MD },
+    { match: "/repos/o/r", json: { default_branch: "main" } },
+  ]);
+  const result = await discoverGithubSkills({ fetch: f }, parseGithubSkillSource("o/r")!, { commit: "abc1234" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.discovery.commit, `abc1234${"0".repeat(33)}`);
+  assert.ok(seen.some((url) => url.includes(`/git/trees/abc1234${"0".repeat(33)}`)));
+});
+
+test("a pinned walk whose branch has gone reads the commit it was shown", async () => {
+  // Deleted between preview and import. The commit still names the bytes the
+  // reader chose, so those are read rather than the import failing.
+  const { fetch: f } = transport([
+    { match: `/repos/o/r/commits/${PIN}`, json: { sha: PIN } },
+    { match: "/repos/o/r/git/trees/", json: tree(["skills/a/SKILL.md"]) },
+    { match: "/contents/skills/a/SKILL.md", text: SKILL_MD },
+  ]);
+  const result = await discoverGithubSkills(
+    { fetch: f },
+    parseGithubSkillSource("https://github.com/o/r/tree/gone/skills")!,
+    { commit: PIN }
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.discovery.commit, PIN);
+  assert.equal(result.discovery.ref, PIN);
+  assert.equal(result.discovery.scope, "skills");
+});
+
+test("a walk reports the folder it was scoped to and every SKILL.md in it", async () => {
+  const routes: Route[] = [
+    { match: "/repos/o/r/commits/main", json: { sha: "abc" } },
+    { match: "/repos/o/r/git/trees/", json: tree(["skills/a/SKILL.md", "skills/b/SKILL.md", "other/SKILL.md"]) },
+    { match: "/SKILL.md", text: SKILL_MD },
+  ];
+  const folder = await discoverGithubSkills(
+    { fetch: transport(routes).fetch },
+    parseGithubSkillSource("https://github.com/o/r/tree/main/skills")!
+  );
+  assert.equal(folder.ok, true);
+  if (folder.ok) {
+    assert.equal(folder.discovery.scope, "skills");
+    assert.deepEqual(folder.discovery.paths, ["skills/a/SKILL.md", "skills/b/SKILL.md"]);
+  }
+
+  // A link to one file scopes the source to that file's folder.
+  const file = await discoverGithubSkills(
+    { fetch: transport(routes).fetch },
+    parseGithubSkillSource("https://github.com/o/r/blob/main/skills/a/SKILL.md")!
+  );
+  assert.equal(file.ok, true);
+  if (file.ok) {
+    assert.equal(file.discovery.scope, "skills/a");
+    assert.deepEqual(file.discovery.paths, ["skills/a/SKILL.md"]);
+  }
+});
+
+test("preferred paths are read first, so the cap never drops what is installed", async () => {
+  const paths = Array.from({ length: MAX_DISCOVERED_SKILLS + 5 }, (_, i) => `s${String(i).padStart(3, "0")}/SKILL.md`);
+  const last = paths[paths.length - 1];
+  const { fetch: f } = transport([
+    { match: "/repos/o/r/commits/main", json: { sha: "abc" } },
+    { match: "/repos/o/r/git/trees/", json: tree(paths) },
+    { match: "/SKILL.md", text: SKILL_MD },
+    { match: "/repos/o/r", json: { default_branch: "main" } },
+  ]);
+  const result = await discoverGithubSkills({ fetch: f }, parseGithubSkillSource("o/r")!, { prefer: [last] });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.discovery.candidates.length, MAX_DISCOVERED_SKILLS);
+  assert.ok(result.discovery.candidates.some((candidate) => candidate.path === last));
+  // Every path in scope is still listed, read or not, so an update check can
+  // tell a skill that was not read from one that is gone.
+  assert.equal(result.discovery.paths.length, paths.length);
+  assert.equal(result.discovery.more, true);
+  // Sorted by path whatever order they were read in.
+  const read = result.discovery.candidates.map((candidate) => candidate.path);
+  assert.deepEqual(read, [...read].sort());
+});
+
+test("GitHub's spelling of the repository is taken when it differs only by case", async () => {
+  const { fetch: f } = transport([
+    { match: "/repos/owner/repo/commits/main", json: { sha: "abc" } },
+    { match: "/repos/owner/repo/git/trees/", json: tree(["a/SKILL.md"]) },
+    { match: "/contents/a/SKILL.md", text: SKILL_MD },
+    { match: "/repos/owner/repo", json: { default_branch: "main", name: "Repo", owner: { login: "Owner" } } },
+  ]);
+  const result = await discoverGithubSkills({ fetch: f }, parseGithubSkillSource("owner/repo")!);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.discovery.owner, "Owner");
+  assert.equal(result.discovery.repo, "Repo");
+  assert.equal(result.discovery.candidates[0].provenance.url, "https://github.com/Owner/Repo/blob/abc/a/SKILL.md");
+
+  // A tree link resolves through the commit endpoint, whose permalink names it.
+  const linked = transport([
+    { match: "/repos/owner/repo/commits/main", json: { sha: "abc", html_url: "https://github.com/Owner/Repo/commit/abc" } },
+    { match: "/repos/owner/repo/git/trees/", json: tree(["a/SKILL.md"]) },
+    { match: "/contents/a/SKILL.md", text: SKILL_MD },
+  ]);
+  const viaTree = await discoverGithubSkills(
+    { fetch: linked.fetch },
+    parseGithubSkillSource("https://github.com/owner/repo/tree/main/a")!
+  );
+  assert.equal(viaTree.ok && viaTree.discovery.owner, "Owner");
+
+  // A different name is a rename or a transfer GitHub followed. Adopting it
+  // would move an installed source to another identity, so it is left alone.
+  const renamed = transport([
+    { match: "/repos/owner/repo/commits/main", json: { sha: "abc" } },
+    { match: "/repos/owner/repo/git/trees/", json: tree(["a/SKILL.md"]) },
+    { match: "/contents/a/SKILL.md", text: SKILL_MD },
+    { match: "/repos/owner/repo", json: { default_branch: "main", name: "elsewhere", owner: { login: "someone" } } },
+  ]);
+  const moved = await discoverGithubSkills({ fetch: renamed.fetch }, parseGithubSkillSource("owner/repo")!);
+  assert.equal(moved.ok && `${moved.discovery.owner}/${moved.discovery.repo}`, "owner/repo");
+});
+
+test("an update check may find a folder emptied, where an import is refused", async () => {
+  const routes: Route[] = [
+    { match: "/repos/o/r/commits/main", json: { sha: "abc" } },
+    { match: "/repos/o/r/git/trees/", json: tree(["README.md"]) },
+    { match: "/repos/o/r", json: { default_branch: "main" } },
+  ];
+  assert.deepEqual(await discoverGithubSkills({ fetch: transport(routes).fetch }, parseGithubSkillSource("o/r")!), {
+    ok: false,
+    reason: "no_skills",
+  });
+  const empty = await discoverGithubSkills({ fetch: transport(routes).fetch }, parseGithubSkillSource("o/r")!, {
+    allowEmpty: true,
+  });
+  assert.equal(empty.ok, true);
+  if (empty.ok) {
+    assert.deepEqual(empty.discovery.paths, []);
+    assert.deepEqual(empty.discovery.candidates, []);
+  }
+});
+
+test("a rate limit partway through the reads refuses the walk rather than reporting broken files", async () => {
+  const { fetch: f } = transport([
+    { match: "/repos/o/r/commits/main", json: { sha: "abc" } },
+    { match: "/repos/o/r/git/trees/", json: tree(["a/SKILL.md", "b/SKILL.md"]) },
+    { match: "/contents/a/SKILL.md", text: SKILL_MD },
+    { match: "/contents/b/SKILL.md", status: 403, headers: { "x-ratelimit-remaining": "0" }, json: {} },
+    { match: "/repos/o/r", json: { default_branch: "main" } },
+  ]);
+  assert.deepEqual(await discoverGithubSkills({ fetch: f }, parseGithubSkillSource("o/r")!), {
+    ok: false,
+    reason: "rate_limited",
+  });
+});

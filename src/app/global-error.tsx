@@ -156,8 +156,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           <p className="juno-fallback-eyebrow">Temporarily unavailable</p>
           <h1 className="juno-fallback-title">Juno can&rsquo;t reach its backend</h1>
           <p className="juno-fallback-copy">
-            Your conversations are safe — the server just can&rsquo;t read them right now. This is on our side, not
-            yours. Try again in a few minutes.
+            Your conversations are safe. The server can&rsquo;t read them right now, and the problem is on our side,
+            not yours. Try again in a few minutes.
           </p>
           <div className="juno-fallback-actions">
             <button type="button" onClick={reset} className="juno-fallback-button juno-fallback-button--primary">

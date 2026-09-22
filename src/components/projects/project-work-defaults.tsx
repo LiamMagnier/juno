@@ -124,7 +124,7 @@ export function ProjectWorkDefaults({
       <CardEyebrow>Task defaults</CardEyebrow>
       <p className="mt-1 text-body text-muted-foreground">
         What a task filed in this project starts with. Each of these is a starting point, not a
-        permission — a task can still be told something different, and nothing here gives Juno
+        permission: a task can still be told something different, and nothing here gives Juno
         anything your account has not already allowed.
       </p>
 
@@ -159,7 +159,7 @@ export function ProjectWorkDefaults({
             {value.permissionPolicy === undefined
               ? WORK_APPROVAL_MODE_SUMMARY[DEFAULT_WORK_PERMISSION_POLICY]
               : WORK_APPROVAL_MODE_SUMMARY[value.permissionPolicy]}{" "}
-            A project can only ask Juno to be more careful than the default, never less — a task
+            A project can only ask Juno to be more careful than the default, never less. A task
             that wants to be left alone has to say so itself.
           </span>
         </label>
@@ -279,8 +279,8 @@ export function ProjectWorkDefaults({
           ) : (
             <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
               {restricted
-                ? "A task filed here can pick among these and cannot add to them. Your connections are unchanged — "
-                : "Tasks filed here choose their own apps, from everything you have connected — "}
+                ? "A task filed here can pick among these and cannot add to them. Your connections are unchanged: "
+                : "Tasks filed here choose their own apps, from everything you have connected: "}
               <Link
                 href="/connections"
                 className="underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"

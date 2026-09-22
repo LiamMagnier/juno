@@ -31,7 +31,7 @@ export default function SkillsError({
   }, [error]);
 
   return (
-    <AppPage measure="wide">
+    <AppPage measure="reading">
       <EmptyState
         tone="error"
         icon={StatusIcons.error}

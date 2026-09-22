@@ -7,7 +7,7 @@ import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, ChevronLeft, ChevronRight, CornerDownRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "@/components/ui/icons";
-import { ActionIcons, CodeIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, SettingsIcons, StatusIcons } from "@/lib/app-icons";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -27,10 +27,11 @@ import { MENU_W } from "@/components/ui/menu-recipe";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
 import { PROVIDERS } from "@/lib/providers";
-import { Textarea } from "@/components/ui/textarea";
+import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
+import { AttachmentTile, MessageAttachments } from "@/components/chat/attachment-tile";
 /**
  * Split: the learning blocks are 112 kB of source (StepLab plus five block
  * types) and they render for one part kind that most answers never produce.
@@ -86,8 +87,10 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent, stripMemoryTags } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
-import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
+import { cn, formatTokens, formatUsd } from "@/lib/utils";
 import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
+import { parseQuotedMessage } from "@/lib/quote-context";
+import { QuotedSelection } from "@/components/chat/quoted-selection";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 
@@ -99,9 +102,18 @@ function formatStreamElapsed(totalSec: number): string {
 }
 
 /**
- * Premium "thinking → writing" indicator shown in the transcript while the
- * assistant works with no visible content yet. Elapsed time + progressive copy
- * keep long silent reasoning from looking hung.
+ * The quiet line in the transcript while the assistant works with nothing
+ * visible yet: the dots, one word, the elapsed time.
+ *
+ * It is set at the reply's own size (`text-reading`, the rung `.prose-juno`
+ * uses) in muted ink, so when the first token lands the line is replaced by
+ * text of the same size rather than shrinking two pixels and changing ink.
+ * It used to be `text-body-lg`, a size above the answer that replaced it.
+ *
+ * The copy is one word until the wait is long enough to need explaining. The
+ * two later rungs say why nothing has happened and that leaving is safe,
+ * because on hidden-reasoning models the wait before the first token runs to
+ * minutes, and a line that only ever says "Thinking" starts to read as hung.
  */
 function StreamStatus({
   status,
@@ -116,8 +128,8 @@ function StreamStatus({
   /**
    * The stream dropped and the client is polling for the persisted answer.
    *
-   * This is NOT thinking, and saying "Thinking about your request" through it is
-   * the bug this parameter exists to kill: the connection is already gone, the
+   * This is NOT thinking, and saying "Thinking" through it is the bug this
+   * parameter exists to kill: the connection is already gone, the
    * global status has gone back to idle, the composer is usable again — and the
    * bubble was still counting up a timer as though a model were working. A
    * reader watched that for minutes and reasonably concluded the app was hung.
@@ -141,42 +153,44 @@ function StreamStatus({
   const writing = status === "writing";
   const checking = status === "checking";
   const submitting = status === "submitting";
-  let statusCopy = "Thinking about your request";
+  let statusCopy = "Thinking";
   // Recovery wins over every status rung. The global status is `idle` by this
-  // point — the stream ended — so the rungs below would all describe work that
+  // point (the stream ended), so the rungs below would all describe work that
   // is not happening.
   if (recovering) {
-    statusCopy = recoveryNote || "Reconnecting — the answer is still being written";
+    statusCopy = recoveryNote || "Reconnecting…";
   } else if (label) statusCopy = label;
-  else if (writing) statusCopy = "Writing the response";
-  else if (checking) statusCopy = "Checking your request";
-  else if (submitting) statusCopy = "Starting your request";
+  else if (writing) statusCopy = "Writing";
+  else if (checking) statusCopy = "Checking your message";
+  else if (submitting) statusCopy = "Sending";
   else if (elapsedSec >= 600) {
-    statusCopy = "Still thinking deeply — safe to leave; the answer will be here when you return";
+    statusCopy = "Still working. You can leave; the answer will be here.";
   } else if (elapsedSec >= 120) {
-    statusCopy = "Still thinking — working in the background";
+    statusCopy = "Still thinking. This can take a few minutes.";
   }
 
   const showClock = !writing && !checking && !submitting && elapsedSec > 0;
 
   return (
     <div className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      <ThinkingDots className="text-muted-foreground/65" />
-      {/* Plain muted text beside the dots — the dots are the one moving thing
+      <ThinkingDots className="text-muted-foreground" />
+      {/* Plain muted text beside the dots; the dots are the one moving thing
           in this row. The sentence used to shimmer as well, which put two
           animations on one line and a fifth "working" signal on the reply
           (the run strip, the tail mask and the shell sweep were the others). */}
-      <span className="flex min-w-0 items-baseline text-body-lg leading-6 text-muted-foreground">
+      <span className="flex min-w-0 items-baseline text-reading text-muted-foreground">
         {/* The live region is the sentence and nothing else. The clock used to
             tick INSIDE it, and role="status" is atomic, so a screen reader
-            re-announced "Thinking about your request, 41 seconds" once a
-            second for the whole pre-first-token wait — which the copy above
-            expects to run for minutes. The keyed child still announces a copy
-            change exactly once; the clock is a sibling the tree cannot see,
-            kept because the panel's own Elapsed is only visible when the
-            panel is open. */}
+            re-announced the sentence and "41 seconds" once a second for the
+            whole pre-first-token wait, which the copy above expects to run
+            for minutes. The keyed child still announces a copy change exactly
+            once, and fades in once as it does; the clock is a sibling the tree
+            cannot see, kept because the panel's own Elapsed is only visible
+            when the panel is open. */}
         <span role="status" className="min-w-0 truncate">
-          <span key={statusCopy}>{statusCopy}</span>
+          <span key={statusCopy} className="duration-fast motion-safe:animate-fade-in">
+            {statusCopy}
+          </span>
         </span>
         {showClock && (
           <span aria-hidden="true" className="ml-1 shrink-0 whitespace-nowrap tabular-nums">
@@ -402,44 +416,6 @@ function stripTrailingSourcesSection(content: string): string {
   return lines.slice(0, start).join("\n").trimEnd();
 }
 
-function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
-  if (attachments.length === 0) return null;
-  return (
-    <div className="mb-2 flex flex-wrap justify-end gap-2">
-      {attachments.map((a) =>
-        a.kind === "IMAGE" ? (
-          <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer">
-            <Image
-              src={a.url}
-              unoptimized={requiresViewerCredentials(a.url)}
-              alt={a.fileName}
-              width={160}
-              height={160}
-              className="max-h-40 w-auto rounded-md border object-cover"
-            />
-          </a>
-        ) : (
-          <a
-            key={a.id}
-            href={a.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            // rounded-md, matching the composer's upload chip (composer.tsx). The
-            // same ~34px chip was rounded-lg (24) here and rounded-md (8) there,
-            // so a file visibly turned into a stadium the instant it was sent.
-            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-caption transition-colors duration-fast ease-out-soft hover:bg-accent"
-          >
-            <CodeIcons.file className="size-4 text-muted-foreground" />
-            <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>
-            <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-            <ActionIcons.download className="size-3.5 text-muted-foreground" />
-          </a>
-        )
-      )}
-    </div>
-  );
-}
-
 /**
  * ChatGPT-style "‹ 2/3 ›" version pager, shown whenever a message has preserved
  * prior versions (regenerate and edit-and-resend never overwrite history). It
@@ -648,6 +624,84 @@ function CopyGlyph({ copied }: { copied: boolean }) {
   );
 }
 
+/**
+ * EDITING A SENT MESSAGE HAPPENS IN THE BUBBLE.
+ *
+ * It used to swap the bubble for a bare 80px `Textarea` in a narrower column:
+ * a different shape, a different size of type, no Esc and no Enter, so the
+ * message you were changing stopped looking like the message you sent. Claude
+ * and ChatGPT edit in place, and so does this: the same tonal fill, radius,
+ * padding and `reading` type as `USER_BUBBLE_CLASS`, opened out to the full
+ * column so there is room to rewrite, growing with the text on the composer's
+ * own autosize.
+ *
+ * Keys are the composer's: Enter (or ⌘/Ctrl+Enter) sends, Shift+Enter is a
+ * new line, Esc puts the message back as it was. An IME composition is left
+ * alone, since its Enter confirms a candidate rather than sending.
+ *
+ * Focus is the text field's accent edge and halo (see `Input`), because a
+ * bubble with a caret in it is otherwise the same object as the bubble at
+ * rest. It arrives on a fast fade; nothing about it travels.
+ */
+function BubbleEditor({
+  value,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+  useComposerAutosize(ref, value, { maxLines: 14 });
+
+  // The caret lands at the END of what was said, which is where an edit most
+  // often starts, not at the first character where `autoFocus` puts it.
+  React.useEffect(() => {
+    const field = ref.current;
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, []);
+
+  const empty = value.trim().length === 0;
+
+  return (
+    <div className="w-full duration-fast motion-safe:animate-fade-in">
+      <div className="rounded-card rounded-br-md border border-transparent bg-secondary px-4 py-2.5 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-primary focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16)] motion-reduce:transition-none">
+        <textarea
+          ref={ref}
+          value={value}
+          rows={1}
+          aria-label="Edit message"
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            } else if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (!empty) onSubmit();
+            }
+          }}
+          className="block w-full resize-none bg-transparent text-reading text-foreground outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <div className="mt-2 flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled={empty} onClick={onSubmit}>
+          Send
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface MessageItemProps {
   message: ChatMessage;
   isLast: boolean;
@@ -684,6 +738,12 @@ interface MessageItemProps {
   onImageEdit?: (input: ImageEditInput) => SendResult;
   /** Model currently selected in the composer — preferred for image edits. */
   currentModelId?: string;
+  /**
+   * Open a file in the side viewer. Absent on surfaces without one (code
+   * sessions), where a file tile falls back to downloading. Must be stable —
+   * see the memo note below.
+   */
+  onOpenAttachment?: (attachment: ClientAttachment) => void;
 }
 
 /**
@@ -734,6 +794,7 @@ export const MessageItem = React.memo(function MessageItem({
   privateMode,
   onImageEdit,
   currentModelId,
+  onOpenAttachment,
 }: MessageItemProps) {
   const router = useRouter();
   const [copied, setCopied] = React.useState(false);
@@ -743,9 +804,8 @@ export const MessageItem = React.memo(function MessageItem({
   // Image-edit dialog target; kept mounted through the close animation.
   const [editTarget, setEditTarget] = React.useState<ClientAttachment | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
-  // Max-height clamp stays on while collapsed or animating; it's removed once the
-  // expand transition settles so extremely long messages are never clipped.
-  const [heightCapped, setHeightCapped] = React.useState(true);
+  // The long user bubble, for scrolling it back into view after "Show less".
+  const bubbleRef = React.useRef<HTMLDivElement>(null);
   const isUser = message.role === "USER";
   const isVoice = message.voice === true;
 
@@ -843,22 +903,43 @@ export const MessageItem = React.memo(function MessageItem({
   // (that freezes / blanks the tab). Expand loads the rest on demand.
   // Avoid content.split("\n") on huge strings — that alone can OOM the tab.
   const HUGE_PASTE = MESSAGE_DISPLAY_COLLAPSE_CHARS;
-  const lineCount = sampleLineCount(view.content);
-  const isLong = view.content.length > 700 || lineCount > 14;
-  const isHuge = view.content.length > HUGE_PASTE;
+  /*
+   * A turn sent with a quoted selection carries the whole block the model was
+   * given — the quote fenced in triple quotes and an instruction written TO
+   * the model. Drawn raw, the person's own question sat under a paragraph of
+   * protocol they never typed. So the block is read back into a quote card and
+   * only their words go in the bubble; anything the parser does not recognise
+   * as a block it wrote is shown exactly as sent.
+   */
+  const quoted = React.useMemo(() => (isUser ? parseQuotedMessage(view.content) : null), [isUser, view.content]);
+  const bubbleText = quoted ? quoted.request : view.content;
+  const lineCount = sampleLineCount(bubbleText);
+  const isLong = bubbleText.length > 700 || lineCount > 14;
+  const isHuge = bubbleText.length > HUGE_PASTE;
   const userDisplayContent =
     isUser && isHuge && !expanded
-      ? `${view.content.slice(0, HUGE_PASTE)}\n\n… (${view.content.length.toLocaleString()} characters — expand to show all)`
-      : view.content;
+      ? `${bubbleText.slice(0, HUGE_PASTE)}\n\n… (${bubbleText.length.toLocaleString()} characters — expand to show all)`
+      : bubbleText;
 
+  /*
+   * The clamp switches INSTANTLY, and only the fade at its foot cross-fades.
+   * It used to tween `max-height` to 4000px on the slow rung, which is a
+   * height animation (ICONS_AND_MOTION.md §2.2 rule 8), ran at a speed set by
+   * a number that had nothing to do with the message, and started the collapse
+   * with a dead pause while the tween climbed down from 4000 to the text's
+   * real height. Claude and ChatGPT switch the clamp in a frame.
+   *
+   * Collapsing a bubble taller than the window can leave the reader below it
+   * with nothing on screen, so its top is brought back into view when it is
+   * not already there.
+   */
   const toggleExpanded = () => {
     if (!expanded) {
       setExpanded(true);
       return;
     }
-    // Restore the clamp first so the collapse animates from a real length.
-    setHeightCapped(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => setExpanded(false)));
+    setExpanded(false);
+    requestAnimationFrame(() => bubbleRef.current?.scrollIntoView({ block: "nearest" }));
   };
   // Stable ref (message.sources / a version's sources) — safe as a memo dep and
   // as a prop into the memoized Markdown.
@@ -923,42 +1004,37 @@ export const MessageItem = React.memo(function MessageItem({
             in a screen reader nothing did, and a transcript with no headings is
             a wall of text with no way to move through it. */}
         <h2 className="sr-only">You said</h2>
-        <AttachmentList attachments={message.attachments} />
+        <MessageAttachments attachments={message.attachments} onOpen={onOpenAttachment} />
         {editing ? (
-          <div className="w-full max-w-2xl space-y-2">
-            <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} className="min-h-[80px]" autoFocus />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(message.content); }}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  // An unsent turn re-sends even when the words are unchanged:
-                  // "save" on a message that never went out IS the send.
-                  if (draft.trim() && (message.unsent || draft.trim() !== message.content)) saveEdit(draft.trim());
-                  setEditing(false);
-                }}
-              >
-                Save &amp; resend
-              </Button>
-            </div>
-          </div>
+          <BubbleEditor
+            value={draft}
+            onChange={setDraft}
+            onCancel={() => {
+              setEditing(false);
+              setDraft(message.content);
+            }}
+            onSubmit={() => {
+              // An unsent turn re-sends even when the words are unchanged:
+              // sending a message that never went out IS the edit.
+              if (draft.trim() && (message.unsent || draft.trim() !== message.content)) saveEdit(draft.trim());
+              setEditing(false);
+            }}
+          />
         ) : (
           view.content && (
             <div className="flex max-w-[85%] flex-col items-end">
+              {quoted && <QuotedSelection quote={quoted} standalone={!bubbleText} />}
+              {bubbleText && (
               <div
+                ref={bubbleRef}
                 data-no-auto-translate
-                onTransitionEnd={(e) => {
-                  if (e.target === e.currentTarget && e.propertyName === "max-height" && expanded) setHeightCapped(false);
-                }}
                 className={cn(
                   USER_BUBBLE_CLASS,
                   // break-words: pre-wrap alone only wraps at whitespace, so a
                   // pasted URL/token longer than the bubble overflows on phones.
-                  "relative w-full break-words",
-                  isLong && heightCapped && "overflow-hidden transition-[max-height] duration-slow ease-out-expo",
-                  isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
+                  "relative w-full scroll-mt-24 break-words",
+                  // The clamp, on or off in one frame: see `toggleExpanded`.
+                  isLong && !expanded && "max-h-60 overflow-hidden"
                 )}
               >
                 {userDisplayContent}
@@ -974,15 +1050,18 @@ export const MessageItem = React.memo(function MessageItem({
                   />
                 )}
               </div>
+              )}
               {isLong && (
                 <button
                   type="button"
                   onClick={toggleExpanded}
-                  // `caption` — the mono metadata voice this row shares with
-                  // the version pager and the model/cost line below it.
-                  className="mt-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+                  aria-expanded={expanded}
+                  // A control, so the interface face rather than the mono
+                  // metadata voice; a 28px row (44px coarse) so it is a
+                  // target rather than a line of type.
+                  className="-mr-1.5 mt-1 inline-flex h-7 items-center rounded-control px-1.5 text-caption font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground coarse:h-11"
                 >
-                  {expanded ? "Show less" : `Show more · ${lineCount} lines`}
+                  {expanded ? "Show less" : <>Show more · {lineCount} lines</>}
                 </button>
               )}
             </div>
@@ -1039,6 +1118,9 @@ export const MessageItem = React.memo(function MessageItem({
   const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
   // Generated media: image attachments + video files (kind FILE, video/* mime).
   const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || a.mimeType.startsWith("video/"));
+  // Anything else an answer carries is a document it produced — a tile that
+  // opens in the viewer, the same object a sent file is.
+  const fileAttachments = message.attachments.filter((a) => a.kind === "FILE" && !a.mimeType.startsWith("video/"));
   const hasTextContent = view.content.trim().length > 0;
   const isMediaOnly = mediaAttachments.length > 0 && !hasTextContent;
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
@@ -1136,7 +1218,7 @@ export const MessageItem = React.memo(function MessageItem({
             status={status}
             recovering={message.streaming && !message.error && !!message.errorMessage}
             recoveryNote={message.errorMessage ?? undefined}
-            // "Running npm test", not "Thinking about your request", while a
+            // "Running npm test", not "Thinking", while a
             // Code run is on a tool. The latest activity row is the truth.
             label={surface === "code" ? codeLiveCopy(view.activity?.[view.activity.length - 1]) ?? undefined : undefined}
           />
@@ -1171,6 +1253,13 @@ export const MessageItem = React.memo(function MessageItem({
             to the answer body, not the turn root — see the note there.
           */
           <div className="space-y-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
+            {fileAttachments.length > 0 && (
+              <div className="mb-1 flex flex-wrap gap-2">
+                {fileAttachments.map((a) => (
+                  <AttachmentTile key={a.id} attachment={a} onOpen={onOpenAttachment} />
+                ))}
+              </div>
+            )}
             {mediaAttachments.length > 0 && (
               <div className="mb-1 flex flex-wrap gap-2">
                 {mediaAttachments.map((a) =>

@@ -29,8 +29,17 @@ import { parseSkillMd, SKILL_MD_FILENAME, type ParsedSkillMd, type SkillMdRefusa
 
 export const GITHUB_API_BASE = "https://api.github.com";
 
-/** How many `SKILL.md` files one import may consider. */
-export const MAX_DISCOVERED_SKILLS = 25;
+/**
+ * How many `SKILL.md` files one walk reads.
+ *
+ * High enough to take the public collections people install whole in one
+ * walk, which matters now that a repository is installed and updated as one
+ * source: a cap that cut a collection in half would install half a source and
+ * then report the rest as new on every update check. Past the cap `more` says
+ * so, and an update check passes what is installed as `prefer` so the cap can
+ * never drop those.
+ */
+export const MAX_DISCOVERED_SKILLS = 100;
 /** Entries in one tree response before the walk stops looking. */
 export const MAX_TREE_ENTRIES = 40_000;
 /** A ref written with slashes (`release/2026-09`) is resolved in this many tries. */
@@ -38,6 +47,12 @@ const MAX_REF_SEGMENTS = 3;
 /** One request's ceiling. Generous for a Markdown file, closed for a tarball. */
 const MAX_FILE_BYTES = 512 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * `SKILL.md` reads in flight at once. A hundred files one after another is
+ * half a minute of a person watching a spinner; GitHub asks integrations not
+ * to fan out widely, and a handful at a time sits well inside that.
+ */
+const FILE_READ_CONCURRENCY = 6;
 
 export interface GithubSkillSource {
   owner: string;
@@ -145,7 +160,7 @@ export const GITHUB_IMPORT_REFUSAL_MESSAGES: Record<GithubImportRefusal, string>
   rate_limited:
     "GitHub is rate-limiting Juno right now. Connecting your GitHub account raises the limit considerably; otherwise this clears on its own within the hour.",
   tree_truncated:
-    "This repository is too large to list in one pass. Paste a link to the folder the skills are in — the tree or blob URL from GitHub's own file browser works.",
+    "This repository is too large to list in one pass. Paste a link to the folder the skills are in (the tree or blob URL from GitHub's own file browser works).",
   no_skills:
     "Juno walked the repository and found no SKILL.md. A skill is a folder with a SKILL.md at its head; this repository has none where it looked.",
   not_a_skill_file: `That link points at a file that is not a ${SKILL_MD_FILENAME}. Link the skill's folder, or the ${SKILL_MD_FILENAME} inside it.`,
@@ -190,14 +205,48 @@ export interface GithubSkillProblem {
 }
 
 export interface GithubDiscovery {
+  /** As GitHub spells them when it said so, otherwise as the source was written. */
   owner: string;
   repo: string;
   ref: string;
   commit: string;
+  /**
+   * The folder the walk was scoped to; "" is the whole repository. A `blob`
+   * link scopes to the folder its file is in. This is what a source records as
+   * its `path`, so an update check walks the same folder the import did.
+   */
+  scope: string;
+  /**
+   * Every `SKILL.md` in scope, read or not, sorted. An update check needs the
+   * whole list to tell "removed upstream" from "not read this time".
+   */
+  paths: string[];
   candidates: GithubSkillCandidate[];
   problems: GithubSkillProblem[];
   /** True when more than `MAX_DISCOVERED_SKILLS` files matched. */
   more: boolean;
+}
+
+export interface GithubDiscoveryOptions {
+  /**
+   * Read the tree at this commit rather than at the ref's head. The ref is
+   * still resolved, for its name and for the scope a slashed branch leaves
+   * behind, so an import pinned to what its preview showed still records the
+   * branch it tracks rather than a bare SHA.
+   */
+  commit?: string;
+  /**
+   * Paths to read before any other when the cap applies. An update check
+   * passes what is installed, so those are always compared, however many
+   * other skills the repository has grown.
+   */
+  prefer?: readonly string[];
+  /**
+   * Report a walk that matched nothing as an empty discovery rather than as
+   * `no_skills`. For an import that is a refusal; for an update check of an
+   * installed source it is the answer: everything it held was removed.
+   */
+  allowEmpty?: boolean;
 }
 
 export type GithubDiscoveryResult =
@@ -282,6 +331,34 @@ interface ResolvedRef {
   commit: string;
   /** Path segments the ref candidate consumed but the URL wrote as the path. */
   extraPath: string;
+  /** GitHub's own spelling of the repository, when a response carried it. */
+  canonical: { owner: string; repo: string } | null;
+}
+
+/**
+ * GitHub's spelling of `owner/repo`, taken only when it differs by case.
+ *
+ * The API answers `Anthropics/Skills` for `anthropics/skills`, and a library
+ * showing whichever spelling somebody typed first looks careless. A name that
+ * differs by more than case means GitHub followed a rename or a transfer, and
+ * adopting it would quietly move an installed source to a different identity,
+ * so that is left alone.
+ */
+function canonicalName(
+  source: Pick<GithubSkillSource, "owner" | "repo">,
+  owner: string | undefined,
+  repo: string | undefined
+): { owner: string; repo: string } | null {
+  if (!owner || !repo) return null;
+  if (owner.toLowerCase() !== source.owner.toLowerCase()) return null;
+  if (repo.toLowerCase() !== source.repo.toLowerCase()) return null;
+  return { owner, repo };
+}
+
+/** `https://github.com/Owner/Repo/commit/<sha>` from a commit response, split. */
+function nameFromCommitUrl(url: string | undefined): { owner?: string; repo?: string } {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/commit\//.exec(url ?? "");
+  return match ? { owner: match[1], repo: match[2] } : {};
 }
 
 /**
@@ -300,25 +377,45 @@ async function resolveRef(client: GithubClient, source: GithubSkillSource): Prom
   const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}`;
 
   if (!source.ref) {
-    const repo = await call<{ default_branch?: string }>(client, base);
+    const repo = await call<{ default_branch?: string; name?: string; owner?: { login?: string } }>(
+      client,
+      base
+    );
     if (!repo.ok) return repo;
     const branch = repo.value.default_branch;
     if (!branch) return { ok: false, reason: "unreachable" };
     const head = await call<{ sha?: string }>(client, `${base}/commits/${encodeURIComponent(branch)}`);
     if (!head.ok) return head;
     if (!head.value.sha) return { ok: false, reason: "unreachable" };
-    return { ok: true, value: { ref: branch, commit: head.value.sha, extraPath: "" } };
+    return {
+      ok: true,
+      value: {
+        ref: branch,
+        commit: head.value.sha,
+        extraPath: "",
+        canonical: canonicalName(source, repo.value.owner?.login, repo.value.name),
+      },
+    };
   }
 
   const pathSegments = source.path ? source.path.split("/") : [];
   let lastFailure: GithubImportRefusal = "not_found";
   for (let extra = 0; extra < Math.min(MAX_REF_SEGMENTS, pathSegments.length + 1); extra++) {
     const candidate = [source.ref, ...pathSegments.slice(0, extra)].join("/");
-    const head = await call<{ sha?: string }>(client, `${base}/commits/${encodeURIComponent(candidate)}`);
+    const head = await call<{ sha?: string; html_url?: string }>(
+      client,
+      `${base}/commits/${encodeURIComponent(candidate)}`
+    );
     if (head.ok && head.value.sha) {
+      const named = nameFromCommitUrl(head.value.html_url);
       return {
         ok: true,
-        value: { ref: candidate, commit: head.value.sha, extraPath: pathSegments.slice(extra).join("/") },
+        value: {
+          ref: candidate,
+          commit: head.value.sha,
+          extraPath: pathSegments.slice(extra).join("/"),
+          canonical: canonicalName(source, named.owner, named.repo),
+        },
       };
     }
     if (!head.ok) {
@@ -352,26 +449,83 @@ const within = (path: string, prefix: string) =>
   prefix === "" || path === prefix || path.startsWith(`${prefix}/`);
 
 /**
+ * The ref's name and scope, with the commit the walk should read.
+ *
+ * Unpinned, that is the ref's head. Pinned, the ref is still resolved (its name
+ * is what a source goes on tracking, and a slashed branch decides where the
+ * scope starts) but the walk reads the pinned commit. When the branch has gone
+ * since the preview, the commit alone still names the bytes the reader was
+ * shown, so those are read and the commit becomes what is tracked.
+ */
+async function resolveWalk(
+  client: GithubClient,
+  source: GithubSkillSource,
+  pin: string | undefined
+): Promise<ApiResult<ResolvedRef>> {
+  if (!pin) return resolveRef(client, source);
+  const named = await resolveRef(client, source);
+  if (!named.ok) {
+    return named.reason === "not_found" ? resolveRef(client, { ...source, ref: pin }) : named;
+  }
+  if (named.value.commit.toLowerCase().startsWith(pin.toLowerCase())) return named;
+  if (/^[0-9a-f]{40}$/i.test(pin)) return { ok: true, value: { ...named.value, commit: pin.toLowerCase() } };
+  // A short SHA is not something the tree endpoint promises to accept.
+  const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}`;
+  const pinned = await call<{ sha?: string }>(client, `${base}/commits/${encodeURIComponent(pin)}`);
+  if (!pinned.ok) return pinned;
+  if (!pinned.value.sha) return { ok: false, reason: "unreachable" };
+  return { ok: true, value: { ...named.value, commit: pinned.value.sha } };
+}
+
+/**
+ * Runs `read` over `items` a few at a time, keeping their order, and stops
+ * starting new reads once `stop` says so.
+ */
+async function readInOrder<T, R>(
+  items: readonly T[],
+  read: (item: T) => Promise<R>,
+  stop: (result: R) => boolean
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  let halted = false;
+  const worker = async () => {
+    while (!halted && next < items.length) {
+      const index = next++;
+      const result = await read(items[index]);
+      out[index] = result;
+      if (stop(result)) halted = true;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(FILE_READ_CONCURRENCY, items.length) }, worker));
+  return out;
+}
+
+/**
  * Walks a repository and reads every skill in it.
  *
  * One tree request for the whole repository, then one content request per
- * `SKILL.md` — which is why the candidate cap exists: a repository with two
- * hundred skills would otherwise be two hundred requests against a rate limit
- * shared by every import on this deployment.
+ * `SKILL.md`, a few at a time. That is why the candidate cap exists: a
+ * repository with five hundred skills would otherwise be five hundred requests
+ * against a rate limit shared by every import on this deployment.
  *
  * A truncated tree is refused rather than served partially. GitHub truncates
  * the recursive listing on very large repositories, and a partial walk reports
- * "found 3 skills" for a repository with 30 — a wrong answer that looks exactly
+ * "found 3 skills" for a repository with 30: a wrong answer that looks exactly
  * like a right one. The refusal tells the reader to link the folder instead,
- * which also makes the walk cheap.
+ * which also makes the walk cheap. A rate limit met halfway through the reads
+ * is refused for the same reason, rather than reported as fifty broken files.
  */
 export async function discoverGithubSkills(
   client: GithubClient,
-  source: GithubSkillSource
+  source: GithubSkillSource,
+  options: GithubDiscoveryOptions = {}
 ): Promise<GithubDiscoveryResult> {
-  const resolved = await resolveRef(client, source);
+  const resolved = await resolveWalk(client, source, options.commit);
   if (!resolved.ok) return resolved;
   const { ref, commit, extraPath } = resolved.value;
+  const owner = resolved.value.canonical?.owner ?? source.owner;
+  const repo = resolved.value.canonical?.repo ?? source.repo;
 
   const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(source.owner)}/${encodeURIComponent(source.repo)}`;
   const tree = await call<{ tree?: TreeEntry[]; truncated?: boolean }>(
@@ -397,29 +551,45 @@ export async function discoverGithubSkills(
     .filter((path) => (source.pointsAtFile ? path === extraPath : within(path, scope)))
     .sort();
 
-  if (matches.length === 0) return { ok: false, reason: "no_skills" };
-  const selected = matches.slice(0, MAX_DISCOVERED_SKILLS);
+  if (matches.length === 0 && !options.allowEmpty) return { ok: false, reason: "no_skills" };
+  // Preferred paths first, so the cap never drops what a caller has to compare;
+  // then everything else in path order.
+  const preferred = new Set(options.prefer ?? []);
+  const selected = [
+    ...matches.filter((path) => preferred.has(path)),
+    ...matches.filter((path) => !preferred.has(path)),
+  ].slice(0, MAX_DISCOVERED_SKILLS);
+
+  const reads = await readInOrder(
+    selected,
+    (path) =>
+      call<string>(
+        client,
+        `${base}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(commit)}`,
+        "application/vnd.github.raw"
+      ),
+    (result) => !result.ok && result.reason === "rate_limited"
+  );
+  if (reads.some((result) => result && !result.ok && result.reason === "rate_limited")) {
+    return { ok: false, reason: "rate_limited" };
+  }
 
   const candidates: GithubSkillCandidate[] = [];
   const problems: GithubSkillProblem[] = [];
 
-  for (const path of selected) {
-    const raw = await call<string>(
-      client,
-      `${base}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(commit)}`,
-      "application/vnd.github.raw"
-    );
+  selected.forEach((path, index) => {
+    const raw = reads[index];
     if (!raw.ok) {
       // One unreadable file does not sink an import of twelve. It is reported
       // in `problems` with the path, which is the only thing the reader can act
       // on, and the rest of the walk continues.
       problems.push({ path, reason: "no_frontmatter" });
-      continue;
+      return;
     }
     const parsed = parseSkillMd(raw.value);
     if (!parsed.ok) {
       problems.push({ path, reason: parsed.reason });
-      continue;
+      return;
     }
     const directory = directoryOf(path);
     candidates.push({
@@ -427,12 +597,12 @@ export async function discoverGithubSkills(
       directory,
       skill: parsed.skill,
       provenance: {
-        owner: source.owner,
-        repo: source.repo,
+        owner,
+        repo,
         ref,
         commit,
         path,
-        url: `https://github.com/${source.owner}/${source.repo}/blob/${commit}/${path}`,
+        url: `https://github.com/${owner}/${repo}/blob/${commit}/${path}`,
       },
       companionFiles: blobs
         .map((entry) => entry.path as string)
@@ -440,26 +610,23 @@ export async function discoverGithubSkills(
         .map((other) => (directory ? other.slice(directory.length + 1) : other))
         .slice(0, 50),
     });
-  }
+  });
 
-  if (candidates.length === 0 && problems.length > 0) {
-    // Everything that matched was unreadable. `no_skills` would be a lie — the
-    // files are there — so the problems are returned and the caller shows them.
-    return {
-      ok: true,
-      discovery: { owner: source.owner, repo: source.repo, ref, commit, candidates, problems, more: false },
-    };
-  }
-
+  // Everything that matched may have been unreadable. `no_skills` would be a
+  // lie then (the files are there), so the problems are returned and the caller
+  // shows them.
+  const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   return {
     ok: true,
     discovery: {
-      owner: source.owner,
-      repo: source.repo,
+      owner,
+      repo,
       ref,
       commit,
-      candidates,
-      problems,
+      scope,
+      paths: matches,
+      candidates: candidates.sort(byPath),
+      problems: problems.sort(byPath),
       more: matches.length > selected.length,
     },
   };

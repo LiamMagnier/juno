@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   createSessionSchema,
   parseSessionListQuery,
@@ -10,22 +11,19 @@ import {
   adoptDiscoveredSession,
   delegatedComposerMode,
   delegatedComposerPlaceholder,
-  delegationAttemptKey,
-  delegationOffer,
 } from "@/lib/work/delegation";
 
 /*
- * Work inside a chat: the pointer, the filter, and the two decisions the
- * composer makes while somebody is typing.
+ * Work inside a chat: the pointer, the filter, what the composer does while a
+ * task is live, and which task the transcript draws.
  *
  * Every case here is one where the wrong answer is invisible from the outside.
  * A `conversationId` silently dropped by the create schema produces a task that
  * runs perfectly and can never be found again by the conversation that started
  * it. A list filter that accepted an empty string would answer "this chat's
- * task" with the whole account's Work history. An offer that fires on a
- * question spends a run ceiling — real money, on a clock — on a sentence that
- * wanted a reply. And a composer that routes a typed answer as an instruction
- * leaves the run waiting for a reply it has already been given.
+ * task" with the whole account's Work history. And a composer that routes a
+ * typed answer as an instruction leaves the run waiting for a reply it has
+ * already been given.
  */
 
 // ---------------------------------------------------------------------------
@@ -90,55 +88,6 @@ test("an unbounded conversation filter is refused", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Offering: the quieter trigger, which must stay quiet
-// ---------------------------------------------------------------------------
-
-test("a sentence that names a document to produce is offered as a task", () => {
-  const offer = delegationOffer("Draft a report on our Q3 support volumes and where it went wrong");
-  assert.notEqual(offer, null);
-  assert.match(offer!.caption, /Run it as a task\?$/);
-});
-
-test("a sentence that names a stretch of time is offered as a task", () => {
-  assert.notEqual(delegationOffer("Keep checking the deploy every morning until it is green"), null);
-});
-
-test("a question is never offered, however much it matches", () => {
-  // `web_research` is the most-matched capability in the whole rule set and is
-  // deliberately not evidence of delegation: "research X" is a question that
-  // wants an answer in the next thirty seconds.
-  assert.equal(delegationOffer("Research the new EU battery rules and tell me about them"), null);
-});
-
-test("naming a connected app is not enough on its own", () => {
-  // "What did Linear say" names a connector and wants a reply. An offer here
-  // would be a regex proposing to spend a run ceiling on a lookup.
-  assert.equal(delegationOffer("What did the Linear ticket say about the migration"), null);
-});
-
-test("a connected app plus a verb that acts through it is offered", () => {
-  assert.notEqual(
-    delegationOffer("Email the finance team the numbers from the Linear board"),
-    null
-  );
-});
-
-test("a draft too short to have a verb in it is never offered", () => {
-  assert.equal(delegationOffer("draft a report"), null);
-  assert.equal(delegationOffer(""), null);
-  assert.equal(delegationOffer("   "), null);
-});
-
-test("the offer names at most two things, so it stays a sentence", () => {
-  const offer = delegationOffer(
-    "Email the team a spreadsheet of the latest prices, researched with sources, every morning"
-  );
-  assert.notEqual(offer, null);
-  // Four capabilities match that goal. The caption must not read them all back.
-  assert.equal(offer!.caption.split(" and ").length <= 2, true);
-});
-
-// ---------------------------------------------------------------------------
 // Typing at a run that is already going
 // ---------------------------------------------------------------------------
 
@@ -195,72 +144,6 @@ test("the placeholder names the destination, not the box", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pressing the button twice
-// ---------------------------------------------------------------------------
-
-const inputs = {
-  goal: "Reconcile the invoices",
-  permissionPolicy: "ask",
-  connectorIds: ["gmail", "drive"],
-  attachmentIds: ["att_1", "att_2"],
-  projectId: "proj_1" as string | null,
-  model: "juno-1",
-  reasoningEffort: "medium" as string | null,
-};
-
-test("the same press twice keeps its keys, so a refused start reuses its draft", () => {
-  assert.equal(delegationAttemptKey(inputs), delegationAttemptKey({ ...inputs }));
-  // Whitespace is not a different errand: the composer trims before it sends.
-  assert.equal(
-    delegationAttemptKey(inputs),
-    delegationAttemptKey({ ...inputs, goal: "  Reconcile the invoices  " })
-  );
-});
-
-test("changing how often it asks is a different press", () => {
-  // The sharpest case in the whole key. Refused under `ask`, the reader opens
-  // the "+" menu, switches to `manual` and presses again; a goal-keyed attempt
-  // would reuse the draft created under `ask` while the pill and the disclosure
-  // line under the field both state `manual`.
-  assert.notEqual(
-    delegationAttemptKey(inputs),
-    delegationAttemptKey({ ...inputs, permissionPolicy: "manual" })
-  );
-});
-
-test("taking a connected app back off is a different press", () => {
-  // A narrowing that has to reach the server, and one a count would have missed:
-  // the ids are what is compared.
-  assert.notEqual(
-    delegationAttemptKey(inputs),
-    delegationAttemptKey({ ...inputs, connectorIds: ["gmail"] })
-  );
-});
-
-test("a file, the project, the model and the effort each mint a fresh press", () => {
-  const changes = [
-    { attachmentIds: ["att_1"] },
-    { projectId: null },
-    { model: "juno-2" },
-    { reasoningEffort: null },
-  ];
-  for (const change of changes) {
-    assert.notEqual(delegationAttemptKey(inputs), delegationAttemptKey({ ...inputs, ...change }));
-  }
-});
-
-test("the grants are a set, so their order is not a new press", () => {
-  assert.equal(
-    delegationAttemptKey(inputs),
-    delegationAttemptKey({
-      ...inputs,
-      connectorIds: ["drive", "gmail"],
-      attachmentIds: ["att_2", "att_1"],
-    })
-  );
-});
-
-// ---------------------------------------------------------------------------
 // Finding the run again
 // ---------------------------------------------------------------------------
 
@@ -296,4 +179,37 @@ test("a task that has started is adopted over whatever was there", () => {
   const live: { id: string; status: WorkStatus } = { id: "s2", status: "running" };
   assert.equal(adoptDiscoveredSession({ id: "s1", status: "completed" }, live), live);
   assert.equal(adoptDiscoveredSession(null, live), live);
+});
+
+// ---------------------------------------------------------------------------
+// The model starts a task; nothing in the composer does
+// ---------------------------------------------------------------------------
+
+const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+test("the composer has no way to arm a task", () => {
+  // The toggle, its approval submenu, the regex offer and the send branch all
+  // went together. Any one of them coming back would be a second way to start
+  // a task that the model-side gates (private, voice, regenerate) never see.
+  const composer = source("src/components/chat/composer.tsx");
+  for (const gone of ["Do this as a task", "Start this as a task", "onDelegate", "delegationOffer", "taskArmed"]) {
+    assert.equal(composer.includes(gone), false, `composer.tsx still mentions ${gone}`);
+  }
+});
+
+test("the web client opts every saved turn in, and never a private one", () => {
+  const hook = source("src/hooks/use-chat.ts");
+  assert.match(hook, /workHandoff: opts\.privateMode \? undefined : true/);
+});
+
+test("a started task is adopted by the one applier a resumed stream also uses", () => {
+  // `createStreamApplier` is shared by the first stream and every reconnect,
+  // so handling the frame there is what makes a dropped connection still draw
+  // the task. A second handler written for replays is where the two drift.
+  const hook = source("src/hooks/use-chat.ts");
+  const applier = hook.slice(hook.indexOf("const createStreamApplier"), hook.indexOf("const findActiveGeneration"));
+  assert.match(applier, /case "work": \{[\s\S]*?opts\.onWorkStarted\?\.\(chunk\.session\)/);
+  const view = source("src/components/chat/chat-view.tsx");
+  assert.match(view, /onWorkStarted: \(session\) => \{[\s\S]*?adoptWorkRef\.current\(session\)/);
+  assert.match(view, /adoptWorkRef\.current = work\.adopt;/);
 });

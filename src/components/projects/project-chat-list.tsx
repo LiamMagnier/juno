@@ -96,7 +96,7 @@ export function ProjectChatList({
           description={
             query
               ? "Try another search term."
-              : "Start one above — Juno reads the project’s instructions and files first."
+              : "Start one above. Juno reads the project’s instructions and files first."
           }
           action={
             query ? (

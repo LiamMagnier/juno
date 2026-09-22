@@ -1,10 +1,11 @@
 /**
- * Juno's own drawings — the four marks the product is recognised by.
+ * Juno's own drawings — the five marks the product is recognised by.
  *
- * Everything else in `icons.tsx` is Phosphor geometry. These four are drawn for
+ * Everything else in `icons.tsx` is Phosphor geometry. These five are drawn for
  * Juno because they are the ones a reader sees on every screen and associates
- * with the product itself: the three places (Chat, Code, Design) and the one
- * verb (send). They borrow the two motifs of the Juno mark (`public/juno-mark.png`):
+ * with the product itself: the places (Chat, Code, Design, Library) and the one
+ * verb (send). All but Library borrow the two motifs of the Juno mark
+ * (`public/juno-mark.png`):
  *
  * - the OPEN RING that ends in a DOT — the bubble in the logo is a ring that
  *   stops short at the top right, with a ball terminal beside the gap;
@@ -14,7 +15,10 @@
  * two chevrons, where `</>` puts a slash: code that Juno writes. Design is two
  * primitives stacked like cut paper — the circle stops short of the square in
  * front of it instead of crossing it, so the mark stays quiet at 16px. Send is
- * an arrow whose head has the spark's concave flanks.
+ * an arrow whose head has the spark's concave flanks. Library is two volumes on
+ * a shelf, one leaning toward the other, with one band each; it was drawn to be
+ * legible where Phosphor's Books hatched into grey, and a spark or a ball on a
+ * spine read as a label rather than as Juno, so it keeps only the grid and line.
  *
  * THE GRID IS PHOSPHOR'S, so these sit in a row of Phosphor glyphs without
  * looking borrowed: a 256-unit box, a 16-unit line at `regular` (1px at 16px),
@@ -24,14 +28,17 @@
  * of its own, for the selected state.
  *
  * IN USE through `icons.tsx`: `JunoChat` (AppIcons.home / .conversation),
- * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design) and `Send` (every
- * send action). Never import this file from a call site: a mark that bypasses
- * `glyph()` loses the optical weight choice, aria and hover articulation.
+ * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design), `JunoLibrary`
+ * (AppIcons.library) and `Send` (every send action). Never import this file
+ * from a call site: a mark that bypasses `glyph()` loses the optical weight
+ * choice, aria and hover articulation.
  *
  * MOTION. The moving part of each drawing carries `juno-part juno-part--*`, and
  * globals.css moves just that part when the control around the mark is hovered
  * (the `parts` articulation): the ball terminal pops out of the gap, the spark
- * twinkles a quarter turn, the circle slides back from the square.
+ * twinkles a quarter turn, the circle slides back from the square, the leaning
+ * volume straightens and lifts. A part never carries a `transform` attribute:
+ * its CSS `rotate` would re-pivot it, so any turn is baked into the path.
  *
  * No hooks, no context: safe in server components.
  */
@@ -227,6 +234,123 @@ export const JunoDesignGlyph = defineGlyph(
           d={`M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top} L${a.right},${a.top} Z`}
           fill="currentColor"
           strokeWidth={8}
+        />
+      </>
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Library — two volumes on a shelf, the right one leaning toward the left, one
+// head band each. Phosphor's Books carried six bands across two volumes, which
+// at 18px aliased into a grey hatch; one band is enough to say "spine".
+// ---------------------------------------------------------------------------
+
+type Point = [number, number];
+type Volume = { x: number; y: number; w: number; h: number; r: number };
+
+/** `[x, y]` turned `deg` about `pivot` (negative leans the top to the left), as "x,y". */
+function turn([x, y]: Point, deg: number, [cx, cy]: Point): string {
+  const t = (deg * Math.PI) / 180;
+  const dx = x - cx;
+  const dy = y - cy;
+  return `${r2(cx + dx * Math.cos(t) - dy * Math.sin(t))},${r2(cy + dx * Math.sin(t) + dy * Math.cos(t))}`;
+}
+
+/** A rounded rect as a path, turned about `pivot`. The lean is baked into the
+ *  coordinates rather than set with a `transform` attribute because the volume
+ *  is a moving part: its CSS `rotate` would re-pivot an attribute transform.
+ *  Circular arcs survive a rotation, so only their end points turn. */
+function volumePath({ x, y, w, h, r }: Volume, deg = 0, pivot: Point = [x, y + h]): string {
+  const p = (px: number, py: number) => turn([px, py], deg, pivot);
+  return (
+    `M${p(x + r, y)} L${p(x + w - r, y)} A${r},${r} 0 0 1 ${p(x + w, y + r)} ` +
+    `L${p(x + w, y + h - r)} A${r},${r} 0 0 1 ${p(x + w - r, y + h)} ` +
+    `L${p(x + r, y + h)} A${r},${r} 0 0 1 ${p(x, y + h - r)} ` +
+    `L${p(x, y + r)} A${r},${r} 0 0 1 ${p(x + r, y)} Z`
+  );
+}
+
+function bandPath({ x, w }: Volume, y: number, deg = 0, pivot: Point = [0, 0]): string {
+  return `M${turn([x, y], deg, pivot)} L${turn([x + w, y], deg, pivot)}`;
+}
+
+/** The volume a stroke of the regular line paints, as one outline. */
+const grown = ({ x, y, w, h, r }: Volume, d = LINE.regular / 2): Volume => ({
+  x: x - d,
+  y: y - d,
+  w: w + 2 * d,
+  h: h + 2 * d,
+  r: r + d,
+});
+
+/** The fill weight's volume: solid, with the band as a slot one house line
+ *  tall that stops short of both edges. A band cut clean across split each
+ *  volume into a round head over a body, and at 16px the pair read as two
+ *  pictogram figures rather than two books. The slot sits wholly inside the
+ *  volume, so `evenodd` makes it a hole and nothing else. */
+function solidVolumePath(v: Volume, band: number, deg = 0, pivot: Point = [v.x, v.y + v.h]): string {
+  const solid = grown(v);
+  const inset = 12;
+  const slot: Volume = {
+    x: solid.x + inset,
+    y: band - LINE.regular / 2,
+    w: solid.w - 2 * inset,
+    h: LINE.regular,
+    r: LINE.regular / 2,
+  };
+  return `${volumePath(solid, deg, pivot)} ${volumePath(slot, deg, pivot)}`;
+}
+
+const LEAN = -13;
+const UPRIGHT_BAND = 88;
+const LEANING_BAND = 110;
+
+/** Both volumes at a line weight. A heavier line would close the gap between
+ *  them, so the upright steps left and the leaning volume steps right and slims
+ *  by the difference: the clear gap is 18 units at every weight (1.1px at 16px),
+ *  and the bold cut still lands inside the 24–232 live area. The upright's
+ *  verticals, top, foot and band sit on the 16px pixel grid at `regular`.
+ *  Corners are tighter than Design's square (10 against 24): a rounder volume
+ *  read as a capsule or a battery at 48px, a squarer one as a book. */
+function shelf(line: number) {
+  const k = line - LINE.regular;
+  const upright: Volume = { x: 40 - k / 2, y: 40, w: 64, h: 176, r: 10 };
+  const leaning: Volume = { x: 170 + k / 2, y: 66, w: 54 - k, h: 150, r: 10 };
+  // The leaning volume stands on its foot's inner corner, on the upright's shelf line.
+  const pivot: Point = [leaning.x, leaning.y + leaning.h];
+  return { upright, leaning, pivot };
+}
+
+export const JunoLibraryGlyph = defineGlyph(
+  "JunoLibraryGlyph",
+  (line) => {
+    const { upright, leaning, pivot } = shelf(line);
+    return (
+      <>
+        <path d={volumePath(upright)} />
+        <path d={bandPath(upright, UPRIGHT_BAND)} />
+        <g className="juno-part juno-part--volume">
+          <path d={volumePath(leaning, LEAN, pivot)} />
+          <path d={bandPath(leaning, LEANING_BAND, LEAN, pivot)} />
+        </g>
+      </>
+    );
+  },
+  // Selected: both volumes solid, each with its band as a slot. The grown
+  // leaning volume still turns about the regular one's foot, so it leans from
+  // the same corner as the line drawing.
+  () => {
+    const { upright, leaning, pivot } = shelf(LINE.regular);
+    return (
+      <>
+        <path d={solidVolumePath(upright, UPRIGHT_BAND)} fill="currentColor" fillRule="evenodd" stroke="none" />
+        <path
+          className="juno-part juno-part--volume"
+          d={solidVolumePath(leaning, LEANING_BAND, LEAN, pivot)}
+          fill="currentColor"
+          fillRule="evenodd"
+          stroke="none"
         />
       </>
     );

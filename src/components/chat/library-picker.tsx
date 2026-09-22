@@ -158,7 +158,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               tone="error"
               icon={StatusIcons.error}
               title="Couldn’t load your library"
-              description="The request didn’t come back. Nothing has been lost — try again."
+              description="The request didn’t go through. Nothing was lost, so try again."
               action={
                 <Button variant="outline" size="sm" onClick={load}>
                   Try again

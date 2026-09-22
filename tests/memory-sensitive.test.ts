@@ -337,9 +337,14 @@ test("a stored row is flagged on read, so rows older than the gate are covered t
 // Regression 1: every route the memory UI calls exists
 // ---------------------------------------------------------------------------
 
-/** `/api/memory/edit` → `src/app/api/memory/edit/route.ts`, `${id}` → `[id]`. */
+/**
+ * `/api/memory/edit` → `src/app/api/memory/edit/route.ts`, `${id}` → `[id]`.
+ * A query string is not part of the route: `/api/memory/recap?days=${days}`
+ * resolves to the recap route, not (as it once did by accident, through the
+ * interpolation in its query) to `[id]`.
+ */
 function routeFileFor(apiPath: string): string | null {
-  const segments = apiPath.replace(/^\//, "").split("/");
+  const segments = apiPath.split("?")[0].replace(/^\//, "").split("/");
   let dir = repoPath("src/app");
   for (const segment of segments) {
     if (!existsSync(dir)) return null;
@@ -412,11 +417,24 @@ test("Undo replays the server's inverse, never one derived on the client", () =>
 // Regression 2: the rows are on the page
 // ---------------------------------------------------------------------------
 
-test("the memory manager renders the entry list, the topics and the edit queue", () => {
+test("the memory manager renders the summary, the list, the prompt bar and the activity sheet", () => {
   const body = src("src/components/memory/memory-manager.tsx");
-  for (const component of ["EntryList", "TopicsView", "EditsPanel", "SummaryCard", "PrivacyStrip"]) {
+  for (const component of [
+    "MemoryHeader",
+    "SummaryPanel",
+    "PromptDock",
+    "MemoryList",
+    "ActivitySheet",
+    "MemoryWelcome",
+    "MemoryFooter",
+    "ImportDialog",
+  ]) {
     assert.match(body, new RegExp(`<${component}\\b`), `${component} is imported but never rendered`);
   }
+  // The rows are where a wrong fact gets pointed at and removed; the list
+  // must draw them, and the activity sheet must draw the edit history.
+  assert.match(src("src/components/memory/memory-list.tsx"), /<EntryRow\b/);
+  assert.match(src("src/components/memory/activity-sheet.tsx"), /<OperationDiff\b/);
 });
 
 test("no memory component is built and left unreachable", () => {

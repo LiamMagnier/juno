@@ -10,11 +10,12 @@ import { PersonalizationSection } from "@/components/settings/sections/personali
 import { MemorySection } from "@/components/settings/sections/memory";
 import { ModelsSection } from "@/components/settings/sections/models";
 import { ConnectorsSection } from "@/components/settings/sections/connectors";
+import { DevicesSection } from "@/components/settings/sections/devices";
 import { VoiceSection } from "@/components/settings/sections/voice";
 import { DataPrivacySection } from "@/components/settings/sections/data-privacy";
 import { AccountSection } from "@/components/settings/sections/account";
 import { BillingSection } from "@/components/settings/sections/billing";
-import { reducedVariants, transition, variants } from "@/lib/motion";
+import { duration, ease, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
@@ -23,6 +24,7 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
   memory: MemorySection,
   models: ModelsSection,
   connectors: ConnectorsSection,
+  devices: DevicesSection,
   voice: VoiceSection,
   data: DataPrivacySection,
   account: AccountSection,
@@ -30,45 +32,57 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
 };
 
 /**
- * The pane's switch. The incoming section is the workhorse `rise`; the
- * outgoing one only fades, on the exit rung, because it is leaving in place
- * rather than going anywhere. Under reduced motion the rise loses its travel
- * and keeps its fade (`reducedVariants`), the same tier as the CSS side.
+ * The switch between sections: the old one fades out on the fast rung, then
+ * the new one fades in on the base rung with a 4px settle. One after the
+ * other (`mode="wait"`), never both at once: two dense panes overlapping for
+ * the length of an exit was a muddy double image, which is what the previous
+ * `popLayout` cross-fade drew. Under reduced motion the settle goes and the
+ * fades stay.
  */
+const SHIFT_PX = 4;
 const PANE: Variants = {
-  hidden: variants.rise.hidden,
-  visible: variants.rise.visible,
-  exit: { opacity: 0, transition: transition.exit },
+  hidden: { opacity: 0, y: SHIFT_PX },
+  visible: { opacity: 1, y: 0, transition: transition.base },
+  exit: { opacity: 0, transition: { duration: duration.fast, ease: ease.in } },
 };
 const PANE_REDUCED: Variants = {
-  hidden: reducedVariants.rise.hidden,
-  visible: reducedVariants.rise.visible,
-  exit: { opacity: 0, transition: transition.exit },
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: transition.base },
+  exit: { opacity: 0, transition: { duration: duration.fast, ease: ease.in } },
 };
 
+/** The nearest ancestor that scrolls vertically: the modal's pane, or the page's canvas. */
+function scrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement instanceof HTMLElement ? document.scrollingElement : null;
+}
+
 /**
- * One section, drawn: its heading, its lede, its content. The modal and the
- * `/settings` page both render exactly this, so a control can never exist in
- * one and not the other again.
+ * One section, drawn: its name and its content. The modal and the `/settings`
+ * page both render exactly this, so a control can never exist in one and not
+ * the other.
  *
- * `key={section}` remounts on switch so each section's own state (drafts,
- * previews) starts clean — and the switch is a CROSS-FADE rather than a snap:
- * `AnimatePresence mode="popLayout"` lifts the outgoing section out of the
- * flow while it fades, so the incoming one takes its place at once instead of
- * waiting for it, and the two overlap for the exit rung.
+ * The header stays put across a switch; only its words change, with a short
+ * fade. It used to ride inside the animating block, so the section's name
+ * rose into place on every click along with everything under it.
  *
- * FIRST PAINT IS CSS, NOT FRAMER. The (app) layout renders on the server, and
- * a framer `initial="hidden"` would be written into that HTML as `opacity:0`,
- * leaving the pane invisible beside a visible rail until the bundle hydrates
- * (and for ever without JS). So `AnimatePresence initial={false}` renders the
- * first section at rest, and that first section arrives on the CSS
- * `animate-rise-in` instead, which plays on first paint with no JS at all.
- * Framer takes over only for switches the reader makes after that.
+ * `key={section}` remounts the content so each section's own state (drafts,
+ * previews) starts clean. When the new section mounts, the scroller it lives
+ * in goes back to the top: a switch used to land partway down the new section,
+ * at whatever depth the reader had scrolled the old one to.
  *
- * `tabpanel` only when the rail beside it is a tablist (the modal — see
- * settings-rail.tsx). On the page the rail is a <nav> of links, and a
- * tabpanel with no tabs is a promise to assistive tech that nothing keeps;
- * there the pane is a plain region named by its own heading.
+ * First paint does not animate here at all: the modal has its own entrance
+ * and the page arrives with the route. An entrance inside an entrance is two
+ * motions for one event.
+ *
+ * `tabpanel` only when the rail beside it is a tablist (the modal). On the
+ * page the rail is a <nav> of links, and the pane is a plain region named by
+ * its own heading.
  */
 export function SettingsPane({
   section,
@@ -84,28 +98,46 @@ export function SettingsPane({
   const Section = SECTION_COMPONENTS[section];
   const headingId = `settings-${section}`;
   const reduce = useReducedMotion();
-  // The first section the pane was mounted with keeps its CSS entrance; once
-  // the reader switches, framer owns every entrance (adjusting state on a
-  // prop change, React's own pattern — no effect, no extra paint).
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  // The name fades only once the reader has switched; on first paint the
+  // frame's own entrance is the only motion (adjusting state on a prop
+  // change, React's own pattern: no effect, no extra paint).
   const [firstSection] = React.useState(section);
   const [switched, setSwitched] = React.useState(false);
   if (!switched && section !== firstSection) setSwitched(true);
+
+  const resetScroll = React.useCallback(() => {
+    const scroller = scrollParent(rootRef.current);
+    if (scroller && scroller.scrollTop > 0) scroller.scrollTop = 0;
+  }, []);
+
   return (
-    <AnimatePresence mode="popLayout" initial={false}>
-      <motion.div
-        key={section}
-        variants={reduce ? PANE_REDUCED : PANE}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-        className={cn(!switched && "motion-safe:animate-rise-in [animation-fill-mode:backwards]", className)}
-        role={tabpanel ? "tabpanel" : "region"}
-        id={tabpanel ? settingsPanelId(section) : undefined}
-        aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
-      >
-        <SettingsPaneHeader title={<span id={headingId}>{meta.label}</span>} description={meta.description} />
-        <Section />
-      </motion.div>
-    </AnimatePresence>
+    <div
+      ref={rootRef}
+      className={className}
+      role={tabpanel ? "tabpanel" : "region"}
+      id={tabpanel ? settingsPanelId(section) : undefined}
+      aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
+    >
+      <SettingsPaneHeader
+        title={
+          <span key={section} id={headingId} className={cn(switched && "motion-safe:animate-fade-in")}>
+            {meta.label}
+          </span>
+        }
+      />
+      <AnimatePresence mode="wait" initial={false} onExitComplete={resetScroll}>
+        <motion.div
+          key={section}
+          variants={reduce ? PANE_REDUCED : PANE}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="min-w-0"
+        >
+          <Section />
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }

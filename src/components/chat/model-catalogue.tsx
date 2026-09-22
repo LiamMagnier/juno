@@ -4,9 +4,9 @@
  * STAGE TWO — the model catalogue, in its own module so it can be fetched
  * when it is opened.
  *
- * The composer chip opens stage one (model-selector.tsx): a ~150px card with
- * the model you are on and how hard it should think. This is what its "Change
- * model" row opens, and it is the expensive half — three panes, sixteen lab
+ * The composer chip opens stage one (model-selector.tsx): a short menu of the
+ * models you use, and how hard the model should think. This is what its "More
+ * models" row opens, and it is the expensive half — three panes, sixteen lab
  * marks, a detail panel, keyboard navigation, favourites and recents. Most
  * sessions never open it; every session was downloading it.
  *
@@ -126,9 +126,9 @@ function matchesQuery(m: ModelInfo, q: string): boolean {
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
     <div aria-hidden className="flex h-8 items-center gap-2 px-2 pt-1">
-      <span className="shrink-0 font-mono text-micro text-muted-foreground/60">{children}</span>
+      <span className="shrink-0 font-mono text-micro text-muted-foreground">{children}</span>
       {count != null && (
-        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/45">{count}</span>
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">{count}</span>
       )}
       <span className="h-px flex-1 bg-border/60" />
     </div>
@@ -173,10 +173,10 @@ function EmptyBlock({
 function Stat({ label, value, unit, score }: { label: string; value: string; unit?: string; score: number }) {
   return (
     <div>
-      <div className="font-mono text-micro text-muted-foreground/60">{label}</div>
+      <div className="font-mono text-micro text-muted-foreground">{label}</div>
       <div className="mt-0.5 flex items-baseline gap-1">
         <span className="text-ui font-medium tabular-nums text-foreground">{value}</span>
-        {unit && <span className="font-mono text-micro text-muted-foreground/60">{unit}</span>}
+        {unit && <span className="font-mono text-micro text-muted-foreground">{unit}</span>}
       </div>
       <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-secondary">
         {/* An inline scale: this is DATA, not a colour — the same precedent as
@@ -258,7 +258,7 @@ function DetailPanel({
           )}
           <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">{model.name}</span>
         </div>
-        <p className="mt-0.5 font-mono text-micro text-muted-foreground/60">
+        <p className="mt-0.5 font-mono text-micro text-muted-foreground">
           {auto ? "Juno" : model.providerModel}
         </p>
 
@@ -293,18 +293,18 @@ function DetailPanel({
             {metrics.inputUsdPerMTok + metrics.outputUsdPerMTok > 0 && (
               <dl className="mt-4 space-y-1 font-mono text-micro tabular-nums text-muted-foreground">
                 <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-muted-foreground/60">In / MTok</dt>
+                  <dt>In / MTok</dt>
                   <dd>{formatPrice(metrics.inputUsdPerMTok)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
-                  <dt className="text-muted-foreground/60">Out / MTok</dt>
+                  <dt>Out / MTok</dt>
                   <dd>{formatPrice(metrics.outputUsdPerMTok)}</dd>
                 </div>
               </dl>
             )}
 
             {caps.length > 0 && (
-              <p className="mt-4 font-mono text-micro leading-relaxed text-muted-foreground/70">
+              <p className="mt-4 font-mono text-micro leading-relaxed text-muted-foreground">
                 {caps.join(" · ")}
               </p>
             )}
@@ -387,8 +387,11 @@ function DetailPanel({
  * MORE than the name did: the lab and how many models it has, which is the
  * count the named row printed at its right edge.
  *
- * Active is the tonal `bg-secondary` — the accent is reserved for the
- * selected MODEL, never for which lab you are browsing.
+ * Active is the on tone, `bg-selected`, one rung past the hover fill
+ * (FLAT_UI.md §3.1); it was `bg-secondary`, which is paler than hover in the
+ * light theme, so the lab you were in read weaker than one the pointer
+ * crossed. The accent stays reserved for the selected MODEL, never for which
+ * lab you are browsing.
  */
 function RailTile({
   active,
@@ -417,7 +420,7 @@ function RailTile({
             "pressable flex size-8 shrink-0 items-center justify-center rounded-control outline-none",
             "motion-reduce:active:scale-100",
             "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            active ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           {children}
@@ -700,7 +703,7 @@ export function ModelCatalogue({
           {active ? (
             <StatusIcons.success className="size-3.5 text-primary" />
           ) : locked ? (
-            <Lock className="size-3 text-muted-foreground/70" />
+            <Lock className="size-3 text-muted-foreground" />
           ) : null}
         </span>
       </button>
@@ -924,7 +927,7 @@ export function ModelCatalogue({
                           {renderRows(g.models, g.key, g.byModality)}
                           {g.legacy.length > 0 && (
                             <details key={q ? "open" : "closed"} open={!!q} className="group/legacy">
-                              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2 text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
+                              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control px-2 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
                                 <span className="shrink-0 font-mono text-micro">Past models</span>
                                 <span className="h-px flex-1 bg-border/70" />
                                 <span className="shrink-0 font-mono text-micro tabular-nums">{g.legacy.length}</span>

@@ -516,6 +516,73 @@ fullscreen, Office export (for Markdown artifacts), and share. It hosts:
 
 The same `SandboxFrame` powers inline Mermaid blocks and the public share viewer.
 
+### 4.3b Files: the transcript tile and the side viewer
+
+A file sent in a chat is a **square tile** in the user's turn (`MessageAttachments` /
+`AttachmentTile`, `chat/attachment-tile.tsx`): the top of the document's first page on a
+sheet set into a tinted well, then its name and `PDF · 1.7 MB`. The page comes from
+`FilePreview` — the same rendered-first-page → opening-lines → extension ladder the Library
+and the composer draw (§13) — so a file looks like itself in all three places. Images keep
+their own thumbnail. Pressing either **opens the file beside the chat**; it no longer
+downloads. A file an answer produced renders as the same tile under the answer. Surfaces with
+no viewer (Code sessions) pass no `onOpenAttachment`, and the tile falls back to a download
+link.
+
+`DocumentViewer` (`components/documents/document-viewer.tsx`, lazy-loaded like the canvas)
+occupies **the canvas's column**: same width, resize handle, persistence key, motion and
+below-the-split takeover. It is a third party to the coexistence rule — opening a file closes
+the canvas and the thought dock without an exit, and opening either of them closes the file
+(`openAttachment` in `chat-view.tsx`). The header carries the file switcher (every file in the
+conversation), find (⌘F, over the file — the transcript's own find stands down inside
+`[data-document-viewer]`), the area tool, Download, fullscreen and close. Esc peels one layer
+at a time: selection → find → area tool → fullscreen → the panel.
+
+Each format gets the view that suits it (`lib/documents/viewer-kind.ts` decides, extension
+first, because uploads arrive as `application/octet-stream`):
+
+| Kind | View | How |
+|---|---|---|
+| PDF | `pdf-view.tsx` | pdf.js from `unpdf/pdfjs` (the engine already shipped — no `pdfjs-dist`), parsing in a Web Worker (`pdf.worker.ts`) with a main-thread fallback. Pages are virtualised; each draws a canvas at the settled zoom plus pdf.js's selectable **text layer**, whose CSS lives in globals.css outside `@layer`. Fit-to-width is per page (capped at 150%), zoom is Ctrl/⌘-wheel, pinch, ⌘± or the floating pill, links are live (http/https/mailto only; internal links jump). |
+| Image | `image-view.tsx` | Fitted, zoomable; opens in area mode, since the only useful gesture on a picture is "this bit". |
+| Text | `text-view.tsx` | Markdown through the chat renderer, CSV/TSV as a table, source with line numbers and the canvas's highlighter. |
+| Office | `reader-view.tsx` | Word, PowerPoint and Excel as a **reading view of their structure**, from `GET /api/attachments/[id]/document` (§13): headings at their depth, bullets, tables, the page breaks Word recorded, slides with speaker notes, workbooks as real grids. |
+
+**Ask about part of a file.** Selecting text shows the canvas's floating bar — *Ask Juno*,
+*Explain*, *Copy*. In a PDF or an image, the area tool draws a box around a figure that has no
+text to select, and *Ask about this area* renders **only that region, fresh, at up to 1600 px**
+(small areas are magnified; `cropPage` offsets the page transform so nothing else is drawn).
+Both become a `DocumentQuote` (`lib/quote-context.ts`): a passage is a quote chip in the
+composer; an area is the chip plus the crop on the composer's attachment row as an ordinary
+image upload (`juno:composer-add-files`), so the person sees what is being sent and can remove
+it. *Explain* sends at once. The model receives a block it can anchor on —
+
+```
+[Selection from document "k3_tech_report.pdf", pages 4-5]:
+"""
+…the words, with the page's soft line-wraps rejoined…
+"""
+
+Why so many heads?
+
+Answer about this passage specifically. It is quoted verbatim from the attached document; …
+```
+
+— and an area adds its region in percent and whatever words the text layer held inside the
+box. The same block is **read back** by `parseQuotedMessage` into a quote card
+(`chat/quoted-selection.tsx`) in the user's bubble and on the public share page, with only the
+person's own words in the bubble; anything the parser does not recognise as a block it wrote is
+shown exactly as sent. Artifact quotes from the canvas get the same card.
+
+Find paints with the **CSS Custom Highlight API** (`documents/find.ts`), never `<mark>`:
+wrapping matches would split pdf.js's measured spans and force React re-renders. PDF matches
+are counted from every page's text content, drawn or not; the reading views search their DOM.
+Where the API is missing, find still counts and scrolls.
+
+`/dev/documents` (404 in production) is a gallery of the real tile, viewer and quote card over
+generated samples — a report PDF with a vector chart, a table, links and a landscape page, plus
+Word, PowerPoint, Excel, Markdown, CSV, source and an image — whose previews and reading views
+come from the real extractors and renderer.
+
 ### 4.4 Hooks & i18n
 
 Hooks (`src/hooks/`): `use-chat` (chat state + streaming), `use-uploads`,
@@ -1297,7 +1364,7 @@ folds, one status glyph per row, with a **Needs you** fold above them; that is a
 answer to the objection the list page raised against landing on a composer, because the
 run that stopped to ask you something is now the first row of the column on *every* page
 rather than only on one. `/code/new` is a redirect onto `/code`
-(`src/app/(app)/code/new/page.tsx`), `/code/pulls` stays as a destination under More, and
+(`src/app/(app)/code/new/page.tsx`), `/code/pulls` is a top-level row in Code's sidebar, and
 `/code/customize` holds the page-sized configuration — environments, repositories, Mac
 workspaces, the default permission mode — that Chat does not have an equivalent of.
 
@@ -1610,10 +1677,15 @@ switch. Without the secret the switch is simply not offered anywhere.
 
 ## 9b. Work: what a conversation can do
 
-**Work is not a place. It is what a conversation can do when the ask is big.** You write a
-goal in the chat composer and arm it — "Do this as a task", beside Deep research in the
-`+` menu — and Juno plans it, works it, stops to ask when only you can decide, and hands
-back a deliverable, all inside the transcript that asked for it. The decision and the
+**Work is not a place. It is what a conversation can do when the ask is big.** You ask in
+the chat, and when the ask is a job rather than a question the chat model hands it to a
+task with its `start_task` tool. There is no switch to press: the web client opts a turn in
+(`workHandoff: true` on every saved, non-private request), the route decides whether the
+tool is offered, and the model decides whether to use it. Juno plans the task, works it,
+stops to ask when only you can decide, and hands back a deliverable, all inside the
+transcript that asked for it. The stream's `work` frame hands the started session to the
+client (`onWorkStarted` in `src/hooks/use-chat.ts`), so the panel appears under the reply
+that announced it rather than on the next discovery poll. The decision and the
 argument for it are `docs/design/TWO_PRODUCTS.md`; this section is what it means in the
 code.
 
@@ -1630,7 +1702,7 @@ always had.
 
 **What a person sees.** A `WorkSession` carries a `conversationId` — an indexed column
 that has existed since Work shipped and that only the legacy `ScheduledTask` adopter ever
-wrote — and the chat composer now writes it on every delegation. `useConversationWork`
+wrote — and a task the chat model starts now writes it every time. `useConversationWork`
 (`src/components/chat/use-conversation-work.ts`) discovers the session by
 `GET /api/work/sessions?conversationId=`, then follows its run down the same SSE stream
 the task page used to read, with the same resume cursor. `WorkRunPanel`
@@ -1640,8 +1712,10 @@ now, the plan with its tally, one line of facts, the run's own words and the blo
 needs a person; **terminal** is the outcome, the deliverables, the offer to save the run
 as a skill, and the receipt. Every block is a component the task page already mounted over
 the same stream — they are pure functions of the event log and were built to be re-mounted
-— so a run cannot disagree with itself about what happened. The composer owns answering,
-steering and stopping, because the composer is where a person types at a conversation.
+— so a run cannot disagree with itself about what happened. The panel names itself (a
+"Task" label and the task's title) and carries its own Stop, because nobody pressed a task
+switch to get it. The composer owns answering and steering, and its Stop ends the task
+too, because the composer is where a person types at a conversation.
 It follows a conversation's NEWEST task; a chat that has delegated twice draws the second
 run, and that limitation is stated in the hook rather than discovered.
 
@@ -2134,6 +2208,11 @@ alongside the object — a rendering of a page carries the page.
 `FilePreview` draws the three as a ladder in one element: excerpt or extension badge
 first, page image painted over it on load, and back to the badge on `onError`. There
 is no flash of an empty frame for a file that cannot be rendered.
+`GET /api/attachments/[id]/document` is the side viewer's reading view of an office file
+(`lib/documents/reader.ts`): the `KnowledgeBlock` rows when the index has them, otherwise the
+file read through the same `extractDocument` ladder on demand, and for a workbook a bounded
+grid of displayed cell values (the extractor's `Header: value` rows are right for retrieval and
+wrong for a grid). Owner-scoped, 404 not 403, rate-limited because a miss parses the file.
 `/api/attachments/[id]` handles per-file get/rename/delete (deleting the object only when
 no other attachment shares the `storageKey` — library re-attach clones share keys).
 

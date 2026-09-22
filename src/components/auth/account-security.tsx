@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import Image from "next/image";
-import { KeyRound, Loader2, LogOut, Mail, ShieldCheck } from "@/components/ui/icons";
+import { Loader2 } from "@/components/ui/icons";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
@@ -69,16 +69,15 @@ export function AccountSecuritySection({ email }: { email: string }) {
   }, [refresh]);
 
   return (
-    <SettingsGroup title="Sign-in" description="How you get into this account, and how you keep other people out.">
+    <SettingsGroup title="Sign-in and security">
       <TwoStepRow status={status} email={email} onChanged={refresh} />
       <PasswordRow hasPassword={status?.hasPassword ?? true} email={email} />
-      <EmailRow currentEmail={email} hasPassword={status?.hasPassword ?? true} />
+      <EmailRow hasPassword={status?.hasPassword ?? true} />
       <SettingRow
         label="This session"
         description="Sign out on this device. Other devices stay signed in."
         control={
           <Button variant="outline" size="sm" onClick={() => void signOutToSignIn()}>
-            <LogOut className="size-4" />
             Sign out
           </Button>
         }
@@ -127,7 +126,6 @@ function TwoStepRow({
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setSetupOpen(true)} disabled={!status}>
-              <ShieldCheck className="size-4" />
               Set up…
             </Button>
           )
@@ -181,7 +179,7 @@ function TwoStepSetupDialog({
         if (copiedTimer.current) clearTimeout(copiedTimer.current);
         copiedTimer.current = setTimeout(() => setCopied(false), 1500);
       })
-      .catch(() => toast.error("Couldn’t copy — select and copy them by hand."));
+      .catch(() => toast.error("Couldn’t copy. Select and copy them by hand."));
   };
 
   // Start the enrolment as the dialog opens, so the QR is already there rather
@@ -243,7 +241,7 @@ function TwoStepSetupDialog({
             <DialogHeader>
               <DialogTitle>Save your recovery codes</DialogTitle>
               <DialogDescription>
-                Each one signs you in once if you lose your authenticator app. This is the only time they are shown —
+                Each one signs you in once if you lose your authenticator app. This is the only time they are shown:
                 they are stored hashed, so nobody, including Juno, can show them to you again.
               </DialogDescription>
             </DialogHeader>
@@ -511,7 +509,6 @@ function PasswordRow({ hasPassword, email }: { hasPassword: boolean; email: stri
         control={
           hasPassword ? (
             <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-              <KeyRound className="size-4" />
               Change…
             </Button>
           ) : null
@@ -580,7 +577,9 @@ function PasswordRow({ hasPassword, email }: { hasPassword: boolean; email: stri
 // Email address
 // ----------------------------------------------------------------------------
 
-function EmailRow({ currentEmail, hasPassword }: { currentEmail: string; hasPassword: boolean }) {
+// The address itself is shown once, in the profile at the top of Account,
+// not again beside this row's button.
+function EmailRow({ hasPassword }: { hasPassword: boolean }) {
   const [open, setOpen] = React.useState(false);
   const [address, setAddress] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -617,13 +616,9 @@ function EmailRow({ currentEmail, hasPassword }: { currentEmail: string; hasPass
         label="Email address"
         description="The address you sign in with. A link to the new address confirms the change."
         control={
-          <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-caption text-muted-foreground">{currentEmail}</span>
-            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-              <Mail className="size-4" />
-              Change…
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+            Change…
+          </Button>
         }
       />
       <Dialog
@@ -644,7 +639,7 @@ function EmailRow({ currentEmail, hasPassword }: { currentEmail: string; hasPass
             <DialogTitle>Change your email address</DialogTitle>
             <DialogDescription>
               {sentTo
-                ? "Nothing has changed yet — open the link to finish."
+                ? "Nothing has changed yet. Open the link to finish."
                 : "Your current address keeps working until the new one is confirmed."}
             </DialogDescription>
           </DialogHeader>
@@ -733,7 +728,6 @@ function SignOutEverywhereRow() {
         description="Ends every session on every device, including this one. Use it if you've lost a phone or laptop."
         control={
           <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-            <LogOut className="size-4" />
             Sign out everywhere
           </Button>
         }
@@ -743,7 +737,7 @@ function SignOutEverywhereRow() {
           <DialogHeader>
             <DialogTitle>Sign out of every device?</DialogTitle>
             <DialogDescription>
-              Every browser, phone and native app signed in to this account is signed out immediately — this one
+              Every browser, phone and native app signed in to this account is signed out immediately, this one
               included. Nothing else about the account changes.
             </DialogDescription>
           </DialogHeader>

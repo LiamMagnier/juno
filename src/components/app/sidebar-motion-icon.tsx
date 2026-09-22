@@ -27,7 +27,9 @@ export type SidebarMotionIconKind =
   | "assistants"
   | "tasks"
   /** Skills, Automations and Permissions: the three rooms Work's tab row used
-   *  to hold, now destinations of their own under More. */
+   *  to hold. Skills and Automations are rows in More. Permissions has no
+   *  sidebar row now (its Macs moved to Settings); the kind stays so a
+   *  flyout or page that links it draws the registry's mark. */
   | "skills"
   | "automations"
   | "permissions"
@@ -89,10 +91,11 @@ const ICONS: Record<SidebarMotionIconKind, IconComponent> = {
  * assign gestures: a destination that moved here but sat still in the command
  * palette, the product switch or a page would be one registry mark behaving
  * two ways. So the plus turns (New), the gear turns (Settings, Customize), the
- * search glass tilts, the dismiss X turns and the library and artifact stacks
- * lift because THAT is what those glyphs do everywhere. Juno's own marks move a
- * part of themselves (`parts`): Chat's ball terminal pops out of the ring's gap,
- * Code's spark twinkles, Design's circle slides back from its square. The
+ * search glass tilts, the dismiss X turns and the artifact stack lifts because
+ * THAT is what those glyphs do everywhere. Juno's own marks move a part of
+ * themselves (`parts`): Chat's ball terminal pops out of the ring's gap,
+ * Code's spark twinkles, Design's circle slides back from its square, and
+ * Library's leaning volume straightens. The
  * destinations whose glyphs icons.tsx leaves still (Research, Assistants,
  * Connections, Automations, Permissions and the rest) stay still here too, as
  * the `.sidebar-motion-icon` note in globals.css settled.

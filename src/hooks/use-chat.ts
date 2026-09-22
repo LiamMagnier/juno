@@ -14,6 +14,7 @@ import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import {
   formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
@@ -202,6 +203,14 @@ interface UseChatOptions {
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
   onMemoryUpdated?: () => void;
+  /**
+   * The model handed this turn to a background task (`start_task`), and the
+   * server has already created it and dispatched its first run. The caller
+   * adopts the session so the task panel appears with the model's one-line
+   * acknowledgement instead of on the next discovery poll. Never called in
+   * private mode, which does not offer the tool.
+   */
+  onWorkStarted?: (session: ClientWorkSession) => void;
   onDone?: (
     assistant: ClientMessage,
     meta?: { finishReason?: ClientMessage["finishReason"]; title?: string; projectId?: string | null; projectName?: string | null }
@@ -594,6 +603,15 @@ export function useChat(opts: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantTempId ? { ...m, sources: chunk.sources } : m))
               );
+              break;
+            }
+            case "work": {
+              // Here rather than in the caller's stream loop so a reconnected
+              // stream adopts the task the same way the original one would
+              // have. The sequencer above already drops a replayed frame, and
+              // adopting an id the panel already follows is a no-op, so a
+              // reconnect that overlaps this frame draws nothing twice.
+              if (!opts.privateMode) opts.onWorkStarted?.(chunk.session);
               break;
             }
             case "reasoning": {
@@ -1296,6 +1314,10 @@ export function useChat(opts: UseChatOptions) {
           reasoningEffort: opts.reasoningEffort,
           connectors: input.connectors ?? opts.connectors,
           preflightClarification: input.preflightClarification,
+          // This client draws a task the model starts (the `work` frame and the
+          // panel under the reply), so the route may offer `start_task`. Never
+          // in private mode: that path writes no rows for a task to hang from.
+          workHandoff: opts.privateMode ? undefined : true,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]

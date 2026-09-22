@@ -159,7 +159,7 @@ export function ProjectOverviewRail({
               <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
                 {instructions}
               </p>
-              <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground/70">
+              <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">
                 {instructions.length.toLocaleString()} chars · {plural(instructionLines, "line")}
               </p>
             </button>
@@ -288,7 +288,7 @@ export function ProjectOverviewRail({
             // No action. Nothing the reader does here resolves it — memories
             // arrive from this project's chats, which is what the sentence
             // says, along with the boundary a reader most needs to trust.
-            <RailEmpty description="What Juno learns in this project’s chats stays here — your other chats never see it." />
+            <RailEmpty description="What Juno learns in this project’s chats stays here. Your other chats never see it." />
           ) : (
             // One piece, entering once, when the answer arrives.
             <div className="motion-safe:animate-fade-in">
@@ -304,7 +304,7 @@ export function ProjectOverviewRail({
                   <p className="line-clamp-3 text-pretty text-caption leading-relaxed text-foreground/85">
                     {memorySummary}
                   </p>
-                  <p className="mt-1.5 font-mono text-caption tabular-nums text-muted-foreground/70">
+                  <p className="mt-1.5 font-mono text-caption tabular-nums text-muted-foreground">
                     Summary · updated {timeAgo(memory.summary.updatedAt)}
                   </p>
                 </button>
@@ -365,7 +365,7 @@ function RailSection({
           {Icon && <Icon className="size-3.5 text-muted-foreground" aria-hidden={true} />}
           <CardEyebrow className="truncate">{title}</CardEyebrow>
           {count !== undefined && count > 0 && (
-            <span className="font-mono text-caption tabular-nums text-muted-foreground/70">
+            <span className="font-mono text-caption tabular-nums text-muted-foreground">
               {count.toLocaleString()}
             </span>
           )}

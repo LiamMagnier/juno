@@ -201,7 +201,6 @@ function LivePlusMenu() {
     ],
     [
       { kind: "toggle", id: "research", label: "Deep research", icon: ComposerIcons.research, checked: research, detail: research ? "Standard" : undefined, onToggle: () => setResearch((v) => !v) },
-      { kind: "toggle", id: "task", label: "Do this as a task", icon: ComposerIcons.task, checked: false, onToggle: noop },
       { kind: "toggle", id: "search", label: "Web search", icon: ComposerIcons.web, checked: web, onToggle: () => setWeb((v) => !v) },
       { kind: "toggle", id: "memory", label: "Memory", icon: ComposerIcons.memory, checked: true, onToggle: noop },
     ],
@@ -859,7 +858,6 @@ export function ControlsGallery() {
               <MenuRow icon={Plug} detail="2" chevron>Connectors</MenuRow>
               <MenuHairline />
               <MenuRow icon={ComposerIcons.research}>Deep research</MenuRow>
-              <MenuRow icon={ComposerIcons.task}>Do this as a task</MenuRow>
               <MenuRow icon={ComposerIcons.web} ticked>Web search</MenuRow>
               <MenuRow icon={ComposerIcons.memory} ticked>Memory</MenuRow>
             </StaticMenu>

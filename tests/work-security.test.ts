@@ -192,6 +192,19 @@ function routeSource(relative: string): string {
 }
 
 /**
+ * Where two routes' bodies live now: creating a session and starting a run,
+ * shared by those routes and the chat model's `start_task` tool. It is not a
+ * route, so the session-guard test has nothing to say about it (its callers
+ * resolve the user and hand it in), but every query it makes has to meet the
+ * same scoping rules the routes do, which is why it is scanned beside them.
+ * Relative to WORK_API_DIR, like the route paths.
+ */
+const DISPATCH_MODULE = "../../../lib/work/dispatch.ts";
+
+/** Every file whose queries answer to the scoping rules below. */
+const SCANNED_FILES: string[] = [...ROUTE_FILES, DISPATCH_MODULE];
+
+/**
  * Removes comments before anything else looks at the source.
  *
  * The scanner reasons about bindings, and a comment is not one. Leaving them in
@@ -480,7 +493,7 @@ function scopedToSessionUser(source: string, clause: WhereClause): boolean {
 test("every Prisma query in a Work route is scoped to the session user", () => {
   let checked = 0;
   let indirect = 0;
-  for (const file of ROUTE_FILES) {
+  for (const file of SCANNED_FILES) {
     const source = routeSource(file);
     // A credential-authenticated route has no session user to scope by: its one
     // lookup is keyed on the id its token proves, and the test above holds it to
@@ -506,7 +519,7 @@ test("every Prisma query in a Work route is scoped to the session user", () => {
 });
 
 test("no Work route takes an account from anything the caller controls", () => {
-  for (const file of ROUTE_FILES) {
+  for (const file of SCANNED_FILES) {
     const source = routeSource(file);
 
     // The concrete substitutions: a body field, a path parameter, a query
@@ -555,7 +568,9 @@ test("no Work route takes an account from anything the caller controls", () => {
 });
 
 test("the one helper that takes a userId is only ever handed the session user's", () => {
-  const source = routeSource("sessions/route.ts");
+  // In the shared dispatch module since `POST /api/work/sessions` became a
+  // wrapper around `createWorkSessionForUser`.
+  const source = routeSource(DISPATCH_MODULE);
   assert.match(
     source,
     /function idempotentSessionId\(userId: string, key: string\): string \{/,

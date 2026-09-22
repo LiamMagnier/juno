@@ -35,8 +35,8 @@ export default function LibraryError({
       <EmptyState
         tone="error"
         icon={StatusIcons.error}
-        title="Couldn’t open your library"
-        description="The file list didn’t come back. Nothing has been deleted — this is the page failing to read your files, not the store losing them."
+        title="Couldn’t load your files"
+        description="Nothing was deleted. The page failed to read the list, and trying again usually works."
         action={
           <>
             <Button size="sm" onClick={reset}>

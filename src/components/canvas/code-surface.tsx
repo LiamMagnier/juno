@@ -114,7 +114,8 @@ const HLJS_ALIASES: Record<string, string> = {
   mermaid: "plaintext",
 };
 
-function highlightHtml(content: string, language?: string | null): string | null {
+/** Highlighted HTML for `content`, or null past the size limit / for an unknown grammar. */
+export function highlightHtml(content: string, language?: string | null): string | null {
   if (content.length > HIGHLIGHT_LIMIT) return null;
   const lang = canonicalLang(language);
   const grammar = HLJS_ALIASES[lang] ?? lang;

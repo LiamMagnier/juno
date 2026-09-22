@@ -2,106 +2,129 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/components/app/app-provider";
-import { MemoryManager } from "@/components/memory/memory-manager";
+import { ChoiceMenu, type ChoiceOption } from "@/components/settings/choice-menu";
+import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { SENSITIVE_TOPICS, SENSITIVE_TOPIC_META } from "@/lib/memory-sensitive";
 import type { ClientSettings } from "@/types/app";
 
+type BackgroundMode = ClientSettings["backgroundProviderMode"];
+
+/**
+ * Where background work may run, in the words of what each mode does (read
+ * off `resolveBackgroundCandidates` in @/lib/background-provider-policy).
+ *
+ * "Only my selected provider" is not offered: nothing in the product ever
+ * lets a reader select that provider, so choosing it quietly stopped all
+ * background work (`selected_provider_unavailable`). An account already on it
+ * still sees it, named for what it now does, so the menu never shows a value
+ * it has no row for.
+ */
+const BACKGROUND_OPTIONS: ChoiceOption<BackgroundMode>[] = [
+  {
+    value: "same_provider",
+    label: "The lab I chat with",
+    description: "A chat’s background work goes to the lab that answered it.",
+  },
+  {
+    value: "any_allowed_provider",
+    label: "Any configured lab",
+    description: "Whichever lab on this server can do the job at the lowest cost.",
+  },
+  {
+    value: "local_only",
+    label: "Juno’s own models only",
+    description: "Nothing goes to an outside lab. Some background work may not run.",
+  },
+];
+const LEGACY_SELECTED_OPTION: ChoiceOption<BackgroundMode> = {
+  value: "selected_provider",
+  label: "A provider I chose",
+  description: "No longer offered, and background work is paused on it. Pick another option.",
+};
+
+/**
+ * What Juno may remember, and where the work of remembering runs. The
+ * memories themselves are on /memory: this section used to embed the whole
+ * memory manager (with a second Pause switch), and the two pages linked to
+ * each other in a loop.
+ */
 export function MemorySection() {
   const { settings } = useApp();
   const save = useSettingsSave();
+  const saves = useSaveStates();
 
-  const allowed = React.useMemo(
-    () => new Set(settings.memorySensitiveTopics),
-    [settings.memorySensitiveTopics]
-  );
+  const allowed = React.useMemo(() => new Set(settings.memorySensitiveTopics), [settings.memorySensitiveTopics]);
 
   const toggleTopic = (topic: (typeof SENSITIVE_TOPICS)[number], on: boolean) => {
     const next = SENSITIVE_TOPICS.filter((id) => (id === topic ? on : allowed.has(id)));
-    void save({ memorySensitiveTopics: next });
+    void saves.track(`topic:${topic}`, () => save({ memorySensitiveTopics: next }));
   };
+
+  const backgroundOptions =
+    settings.backgroundProviderMode === "selected_provider"
+      ? [...BACKGROUND_OPTIONS, LEGACY_SELECTED_OPTION]
+      : BACKGROUND_OPTIONS;
 
   return (
     <>
-      {/* No title and no lede: the pane header directly above this is "Memory"
-          with the registry's one-line description, and this group used to
-          repeat both — the same word one rung down and a paraphrase of the
-          same sentence. The pane's lede is this group's lede. */}
       <SettingsGroup>
         <SettingRow
           label="Reference saved memories"
           htmlFor="memory-enabled"
-          description="Juno learns durable facts and preferences from your chats and uses them in later ones."
+          description="Juno remembers lasting facts and preferences from your chats and uses them in later ones."
+          status={saves.status("memoryEnabled")}
           control={
             <Switch
               id="memory-enabled"
               checked={settings.memoryEnabled}
-              onCheckedChange={(v) => void save({ memoryEnabled: v })}
+              onCheckedChange={(memoryEnabled) => void saves.track("memoryEnabled", () => save({ memoryEnabled }))}
             />
           }
         />
         <SettingRow
           label="Learn from past chats in the background"
           htmlFor="memory-background-learning"
-          description="Between your sessions, Juno reads older conversations it hasn’t learned from yet, a few at a time and within your usage limits. New chats are always learned from as you go."
+          description="Between sessions, Juno reads older chats it hasn’t learned from yet, within your usage limits."
+          status={saves.status("memoryBackgroundLearning")}
           control={
             <Switch
               id="memory-background-learning"
               checked={settings.memoryBackgroundLearning}
               disabled={!settings.memoryEnabled}
-              onCheckedChange={(v) => void save({ memoryBackgroundLearning: v })}
+              onCheckedChange={(memoryBackgroundLearning) =>
+                void saves.track("memoryBackgroundLearning", () => save({ memoryBackgroundLearning }))
+              }
             />
           }
         />
         <SettingRow
-          label="Background processing"
-          description="Which providers may read your chats to build memory, titles and summaries — work you never see."
+          label="Memories"
+          description="See what Juno remembers, change it or forget it."
           control={
-            <Select
-              value={settings.backgroundProviderMode}
-              onValueChange={(v) =>
-                void save({ backgroundProviderMode: v as ClientSettings["backgroundProviderMode"] })
-              }
-            >
-              <SelectTrigger aria-label="Background processing" className="w-64">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="same_provider">Only the provider I chat with</SelectItem>
-                <SelectItem value="selected_provider">Only my selected provider</SelectItem>
-                <SelectItem value="any_allowed_provider">Any configured provider</SelectItem>
-                <SelectItem value="local_only">On-device models only</SelectItem>
-              </SelectContent>
-            </Select>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/memory">Manage</Link>
+            </Button>
           }
         />
       </SettingsGroup>
 
       {/*
-       * Sensitive subjects.
-       *
-       * OFF IS THE DEFAULT AND OFF IS THE POINT. Juno's extractor is good at
-       * noticing durable facts, which means it is equally good at noticing a
-       * diagnosis mentioned once while drafting an email about it. Nobody asks
-       * for that to become a permanent line in their profile, and finding it
-       * on this page later is the wrong moment to discover the feature.
-       *
-       * Every switch is additive and reversible, and turning one OFF does not
-       * delete what was learned while it was on — the memory page lists those
-       * facts with a Sensitive chip so they can be forgotten deliberately.
-       * Silently deleting them would be the friendlier-looking choice and the
-       * wrong one: a switch that destroys data is a switch people are afraid
-       * to touch.
+       * OFF IS THE DEFAULT AND OFF IS THE POINT. The extractor is good at
+       * noticing durable facts, which makes it equally good at noticing a
+       * diagnosis mentioned once while drafting an email about it. Turning a
+       * subject off does not delete what was learned while it was on: /memory
+       * lists those facts with a Sensitive chip so they can be forgotten
+       * deliberately. A switch that destroys data is a switch people are
+       * afraid to touch.
        */}
       <SettingsGroup
         title="Sensitive subjects"
-        description="Juno never learns these on its own. Turn one on and it will remember that subject like any other — you can turn it back off at any time, and anything already learned stays listed below until you forget it."
+        description="Juno doesn’t learn these on its own. Anything you ask it to remember is always kept."
       >
         {SENSITIVE_TOPICS.map((topic) => (
           <SettingRow
@@ -109,6 +132,7 @@ export function MemorySection() {
             label={SENSITIVE_TOPIC_META[topic].label}
             htmlFor={`memory-sensitive-${topic}`}
             description={SENSITIVE_TOPIC_META[topic].description}
+            status={saves.status(`topic:${topic}`)}
             control={
               <Switch
                 id={`memory-sensitive-${topic}`}
@@ -118,29 +142,32 @@ export function MemorySection() {
             }
           />
         ))}
-        {/* The info mark, not a warning shield: this line explains a rule, and
-            `StatusIcons.security` is reserved for a security PROBLEM. */}
-        <p className="flex items-start gap-1.5 px-1 pt-1 text-caption text-muted-foreground/80">
-          <StatusIcons.info className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-          <span>
-            A fact you add yourself is always kept, whatever these say — this controls what Juno writes down without
-            being asked.
-          </span>
-        </p>
       </SettingsGroup>
 
+      {/* Titled for what it governs. It sits here because memory is the
+          biggest reader of your chats in the background, but the same rule
+          covers chat titles, summaries and moderation, and the row says so. */}
       <SettingsGroup
-        title="Manage memories"
-        description="What Juno currently remembers, and the words to change it."
-        aside={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/memory">Open memory page</Link>
-          </Button>
-        }
+        title="Background work"
+        description="Memory, chat titles, summaries and moderation run without you asking."
       >
-        <div className="py-3">
-          <MemoryManager compact />
-        </div>
+        <SettingRow
+          label="Who may read your chats for it"
+          wide
+          status={saves.status("backgroundProviderMode")}
+          control={
+            <ChoiceMenu
+              ariaLabel="Who may read your chats for background work"
+              value={settings.backgroundProviderMode}
+              options={backgroundOptions}
+              onChange={(backgroundProviderMode) => {
+                if (backgroundProviderMode === settings.backgroundProviderMode) return;
+                void saves.track("backgroundProviderMode", () => save({ backgroundProviderMode }));
+              }}
+              className="@[34rem]/pane:w-56"
+            />
+          }
+        />
       </SettingsGroup>
     </>
   );

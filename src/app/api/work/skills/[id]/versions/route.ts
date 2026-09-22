@@ -1,41 +1,23 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
-import { recordWorkAudit } from "@/lib/work/audit";
 import {
   SKILL_CONTRACT_VERSION,
   emptySkillContract,
   mintSkillVersionSchema,
-  nextSkillVersion,
   parseRequestedTools,
   parseSkillContract,
   serializeSkill,
   serializeSkillVersion,
-  skillContractToJson,
   type WorkSkillVersionContent,
 } from "@/lib/work/skills";
-import {
-  permissionExpansion,
-  permissionSurfaceFromScan,
-  scanSkillVersion,
-} from "@/lib/work/skill-security";
+import { mintSkillVersion } from "@/lib/skills/store";
 import { ownsEverySkillResource } from "@/app/api/work/skills/resources";
 
 export const runtime = "nodejs";
 
 const VERSION_LIST_DEFAULT_LIMIT = 50;
 const VERSION_LIST_MAX_LIMIT = 200;
-
-/**
- * How many times to re-derive the version number when another writer takes it
- * first. Two tabs saving the same skill at once is the realistic case and it
- * settles in one extra pass; anything past that is a bug worth surfacing rather
- * than a race worth looping on. The shape follows `createRun`'s attempt
- * allocation in `src/lib/work/store.ts`, for the same reason it exists there.
- */
-const VERSION_ALLOCATION_TRIES = 4;
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -161,92 +143,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  const securityScan = scanSkillVersion({
-    name: skill.name,
-    description: skill.description,
-    instructions: content.instructions,
-    requestedTools: content.requestedTools,
-    contract: content.contract,
-  });
-  const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
-  const previousVersion = await prisma.workSkillVersion.findFirst({
-    where: { skillId: skill.id },
-    orderBy: { version: "desc" },
-    select: { securityScan: true },
-  });
-  const expansion = permissionExpansion(
-    permissionSurfaceFromScan(previousVersion?.securityScan),
-    securityScan.permissions
-  );
-  const requiresConsent = expansion.length > 0;
-
-  for (let tries = 0; tries < VERSION_ALLOCATION_TRIES; tries++) {
-    try {
-      const minted = await prisma.$transaction(async (tx) => {
-        // The highest version that exists, never `currentVersion`. The pointer
-        // moves backwards on a restore, so a skill on five versions restored to
-        // three would try to mint version 4 — a number already taken — and the
-        // unique index would fail every subsequent edit of that skill.
-        const highest = await tx.workSkillVersion.findFirst({
-          where: { skillId: skill.id },
-          orderBy: { version: "desc" },
-          select: { version: true },
-        });
-        const version = await tx.workSkillVersion.create({
-          data: {
-            skillId: skill.id,
-            version: nextSkillVersion(highest?.version ?? 0),
-            instructions: content.instructions,
-            contract: skillContractToJson(content.contract),
-            contractVersion: content.contractVersion,
-            requestedTools: content.requestedTools,
-            securityStatus: securityScan.status,
-            securityScan: securityScan as unknown as Prisma.InputJsonValue,
-            permissionDigest,
-            requiresConsent,
-          },
-        });
-        // The pointer moves in the same transaction as the row it points at,
-        // so a failure between the two cannot leave a head naming a version
-        // that was never written.
-        const updated = await tx.workSkill.update({
-          where: { id: skill.id, userId: user.id },
-          data: {
-            currentVersion: version.version,
-            enabled: securityScan.status !== "blocked",
-            securityStatus: securityScan.status,
-            securityUpdatedAt: new Date(),
-          },
-        });
-        return { skill: updated, version };
-      });
-
-      await recordWorkAudit({
-        userId: user.id,
-        kind: "skill_security_scanned",
-        actor: "web",
-        severity: securityScan.status === "blocked" ? "refusal" : securityScan.status === "warning" ? "warning" : "info",
-        detail: {
-          skillId: minted.skill.id,
-          skillSlug: minted.skill.slug,
-          skillVersion: minted.version.version,
-          scanStatus: securityScan.status,
-          findingCount: securityScan.findings.length,
-          requiresConsent,
-          permissionAdditions: expansion,
-        },
-      });
-
-      return NextResponse.json(
-        { skill: serializeSkill(minted.skill), version: serializeSkillVersion(minted.version) },
-        { status: 201 }
-      );
-    } catch (err) {
-      // `(skillId, version)` is the only unique constraint this write can
-      // violate, so a P2002 means another editor took the number between the
-      // read and the insert. Re-deriving it is the whole recovery.
-      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") throw err;
-    }
+  // The gate itself is in `mintSkillVersion`, shared with the source update
+  // route: every version is scanned (`scanSkillVersion`), compared with the
+  // highest one before it (`permissionExpansion`) so a version asking for more
+  // waits for consent, and a blocked version lands switched off. Nothing there
+  // switches a skill back on that the reader turned off.
+  const minted = await mintSkillVersion({ userId: user.id, skill, content, actor: "web" });
+  if (minted.ok) {
+    return NextResponse.json(
+      { skill: serializeSkill(minted.skill), version: serializeSkillVersion(minted.version) },
+      { status: 201 }
+    );
   }
 
   return NextResponse.json({ error: "version_conflict" }, { status: 409 });

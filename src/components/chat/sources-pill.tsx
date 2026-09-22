@@ -83,7 +83,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
             <p className="mt-2 font-mono text-caption text-muted-foreground">
               {source.publishedAt
                 ? `Published ${source.publishedAt.slice(0, 10)}`
-                : "No publication date — this source cannot be placed in time."}
+                : "No publication date, so this source cannot be placed in time."}
             </p>
             {/* What the four meters above were actually measured on. A preview
                 is two sentences of lede, and every verdict below was reached

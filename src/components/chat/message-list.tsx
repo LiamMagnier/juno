@@ -6,7 +6,7 @@ import { MessageItem } from "@/components/chat/message-item";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
-import type { ClientArtifact, GenerationStatus } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -41,6 +41,8 @@ interface MessageListProps {
   privateMode?: boolean;
   onImageEdit?: (input: ImageEditInput) => SendResult;
   currentModelId?: string;
+  /** Open a file in the side viewer — see MessageItemProps.onOpenAttachment. */
+  onOpenAttachment?: (attachment: ClientAttachment) => void;
   /** Names the transcript for assistive tech. Rendered as a visually-hidden
    *  <h1>: /chat/[id] had no heading at all once a conversation had messages,
    *  so there was nothing for a screen reader to navigate to. */
@@ -362,6 +364,7 @@ export function MessageList(props: MessageListProps) {
               speaking={props.speakingId === m.id}
               privateMode={props.privateMode}
               onImageEdit={props.onImageEdit}
+              onOpenAttachment={props.onOpenAttachment}
               currentModelId={props.currentModelId}
             />
             {runsByMessage.get(i)}

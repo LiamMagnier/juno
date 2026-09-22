@@ -4,11 +4,19 @@
  * Productizes Work Skills into first-class user-facing AI Assistants (Gems/GPTs equivalent)
  * with dedicated system prompts, attached knowledge, configured toolsets, preferred models,
  * starter prompts, and permission constraints.
+ *
+ * Assistants are stored as `WorkSkill` rows with `kind: "assistant"`, and every
+ * query here names that kind. Without it this page listed every imported skill
+ * as an assistant, and chat offered every assistant as a slash skill; the
+ * skill readers filter on `kind: "skill"` from their side.
  */
 
 import { prisma } from "@/lib/prisma";
 import crypto from "node:crypto";
 import type { ReasoningEffort } from "@/lib/model-metrics";
+import { nextSkillVersion } from "@/lib/work/skills";
+
+const ASSISTANT = { kind: "assistant" } as const;
 
 export interface JunoAssistantConfig {
   id: string;
@@ -52,7 +60,7 @@ export interface CreateAssistantInput {
  */
 export async function listUserAssistants(userId: string): Promise<JunoAssistantConfig[]> {
   const skills = await prisma.workSkill.findMany({
-    where: { userId, deletedAt: null },
+    where: { userId, deletedAt: null, ...ASSISTANT },
     include: {
       versions: {
         orderBy: { version: "desc" },
@@ -102,6 +110,7 @@ export async function getAssistantById(id: string, userId: string): Promise<Juno
       id,
       userId,
       deletedAt: null,
+      ...ASSISTANT,
     },
     include: {
       versions: {
@@ -168,6 +177,7 @@ export async function createAssistant(input: CreateAssistantInput, userId: strin
       currentVersion: 1,
       enabled: true,
       trust: "user_authored",
+      ...ASSISTANT,
       versions: {
         create: {
           version: 1,
@@ -214,7 +224,7 @@ export async function updateAssistant(
   userId: string
 ): Promise<JunoAssistantConfig | null> {
   const existing = await prisma.workSkill.findFirst({
-    where: { id, userId, deletedAt: null },
+    where: { id, userId, deletedAt: null, ...ASSISTANT },
     include: {
       versions: {
         orderBy: { version: "desc" },
@@ -240,10 +250,14 @@ export async function updateAssistant(
     isPinned: input.isPinned ?? currentContract.isPinned,
   };
 
-  const nextVersionNum = existing.currentVersion + 1;
+  // After the highest version that exists, never `currentVersion + 1`: the
+  // pointer can sit below the highest (a restore moves it back), and the
+  // unique `(skillId, version)` index then failed every later save. The
+  // include above orders versions newest first, so the first is the highest.
+  const nextVersionNum = nextSkillVersion(currentVersion?.version ?? 0);
 
   await prisma.workSkill.update({
-    where: { id },
+    where: { id, userId },
     data: {
       name: input.name ?? existing.name,
       description: input.description ?? existing.description,
@@ -266,9 +280,11 @@ export async function updateAssistant(
  * Delete an assistant (soft delete)
  */
 export async function deleteAssistant(id: string, userId: string): Promise<boolean> {
+  // `enabled` and `autoSelect` cleared with it, as a deleted skill's are, so a
+  // reader that forgets `deletedAt` still refuses the row.
   const updated = await prisma.workSkill.updateMany({
-    where: { id, userId, deletedAt: null },
-    data: { deletedAt: new Date() },
+    where: { id, userId, deletedAt: null, ...ASSISTANT },
+    data: { deletedAt: new Date(), enabled: false, autoSelect: false },
   });
   return updated.count > 0;
 }
