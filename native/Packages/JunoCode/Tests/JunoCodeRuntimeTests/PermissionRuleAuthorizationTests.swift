@@ -164,6 +164,41 @@ final class WebFetchToolTests: XCTestCase {
         XCTAssertFalse(text.contains("<"))
     }
 
+    /// The reported hole: a `WebFetch(domain:…)` rule is checked against the
+    /// host the model named, and the fetch then followed a redirect anywhere.
+    func testARedirectOffTheApprovedHostIsNotFollowed() async throws {
+        let tool = WebFetchTool(session: RedirectStub.session())
+        for (start, location) in [
+            ("https://allowed.example/leave", "https://evil.example/collect?token=secret"),
+            ("https://allowed.example/loopback", "http://127.0.0.1:8080/admin"),
+            // Same host, but no longer encrypted.
+            ("https://allowed.example/downgrade", "http://allowed.example/final"),
+            ("https://allowed.example/sibling", "https://www.allowed.example/final"),
+        ] {
+            RedirectStub.log.reset()
+            let result = try await tool.execute(input: ["url": .string(start)], context: Self.context)
+            XCTAssertTrue(result.content.contains("Redirected to \(location)"), result.content)
+            XCTAssertTrue(result.content.contains("Call web_fetch on that URL"), result.content)
+            XCTAssertEqual(RedirectStub.log.all, [start], "\(start) reached a host nobody approved")
+        }
+    }
+
+    func testARedirectOnTheSameHostIsFollowed() async throws {
+        let tool = WebFetchTool(session: RedirectStub.session())
+        RedirectStub.log.reset()
+        let result = try await tool.execute(input: ["url": "https://allowed.example/stay"], context: Self.context)
+        XCTAssertTrue(result.content.contains("arrived"), result.content)
+        XCTAssertFalse(result.isError)
+        XCTAssertEqual(RedirectStub.log.all, ["https://allowed.example/stay", "https://allowed.example/final"])
+
+        XCTAssertTrue(WebFetchTool.mayFollow(
+            from: URL(string: "http://docs.example/a")!,
+            to: URL(string: "https://DOCS.example/b")!
+        ))
+    }
+
+    private static let context = ToolContext(sessionID: CodeSessionID(), toolCallID: "call", emitOutput: { _, _ in })
+
     func testOnlyWebURLsAreAccepted() {
         let tool = WebFetchTool()
         XCTAssertNil(tool.precheck(input: ["url": "https://developer.apple.com/documentation"]))
@@ -175,4 +210,81 @@ final class WebFetchToolTests: XCTestCase {
             .domain("docs.swift.org")
         )
     }
+}
+
+/// Serves a few fixed routes without a network, and records every URL the
+/// session actually asked for, which is the fact the redirect tests are about.
+final class RedirectStub: URLProtocol {
+    static let redirects: [String: (status: Int, location: String)] = [
+        "https://allowed.example/leave": (302, "https://evil.example/collect?token=secret"),
+        "https://allowed.example/loopback": (307, "http://127.0.0.1:8080/admin"),
+        "https://allowed.example/downgrade": (301, "http://allowed.example/final"),
+        "https://allowed.example/sibling": (302, "https://www.allowed.example/final"),
+        "https://allowed.example/stay": (302, "/final"),
+    ]
+
+    final class Log: @unchecked Sendable {
+        private let lock = NSLock()
+        private var urls: [String] = []
+
+        func record(_ url: String) {
+            lock.lock()
+            urls.append(url)
+            lock.unlock()
+        }
+
+        func reset() {
+            lock.lock()
+            urls = []
+            lock.unlock()
+        }
+
+        var all: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return urls
+        }
+    }
+
+    static let log = Log()
+
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RedirectStub.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        Self.log.record(url.absoluteString)
+        if let redirect = Self.redirects[url.absoluteString],
+           let target = URL(string: redirect.location, relativeTo: url)?.absoluteURL,
+           let response = HTTPURLResponse(
+               url: url,
+               statusCode: redirect.status,
+               httpVersion: "HTTP/1.1",
+               headerFields: ["Location": redirect.location]
+           )
+        {
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: target), redirectResponse: response)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        let body = url.path == "/final" ? "arrived" : "reached \(url.absoluteString)"
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/plain"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
