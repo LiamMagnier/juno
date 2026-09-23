@@ -776,8 +776,12 @@ RELEASE_STATE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
      not $EXPECTED_PRERELEASE. A notarized build must be stable and an unnotarized one must not."
 
 if [ "$NOTARIZE" != 1 ]; then
-  printf '\n  Published as a PRERELEASE. It updates development-signed installs through\n'
-  printf '  ?channel=next and is deliberately invisible to the public download feed.\n\n'
+  # Development-signed installs from 1.6.0 on follow ?channel=next. Older ones
+  # (1.5.4 and before) ask it only while they are ahead of stable, so they never
+  # see a prerelease: reaching them takes promoting the release to stable.
+  printf '\n  Published as a PRERELEASE. Development-signed installs of 1.6.0 or later update\n'
+  printf '  to it through ?channel=next; it is deliberately invisible to the public download\n'
+  printf '  feed. Installs older than 1.6.0 only see stable releases.\n\n'
 fi
 
 # A GitHub release can be public before the backend's server-side release-feed

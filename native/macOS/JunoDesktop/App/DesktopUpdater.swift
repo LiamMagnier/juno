@@ -77,6 +77,12 @@ final class DesktopUpdateModel {
     private let build: JunoBuildInfo
     private let bundleURL: URL
 
+    /// Whether the running app is signed by anything short of Developer ID —
+    /// every build `release-macos.sh --publish-dev` produces. Read once: the
+    /// running bundle's signature does not change under it.
+    @ObservationIgnored
+    private lazy var isDevelopmentSigned: Bool = !CodeSignature.isDeveloperID(bundleURL)
+
     /// Ten minutes. The server refreshes its upstream release list in one
     /// minute; the longer poll keeps background network use small, while the
     /// menu's manual check bypasses both caches immediately.
@@ -181,16 +187,20 @@ final class DesktopUpdateModel {
                 forceRefresh: forceRefresh
             )
 
-            // A development build produced before the first stable release can
-            // legitimately be newer than the public stable feed. In that case
-            // a stable-only check would report “up to date” forever. Ask the
-            // prerelease stream only when this installation is already ahead of
-            // stable; a current production build never opts into it.
-            if let stable = candidate,
-               JunoUpdateFeed.isNewer(build.version, than: stable.version),
-               build.channel != "next"
+            // Development-signed installs follow the prerelease stream their
+            // releases are published to; a Developer ID build asks it only
+            // while it is ahead of stable. The rule, and why an equal version
+            // is not enough, is in `JunoUpdateFeed.asksPrereleaseStream`. A
+            // failed prerelease fetch leaves the stable answer standing.
+            if build.channel != "next",
+               JunoUpdateFeed.asksPrereleaseStream(
+                   installed: build.version,
+                   stable: candidate,
+                   developmentSigned: isDevelopmentSigned
+               )
             {
-                candidate = (try? await fetchCandidate(channel: "next", forceRefresh: forceRefresh)) ?? stable
+                let prerelease = try? await fetchCandidate(channel: "next", forceRefresh: forceRefresh)
+                candidate = JunoUpdateFeed.preferred(stable: candidate, prerelease: prerelease)
             }
 
             guard let candidate else {

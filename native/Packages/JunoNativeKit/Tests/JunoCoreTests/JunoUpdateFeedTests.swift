@@ -229,4 +229,54 @@ final class JunoUpdateFeedTests: XCTestCase {
         XCTAssertEqual(query.first(where: { $0.name == "refresh" })?.value, "test-token")
         XCTAssertEqual(query.first(where: { $0.name == "channel" })?.value, "next")
     }
+
+    // MARK: - Which stream a stable install follows
+
+    private func candidate(_ version: String) -> JunoUpdateFeed.Candidate {
+        JunoUpdateFeed.Candidate(
+            version: version,
+            downloadURL: URL(string: "https://github.com/LiamMagnier/juno/releases/download/v\(version)/Juno-\(version).dmg")!,
+            sizeBytes: nil,
+            sha256: nil
+        )
+    }
+
+    /// The trap 1.6.0 closes: a development build that is itself the newest
+    /// stable release must still see the next development release, which is
+    /// published as a prerelease. Equal to stable used to mean "never ask".
+    func testADevelopmentBuildEqualToStableStillAsksThePrereleaseStream() {
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: candidate("1.6.0"), developmentSigned: true
+        ))
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: nil, developmentSigned: true
+        ))
+    }
+
+    /// A Developer ID build stays on stable unless it is ahead of it.
+    func testADeveloperIDBuildAsksOnlyWhenAheadOfStable() {
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.5.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: nil, developmentSigned: false
+        ))
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.7.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+    }
+
+    /// A prerelease wins only when it is strictly newer than stable, so an old
+    /// prerelease can never displace a newer stable release.
+    func testThePrereleaseIsPreferredOnlyWhenNewer() {
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: candidate("1.6.1"))?.version, "1.6.1")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.7.0"), prerelease: candidate("1.6.1"))?.version, "1.7.0")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: candidate("1.6.0"))?.version, "1.6.0")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: nil, prerelease: candidate("1.6.1"))?.version, "1.6.1")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: nil)?.version, "1.6.0")
+        XCTAssertNil(JunoUpdateFeed.preferred(stable: nil, prerelease: nil))
+    }
 }

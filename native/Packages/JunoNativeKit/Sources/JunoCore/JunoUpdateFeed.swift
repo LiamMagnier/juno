@@ -124,6 +124,40 @@ public enum JunoUpdateFeed {
         order(candidate, installed) == .orderedDescending
     }
 
+    /// Whether a stable-channel installation should also ask the prerelease
+    /// stream (`?channel=next`), given what the stable feed answered.
+    ///
+    /// A build that is not Developer ID signed always asks. Every such build
+    /// comes out of `release-macos.sh --publish-dev`, which publishes as a
+    /// GitHub prerelease so the public download page never serves it — and
+    /// until 1.6.0 an installed development build asked the prerelease stream
+    /// only while it was *ahead* of stable. Once a development build was itself
+    /// the newest stable release, the next one could never reach it: equal is
+    /// not ahead, so it reported "up to date" forever and every release had to
+    /// be promoted by hand.
+    ///
+    /// A Developer ID build keeps the narrower rule: only when it is ahead of
+    /// stable (a build installed before the public release it precedes), or
+    /// when stable offers nothing to compare with.
+    public static func asksPrereleaseStream(
+        installed: String,
+        stable: Candidate?,
+        developmentSigned: Bool
+    ) -> Bool {
+        if developmentSigned { return true }
+        guard let stable else { return false }
+        return isNewer(installed, than: stable.version)
+    }
+
+    /// The build to offer when both streams answered: the prerelease only if
+    /// it is strictly newer than what stable offers, so a stale prerelease can
+    /// never displace a newer stable release, and either one alone stands.
+    public static func preferred(stable: Candidate?, prerelease: Candidate?) -> Candidate? {
+        guard let prerelease else { return stable }
+        guard let stable else { return prerelease }
+        return isNewer(prerelease.version, than: stable.version) ? prerelease : stable
+    }
+
     static func order(_ lhs: String, _ rhs: String) -> ComparisonResult {
         // Invalid SemVer has no defined precedence. Treat it as equal so the
         // updater fails closed instead of offering a malformed feed value.

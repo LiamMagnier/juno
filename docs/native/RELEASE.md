@@ -166,6 +166,16 @@ published with `draft=false, prerelease=false` — indistinguishable from a
 production release — which is how thirty consecutive unnotarized builds became
 the website's macOS download.
 
+Who a prerelease reaches depends on the installed updater. From 1.6.0, a build
+that is not Developer ID signed always asks `?channel=next` and takes a
+prerelease that is newer than stable (`JunoUpdateFeed.asksPrereleaseStream`).
+Up to 1.5.4 the updater asked `?channel=next` only while it was *ahead* of
+stable, so an installed 1.5.4 never sees a prerelease. That is why 1.6.0, the
+release that carries the new rule, had to be promoted to a normal release by
+hand (`gh api -X PATCH repos/LiamMagnier/juno/releases/<id> -F
+prerelease=false`) and checked against the stable feed the installed apps
+query, with no `channel` parameter.
+
 Independently of that, each release now publishes a `notarized` field in its
 `Juno-<version>.release.json` manifest, written from the same flag that gates
 Developer ID signing, the notary verdict, stapling and the Gatekeeper assessment.
