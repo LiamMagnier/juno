@@ -1,0 +1,247 @@
+{
+ "verdicts": [
+  {
+   "id": "web-design-model-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: download() at export/route.ts:173-182 builds `Content-Disposition: attachment; filename=\"${fileName}\"` inside the try block (187-240). safeFileName (export.ts:57-60) strips only \\/:*?\"<>|. SVG and PNG take the layer name when nodeId is set (export.ts:71, 101); PDF and HTML take doc.name (238, 1242). The editor sets nodeId whenever exactly one layer is selected (design-editor.tsx:302). The PDF notes header (route.ts:213) carries `${resolved.name}: ...` strings (export.ts:148-201). PROBED: under Node 26 / Next 15.5.25, `new NextResponse('x',{headers:{'Content-Disposition':'attachment; filename=\"Tom\u2019s app.svg\"'}})` throws 'Cannot convert argument to a ByteString... 8217'. CJK throws the same way. Latin-1 characters such as 'Caf\u00e9' pass. The catch at 241-249 turns this into a generic 500. PNG, React, SwiftUI, tokens and handoff return JSON bodies and are not affected, so the claim's scope (SVG/PDF/HTML) is right."
+  },
+  {
+   "id": "web-design-model-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: render.ts:859-866 builds opacityAttr, filterAttr, blendAttr and rotateAttr and attaches them only through `common` or the pushShape <g> (935-941). Children are pushed afterwards with renderNode (1024-1028), and the only wrapper is the clip group, which uses the unrotated box (1033-1041). PROBED: a frame with opacity 0.5 and rotation 30 renders `<rect ... opacity=\"0.5\" transform=\"rotate(30 100 50)\"/><g clip-path><rect x=\"10\" .../></g>`, so the child has no opacity or rotation. The canvas uses the same renderPageSvg (design-canvas.tsx:190-191) and injects it inline (1078). The HTML export nests children inside the parent div (export.ts:1134-1141), so the two disagree as described."
+  },
+  {
+   "id": "web-design-model-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the authored schema allows 'image' (authoring.ts:47), but patchFor (107-151) never sets assetId. createNode calls requireAsset(doc, '') for images (operations.ts:711, 571-576). The chat prompt lists image as a node type and never mentions an asset (system-prompt.ts:285). PROBED: normalizeDesignArtifact of a frame with an image child throws DesignOperationError 'An image layer needs a picture...'. Correction to the scenario: the drop is not silent in the main path. prepareChatArtifactOutput runs verifyAndRepairChatArtifacts first (chat/route.ts:433-460; chat-artifact-verification.ts:90-101), which refuses the design and rewrites the message to 'Artifact unavailable: verification failed, so it was not saved or presented.', with an 'Artifact refused' activity entry. The whole design is still lost, and the notice gives no reason."
+  },
+  {
+   "id": "web-design-model-4",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: coalesceOperations drops an earlier updateNode when its keys are a subset of a later one's (operations.ts:444-448). updateNode merges typography (757-759), and the inspector sends partial typography (inspector-panel.tsx:910). persist() merges new ops into the queued tail while a save is in flight (use-design-document.ts:310-320). drain() coalesces the batch (241), applies the coalesced transaction to the acknowledged base (249) and adopts the result when the queue empties (280). PROBED: [{typography:{fontSize:40}},{typography:{fontWeight:800}}] gives 40/800 applied in full and 16/800 after coalescing."
+  },
+  {
+   "id": "web-design-model-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: arrangeIntoRows measures each child with width = contentWidth (layout.ts:335-339), and measureNode returns available.width for widthMode fill (251-252). naturalWidth then includes the full content width, so free is 0 and perGrow is 0 (505-514). PROBED: a 400-wide row with a 100-wide child, a fill child and a 30-wide child gives b={x:110,width:400} and pushes the third child to x=520. A `layoutChild.grow` child in the same row lays out correctly (width 290), so only widthMode 'fill' is affected."
+  },
+  {
+   "id": "web-design-model-6",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: layout.ts:515-516 uses rowHeight for stretch or heightMode fill. rowHeight is the tallest measured item (357-359, 367), and fill items are measured with height 0 (338). The vertical branch uses contentWidth for the cross axis (496). PROBED: in a 400\u00d750 row with 20-tall siblings, both the heightMode 'fill' child and the alignSelf 'stretch' child come out 20 tall."
+  },
+  {
+   "id": "web-design-model-7",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: grid rows are sliced by column count (layout.ts:348-355) and placed by the horizontal branch, which advances cursorX by each item's own width (512-520). There is no column-track computation. PROBED: a 2-column grid with widths [100,50] and [30,50] puts the column-2 x at 110 in row 1 and at 40 in row 2."
+  },
+  {
+   "id": "web-design-model-8",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: restorableType maps 'instance' to 'frame' (operations.ts:1608-1610). The deleteNodes inverse re-adds identity only for type==='component' (806-825). The restorableType docstring says linkage is 're-established by the accompanying operations', but no such operation is emitted for instances. PROBED: after deleting instance 'inst' and applying the inverse, the node has type 'frame' and componentId undefined."
+  },
+  {
+   "id": "web-design-model-9",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the inverse re-adds createComponent and setComponentProperty only (operations.ts:814-823), and the definition, variants included, is deleted (824). PROBED: variants were {\"State=Default\":\"button\"} before the delete and {} after undo. setInstanceVariant then throws 'Button has no variant State=Default.' ('No component cmp' is the error before the undo, not after it). Minor wording difference only."
+  },
+  {
+   "id": "web-design-model-10",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: createVariant returns [] when the key is new (operations.ts:1407-1410), and setComponentProperty does the same when the property is new (1422). PROBED: both inverses are []. It is worse than 'undo succeeds as a no-op'. For a transaction made only of these ops, invertTransaction yields zero operations, and applyTransaction refuses them ('operations: Too small: expected array to have >=1 items'). In a mixed transaction, the undo silently leaves the variant in place (probe: Size=Large remained after undo). Only AI proposals emit these ops; there is no UI call site (grep)."
+  },
+  {
+   "id": "web-design-model-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: ungroupNodes checks only isContainer (operations.ts:1058). Its inverse is groupNodes, built from nodeDefaultsFor('group') (1026-1037, 1076). The context menu enables Ungroup for any container (design-context-menu.tsx:145, 266-268). PROBED: ungrouping the 'card' frame and then undoing gives type 'group', 0 fills, radius 0, layout null and clipsContent false. Ungrouping a component root leaves components.cmp.rootNodeId='button' pointing at a deleted node, validateHierarchy returns [] (the dangling link is not detected), and createInstance throws 'No node button'."
+  },
+  {
+   "id": "web-design-model-12",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: members are attached in operation.nodeIds order (operations.ts:1012, 1041-1047). The shortcut passes the selection as-is (design-editor.tsx:440), and so does the context menu (design-context-menu.tsx:261). PROBED: grouping [button, title] from card children [title, email, button] gives group children [button, title], which reverses their z-order."
+  },
+  {
+   "id": "web-design-model-13",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: transactionIsScopedTo checks only touchedNodeIds and allows every ancestor for any field (operations.ts:1682-1712). setVariableMode, renameDocument, setPageBackground and createPage add nothing to touched. previewProposal relies solely on this check (ai.ts:163-171), while the prompt claims out-of-scope touches are 'rejected automatically' (ai.ts:341). describeChanges iterates only touched nodes (ai.ts:175-195), so document-wide changes do not even appear in the review lines. PROBED: scoped to ['buttonLabel'], a transaction with setVariableMode + renameDocument + setPageBackground + createPage + updateNode(screen width and fills) returns {ok:true}. The user still has to accept the preview, so medium is right."
+  },
+  {
+   "id": "web-design-model-14",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: buildDocumentSummary lists only page.children as topLevel (selection-context.ts:327-342). With no selection the prompt says 'CURRENT SELECTION: none.' (ai.ts:388) and forbids inventing ids (ai.ts:356). The edit route builds selection context only when scoped (edit/route.ts:148-155). The bar sends [] when nothing is selected, and its placeholder invites whole-design requests (ask-juno-bar.tsx:68, 86, 199-204). Minted ids such as n<hash><n> cannot be guessed. The message is consumed before the model runs (edit/route.ts:181) and is refunded only on provider failure (244), so a note or refusal still costs a message."
+  },
+  {
+   "id": "web-design-model-15",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: the vocabulary line at ai.ts:298 omits kind and mimeType, marks id as optional and adds 'name'. assetSchema requires id, kind:'image' and mimeType (schema.ts:544-557), and parseDesignProposal rejects the whole proposal on the first issue (ai.ts:106-110). The mismatch is real. Severity is lowered because the model has almost no legitimate asset URL to use: data: images are huge, it cannot upload, and nothing in the UI invites it."
+  },
+  {
+   "id": "web-design-model-16",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: bindVariable only checks that the variable exists (operations.ts:1465-1478). A grep finds isBindable and bindablePaths only at their definitions (variables.ts:115, 133), despite the comment at 113-114. applyBoundVariables writes the resolved value blindly (variables.ts:85-95). PROBED: binding a string variable to cornerRadius renders `d=\"MNaN 262.4 HNaN VNaN...\"`. Lowered to low: it needs a model or bridge to emit a wrongly typed binding, and the AI path shows a preview the user must accept."
+  },
+  {
+   "id": "web-design-model-17",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: bindablePaths offers width, height, x and y (variables.ts:125). Layout measures raw node fields (layout.ts:250-268, 418-429), and render draws geometry from the layout box (render.ts:813-816). PROBED: a rectangle with width bound to a variable of 300 still renders width=\"100\". Rotation, opacity and similar properties are read from the resolved node and do work."
+  },
+  {
+   "id": "web-design-model-18",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: deleteNodes removes interactions only when the deleted node is the source (operations.ts:829-835). The HTML runtime hides every .juno-root whose data-root is not the destination (export.ts:1197-1202). PROBED: after deleting s2, i1 still navigates to 's2', validateHierarchy returns [], the HTML contains data-navigate=\"s2\" and unsupported is []."
+  },
+  {
+   "id": "web-design-model-19",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: pdfColor emits r, g and b only (export.ts:249-251). node.opacity is used only as a ===0 skip (145). Text is split on \\n with no wrap, uses the /F1 Type1 Helvetica font with no weight (337) and is anchored at box.x (163-175). None of this is added to `unsupported`, contrary to the docstring at 105-115. PROBED: a 10%-alpha black scrim emits `0 0 0 rg / 0 0 300 200 re f` (opaque) with unsupported=[]."
+  },
+  {
+   "id": "web-design-model-20",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: export/route.ts:109 applies `\\bon[a-z]+\\s*=` to the whole SVG, and 121 applies `(fetch|XMLHttpRequest|WebSocket)\\s*\\(` to the whole HTML. escapeXml escapes only &<>\"' (render.ts:52-54), so user text reaches both checks unchanged. The PNG path runs the same SVG check (route.ts:197-199). PROBED: a text layer 'online = true\\nUse fetch() here' matches both regexes, so SVG, PNG and HTML export return 500 EXPORT_VERIFICATION_FAILED."
+  },
+  {
+   "id": "web-design-model-21",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: POST /api/artifacts/[id] accepts any string up to 200k characters with no type check (artifacts/[id]/route.ts:7-16, 40-90). The canvas History 'Restore vN' calls it for every artifact type (canvas-panel.tsx:419-446, 1092-1100), and hasHistory is simply versions.length>1 (372), so DESIGN artifacts get it. The restored body keeps its old `revision`, which contradicts 'the only write path' (transactions/route.ts:20-24). An open editor's next commit then conflicts, and rollback clears its undo stack (use-design-document.ts:200-208). The malformed-JSON case needs a direct API call."
+  },
+  {
+   "id": "web-design-model-22",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: loadOwnedDesignArtifact includes every version row with its content (store.ts:34-37). appendVersion and rewriteVersion include them again (163-166, 193-196), and the conflict path reloads them (130-133). Only the current row and version metadata are used (43-45, 207-222). allocatesCheckpoint allows a new row once the newest is at least 30 s old (operations.ts:529-539), so history grows about every 30 s of continuous editing. Every transaction, edit and export call goes through this loader."
+  },
+  {
+   "id": "web-design-model-23",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "src/lib/design/schema.ts:553 (web only; the Mac/iPhone bundle is not affected)",
+   "reasoning": "READ: the refine is `u.startsWith('/') || u.startsWith('data:image/')` (schema.ts:553), so '//host/p.png' and '/\\\\host/p.png' pass. The web CSP allows img-src https: (csp.ts:39). The canvas injects the SVG inline (design-canvas.tsx:1078), so <image href> loads. A chat-authored full document passes through parseDesignDocument (authoring.ts:223-225), which is a second vector besides Ask Juno. CORRECTION: the Mac/iPhone editor bundle's CSP is `img-src 'self' data:` (native/macOS/JunoDesktop/Resources/DesignEditor/index.html:16), which blocks the remote load there, so the claim about the Mac and iPhone web views is wrong."
+  },
+  {
+   "id": "web-design-model-24",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: in exportSwiftUI (export.ts:1347-1644), a grep finds no code for strokes, fontFamily, letterSpacing, lineHeight, textAlign, italic, clipsContent or blendMode (the only 'stroke' hit is a comment about the glass rim). Text always gets .font(.system(size:weight:)) (1466-1467). The unsupported entries cover effects, extra fills, motion and layout only."
+  },
+  {
+   "id": "web-design-model-25",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: text is emitted as `<div>${escapeXml(characters)}</div>` (export.ts:1124-1126). The <style> block (1149-1160) has no white-space rule, and a grep finds no white-space, box-sizing, mix-blend or verticalAlign handling anywhere in export.ts. Strokes become `border` (577-578) on explicitly sized, content-box elements, so borders add to the element's size and shift absolutely positioned children by the stroke weight."
+  },
+  {
+   "id": "web-design-model-26",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: descendant mappings use `line: lines.length` after '}' and '' have been pushed (export.ts:1302-1325; SwiftUI 1615-1632), so every descendant points at the blank line after the component. The symbol string does carry the data-juno-node or accessibilityIdentifier selector, which is still usable. findSymbol has no in-product consumer (only tests/design-export.test.ts), so the Juno Code scenario is future-facing. Low is right."
+  },
+  {
+   "id": "web-design-model-27",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "PROBED: normalizeDesignArtifact accepts a full document with schemaVersion 2, and parseStoredDesignDocument then throws 'written by a newer version of Juno (schema v2; this build understands v1)'. READ: authoring.ts:223-225 and migrations.ts:60-69. The chat prompt tells the model not to write schemaVersion (system-prompt.ts:291), so this is unlikely. Low."
+  },
+  {
+   "id": "web-design-model-28",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: validateDesignAssets walks every doc.assets entry (export/route.ts:66-102) and runs before the format switch (162-163), so json, tokens and handoff are blocked too, including by assets no layer uses or on a page that is not exported."
+  },
+  {
+   "id": "web-design-model-29",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `JSON.stringify(result.unsupported).slice(0, 2_000)` (export/route.ts:213). The client saves the blob first and then runs JSON.parse on the header inside the same try, so a parse error goes to toast.error (design-editor.tsx:329-341). PROBED: 40 rounded rectangles produce 2,551 characters of notes, and the sliced string fails with 'Unterminated string in JSON at position 2000'. This is easy to hit, since every rounded layer adds a note."
+  },
+  {
+   "id": "web-design-model-30",
+   "verdict": "refuted",
+   "corrected_severity": "n/a",
+   "reasoning": "The fallback exists (store.ts:48-51), but the failure scenario is invented. A grep finds no caller of GET /api/design/[id]?version= in src/components, src/lib or native: the design page loads server-side and the canvas History uses the generic artifact data. Versions are never deleted or 'folded' away either: rewriteVersion rewrites the newest row in place (store.ts:179-203), so every version 1..currentVersion exists. Only a hand-crafted request with N>currentVersion reaches the fallback. At most a latent API wart."
+  },
+  {
+   "id": "web-design-model-31",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: design-editor.tsx:436-441 returns when selection.length < 2 before checking shiftKey, so \u21e7\u2318G on one selected group does nothing. The context menu advertises \u21e7\u2318G and allows a single container (design-context-menu.tsx:145, 266-271). The web editor has no other ungroup handler (grep)."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "This is the UX side of web-design-model-1, reproduced in Node (NextResponse throws a ByteString error for U+2019 and CJK). The catch returns only 'Export failed. Please try again.' (export/route.ts:249). Latin-1 accents such as \u00e9 still work; anything above U+00FF (smart quotes, em dash, emoji, CJK, Cyrillic, Greek) fails for SVG, PDF and HTML. That such names are common is an inference, but a plausible one. Major UX."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the summary exposes only top-level frames (selection-context.ts:335-342), the prompt says 'CURRENT SELECTION: none.' and 'Never invent an id' (ai.ts:356, 388), and the unscoped placeholder is 'Ask Juno to change this design\u2026' (ask-juno-bar.tsx:199-204). Nothing suggests selecting first, and a note is simply shown (ask-juno-bar.tsx:91). Major UX."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: maxDuration=120 (edit/route.ts:22). The provider stream is accumulated into `raw` and returned as one JSON response (186-201, 248-262). The client shows only a spinner on the send key (ask-juno-bar.tsx:217-230), and there is no cancel control (only the unmount abort at 66). The image is off (includeImage:false, route.ts:155). CORRECTION: DESIGN_TOOLS (ai.ts:256-270) is not 'advertised' to anyone. It is exported but never referenced by the prompt or any caller (a grep finds only its definition). It is misleading dead code, not an advertised loop."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: MAX_IMAGE_BYTES = 96 KB, inlined as base64 data URLs (use-design-document.ts:568-588), which is about 131k of the 200,000-character budget (store.ts:63, 117-120). So one maximum-size photo per design; smaller images allow a few more. The editor never inserts Library /api/files images (a grep finds no api/files use in src/components/design). No proximity warning exists (grep for budget, 200_000 and 'too large' in components/design). A too-large save rolls back with the store's message and clears undo (use-design-document.ts:200-208, 268-273)."
+  },
+  {
+   "id": "ux-4",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "The root cause is confirmed (see web-design-model-3), but the description of what the user sees is wrong. The design is refused before persistence by verifyAndRepairChatArtifacts (chat/route.ts:433-460, 3058-3063), and the message is rewritten to 'Artifact unavailable: verification failed, so it was not saved or presented.' with an 'Artifact refused' activity. So the user sees a generic refusal, not nothing, and not only a server log line. The artifacts-store.ts:16-24 drop is a backstop that is silent only on the unverified audit path (chat/route.ts:3592). The UX is still bad: the whole design is lost for an 'image' node the prompt itself advertises, and the notice does not say why."
+  },
+  {
+   "id": "ux-5",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "Same mechanism as web-design-model-2, reproduced. The canvas, SVG/PNG export and the layers-panel thumbnails all use renderPageSvg/renderNodeSvg (design-canvas.tsx:191, layers-panel.tsx:843, export.ts:67/94), while the HTML/React exports nest children and inherit. Clip groups also ignore the parent's rotation (render.ts:1033-1041). Major UX."
+  }
+ ],
+ "missed": [
+  {
+   "id": "missed-1",
+   "title": "A transaction whose inverse is empty jams the editor's undo stack",
+   "severity": "medium",
+   "file": "src/components/design/use-design-document.ts",
+   "line": 398,
+   "evidence": "apply() pushes a history entry whenever the transaction touched a node or contains any non-setSelection op (use-design-document.ts:376-389), with undo = invertTransaction(...) (operations.ts:395-408), which copies result.inverse verbatim. createVariant for a new key, setComponentProperty for a new property, and deleteAsset, deleteVariable, deleteInteraction, deleteAnimation or deleteComponent on a missing id all return inverse [] (operations.ts:1172, 1274, 1407-1410, 1422, 1449, 1510, 1531). undo() calls applyTransaction before popping the stack (398-415); designTransactionSchema requires at least one operation (operations.ts:320), so the call throws. PROBED: undoing a pure createVariant throws 'operations: Too small: expected array to have >=1 items'.",
+   "failure_scenario": "The user accepts an Ask Juno proposal that only adds a variant (\"add a Large size variant\") or only sets a new component property. Every later \u2318Z shows the same schema error toast and the entry is never popped, so nothing older in the history can be undone until the document is reloaded."
+  },
+  {
+   "id": "missed-2",
+   "title": "createInteraction checks only the source node, never the target or animation",
+   "severity": "low",
+   "file": "src/lib/design/operations.ts",
+   "line": 1495,
+   "evidence": "createInteraction calls requireNode only on interaction.sourceNodeId (operations.ts:1494-1497). navigate, open-overlay and scroll-to targetNodeId, set-variant instanceNodeId, play-animation animationId and set-variable variableId are validated only as id-shaped strings (schema.ts:473-486). validateHierarchy does not check interactions (the probe in web-design-model-18 returned []).",
+   "failure_scenario": "An Ask Juno proposal with a mistyped or invented navigate target is accepted and passes validation. In the exported HTML prototype, clicking that hotspot hides every screen and leaves a blank page (export.ts:1197-1202), the same failure web-design-model-18 describes for deleted targets, reached here without any deletion."
+  }
+ ]
+}

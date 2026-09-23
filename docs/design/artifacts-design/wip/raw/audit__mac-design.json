@@ -1,0 +1,654 @@
+{
+ "area": "macOS: Juno Design screen, the hosted web editor bundle, bridge and routing (with the iPhone host for comparison)",
+ "summary": "What exists. Juno Design on the Mac is a destination page inside Chat's detail column (`DesktopDestination.design`, routed in DesktopAccountScreens.swift:120-134). You get to it from the footer row `DesktopSidebarDesignRow` in Chat (DesktopChatSidebar.swift:284) and in the legacy Work column (DesktopWorkWorkspace.swift:332-347, 959). The Code window has no way in on main. `DesktopDesignScreen` (DesktopDesignScreen.swift:194-583) has two states. The first is a native launcher: four size presets that POST /api/design, a \"Recent\" list of DESIGN artifacts from the local encrypted store, a delete confirmation and an inline error notice. The second is the open document: a native command bar (All designs, title/subtitle, Discard, Save \u2318S, a Delete menu) above `DesktopDesignSurface` (DesktopArtifactCanvas.swift:972-1093). That surface decodes the stored JSON natively with `DesignDocumentCodec` and hosts the bundled React editor in a WKWebView through `DesktopDesignEditorHost`. The same surface is also used by the Artifacts library (editable when on the latest version, DesktopArtifactsScreen.swift:940), by the torn-off artifact window (read-only) and by the chat canvas (read-only, DesktopArtifactCanvas.swift:809-818). Everything inside the canvas is web code: tools, layers/history, inspector, motion, prototype, context menu, Export. Native Swift owns the launcher, decoding, bridge validation and persistence. Edits cross a narrow, validated bridge (DesignBridge.swift) as whole-document snapshots. They build up in an in-memory `draft` and are written only when you press Save, through the generic POST /api/artifacts/[id].\n\nHow good it is. The security boundary is careful. The editor is loaded from disk with read access scoped to its own folder, uses a non-persistent data store and a strict CSP with `connect-src 'none'`. Navigation is pinned to the bundle, new windows are refused, message handling goes through a retain-cycle-safe proxy, every message is checked for nonce, revision and document, and host commands are embedded as JSON data rather than script. The launcher is well documented, tested for its wire contract, and follows the web's shape.\n\nEverything around the editor has serious problems.\n- **Stale bundle.** The shipped bundle is out of date: `node scripts/build-design-editor.mjs --check` fails (expected 1.0.0+9cc1cfa8d4fe, shipped 1.0.0+2b86e5baaf9d). 11 editor commits since the last build (2fa09d35, 17 Sept) went out in Mac 1.6.0 (0a3087fe, 23 Sept) without being bundled, and neither CI nor the release scripts build or check the bundle.\n- **Missing shared styles.** The bundle's Tailwind scan leaves out the shared `src/components/ui/*` primitives, and the host stylesheet has no copies of globals.css's component classes. So the shipped editor.css has no `.surface-float`, `.overlay-glass`, `.control-primary`, `.inline-flex`, `.size-8`, `.bg-selected` or `z-popper`. From that I infer that menus, tooltips and popovers draw with no fill and that toolbar buttons lose their size and flex layout.\n- **Wrong colours.** The host's colour tokens are a cool indigo/zinc palette, not the website's warm coral one, even though the file claims they are \"the same values\".\n- **Dropped field.** The Swift `DesignDocument` has no `cornerSmoothing` field, so any edit saved from the Mac or iPhone silently removes corner smoothing from every node.\n\nSave and conflict handling can lose work:\n- Save sends whatever version sync last delivered as `baseVersion`, not the version the editor opened. Because the editor never takes in newer versions, a Mac save quietly reverts changes Juno or the web made in the meantime. The 409 path gives the same result on the second Save.\n- The unsaved draft lives only in `@State`. It is thrown away without a prompt on Back, on switching destination or on quit.\n- Edits made while a save is in flight are cleared from `draft`.\n\nMissing and broken features:\n- Export does not work: it fetches `/api/design/...` from file:// under `connect-src 'none'`, with the wrong id, and has no download path.\n- The Image tool does nothing, because no WKUIDelegate open panel is implemented.\n- Ask Juno, adjustments, rename, \"open conversation\", autosave and the \"window\" editor layout are all missing. The editor runs in \"embedded\" mode, so the inspector hides below 1024px of web-view width and cannot be reopened.\n- The launcher shows \"No designs yet\" while loading or after a failure.\n\nFor the merge goal: the architecture is a good base (one editor bundle for web, Mac and iPhone, and one native surface for every Mac entry point). The blockers are the lost-update save model, the chat canvas being read-only, Swift schema drift, a bundle pipeline nobody gates, and a bridge that carries only document snapshots, with no AI proposals, comments, theme or undo state. The mac/liquid-glass-chat branch only changes comments and the icon here, and moves the Design row into Chat's navigation rows. It fixes none of the above.",
+ "files_read": [
+  "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+  "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+  "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift (700-830, 940-1123)",
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift (80-100, 905-975, 1950-1975)",
+  "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift (1-80, 130-200)",
+  "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift (380-430)",
+  "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift (95-145, 290-305)",
+  "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift (270-300)",
+  "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift (320-360)",
+  "native/macOS/JunoDesktop/App/DesktopCommands.swift (150-205)",
+  "native/macOS/JunoDesktop/App/DesktopProductMode.swift (1-20)",
+  "native/macOS/JunoDesktop/Resources/DesignEditor/index.html",
+  "native/macOS/JunoDesktop/Resources/DesignEditor/editor.css (grepped, minified single line)",
+  "native/macOS/JunoDesktop/Resources/DesignEditor/editor.js (grepped, minified)",
+  "native/macOS/JunoDesktop/Tests/DesktopDesignLauncherTests.swift",
+  "native/macOS/JunoDesktop/Tests/DesktopDesignRoutingTests.swift",
+  "native/macOS/JunoDesktop/project.yml (grep)",
+  "native/macOS/JunoDesktop/JunoDesktop.xcodeproj/project.pbxproj (grep)",
+  "native/iOS/JunoMobile/App/JunoMobileDesignEditorHost.swift",
+  "native/iOS/JunoMobile/JunoMobile.xcodeproj/project.pbxproj (grep)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignBridge.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocumentCodec.swift",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift (1-140, 380-460, 479-540, 705-907)",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift (180-460)",
+  "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactAPIClient.swift (222-252)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/Generated/JunoGeneratedTokens.swift (170-185)",
+  "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoColors.swift (130-150)",
+  "native/Packages/JunoNativeKit/Tests/JunoDesignKitTests/DesignRoundTripTests.swift (78-104)",
+  "scripts/build-design-editor.mjs",
+  "src/components/design/host/main.tsx",
+  "src/components/design/host/bridge.ts",
+  "src/components/design/host/editor.css",
+  "src/components/design/design-editor.tsx",
+  "src/components/design/use-design-document.ts",
+  "src/components/design/panel-layout.tsx (85-145)",
+  "src/components/design/design-canvas.tsx (750-800, 1260-1285)",
+  "src/components/design/design-workspace.tsx (1-60 + grep)",
+  "src/app/(app)/design/page.tsx (205-270)",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/design/route.ts (grep)",
+  "src/components/ui/button.tsx (1-80)",
+  "src/components/ui/tooltip.tsx (52-62)",
+  "src/components/ui/menu-recipe.ts (60-75)",
+  "src/app/globals.css (token + .surface-float/.overlay-glass grep)",
+  "src/lib/design/types.ts (330-490, 585-770)",
+  "src/lib/design/schema.ts (grep)",
+  "tests/design-host-bridge.test.ts",
+  "tests/design-host-motion-tokens.test.ts (ran)",
+  "docs/design/FLAT_UI.md (1-80)",
+  "docs/design/ICONS_AND_MOTION.md (150-260)",
+  "package.json (scripts)",
+  ".github/workflows/native.yml, release-macos.yml, native/Scripts/release-macos.sh (grep)"
+ ],
+ "inventory": [
+  {
+   "feature": "Design door in the sidebar",
+   "description": "`DesktopSidebarDesignRow` footer row. Present in Chat's footer (DesktopChatSidebar.swift:284-286) and the legacy Work column (DesktopWorkWorkspace.swift:959, which writes the destination and switches product at 344-347). Absent from Code's column on main: rg finds no use in any Code file. It uses the `.pencil` icon (DesktopDesignScreen.swift:852), while the doc comment above it (827-839) describes an SF Symbol `pencil.tip`.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:840-892",
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:284",
+    "native/macOS/JunoDesktop/App/DesktopWorkWorkspace.swift:332-347"
+   ]
+  },
+  {
+   "feature": "Launcher: size presets (Phone/Tablet/Desktop/Square)",
+   "description": "Adaptive grid of tiles, each with a rectangle drawn at the preset's aspect ratio. POST /api/design with {title:'Untitled design', preset}, then sync refresh and reload, then opens the new design. A small spinner shows in the tile being started; the other tiles are disabled; a double click is guarded. Server errors are shown inline (403 plan message, 401/404/429 fallbacks). The tiles are disabled, with a stated reason, when there is no request sender. Wire values and sizes are pinned by tests.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:25-165",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:344-369",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:544-572",
+    "native/macOS/JunoDesktop/Tests/DesktopDesignLauncherTests.swift:24-60"
+   ]
+  },
+  {
+   "feature": "Launcher: Recent list and empty state",
+   "description": "Rows of DESIGN artifacts from the local store (title, vN, relative time), a \u22ef menu with Delete, a design count and 'No designs yet'. No thumbnails, by design. There is no loading, offline or failed state: the view only checks `designs.isEmpty`.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:372-403",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:674-753"
+   ]
+  },
+  {
+   "feature": "Delete design",
+   "description": "Confirmation alert with the text 'Every version of this design and its history will be removed.', then DELETE /api/artifacts/[id] through the model. The open design closes on success. Online only.",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:265-277",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:529-533"
+   ]
+  },
+  {
+   "feature": "Open document with native command bar",
+   "description": "All designs (back), title, a subtitle of vN \u00b7 Updated \u2026 \u00b7 Unsaved changes \u00b7 model error, Discard (reloads the editor from storage), Save (\u2318S) and a \u22ef menu with Delete. No rename, no version history, no open-conversation, no export and no share.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:421-510"
+   ]
+  },
+  {
+   "feature": "Explicit Save to a new artifact version",
+   "description": "The draft is re-encoded by the Swift codec on each accepted transaction. Save calls model.saveArtifact, which POSTs /api/artifacts/[id] with baseVersion taken from the model's current version, and a 409 keeps the draft. There is no autosave, no offline queue and no server-side design validation (the generic route only checks the size).",
+   "maturity": "broken",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:577-582",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:321-336",
+    "src/app/api/artifacts/[id]/route.ts:40-88"
+   ]
+  },
+  {
+   "feature": "DesktopDesignSurface (the single design view on the Mac)",
+   "description": "Decodes the stored JSON natively and refuses documents that are invalid or from a newer schema, with a stated reason. Creates the host once per identity, overlays loading, unavailable and failed states, and shows a glass banner when an edit cannot be encoded. Used by the Design screen, the Artifacts library (editable on the latest version), the torn-off window (read-only) and the chat canvas (read-only).",
+   "maturity": "solid",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:972-1093",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:940",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1961-1967",
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:809-818"
+   ]
+  },
+  {
+   "feature": "WKWebView host and security boundary",
+   "description": "loadFileURL scoped to the DesignEditor folder, `.nonPersistent()` data store, no JS window opening, navigation pinned to the bundle's file URLs, createWebView refused, a weak MessageProxy, and a transparent background through private KVC `drawsBackground`. No open panel, no download delegate, no handling of content-process termination, and not inspectable.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:86-123",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:199-254"
+   ]
+  },
+  {
+   "feature": "Bridge protocol v1",
+   "description": "Editor to host: ready {protocolVersion, editorVersion}, transaction {nonce, baseRevision, revision=base+1, transactionId, summary, document}, selection {nonce, revision, nodeIds}, save {nonce, revision} (the validator accepts it but the editor never sends it), failure {nonce?, message \u22642000}. Host to editor through `window.__junoDesignHost.receive(JSON.parse('\u2026'))`: openDocument, adoptDocument, setSelection, setReadOnly. The Mac never calls the last two. On stale or badField the host re-adopts its own document; other errors set the failed state.",
+   "maturity": "solid",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignBridge.swift:23-251",
+    "src/components/design/host/bridge.ts:19-138",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:126-193"
+   ]
+  },
+  {
+   "feature": "Hosted editor (web code): tools, undo/redo, align, layers/history, canvas, inspector, prototype, motion timeline, context menu, toasts",
+   "description": "The same `DesignEditor` as the website, mounted by host/main.tsx with the bridge transport, a TooltipProvider and a Toaster. The shipped build is stale and its CSS is missing shared-primitive classes (see defects).",
+   "maturity": "partial",
+   "where": [
+    "src/components/design/host/main.tsx:34-75",
+    "src/components/design/design-editor.tsx:164-877"
+   ]
+  },
+  {
+   "feature": "Export menu in the Mac editor",
+   "description": "Visible, with 9 formats plus the Juno Code handoff bundle, but every item fails on the Mac: a relative fetch to /api/design/<document.id>/export from file:// under `connect-src 'none'`, and download through anchor.click with no download handling.",
+   "maturity": "broken",
+   "where": [
+    "src/components/design/design-editor.tsx:298-345",
+    "src/components/design/design-editor.tsx:656-682",
+    "native/macOS/JunoDesktop/Resources/DesignEditor/index.html:16",
+    "src/components/design/host/main.tsx:66"
+   ]
+  },
+  {
+   "feature": "Image placement (Image tool I, inspector image fill)",
+   "description": "Depends on `<input type=file>`. The Mac host implements no `runOpenPanelWith` WKUIDelegate method, so no picker appears. Assets are data URLs, which the CSP would allow.",
+   "maturity": "broken",
+   "where": [
+    "src/components/design/design-canvas.tsx:1268-1276",
+    "src/components/design/inspector-panel.tsx:1245-1275",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:199-234"
+   ]
+  },
+  {
+   "feature": "Ask Juno / AI edits / adjustments in the editor",
+   "description": "The web window passes onAskJuno, the AskJunoBar, DesignAdjustments and a proposal review. The Mac host passes none of them; selection is reported to the host (`host.selection`) and never read.",
+   "maturity": "absent",
+   "where": [
+    "src/components/design/host/main.tsx:65-71",
+    "src/components/design/design-workspace.tsx:211-238",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:53,164-165"
+   ]
+  },
+  {
+   "feature": "Bundle build (scripts/build-design-editor.mjs)",
+   "description": "esbuild IIFE (safari17, minified) plus a Tailwind scan of src/components/design/** and icon-swap.tsx, plus the host editor.css and a CSP'd index.html stamped with a sha256 of src/lib/design, src/components/design and icon-swap.tsx. `--check` compares the stamp. Run by hand only (npm run design:editor); not in CI, not in release-macos.yml, not in release-macos.sh, not an Xcode build phase. The iOS app bundles the same folder.",
+   "maturity": "partial",
+   "where": [
+    "scripts/build-design-editor.mjs:55-205",
+    "package.json:85-86",
+    "native/iOS/JunoMobile/JunoMobile.xcodeproj/project.pbxproj:176"
+   ]
+  },
+  {
+   "feature": "Code window's .design selection",
+   "description": "An enum case with encode/decode/validate (DesktopCodeStudio.swift:34-35,144,166,190). Rendered as a retired destination that falls back to the landing (DesktopCodeWorkspace.swift:409-416). Nothing in Code sets it, and its doc comment ('reached from the brand menu') is stale.",
+   "maturity": "stub",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift:34-35",
+    "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift:409-416"
+   ]
+  },
+  {
+   "feature": "iPhone host",
+   "description": "A near-copy of the Mac host (244 lines) that uses the same bundle. The library can edit the latest version (JunoMobileWorkspaceViews.swift:2067). Differences: any refused message is fatal (no adopt recovery), transactions are refused when read-only, and `send` does not wait for ready.",
+   "maturity": "partial",
+   "where": [
+    "native/iOS/JunoMobile/App/JunoMobileDesignEditorHost.swift:126-170",
+    "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift:2067"
+   ]
+  },
+  {
+   "feature": "Offline behaviour",
+   "description": "The editor loads offline (local bundle) and the Recent list reads the local encrypted DB. Start, Save and Delete all need the server and fail with messages. Unsaved edits exist only in memory; there is no offline indicator on the Design screen.",
+   "maturity": "partial",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:110-121",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:400-431"
+   ]
+  },
+  {
+   "feature": "Undo integration with the Mac menu bar",
+   "description": "Undo and redo exist only inside the web editor (\u2318Z/\u21e7\u2318Z handled by a window keydown listener when focus is in the editor root). The bridge carries no undo state and there is no NSUndoManager or Edit-menu wiring.",
+   "maturity": "absent",
+   "where": [
+    "src/components/design/design-editor.tsx:410-431",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignBridge.swift:35-46"
+   ]
+  }
+ ],
+ "architecture": "Data flow when you open a design on the Mac:\n1. `DesktopAccountScreens` routes `.design` to `DesktopDesignScreen(model: NativeArtifactModel, accountID, requestSender, syncModel)` (DesktopAccountScreens.swift:120-134).\n2. The launcher lists `model.artifacts.filter { $0.kind.isDesignDocument }`. That list is projected from the local SQLite/encrypted store, which sync fills (NativeArtifactStore.swift:258-288).\n3. Starting a design goes through `DesktopDesignStartClient`: POST /api/design over `NativeAuthenticatedRequestSending`. The route creates a conversation, an Artifact of type DESIGN and version 1, and returns its artifactId. The screen then calls `syncModel.refresh()` and `model.reload()` and opens the design.\n4. Opening builds `DesktopDesignSurface(content: draft ?? storedContent, readOnly: false, onEdit:)`, keyed on `designID#reloadToken`. It calls `DesignDocumentCodec.load`, which uses JSONSerialization for the schemaVersion gate, then Codable `DesignDocument`, then `validateHierarchy`, and creates `DesktopDesignEditorHost(document:readOnly:)`.\n5. The host makes a WKWebView (non-persistent store, MessageProxy handler \"junoDesign\") and loads `Resources/DesignEditor/index.html`, whose CSP is `default-src 'none'; script-src 'self'; connect-src 'none'; img-src 'self' data:`.\n6. host/main.tsx boots and posts `ready`. The host checks the protocol version and sends `openDocument` with a nonce and the Swift-re-encoded document. `HostedEditor` mounts `DesignEditor` with `bridgeTransport`.\n7. Each committed editor transaction, including undo and redo, posts `transaction` with the full post-transaction document. The validator checks nonce, baseRevision == host revision, revision == base+1, then Swift decode, hierarchy check and document.revision. The host sets `document` and calls `onTransaction`, which runs `DesignDocumentCodec.encode` and stores the result in `draft`.\n8. Save calls `model.saveArtifact(id, content: draft)`, which POSTs /api/artifacts/[id] {content, baseVersion: currentVersion, origin:'edit'}, merges the result, refreshes sync and reloads. On 409 it merges the latest version, sets lastErrorDescription and keeps the draft.\n\nKey types: DesignDocument / DesignNode / DesignBridgeValidator / DesignHostCommand (JunoDesignKit), DesktopDesignEditorHost (@Observable, NSObject, WKNavigationDelegate/WKUIDelegate), DesktopDesignSurface, DesktopDesignScreen, NativeArtifactModel.\n\nPersistence: server Artifact/ArtifactVersion through the generic artifact route. The Mac never uses /api/design/[id]/transactions, /edit or /export. Pane sizes use localStorage inside a non-persistent store, so they are lost on every open. The document contract is written twice, in TypeScript (src/lib/design/types.ts, schema.ts, and contracts/design/design-document.v1.schema.json) and in Swift (DesignDocument.swift), and the Swift copy has drifted (no cornerSmoothing).\n\nBundle: scripts/build-design-editor.mjs writes editor.js, editor.css and index.html into native/macOS/JunoDesktop/Resources/DesignEditor. That folder is a folder reference in both the Mac and iOS Xcode projects (project.yml:61-63; iOS pbxproj:176). It is built by hand and committed.\n\nWhere the chat surface fits: DesktopArtifactCanvas shows DESIGN artifacts from a conversation read-only (no row to write to). DesktopArtifactsScreen edits the latest version with the same Save model.",
+ "ux": [
+  {
+   "observation": "Launching a design (READ): one click on a preset tile creates an 'Untitled design', waits for a server round trip plus a sync pull plus a reload, then swaps to the editor. There is no rename on the Mac Design screen (the web window has a NameField, design-workspace.tsx:176), so every Mac-started design stays 'Untitled design' unless renamed elsewhere.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:556",
+    "src/components/design/design-workspace.tsx:124-176"
+   ]
+  },
+  {
+   "observation": "Two stacked opaque toolbars (READ): the native command bar (Back, title, Discard, Save, \u22ef) sits over the web editor's own toolbar (tools, undo, align, Motion, Export). A native Save sits next to web undo/redo, and there are two rows of chrome before the canvas. This does not fit a Liquid Glass or full-bleed canvas direction, where the tools would float over the canvas.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:421-438",
+    "src/components/design/design-editor.tsx:552-706"
+   ]
+  },
+  {
+   "observation": "Explicit Save model versus the web's autosave (READ): the web editor commits every transaction to /api/design/[id]/transactions and shows 'Saving\u2026'. The Mac needs a manual Save and reports status only as 'Unsaved changes' in a one-line caption subtitle. The same editor behaves differently on the two platforms.",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:470-484",
+    "src/components/design/use-design-document.ts:89-107"
+   ]
+  },
+  {
+   "observation": "Errors go into a one-line, truncated subtitle (READ): `subtitle` joins `model.lastErrorDescription` (a model-wide error that may come from another screen or from sync) with ' \u00b7 ' at lineLimit(1). A 409 stale-conflict message is easy to miss and cannot be selected.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:503-510"
+   ]
+  },
+  {
+   "observation": "Double loading indicator (READ): the native `ProgressView` overlays the web view while status is .loading (DesktopArtifactCanvas.swift:1050-1051), and the web page draws its own 'Opening design\u2026' spinner underneath (main.tsx:96-103).",
+   "severity": "info",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:1049-1057",
+    "src/components/design/host/main.tsx:96-103"
+   ]
+  },
+  {
+   "observation": "Accent spent on furniture, against FLAT_UI \u00a72.4 and against the web's own documented fix (READ): Mac Recent rows use an accent-tinted icon tile and an accent hover stroke, and preset tiles stroke in accent on hover. The web replaced exactly this with a neutral edge and a quiet `bg-secondary` tile ('spent the page's one accent on a row the pointer happened to cross', page.tsx comment).",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:685-692",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:734-740",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:621-625",
+    "src/app/(app)/design/page.tsx:230-247"
+   ]
+  },
+  {
+   "observation": "Rail sizes and collapsed state never persist on the Mac (READ plus INFER): panel-layout stores them in localStorage, and the host's `.nonPersistent()` store discards it with the web view. Every design opens with default rail widths.",
+   "severity": "minor",
+   "where": [
+    "src/components/design/panel-layout.tsx:93-135",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:95"
+   ]
+  },
+  {
+   "observation": "Dark mode (READ): the host CSS follows prefers-color-scheme, so the editor goes dark with the system. Its dark palette is cool zinc (240 hue), while native chrome and the web are warm charcoal (FLAT_UI \u00a73.1, hue 30), so the editor reads as a foreign panel in both themes. The user's accent choice (JunoAccentSelection) never reaches the editor.",
+   "severity": "major",
+   "where": [
+    "src/components/design/host/editor.css:67-85",
+    "docs/design/FLAT_UI.md:48-62",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoColors.swift:139-144"
+   ]
+  },
+  {
+   "observation": "Window management (READ): a design lives only in Chat's detail column. There is no per-design window, no side-by-side designs, and no dedicated focus or full-canvas mode. The only other window is the library's read-only torn-off window. The sidebar plus the native bar reduce the canvas, and at a narrow window the inspector disappears (see defects).",
+   "severity": "major",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift:120-134",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1961-1967"
+   ]
+  },
+  {
+   "observation": "Undo is not in the menu bar (READ plus INFER): \u2318Z works only while focus is inside the web editor's root (design-editor.tsx:421). After clicking a native control such as Save, \u2318Z goes to the app's Edit menu, which has no design undo. Edit > Undo, Cut, Copy and Paste never reflect design state, and layer copy/paste is only in the canvas context menu.",
+   "severity": "major",
+   "where": [
+    "src/components/design/design-editor.tsx:410-471"
+   ]
+  },
+  {
+   "observation": "No discoverable keyboard help on Mac chrome (READ): tool keys (V F R O L T I), \u2318D, \u2318G, \u2325\u2318K and \u2318[ \u2318] exist only in web tooltips (which the stale CSS may also leave unstyled). The native 'All designs' button has no \u2318[ shortcut, while other Mac back buttons use \u2318[ (DesktopAccountScreens.swift:301). Adding one would collide with the editor's \u2318[ Send backward.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:444-453",
+    "native/macOS/JunoDesktop/App/DesktopAccountScreens.swift:301",
+    "src/components/design/design-editor.tsx:461-470"
+   ]
+  },
+  {
+   "observation": "The launcher subtitle promises 'restyle and hand to Juno Code' (READ). The Mac has no handoff: the Export > 'Juno Code handoff bundle\u2026' item is broken and nothing in native Code accepts a design.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:297-299",
+    "src/components/design/design-editor.tsx:678-680"
+   ]
+  },
+  {
+   "observation": "A design deleted elsewhere while open with unsaved edits closes silently back to the launcher (`onChange(of: openDesign == nil)` calls closeDesign), with no notice that the work is gone.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:258-263"
+   ]
+  },
+  {
+   "observation": "A refused transaction silently snaps the canvas back (READ): on staleRevision or badField the host re-adopts its document and records the reason only in `lastRefusal`, which nothing displays. The user sees their edit vanish without an explanation.",
+   "severity": "minor",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:185-188"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "Launcher and document swap is a hard cut (READ): `Color.clear.overlay { if let design \u2026 else launcher }` has no transition or animation. ICONS_AND_MOTION \u00a72.2.7 says state swaps cross-fade.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:250-257",
+    "docs/design/ICONS_AND_MOTION.md:150-200"
+   ]
+  },
+  {
+   "observation": "The Recent list is dumped rather than dealt (READ): the Mac rows have no entrance, while the web deals them in with `animate-rise-in` and `staggerDelay(min(i,8),'tight')` (page.tsx:222-228). ICONS_AND_MOTION \u00a72.2.5 says 'Lists are dealt, not dumped'.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:389-393",
+    "src/app/(app)/design/page.tsx:222-228"
+   ]
+  },
+  {
+   "observation": "The notice's `.transition(.opacity)` never plays (READ plus INFER): `startErrorDescription` is set without `withAnimation` and the parent has no `.animation(value:)`, so the notice cuts in and out.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:320-322",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:782",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:564-570"
+   ]
+  },
+  {
+   "observation": "Sidebar Design row hover animates with `JunoMotion.standard` (a spring, JunoDesignTokens.swift:228). The law says hover is a tonal cross-fade on duration-fast/ease-out-soft (\u00a72.2.1). Preset tiles and rows correctly use `JunoMotion.fast`. Tiles have no tonal press state (large surfaces 'press tonally').",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:875-876",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:653-657",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift:215-232"
+   ]
+  },
+  {
+   "observation": "Web-side motion in the shipped Mac editor lags the website (READ): the bundled CSS has no `svg.icon[data-motion]` hover gestures (added to host/editor.css:176-233 after the last build), no `after:scale-x-100` rail-tab indicator growth, and no `animate-pop-in`, `animate-tooltip-in` or `animate-pop-out` (their recipe classes live in unscanned src/components/ui files). Menus and tooltips on the Mac cut in and out while the web animates them. The motion-token ladder itself is present and tested (tests/design-host-motion-tokens.test.ts passes).",
+   "where": [
+    "native/macOS/JunoDesktop/Resources/DesignEditor/editor.css",
+    "src/components/design/host/editor.css:176-233",
+    "src/components/ui/menu-recipe.ts:68-71",
+    "src/components/ui/tooltip.tsx:58-60"
+   ]
+  },
+  {
+   "observation": "Reduced motion (READ): the host CSS carries the website's tiered reduced-motion overrides and a `.pressable` reset (editor.css:93-103, 148-155). The native launcher's hover animations do not check accessibilityReduceMotion, but they are tonal-only, so this is acceptable.",
+   "where": [
+    "src/components/design/host/editor.css:93-155"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "mac-design-1",
+   "title": "Swift DesignDocument drops `cornerSmoothing`, so every Mac or iPhone save strips it from the whole document",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift",
+   "line": 479,
+   "evidence": "READ: TS `BaseNode` has required `cornerSmoothing: CornerSmoothing` (src/lib/design/types.ts:484), and the schema defaults it to 0 so the web writes it on every node (schema.ts:332). Swift `DesignNode` properties (DesignDocument.swift:479-524) and CodingKeys (526-537) have no cornerSmoothing, and `grep cornerSmoothing native/Packages` finds nothing. `DesignDocumentCodec.decode` uses a plain JSONDecoder (DesignDocumentCodec.swift:54), which ignores unknown keys. The bridge re-decodes every transaction document into this struct (DesignBridge.swift:127-128). `DesktopDesignSurface` re-encodes it into the draft (DesktopArtifactCanvas.swift:1076-1080). The round-trip fixture dates from 6 Aug, before the field was added on 15 Aug (c69ee98e), so DesignRoundTripTests cannot catch this. The bundled editor.js already contains the corner-smoothing inspector control.",
+   "failure_scenario": "A user sets corner smoothing to 60% on a card on the web, or on the Mac, where the slider exists in the bundled inspector. They open the design on the Mac (Design screen or Artifacts library) and nudge any layer, then Save. The saved version has no cornerSmoothing on any node, so every squircle corner becomes a circular arc on all platforms, with no warning. The openDocument payload is also re-encoded from the Swift struct, so the Mac never even draws the smoothing it was given. The iPhone library editor (JunoMobileWorkspaceViews.swift:2067) loses it the same way."
+  },
+  {
+   "id": "mac-design-2",
+   "title": "Lost update: Save uses the latest synced version as baseVersion, and the editor never takes in newer versions",
+   "severity": "high",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 331,
+   "evidence": "READ: `saveArtifact` sends `baseVersion: artifact.currentVersion`, read from `artifacts` at save time (NativeArtifactStore.swift:321-335). Background sync replaces `artifacts` (reload at 258-288). `DesktopDesignSurface` reads `content` once and ignores later values (DesktopArtifactCanvas.swift:973-979). DesktopDesignScreen never records the version it opened or calls `host.adopt`. On 409 the model merges the latest version (422-426) and the screen keeps the draft, with the comment 'a second Save \u2026 is the recovery' (DesktopDesignScreen.swift:574-582). The server only compares baseVersion with currentVersion (route.ts:50-55).",
+   "failure_scenario": "The Mac opens design v3. Juno edits the same design in a conversation (or a web user edits it), producing v4, which sync lands on the Mac. The Mac canvas still shows v3. The user nudges a layer and presses \u2318S. The POST carries baseVersion 4, the server accepts it as v5, and Juno's v4 changes are silently reverted. If the save races the sync instead, the 409 path keeps the stale draft and the user's second Save overwrites v4 all the same, having never seen it."
+  },
+  {
+   "id": "mac-design-3",
+   "title": "Unsaved design edits are silently discarded on Back, on destination switch or on quit",
+   "severity": "high",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+   "line": 444,
+   "evidence": "READ: the draft exists only in `@State private var draft` (215). 'All designs' calls `closeDesign()` (444-446), which sets `draft = nil` (520-523) with no confirmation. `.onAppear { closeDesign() }` (264). The screen is a `switch` arm in DesktopAccountScreens (120-134), so moving to any other destination destroys its state. There is no onDisappear guard, NSDocument dirty flag, autosave or local persistence of the draft. Discard, by contrast, is an explicit button (470-476).",
+   "failure_scenario": "A user spends 20 minutes arranging a layout, then clicks 'All designs', a conversation in the sidebar, or \u2318Q. Every change is gone without a prompt; the stored version is unchanged. The same thing happens after a failed offline Save, where the draft is kept only in memory."
+  },
+  {
+   "id": "mac-design-4",
+   "title": "The shipped editor bundle is stale (Mac 1.6.0 shipped without 11 editor commits), and nothing in CI or release builds or checks it",
+   "severity": "high",
+   "file": "scripts/build-design-editor.mjs",
+   "line": 190,
+   "evidence": "READ: `node scripts/build-design-editor.mjs --check` prints 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)', while index.html:21 stamps 1.0.0+2b86e5baaf9d. The last bundle commit is 2fa09d35 (17 Sept). 11 commits touching src/components/design, src/lib/design and icon-swap.tsx followed before the release commit 0a3087fe (23 Sept), about 1,161 lines changed. The bundle lacks strings from them: `after:scale-x-100` and `svg.icon[data-motion]` are both absent. rg finds no `design:editor` in .github/workflows, native/Scripts/release-macos.sh or deploy scripts. The script header claims `--check` is for 'verify freshness in CI' (line 16). tests/design-host-bridge.test.ts:77 is titled '\u2026present, self-contained and current' but never compares the hash. The iOS app bundles the same folder (iOS pbxproj:176).",
+   "failure_scenario": "The Mac and iPhone ship an editor that differs from the website: the premium-redesign layers, effects and motion panels, and the icon hover motion. That is true for every release in which someone forgot `npm run design:editor`. Any future bridge-relevant fix in src/components/design reaches users only if a human remembers to rebuild."
+  },
+  {
+   "id": "mac-design-5",
+   "title": "The bundled CSS lacks the shared UI primitives' classes: menus, tooltips and popovers have no surface, and Buttons lose their size and flex layout",
+   "severity": "high",
+   "file": "scripts/build-design-editor.mjs",
+   "line": 172,
+   "evidence": "READ: Tailwind `--content` is only `./src/components/design/**/*.{ts,tsx}` plus icon-swap.tsx. The editor also imports ui/button, tooltip, dropdown-menu, popover, select, dialog, kbd, collapse, menu-recipe, icons, lib/app-icons and lib/motion (rg of imports). Those files carry their classes. button.tsx:43 has `inline-flex \u2026 whitespace-nowrap`, size `icon-sm` is `size-8`, and the default variant is `control-primary`. tooltip.tsx:59 has `surface-float z-popper \u2026 animate-tooltip-in`. menu-recipe.ts:68-71 has `surface-float overlay-glass z-popper \u2026 animate-pop-in`. `.surface-float`, `.overlay-glass`, `.control-primary` and `.control-neu` are components defined only in src/app/globals.css (1137-1142, 1797-1802), which the host does not include, and host/editor.css does not define them. Grep of the shipped editor.css: `display:inline-flex` 0, `.size-8{` 0, `.h-8{` 0, `whitespace-nowrap` 0, `surface-float` 0, `overlay-glass` 0, `z-popper` 0, `animate-pop-in` 0, `.bg-selected` 0, `--shadow-float` 0. Rendering is INFERRED from the missing rules.",
+   "failure_scenario": "In the Mac or iPhone editor, opening Export or the canvas context menu, or hovering a toolbar button, is expected to show menu or tooltip text floating with no background, border or shadow over the artwork. Toolbar icon buttons render as inline-block boxes about the size of the 16px glyph instead of 32px, with icon and label not flex-centred. Primary buttons (the proposal Apply button, the zoom control's glass) have no fill. This cannot be fixed by rebuilding alone; the scan and host CSS have to change."
+  },
+  {
+   "id": "mac-design-6",
+   "title": "Host colour tokens have diverged from the website (indigo/zinc instead of warm coral), and several tokens are missing",
+   "severity": "medium",
+   "file": "src/components/design/host/editor.css",
+   "line": 21,
+   "evidence": "READ: the host sets `--primary: 231 82% 63%`, `--background: 0 0% 100%` and `--border: 240 6% 90%` (editor.css:15-35; dark 67-85). The website sets `--primary: 15 54% 46%`, `--background: 48 24% 97.2%` and `--border: 44 14% 86.5%` (globals.css:80 etc.; FLAT_UI \u00a73.1). Native `JunoGeneratedTokens.primary` is coral (0.708, 0.336, 0.212) and the accent is user-selectable (JunoColors.swift:139-144). The file header says the tokens are 'the same names and the same values the website's theme uses' (editor.css:4-6). The bundle uses `var(--primary-ink)`, `var(--destructive-ink)` and `var(--shadow-soft)`, none of which are defined (so `.text-destructive` is invalid, and `--selected` is absent). The motion-token test covers only motion.",
+   "failure_scenario": "A Mac user with the default coral accent sees native chrome in coral on warm paper, and directly underneath it an editor whose selection, focus ring and primary controls are indigo on cold white or zinc. Destructive text in the editor (for example 'Delete' in menus) is not red, because its colour resolves to an invalid value. Changing the accent in Settings changes everything except the editor."
+  },
+  {
+   "id": "mac-design-7",
+   "title": "Every Export menu item fails in the Mac and iPhone editor",
+   "severity": "medium",
+   "file": "src/components/design/design-editor.tsx",
+   "line": 304,
+   "evidence": "READ: `exportAs` does `fetch(`/api/design/${artifactId}/export?...`)`. The hosted page is file://\u2026/index.html, so the relative URL resolves to file:///api/\u2026, which the CSP `connect-src 'none'` (index.html:16) blocks. main.tsx:66 passes `artifactId={session.document.id}` (the DesignDocument id, not the artifact id). Downloads use `anchor.download` + `click()` (1106-1113) and blob URLs. The host cancels any non-file navigation (DesktopDesignEditorHost.swift:209-214) and has no WKDownloadDelegate. The Export menu is rendered unconditionally (656-682).",
+   "failure_scenario": "A user picks Export > PNG (2\u00d7), React component, SwiftUI view, or Juno Code handoff bundle in the Mac Design screen. They get only an error toast (the fetch is refused) and no file. The native command bar offers no alternative export, so the Mac cannot export a design at all from the Design screen."
+  },
+  {
+   "id": "mac-design-8",
+   "title": "The Image tool and the inspector's image picker do nothing on the Mac (no WKUIDelegate open panel)",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+   "line": 199,
+   "evidence": "READ: image placement triggers a hidden `<input type=file accept=image/...>` (design-canvas.tsx:1268-1276; inspector-panel.tsx:1275). On macOS, WKWebView shows a file picker only if the UI delegate implements `webView(_:runOpenPanelWith:initiatedByFrame:completionHandler:)`. The host's WKUIDelegate conformance implements only `createWebViewWith` (226-233), and rg for `runOpenPanel` across native finds nothing.",
+   "failure_scenario": "The user presses I (Image) and clicks the canvas, or picks 'Replace image' in the inspector. No panel appears, no error is shown and nothing is placed. Images can only come from a design authored elsewhere. There is also no drag-and-drop from Finder."
+  },
+  {
+   "id": "mac-design-9",
+   "title": "Edits made while a save is in flight are dropped from the draft",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+   "line": 581,
+   "evidence": "READ: `save` captures `guard let draft` (578), awaits the network save plus sync refresh plus reload (579), then unconditionally sets `self.draft = nil` (581). Meanwhile each editor transaction keeps overwriting `draft` through `onEdit: { draft = $0 }` (428). The Save button is disabled only while `model.isMutating` is true.",
+   "failure_scenario": "The user presses \u2318S on a slow network and keeps dragging layers during the one to three seconds the save takes. The save lands and draft becomes nil, so 'Unsaved changes' disappears and Save greys out, even though the canvas shows edits that are not in the stored version. If they then click 'All designs', those edits are lost."
+  },
+  {
+   "id": "mac-design-10",
+   "title": "The launcher says 'No designs yet' while the store is loading or has failed",
+   "severity": "medium",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+   "line": 373,
+   "evidence": "READ: `launcherContent` branches only on `designs.isEmpty` (373-379). `model.phase` (.loading/.offline/.failed, NativeArtifactStore.swift:193-199, 271-282) and `model.lastErrorDescription` are never consulted on the launcher. The web launcher has separate skeleton and error EmptyState branches (page.tsx:207-211).",
+   "failure_scenario": "At first launch, or after a sync failure or decryption error, a user who has 30 designs opens Design and is told 'No designs yet \u2026 Pick a size above to start one'. They may start duplicates, or conclude their designs were lost."
+  },
+  {
+   "id": "mac-design-11",
+   "title": "The hosted editor runs in the 'embedded' layout, so the inspector and layers rails vanish, with no way back, at common Mac widths",
+   "severity": "medium",
+   "file": "src/components/design/host/main.tsx",
+   "line": 65,
+   "evidence": "READ: HostedEditor mounts `<DesignEditor \u2026 />` without a `surface` prop, so it defaults to 'embedded' (design-editor.tsx:169). In that mode the left rail is `hidden md:flex` (768px) and the right rail `hidden lg:flex` (1024px) (549-550). The CollapsedRail stubs and resize grips carry the same class (710-717, 825-827, 866-873), so no re-open control shows either. The component's own comment says 'window' is for 'where the editor *is* the page' (186-196), which is what the Mac Design screen is.",
+   "failure_scenario": "On a 13-inch MacBook, with the Chat sidebar open and the window at a comfortable size (web view about 900-1000pt wide), the Design screen shows no inspector and offers no button to bring it back. Fills, typography, effects and auto layout cannot be edited unless the window is widened. Below 768pt the layers rail goes too."
+  },
+  {
+   "id": "mac-design-12",
+   "title": "Any non-fatal JavaScript error permanently covers a working editor with an opaque 'Design editor unavailable' panel",
+   "severity": "low",
+   "file": "src/components/design/host/main.tsx",
+   "line": 126,
+   "evidence": "READ: every window `error` and `unhandledrejection` event is posted as a `failure` (main.tsx:126-127). The host maps any failure to `status = .failed(message)` (DesktopDesignEditorHost.swift:172-173). The surface then draws `JunoEmptyState(...).background(Color.junoCanvasWarm)` over the web view (DesktopArtifactCanvas.swift:1052-1054). There is no dismiss or retry, and the status never returns to ready. The trigger (an exception in an event handler or a rejected promise that React survives) is INFERRED as plausible.",
+   "failure_scenario": "A single thrown error in an onClick handler, or a benign rejected promise, flips the pane to 'Design editor unavailable: <stack>' although the React tree and the document are intact. The unsaved draft is still in memory, but the canvas is hidden and the user cannot keep working. The only way out is leaving the design, which (see mac-design-3) discards the draft."
+  },
+  {
+   "id": "mac-design-13",
+   "title": "No handling of WebContent process termination, so a crashed editor stays blank with status 'ready'",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+   "line": 217,
+   "evidence": "READ: the navigation delegate implements only decidePolicyFor, didFail and didFailProvisionalNavigation (204-223). There is no `webViewWebContentProcessDidTerminate(_:)`, so after a WebKit content-process kill (memory pressure, large designs near the 200k budget) nothing resets `status` or reloads.",
+   "failure_scenario": "WebKit kills the editor's content process under memory pressure. The pane goes empty or grey with no message or spinner, and the native Save still offers to save the pre-crash draft. The user cannot tell what happened, and the only way to recover is to re-open the design."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No AI editing on the Mac canvas (Ask Juno, adjustments, proposal review)",
+   "description": "The web window docks AskJunoBar and DesignAdjustments and shows ProposalReview (POST /api/design/[id]/edit, which returns a proposal the user can Apply or Reject). The Mac host passes no onAskJuno or canvasDock. The bridge has no 'proposeTransaction' command, and the selection it reports is ignored.",
+   "why": "This is the core of 'Claude Design works inside conversations'. Without it the Mac design surface is a manual vector editor cut off from the model."
+  },
+  {
+   "title": "Chat canvas designs are read-only on the Mac",
+   "description": "DesktopArtifactCanvas opens DESIGN artifacts from a conversation with readOnly: true, because there is 'no stored row' (809-818). Editing requires going to Design or Artifacts.",
+   "why": "The merge goal is one surface where a design made in a conversation is edited in place. Today the Mac forces three different doors with different editability."
+  },
+  {
+   "title": "No autosave, offline queue or server-side design validation on Mac saves",
+   "description": "The Mac writes whole documents through the generic /api/artifacts/[id] route (size check only, route.ts:7-16), bypassing /api/design/[id]/transactions with its revision checks and schema validation. Drafts live only in memory.",
+   "why": "This is the root of mac-design-2, -3 and -9, and of platform divergence in version granularity (each Save is a version on the Mac; each web transaction batch is)."
+  },
+  {
+   "title": "No rename, version history, restore, open-conversation or share on the Design screen",
+   "description": "These exist on the web window (NameField, the 'Open in chat' link, a delete dialog) or in the Mac Artifacts library (history and restore), but not in DesktopDesignScreen's command bar (only Discard, Save and Delete).",
+   "why": "Parity, and a prerequisite for a single artifact surface with typed views."
+  },
+  {
+   "title": "No comments or collaboration",
+   "description": "DesignComment is modelled in Swift and TS, but neither the web editor nor the Mac exposes a comment UI (rg for comment operations in src/components/design finds nothing), and there are no share links from Design.",
+   "why": "Claude's merged surface offers shareable links, comments and phone editing. Figma's core loop is comments plus multiplayer. Juno has neither for designs."
+  },
+  {
+   "title": "Bridge lacks theme, accent, undo state, command and export channels",
+   "description": "The protocol has no host-to-editor 'setAppearance/accent', no editor-to-host 'undoState' for NSUndoManager and the Edit menu, no 'export request' through which native could fetch with credentials and save through NSSavePanel, and no 'openPanel/asset' request.",
+   "why": "This blocks native menu-bar integration, native export, accent fidelity, and image insertion without giving the page network access."
+  },
+  {
+   "title": "No Code entry point and no handoff",
+   "description": "Code has no Design door (the `.design` selection is retired), and the handoff bundle cannot be produced on the Mac. Nothing in native Juno Code consumes a design.",
+   "why": "The launcher copy promises 'hand to Juno Code'. Design-to-code is the obvious bridge between Juno's two products."
+  },
+  {
+   "title": "Typed artifacts beyond DESIGN are not hosted",
+   "description": "Only DESIGN documents get an editor. Docs, Slides and Design System would need either new bundles or a generalised host.",
+   "why": "Claude's merge makes Design, Docs, Slides and Design System typed artifacts at one link. Juno's host pattern could generalise, but today it is hard-wired to one bundle, one message handler and one document type."
+  }
+ ],
+ "debt": [
+  {
+   "title": "The document contract is written twice by hand (TS and Swift) with no generated check",
+   "description": "DesignDocument.swift re-specifies the zod schema. contracts/design/design-document.v1.schema.json exists but is not used to generate or validate Swift, and the round-trip fixture is frozen at 6 Aug. The drift has already happened (cornerSmoothing). Either generate Swift from the JSON schema, keep unknown fields as opaque JSON, or add a test that decodes a fresh `serializeDesignDocument` output of a maximal document.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignDocument.swift:1-19",
+    "contracts/design/design-document.v1.schema.json",
+    "native/Packages/JunoNativeKit/Tests/JunoDesignKitTests/Fixtures/sign-in.juno.design.json"
+   ]
+  },
+  {
+   "title": "Generated artifact committed and built by hand",
+   "description": "editor.js (950 KB minified) is committed and rebuilt manually. It should be an Xcode build phase or a CI gate (`npm run design:editor:check` in native.yml and release-macos.yml), and the 'current' test should compare the hash. The hash covers only src/lib/design, src/components/design and icon-swap.tsx, so changes to ui/button, tooltip, menu-recipe, tailwind.config.ts or package versions do not restamp the bundle.",
+   "where": [
+    "scripts/build-design-editor.mjs:55-88",
+    "tests/design-host-bridge.test.ts:77-98",
+    "package.json:85-86"
+   ]
+  },
+  {
+   "title": "The host stylesheet is a hand-mirrored subset of globals.css",
+   "description": "host/editor.css copies tokens and a few rules by hand. Colour tokens, component classes (.surface-float, .overlay-glass, .control-*), shadows and z-index tokens have all drifted or are missing. Building the host CSS from globals.css's token and component layers (minus page utilities) would remove a whole class of defects.",
+   "where": [
+    "src/components/design/host/editor.css:1-233",
+    "src/app/globals.css"
+   ]
+  },
+  {
+   "title": "Mac and iPhone hosts are near-duplicates that have diverged",
+   "description": "DesktopDesignEditorHost (271 lines) and JunoMobileDesignEditorHost (244 lines) duplicate configuration, navigation policy, the proxy and the handler, and already differ in refusal handling, read-only guards and ready gating. The platform-neutral core belongs in JunoDesignKit.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift",
+    "native/iOS/JunoMobile/App/JunoMobileDesignEditorHost.swift"
+   ]
+  },
+  {
+   "title": "Dead or unused bridge surface",
+   "description": "`save` message (validated but never sent by the editor), `setSelection`/`setReadOnly` host commands (never called), `host.selection`, `lastRefusal` and `editorVersion` (never read). The bridge.ts comment still promises native 'Ask Juno' chrome driven by selection.",
+   "where": [
+    "native/Packages/JunoNativeKit/Sources/JunoDesignKit/DesignBridge.swift:43,155-158,185-186",
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:53,59,132-138",
+    "src/components/design/host/bridge.ts:131"
+   ]
+  },
+  {
+   "title": "Stale comments and a test that pins a retired destination",
+   "description": "DesktopCodeStudio.swift:34 says Design is 'reached from the brand menu', but DesktopCodeWorkspace.swift:409-416 treats `.design` as retired. DesktopDesignLauncherTests.swift:92-118 says 'Code's column reaches its own copy of the page'. DesktopDesignScreen.swift:810-839 claims the row appears in 'every navigation column (Chat, Code and Work)' and uses an SF Symbol `pencil.tip`, while the code uses `.pencil` and Code has no row. DesktopDesignScreen.swift:181-186 says the Mac has three product modes, which the liquid-glass branch rewrites.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift:34-35",
+    "native/macOS/JunoDesktop/Tests/DesktopDesignLauncherTests.swift:92-118",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:810-852"
+   ]
+  },
+  {
+   "title": "Private API and no debug inspectability",
+   "description": "`view.setValue(false, forKey: \"drawsBackground\")` is private KVC. `isInspectable` is never set, even in DEBUG, although main.tsx documents that diagnosing faults without the console cost weeks ('Script error.').",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:106",
+    "src/components/design/host/main.tsx:113-127"
+   ]
+  },
+  {
+   "title": "Navigation policy uses a bare prefix check",
+   "description": "`url.standardizedFileURL.path.hasPrefix(directory)` has no trailing separator, so a sibling path such as `\u2026/DesignEditorX/\u2026` would pass. The risk is low because read access is scoped and the bundle is read-only, but the check should compare path components.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignEditorHost.swift:212-214",
+    "native/iOS/JunoMobile/App/JunoMobileDesignEditorHost.swift:186-188"
+   ]
+  },
+  {
+   "title": "Three editing surfaces share one Save model separately",
+   "description": "DesktopDesignScreen and DesktopArtifactsScreen each own their own draft, reload token and save logic around DesktopDesignSurface, so conflict or dirty-state fixes must be made twice.",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:212-226",
+    "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:80-93,940-946"
+   ]
+  }
+ ],
+ "strengths": [
+  "The WKWebView boundary is carefully built and documented: local-only load with read access scoped to the editor folder, `.nonPersistent()` store, CSP `default-src 'none'; connect-src 'none'`, navigation pinned, new windows refused, and a weak MessageProxy to avoid leaks (DesktopDesignEditorHost.swift:86-123, 199-254; index.html:16).",
+  "The bridge validator is sound and tested: session nonce, strict baseRevision/revision+1 ordering, full document decode plus hierarchy validation, a bounded failure length, protocol-version refusal, and host commands passed as quoted JSON data including U+2028/U+2029 and `<` escaping (DesignBridge.swift:94-251; DesignBridgeTests).",
+  "One editor implementation: the Mac and iPhone host the exact web `DesignEditor` through a pluggable `DesignTransport`, so scene model, layout, renderer, undo and inspector are shared (use-design-document.ts:74-87; host/main.tsx).",
+  "One native design view: `DesktopDesignSurface` is the single entry point for the Design screen, the library, the torn-off window and the chat canvas. It decodes natively and refuses documents from a newer schema with a readable reason instead of showing a blank canvas (DesktopArtifactCanvas.swift:972-1093).",
+  "The launcher's wire contract (preset raw values and sizes) is pinned by tests. Server errors such as the plan-limit 403 are shown verbatim and inline, and disabled presets explain why (DesktopDesignScreen.swift:25-165, 331-342; DesktopDesignLauncherTests).",
+  "Motion tokens and reduced-motion policy are mirrored into the host and guarded by tests/design-host-motion-tokens.test.ts, which passes.",
+  "The build script hashes whole directories, not a hand-kept list, and says why (build-design-editor.mjs:37-73). The `--check` mode exists and works; it just isn't wired in."
+ ],
+ "merge_relevance": "Merging Artifacts and Design into one surface, the way Claude folded Design, Docs and Slides into conversations as typed artifacts at one link.\n\nWhat already helps:\n1. A single editor bundle runs on web, Mac and iPhone. A 'Design' typed artifact can be editable wherever it appears, and the same host pattern (local bundle, validated bridge, `DesignTransport`) could host other typed editors such as Docs or Slides.\n2. On the Mac, every design entry point already goes through one view (`DesktopDesignSurface`). Making the chat canvas editable is a change of `readOnly` plus a write path, not a new view.\n3. Designs are already ordinary `Artifact` rows (type DESIGN) listed in the Artifacts library. The Design screen is really a type-filtered Artifacts view with a create button, so folding it into a typed 'New \u2192 Design' action in Artifacts, and into the conversation canvas, is structurally cheap.\n\nWhat blocks it:\n1. The Mac save model (explicit Save through the generic artifact route, using the synced version as baseVersion, with no adoption of remote versions) guarantees lost updates once Juno and the user edit the same design inside a conversation (mac-design-2). The Mac must move to the `/api/design/[id]/transactions` protocol (baseRevision per transaction, server validation, autosave), with the host calling `adopt` on remote updates.\n2. The chat canvas refuses edits because a transcript artifact has 'no row' (DesktopArtifactCanvas.swift:809-818). The merged model needs every conversation artifact to have an addressable, writable row, which is also what a shareable link needs.\n3. The bridge carries only document snapshots. A merged experience needs: AI proposals (review, apply, reject) driven by the conversation; selection-to-conversation context (the selection is already reported but unused); comments; theme and accent; undo state for the menu bar; and a native export or share path.\n4. The Swift schema mirror and the hand-built bundle are drift machines (mac-design-1, -4, -5, -6). Before more typed artifacts are hosted, the contract has to be generated or opaque, and the bundle has to be built and checked by CI and the release pipeline.\n5. Design is a Chat-only destination; Code has no door and no handoff. A unified surface should be reachable from both products.\n\nOn the liquid-glass branch: it moves the Design row into Chat's navigation rows (sidebarCases [.library, .projects, .artifacts, .design]) and changes the icon to `.design`. It rewrites comments in DesktopDesignScreen.swift and DesktopArtifactCanvas.swift but changes no behaviour in the editor, host or bundle, so every defect above survives that redesign. For the merge, prefer removing the separate Design row and making Design a type inside Artifacts and inside the conversation canvas, rather than keeping a fourth navigation row.",
+ "tests": "Ran `npx tsx --test tests/design-host-bridge.test.ts tests/design-host-motion-tokens.test.ts`: 10/10 pass in 104 ms.\n\nThese pass even though the bundle is stale. 'the bundled editor is present, self-contained and current' (design-host-bridge.test.ts:77-98) checks for local scripts, a CSP and no remote origins, but never compares the version hash. The motion-token test checks only motion custom properties; nothing checks colour tokens or the component classes the bundle needs.\n\nRan `node scripts/build-design-editor.mjs --check` (read-only mode): exit 1, 'bundle is stale (expected 1.0.0+9cc1cfa8d4fe)'.\n\nSwift tests were read but not run (xcodebuild and swift build are forbidden here):\n- DesktopDesignLauncherTests (preset wire values and sizes, destination-not-product, Code `.design` scene-storage round trip, navigation restore).\n- DesktopDesignRoutingTests (only `.design` is a design document; the shared preview does not claim to render it).\n- JunoDesignKit's DesignBridgeTests (accepting transactions, replay, nonce, revision skip, invalid document, unknown types, protocol mismatch, selection past/future, failure bounding, JS quoting).\n- DesignRoundTripTests (a byte-identical round trip against a fixture from 6 Aug that predates cornerSmoothing, so it cannot catch mac-design-1).\n- DesignLegacyEffectsTests.\n\nNot covered by any test:\n- DesktopDesignScreen save, discard, dirty and conflict behaviour.\n- The navigation-away data loss.\n- The host's navigation policy and adopt-on-refusal path.\n- Export and file-picker behaviour inside the host.\n- CSS completeness of the bundle.\n- Any end-to-end test of the WKWebView editor (the memory notes favour offscreen snapshot tests; none exist for the design pane).",
+ "open_questions": [
+  "When the WKWebView is first responder, does \u2318S (which the editor deliberately leaves unhandled, design-editor.tsx:471) reliably reach the SwiftUI `.keyboardShortcut(\"s\")` on the native Save button? And do \u2318G, \u2318D and \u2318A reach the page before any SwiftUI Edit or Find menu equivalents? This needs a manual test on the installed app.",
+  "Does the default WKWebView context menu on macOS offer 'Reload' when you right-click the editor's toolbar or panels (areas the canvas context menu does not intercept)? A reload would re-run `ready` and re-open the host's last accepted document, losing undo history and in-editor state.",
+  "Does WebKit dispatch 'ResizeObserver loop completed with undelivered notifications' as a window `error` event for the canvas's ResizeObserver (design-canvas.tsx:220-221)? If so, mac-design-12 fires in normal use.",
+  "Can the editor's batched queue (use-design-document.ts:296-326) post a `selection` message whose revision is ahead of the last posted transaction? The validator treats a selection 'from the future' as staleRevision, and the host then re-adopts, snapping the canvas back. This would only happen if several applies land while a commit is in flight; the bridge commit resolves in a microtask, so it may be unreachable in practice.",
+  "Is the Mac app sandboxed with user-selected-file read access? This affects how a `runOpenPanelWith` fix and a native export or save path should be written.",
+  "Should the Design screen exist at all after the merge, or become a type filter plus a 'New design' action inside Artifacts and the conversation canvas? The liquid-glass branch currently promotes it to a navigation row.",
+  "Why does the Mac still have a Work product mode (DesktopProductMode.swift:11) when TWO_PRODUCTS.md says Work was merged into Chat? This is outside this area, but the Design door is rendered in Work's footer."
+ ]
+}

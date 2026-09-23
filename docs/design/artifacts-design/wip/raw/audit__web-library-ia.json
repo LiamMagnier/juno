@@ -1,0 +1,913 @@
+{
+ "area": "Web: Artifacts library, Design home, navigation and information architecture (where made things are found)",
+ "summary": "WHAT EXISTS (read). The web has four places to find things, each on its own data model: /library lists Attachments (uploads, files shared in chat, project files, and also Juno-generated images and videos, which /api/generate stores as Attachments with origin \"generated\", src/app/api/generate/route.ts:263-272). /artifacts lists Artifact rows of all 7 types, from Chat and Code conversations. /design lists only DESIGN Artifacts: it takes the same /api/artifacts response and filters it in the browser (src/app/(app)/design/page.tsx:75-79). Project > Sources lists project files and is meant to list project artifacts too. Work deliverables (WorkArtifact: document, spreadsheet, presentation and so on) are listed only per Work session inside a conversation (src/components/work/work-transport.tsx:1571). No global page, search, project or library shows them. Artifact has no userId and no projectId. It is owned only through its Conversation, and that relation cascades on delete (prisma/schema.prisma:1125-1144). Because of this, a design started from /design is created together with an empty \"Untitled design\" chat to hold it (src/app/api/design/route.ts:71-90).\n\nQUALITY. The Artifacts page is visually careful. It has list and grid views with the choice kept in localStorage, type chips with counts, client-side search, an offline state that retries on its own, a skeleton, rise-in stagger, and a menu with Open in canvas / Open conversation / Rename / Download / Share / Delete. Functionally it trails the Library, which it claims to match. The Library searches on the server, sorts, pages, supports bulk selection, and keeps deleted files in \"Recently deleted\" (src/app/(app)/library/page.tsx:52-62, 216-233). The Artifacts API stops at the 200 most recently updated artifacts with no pagination (src/app/api/artifacts/route.ts:27). There is no sort, no bulk action, no duplicate, no pin, no project filter, and delete is permanent. The Design home is thinner still. It has four size presets as the only way to create anything, and a list with no thumbnails, no search, no rename, no share and no duplicate. Delete is the only action, and its error state has no retry.\n\nBIGGEST PROBLEMS (read, with file:line in defects). (1) Artifacts never appear on project pages. The page reads `res.artifacts`, but the API has always returned `items` (src/app/(app)/projects/[id]/page.tsx:305-318). So the Sources tab always shows \"Artifacts 0\", and the header and rail source counts leave artifacts out. Even if that were fixed, the fetch is not scoped to the project, and each row links to `/artifacts?id=`, a parameter the Artifacts page ignores. (2) Sharing a DESIGN produces a public page that shows only the minified DesignDocument JSON, because the share viewer has no preview for the \"design\" runtime mode (src/components/share/shared-artifact-viewer.tsx:32). (3) Deleting a conversation also deletes its artifacts, designs and files, but the dialog says only \"the conversation and its messages\" (src/components/app/app-sidebar.tsx:2273, 2777). The empty holder chats that /design creates look like junk, so they are the most likely chats to be deleted. (4) The same design opens in two different editors depending on where you click. /artifacts opens it in the chat canvas; /design opens the full-window editor. The /api/design route comment explicitly calls the canvas the wrong place for a new design. (5) The Code sidebar's Artifacts row takes the user out of Code: productOf('/artifacts') returns 'chat', so the whole column and the product switch flip to Chat. (6) The deep links do not do what they claim. Code-session artifacts, search's `?v=` version, and the project's `?id=` link are all ignored.\n\nNAMING (read). The same kinds of object have different names on each surface. An Attachment is \"Library\" in the nav, \"Files\" in search, and \"Sources\" in a project. An Artifact is an \"Artifact\" on the page, an \"Output\" in the conversation panel, a \"Source\" in a project, and it opens in the \"Canvas\". MARKDOWN is \"Documents\" on a chip, \"Markdown\" in row metadata, \"Doc\" in the Outputs panel, and \"MARKDOWN\" as the raw enum in a project. \"Document\" is also the /knowledge/documents viewer and a Work deliverable kind. Design is \"Design\", \"Designs\" and \"Juno Design\". The Artifacts lede says \"Everything Juno built with you\", which is not true: generated media is in the Library and Work deliverables are nowhere. The command palette's \"Open Library\" row carries the keywords \"saved prompts snippets\" for a page of files.\n\nMERGE READINESS (inferred). This IA is where a Claude-style merge would change the most. The Library already has most of the listing machinery a unified \"made things\" surface needs: server search, sort, cursor pagination, trash and bulk actions. The Artifact data model is what blocks the merge: owned only through a chat, no project, hard delete, snapshot-only shares with no live link, no comments. The fastest path is to make Artifact first-class (userId, projectId, deletedAt, optional conversation). Then give it one route (e.g. /a/{id}) that is both the full-window editor and the panel inside a conversation. Then fold /design into a DESIGN filter plus a \"New\" menu on one library, and bring WorkArtifact and generated media into the same index. None of the audited web files differ between main and mac/liquid-glass-chat (git diff main mac/liquid-glass-chat on these paths is empty).",
+ "files_read": [
+  "src/app/(app)/artifacts/page.tsx",
+  "src/app/(app)/artifacts/loading.tsx",
+  "src/app/(app)/artifacts/error.tsx",
+  "src/app/(app)/design/page.tsx",
+  "src/app/(app)/design/loading.tsx",
+  "src/app/(app)/design/error.tsx",
+  "src/app/(app)/design/[artifactId]/page.tsx",
+  "src/app/(app)/design/[artifactId]/loading.tsx",
+  "src/app/(app)/design/[artifactId]/error.tsx",
+  "src/app/(app)/design/[artifactId]/not-found.tsx",
+  "src/app/(app)/library/page.tsx",
+  "src/app/(app)/library/loading.tsx",
+  "src/app/(app)/library/error.tsx (grep)",
+  "src/app/(app)/projects/[id]/page.tsx (lines 170-330, 700-1000 via grep/read)",
+  "src/app/(app)/chat/[id]/page.tsx",
+  "src/app/(app)/knowledge/documents/[id]/page.tsx (header)",
+  "src/app/api/artifacts/route.ts",
+  "src/app/api/artifacts/[id]/route.ts",
+  "src/app/api/artifacts/[id]/export/route.ts (head)",
+  "src/app/api/design/route.ts",
+  "src/app/api/design/[artifactId]/route.ts",
+  "src/app/api/design/[artifactId]/export/route.ts (grep)",
+  "src/app/api/share/route.ts",
+  "src/app/api/share/[id]/route.ts",
+  "src/app/api/library/route.ts (lines 1-100)",
+  "src/app/api/conversations/[id]/route.ts (DELETE)",
+  "src/app/api/generate/route.ts (lines 255-285)",
+  "src/app/api/work/artifacts/route.ts (head)",
+  "src/app/share/[token]/page.tsx",
+  "src/app/robots.ts",
+  "src/components/app/app-sidebar.tsx (lines 990-1125, grep elsewhere)",
+  "src/components/app/command-palette.tsx (lines 1-120, 540-660, 1085-1230)",
+  "src/components/app/app-shell.tsx (lines 170-200)",
+  "src/components/app/product-switch.tsx (productOf)",
+  "src/components/app/document-title.tsx",
+  "src/components/artifacts/artifact-preview.tsx",
+  "src/components/projects/project-sources-list.tsx",
+  "src/components/projects/project-overview-rail.tsx (lines 160-260)",
+  "src/components/projects/project-workspace-header.tsx (lines 110-135)",
+  "src/components/share/shared-artifact-viewer.tsx",
+  "src/components/share/share-dialog.tsx (grep + lines 110-130)",
+  "src/components/share/shared-chat-transcript.tsx (grep)",
+  "src/components/design/design-workspace.tsx (lines 60-280)",
+  "src/components/design/design-editor.tsx (grep surface)",
+  "src/components/canvas/canvas-panel.tsx (lines 225-245, 1225-1260, grep)",
+  "src/components/chat/chat-view.tsx (lines 900-925, 1895-1930)",
+  "src/components/chat/session-outputs.tsx (lines 1-110, 225-260)",
+  "src/components/chat/composer.tsx (lines 1580-1625, 2005-2030)",
+  "src/components/chat/starter-chips.tsx (grep)",
+  "src/components/code/code-session-view.tsx (grep)",
+  "src/components/library/library-types.ts",
+  "src/components/ui/segmented-control.tsx (lines 105-170)",
+  "src/lib/route-title.ts",
+  "src/lib/search/sql.ts (lines 130-160, 310-385)",
+  "src/lib/search/engine.ts (lines 410-445)",
+  "src/lib/search/types.ts (lines 40-55)",
+  "src/lib/share.ts (createShare, getSharedArtifactSnapshot)",
+  "src/lib/serializers.ts (serializeArtifact)",
+  "src/lib/queries.ts (listConversations)",
+  "src/lib/design/store.ts (lines 140-175)",
+  "src/lib/design/migrations.ts (serializeDesignDocument)",
+  "src/lib/design/export.ts (grep fileName)",
+  "src/lib/artifact-runtime.ts (lines 90-125)",
+  "src/lib/app-icons.ts (lines 100-200)",
+  "src/lib/motion.ts (STAGGER, staggerDelay)",
+  "src/lib/plans.ts (grep canvas)",
+  "prisma/schema.prisma (Conversation, Artifact, ArtifactVersion, ArtifactType, Attachment, Share, WorkArtifact)",
+  "e2e/projects-and-artifacts.spec.ts",
+  "tests/shell-product-column.test.ts (lines 1-120)",
+  "tests/unified-search.test.ts (grep artifact)",
+  "docs/design/TWO_PRODUCTS.md (lines 60-110)",
+  "docs/design/PREMIUM_AUDIT.md (rules \u00a73, lines 18-30, 110-120, 278-290, 818-873)",
+  "docs/design/ICONS_AND_MOTION.md (lines 152-297)",
+  "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift (lines 280-370)",
+  "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift (lines 95-125)",
+  "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift (lines 1320-1340)"
+ ],
+ "inventory": [
+  {
+   "feature": "Artifacts library: list view",
+   "description": "Rows showing the kind glyph on an inset tile, title, 'in <conversation title>', then the runtime label, version and relative time. The whole row is a stretched link to /chat/{conversationId}?artifact={identifier}, with an actions menu above it. Tonal hover, and the glyph lifts.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:591-642",
+    "src/app/(app)/artifacts/page.tsx:93-94"
+   ]
+  },
+  {
+   "feature": "Artifacts library: grid view with previews",
+   "description": "auto-fill grid with a 15rem minimum. The tile shows ArtifactPreview: SVG renders as an <img> data URL; every other type shows its first 20 source lines in muted mono under a fade. DESIGN therefore shows one clipped line of minified JSON. Previews are cut to 1200 chars in Postgres with left(...::int).",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:509-590",
+    "src/components/artifacts/artifact-preview.tsx:59-129",
+    "src/app/api/artifacts/route.ts:67-78"
+   ]
+  },
+  {
+   "feature": "List/grid toggle, kept per viewer",
+   "description": "SegmentedControl stored in localStorage under 'juno:artifacts:view' (the Library uses 'juno-library-view'). Access is wrapped in try/catch.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:103-134",
+    "src/app/(app)/artifacts/page.tsx:212-219"
+   ]
+  },
+  {
+   "feature": "Type filter chips",
+   "description": "Filtered in the browser. Shows only the types that are present, and only when more than one type exists. Each chip has a count. Labels are Sites/Components/Code/Documents/Graphics/Diagrams/Designs.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:51-60",
+    "src/app/(app)/artifacts/page.tsx:247-251",
+    "src/app/(app)/artifacts/page.tsx:415-428"
+   ]
+  },
+  {
+   "feature": "Artifacts search",
+   "description": "Substring match in the browser over title, conversation title and runtime label, across only the (at most 200) loaded rows. Not debounced, does not search content, and does not match the chip vocabulary (typing 'sites' or 'designs' finds nothing).",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:253-265",
+    "src/app/(app)/artifacts/page.tsx:404-414"
+   ]
+  },
+  {
+   "feature": "Artifacts sort",
+   "description": "Absent. Always newest-updated first, fixed on the server. A code comment claims the page has a sort control.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/artifacts/route.ts:26",
+    "src/app/(app)/artifacts/page.tsx:361-362"
+   ]
+  },
+  {
+   "feature": "Artifacts pagination",
+   "description": "Absent. take: 200 with no cursor. The header count reports items.length.",
+   "maturity": "absent",
+   "where": [
+    "src/app/api/artifacts/route.ts:27",
+    "src/app/(app)/artifacts/page.tsx:381-385"
+   ]
+  },
+  {
+   "feature": "Rename artifact",
+   "description": "Dialog, then PATCH /api/artifacts/{id}, then optimistic replace. For DESIGN it does not update DesignDocument.name, which exports use.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:293-320",
+    "src/app/(app)/artifacts/page.tsx:645-675",
+    "src/app/api/artifacts/[id]/route.ts:92-110"
+   ]
+  },
+  {
+   "feature": "Delete artifact",
+   "description": "Confirm dialog, then a hard DELETE that cascades versions and share links. No trash or undo (the Library has 'Recently deleted'). Artifacts copy: 'Every version is removed...'; the Design home copy says 'cannot be undone'.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:322-336",
+    "src/app/(app)/artifacts/page.tsx:677-695",
+    "src/app/api/artifacts/[id]/route.ts:112-126"
+   ]
+  },
+  {
+   "feature": "Share artifact",
+   "description": "ShareDialog (ARTIFACT kind) creates or reuses a frozen snapshot link, with revoke. The public page shows Preview/Code tabs for web runtimes. DESIGN gets the Code tab only (raw JSON). A reused link keeps its first snapshot.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:198-200",
+    "src/app/(app)/artifacts/page.tsx:697-705",
+    "src/lib/share.ts:85-107",
+    "src/components/share/shared-artifact-viewer.tsx:29-80",
+    "src/app/share/[token]/page.tsx:83-96"
+   ]
+  },
+  {
+   "feature": "Download source",
+   "description": "GET /api/artifacts/{id} (every version's full content), then writes the latest to a Blob and saves it as {identifier}.{ext}; DESIGN saves as .juno.design.json. The more-glyph cross-fades to a spinner (IconSwap). There are no PNG/SVG/DOCX exports here, although the canvas and design editor offer them.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:338-358",
+    "src/app/(app)/artifacts/page.tsx:62-70",
+    "src/app/api/artifacts/[id]/route.ts:20-37"
+   ]
+  },
+  {
+   "feature": "Open in canvas / Open conversation",
+   "description": "Both go to /chat/{conversationId}, the first with ?artifact={identifier}. In a Code session with a workspace, the canvas does not open (CodeSessionView gets no identifier). DESIGN opens in the embedded canvas editor, not /design/{id}.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:185-190",
+    "src/app/(app)/chat/[id]/page.tsx:52-60",
+    "src/components/chat/chat-view.tsx:910-917"
+   ]
+  },
+  {
+   "feature": "Duplicate / pin / star / bulk select / move to project",
+   "description": "Absent from /artifacts and /design (searched for duplicate|copy|fork|pin|star|select in both pages and the artifacts API).",
+   "maturity": "absent",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx",
+    "src/app/(app)/design/page.tsx"
+   ]
+  },
+  {
+   "feature": "New design from /artifacts",
+   "description": "Secondary header button, hidden while the page is empty, where the empty state carries the same button instead. Always uses the phone preset. POST /api/design, then router.push to /design/{id}.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:267-288",
+    "src/app/(app)/artifacts/page.tsx:391-396",
+    "src/app/(app)/artifacts/page.tsx:469-486"
+   ]
+  },
+  {
+   "feature": "Artifacts states: loading / empty / no-results / error / offline",
+   "description": "Route skeleton (header, toolbar, 6 rows), then an in-page skeleton with no toolbar. Empty state has 'Start building' (to /chat) and 'New design'. No-results has Clear filters. The error state detects offline and retries automatically on the 'online' event. Segment error boundary shows a digest.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/artifacts/loading.tsx:14-43",
+    "src/app/(app)/artifacts/page.tsx:237-244",
+    "src/app/(app)/artifacts/page.tsx:439-508",
+    "src/app/(app)/artifacts/error.tsx:22-61"
+   ]
+  },
+  {
+   "feature": "Design home: start presets",
+   "description": "Four tiles: Phone 375x812, Tablet 834x1194, Desktop 1440x900, Square 1080x1080. Each posts to /api/design with that preset. While a design is created, the + cross-fades (spring) to the Design mark, which breathes. All tiles are disabled while one is being created.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/design/page.tsx:55-60",
+    "src/app/(app)/design/page.tsx:92-110",
+    "src/app/(app)/design/page.tsx:145-195",
+    "src/app/api/design/route.ts:12-101"
+   ]
+  },
+  {
+   "feature": "Design home: document list",
+   "description": "Built from /api/artifacts filtered to DESIGN in the browser, so it is capped by the 200 most recent artifacts of any type. Bordered rows with a Design glyph, title, 'v{n} \u00b7 time', and a More menu whose only item is Delete. A row opens /design/{id} through a button's router.push, not a link. No thumbnails, search, sort, rename, share or duplicate.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/design/page.tsx:71-90",
+    "src/app/(app)/design/page.tsx:218-286"
+   ]
+  },
+  {
+   "feature": "Design home states",
+   "description": "The route skeleton matches the preset grid. In-page skeleton rows. Empty state: 'No designs yet.' The error EmptyState has no action (no retry) and no offline handling. A footer paragraph links to Artifacts.",
+   "maturity": "partial",
+   "where": [
+    "src/app/(app)/design/loading.tsx:14-45",
+    "src/app/(app)/design/page.tsx:198-217",
+    "src/app/(app)/design/page.tsx:290-296",
+    "src/app/(app)/design/error.tsx:22-61"
+   ]
+  },
+  {
+   "feature": "Design editor route shell (/design/[artifactId])",
+   "description": "Server-loads the owned design and returns 404 if missing. A three-pane skeleton, a not-found page linking to 'All designs', and an error boundary. The header has a back link, an inline name field, the version, a Chat link (no ?artifact) and a More menu with Delete only.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/design/[artifactId]/page.tsx:19-38",
+    "src/app/(app)/design/[artifactId]/loading.tsx:25-81",
+    "src/app/(app)/design/[artifactId]/not-found.tsx:16-33",
+    "src/components/design/design-workspace.tsx:161-206"
+   ]
+  },
+  {
+   "feature": "Sidebar destinations",
+   "description": "Chat: Library, Projects, Artifacts, Design, More. Code: Artifacts, Customize, Pull requests, More. A shared layoutId selection fill travels between rows. Design uses an exact pathname match; Projects uses startsWith.",
+   "maturity": "partial",
+   "where": [
+    "src/components/app/app-sidebar.tsx:1068-1125"
+   ]
+  },
+  {
+   "feature": "Command palette navigation",
+   "description": "Actions: Open Design (keywords include 'figma'), Open Artifacts ('documents canvas generated'), Open Library ('saved prompts snippets'). No 'New design' or 'New document' action, and no artifact titles in \u2318K.",
+   "maturity": "partial",
+   "where": [
+    "src/components/app/command-palette.tsx:1122-1181"
+   ]
+  },
+  {
+   "feature": "Unified search: artifacts",
+   "description": "Searches the title plus every version's content (DISTINCT ON the best-matching version), with project and date filters. Every artifact result gets the same generic Artifacts icon. href is /chat/{conv}?artifact=&v=, and the chat page ignores v.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/search/sql.ts:317-354",
+    "src/lib/search/engine.ts:420-441",
+    "src/components/app/command-palette.tsx:555-564"
+   ]
+  },
+  {
+   "feature": "Project Sources: artifacts section",
+   "description": "Designed as Files and Artifacts sections under an All/Files/Artifacts filter, with project artifacts also counted in the header and rail. Always empty, because the fetch reads res.artifacts but the API returns items. Rows would link to /artifacts?id=..., which is ignored, and show the raw enum type.",
+   "maturity": "broken",
+   "where": [
+    "src/app/(app)/projects/[id]/page.tsx:304-320",
+    "src/components/projects/project-sources-list.tsx:185-196",
+    "src/components/projects/project-sources-list.tsx:305-341",
+    "src/components/projects/project-workspace-header.tsx:122-127"
+   ]
+  },
+  {
+   "feature": "Public share page",
+   "description": "Anonymous, noindex, force-dynamic. A header with the title, the shared date and 'Open in Juno'. For artifacts: SharedArtifactViewer at the 48rem reading measure. For chats: a transcript where artifacts appear as inert chips with no content.",
+   "maturity": "partial",
+   "where": [
+    "src/app/share/[token]/page.tsx:41-115",
+    "src/components/share/shared-chat-transcript.tsx:31-70"
+   ]
+  },
+  {
+   "feature": "Library (files) as the reference listing",
+   "description": "Server-side debounced search, kind filter, 4 sorts, list/grid, cursor pagination with infinite scroll, bulk select and delete/restore, Recently deleted (soft delete), versions, drag-and-drop upload with progress, storage caption.",
+   "maturity": "solid",
+   "where": [
+    "src/app/(app)/library/page.tsx:49-407",
+    "src/app/api/library/route.ts:23-100"
+   ]
+  },
+  {
+   "feature": "Global index of Work deliverables",
+   "description": "Absent. WorkArtifact is listed only per session (GET /api/work/artifacts?sessionId=) inside the conversation's work panel. It is not in /artifacts, /library, search or projects.",
+   "maturity": "absent",
+   "where": [
+    "src/components/work/work-transport.tsx:1571",
+    "prisma/schema.prisma:2608-2635"
+   ]
+  },
+  {
+   "feature": "Per-conversation Outputs panel",
+   "description": "A popover in the chat header that indexes the conversation's artifacts and generated media ('Outputs') separately from what the chat used. It has its own TYPE_LABEL vocabulary.",
+   "maturity": "solid",
+   "where": [
+    "src/components/chat/session-outputs.tsx:53-61",
+    "src/components/chat/session-outputs.tsx:225-260",
+    "src/components/chat/chat-view.tsx:1923-1930"
+   ]
+  },
+  {
+   "feature": "Tab and mobile titles",
+   "description": "Longest-prefix map: /design gives 'Design', /artifacts 'Artifacts', /library 'Library'. Only /chat/ routes add the object's own name, so every open design tab reads 'Design \u00b7 Juno'.",
+   "maturity": "partial",
+   "where": [
+    "src/lib/route-title.ts:15-68",
+    "src/components/app/document-title.tsx:28-63"
+   ]
+  },
+  {
+   "feature": "Creating documents / sites / slides by hand",
+   "description": "Absent. The only paths are prompting: the /artifact slash command prefills 'Create an artifact that ', and the empty state's 'Start building' just goes to /chat. The starter chips are Research/Write/Code/Plan, with no Design or Build. No Slides or Design System artifact type exists (ArtifactType enum).",
+   "maturity": "absent",
+   "where": [
+    "src/components/chat/composer.tsx:2016-2028",
+    "src/components/chat/starter-chips.tsx:53-90",
+    "prisma/schema.prisma:1344-1356"
+   ]
+  },
+  {
+   "feature": "Comments on artifacts / live collaborative links",
+   "description": "Absent. The only Comment model is FeatureComment (the roadmap). ShareKind is CHAT or ARTIFACT, always snapshot, view-only.",
+   "maturity": "absent",
+   "where": [
+    "prisma/schema.prisma:1473",
+    "prisma/schema.prisma:1803-1806"
+   ]
+  }
+ ],
+ "architecture": "DATA MODEL (read). Artifact(id, conversationId, messageId?, identifier, title, type: ArtifactType, language?, currentVersion, createdAt, updatedAt) has @@unique([conversationId, identifier]) and onDelete: Cascade from Conversation (prisma/schema.prisma:1125-1144). ArtifactVersion(artifactId, version, content TEXT, origin generated|edit|restore) (1146-1160). ArtifactType: HTML, REACT, CODE, MARKDOWN, SVG, MERMAID, DESIGN (1344-1356). The DESIGN body is JSON.stringify of a key-sorted DesignDocument (src/lib/design/migrations.ts:111-113), and every committed edit appends a full version (src/lib/design/store.ts:155-175). Artifact has no userId and no projectId: ownership is the join artifact -> conversation.userId, and project membership is conversation.projectId. Attachment (the Library) is a separate table with userId, projectId, deletedAt (soft delete) and a conversation cascade (schema.prisma:818-853). Generated media is stored as Attachment origin 'generated' (src/app/api/generate/route.ts:263-272). WorkArtifact/WorkArtifactVersion is a third table keyed by WorkSession, storing bytes in object storage (schema.prisma:2608-2664). Share(kind CHAT|ARTIFACT, token, snapshotAt, revokedAt) freezes the version current at snapshotAt (src/lib/share.ts:248-276).\n\nAPIS. GET /api/artifacts returns every artifact in the user's conversations, ordered by updatedAt desc, take 200, plus a DISTINCT ON raw query for a 1200-char preview, as {items:[...]} (src/app/api/artifacts/route.ts:20-97). GET/POST/PATCH/DELETE /api/artifacts/[id]: GET returns the full history, POST appends a version with a stale check (409), PATCH changes the title only, DELETE is hard (src/app/api/artifacts/[id]/route.ts). POST /api/design is plan-gated (canvas is true on every plan). It creates Conversation(kind chat, title=design title, titleSource manual), then Artifact(DESIGN, identifier design-<ts36>) with v1 as a single blank frame, returns {artifactId, conversationId, url:/design/{id}}, and uses no transaction (src/app/api/design/route.ts:37-101). The Mac calls the same endpoint (native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:100-118). /api/share POST reuses the newest active link for a target (src/lib/share.ts:59-107). /api/search artifact branch: src/lib/search/sql.ts:329-354 and src/lib/search/engine.ts:420-441.\n\nROUTES and HOW THEY CONNECT. /artifacts is a client page that fetches /api/artifacts. Links go to /chat/{conv}?artifact={identifier}. That page is a server component reading searchParams artifact|m|researchRun (src/app/(app)/chat/[id]/page.tsx:24-73) and passes the identifier into ChatView only; CodeSessionView gets none. ChatView opens the canvas when chat.artifacts contains the identifier (src/components/chat/chat-view.tsx:902-917). The canvas renders DESIGN through DesignEditor with the default surface 'embedded' (src/components/canvas/canvas-panel.tsx:1236-1255, src/components/design/design-editor.tsx:169, 549-550). /design is a client page on the same /api/artifacts, filtered to DESIGN; its links go to /design/{id}. That route server-loads with loadOwnedDesignArtifact and renders DesignWorkspace with DesignEditor surface='window', AskJunoBar and ZoomControls (src/app/(app)/design/[artifactId]/page.tsx:19-38, src/components/design/design-workspace.tsx:209-236). /projects/[id] fetches /api/artifacts, reads the wrong key (projects/[id]/page.tsx:305-318) and renders ProjectSourcesList, whose artifact rows link to /artifacts?id={identifier} (project-sources-list.tsx:321). The shell picks the sidebar column with productOf(pathname, activeConversationKind): '/code*' gives code, '/chat/<id>' with kind code gives code, everything else chat (src/components/app/product-switch.tsx:130-137, app-shell.tsx:184). The sidebar destination lists are hard-coded per product (app-sidebar.tsx:1068-1101). The command palette has two surfaces: \u2318K actions/navigation (command-palette.tsx:1122-1181) and a Search palette over /api/search (from 630). Tab titles: route-title.ts plus document-title.tsx.\n\nPERSISTENCE ON THE CLIENT. localStorage 'juno:artifacts:view' (artifacts) and 'juno-library-view' (library) hold the view choice, each wrapped in try/catch. Nothing else persists: the filter and search are lost on navigation, and nothing is in the URL.",
+ "ux": [
+  {
+   "observation": "Four surfaces, four data models, no shared index of what Juno made. Generated images are Library files; text artifacts are Artifacts; designs appear in both Artifacts and Design; Work deliverables appear only inside their conversation. The Artifacts lede 'Everything Juno built with you, newest first.' is therefore not true, and the Library lede 'Everything you upload or share in chats.' leaves out generated media (READ: artifacts/page.tsx:378, library/page.tsx:214, generate/route.ts:263-272, work-transport.tsx:1571).",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:378",
+    "src/app/(app)/library/page.tsx:214",
+    "src/app/api/generate/route.ts:263-272"
+   ]
+  },
+  {
+   "observation": "The same objects have different names on each surface. Attachment: 'Library' (nav) / 'Files' (search group, types.ts:45) / 'Sources' (project). Artifact: 'Artifacts' / 'Outputs' (session-outputs.tsx:286) / 'Sources' (project) / opens in the 'Canvas'. MARKDOWN: 'Documents' (chip, artifacts/page.tsx:56) / 'Markdown' (row metadata via runtimeFor) / 'Doc' (session-outputs.tsx:55) / raw 'MARKDOWN' (project-sources-list.tsx:332) / the fallback 'document' (projects/[id]/page.tsx:314). HTML: 'Sites' / 'HTML' / 'Web page'. 'Document' also names /knowledge/documents (route-title.ts:38) and a Work deliverable kind. Design: 'Design' (nav), 'Designs' (chip), 'Juno Design' (design/error.tsx:38).",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:51-60",
+    "src/components/chat/session-outputs.tsx:53-61",
+    "src/components/projects/project-sources-list.tsx:332",
+    "src/lib/search/types.ts:41-53",
+    "src/lib/route-title.ts:31-38"
+   ]
+  },
+  {
+   "observation": "A design opens in two different editors depending on the entry point. From /artifacts, search or the Outputs panel it opens in the chat canvas: an embedded DesignEditor with no AskJunoBar and no zoom chrome, whose rails hide below md/lg. From /design it opens the full-window workspace. Neither surface links to the other: the canvas has no 'Open in Design', and the workspace's 'Chat' link has no ?artifact so the canvas does not open (READ: canvas-panel.tsx:1236-1255, design-workspace.tsx:176-181, 209-236).",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:529",
+    "src/app/(app)/design/page.tsx:236",
+    "src/components/canvas/canvas-panel.tsx:1236-1255",
+    "src/components/design/design-workspace.tsx:176-181"
+   ]
+  },
+  {
+   "observation": "The only ways to start something by hand are the four design presets, plus a phone-only 'New design' on /artifacts. Nothing starts a document, site, deck or diagram, and \u2318K has no 'New design'. A doc can only come from prompting ('/artifact' prefills 'Create an artifact that '). The chat's starter chips (Research/Write/Code/Plan) never mention Design or building.",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/design/page.tsx:55-60",
+    "src/app/(app)/artifacts/page.tsx:279",
+    "src/components/app/command-palette.tsx:1122-1181",
+    "src/components/chat/composer.tsx:2016-2028",
+    "src/components/chat/starter-chips.tsx:53-90"
+   ]
+  },
+  {
+   "observation": "The Artifacts page trails the Library it says it matches ('Same control, same options, same storage mechanism as the Library', artifacts/page.tsx:96-102). It has no sort, no server search, no pagination, no bulk select, no trash/restore and no filter state in the URL.",
+   "severity": "major",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:96-116",
+    "src/app/(app)/library/page.tsx:49-62"
+   ]
+  },
+  {
+   "observation": "Design home rows are cards at rest (border, bg-card, rounded-menu, p-1), which breaks PREMIUM_AUDIT rule 3 'A list row is text on the panel'. Every row carries the same Design glyph, which the code itself calls furniture (rule 4 spirit). The Artifacts list rows follow rule 3.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/design/page.tsx:233",
+    "src/app/(app)/design/page.tsx:248-250",
+    "docs/design/PREMIUM_AUDIT.md:824-826"
+   ]
+  },
+  {
+   "observation": "The Design home's icon-only row action button has an aria-label but no tooltip, unlike /artifacts' 'More actions'. ICONS_AND_MOTION \u00a73 requires both. The design workspace's More button is the same.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/design/page.tsx:258-271",
+    "src/components/design/design-workspace.tsx:188-199",
+    "docs/design/ICONS_AND_MOTION.md:297"
+   ]
+  },
+  {
+   "observation": "The Artifacts row's trailing cluster carries 3-4 facts (runtime label, version, time) plus the actions trigger. PREMIUM_AUDIT rule 6 says one trailing signal per row.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:622-634",
+    "docs/design/PREMIUM_AUDIT.md:828-829"
+   ]
+  },
+  {
+   "observation": "The Design home 'Delete design' button uses disabled plus a text swap to 'Deleting\u2026' instead of Button loading, which changes the button's width. The Artifacts dialogs use loading.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/design/page.tsx:316-318",
+    "src/app/(app)/artifacts/page.tsx:690"
+   ]
+  },
+  {
+   "observation": "The same operation has different delete copy. Artifacts: 'Every version is removed and any public share link stops working...' with a curly-quoted title. Design home and editor: 'permanently removed. This cannot be undone.' with an unquoted title and no mention of share links.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:681-684",
+    "src/app/(app)/design/page.tsx:301-304",
+    "src/components/design/design-workspace.tsx:241-245"
+   ]
+  },
+  {
+   "observation": "The Design home says 'Recent' above what is actually the complete list, and it opens rows with a button's router.push. That rules out middle-click, open in new tab and link prefetch, all of which /artifacts rows support through Link. The footer 'Artifacts' link is also a Button with router.push.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/design/page.tsx:220",
+    "src/app/(app)/design/page.tsx:234-243",
+    "src/app/(app)/design/page.tsx:292"
+   ]
+  },
+  {
+   "observation": "Rows for hand-started designs read 'in \u201cUntitled design\u201d' on /artifacts, naming a holder chat the user never wrote in. The holder chat is never renamed along with the design.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:619",
+    "src/app/api/design/route.ts:71-79"
+   ]
+  },
+  {
+   "observation": "INFERRED, not rendered: the type SegmentedControl lays out up to 8 options (All plus 7 types, each with a count) as equal minmax(0,1fr) grid columns with whitespace-nowrap. In a narrow content column, such as the phone gutter at about 343px, the labels probably overflow their cells. No /dev gallery covers /artifacts or /design, so this is unverified.",
+   "severity": "minor",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:416-427",
+    "src/components/ui/segmented-control.tsx:110-127"
+   ]
+  },
+  {
+   "observation": "Grid tiles show source text rather than a rendering for everything except SVG, by an explicit decision. For MARKDOWN and HTML the tile is honest but reads poorly. For DESIGN it is one clipped JSON line. Claude, Figma and Canva show rendered thumbnails. The server already has an SVG renderer for designs (design export svg/png), which could produce thumbnails.",
+   "severity": "minor",
+   "where": [
+    "src/components/artifacts/artifact-preview.tsx:9-34",
+    "src/app/api/design/[artifactId]/export/route.ts:25"
+   ]
+  },
+  {
+   "observation": "The two platforms draw Design with different marks. On the Mac, the sidebar's Design icon is .penTool and a comment says the web draws a pen nib (DesktopChatSidebar.swift:356-369). The web moved to the JunoDesign square-and-circle mark (app-icons.ts:117-141).",
+   "severity": "info",
+   "where": [
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:356-369",
+    "src/lib/app-icons.ts:117-141"
+   ]
+  },
+  {
+   "observation": "A public artifact share renders inside the 48rem reading measure. That suits documents; an HTML site or a design frame gets a narrow sandbox on a desktop screen.",
+   "severity": "minor",
+   "where": [
+    "src/app/share/[token]/page.tsx:84-96"
+   ]
+  }
+ ],
+ "motion": [
+  {
+   "observation": "List entrance: rows and tiles on /artifacts and the Design home deal in with motion-safe:animate-rise-in on staggerDelay(i,'tight'), capped at 10 in staggerDelay itself, which follows ICONS_AND_MOTION \u00a72.2 rule 5. Switching list/grid remounts every row, so the whole list plays its entrance again on each toggle, with no shared-element or cross-fade between views.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:531-540",
+    "src/app/(app)/artifacts/page.tsx:598-602",
+    "src/app/(app)/design/page.tsx:224-228",
+    "src/lib/motion.ts:229-270"
+   ]
+  },
+  {
+   "observation": "Removal and rename have no motion. A deleted artifact or design disappears in one frame (setItems filter) and the rows below jump up. There is no exit animation, no collapse and no undo toast (only toast.success).",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:328-330",
+    "src/app/(app)/design/page.tsx:119-121"
+   ]
+  },
+  {
+   "observation": "State swaps use IconSwap as the doctrine asks: More to spinner while downloading (artifacts/page.tsx:174-178), and + to the Design mark on a spring while a preset is created, with the Design mark breathing, which counts as live state and is allowed to loop (design/page.tsx:173-188).",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:174-178",
+    "src/app/(app)/design/page.tsx:173-188"
+   ]
+  },
+  {
+   "observation": "Hover is a tonal fill (hover:bg-accent, duration-fast ease-out-soft). The kind glyph lifts through data-icon-trigger/motion='lift'; the row and tile never lift. This follows ICONS_AND_MOTION \u00a72.2 rule 1 and PREMIUM_AUDIT rule 10.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:87-94",
+    "src/app/(app)/artifacts/page.tsx:534-540",
+    "src/components/artifacts/artifact-preview.tsx:123-128"
+   ]
+  },
+  {
+   "observation": "The sidebar's selection fill is a shared layoutId that travels between destination rows. On /design/{id} no row matches (exact '/design' check), so on entering the editor the fill leaves the Design row with nothing selected.",
+   "where": [
+    "src/components/app/app-sidebar.tsx:1100-1114"
+   ]
+  },
+  {
+   "observation": "Loading takes three phases with layout shift on /artifacts: the route skeleton includes a toolbar row, the client page's own loading state drops the toolbar, and the loaded page adds it back. The Library avoids this by drawing LibraryToolbarSkeleton in the page. The Design home keeps its skeleton and page in step.",
+   "where": [
+    "src/app/(app)/artifacts/loading.tsx:21-24",
+    "src/app/(app)/artifacts/page.tsx:402",
+    "src/app/(app)/library/page.tsx:258-259",
+    "src/app/(app)/design/loading.tsx:21-33"
+   ]
+  },
+  {
+   "observation": "The in-page /artifacts skeleton sets staggerDelay on each li but has no animate class, so the delay does nothing (artifacts/page.tsx:459). The route skeleton pairs it with animate-rise-in (loading.tsx:29-30).",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:457-467",
+    "src/app/(app)/artifacts/loading.tsx:26-31"
+   ]
+  },
+  {
+   "observation": "Direction of change (git log since 2026-08-15): most recent commits on these files are visual and motion polish ('Design updates 1-3', 'Shell: one selected state', 'a page opens with its name', container sizing). The functional IA defects below (the project artifacts key, the ignored deep links, the 200 cap) predate them and survived. The most recent Artifacts fix, 971ba294 on 2026-09-20, repaired a Postgres bigint cast that broke the page for every account that had artifacts.",
+   "where": [
+    "src/app/api/artifacts/route.ts:54-66"
+   ]
+  }
+ ],
+ "defects": [
+  {
+   "id": "web-library-ia-1",
+   "title": "Project pages never show artifacts: the page reads `res.artifacts`, but /api/artifacts returns `items`",
+   "severity": "high",
+   "file": "src/app/(app)/projects/[id]/page.tsx",
+   "line": 308,
+   "evidence": "READ: projects/[id]/page.tsx:305-318 fetches '/api/artifacts' and only sets state when `Array.isArray(res.artifacts)`. src/app/api/artifacts/route.ts:80 returns `{ items: [...] }`, and the first version (git show 7ff31854) also returned `items`. So projectArtifacts stays [] (page.tsx:175). It feeds ProjectSourcesList artifacts (page.tsx:969), the header's artifactCount (page.tsx:740 into project-workspace-header.tsx:124) and the rail's sourceCount (page.tsx:726, 908). Even if the key were right, the fetch is not scoped to the project: the API filters only by conversation.userId (route.ts:25).",
+   "failure_scenario": "A user files chats into a project, and Juno builds three artifacts in them. On /projects/{id}, the Sources tab shows 'Artifacts 0', the filter says 'No artifacts yet. Artifacts Juno builds in this project\u2019s chats will collect here.', and the header says '0 sources'. Fixing only the key would then list every artifact in the account under every project."
+  },
+  {
+   "id": "web-library-ia-2",
+   "title": "Sharing a DESIGN produces a public page that shows only minified DesignDocument JSON",
+   "severity": "high",
+   "file": "src/components/share/shared-artifact-viewer.tsx",
+   "line": 32,
+   "evidence": "READ: runtimeFor('DESIGN') returns mode 'design' (src/lib/artifact-runtime.ts:98). SharedArtifactViewer sets hasPreview = isMarkdown || rt.mode === 'web' (shared-artifact-viewer.tsx:32), so a design gets only the Code tab, which is CodeSurface over the raw content (76-78). The content is JSON.stringify of a key-sorted document (src/lib/design/migrations.ts:111-113). /artifacts offers Share on every type, DESIGN included (src/app/(app)/artifacts/page.tsx:198-200).",
+   "failure_scenario": "A user shares a design from /artifacts and sends the link. The visitor sees a single line starting {\"assets\":{},\"background\":\"#f5f5f7\",... in a code viewer, with no picture of the design."
+  },
+  {
+   "id": "web-library-ia-3",
+   "title": "Deleting a conversation also permanently deletes its artifacts, designs and files, and the dialog does not say so",
+   "severity": "high",
+   "file": "src/components/app/app-sidebar.tsx",
+   "line": 2273,
+   "evidence": "READ: the dialog copy is 'This permanently removes the conversation and its messages. This can't be undone.' (app-sidebar.tsx:2273, 2777). DELETE /api/conversations/[id] hard-deletes (src/app/api/conversations/[id]/route.ts:88). Artifact.conversation is onDelete: Cascade (prisma/schema.prisma:1137), and so is Attachment.conversation (schema.prisma:853). A design started from /design lives in an empty holder chat titled 'Untitled design' (src/app/api/design/route.ts:71-79), and that chat is listed in Recents because listConversations does not filter out chats with no messages (src/lib/queries.ts:39-81).",
+   "failure_scenario": "A user tidying Recents deletes an empty-looking chat called 'Untitled design'. The dialog mentions only messages. The design they drew by hand, with every version, is gone from /design and /artifacts with no trash to restore it from."
+  },
+  {
+   "id": "web-library-ia-4",
+   "title": "/api/artifacts silently stops at 200 rows, which makes older artifacts, and older designs on /design, unreachable",
+   "severity": "medium",
+   "file": "src/app/api/artifacts/route.ts",
+   "line": 27,
+   "evidence": "READ: findMany with take: 200 and no cursor (route.ts:24-40). /artifacts shows `{items.length} artifacts` (page.tsx:381-385) and searches and filters only those rows (253-265). /design reuses the same response and keeps only DESIGN rows (design/page.tsx:75-79), so its count and list are also bounded by the 200 most recently updated artifacts of any type.",
+   "failure_scenario": "An active user has 260 artifacts, and a design last touched in July is outside the 200 most recent. It does not appear on /design (the page says '4 designs'), in the Designs chip on /artifacts, or in /artifacts search. /artifacts reads '200 artifacts'."
+  },
+  {
+   "id": "web-library-ia-5",
+   "title": "Project Sources artifact rows link to /artifacts?id=<identifier>, a parameter the Artifacts page never reads",
+   "severity": "medium",
+   "file": "src/components/projects/project-sources-list.tsx",
+   "line": 321,
+   "evidence": "READ: `href={`/artifacts?id=${art.identifier}`}` (project-sources-list.tsx:321), next to a comment saying the row 'opens the artifact inside the product' (329-331). src/app/(app)/artifacts/page.tsx never uses searchParams (rg found no searchParams/useSearchParams in the artifacts or design pages). identifier is unique only per conversation (schema.prisma:1142), so it cannot identify an artifact globally anyway. Hidden today behind web-library-ia-1.",
+   "failure_scenario": "Once project artifacts load, clicking one in Sources lands on the full /artifacts list with no filter, highlight or open canvas, and the user has to look for it again."
+  },
+  {
+   "id": "web-library-ia-6",
+   "title": "Code's 'Artifacts' sidebar row takes the user out of Code",
+   "severity": "medium",
+   "file": "src/components/app/product-switch.tsx",
+   "line": 134,
+   "evidence": "READ: the Code destinations include { href: '/artifacts' } (app-sidebar.tsx:1084). productOf returns 'code' only for '/code*' or '/chat/<id>' with kind code, and 'chat' for everything else (product-switch.tsx:130-137). AppShell computes the product from it (app-shell.tsx:184). tests/shell-product-column.test.ts:57-58 asserts that /artifacts keeps Chat's column.",
+   "failure_scenario": "In Juno Code, the user clicks Artifacts. The sidebar swaps to Chat's column (Library, Projects, Artifacts, Design and chat Recents), the product switch shows Chat, and Code's own Artifacts row is never seen selected. Getting back takes the product switch."
+  },
+  {
+   "id": "web-library-ia-7",
+   "title": "Opening a Code-session artifact from /artifacts or search does not open it",
+   "severity": "medium",
+   "file": "src/app/(app)/chat/[id]/page.tsx",
+   "line": 52,
+   "evidence": "READ: for a code conversation with a workspace, the page returns <CodeSessionView conversation initialMessages initialArtifacts/> with no artifact identifier (chat/[id]/page.tsx:50-60). CodeSessionView has no URL deep-link handling (rg for useSearchParams, location.search and ?artifact in code-session-view.tsx found nothing). /api/artifacts includes artifacts from every conversation kind (route.ts:25), and /artifacts links all of them as /chat/{conv}?artifact=... (page.tsx:529, 596).",
+   "failure_scenario": "An artifact Juno made during a Code session appears in /artifacts. 'Open in canvas' lands on the Code session transcript with the canvas closed, so the user has to scroll to find the artifact card."
+  },
+  {
+   "id": "web-library-ia-8",
+   "title": "Search opens the current version, not the matching one it promises (`?v=` is ignored)",
+   "severity": "medium",
+   "file": "src/lib/search/engine.ts",
+   "line": 434,
+   "evidence": "READ: engine.ts:432-434 builds href /chat/{conv}?artifact={identifier}&v={version} with the comment '?v= names the version that matched', and tests/unified-search.test.ts:530-534 asserts that href. The chat page destructures only { artifact, m, researchRun } (src/app/(app)/chat/[id]/page.tsx:31-35), and ChatView opens the artifact at its current version (chat-view.tsx:910-917).",
+   "failure_scenario": "The user searches for a phrase that was in v2 of a document and removed in v5. The result says 'v2', but clicking it opens v5, where the phrase no longer exists."
+  },
+  {
+   "id": "web-library-ia-9",
+   "title": "Renaming a design from /artifacts leaves DesignDocument.name stale, so exports keep the old name",
+   "severity": "medium",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 307,
+   "evidence": "READ: submitRename only PATCHes /api/artifacts/{id} with { title } (page.tsx:307-311), and the PATCH updates Artifact.title only (api/artifacts/[id]/route.ts:104-108). design-workspace.tsx:113-131 documents this exact bug ('a design renamed in the header still exported as whatever it was called') and fixes it only in the editor, by also applying the renameDocument operation. Exports name their files from doc.name (src/lib/design/export.ts:71, 101, 238, 1242, 1258, 1354).",
+   "failure_scenario": "A user renames 'Untitled design' to 'Checkout v2' from the /artifacts menu, then exports PNG or React from the editor. The files are named Untitled-design.png / Untitled-design.tsx."
+  },
+  {
+   "id": "web-library-ia-10",
+   "title": "DESIGN grid tiles show one clipped line of minified JSON",
+   "severity": "medium",
+   "file": "src/components/artifacts/artifact-preview.tsx",
+   "line": 83,
+   "evidence": "READ: preview is the first 1200 chars of the newest version (api/artifacts/route.ts:17, 72). The tile splits it on '\\n' and shows up to 20 lines in a non-wrapping, overflow-hidden <pre> (artifact-preview.tsx:81-110). A DESIGN version is JSON.stringify with no newlines (migrations.ts:111-113), so there is one line.",
+   "failure_scenario": "In grid view, every design tile shows a single truncated line such as {\"assets\":{},\"background\":\"#f5f5f7\",\"id\":... at the top of an otherwise empty inset, which looks like a rendering fault."
+  },
+  {
+   "id": "web-library-ia-11",
+   "title": "Every hand-started design leaves a permanent empty 'Untitled design' chat in Recents, which outlives the design",
+   "severity": "medium",
+   "file": "src/app/api/design/route.ts",
+   "line": 71,
+   "evidence": "READ: POST /api/design creates a Conversation with title = design title and titleSource 'manual' (route.ts:71-79), with no messages. Renaming the design PATCHes the artifact only (design-workspace.tsx:133-137), so the chat keeps its first name, and titleSource 'manual' rules out auto-titling. Deleting the design deletes only the artifact (api/artifacts/[id]/route.ts:124, design/page.tsx:116). Conversation and artifact are created without a transaction (route.ts:71-90).",
+   "failure_scenario": "A user clicks 'Phone' three times while exploring and then deletes two of the designs. Recents now holds three empty 'Untitled design' chats. Two hold nothing; the third silently holds the surviving design (see web-library-ia-3)."
+  },
+  {
+   "id": "web-library-ia-12",
+   "title": "Re-sharing an edited artifact returns the old snapshot, while the dialog says 'as it is now'",
+   "severity": "medium",
+   "file": "src/lib/share.ts",
+   "line": 95,
+   "evidence": "READ: createShare returns the newest active link if one exists (share.ts:91-95) and keeps its original snapshotAt. getSharedArtifactSnapshot serves the version at or before snapshotAt (share.ts:257-265). The ShareDialog description says 'People with the link see this artifact as it is now. Later edits stay private.' (share-dialog.tsx:119-122). There is no 'update link' action, only Copy and Revoke (share-dialog.tsx:180-205).",
+   "failure_scenario": "A user shares v1, edits the artifact to v6 a week later, and opens Share again to send it to someone else. The dialog repeats 'as it is now' and hands out the same token, which still shows v1. The only visible hint is the snapshot date on the mono line."
+  },
+  {
+   "id": "web-library-ia-13",
+   "title": "The type filter can stay on a type that no longer exists",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 116,
+   "evidence": "READ: typeFilter state is never reset when presentTypes changes (page.tsx:116, 247-251). After a delete the control is rebuilt from the remaining types (415-427), or hidden when one type or fewer remains, while filtered still applies the stale type (257).",
+   "failure_scenario": "The user selects 'Designs' and deletes their only design. The page shows 'No matching artifacts: Nothing fits these filters.' The segmented control either vanishes or shows no selected segment, so the only way back is the Clear filters button."
+  },
+  {
+   "id": "web-library-ia-14",
+   "title": "Design sidebar row is not selected inside the design editor",
+   "severity": "low",
+   "file": "src/components/app/app-sidebar.tsx",
+   "line": 1100,
+   "evidence": "READ: `active: pathname === \"/design\"` (app-sidebar.tsx:1100), while Projects uses `pathname?.startsWith(\"/projects\")` (1090). /design/{id} renders inside the same shell, since nothing in app-shell.tsx special-cases design.",
+   "failure_scenario": "The user opens a design at /design/abc. No destination in the sidebar is highlighted, so the shell gives no answer to 'where am I', unlike /projects/{id}."
+  },
+  {
+   "id": "web-library-ia-15",
+   "title": "Design home load failure has no retry and no offline handling",
+   "severity": "low",
+   "file": "src/app/(app)/design/page.tsx",
+   "line": 211,
+   "evidence": "READ: the error branch renders <EmptyState tone='error' ... description={error} /> with no action (design/page.tsx:207-211). The fetch runs once in a mount effect (71-90). By contrast /artifacts has 'Try again' and retries automatically when back online (artifacts/page.tsx:237-244, 439-455). The description repeats the title ('Couldn\u2019t load your designs' / 'Couldn\u2019t load your designs.').",
+   "failure_scenario": "The user opens /design on a flaky connection. The request fails and the page shows the error with no button. Coming back online does nothing; only a manual reload helps."
+  },
+  {
+   "id": "web-library-ia-16",
+   "title": "Command palette: 'Open Library' matches 'prompts/snippets' but not 'files', and there is no 'New design'",
+   "severity": "low",
+   "file": "src/components/app/command-palette.tsx",
+   "line": 1170,
+   "evidence": "READ: { id: 'library', label: 'Open Library', keywords: 'saved prompts snippets' } (command-palette.tsx:1170). The Library holds only files and images (library-types.ts:9-26; api/library/route.ts:23-24). Matching is word-start on label or keywords (1111-1119). The actions list has no row that creates a design or artifact (1122-1181).",
+   "failure_scenario": "The user presses \u2318K and types 'files' or 'uploads': nothing under Actions finds the Library. Typing 'prompt' offers Open Library, which has no prompts in it. Typing 'new design' returns no action."
+  },
+  {
+   "id": "web-library-ia-17",
+   "title": "Download source pulls every version's full content just to save the newest",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 341,
+   "evidence": "READ: download() GETs /api/artifacts/{id} (page.tsx:341). That loads include: { versions: true } (api/artifacts/[id]/route.ts:20-24), and serializeArtifact maps every version's content into the response (src/lib/serializers.ts:218). Each committed design edit appends a full-document version (src/lib/design/store.ts:155-167).",
+   "failure_scenario": "A design edited 300 times (a v300 row on /design) at 60KB per version sends about 18MB of JSON to the browser to save one 60KB file, with the row spinner showing for the whole transfer."
+  },
+  {
+   "id": "web-library-ia-18",
+   "title": "Search matches designs on their JSON keys and shows JSON snippets",
+   "severity": "low",
+   "file": "src/lib/search/sql.ts",
+   "line": 330,
+   "evidence": "READ: the artifact search body is title || ' ' || v.content for every type, with to_tsvector('simple') (sql.ts:330, 347). DESIGN content is the serialized DesignDocument, whose nodes carry type 'frame', fill and so on (api/design/route.ts:55-63, migrations.ts:111-113). The snippet is cut from the same content (sql.ts:341). INFERRED: the 'simple' parser splits that JSON into words such as 'frame', 'fill', 'width'.",
+   "failure_scenario": "The user searches 'frame' or 'fill' looking for a note. Every design ranks as an Artifacts hit with a snippet like \"type\":\"frame\",\"width\":375, crowding out the real result."
+  },
+  {
+   "id": "web-library-ia-19",
+   "title": "Every open design tab has the same title",
+   "severity": "low",
+   "file": "src/components/app/document-title.tsx",
+   "line": 33,
+   "evidence": "READ: only /chat/ routes get the object's name (document-title.tsx:32-35). /design/{id} falls back to titleForPath, which returns 'Design' (route-title.ts:31), and that title is also the mobile top-bar caption (route-title.ts:11-13).",
+   "failure_scenario": "The user opens three designs in three tabs. All read 'Design \u00b7 Juno' in the tab strip and the window switcher."
+  },
+  {
+   "id": "web-library-ia-20",
+   "title": "/artifacts skeleton drops and restores the toolbar row, shifting the layout",
+   "severity": "low",
+   "file": "src/app/(app)/artifacts/page.tsx",
+   "line": 402,
+   "evidence": "READ: loading.tsx draws a toolbar skeleton row (search plus segmented control, 21-24). The client page shows no toolbar while items === null (page.tsx:402), then renders it once data arrives. The Library draws LibraryToolbarSkeleton while loading for exactly this reason (library/page.tsx:258-259).",
+   "failure_scenario": "Navigating to /artifacts, the toolbar placeholder appears, vanishes when the page mounts (the list skeleton jumps up about 44px), then the real toolbar pushes the list back down when the data lands."
+  }
+ ],
+ "gaps": [
+  {
+   "title": "No single index of things Juno made",
+   "description": "Text artifacts, designs, generated images (Attachments with origin 'generated') and Work deliverables (WorkArtifact) live in three tables and are shown on different pages. WorkArtifact appears in no global list, search or project. GET /api/work/artifacts already works without sessionId (src/app/api/work/artifacts/route.ts:124-153), but nothing calls it that way.",
+   "why": "The merge's premise is 'every made thing is a typed artifact at one link'. Today a user cannot answer 'where is the deck Juno made last week?' outside the conversation it came from."
+  },
+  {
+   "title": "Artifacts are not first-class records",
+   "description": "No userId, projectId, deletedAt or standalone existence: an artifact must belong to a conversation (schema.prisma:1125-1144). Hand-made designs need a fake holder chat (api/design/route.ts:69-79), and projects can only reach artifacts through the chat.",
+   "why": "This blocks project-scoped artifacts, trash/restore, moving an artifact between projects, and artifacts that outlive or exist without a chat, all of which a Claude-style merged surface needs."
+  },
+  {
+   "title": "No one-URL, two-presentation artifact route",
+   "description": "A design has two editors (the canvas embedded in chat and /design/{id}), and other types have only the in-chat canvas deep link /chat/{conv}?artifact=. There is no /a/{id} or /artifacts/{id} page (src/components/work/work-transport.tsx:1520 even mentions an '/artifacts/[id]' describing deliverable versions, but no such web route exists).",
+   "why": "Claude's merge puts Design, Docs and Slides at one shareable link that works both inside a conversation and on its own. Juno needs a canonical route before shares, search and projects can all point at the same place."
+  },
+  {
+   "title": "No hand-created docs, slides, sites or design systems",
+   "description": "The only 'New' flows are the design presets. No blank document, deck or site; no Slides or Design System type in ArtifactType (schema.prisma:1344-1356). Presentations exist only as Work pptx deliverables.",
+   "why": "Claude Design/Docs/Slides and Figma both start from a 'New' menu of typed documents and templates. Juno relies on the user knowing to ask the model."
+  },
+  {
+   "title": "No live links, collaboration or comments on artifacts",
+   "description": "ShareKind is CHAT|ARTIFACT, a view-only frozen snapshot; the only comment model is FeatureComment for the roadmap. Shared chats show artifacts as inert chips (shared-chat-transcript.tsx:31-70).",
+   "why": "The merge target includes comments, phone editing and a link that stays current. The share layer would need a 'live' mode, access levels and a comments table."
+  },
+  {
+   "title": "Library listing features missing from Artifacts and Design",
+   "description": "Server search, sort, cursor pagination, bulk select, trash/restore, filters in the URL, rename/share/duplicate on the Design home, thumbnails.",
+   "why": "The Library (library/page.tsx; api/library/route.ts) already has the patterns a merged made-things list needs and could be generalised instead of rebuilt."
+  },
+  {
+   "title": "No visual verification gallery for /artifacts or /design",
+   "description": "src/app/dev has library, documents, shell and others, but no artifacts or design-home gallery. The e2e spec named projects-and-artifacts never visits /artifacts or /design.",
+   "why": "Project memory says web UI must be verified through /dev galleries, since the pane is not signed in. Every state of these pages (grid with DESIGN tiles, the 8-chip filter on a phone, the error on /design) is currently unverifiable visually."
+  },
+  {
+   "title": "Missing entry points to Design",
+   "description": "Code has no Design row. \u2318K has 'Open Design' but no 'New design'. Chat starter chips do not mention design. The canvas has no 'Open in Design' link. /design is not in robots disallow (the route is auth-gated, so this is harmless).",
+   "why": "Discoverability was the original complaint behind the Design page (design/page.tsx:6-9). Some entry points still lead nowhere or are missing."
+  }
+ ],
+ "debt": [
+  {
+   "title": "Three competing vocabularies for artifact types",
+   "description": "TYPE_LABELS on /artifacts, runtimeFor().label, TYPE_LABEL in session-outputs, raw enums on the project page, and the Mac's labels. There should be one registry, like app-icons.ts does for glyphs.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:51-60",
+    "src/components/chat/session-outputs.tsx:53-61",
+    "src/lib/artifact-runtime.ts:98-125",
+    "src/components/projects/project-sources-list.tsx:332"
+   ]
+  },
+  {
+   "title": "The type-to-glyph map is duplicated",
+   "description": "The same Record<ArtifactType, Icon> is declared in the artifacts page, the artifact preview, the inline card and the shared transcript.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:41-49",
+    "src/components/artifacts/artifact-preview.tsx:36-44",
+    "src/components/chat/artifact-inline-card.tsx:56",
+    "src/components/share/shared-chat-transcript.tsx:28"
+   ]
+  },
+  {
+   "title": "The design list reuses the all-artifacts endpoint and filters in the browser",
+   "description": "/design downloads every artifact's preview (up to 200 x 1200 chars) to keep the DESIGN rows. It should call /api/artifacts?type=DESIGN (which does not exist yet) or a design list endpoint.",
+   "where": [
+    "src/app/(app)/design/page.tsx:75-79",
+    "src/app/api/artifacts/route.ts:20-97"
+   ]
+  },
+  {
+   "title": "startDesign is written twice",
+   "description": "The same POST /api/design + toast + router.push logic is in two pages with different preset handling. The Mac has a third copy.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:273-288",
+    "src/app/(app)/design/page.tsx:92-110",
+    "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:100-118"
+   ]
+  },
+  {
+   "title": "Cross-module helper import",
+   "description": "The Artifacts and Design pages import timeAgo from the roadmap UI module.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:30",
+    "src/app/(app)/design/page.tsx:41"
+   ]
+  },
+  {
+   "title": "Stale or incorrect comments",
+   "description": "The Artifacts page claims a sort control exists (361-362). The Mac sidebar comment says the web draws a pen nib for Design (DesktopChatSidebar.swift:356-357). The Attachment.origin doc lists upload|library_clone|replacement|restore but 'generated' is written. The /api/artifacts comment calls itself 'the Canvas library'.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:361-362",
+    "native/macOS/JunoDesktop/App/DesktopChatSidebar.swift:356-357",
+    "prisma/schema.prisma:836-839",
+    "src/app/api/artifacts/route.ts:19"
+   ]
+  },
+  {
+   "title": "View-preference storage keys use two naming schemes",
+   "description": "'juno:artifacts:view' vs 'juno-library-view', while the comment claims the same storage mechanism.",
+   "where": [
+    "src/app/(app)/artifacts/page.tsx:104",
+    "src/app/(app)/library/page.tsx:23"
+   ]
+  },
+  {
+   "title": "A design is a full-document version per commit",
+   "description": "Every committed edit appends a whole serialized DesignDocument, so row versions ('v214') and payloads grow without bound. The Artifacts GET returns all of them.",
+   "where": [
+    "src/lib/design/store.ts:155-175",
+    "src/app/api/artifacts/[id]/route.ts:20-37"
+   ]
+  },
+  {
+   "title": "POST /api/design is not atomic",
+   "description": "The conversation and artifact are created in two statements with no transaction, so a failure between them leaves an orphan empty chat.",
+   "where": [
+    "src/app/api/design/route.ts:71-90"
+   ]
+  },
+  {
+   "title": "A test locks in the Code-to-Chat flip",
+   "description": "shell-product-column.test.ts asserts that /artifacts renders Chat's column even when coming from Code, which enshrines web-library-ia-6.",
+   "where": [
+    "tests/shell-product-column.test.ts:43-62"
+   ]
+  }
+ ],
+ "strengths": [
+  "The Artifacts page's resilience is careful: an offline state that retries automatically on 'online' (artifacts/page.tsx:237-244), error.message never shown to the user, error digests shown, and localStorage access guarded.",
+  "The action menu is one render function shared by list and grid, so the two views cannot drift, and keyboard focus survives the download spinner swap (artifacts/page.tsx:136-210).",
+  "Preview extraction is truncated in Postgres (left(...::int)) instead of in Node, and SVG thumbnails render safely through an <img> data URL (api/artifacts/route.ts:54-78; artifact-preview.tsx:59-64, 92-98).",
+  "Empty, no-results and error states follow one shared EmptyState vocabulary with a single action each. Skeletons follow the page's shape (the Design home and the design editor are especially faithful).",
+  "Motion is disciplined and matches ICONS_AND_MOTION: tonal hovers, glyph lift instead of card lift, capped stagger, IconSwap for state swaps, and loops only for live state.",
+  "The Design home solves discoverability directly, with named size presets as the primary action, and the /design/{id} route server-loads and returns a 404 instead of rendering an empty editor.",
+  "The Library is a strong reference implementation (server search, sort, cursor pagination, bulk select, trash, versions, drag-and-drop upload) that a unified made-things surface could generalise.",
+  "Unified search already covers artifact version history with DISTINCT ON and carries a version locator. Only the consumer is missing.",
+  "The shared share-dialog and public share page are privacy-careful: noindex, force-dynamic so revocation applies on the next request, and an explicit snapshot line."
+ ],
+ "merge_relevance": "Everything below is inferred from the code above. This IA is the layer the Sept-2026 Claude-style merge would rewrite most.\n\n(1) BLOCKERS. The Artifact model has to become first-class before 'typed artifacts at one shareable link' is possible: add userId, projectId and deletedAt, and make conversationId optional so a design no longer needs a fake holder chat (api/design/route.ts:69-79). Without this, project artifacts (web-library-ia-1/5), trash, safe conversation deletion (web-library-ia-3) and standalone Docs/Slides cannot exist. The share layer is snapshot-only, view-only, and cannot render DESIGN at all (web-library-ia-2, 12), so 'one shareable link, with comments, editable on phone' needs a live share mode, access levels and a comments model. None of these exist.\n\n(2) DUPLICATES TO COLLAPSE. /design is a DESIGN-filtered copy of /artifacts plus a create menu. /artifacts is a weaker copy of the Library's listing machinery. The canvas-embedded editor and the /design/{id} window are two hosts for one document. The natural merged IA is one made-things surface (called 'Artifacts', or renamed) with type filters (Designs, Docs, Slides, Sites, Diagrams, Code, Images, Deliverables) and a 'New' menu (Design presets plus blank Doc, Deck and Site). It would reuse the Library's server search, sort, pagination and trash (src/app/api/library/route.ts), with one canonical route per artifact that renders full-window on its own and as the side panel inside the owning conversation. The sidebar would drop to Library, Projects, Artifacts, and 'Design' would become a filter and a New-menu entry, not a destination. The Code row would stop flipping the product (web-library-ia-6).\n\n(3) ENABLERS ALREADY PRESENT. Unified search indexes artifact history (it needs a type field, a typed icon and v= support). Session Outputs already indexes made things per conversation, including generated media. /api/work/artifacts can list every deliverable without a session. The design export pipeline can render SVG/PNG server-side for real thumbnails and share previews. The Mac already calls the same /api/design, so a server-side route change carries to native.\n\n(4) NAMING DECISION NEEDED FIRST. Pick one noun per object across nav, search groups, projects, the Outputs panel and the Mac: Library/Files/Sources, Artifacts/Outputs/Canvas, and the Documents/Doc/Markdown/Document collision. Otherwise the merge carries the inconsistency into one surface. The mac/liquid-glass-chat branch changes none of the web files audited here (`git diff main mac/liquid-glass-chat` on these paths is empty; only src/lib/design/tokens.generated.ts differs under src/lib/design), so it neither helps nor conflicts with this IA work.",
+ "tests": "Tests I ran (all passed): `npx tsx --test tests/shell-product-column.test.ts tests/unified-search.test.ts tests/library-and-model-menu.test.ts` (50/50), and `npx tsx --test tests/design-authoring.test.ts` (12/12).\n\nWhat the tests cover in this area:\n- tests/unified-search.test.ts:530-534 asserts the artifact search href is '/chat/conv-a?artifact=guards-a&v=2' and the locator is 'v2'. Nothing tests that the chat page honours `v`, and it does not (web-library-ia-8).\n- tests/shell-product-column.test.ts:43-62 asserts that /design and /artifacts keep Chat's column. This locks in the Code-to-Chat flip described in web-library-ia-6.\n- tests/design-authoring.test.ts:177 mirrors POST /api/design, but its comment says the route's database writes are not exercised.\n- tests/artifact-export-verification.test.ts covers /api/artifacts/[id]/export (docx/xlsx/pptx).\n\nWhat nothing covers:\n- No unit or e2e test touches /artifacts, the /design home, /api/artifacts (including the 200 cap and the bigint cast regression that 971ba294 fixed by hand), project Sources artifacts, the shared-artifact viewer for DESIGN, or route titles for /design/{id}.\n- e2e/projects-and-artifacts.spec.ts, despite its name, visits /projects, /automations, /library and /settings only. It never opens /artifacts or /design.\n- There is no /dev gallery for artifacts or the Design home (src/app/dev lists library, documents, shell and others).\n- A simple contract test (projects page reads the key the API returns) would have caught web-library-ia-1.",
+ "open_questions": [
+  "Is the empty holder conversation for hand-started designs meant to be visible in Recents? If it is intentional (findable via the design title), should renaming the design rename the chat, and should deleting the design delete an empty holder chat?",
+  "Should /artifacts open DESIGN rows in /design/{id} (the full editor), as /api/design/route.ts:95-100 argues, instead of the chat canvas? Or should the canvas gain an 'Open in Design' hand-off? (I did not audit the canvas beyond the lines cited.)",
+  "Are generated images and videos meant to be Library files (the current behaviour) or made things that belong with Artifacts? The Outputs panel treats them as outputs; the Library and Artifacts pages disagree.",
+  "Should Work deliverables (WorkArtifact) join /artifacts, or stay inside the task that made them? The TWO_PRODUCTS doc folds Work into Chat but says nothing about where deliverables are found afterwards.",
+  "Does the 8-option type SegmentedControl on /artifacts overflow on a phone-width column? This is inferred from the grid-cols minmax(0,1fr) plus whitespace-nowrap layout (segmented-control.tsx:110-127) and not rendered; it needs a /dev/artifacts gallery to verify.",
+  "When a hand-started design's holder conversation is opened through the design workspace's 'Chat' link (no ?artifact), does ChatView render its header actions (and so the Outputs chip) for a conversation with zero messages? If not, that link is a dead end with no path back to the design. I did not trace ChatView's empty-conversation rendering.",
+  "Should the Code product have its own Design and Library entry points, or is the intended model that Code users go through Chat for both? TWO_PRODUCTS.md:93 lists Artifacts in Code's sidebar, but the route flips the product.",
+  "Is the 200-row cap on /api/artifacts a deliberate performance bound, meant to be replaced by pagination, or an oversight? Nothing in the page tells the user the list is truncated."
+ ]
+}

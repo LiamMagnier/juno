@@ -1,0 +1,132 @@
+{
+ "verdicts": [
+  {
+   "id": "mac-artifacts-1",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift:552-565 and 865-871; trigger at native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift:635-639",
+   "reasoning": "READ: `DesktopChatArtifact.id` is `reference.id` (DesktopArtifactCanvas.swift:45), and that is the tag identifier (NativeMessageContent.swift:50). The system prompt tells the model to reuse the identifier when it revises (src/lib/chat/system-prompt.ts:257). `open(artifact:)` replaces `openArtifact` with a new struct and never sets it to nil in between (DesktopChatWorkspace.swift:635-639). Inside `canvasColumn`, `DesktopArtifactCanvas` sits in the same `if let` branch with no `.id` (DesktopArtifactCanvas.swift:404-416), so its @State survives. `onChange(of: artifact.id)` does not fire for an equal id (552). `onAppear` seeds the draft only when it is empty (563-565). `resolvedContent` therefore keeps returning the v1 draft (865-867), and Preview, Canvas, Copy, Save As and Share all use v1. `DesktopDesignSurface` reads the raw reference once and is keyed on the same id (817-818, 1065-1066), so a design stays on v1 too. One detail the auditor missed: `hasDraftChanges` compares the v1 draft with the v2 reference (869-871), so a 'Reset' button appears though the user edited nothing, and clicking it loads v2 (785-792). That recovery is accidental and not discoverable. The Edit-component path is not affected, because `requestEdit` closes the dock (DesktopChatWorkspace.swift:564-567), which drops the state. The common path (typing a revision into the composer with the dock open, then clicking the new card) is broken. The web follows the stored row (chat-view.tsx:871-873). The liquid-glass branch changes only comments in this file."
+  },
+  {
+   "id": "mac-artifacts-2",
+   "verdict": "confirmed",
+   "corrected_severity": "high",
+   "reasoning": "READ: the rule list blocks every `scheme://` URL (NativeArtifactPreview.swift:111-118). The CSP sets `default-src 'none'`, `img-src data: blob:`, `font-src data:` and `script-src 'unsafe-inline'` (161-176). `ArtifactCanvasView` builds its document through the same `NativeArtifactSandbox.document` (ArtifactCanvasView.swift:141,151) and installs the same rule list (1237-1244). It reports blocked loads with the 'BLOCKED' tag (1066). The web allows https scripts, styles, images and fonts (sandbox-frame.tsx:52-70). The web also goes further than the claim says: `htmlDoc` injects the Tailwind CDN into every HTML fragment on its own (sandbox-frame.tsx:580-583). So an artifact that uses Tailwind classes and never references a CDN renders styled on the web and unstyled on the Mac. The Mac isolation is a deliberate security policy (comment at 17-24), so this is a product decision with a visible parity cost rather than an accidental bug. The severity stands because 'build me a website' output relies on this."
+  },
+  {
+   "id": "mac-artifacts-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: the card button sets `selectedArtifactID` with no dirty check (DesktopArtifactsScreen.swift:514-517). The 'All artifacts' button flips only `libraryVisible` and `historyVisible` (1150-1153). `.task(id: model.selectedArtifactID)` sets `draft = nil` first (234-235), and for a design the editor is re-keyed on the artifact id (946), so the edit is lost. `draft` is view @State (68). The destination switch in DesktopAccountScreens.swift:98-103 unmounts the screen, and on return `onAppear` resets it to the library (254-257). The only confirmationDialog in the file is Delete (313-327), and grepping for isDirty or 'unsaved' finds no guard or autosave. Re-opening the same card keeps the draft, because the task id does not change. Any other card, or leaving the destination, drops the edit silently."
+  },
+  {
+   "id": "mac-artifacts-4",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `performMutation` and `exportArtifact` route errors to `record(error)`, which sets the phase for the whole model (NativeArtifactStore.swift:395, 427-430, 447-459). The stale path sets `phase = .failed` (422-426). `DesktopArtifactStatus` treats `.failed` as retryable (DesktopArtifactStatus.swift:74-78). The screen shows 'Try Again' \u2192 `model.reload()` whenever there is no local error (DesktopArtifactsScreen.swift:645-657). An empty rename submitted with Return reaches the API client through `.onSubmit` (1372-1374, 1417-1421) and throws `.invalidTitle` (NativeArtifactAPIClient.swift:261-264). That message is 54 characters, over the 40-character prose threshold, so it is shown verbatim. OVERSTATED: 'Try Again' does dismiss the notice, because `reload()` clears `lastErrorDescription` (NativeArtifactStore.swift:270) and resets the phase. Any background sync reload clears it as well. The real defect is a misleading label and the wrong recovery for action errors, not a notice that cannot be dismissed. Lowered to low. See the missed item on what 'Try Again' does after a 409."
+  },
+  {
+   "id": "mac-artifacts-5",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: `deleteArtifact` sets `selectedArtifactID = artifacts.first?.id` when the deleted artifact was selected (NativeArtifactStore.swift:365), and `reload` keeps that selection (266-269). The screen goes back to the library only when the selection becomes nil (DesktopArtifactsScreen.swift:258-263). Delete from the command bar leaves `libraryVisible` false (1273-1275, 321-323), and `.task(id:)` then opens the new selection (246-247). The document view switches to artifact A with no transition or notice. This compounds a gap the auditor did not cite: the delete confirmation says only 'Delete this artifact?' and does not name the artifact (313-326), while the web's dialog names it (src/app/(app)/artifacts/page.tsx:681). A user who repeats Delete, believing the first attempt failed, deletes A. Returning to the library only happens when the last artifact is deleted."
+  },
+  {
+   "id": "mac-artifacts-6",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `reload()` auto-selects `artifacts.first` (NativeArtifactStore.swift:269). `.task(id: model.selectedArtifactID)` calls `openArtifact` whatever `libraryVisible` is (DesktopArtifactsScreen.swift:234-247), so every appearance of the library issues GET /api/artifacts/:id plus the export-formats request (NativeArtifactStore.swift:295-304). On success it sets `phase = .ready` and clears `lastErrorDescription` (298-299), which replaces a `.failed` phase that reload() derived from the sync model (276-279). On a 404 the server returns {error:'Not found'} (src/app/api/artifacts/[id]/route.ts:34). `DesktopStatusCopy` turns that into 'Juno couldn't find this artifact. It may have been deleted from another device.' (DesktopArtifactStatus.swift:122-125), and it floats over the grid (233)."
+  },
+  {
+   "id": "mac-artifacts-7",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `componentCandidates` is computed (DesktopArtifactCanvas.swift:877-879) and read twice in `viewBar` (748, 750). A Menu's content closure is built with the body, and each keystroke in `TextEditor(text: $draftContent)` (848) invalidates this view. Each call runs `matches(in:)` over the whole source (914-917). OVERSTATED: the claim of 'thousands of NSRegularExpression compilations'. Any tag without an id or class gets the unique identity `tag-index` (931), so the 60-row cap (934) is reached after a few dozen to a few hundred matches in real HTML. The loop does not run over thousands of tags, so each call compiles roughly 2 \u00d7 (matches processed before 60 unique rows). The main cost is two full-document scans per keystroke on the main actor. The work is wasteful and could add some lag on very large sources, but it is unprofiled and affects only the dock's source editor, which cannot save anyway (ux-1). Lowered to low."
+  },
+  {
+   "id": "mac-artifacts-8",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "corrected_location": "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift:1449-1473 (with 541-542, 1150-1153)",
+   "reasoning": "READ: `windowMode(for:)` returns the page's `resolvedMode` whenever the target kind offers it (1470-1473). `resolvedMode` is clamped against the selected artifact's kinds (158-171). Code offers only [.source] (NativeArtifactAPIClient.swift:51-52, 91-92), so after a Code artifact, an HTML card opened from the grid context menu (541-542) opens on Source. The title says 'different version' but the evidence is about mode. The version part is also real, and the auditor did not argue it: `openInWindow` uses `targetVersion` for the selected artifact (1450). `selectedVersion` is not reset by the Back button (1150-1153), so right-clicking the same card after browsing v2 in history opens v2 while the card shows the current version. The window also uses stored content, not the unsaved draft on screen (1452-1458)."
+  },
+  {
+   "id": "mac-artifacts-9",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `title(forWireKind:)` has no DESIGN case and falls back to `default: kind` (DesktopArtifactCanvas.swift:168-178). `icon(forWireKind:)` does handle DESIGN (191). `normalizedKind` keeps 'DESIGN' upper-case (NativeMessageContent.swift:376-384). The inline card's kindLabel/metadata (DesktopChatWorkspace.swift:1786-1796) and the dock header metadata (DesktopArtifactCanvas.swift:685-692) both call it. The library's `DesktopArtifactKindName.singular(.design)` says 'Design' (DesktopArtifactsScreen.swift:2004-2012), so the two surfaces disagree."
+  },
+  {
+   "id": "mac-artifacts-10",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `decodeVersion` stores `origin: nil` (NativeArtifactStore.swift:162-168). `merge` copies API versions, which do carry origin (437-440). `reload()` assigns `artifacts = snapshot.artifacts` wholesale (265) on every sync generation (252-256) and right after every successful mutation (420-421). So the 'Edited' caption disappears immediately after the user's own Save. The captions show origin only when it is present (DesktopArtifactsScreen.swift:854-858, 1087-1091). It comes back only when `openArtifact` runs again, i.e. on re-selection."
+  },
+  {
+   "id": "mac-artifacts-11",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "corrected_location": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift:101-112,144,157 (effect on Design at native/macOS/JunoDesktop/App/DesktopDesignScreen.swift:373-379)",
+   "reasoning": "READ: `NativeArtifactKind(rawValue: wire.type)` failing throws `corruptRecord` (144-147). A version over 200,000 UTF-16 units throws (157). Both are applied with `try` for every record (102, 111-112), so one record fails the whole snapshot. `reload`'s catch sets `.failed` and leaves `artifacts` untouched, which is empty on the first load (283-287). The sync hydrator passes `row.type` through unfiltered (src/lib/sync-entities.ts:222-241), and there is no client-version gate. The test pins fail-closed behaviour for a corrupt record (NativeArtifactStoreTests.swift:58-80); an unknown kind goes through the same guard. CORRECTION: the Design destination does not say 'Artifacts unavailable'. DesktopDesignScreen has no phase or error handling and shows 'No designs yet' (373-379), which is worse because it reads as data loss. After a successful earlier load, a later failure keeps the old list, so the list only disappears after a relaunch. The 200k cap is enforced on POST (src/app/api/artifacts/[id]/route.ts:8) and on verified chat artifacts (src/lib/chat-artifact-verification.ts:63). The research-audit path persists `parseArtifacts(audit.report)` without that verification (src/app/api/chat/route.ts:3592), so an oversized version is unlikely but possible today. This is a latent blocker for the planned merge."
+  },
+  {
+   "id": "mac-artifacts-12",
+   "verdict": "confirmed",
+   "corrected_severity": "low",
+   "reasoning": "READ: `resolvedContent` falls back to the reference when `draftContent` is empty (DesktopArtifactCanvas.swift:865-867). `hasDraftChanges` compares against the reference (869-871), so 'Reset' disappears (785). The TextEditor binds `$draftContent` directly (848), and `onAppear` only reseeds on first appearance (563-565). An emptied editor therefore coexists with a Preview, Copy Source (618-620), Save Source As (621-633) and ShareLink (610) that all use the original. The impact is small because the dock's edits never persist (ux-1)."
+  },
+  {
+   "id": "ux-0",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: `artifactCard` is a `Button` with `.buttonStyle(.plain)` and no `onHover`, hover fill, press style or entrance animation (DesktopArtifactsScreen.swift:514-549). Grepping the file for onHover or junoRowHover finds nothing. The web tile has `hover:bg-accent`, `motion-safe:animate-rise-in` and `staggerDelay(i, 'tight')` (src/app/(app)/artifacts/page.tsx:531-541). ICONS_AND_MOTION.md \u00a72.2 rules 1, 2 and 5 (164-196) require a tonal hover, a tonal press on large surfaces, and dealt lists. The Mac honours that law elsewhere: the inline card uses `hovered` fills and `.junoPress` (DesktopChatWorkspace.swift:1833-1849), and DesktopDesignScreen rows use onHover (656, 741, 874). The document is written in web terms, so applying it to native is partly inferred. This is a polish and affordance gap on the screen's primary interaction, not a functional failure, so medium rather than major."
+  },
+  {
+   "id": "ux-1",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: 'Edit source' toggles a TextEditor bound to view @State (DesktopArtifactCanvas.swift:777-783, 847-855). There is no Save or persistence path and no warning. The draft is lost when the dock closes (the `if let artifact` branch is removed, 404) and when the conversation changes (`openArtifact = nil`, DesktopChatWorkspace.swift:506-508). The header comment says there is no stored row to save to (38-41), yet the same file refuses edits for designs for exactly that reason ('An editor that took edits here and dropped them would be the worse divergence', 810-817). NUANCE: the edits are not useless. They feed Preview, Canvas, Copy Source, Save Source As\u2026 and Share (610-633, 827-861), so a user can export the edited text to a file. What is missing is saving it back as an artifact version, plus any signal that the edit is temporary."
+  },
+  {
+   "id": "ux-2",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ, by grep over DesktopArtifactsScreen.swift and DesktopArtifactCanvas.swift: there is no onKeyPress, onMoveCommand, focusable, onDeleteCommand, draggable, onDrag or QuickLook. The grid is a LazyVGrid of plain Buttons (488-549). The search field is a plain TextField with no \u2318F binding (403-405), and \u21e7\u2318F is 'Find in Juno\u2026' (DesktopCommands.swift:~140-144). No onExitCommand or cancelAction closes the dock (grep across App/*.swift; the close button at DesktopArtifactCanvas.swift:654-660 has no shortcut). DesktopCommands.swift has no artifact commands; the only in-view shortcuts are \u21e7\u2318D, \u21e7\u2318C, \u2318S and \u2325\u2318I (1190-1296). Detached windows are bare NSWindows with no toolbar, actions or restoration class (2130-2146 region: `DesktopArtifactWindows.present`, 1921-1950 in the file) and render a fixed snapshot. Each gap is real. Together they are significant for a Mac app, but none blocks a task, so medium."
+  },
+  {
+   "id": "ux-3",
+   "verdict": "confirmed",
+   "corrected_severity": "medium",
+   "reasoning": "READ: `DesktopArtifactsScreen(model: model)` receives no `openConversation`, while Library and Tasks do (DesktopAccountScreens.swift:93-117). 'in <conversation>' appears only as text (DesktopArtifactsScreen.swift:679-692, 860-862). The context menu offers only Copy Source, Open in New Window and Delete (538-546). The command bar menu offers Rename, Discard, Open in New Window, Save Source As, Export and Delete (1237-1276). The dock has no 'Open in Artifacts' or history entry point (header 591-667). The web tile links to `/chat/:conversationId?artifact=identifier` (src/app/(app)/artifacts/page.tsx:529). The user can still find the conversation by title through the sidebar or Search, so this is a navigation gap rather than a blocker. It is directly on the path of the planned Artifacts-in-conversation merge."
+  }
+ ],
+ "missed": [
+  {
+   "id": "mac-artifacts-missed-1",
+   "title": "'Try Again' after a 409 stale-save reverts the merged latest version, so the next Save conflicts again",
+   "severity": "low",
+   "file": "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeArtifactStore.swift",
+   "line": 422,
+   "evidence": "READ: in the stale path, `merge(latest)` updates the in-memory artifact to the server's newest version and sets `phase = .failed`. Unlike the success path (419-421), it does not call `syncModel.refresh()` (422-426). The status control's 'Try Again' calls only `model.reload()` (DesktopArtifactsScreen.swift:650-654), and reload replaces `artifacts` wholesale with the local projection (265). A 409 happens precisely because that projection is behind the server.",
+   "failure_scenario": "The user saves an edit while another device has already written v6. The Mac gets a 409, merges v6 and says 'This artifact changed on another device. The latest version has been loaded.' with a 'Try Again' button. The user clicks it. reload() restores the local v5 as current. The user presses \u2318S, which sends baseVersion 5, and gets another 409. The recovery the message describes is undone by the button beside it."
+  },
+  {
+   "id": "mac-artifacts-missed-2",
+   "title": "The Design destination shows 'No designs yet' while the shared artifact store is loading or has failed",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift",
+   "line": 373,
+   "evidence": "READ: `launcherContent` branches only on `designs.isEmpty` (373-379). A grep for `model.phase`, a status control or DesktopArtifactStatus in DesktopDesignScreen.swift finds nothing. The only error surfacing is inside an open design's subtitle (508). NativeArtifactModel leaves `artifacts` empty when the first load fails (NativeArtifactStore.swift:283-287).",
+   "failure_scenario": "The local artifact snapshot fails to decode (a corrupt or unknown-kind record, see mac-artifacts-11), or the model is still loading. Artifacts says 'Artifacts unavailable', but Design says 'No designs yet. Pick a size above to start one\u2026'. That tells the user they have no designs when their designs are only unreadable, and it gives no retry."
+  },
+  {
+   "id": "mac-artifacts-missed-3",
+   "title": "The delete confirmation does not name the artifact it will delete",
+   "severity": "low",
+   "file": "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift",
+   "line": 314,
+   "evidence": "READ: `.confirmationDialog(\"Delete this artifact?\" \u2026)` with the message 'Every version of this artifact is removed.' (313-327). The dialog never shows the title of `deleteTarget`. The web dialog title is `Delete \u201c{deleteTarget?.title}\u201d?` (src/app/(app)/artifacts/page.tsx:681).",
+   "failure_scenario": "Together with mac-artifacts-5: after a delete, the document view silently switches to the newest artifact. A user who thinks the delete failed chooses Delete\u2026 again, sees the same anonymous 'Delete this artifact?' prompt, confirms it, and permanently deletes a different artifact with all its versions."
+  }
+ ]
+}
