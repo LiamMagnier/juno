@@ -227,8 +227,8 @@ export function ProjectWorkspaceHeader({
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenameOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveName} disabled={renaming || !nameDraft.trim()}>
-              {renaming ? "Renaming…" : "Rename project"}
+            <Button onClick={handleSaveName} loading={renaming} disabled={!nameDraft.trim()}>
+              Rename project
             </Button>
           </DialogFooter>
         </DialogContent>

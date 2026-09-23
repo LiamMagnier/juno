@@ -357,26 +357,53 @@ extension DesktopSettingsScreen {
     }
 }
 
-/// The Code section: the package's page, with this app's two hosting tiles
-/// handed in — remote Code sessions, and Juno Work on this Mac. Both are
-/// "what may another device make this Mac do", which is why they sit
-/// together at the bottom of Code rather than each in a section of its own.
+/// The Code section of the account's Settings: a way into Juno Code's own
+/// settings window, and Juno Work's hosting switch, which is about this Mac
+/// rather than about Code.
 struct DesktopCodeSettingsScreen: View {
     let workbench: WorkbenchModel?
     let availableModels: [ModelOption]
     let codeHostModel: DesktopCodeHostModel?
     var workHostModel: DesktopWorkHostModel? = nil
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
-        CodeSettingsView(
-            workbench: workbench,
-            availableModels: availableModels
-        ) {
-            DesktopCodeRemoteHostTile(host: codeHostModel)
+        Form {
+            Section {
+                HStack {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        Text("Juno Code has its own settings")
+                        Text("Permissions and rules, environment, instructions, the agent, Git, tools and MCP, appearance and notifications.")
+                            .font(Studio.Font.meta)
+                            .foregroundStyle(Studio.Ink.tertiary)
+                    }
+                    Spacer()
+                    Button("Open Code Settings") {
+                        openWindow(id: JunoDesktopWindow.codeSettingsID)
+                    }
+                }
+            }
             if let workHostModel {
-                DesktopWorkHostTile(host: workHostModel)
+                Section("Juno Work") {
+                    DesktopWorkHostTile(host: workHostModel)
+                }
             }
         }
+        .formStyle(.grouped)
+    }
+}
+
+/// Juno Code's settings window: the package's page, with this app's remote
+/// hosting switch handed in for the Permissions section.
+struct DesktopCodeSettingsWindow: View {
+    let configuration: JunoDesktopConfiguration?
+
+    var body: some View {
+        StudioSettingsView(
+            workbench: DesktopWorkbenchRegistry.shared.workbench,
+            remoteHosting: AnyView(DesktopCodeRemoteHostTile(host: configuration?.codeHostModel))
+        )
     }
 }
 

@@ -36,7 +36,7 @@ export default function ArtifactsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t open your artifacts"
-        description="The list didn’t come back. Nothing Juno built with you has been lost — this is the page failing to read it, not the record."
+        description="The list didn’t load. Nothing Juno built with you was lost: the page failed to read it, and the record is intact."
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

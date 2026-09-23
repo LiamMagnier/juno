@@ -21,14 +21,23 @@ import { cn } from "@/lib/utils";
  *    reduced motion the class is never applied (`motion-safe:`), so nothing
  *    is left waiting for an event that will not fire.
  *
- * 2. KEYED ON THE FIRST SEGMENT, not the full pathname. Changing the key
- *    remounts the subtree, and chat-view does `router.replace('/chat/<id>')`
- *    right after a brand-new chat's first reply — keying on the full path would
- *    remount the chat mid-stream and drop it. `/chat` → `/chat/abc` therefore
- *    keeps one key and does not animate; `/chat` → `/settings` does.
+ * 2. SOFT SURFACES ARE KEYED ON THEIR FIRST SEGMENT; everything else on its
+ *    first two. Changing the key remounts the subtree. Chat, Code, Work and
+ *    Design rewrite their own URL while they run (chat-view does
+ *    `router.replace('/chat/<id>')` right after a brand-new chat's first
+ *    reply), and Settings swaps its section in place, so on those a key per
+ *    path would remount the surface mid-stream and drop it: `/chat` to
+ *    `/chat/abc` keeps one key and does not animate. Every other page is a
+ *    list that opens a detail, and there the detail IS a new page. Keyed on
+ *    the first segment alone, `/projects` to `/projects/abc` (and the same on
+ *    Artifacts, Skills, Automations and Research) cut with no entrance at all,
+ *    the one navigation in the product that most needs to say "you went in".
  */
+const SOFT_SURFACES = new Set(["chat", "code", "work", "design", "settings"]);
+
 function routeGroup(pathname: string): string {
-  return "/" + (pathname.split("/")[1] ?? "");
+  const segments = pathname.split("/");
+  return SOFT_SURFACES.has(segments[1] ?? "") ? `/${segments[1]}` : `/${segments.slice(1, 3).join("/")}`;
 }
 
 function Entrance({ children }: { children: React.ReactNode }) {

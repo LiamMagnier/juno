@@ -144,68 +144,64 @@ extension View {
         environment(\.junoVoiceCall, column)
     }
 
-    /// Mounts the voice field behind **this whole surface**, anchored to its
-    /// bottom.
+    /// The dock above this composer and the voice field behind the pair.
     ///
-    /// **Code's, not Chat's.** Chat drew this behind its column until the
-    /// Liquid Glass redesign moved the call into the composer (§5.8: "No
-    /// aura"). Code's surfaces still mount it, alongside ``DesktopVoiceDock``,
-    /// until the Code rework decides their voice UI; it is kept working for
-    /// them, unchanged.
-    ///
-    /// Applied to a column, never to the window: the light stops where the
-    /// conversation does, and a `.background` is what enforces it — it can
-    /// only ever be the size of what it is behind.
-    func junoVoiceField(_ column: DesktopVoiceColumn?) -> some View {
-        modifier(DesktopVoiceFieldLayer(column: column))
+    /// **Code's, not Chat's.** Chat drew a dock and a field around its composer
+    /// until the Liquid Glass redesign moved the call into the composer (§5.8:
+    /// "No aura"). Juno Code's landing and session surfaces still wrap their
+    /// composer in both, until the Code rework decides their voice UI; this is
+    /// kept working for them, unchanged.
+    func junoVoiceColumn(_ column: DesktopVoiceColumn?) -> some View {
+        modifier(DesktopVoiceComposerLayer(column: column))
     }
 }
 
-private struct DesktopVoiceFieldLayer: ViewModifier {
+/// The dock, directly above the composer, announcing the call to the composer
+/// beneath it from the same modifier, so a surface can never end up with the
+/// controls of a call the composer knows nothing about.
+private struct DesktopVoiceDockLayer: ViewModifier {
     let column: DesktopVoiceColumn?
 
     func body(content: Content) -> some View {
-        content.background(alignment: .bottom) {
+        VStack(spacing: 0) {
             if let column {
-                DesktopVoiceColumnField(controller: column.controller)
+                DesktopVoiceDock(column: column)
+                    .padding(.horizontal, JunoSpace.roomy)
+                    .padding(.bottom, JunoSpace.snug)
+                    .transition(.opacity)
             }
+            content
         }
+        .environment(\.junoVoiceCall, column)
     }
 }
 
-/// The field as a column wears it: sized from the column, clipped to it.
+/// Code's composer-scoped arrangement: the dock above, the field behind the pair.
 ///
-/// A view of its own because two kinds of Code host need the same arrangement
-/// and only one of them can take a modifier. Code's draft column reaches it
-/// through ``SwiftUI/View/junoVoiceField(_:)``; Code's *session* surface is
-/// built inside `JunoCodeUI`, which cannot name a ``DesktopVoiceColumn``, and
-/// is handed the finished view instead — see ``DesktopVoiceColumn/erasedField``.
-private struct DesktopVoiceColumnField: View {
-    let controller: JunoRealtimeVoiceController
+/// The field's height is fixed here rather than taken from the host, because the
+/// host is a composer — a couple of hundred points tall at most, and 46% of that
+/// is not a field, it is a hairline.
+private struct DesktopVoiceComposerLayer: ViewModifier {
+    let column: DesktopVoiceColumn?
 
-    /// `.voice-aura`'s `height: min(30rem, 46vh)`, in points.
-    private static let heightCap: CGFloat = 460
-    private static let heightRatio: CGFloat = 0.46
+    private static let fieldHeight: CGFloat = 460
 
-    var body: some View {
-        GeometryReader { proxy in
-            DesktopVoiceField(controller: controller)
-                .frame(height: min(Self.heightCap, proxy.size.height * Self.heightRatio))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        }
-        // Clipped, so the field's blur cannot put a glow on the sidebar's side
-        // of the divider.
-        .clipped()
+    func body(content: Content) -> some View {
+        content
+            .modifier(DesktopVoiceDockLayer(column: column))
+            // Behind the dock *and* the composer, so the light passes under the
+            // pill as well as under the composer.
+            .background(alignment: .bottom) {
+                if let column {
+                    DesktopVoiceField(controller: column.controller)
+                        .frame(height: Self.fieldHeight)
+                        // The band's brightest edge belongs just past the
+                        // composer, so the light looks like it is coming from
+                        // under it rather than stopping at a seam.
+                        .offset(y: JunoSpace.roomy)
+                }
+            }
     }
-}
-
-extension DesktopVoiceColumn {
-    /// The field, type-erased for a host that cannot name this type.
-    ///
-    /// `JunoCodeUI` owns the Code session surface and depends on neither this
-    /// target nor `JunoVoiceKit`; that is why the dock crosses the package
-    /// boundary as an `AnyView`, and the field crosses it the same way.
-    var erasedField: AnyView { AnyView(DesktopVoiceColumnField(controller: controller)) }
 }
 
 /// The field, in a view of its own.

@@ -14,9 +14,22 @@ public struct MCPCodeTool: CodeTool {
         self.reference = reference
     }
 
+    /// `mcp__<server>__<tool>`, never longer than providers accept.
+    ///
+    /// Anthropic and OpenAI both cap tool names at 64 characters and reject
+    /// the *whole request* over one that is longer, so a single verbose MCP
+    /// tool used to fail every turn of every session in that workspace. Past
+    /// the limit the name keeps its readable start and ends in a digest of the
+    /// full name, which keeps it stable and unique.
     public var name: String {
-        "mcp__" + Self.safeName(reference.serverID) + "__" + Self.safeName(reference.definition.name)
+        let full = "mcp__" + Self.safeName(reference.serverID) + "__"
+            + Self.safeName(reference.definition.name)
+        guard full.count > Self.maximumNameLength else { return full }
+        let digest = String(Digests.sha256Hex(full).prefix(8))
+        return String(full.prefix(Self.maximumNameLength - digest.count - 1)) + "_" + digest
     }
+
+    static let maximumNameLength = 64
 
     public var description: String {
         let server = reference.serverID

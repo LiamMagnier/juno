@@ -26,7 +26,7 @@ there is information, never texture.
    Nothing in the reading column casts a shadow.
 3. **State is tonal, and ranked.** Hover is `--accent`; selected, on and
    held are `--selected`, one rung past hover; the active sidebar row is
-   `--sidebar-selected` inside its edge. No surface goes up or down; it
+   the `--sidebar-selected` fill alone. No surface goes up or down; it
    changes shade, and a state the reader chose is always a deeper shade than
    one the pointer is merely passing over (darker in light, lighter in dark).
 4. **One accent, used for state.** Coral (or the chosen accent) is the primary
@@ -56,6 +56,8 @@ there is information, never texture.
 | `--border` | `44 14% 86.5%` | `30 5% 22.5%` |
 | `--input` (field hairline) | `44 12% 78%` | `30 5% 27%` |
 | `--sidebar` | `46 22% 94.6%` | `30 5% 8.8%` |
+| `--sidebar-hover` (row under the pointer) | `46 20% 92.8%` | `30 5% 13.5%` |
+| `--sidebar-selected` (the row you are on) | `46 22% 89.8%` | `32 6% 19%` |
 
 Every rung stays warm (red ≥ green ≥ blue); the native brand-neutral test
 still gates it.
@@ -79,8 +81,14 @@ label is foreground ink for the same reason: `text-primary-ink` drops to
 
 In Tailwind it is `bg-selected` (`active:bg-selected`,
 `aria-pressed:bg-selected`, `data-[state=on]:bg-selected`). The sidebar keeps
-its own pair, `--sidebar-hover` and `--sidebar-selected`, which already rank
-this way.
+its own pair, `--sidebar-hover` and `--sidebar-selected`, ranked the same way
+against the darker panel. Both are fills with no edge: the selected row used
+to sit inside a `--sidebar-selected-border` hairline, which read as the one
+outlined object in a column of text, so the edge went and the fill came one
+rung deeper to carry the state alone. It stops at 89.8% in light because
+`--muted-foreground` still measures 4.52:1 there, and the open account row
+sets its plan line in that ink. `--sidebar-selected-border` stays defined only
+because the native clients read the token table; no row draws it.
 
 ### 3.2 Shadows
 
@@ -116,9 +124,11 @@ a token that resolves to "no shadow" is a retune, not a migration.
   a shadow. Destructive is the same recipe in the destructive hue, with the
   gradient overlay gone.
 - **Sidebar.** The active row is `.sidebar-row-selected`: the
-  `--sidebar-selected` fill inside its `--sidebar-selected-border` edge, not a
-  raised card. Hover is `--sidebar-hover`, a lighter step with no edge, so the
-  current row always outranks the one under the pointer.
+  `--sidebar-selected` fill and nothing else, no edge and no shadow, the way
+  Claude and ChatGPT mark the current row. Hover is `--sidebar-hover`, a
+  lighter step, so the current row always outranks the one under the pointer.
+  The account row takes the same fill while its menu is open
+  (`.sidebar-row-selected-on-open`).
 - **User bubble.** `--secondary` at `rounded-card`, no border, no shadow —
   the Claude / ChatGPT bubble.
 - **Switch, checkbox, radio, slider, progress, badge, kbd.** Tonal tracks,

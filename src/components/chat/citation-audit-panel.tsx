@@ -506,7 +506,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
     return (
       <p aria-live="polite" className={cn("mt-3 flex items-start gap-1.5 font-mono text-caption text-muted-foreground", className)}>
         <StatusIcons.info aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
-        <span className="min-w-0">Citation check unavailable — the sources below have not been verified.</span>
+        <span className="min-w-0">Citation check unavailable. The sources below have not been verified.</span>
       </p>
     );
   }

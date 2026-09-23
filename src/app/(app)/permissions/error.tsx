@@ -36,7 +36,7 @@ export default function PermissionsError({
         tone="error"
         icon={StatusIcons.error}
         title="Couldn’t load your permissions"
-        description="This page didn’t come back. Nothing has changed — every task and every Mac keeps exactly the permissions it had, and Juno still stops for everything it always stops for."
+        description="This page didn’t load. Nothing changed: every task and every Mac keeps the permissions it had, and Juno still asks before everything it always asks about."
         action={
           <>
             <Button size="sm" onClick={reset} className="gap-1.5">

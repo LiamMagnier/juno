@@ -37,6 +37,16 @@ public enum ModelMessage: Hashable, Codable, Sendable {
     /// ``persistenceSafe``.
     case userWithImages(String, [ModelImage])
     case assistant(String)
+    /// A reasoning block exactly as the provider returned it, signature and
+    /// all.
+    ///
+    /// Anthropic requires the thinking that preceded a `tool_use` to come back
+    /// unmodified in the next request of the same tool loop; without it a model
+    /// with thinking enabled either rejects the request or reasons from
+    /// scratch every step. Providers that have no such contract ignore it.
+    case assistantThinking(text: String, signature: String)
+    /// A reasoning block the provider encrypted. Opaque; replayed verbatim.
+    case assistantRedactedThinking(data: String)
     case toolCall(id: String, name: String, input: JSONValue)
     case toolCallWithExtra(id: String, name: String, input: JSONValue, extraContent: JSONValue)
     case toolResult(id: String, content: String, isError: Bool)
@@ -131,6 +141,12 @@ public enum ModelStreamEvent: Sendable {
     case textDelta(String)
     /// Product-facing reasoning summary, never raw private reasoning.
     case reasoningSummary(String)
+    /// A complete reasoning block with the signature the provider needs to see
+    /// again. Emitted once per block, after its deltas, for replay only — the
+    /// readable text already went out as ``reasoningSummary(_:)``.
+    case thinkingBlock(text: String, signature: String)
+    /// A complete encrypted reasoning block, for replay only.
+    case redactedThinking(data: String)
     case toolCallRequested(id: String, name: String, input: JSONValue)
     case toolCallRequestedWithExtra(id: String, name: String, input: JSONValue, extraContent: JSONValue)
     /// Token accounting for the turn, as the provider reported it.
@@ -148,7 +164,12 @@ public enum AgentModelClientError: Error, Equatable, Sendable {
     case transport(message: String)
     case unauthorized
     case rateLimited
+    /// The provider's own capacity or billing quota. Another model may work.
     case quotaExhausted(message: String)
+    /// The Juno account's plan budget or usage window. Every model draws on
+    /// the same allowance, so neither a retry nor a fallback can help; the
+    /// honest answer is the message, which says when it frees up.
+    case planLimitReached(message: String)
     case invalidResponse(message: String)
 }
 

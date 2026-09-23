@@ -99,7 +99,7 @@ export function ModelLineup() {
       <RevealList as="ul" className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4" aria-label="Labs in the picker">
         {LABS.map(({ provider, label, flagship }, i) => (
           <RevealItem key={provider} as="li" index={i} rung="tight" className="inline-flex items-center gap-2">
-            <ProviderLogo provider={provider} label={label} className="size-6 shrink-0" />
+            <ProviderLogo provider={provider} className="size-6 shrink-0" />
             <span className="flex flex-col leading-tight">
               <span className="text-ui font-medium text-foreground">{label}</span>
               <span className="font-mono text-caption text-muted-foreground">{flagship}</span>

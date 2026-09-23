@@ -5,21 +5,34 @@ import { useTheme } from "next-themes";
 import { Monitor, Moon, Plus, Sun } from "@/components/ui/icons";
 import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
-import { SettingBlock, SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { useSaveStates } from "@/components/settings/save-status";
+import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { FONT_SIZES, readFontSize, writeFontSize, type FontSizeId } from "@/components/settings/font-size";
 import { ACCENTS, swatchInk } from "@/lib/accents";
 import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
 
+/** The accents' names, for their swatches' accessible names (they used to announce the raw id). */
+const ACCENT_NAMES: { id: (typeof ACCENTS)[number]["id"]; label: string }[] = [
+  { id: "coral", label: "Coral" },
+  { id: "juniper", label: "Juniper" },
+  { id: "teal", label: "Teal" },
+  { id: "violet", label: "Violet" },
+  { id: "amber", label: "Amber" },
+  { id: "sage", label: "Sage" },
+];
+
 /** The custom-colour swatch is the last option of the accent radiogroup, not a control beside it. */
 const CUSTOM_ACCENT = "__custom__";
 const ACCENT_OPTIONS: string[] = [...ACCENTS.map((a) => a.id), CUSTOM_ACCENT];
+const DEFAULT_CUSTOM_ACCENT = "#ea580c";
 
 const AccentSwatch = React.forwardRef<
   HTMLButtonElement,
@@ -36,23 +49,17 @@ const AccentSwatch = React.forwardRef<
     <Pressable
       ref={ref}
       kind="icon"
-      size="lg"
       role="radio"
       aria-checked={selected}
       aria-label={label}
       onClick={onClick}
-      // No hover scale: the ring is the state, and a swatch that grows under
-      // the pointer was the one gesture in the product nothing else makes.
-      //
-      // The ring is an OUTLINE with an offset, not a `ring-offset-background`
-      // box-shadow: the offset band of a ring is painted in a named colour,
-      // and this picker renders on the page AND inside the settings dialog,
-      // where --background is not the surface — so the selected swatch wore a
-      // page-coloured halo. An outline's offset is transparent and shows
-      // whatever is really underneath. Keyboard focus keeps the --ring colour
-      // the global :focus-visible rule would have drawn.
+      // The ring is an OUTLINE with an offset, not a ring-offset box-shadow:
+      // an outline's offset is transparent and shows whatever is underneath,
+      // where a ring's offset band is painted in a named colour and wore a
+      // page-coloured halo inside the dialog. No hover scale: the ring is the
+      // state.
       className={cn(
-        "overflow-hidden hover:bg-transparent",
+        "size-7 overflow-hidden hover:bg-transparent coarse:size-9",
         selected && "outline outline-2 outline-offset-2 outline-foreground focus-visible:outline-ring"
       )}
       style={{ background, color: swatchInk(inkAgainst ?? background) }}
@@ -63,22 +70,42 @@ const AccentSwatch = React.forwardRef<
   );
 });
 
+/**
+ * The custom colour. The native picker PREVIEWS on every `input` event (the
+ * accent follows the pointer while the picker is dragged) and SAVES once, on
+ * `change`, when the reader lets go. It used to PATCH the account on every
+ * input event, dozens of writes a second.
+ */
 const CustomPickerButton = React.forwardRef<
   HTMLButtonElement,
   {
     selected: boolean;
     customColor: string;
-    onChange: (color: string) => void;
+    onPreview: (color: string) => void;
+    onCommit: (color: string) => void;
   } & Pick<React.ComponentPropsWithoutRef<"button">, "tabIndex" | "onKeyDown">
->(function CustomPickerButton({ selected, customColor, onChange, ...rest }, ref) {
+>(function CustomPickerButton({ selected, customColor, onPreview, onCommit, ...rest }, ref) {
   const pickerRef = React.useRef<HTMLInputElement>(null);
+  const commitRef = React.useRef(onCommit);
+  React.useEffect(() => {
+    commitRef.current = onCommit;
+  }, [onCommit]);
+  // React's `onChange` on an input is the native `input` event; the commit
+  // needs the native `change`, which React does not expose separately.
+  React.useEffect(() => {
+    const el = pickerRef.current;
+    if (!el) return;
+    const commit = () => commitRef.current(el.value);
+    el.addEventListener("change", commit);
+    return () => el.removeEventListener("change", commit);
+  }, []);
   return (
     <div className="relative">
       <input
         ref={pickerRef}
         type="color"
-        value={customColor}
-        onChange={(e) => onChange(e.target.value)}
+        defaultValue={customColor}
+        onInput={(e) => onPreview(e.currentTarget.value)}
         className="sr-only"
         tabIndex={-1}
         aria-hidden="true"
@@ -106,32 +133,67 @@ const CustomPickerButton = React.forwardRef<
   );
 });
 
-const THEME_OPTIONS: { value: ClientSettings["theme"]; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
+const THEME_OPTIONS: { value: ClientSettings["theme"]; label: string; icon: React.ReactNode }[] = [
+  { value: "light", label: "Light", icon: <Sun className="size-4" /> },
+  { value: "dark", label: "Dark", icon: <Moon className="size-4" /> },
+  { value: "system", label: "System", icon: <Monitor className="size-4" /> },
 ];
 
 export function GeneralSection() {
-  const { settings } = useApp();
+  const { settings, setSettings } = useApp();
   const { setTheme } = useTheme();
   const save = useSettingsSave();
+  const saves = useSaveStates();
 
   const [fontSize, setFontSize] = React.useState<FontSizeId>("default");
   React.useEffect(() => setFontSize(readFontSize()), []);
   const fontStep = Math.max(0, FONT_SIZES.findIndex((s) => s.id === fontSize));
   const fontPx = FONT_SIZES[fontStep]?.px ?? 16;
 
-  const setThemePref = async (theme: ClientSettings["theme"]) => {
-    const previous = settings.theme;
+  // The painted theme and accent are put back through `onRollback`, not on
+  // every failure: with two changes in flight, the first one's failure must
+  // not repaint the page in a value the second has already replaced, and
+  // when both fail the page goes back to what the server holds rather than
+  // to the first change.
+  const setThemePref = (theme: ClientSettings["theme"]) => {
+    if (theme === settings.theme) return;
     setTheme(theme);
-    if (!(await save({ theme }))) setTheme(previous);
+    void saves.track("theme", () =>
+      save(
+        { theme },
+        {
+          onRollback: (restored) => {
+            if (restored.theme) setTheme(restored.theme);
+          },
+        }
+      )
+    );
   };
 
-  const setAccent = async (accent: string) => {
-    const previous = settings.accent;
+  // The accent the account held before a custom-colour preview started, so a
+  // refused save goes back to it rather than to the last previewed colour.
+  const accentBeforePreview = React.useRef<string | null>(null);
+  const setAccent = (accent: string) => {
+    const previous = accentBeforePreview.current ?? settings.accent;
+    accentBeforePreview.current = null;
+    if (accent === previous) return;
     document.documentElement.dataset.accent = accent;
-    if (!(await save({ accent }))) document.documentElement.dataset.accent = previous;
+    void saves.track("accent", () =>
+      save(
+        { accent },
+        {
+          previous: { accent: previous },
+          onRollback: (restored) => {
+            if (restored.accent) document.documentElement.dataset.accent = restored.accent;
+          },
+        }
+      )
+    );
+  };
+  const previewAccent = (accent: string) => {
+    if (accentBeforePreview.current === null) accentBeforePreview.current = settings.accent;
+    document.documentElement.dataset.accent = accent;
+    setSettings({ accent });
   };
 
   // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
@@ -144,92 +206,75 @@ export function GeneralSection() {
   const accentIsPreset = ACCENTS.some((a) => a.id === settings.accent);
   const customAccent = !accentIsPreset && settings.accent.startsWith("#");
 
-  const themeOption = useRadioGroup(
-    THEME_OPTIONS,
-    THEME_OPTIONS.findIndex((t) => t.value === settings.theme),
-    (t) => void setThemePref(t.value)
-  );
   const accentOption = useRadioGroup(
     ACCENT_OPTIONS,
     customAccent ? ACCENTS.length : ACCENTS.findIndex((a) => a.id === settings.accent),
     (id) => {
-      if (id !== CUSTOM_ACCENT) void setAccent(id);
+      if (id !== CUSTOM_ACCENT) setAccent(id);
     }
   );
 
   return (
     <>
-      <SettingsGroup title="Appearance" description="How Juno looks on this device.">
-        <SettingBlock label="Theme">
-          <div className="grid max-w-md grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
-            {THEME_OPTIONS.map((t, i) => {
-              const selected = settings.theme === t.value;
-              return (
-                <Pressable
-                  key={t.value}
-                  kind="tile"
-                  role="radio"
-                  selected={selected}
-                  aria-checked={selected}
-                  onClick={() => void setThemePref(t.value)}
-                  className="group items-center gap-1.5"
-                  {...themeOption(i)}
-                >
-                  {/* Muted at rest, the tile's ink on hover or when chosen —
-                      the chrome-glyph rule, so the chosen theme reads by its
-                      edge and its ink rather than by a coloured glyph. The ink
-                      fades on a wrapper so the sun's turn and the moon's tilt
-                      keep the base-layer transition they settle on. */}
-                  <span
-                    className={cn(
-                      "flex transition-colors duration-fast ease-out-soft",
-                      selected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                    )}
-                  >
-                    <t.icon className="size-4" />
-                  </span>
-                  {t.label}
-                </Pressable>
-              );
-            })}
-          </div>
-        </SettingBlock>
-
-        <SettingBlock label="Accent color" description="The one saturated colour in the interface.">
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Accent color">
-            {ACCENTS.map((a, i) => {
-              const selected = settings.accent === a.id;
-              return (
-                <AccentSwatch
-                  key={a.id}
-                  selected={selected}
-                  background={a.color}
-                  label={a.id}
-                  onClick={() => void setAccent(a.id)}
-                  {...accentOption(i)}
-                >
-                  {selected && <StatusIcons.success className="check-morph size-4" />}
-                </AccentSwatch>
-              );
-            })}
-            <CustomPickerButton
-              selected={customAccent}
-              customColor={customAccent ? settings.accent : "#ea580c"}
-              onChange={(color) => void setAccent(color)}
-              {...accentOption(ACCENTS.length)}
+      <SettingsGroup title="Appearance" description="Theme and accent follow your account. Text size is set for this device.">
+        <SettingRow
+          label="Theme"
+          wide
+          status={saves.status("theme")}
+          control={
+            <SegmentedControl
+              ariaLabel="Theme"
+              value={settings.theme}
+              onChange={setThemePref}
+              options={THEME_OPTIONS}
+              className="w-full @[34rem]/pane:w-auto"
             />
-          </div>
-        </SettingBlock>
+          }
+        />
 
-        {/* Six steps from 14 to 20px on a slider, not three segments: a
-            segmented control at six options is wider than the row, and a
-            size is a quantity, which is what a slider says. The live value
+        <SettingRow
+          label="Accent color"
+          description="Buttons, selection and focus."
+          wide
+          status={saves.status("accent")}
+          control={
+            <div className="flex flex-wrap items-center gap-2.5 p-0.5" role="radiogroup" aria-label="Accent color">
+              {ACCENTS.map((a, i) => {
+                const selected = settings.accent === a.id;
+                return (
+                  <AccentSwatch
+                    key={a.id}
+                    selected={selected}
+                    background={a.color}
+                    label={ACCENT_NAMES.find((n) => n.id === a.id)?.label ?? a.id}
+                    onClick={() => setAccent(a.id)}
+                    {...accentOption(i)}
+                  >
+                    {selected && <StatusIcons.success className="check-morph size-4" />}
+                  </AccentSwatch>
+                );
+              })}
+              <CustomPickerButton
+                selected={customAccent}
+                customColor={customAccent ? settings.accent : DEFAULT_CUSTOM_ACCENT}
+                onPreview={previewAccent}
+                onCommit={setAccent}
+                {...accentOption(ACCENTS.length)}
+              />
+            </div>
+          }
+        />
+
+        {/* Six steps from 14 to 20px on a slider: a size is a quantity, and a
+            segmented control at six options is wider than the row. The value
             beside it is the number a reader can quote. */}
         <SettingRow
           label="Text size"
-          description="Scales the whole interface. Stored on this device."
+          description="Scales the whole interface on this device."
+          wide
+          status={saves.status("fontSize")}
           control={
-            <div className="flex w-56 items-center gap-3">
+            <div className="flex w-full items-center gap-3 @[34rem]/pane:w-60">
               <span className="text-caption text-muted-foreground" aria-hidden="true">
                 A
               </span>
@@ -244,32 +289,37 @@ export function GeneralSection() {
                   setFontSize(next);
                   writeFontSize(next);
                 }}
+                // Confirmed once the thumb is let go, not on every step it
+                // passes while dragged.
+                onValueCommit={() => void saves.track("fontSize", async () => true)}
               />
               <span className="text-body-lg text-muted-foreground" aria-hidden="true">
                 A
               </span>
-              <span className="w-10 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
-                {fontPx}px
+              <span className="w-10 shrink-0 text-right text-ui tabular-nums text-muted-foreground" aria-hidden="true">
+                {fontPx}
+                <span className="ml-0.5">px</span>
               </span>
             </div>
           }
         />
       </SettingsGroup>
 
-      <SettingsGroup title="Language" description="The language Juno's own buttons and menus are in.">
+      <SettingsGroup title="Language">
         <SettingRow
           label="Interface language"
-          description="Replies follow their own setting under Personalization."
+          description="Replies follow Response language in Personalization."
+          wide
           control={
             <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>
-              <SelectTrigger aria-label="Interface language" className="w-52">
+              <SelectTrigger aria-label="Interface language" className="w-full @[34rem]/pane:w-52">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={AUTO_LOCALE}>Auto-detect</SelectItem>
                 {UI_LOCALES.map((l) => (
                   <SelectItem key={l} value={l}>
-                    <span data-no-auto-translate lang={l}>
+                    <span data-no-auto-translate translate="no" lang={l}>
                       {localeNativeName(l)}
                     </span>
                   </SelectItem>

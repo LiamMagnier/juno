@@ -26,8 +26,10 @@ import { cn } from "@/lib/utils";
  * A photo is not a document that failed to index, and marking it as one would
  * make every screenshot look like a problem.
  *
- * Drawn in the metadata voice — mono caption, tabular — so it sits on the same
- * line as "2.1 MB · 3d ago" without becoming a second sentence.
+ * Drawn in the metadata voice (the caption rung, tabular figures) so it sits
+ * under a file's name the way "2.1 MB · 3d ago" does, without becoming a
+ * second heading. Sans rather than mono: this is a sentence about the file,
+ * not an identifier, and the Library's other metadata is set in the UI face.
  */
 export interface KnowledgeIndexState {
   /** queued | extracting | ocr | indexing | ready | degraded | failed | stale */
@@ -49,7 +51,7 @@ export function IndexStatus({
 }) {
   if (!status) return null;
 
-  const shared = "inline-flex min-w-0 items-center gap-1.5 font-mono text-caption tabular-nums";
+  const shared = "inline-flex min-w-0 items-center gap-1.5 text-caption tabular-nums";
 
   if (IN_PROGRESS.has(status.state)) {
     return (

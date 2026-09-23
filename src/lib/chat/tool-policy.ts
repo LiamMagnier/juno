@@ -19,6 +19,11 @@
  * stricter condition than a toggle rather than a looser one: they can only
  * reach files the person put in this conversation, so a turn with no
  * attachments has nothing to offer them and does not carry them.
+ *
+ * `start_task` is not on this list, because it is not a registry tool. It is a
+ * native tool the chat route builds per turn (`NativeChatTool` in llm.ts) and
+ * gates with `chatTaskToolEnabled` in src/lib/chat/task-tool.ts, so it never
+ * passes through the registry's generic approval broker.
  */
 
 /** Registry id of the hosted page-reading tool (`src/lib/agent/browser.ts`). */

@@ -30,6 +30,12 @@ VM="${JUNO_VM:-liammgnr@20.91.138.96}"
 KEY="${JUNO_SSH_KEY:-$HOME/Developer/KEY/chatliamsdev.pem}"
 PUBLIC_URL="${JUNO_PUBLIC_URL:-https://chat.liams.dev}"
 IMAGE="node:24-bookworm"
+# Where the container builds. Next bakes this absolute path into .next and
+# deploy.sh rewrites it, as plain text, to the release directory — so it must
+# be a path that occurs nowhere else in the build. `/app` was not: it is also
+# the start of "/app-auth", "/apple-icon.png" and a user-agent regex, and the
+# rewrite broke every request on the new release.
+BUILD_ROOT="/opt/juno-release-build"
 REF="origin/main"
 SKIP_CHECKS=0
 
@@ -79,10 +85,22 @@ echo "Live now: ${live_sha:-unknown}"
 [ "$live_sha" != "$SHA" ] || warn "that commit is already live — deploying it again anyway"
 
 WORK="$(mktemp -d /tmp/juno-deploy.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
-RUN_ID="mac-$(date +%Y%m%d%H%M%S)"
+# The VM upload directory, while removing it is this script's job: from the
+# preflight that creates it until the release transaction, whose own cleanup
+# removes it, takes it over. An upload that fails or is interrupted goes at
+# once, rather than an hour later when the next preflight finds it abandoned.
+VM_UPLOAD_OWNED=''
+on_exit() {
+  rm -rf "$WORK"
+  [ -z "$VM_UPLOAD_OWNED" ] || vm "rm -rf -- '$VM_UPLOAD_OWNED'" >/dev/null 2>&1 || true
+}
+trap on_exit EXIT
+# Everything this run leaves on the VM is named for it, and WORK's random tail
+# keeps two deploys started in the same second apart.
+RUN_ID="mac-$(date +%Y%m%d%H%M%S)-${WORK##*.}"
 ARCHIVE="juno-$SHA.tar.gz"
 ARTIFACT="juno-$SHA.build.tar.gz"
+UPLOAD_DIR="/tmp/juno-upload-$RUN_ID"
 
 # —— Production env for the build ———————————————————————————————————————————
 # Next.js bakes NEXT_PUBLIC_* values into the build, so it has to see the real
@@ -113,12 +131,12 @@ build_start=$SECONDS
 docker run --rm -i --platform linux/amd64 \
   -v juno-npm-cache:/root/.npm \
   -v "$WORK/build.env:/run/juno-build.env:ro" \
-  -e SKIP_CHECKS="$SKIP_CHECKS" -e CI=1 \
+  -e SKIP_CHECKS="$SKIP_CHECKS" -e CI=1 -e BUILD_ROOT="$BUILD_ROOT" \
   "$IMAGE" bash -c '
     set -Eeuo pipefail
     exec 3>&1 1>&2
     step() { printf "\n\033[1;36m--> %s\033[0m\n" "$*"; }
-    mkdir /app && cd /app && gzip -cd | tar -x
+    mkdir -p "$BUILD_ROOT" && cd "$BUILD_ROOT" && gzip -cd | tar -x
     step "npm ci"
     npm ci --no-audit --no-fund
     step "vendored runner core"
@@ -154,40 +172,31 @@ echo "Built in $(elapsed "$build_start"): $(du -h "$WORK/$ARTIFACT" | cut -f1) a
 
 # —— Ship ———————————————————————————————————————————————————————————————————
 say "Freeing space on the VM"
-vm 'bash -s' <<'PREFLIGHT'
-set -euo pipefail
-rm -f /tmp/juno-*.tar.gz /tmp/juno-*.sha256 /tmp/juno-*.env 2>/dev/null || true
-if [ -d "$HOME/juno/releases" ]; then
-  find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
-  current_target="$(readlink -f "$HOME/juno/current" 2>/dev/null || true)"
-  prev_target="$(readlink -f "$HOME/juno/previous" 2>/dev/null || true)"
-  for dir in $(find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort); do
-    real_dir="$(cd "$dir" 2>/dev/null && pwd -P || echo "$dir")"
-    if [ "$real_dir" != "$current_target" ] && [ "$real_dir" != "$prev_target" ]; then
-      echo "Pruning older release: $dir"
-      rm -rf -- "$dir" || true
-    fi
-  done
-fi
-df -h "$HOME" | tail -1
-PREFLIGHT
+# Under the lock deploy.sh holds for a whole release transaction, so it is
+# refused, with the holder named, while another deploy is running. It creates
+# UPLOAD_DIR last; see deploy/vm-preflight.sh.
+vm "UPLOAD_DIR='$UPLOAD_DIR' bash -s" < deploy/vm-preflight.sh \
+  || die "the VM preflight did not complete (see above) — nothing was uploaded"
+VM_UPLOAD_OWNED="$UPLOAD_DIR"
 
 say "Uploading to the VM"
 upload_start=$SECONDS
-scp "${SSH_OPTS[@]}" "$WORK/$ARCHIVE" "$WORK/$ARCHIVE.sha256" "$WORK/$ARTIFACT" "$WORK/$ARTIFACT.sha256" "$VM:/tmp/"
+scp "${SSH_OPTS[@]}" "$WORK/$ARCHIVE" "$WORK/$ARCHIVE.sha256" "$WORK/$ARTIFACT" "$WORK/$ARTIFACT.sha256" "$VM:$UPLOAD_DIR/"
 echo "Uploaded in $(elapsed "$upload_start")"
 
 # —— Release transaction (same as deploy.yml) ——————————————————————————————————
 say "Activating ${SHA:0:12} (deploy.sh: migrate, reload, health check, auto-rollback)"
-vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='/app' bash -s" <<'REMOTE'
+VM_UPLOAD_OWNED=''
+vm "GIT_SHA_TO_DEPLOY='$SHA' RUN_ID='$RUN_ID' UPLOAD_DIR='$UPLOAD_DIR' JUNO_BUILD_ROOT='$BUILD_ROOT' bash -s" <<'REMOTE'
 set -euo pipefail
 LIVE_ROOT="$HOME/juno"
-ARCHIVE="/tmp/juno-${GIT_SHA_TO_DEPLOY}.tar.gz"
-BUILD_ARTIFACT="/tmp/juno-${GIT_SHA_TO_DEPLOY}.build.tar.gz"
+ARCHIVE="$UPLOAD_DIR/juno-${GIT_SHA_TO_DEPLOY}.tar.gz"
+BUILD_ARTIFACT="$UPLOAD_DIR/juno-${GIT_SHA_TO_DEPLOY}.build.tar.gz"
 INCOMING_ENV="$LIVE_ROOT/.env.incoming-${RUN_ID}"
 SOURCE_STAGE="$HOME/.juno-source-${RUN_ID}"
 cleanup() {
-  rm -f -- "$ARCHIVE" "$ARCHIVE.sha256" "$BUILD_ARTIFACT" "$BUILD_ARTIFACT.sha256" "$INCOMING_ENV"
+  rm -rf -- "$UPLOAD_DIR"
+  rm -f -- "$INCOMING_ENV"
   [ ! -d "$SOURCE_STAGE" ] || rm -rf -- "$SOURCE_STAGE"
 }
 trap cleanup EXIT

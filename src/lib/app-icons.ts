@@ -24,7 +24,7 @@ import {
   Bot,
   CalendarClock,
   Check,
-  Cpu,
+  Cube,
   CreditCard,
   Copy,
   Database,
@@ -44,7 +44,6 @@ import {
   ImagePlus,
   Laptop,
   Layers3,
-  LibraryBig,
   LayoutTemplate,
   Lock,
   Mic,
@@ -52,6 +51,7 @@ import {
   JunoChat,
   JunoCode,
   JunoDesign,
+  JunoLibrary,
   Minus,
   MoreHorizontal,
   NotebookPen,
@@ -148,12 +148,21 @@ export const AppIcons = {
    *  of layers it was the one mark in the column that had to be decoded
    *  rather than read.
    *
-   *  `LibraryBig` is the same idea drawn with CLOSED SHAPES — the set's
-   *  `Books`, volumes with tops and depth, one leaning — which survive the
-   *  size because an outlined form survives what a bare hairline does not.
-   *  Same metaphor, same word over it, and the only thing that changes is
-   *  whether you can tell what it is. */
-  library: LibraryBig,
+   *  The set's `Books` came next: the same idea drawn with CLOSED SHAPES,
+   *  which survive the size because an outlined form survives what a bare
+   *  hairline does not. But it carried six bands across two volumes, and at
+   *  18px each band and each gap is about a pixel, so the spines aliased into
+   *  a grey hatch and the leaning volume ran into the upright at the top. It
+   *  was the busiest mark in the column, under Juno's own marks drawn in one
+   *  or two strokes.
+   *
+   *  Juno's own drawing (`JunoLibrary`) keeps what carried the meaning and
+   *  drops the texture: two volumes, the right one leaning toward the left
+   *  with a clear gap at every weight, and ONE head band each. The lean is
+   *  what says "books on a shelf" rather than "two boxes"; the extra bands
+   *  only said "detail". Under the pointer the leaning volume straightens and
+   *  lifts, the way a book comes off a shelf. */
+  library: JunoLibrary,
   /** Deep research, wherever the shell has to name it — the command palette,
    *  a native sidebar row, an empty state. The SAME mark the composer's Deep
    *  research tool draws (`ComposerIcons.research`): one feature, one drawing.
@@ -440,8 +449,9 @@ export type ActionIconName = keyof typeof ActionIcons;
  * Every mark here names the NOUN of its section — the thing you are editing —
  * rather than a feeling about it. `personalization` is a person with a gear
  * because it is Juno adjusted to you (the export is still `UserPen`; the set
- * has no person-and-pen); `models` is a processor because a model is machinery
- * with a price per token, and the section is about picking which one runs.
+ * has no person-and-pen); `models` is a cube because a model is a thing you
+ * pick off a shelf and pay for per token, and the section is about which one
+ * runs.
  */
 export const SettingsIcons = {
   /** Adjustments to how the app itself looks and behaves. */
@@ -451,8 +461,20 @@ export const SettingsIcons = {
   /** What Juno keeps between conversations — the same notebook the composer's
    *  memory toggle uses, because it is the same store. */
   memory: NotebookPen,
-  /** Which machine answers, and how hard it thinks. Not a wand. */
-  models: Cpu,
+  /** Which model answers, and how hard it thinks. Not a wand, and no longer a
+   *  processor.
+   *
+   *  A CUBE: the set's three-faced box, a model drawn as an OBJECT, the
+   *  packaged thing you choose, so it names the NOUN like the rest of this
+   *  rail. The processor it replaced said the same thing less well. It is a
+   *  square inside a square with eight pins, and at the rail's 16px the pins
+   *  merged into a fringe, the densest mark in a column of calm ones (sliders,
+   *  a plug, a mic, a cylinder). It also named the hardware, which Juno's
+   *  reader never picks. The cube is one outline and a Y, reads at 14px, and
+   *  cannot be mistaken for `data`'s cylinder or `Bot`, which is Assistants.
+   *  Not a brain or an atom either: both are the same AI-marketing shorthand
+   *  the sparkle and the wand were removed for, and both hatch at 16px. */
+  models: Cube,
   /** The apps Juno may reach. Matches `AppIcons.connections`. */
   connectors: Plug,
   /** Speech, in and out. */

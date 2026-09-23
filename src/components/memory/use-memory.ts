@@ -77,9 +77,18 @@ export interface MemoryState {
   /** Save a fact by hand — account-wide, or scoped to one project. */
   addMemory: (content: string, projectId?: string | null) => Promise<boolean>;
   editMemory: (id: string, content: string) => Promise<boolean>;
-  forgetMemory: (memory: Memory) => Promise<void>;
-  deleteMemory: (memory: Memory) => Promise<void>;
-  resetMemory: () => Promise<void>;
+  /**
+   * Retire a fact and block it from being learned again. `silent` skips the
+   * success toast, for a caller that already showed its own (the page's
+   * deferred delete, which toasts with Undo before this ever runs). Resolves
+   * true when the server agreed.
+   */
+  forgetMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
+  deleteMemory: (memory: Memory, opts?: { silent?: boolean }) => Promise<boolean>;
+  /** File a fact under one project, or (null) back under the whole account. */
+  moveMemory: (memory: Memory, project: { id: string; name: string } | null) => Promise<boolean>;
+  /** Delete everything remembered, account-wide. Resolves true when the server did. */
+  resetMemory: () => Promise<boolean>;
   exportMemory: () => void;
 }
 
@@ -136,6 +145,12 @@ export function useMemory(): MemoryState {
     []
   );
 
+  // Whether a list has ever arrived. A refresh that fails after that (the
+  // reload behind an edit, a forget, a move) must not swap a page of rows the
+  // reader can see for "Couldn't load your memory. Nothing has been changed",
+  // which is false the moment the change it followed went through.
+  const loadedOnce = React.useRef(false);
+
   const reload = React.useCallback(async () => {
     try {
       const res = await fetch("/api/memory");
@@ -145,8 +160,10 @@ export function useMemory(): MemoryState {
       setSummary(data.summary ?? null);
       setProjectSummaries(data.projectSummaries ?? []);
       setLoadError(false);
+      loadedOnce.current = true;
     } catch {
-      setLoadError(true);
+      if (loadedOnce.current) toast.error("Couldn’t refresh your memory. Reload the page to see the latest.");
+      else setLoadError(true);
     }
   }, []);
 
@@ -182,11 +199,8 @@ export function useMemory(): MemoryState {
       // the pause toggle forget itself on reload.
       const ok = await saveSettings({ memoryEnabled: !nextPaused });
       if (!ok) return;
-      toast.success(
-        nextPaused
-          ? "Memory paused — Juno won’t save or use new details."
-          : "Memory on — Juno will learn from your conversations."
-      );
+      if (nextPaused) toast.success("Memory is off. Juno won’t use or save memories.");
+      else toast.success("Memory is on. Juno will learn from your chats.");
     },
     [saveSettings]
   );
@@ -286,8 +300,9 @@ export function useMemory(): MemoryState {
             operations: data.proposal.operations,
           },
         ]);
+        // No toast: the draft appears under the prompt bar that asked for it,
+        // which is where the reader is already looking.
         setEdits(list);
-        toast.success("Change drafted — review it below.");
         return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
@@ -340,9 +355,11 @@ export function useMemory(): MemoryState {
           toast.error(outcome.message);
           return;
         }
+        // No toast: both places that accept an edit (the proposal under the
+        // prompt bar, the activity sheet) turn the row itself into "Applied"
+        // with its Undo beside it, which says more than a toast could.
         const list = await updateEdit(edit.id, { status: "applied", inverse: outcome.inverse });
         setEdits(list);
-        toast.success("Memory updated.");
       } catch {
         toast.error(GENERIC_FAILURE);
       } finally {
@@ -440,19 +457,24 @@ export function useMemory(): MemoryState {
   );
 
   const forgetMemory = React.useCallback(
-    async (memory: Memory) => {
+    async (memory: Memory, opts?: { silent?: boolean }): Promise<boolean> => {
       mark(setBusyIds, memory.id, true);
       try {
         const res = await fetch(`/api/memory/${memory.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ forget: true }),
+          // The page's deferred removal can send this as the tab closes; a
+          // keepalive request outlives the page that started it.
+          keepalive: true,
         });
         if (!res.ok) throw new Error();
         await reload();
-        toast.success("Forgotten — Juno won’t learn this again.");
+        if (!opts?.silent) toast.success("Forgotten. Juno won’t learn this again.");
+        return true;
       } catch {
         toast.error("Couldn’t forget that. Nothing was changed.");
+        return false;
       } finally {
         mark(setBusyIds, memory.id, false);
       }
@@ -461,19 +483,23 @@ export function useMemory(): MemoryState {
   );
 
   const deleteMemory = React.useCallback(
-    async (memory: Memory) => {
+    async (memory: Memory, opts?: { silent?: boolean }): Promise<boolean> => {
       mark(setBusyIds, memory.id, true);
       try {
-        const res = await fetch(`/api/memory/${memory.id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error();
+        const res = await fetch(`/api/memory/${memory.id}`, { method: "DELETE", keepalive: true });
+        // A 404 is the outcome asked for, not a failure: the row is already
+        // gone (a reset, another tab), and "Nothing was changed" would be false.
+        if (!res.ok && res.status !== 404) throw new Error();
         setMemories((prev) => (prev ?? []).filter((m) => m.id !== memory.id));
         // Deliberately says what delete does NOT do. Delete removes the row;
         // the chat it came from is still there, so a later backfill may learn
         // the same fact again. "Forget" is the one that also blocks it, and
         // this is the moment the difference matters.
-        toast.success("Deleted. Juno may learn it again from the chat it came from.");
+        if (!opts?.silent) toast.success("Deleted. Juno may learn it again from the chat it came from.");
+        return true;
       } catch {
         toast.error("Couldn’t delete that. Nothing was changed.");
+        return false;
       } finally {
         mark(setBusyIds, memory.id, false);
       }
@@ -481,7 +507,38 @@ export function useMemory(): MemoryState {
     [mark]
   );
 
-  const resetMemory = React.useCallback(async () => {
+  const moveMemory = React.useCallback(
+    async (memory: Memory, project: { id: string; name: string } | null): Promise<boolean> => {
+      mark(setBusyIds, memory.id, true);
+      try {
+        // `projectId: null` is the route's "back to the whole account"; the
+        // route checks the project belongs to this account before it moves.
+        const res = await fetch(`/api/memory/${memory.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: project?.id ?? null }),
+        });
+        if (!res.ok) {
+          const { message } = await readRefusal(res);
+          throw new Error(message);
+        }
+        // Reloaded rather than spliced: the row's project name comes from the
+        // server, and the scope chips count from the same list.
+        await reload();
+        if (project) toast.success("Moved. Only chats in that project will use it.");
+        else toast.success("Moved. Every chat can use it now.");
+        return true;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : GENERIC_FAILURE);
+        return false;
+      } finally {
+        mark(setBusyIds, memory.id, false);
+      }
+    },
+    [mark, reload]
+  );
+
+  const resetMemory = React.useCallback(async (): Promise<boolean> => {
     setResetting(true);
     try {
       const res = await fetch("/api/memory", { method: "DELETE" });
@@ -490,9 +547,11 @@ export function useMemory(): MemoryState {
       setSummary(null);
       setProjectSummaries([]);
       setEdits([]);
-      toast.success("Memory cleared — Juno starts fresh.");
+      toast.success("Memory reset. Juno starts fresh.");
+      return true;
     } catch {
       toast.error("Couldn’t reset memory. Nothing was deleted.");
+      return false;
     } finally {
       setResetting(false);
     }
@@ -533,6 +592,7 @@ export function useMemory(): MemoryState {
     editMemory,
     forgetMemory,
     deleteMemory,
+    moveMemory,
     resetMemory,
     exportMemory,
   };

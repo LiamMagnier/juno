@@ -33,8 +33,8 @@ export function DownloadMenu({ className }: { className?: string }) {
   const [downloads, setDownloads] = React.useState<AppDownload[] | null>(null);
   const [open, setOpen] = React.useState(false);
 
-  // Fetched on first open rather than on mount: this sits in the app shell on
-  // every page, and nobody navigating a chat needs a GitHub round trip.
+  // Fetched on first open rather than on mount: nobody reading the page it sits
+  // on needs a GitHub round trip until they ask for a build.
   React.useEffect(() => {
     if (!open || downloads) return;
     let cancelled = false;
@@ -74,13 +74,10 @@ export function DownloadMenu({ className }: { className?: string }) {
               aria-label="Download the app"
               className={cn(
                 "pressable inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-                // sidebar-hover, not muted: this sits in the sidebar footer
-                // directly beside the account row, which fills with
-                // `hover:bg-sidebar-hover`. Two adjacent controls in one 2px-gap
-                // cluster answering the pointer with two different fills is the
-                // most visible way a footer stops reading as one object — and on
-                // the dark theme --muted (9.5%) sat below the panel's hover fill,
-                // so this one also lifted less than its neighbour.
+                // The panel's hover fill, from when this sat in the sidebar
+                // footer beside the account row. The footer is one row now and
+                // "Get the apps" is in the account menu; this menu remains for
+                // pages that offer the builds in place.
                 //
                 // No transition-* utility beside `.pressable`: that class ships a
                 // transition covering colour AND transform, and a later
@@ -174,7 +171,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
       <span className="truncate font-mono text-caption text-muted-foreground">{detail}</span>
       {blockedOnFirstOpen && (
         <span className="mt-1 text-caption leading-snug text-warning">
-          Not notarized yet. macOS blocks the first open — allow it under System Settings › Privacy &amp;
+          Not notarized yet. macOS blocks the first open; allow it under System Settings › Privacy &amp;
           Security.
         </span>
       )}

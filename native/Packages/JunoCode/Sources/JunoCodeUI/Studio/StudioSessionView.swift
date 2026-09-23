@@ -1,0 +1,195 @@
+import SwiftUI
+import JunoCodeCore
+import JunoDesignSystem
+
+/// One session: the thread, anything waiting for an answer, and the composer.
+///
+/// The side panel is the host's (it belongs to the window's inspector), so
+/// this view is the whole centre column and nothing else.
+public struct StudioSessionView: View {
+    @Bindable var controller: SessionController
+    let models: [ModelOption]
+    let openReview: (String?) -> Void
+    let beginDictation: (() -> Void)?
+
+    @State private var slashCommands: CodeSlashCommandLibrary = .builtIn
+    @FocusState private var composerFocused: Bool
+
+    private var preferences: StudioPreferences { .shared }
+
+    public init(
+        controller: SessionController,
+        models: [ModelOption],
+        openReview: @escaping (String?) -> Void,
+        beginDictation: (() -> Void)? = nil
+    ) {
+        self.controller = controller
+        self.models = models
+        self.openReview = openReview
+        self.beginDictation = beginDictation
+    }
+
+    private var mode: StudioMode {
+        StudioMode(
+            behavior: controller.session.configuration.behavior,
+            permission: controller.session.configuration.permissionMode
+        )
+    }
+
+    private var isRunning: Bool { controller.isRunning }
+
+    private var canSend: Bool {
+        (!controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !controller.pendingAttachments.isEmpty)
+            && controller.isAgentTransportConfigured
+    }
+
+    private var placeholder: String {
+        guard controller.isAgentTransportConfigured else { return "Sign in to Juno to run the agent" }
+        if isRunning {
+            return controller.activeInstructionKind == .steer
+                ? "Steer Juno while it works"
+                : "Queue a follow-up for when it finishes"
+        }
+        return controller.events.isEmpty ? "Describe the change you want" : "Ask for a follow-up"
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            if let problem = controller.settingsProblem {
+                StudioBanner(text: problem, tone: .warning)
+            } else if let notice = controller.settingsNotice {
+                StudioBanner(text: notice)
+            }
+            StudioThreadView(controller: controller, openReview: openReview)
+            VStack(spacing: JunoSpace.snug) {
+                StudioApprovalPrompt(controller: controller)
+                composer
+            }
+            .frame(maxWidth: Studio.Metrics.measure)
+            .padding(.horizontal, Studio.Metrics.gutter)
+            .padding(.bottom, JunoSpace.regular)
+            .frame(maxWidth: .infinity)
+            .animation(JunoMotion.standard, value: controller.pendingApprovals.map(\.id))
+        }
+        .background(Studio.Surface.canvas)
+        .task(id: controller.sessionID) {
+            composerFocused = true
+            if let context = controller.context {
+                slashCommands = .merged(workspace: await context.slashCommands())
+            }
+        }
+        .onChange(of: isRunning) { _, running in
+            if running { controller.activeInstructionKind = preferences.followUp.instructionKind }
+        }
+    }
+
+    private var composer: some View {
+        StudioComposer(
+            text: $controller.composerText,
+            placeholder: placeholder,
+            attachments: controller.pendingAttachments,
+            addAttachment: controller.currentModelSupportsVision ? { controller.attach($0) } : nil,
+            removeAttachment: { controller.removeAttachment(id: $0) },
+            slashCommands: slashCommands,
+            searchFiles: controller.context == nil
+                ? nil
+                : { query in await controller.findFiles(nameContains: query, limit: 24) },
+            chooseFile: { entry in
+                if !entry.isDirectory { controller.registerComposerFileReference(entry.path) }
+            },
+            runCommand: run,
+            canSend: canSend,
+            isRunning: isRunning,
+            send: { Task { await controller.send() } },
+            stop: { Task { await controller.stop() } },
+            focus: $composerFocused
+        ) {
+            StudioModeChip(mode: mode, select: select, isEnabled: !isRunning)
+            if isRunning {
+                Menu {
+                    Picker("While Juno works", selection: $controller.activeInstructionKind) {
+                        Text("Steer the current run").tag(UserInstructionKind.steer)
+                        Text("Queue for after it finishes").tag(UserInstructionKind.queue)
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    StudioChipLabel(title: controller.activeInstructionKind == .steer ? "Steer" : "Queue")
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help("What your next message does while Juno is working")
+            }
+        } trailing: {
+            if preferences.showContextMeter,
+               let used = controller.contextTokens,
+               let window = controller.contextWindowTokens,
+               window > 0
+            {
+                StudioContextMeter(used: used, window: window)
+            }
+            StudioModelChip(
+                models: models,
+                modelID: controller.session.configuration.modelID,
+                effort: controller.session.configuration.reasoningEffort,
+                selectModel: { id in Task { await controller.setModelID(id) } },
+                selectEffort: { effort in Task { await controller.setReasoningEffort(effort) } },
+                isEnabled: !isRunning
+            )
+            if let beginDictation {
+                Button(action: beginDictation) { JunoIconView(.mic, size: 15) }
+                    .buttonStyle(StudioIconButtonStyle())
+                    .help("Dictate")
+                    .accessibilityLabel("Dictate")
+                    .accessibilityIdentifier("juno.code.composer.dictate")
+            }
+        }
+    }
+
+    private func select(_ mode: StudioMode) {
+        Task {
+            await controller.setBehavior(mode.behavior)
+            if mode.behavior == .code {
+                await controller.setPermissionMode(mode.permission)
+            }
+        }
+    }
+
+    private func run(_ command: CodeSlashCommand, argument: String) {
+        if let action = command.action {
+            switch action {
+            case .compact: Task { await controller.compactConversation() }
+            case .review: openReview(nil)
+            }
+            return
+        }
+        if let behavior = command.behavior, behavior != controller.session.configuration.behavior {
+            Task { await controller.setBehavior(behavior) }
+        }
+    }
+}
+
+/// A one-line notice across the top of a column.
+struct StudioBanner: View {
+    enum Tone { case warning, info }
+    let text: String
+    var tone: Tone = .info
+
+    var body: some View {
+        HStack(spacing: JunoSpace.snug) {
+            JunoIconView(tone == .warning ? .triangleAlert : .circleHelp, size: 13)
+                .foregroundStyle(tone == .warning ? Studio.Ink.danger : Studio.Ink.secondary)
+            Text(text)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
+        .background(Studio.Surface.muted.opacity(0.6))
+        .studioHairline(.bottom)
+    }
+}

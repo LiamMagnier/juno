@@ -203,10 +203,13 @@ export function SegmentedControl<T extends string>({
                 {opt.label}
               </span>
             )}
-            {/* The tally, in the register a `Badge` count wears: mono, tabular,
-                dimmed by opacity so the segment's own ink decides its colour. */}
+            {/* The tally, in the register a `Badge` count wears: mono and
+                tabular, at the segment's own ink so it follows the selection.
+                It used to be dimmed to 70% on top of that, which put the
+                unselected count at 2.9:1 in the light theme; the mono face and
+                the smaller rung already set it apart from the label. */}
             {!labelHidden && opt.count !== undefined && (
-              <span className="relative z-10 font-mono text-micro opacity-70">
+              <span className="relative z-10 font-mono text-micro">
                 <RollingNumber value={opt.count} />
               </span>
             )}

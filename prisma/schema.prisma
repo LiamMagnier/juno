@@ -135,6 +135,7 @@ model User {
   workHosts                   WorkHost[]
   workCommands                WorkCommand[]
   workSkills                  WorkSkill[]
+  workSkillSources            WorkSkillSource[]
   workSchedules               WorkSchedule[]
   workTriggers                WorkTrigger[]
   workAuditEvents             WorkAuditEvent[]
@@ -2862,18 +2863,71 @@ model WorkSkill {
   /// high, or only on explicit invocation.
   autoSelect        Boolean   @default(false)
 
+  /// skill | assistant. Assistants (src/lib/assistants.ts) are stored in this
+  /// table too, and without the column every imported skill listed as an
+  /// assistant and every assistant as a slash-invocable skill. Readers on
+  /// either side filter on it; nothing infers it from the contract any more.
+  kind       String  @default("skill")
+  /// The source this skill was installed from, or null for one written here.
+  /// SetNull rather than Cascade: removing a source soft-deletes its skills
+  /// first, and a run that followed one of them still has to resolve it.
+  sourceId   String?
+  /// Its `SKILL.md` path inside the source's repository: the identity an
+  /// update check matches upstream files against, since the slug can differ.
+  sourcePath String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   project  Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source   WorkSkillSource?   @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   versions WorkSkillVersion[]
 
   @@unique([userId, slug])
   @@index([userId, enabled])
+  @@index([userId, sourceId])
   @@index([projectId])
   @@index([securityStatus])
+}
+
+/// A repository a group of skills was installed from.
+///
+/// The source is what gets installed, switched off, checked for updates and
+/// removed; the skills inside it are what get called. `enabled` here is a
+/// second switch above each skill's own: turning a source off hides all of its
+/// skills without touching theirs, so turning it back on restores exactly what
+/// was on before. See src/lib/skills/library-contract.ts for the wire shape.
+model WorkSkillSource {
+  id            String    @id @default(cuid())
+  userId        String
+  /// github. The only kind today.
+  kind          String    @default("github")
+  /// As GitHub spells them, for display. `key` is the identity.
+  owner         String
+  repo          String
+  /// `github:owner/repo`, lower-cased (githubSourceKey), so two spellings of
+  /// one repository are one source.
+  key           String
+  /// The branch or tag the source tracks.
+  ref           String
+  /// The folder the import was scoped to; "" is the whole repository.
+  path          String    @default("")
+  /// The commit the installed skills were read at.
+  commit        String
+  /// The newest commit the last check saw, while installed skills differ from it.
+  latestCommit  String?
+  lastCheckedAt DateTime?
+  enabled       Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills WorkSkill[]
+
+  // Leads with userId, so it also serves every per-account listing.
+  @@unique([userId, key, path])
 }
 
 model WorkSkillVersion {

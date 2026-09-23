@@ -44,7 +44,7 @@ row. Layout from Claude, skin from Juno.
 `WorkSession.conversationId` has existed, indexed and serialised to every
 client, since Work shipped — and the web create route has no field for it, so
 only the legacy `ScheduledTask` adopter ever wrote one. The merge is mostly that
-pointer, written from the chat composer, plus subtraction.
+pointer, written whenever a chat starts a task, plus subtraction.
 
 The pattern it feeds is not new either. A deep-research run already lives inside
 a `kind: "chat"` conversation: discovered by `?conversationId=`, drawn by a
@@ -55,16 +55,21 @@ shipped once.**
 
 ### 2.2 Three choices, and why
 
-**A message becomes work by a toggle, never by a guess.** The `+` menu gains
-"Do this as a task" beside Deep research, and an armed pill sits beside `+` the
-way the research pill does. A second, quieter trigger reads the sentence —
-`inference.ts` already scores a goal for the capabilities it implies — and
-offers *one caption with one chip*: "Looks like this needs a spreadsheet and
-Gmail. Run it as a task?" It never arms itself. The file's own asymmetry
-argument is why: a wrong guess about a local capability blocks a person, and a
-wrong guess here would spend an afternoon of the account's window on a question
-that wanted a reply.
-Suggesting is Claude's behaviour; deciding for the reader is not.
+**The model decides when a message becomes work, and the reader can always
+stop it.** There is no switch. The chat model is offered one tool, `start_task`,
+on turns where a task can run (the web client opts in with `workHandoff`; never
+in private mode), and its system prompt says when to use it: a finished result
+that needs many steps, work carried out through connected apps, or something
+to keep doing over time. Questions, advice and a single document stay in chat,
+and when it is unsure it answers or asks. The panel that appears under the
+reply names itself as a task, shows its title and carries its own Stop.
+
+The first version was a "Do this as a task" row in the `+` menu, with a regex
+offer under the field ("Run it as a task?"). It was removed in September 2026:
+it asked the reader to classify their own sentence before sending it, which is
+the one decision the model reading that sentence is better placed to make. The
+cost of a wrong guess is bounded where it always was, on the server: the
+account's usage window, the live-run cap and the cost preflight.
 
 **"Needs you" is a fold, not a destination.** The rejected alternative was a
 `/tasks` page — the inbox under a new name, which is the thing being removed.
@@ -79,18 +84,21 @@ Connections) or settings.
 
 ## 3. What a person sees
 
-**Chat sidebar.** Brand row · Chat|Code pill · New chat · Library · Projects ·
-Artifacts · Design · More (Assistants, Connections, Skills, Automations,
-Permissions, Archived) · then the folds: **Needs you** (when non-empty), Pinned,
-Today, Yesterday, Previous 7 days, Older. A conversation carrying a live or
+**Chat sidebar.** Brand row · Chat|Code pill · New chat · Search · Library ·
+Projects · Artifacts · Design · More (Assistants, Skills, Automations, then
+Archived chats) · then the folds: **Needs you** (when non-empty), Pinned
+projects, Pinned chats, Recent · and one account row (Settings, the apps and
+sign out live in its menu). Connections is in Settings > Connectors and the
+composer's `+`; the Macs Permissions listed are in Settings > Devices. The Code
+sidebar is the same shape: Artifacts · Customize · Pull requests · More
+(Connections, then Archived sessions). A conversation carrying a live or
 waiting run swaps its hollow bullet for a toned status dot — state, not
 decoration, and the one trailing mark that row is allowed.
 
 **Chat composer.** Unchanged at rest: `+`, the model chip with thinking inside
-it, dictate, send. Armed, a "Task · asks before risky steps" pill appears beside
-`+` and one disclosure line sits under the field — where it runs, how often it
-asks, what stops it — computed by the same function the dispatch route runs, so
-the sentence read is the sentence acted on.
+it, dictate, send. Nothing in it starts a task. While a task on the chat is
+live, the field steers it: the placeholder says whether a message answers the
+task's question or adds an instruction, and Stop ends the task.
 
 **A run in the transcript.** Live: what it is doing now, the plan with its
 tally, one line of facts (spend against what the window had left when the run

@@ -381,7 +381,28 @@ const config: Config = {
           { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" },
         ],
         "body-lg": ["1.0625rem", { lineHeight: "1.6" }],
+        /*
+         * The conversation's reading size: both speakers in a chat, the
+         * assistant's prose (`.prose-juno` in globals.css states the same two
+         * numbers) and the user's bubble (`USER_BUBBLE_CLASS`). 16px because
+         * that is what Claude and ChatGPT set replies at, and at 15px a long
+         * answer read a size smaller than the products it sits next to. 1.7
+         * rather than body's 1.6: this rung is for paragraphs read in flow,
+         * where the extra leading is what keeps a 75ch line easy to track back.
+         */
+        reading: ["1rem", { lineHeight: "1.7" }],
         body: ["0.9375rem", { lineHeight: "1.6" }],
+        /*
+         * The navigation rung: sidebar rows, conversation and project titles,
+         * the account name. 14px on a 20px line, which is what Claude and
+         * ChatGPT set their sidebars in. `body` (15px) is the size the product
+         * reads prose at, and chrome at reading size competes with the
+         * transcript beside it; `ui` (13px) is dense furniture read at a
+         * glance, one step too small for a column people scan all day. A fixed
+         * 20px line rather than a ratio, because every one of these sits
+         * centred in a fixed-height row.
+         */
+        nav: ["0.875rem", { lineHeight: "1.25rem" }],
         /*
          * The dense-UI rung — list rows, chips, option text, table cells:
          * interface furniture read at a glance, not prose read in flow. It was

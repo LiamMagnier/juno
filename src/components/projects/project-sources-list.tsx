@@ -178,7 +178,7 @@ export function ProjectSourcesList({
           {uploading ? "Uploading…" : dragging ? "Drop to add to this project" : onDropFiles ? "Drop files here, or click to browse" : "Click to upload files"}
         </span>
         <span className="font-mono text-caption text-muted-foreground">
-          PDFs, documents, code and data — indexed so Juno can cite them.
+          PDFs, documents, code and data, indexed so Juno can cite them.
         </span>
       </button>
 
@@ -212,15 +212,11 @@ export function ProjectSourcesList({
           size="sm"
           variant="secondary"
           onClick={onUploadClick}
-          disabled={uploading}
+          loading={uploading}
           className="ml-auto"
         >
-          {uploading ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : (
-            <Upload className="size-3.5" aria-hidden="true" />
-          )}
-          {uploading ? "Uploading…" : "Upload"}
+          <Upload className="size-3.5" aria-hidden="true" />
+          Upload
         </Button>
       </div>
 

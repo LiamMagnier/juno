@@ -25,9 +25,10 @@
  * spellings the codebase already used (`ChevronDown`, `Loader2`, `Settings`) so
  * the migration touched imports, not call sites. Replacing any mark with a
  * bespoke Juno drawing — on the same 256 grid, 16-unit line, round caps — is a
- * one-line change in this file and reaches every surface at once. Four marks
+ * one-line change in this file and reaches every surface at once. Five marks
  * already are Juno's own (`juno-glyphs.tsx`): `JunoChat`, `JunoCode`,
- * `JunoDesign` and `Send`, the places and the verb the product is known by.
+ * `JunoDesign`, `JunoLibrary` and `Send`, the places and the verb the product
+ * is known by.
  *
  * MOTION. Each glyph can carry one hover articulation (`data-motion`), played
  * by `globals.css` when the interactive element around it is hovered or
@@ -69,7 +70,6 @@ import {
   BinocularsIcon,
   BookmarkSimpleIcon,
   BookOpenIcon,
-  BooksIcon,
   BoundingBoxIcon,
   BoxArrowUpIcon,
   BracketsCurlyIcon,
@@ -80,6 +80,7 @@ import {
   CaretDownIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  CaretUpDownIcon,
   CaretUpIcon,
   ChatCenteredDotsIcon,
   ChatCircleDotsIcon,
@@ -105,6 +106,7 @@ import {
   CreditCardIcon,
   CropIcon,
   CrosshairIcon,
+  CubeIcon,
   CursorIcon,
   DatabaseIcon,
   DeviceMobileIcon,
@@ -244,7 +246,13 @@ import {
   XIcon,
 } from "@phosphor-icons/react/dist/ssr";
 
-import { JunoChatGlyph, JunoCodeGlyph, JunoDesignGlyph, JunoSendGlyph } from "@/components/ui/juno-glyphs";
+import {
+  JunoChatGlyph,
+  JunoCodeGlyph,
+  JunoDesignGlyph,
+  JunoLibraryGlyph,
+  JunoSendGlyph,
+} from "@/components/ui/juno-glyphs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -262,7 +270,8 @@ import { cn } from "@/lib/utils";
  * - `pop` — a small spring swell for marks you set: star, sparkle, bookmark.
  * - `parts` — Juno's own marks move one PART of the drawing instead of the
  *   whole glyph: Chat's ball terminal pops out of the gap, Code's spark
- *   twinkles, Design's circle slides back from the square.
+ *   twinkles, Design's circle slides back from the square, Library's leaning
+ *   volume straightens and lifts off the shelf.
  */
 export type IconMotion =
   | "nudge-r"
@@ -376,9 +385,10 @@ function glyph(
 }
 
 // ---------------------------------------------------------------------------
-// Juno's own marks — the three places the product is known by. Drawn for Juno
-// in juno-glyphs.tsx from the two motifs of the logo (the open ring with its
-// ball terminal, and the four-point spark); `Send` below is the fourth.
+// Juno's own marks — the places the product is known by. Drawn for Juno in
+// juno-glyphs.tsx on the same grid and line as the rest of the set; Chat, Code
+// and Design carry the two motifs of the logo (the open ring with its ball
+// terminal, and the four-point spark). `Send` below is the verb.
 // ---------------------------------------------------------------------------
 
 /** Chat: the logo's bubble as a line. Its `fill` weight is the logo itself —
@@ -388,6 +398,11 @@ export const JunoChat = glyph(JunoChatGlyph, "juno-chat", { motion: "parts" });
 export const JunoCode = glyph(JunoCodeGlyph, "juno-code", { motion: "parts" });
 /** Design: a square in front of a circle, stacked like cut paper. */
 export const JunoDesign = glyph(JunoDesignGlyph, "juno-design", { motion: "parts" });
+/** Library: two volumes on a shelf, the right one leaning toward the left, one
+ *  band each. It replaced Phosphor's Books, whose six bands hatched into grey
+ *  at 18px. Under the pointer the leaning volume straightens and lifts, the
+ *  way a book comes off a shelf. */
+export const JunoLibrary = glyph(JunoLibraryGlyph, "juno-library", { motion: "parts" });
 
 // ---------------------------------------------------------------------------
 // Direction & navigation
@@ -400,6 +415,10 @@ export const ChevronDown = glyph(CaretDownIcon, "chevron-down");
 export const ChevronUp = glyph(CaretUpIcon, "chevron-up");
 export const ChevronLeft = glyph(CaretLeftIcon, "chevron-left");
 export const ChevronRight = glyph(CaretRightIcon, "chevron-right");
+/** Both ways at once: a row that opens a menu (the sidebar's account row)
+ *  without claiming which direction it opens in. Still a state mark, so it
+ *  carries no hover gesture either. */
+export const ChevronsUpDown = glyph(CaretUpDownIcon, "chevrons-up-down");
 
 export const ArrowLeft = glyph(ArrowLeftIcon, "arrow-left", { motion: "nudge-l" });
 export const ArrowRight = glyph(ArrowRightIcon, "arrow-right", { motion: "nudge-r" });
@@ -532,7 +551,6 @@ export const Inbox = glyph(TrayIcon, "inbox");
 export const Mail = glyph(EnvelopeSimpleIcon, "mail");
 export const MailWarning = glyph(EnvelopeSimpleIcon, "mail-warning");
 export const BookOpen = glyph(BookOpenIcon, "book-open");
-export const LibraryBig = glyph(BooksIcon, "library", { motion: "lift" });
 export const ScrollText = glyph(ScrollIcon, "scroll");
 export const ReceiptText = glyph(ReceiptIcon, "receipt");
 export const Layers = glyph(StackSimpleIcon, "layers", { motion: "lift" });
@@ -562,6 +580,8 @@ export const Globe = glyph(GlobeSimpleIcon, "globe");
 export const Cloud = glyph(CloudIcon, "cloud");
 export const Database = glyph(DatabaseIcon, "database");
 export const Cpu = glyph(CpuIcon, "cpu");
+/** A cube: three faces and no inner detail. `SettingsIcons.models` draws it. */
+export const Cube = glyph(CubeIcon, "cube");
 export const Monitor = glyph(MonitorIcon, "monitor");
 export const Laptop = glyph(LaptopIcon, "laptop");
 export const Smartphone = glyph(DeviceMobileIcon, "smartphone");

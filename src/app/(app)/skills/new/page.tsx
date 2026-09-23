@@ -2,75 +2,37 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "@/components/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { skillSlugFromName } from "@/lib/work/skills";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
-import { createWorkSkill } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { AppIcons } from "@/lib/app-icons";
+import { skillSlugFromName } from "@/lib/work/skills";
+import { openSkillDraftingChat } from "@/components/skills/add-skill-menu";
+import { createSkill, skillsFailureMessage } from "@/components/skills/skills-transport";
 
 /**
- * Writing a skill.
+ * Writing a skill: a name, one line, and the instructions.
  *
- * `origin` is a real question rather than a hidden default, because it is what
- * decides the skill's starting trust and therefore whether the planner may ever
- * reach for it unprompted: something written here starts as yours, and something
- * pasted in from elsewhere starts untrusted until you have read it and said
- * otherwise. The server derives the trust from this and never takes it from the
- * body, so answering honestly is the only thing that has any effect.
+ * A SKILL WRITTEN HERE IS YOURS. The page used to ask "where did it come
+ * from", which set the starting trust, and it was the most confusing question
+ * in the product: importing is a flow of its own now (and lands untrusted
+ * there), so anything typed here is `authored`. Where it is filed and whether
+ * Juno may pick it on its own are set on the skill's page afterwards, once it
+ * exists and can be read back.
  *
- * The slug is derived rather than asked for. It is what a user types after a
- * slash and what an older message in their history already says, so it is chosen
- * once — and `skillSlugFromName` is the same function the route uses, imported
- * so the preview under the name field cannot disagree with what gets stored.
+ * The slash name is derived rather than asked for, by the same function the
+ * route uses, so the preview under the name cannot disagree with what is saved.
  */
-/**
- * The picker's value for "not filed in any project".
- *
- * A sentinel rather than an empty string, because an `<option value="">` reads
- * back as the falsy value for both "the account" and "nothing chosen" while
- * only one of those is something the reader can have meant here.
- */
-const ACCOUNT_LEVEL = "__account__";
-
 export default function NewSkillPage() {
   const router = useRouter();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [instructions, setInstructions] = React.useState("");
-  const [origin, setOrigin] = React.useState<"authored" | "imported">("authored");
   const [saving, setSaving] = React.useState(false);
   const [refusal, setRefusal] = React.useState<string | null>(null);
-  /**
-   * Where the skill is filed, chosen here rather than only afterwards.
-   *
-   * `null` is the account level, and it is the default: a skill nobody has
-   * placed belongs to the whole account, which is what filing it nowhere has
-   * always meant. The alternative — defaulting to whichever project the reader
-   * last looked at — would narrow the planner's offer without anybody saying
-   * so, and the symptom is a skill that never gets picked.
-   */
-  const [projectId, setProjectId] = React.useState<string | null>(null);
-  const [projects, setProjects] = React.useState<{ id: string; name: string }[] | null>(null);
-
-  React.useEffect(() => {
-    let live = true;
-    fetch("/api/projects")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { projects?: { id: string; name: string }[] } | null) => {
-        if (live && data && Array.isArray(data.projects)) {
-          setProjects(data.projects.map((project) => ({ id: project.id, name: project.name })));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, []);
 
   const slug = skillSlugFromName(name);
   const canSave = name.trim().length > 0 && instructions.trim().length > 0 && slug !== null && !saving;
@@ -79,47 +41,52 @@ export default function NewSkillPage() {
     if (!canSave) return;
     setSaving(true);
     setRefusal(null);
-    const result = await createWorkSkill({
+    const result = await createSkill({
       name: name.trim(),
       description: description.trim(),
       instructions: instructions.trim(),
-      origin,
-      projectId,
+      origin: "authored",
     });
     setSaving(false);
     if (result.kind === "ok") {
       router.push(`/skills/${result.value.id}`);
       return;
     }
-    if (result.kind === "blocked") {
-      // The one refusal this form can produce on its own: `(userId, slug)` is
-      // unique, and the slug came from the name, so a second "Tidy Downloads"
-      // collides without the reader ever having typed a slug.
-      setRefusal(
-        result.reason === "slug_taken"
-          ? `You already have a skill called /${slug ?? ""}. Give this one a different name.`
-          : result.explanation
-      );
-      return;
-    }
+    // The one refusal this form can cause on its own: slugs are unique per
+    // account and this one came from the name.
     setRefusal(
-      result.message ??
-        (result.cause === "offline"
-          ? "Couldn’t reach Juno to save this. Nothing was created."
-          : "Couldn’t save this skill. Nothing was created.")
+      result.kind === "blocked" && result.reason === "slug_taken"
+        ? `You already have a skill called /${slug ?? ""}. Give this one a different name.`
+        : skillsFailureMessage(result, "Couldn’t save this skill. Nothing was created.")
     );
   };
 
   return (
     <AppPage measure="reading">
       <AppPageHeader
-        eyebrow="Skills"
         heading="New skill"
-        lede="Instructions Juno can be handed by name. What it asks for is a request, never a grant — it can only ever do what you have already allowed elsewhere."
+        lede="Instructions Juno follows when you call it by name."
         backHref="/skills"
         backLabel="Back to skills"
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => openSkillDraftingChat((href) => router.push(href))}
+          >
+            <AppIcons.conversation className="size-4" aria-hidden="true" />
+            Create with Juno
+          </Button>
+        }
       />
-      <div className="space-y-6">
+      <form
+        className="space-y-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
         <div>
           <Label htmlFor="skill-name">Name</Label>
           <Input
@@ -128,28 +95,36 @@ export default function NewSkillPage() {
             onChange={(event) => setName(event.target.value)}
             placeholder="File the invoices"
             disabled={saving}
-            className="mt-1"
+            autoFocus
+            className="mt-1.5"
           />
-          <p className="mt-1 font-mono text-micro text-muted-foreground">
-            {slug === null
-              ? "Type a name with at least one letter or number in it."
-              : `Typed as /${slug}`}
+          <p className="mt-1.5 text-caption text-muted-foreground">
+            {slug === null ? (
+              "Use at least one letter or number."
+            ) : (
+              <>
+                Type{" "}
+                <span className="font-mono text-foreground" translate="no">
+                  /{slug}
+                </span>{" "}
+                in chat to use it.
+              </>
+            )}
           </p>
         </div>
 
         <div>
-          <Label htmlFor="skill-description">What it is for</Label>
+          <Label htmlFor="skill-description">Description</Label>
           <Input
             id="skill-description"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Sorts incoming invoices into the right folder and renames them."
             disabled={saving}
-            className="mt-1"
+            className="mt-1.5"
           />
-          <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
-            One line. This is what Juno reads when deciding whether a skill fits the task in front
-            of it.
+          <p className="mt-1.5 text-caption text-muted-foreground">
+            One line. Juno reads it to decide when the skill fits.
           </p>
         </div>
 
@@ -159,75 +134,29 @@ export default function NewSkillPage() {
             id="skill-instructions"
             value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
-            placeholder="Write it the way you would for a person doing it for the first time: the steps, the edge cases, and what to do when something does not fit."
-            rows={12}
+            placeholder="Write it the way you would brief a person doing it for the first time: the steps, the edge cases, and what to do when something doesn’t fit."
+            rows={14}
             disabled={saving}
-            className="mt-1 font-mono text-ui"
+            className="mt-1.5 font-mono text-ui leading-relaxed"
           />
+          <p className="mt-1.5 text-caption text-muted-foreground">Markdown works.</p>
         </div>
 
-        <div>
-          <Label htmlFor="skill-project">Filed in</Label>
-          {/* The same `field-well` recipe the other Work selects carry. */}
-          <select
-            id="skill-project"
-            value={projectId ?? ACCOUNT_LEVEL}
-            disabled={saving || projects === null}
-            onChange={(event) =>
-              setProjectId(event.target.value === ACCOUNT_LEVEL ? null : event.target.value)
-            }
-            className="field-well mt-1 h-9 w-full max-w-sm rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value={ACCOUNT_LEVEL}>Everything</option>
-            {(projects ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-            {projectId === null
-              ? "Juno may offer this for any task. File it in a project to keep it out of the way of work it has nothing to do with."
-              : "Juno offers this only for tasks filed in that project. Typing its slash name still reaches it from anywhere."}
-          </p>
-        </div>
-
-        <div>
-          <Label>Where it came from</Label>
-          <SegmentedControl
-            value={origin}
-            onChange={setOrigin}
-            options={[
-              { value: "authored", label: "I wrote it" },
-              { value: "imported", label: "From somewhere else" },
-            ]}
-            ariaLabel="Where this skill came from"
-            optionClassName="px-3 py-1 text-label"
-            className="mt-1 max-w-sm"
-          />
-          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-            {origin === "authored"
-              ? "Starts as trusted, because you wrote it. Juno may reach for it on its own once you switch that on."
-              : "Starts untrusted. Juno will not reach for it on its own until you have read it and said it is fine — which is the point of the distinction."}
-          </p>
-        </div>
-
-        {refusal !== null && (
+        {refusal !== null ? (
           <WorkStateNote tone="error" className="motion-safe:animate-rise-in">
             {refusal}
           </WorkStateNote>
-        )}
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => void save()} disabled={!canSave} className="gap-1.5">
-            {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+          <Button type="submit" disabled={!canSave} loading={saving}>
             Create skill
           </Button>
-          <Button variant="ghost" onClick={() => router.push("/skills")} disabled={saving}>
+          <Button type="button" variant="ghost" onClick={() => router.push("/skills")} disabled={saving}>
             Cancel
           </Button>
         </div>
-      </div>
+      </form>
     </AppPage>
   );
 }

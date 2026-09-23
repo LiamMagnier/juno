@@ -59,6 +59,11 @@ struct DesktopCodeActions {
     /// ⌘O: grant a folder as a project.
     var openFolder: () -> Void
     var createPullRequest: (() -> Void)?
+    /// ⌘.: stops the run on screen, or nil when nothing is running. A menu
+    /// command rather than a shortcut on the composer's Stop button, which
+    /// gives way to Send as soon as the draft has any text, taking ⌘. with it
+    /// in exactly the moment a reader typing a correction decides to stop.
+    var stop: (() -> Void)?
     var hasSession: Bool
 }
 
@@ -219,6 +224,15 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
+                // ⌘. answers in one product at a time. Here it is Code's
+                // Stop, enabled only while the focused window shows Code;
+                // Chat's Stop generating is the composer's stop face
+                // (`ChatComposer`), which exists only while Chat is showing.
+                Button("Stop") { codeStop?() }
+                    .keyboardShortcut(".", modifiers: [.command])
+                    .disabled(codeStop == nil)
+            }
+            Section {
                 Button("Previous Session") { codeActions?.previousSession() }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
                     .disabled(codeActions == nil)
@@ -227,13 +241,16 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions == nil)
             }
             Section {
-                Button("Toggle Review") { codeActions?.toggleReview() }
+                Button("Changes") { codeActions?.toggleReview() }
                     .keyboardShortcut("r", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Console") { codeActions?.toggleConsole() }
+                // ⌥⌘C, not ⌥⌘T: ToolbarCommands above binds ⌥⌘T to Show/Hide
+                // Toolbar, and the View menu is matched first, so ⌥⌘T hid
+                // the Code window's toolbar instead of opening the terminal.
+                Button("Terminal") { codeActions?.toggleConsole() }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
-                Button("Toggle Context Rail") { codeActions?.toggleInspector() }
+                Button("Toggle Side Panel") { codeActions?.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
                 Button("Toggle Preview") { codeActions?.togglePreview() }
@@ -281,6 +298,16 @@ struct JunoDesktopCommands: Commands {
             .keyboardShortcut(mode.keyboardShortcut)
             .disabled(actions == nil)
         }
+    }
+
+    /// Session › Stop's action: the Code run on screen, and nothing unless the
+    /// focused window is showing Code. Code's actions are only published by
+    /// the Code workspace, and a window instantiates one workspace at a time,
+    /// so this is belt and braces: ⌘. must never stop a Code run from Chat,
+    /// nor shadow Chat's own Stop while a chat is generating.
+    private var codeStop: (() -> Void)? {
+        guard actions?.currentProduct == .code else { return nil }
+        return codeActions?.stop
     }
 
     /// ⇧⌘N. Through the focused window when there is one; otherwise the request

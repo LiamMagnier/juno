@@ -101,7 +101,7 @@ export function ShareDialog({
       if (!res.ok) throw new Error("Revoke failed");
       setShare(null);
       setStatus("revoked");
-      toast.success("Link revoked — it no longer works.");
+      toast.success("Link revoked. It no longer works.");
     } catch {
       toast.error("Couldn’t revoke the link.");
     } finally {
@@ -118,8 +118,8 @@ export function ShareDialog({
           </DialogTitle>
           <DialogDescription>
             {kind === "CHAT"
-              ? "People with the link see the conversation up to now — new messages stay private."
-              : "People with the link see this artifact as it is now — later edits stay private."}
+              ? "People with the link see the conversation up to now. New messages stay private."
+              : "People with the link see this artifact as it is now. Later edits stay private."}
           </DialogDescription>
         </DialogHeader>
 
@@ -152,7 +152,7 @@ export function ShareDialog({
             {/* The broken link, the set's own mark for exactly this state. */}
             <p className="flex items-start gap-2 text-body text-muted-foreground">
               <Link2Off className="mt-1 size-4 shrink-0" aria-hidden />
-              <span className="min-w-0">The link was revoked — anyone opening it now sees nothing.</span>
+              <span className="min-w-0">The link was revoked. Anyone opening it now sees nothing.</span>
             </p>
             {/* size-4, not size-3.5. That is what Button gives an unsized icon
                 (`.ui-button svg:not([class*="size-"])` in globals.css), it is

@@ -111,11 +111,14 @@ export function FilePreview({
   sizes = "200px",
   /** Skip the network entirely — for a dense list where tiles are 32px. */
   excerpt: wantsExcerpt = true,
+  /** The extension chip in the corner — off where the name and type are already printed beside the tile. */
+  badge = true,
 }: {
   item: PreviewableItem;
   className?: string;
   sizes?: string;
   excerpt?: boolean;
+  badge?: boolean;
 }) {
   const [imageFailed, setImageFailed] = React.useState(false);
   const [pageFailed, setPageFailed] = React.useState(false);
@@ -164,7 +167,7 @@ export function FilePreview({
           {/* `text-caption` (the rung this 0.6875rem already was, spelled off-ladder so
     the lint rule could not see it) and no 0.08em: that is CAPS tracking, and
     rule 13 of PREMIUM_AUDIT keeps it for uppercase. The rung carries its own. */}
-          <span className="font-mono text-caption font-medium text-muted-foreground/70">
+          <span className="font-mono text-caption font-medium text-muted-foreground">
             {extensionOf(item)}
           </span>
         </div>
@@ -195,7 +198,7 @@ export function FilePreview({
           from a .py at a glance, and both look like grey lines from a metre.
           Over a rendered page it does the same job for a second reason — the
           page itself never says what format it is. */}
-      {(text || pageUrl) && (
+      {badge && (text || pageUrl) && (
         <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-micro font-medium tracking-[0.06em] text-muted-foreground">
           {/* `bg-secondary`, opaque, at the `xs` rung. The chip was
               `bg-background/85` — the page colour — which lands within a point

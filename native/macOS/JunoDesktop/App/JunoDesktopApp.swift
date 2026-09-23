@@ -10,6 +10,10 @@ enum JunoDesktopWindow {
     static let mainID = "juno.main"
     /// The ⌘/ list of every shortcut the app answers.
     static let shortcutsID = "juno.shortcuts"
+    /// Juno Code's own settings: permissions, environment, instructions, agent,
+    /// Git, tools, appearance. A window of its own because a coding agent's
+    /// configuration is page-sized, and it opens beside the session it tunes.
+    static let codeSettingsID = "juno.code.settings"
     /// The File menu's item that opens another main window. Named here because
     /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
     /// with no window at all.
@@ -77,6 +81,14 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
             // ⌥Space from anywhere. Installed at launch rather than on first
             // use so the shortcut exists before any window does.
             DesktopQuickEntryController.shared.installHotkey()
+            // Juno Code's notifications, answered for the life of the app
+            // rather than while a Code window happens to be on screen. A click
+            // is one request the registry hands to exactly one window, which
+            // switches it to Code; with no window open, one is opened.
+            StudioRunMonitor.shared.install { id in
+                DesktopWorkbenchRegistry.shared.request(.openSession(id))
+                Self.presentMainWindowIfWithheld()
+            }
         }
     }
 
@@ -229,6 +241,13 @@ struct JunoDesktopApp: App {
                 // prominent button take it, and nothing in the chrome does.
                 .junoAccentTint()
         }
+
+        Window("Juno Code Settings", id: JunoDesktopWindow.codeSettingsID) {
+            DesktopCodeSettingsWindow(configuration: configuration)
+                .junoAccountAppearance(configuration)
+        }
+        .defaultSize(width: 880, height: 640)
+        .windowResizability(.contentMinSize)
 
         Window("Keyboard Shortcuts", id: JunoDesktopWindow.shortcutsID) {
             DesktopShortcutsWindow()

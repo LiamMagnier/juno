@@ -413,7 +413,7 @@ export function CanvasPanel({
     const text = unifiedDiff(baseContent, targetContent, `v${baseVersion}`, `v${targetVersion}`);
     await navigator.clipboard.writeText(text).catch(() => {});
     flashDiffCopied();
-    toast.success("Diff copied");
+    toast.success("Diff copied.");
   };
 
   /** Append a version through the API, reporting stale conflicts honestly. */
@@ -445,12 +445,12 @@ export function CanvasPanel({
       const result = await appendVersion(targetContent, "restore", artifact.currentVersion);
       if (result.stale) {
         if (result.latest) onArtifactUpdated(result.latest);
-        toast.error("The artifact changed since you opened history — review the new version first.");
+        toast.error("The artifact changed since you opened history. Review the new version first.");
         return;
       }
       onArtifactUpdated(result.artifact);
       setHistoryOpen(false);
-      toast.success(`Restored v${targetVersion} as v${result.artifact.currentVersion}`);
+      toast.success(`Restored v${targetVersion} as v${result.artifact.currentVersion}.`);
     } catch {
       toast.error("Couldn’t restore this version.");
     } finally {
@@ -461,7 +461,7 @@ export function CanvasPanel({
   const copy = async () => {
     await navigator.clipboard.writeText(displayedContent).catch(() => {});
     flashCopied();
-    toast.success("Source copied");
+    toast.success("Source copied.");
   };
 
   const download = () => {
@@ -531,13 +531,13 @@ export function CanvasPanel({
       const result = await appendVersion(draft, "edit", force ? null : editBaseVersion);
       if (result.stale) {
         if (result.latest) setStaleConflict(result.latest);
-        else toast.error("Couldn’t save — the artifact may have been deleted.");
+        else toast.error("Couldn’t save. The artifact may have been deleted.");
         return;
       }
       onArtifactUpdated(result.artifact);
       setDraft(null);
       setStaleConflict(null);
-      toast.success(`Saved as v${result.artifact.currentVersion}`);
+      toast.success(`Saved as v${result.artifact.currentVersion}.`);
     } catch {
       toast.error("Couldn’t save the artifact.");
     } finally {
@@ -720,7 +720,7 @@ export function CanvasPanel({
         selector: sel.selector,
         mode: "modify",
       });
-      toast.success(`Selected <${sel.tag || "element"}> — describe the change`);
+      toast.success(`Selected <${sel.tag || "element"}>. Describe the change.`);
     },
     [artifact.id, artifact.identifier, artifact.title, onQuote, selectedVersion]
   );
@@ -1064,12 +1064,13 @@ export function CanvasPanel({
                           line.type === "added" ? "border-success bg-success/10" : line.type === "removed" ? "border-destructive/70 bg-destructive/10 opacity-80" : "border-transparent"
                         )}
                       >
-                        {/* /50 over a black ground composited to ~2.2:1 — the a/b line
-                            numbers that make a diff readable were the least legible thing
-                            in it. /70 clears 4.5:1, and tabular-nums stops the columns
+                        {/* Full muted ink, the house rule for secondary text. These
+                            were /50, which over a black ground composited to ~2.2:1:
+                            the a/b line numbers that make a diff readable were the
+                            least legible thing in it. tabular-nums stops the columns
                             shifting as the digit count changes. */}
-                        <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.aLine ?? ""}</span>
-                        <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.bLine ?? ""}</span>
+                        <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground">{line.aLine ?? ""}</span>
+                        <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground">{line.bLine ?? ""}</span>
                         <span className="whitespace-pre pr-4">{line.text || " "}</span>
                       </div>
                     ))}
@@ -1090,10 +1091,10 @@ export function CanvasPanel({
 
               {targetVersion !== artifact.currentVersion && (
                 <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
-                  <span className="text-caption text-muted-foreground">Restoring keeps history — v{targetVersion} becomes a new version.</span>
-                  <Button size="sm" onClick={restore} disabled={restoring}>
+                  <span className="text-caption text-muted-foreground">Restoring keeps history: v{targetVersion} becomes a new version.</span>
+                  <Button size="sm" onClick={restore} loading={restoring}>
                     <ActionIcons.restore className="size-3.5" aria-hidden />
-                    {restoring ? "Restoring…" : `Restore v${targetVersion}`}
+                    Restore v{targetVersion}
                   </Button>
                 </div>
               )}
@@ -1139,7 +1140,7 @@ export function CanvasPanel({
                   <button
                     type="button"
                     onClick={() => setSelectedVersion(artifact.currentVersion)}
-                    aria-label={`Viewing v${selectedVersion} — back to latest`}
+                    aria-label={`Viewing v${selectedVersion}. Back to latest`}
                     className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-caption text-warning-foreground hover:bg-warning/20"
                   >
                     v{selectedVersion}
@@ -1372,8 +1373,8 @@ export function CanvasPanel({
                       <Button variant="ghost" size="sm" onClick={discardDraft} disabled={saving}>
                         Discard
                       </Button>
-                      <Button size="sm" onClick={() => saveEdit()} disabled={saving}>
-                        {saving ? "Saving…" : "Save version"}
+                      <Button size="sm" onClick={() => saveEdit()} loading={saving}>
+                        Save version
                       </Button>
                     </div>
                   )}

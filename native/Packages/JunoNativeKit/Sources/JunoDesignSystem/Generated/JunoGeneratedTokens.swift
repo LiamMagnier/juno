@@ -4,7 +4,7 @@
 // type, spacing). Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 967a1f7eb2a8e9da
+// tokens-digest: e416ab2ba42e70b8
 //
 
 import CoreGraphics
@@ -115,7 +115,7 @@ public enum JunoGeneratedColors {
     /// `--destructive-ink`
     public static let destructiveInk = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.6355, 0.2672, 0.1845),
-        dark: JunoColorToken(unchecked: 0.7844, 0.4179, 0.3356)
+        dark: JunoColorToken(unchecked: 0.8334, 0.5502, 0.4866)
     )
 
     /// `--foreground`
@@ -264,8 +264,8 @@ public enum JunoGeneratedColors {
 
     /// `--sidebar-selected`
     public static let sidebarSelected = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.9282, 0.9188, 0.8878),
-        dark: JunoColorToken(unchecked: 0.1855, 0.1757, 0.1645)
+        light: JunoColorToken(unchecked: 0.9204, 0.91, 0.8756),
+        dark: JunoColorToken(unchecked: 0.2014, 0.1908, 0.1786)
     )
 
     /// `--sidebar-selected-border`
@@ -324,7 +324,7 @@ public enum JunoGeneratedColors {
 
     /// `--warning-foreground`
     public static let warningForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.5181, 0.3927, 0.1419),
+        light: JunoColorToken(unchecked: 0.5024, 0.3808, 0.1376),
         dark: JunoColorToken(unchecked: 0.916, 0.7853, 0.524)
     )
 }
@@ -471,8 +471,12 @@ public enum JunoGeneratedType {
     public static let heading = JunoGeneratedTypeRung(minSize: 18.0, maxSize: 18.0, fluidIntercept: 18.0, fluidSlope: 0.0, lineHeight: 1.3, tracking: -0.006, weight: 600)
     /// `text-body-lg`
     public static let bodyLg = JunoGeneratedTypeRung(minSize: 17.0, maxSize: 17.0, fluidIntercept: 17.0, fluidSlope: 0.0, lineHeight: 1.6, tracking: 0.0, weight: nil)
+    /// `text-reading`
+    public static let reading = JunoGeneratedTypeRung(minSize: 16.0, maxSize: 16.0, fluidIntercept: 16.0, fluidSlope: 0.0, lineHeight: 1.7, tracking: 0.0, weight: nil)
     /// `text-body`
     public static let body = JunoGeneratedTypeRung(minSize: 15.0, maxSize: 15.0, fluidIntercept: 15.0, fluidSlope: 0.0, lineHeight: 1.6, tracking: 0.0, weight: nil)
+    /// `text-nav`
+    public static let nav = JunoGeneratedTypeRung(minSize: 14.0, maxSize: 14.0, fluidIntercept: 14.0, fluidSlope: 0.0, lineHeight: 1.428571, tracking: 0.0, weight: nil)
     /// `text-ui`
     public static let ui = JunoGeneratedTypeRung(minSize: 13.0, maxSize: 13.0, fluidIntercept: 13.0, fluidSlope: 0.0, lineHeight: 1.5, tracking: 0.0, weight: nil)
     /// `text-label`

@@ -151,6 +151,14 @@ export const chatBodySchema = z
       .max(64)
       .optional(),
     generationId: z.string().trim().min(8).max(120).optional(),
+    /**
+     * This client can show a task the MODEL started from this turn (the
+     * `work` stream chunk and the in-chat task panel), so the `start_task`
+     * tool may be offered to the model. An opt-in rather than a default:
+     * a native build that predates model-started tasks never sends it, and
+     * would otherwise start runs it has nowhere to draw.
+     */
+    workHandoff: z.boolean().optional(),
     privateMode: z.boolean().optional(),
     // Which surface sent the request — tags the spend ledger so admin can split
     // website vs native-app spending. Defaults to "web".

@@ -28,25 +28,21 @@ const WIDTH_KEY = "juno:sidebar:width";
 const SIDEBAR_MIN = 224;
 const SIDEBAR_MAX = 336;
 /*
- * 304, not 256.
+ * 288, the width Claude's sidebar opens at.
  *
- * 256 is the width a sidebar defaults to because 256 is a round number, and at
- * that width this column truncates its own content: "Pricing table for the new
- * Fl…" is a conversation title losing its last four words to make room for
- * nothing. The rows inside it are 36px now with real gaps, so the horizontal
- * measure had to come up with the vertical one — air in one axis and a squeeze
- * in the other reads worse than a squeeze in both.
- *
- * It went 256 -> 288 when the rows opened up, and 288 -> 304 when the panel's
- * own inset went 8px -> 12px: that inset takes 8px off the label on both sides
- * at once, so titles that had just started fitting began truncating again. The
- * horizontal budget is `width - 44px of text inset - 12px of right padding`,
- * and it has to be spent on the words, not on the margins around them.
+ * At 256 this column truncated its own content ("Pricing table for the new
+ * Fl…"). It went to 304 when the panel's inset grew to 12px a side; the inset
+ * is back to 8px (panel `px-2` plus row `px-2`, glyphs at 16px and labels at
+ * 46px) and the rows set their text at the 14px `nav` rung instead of 15px,
+ * so a title gets the same words at 288 that it got at 304. The horizontal
+ * budget for a conversation title is `width - 16px of text inset - 18px of
+ * right inset`: the row's kebab floats over that end on hover instead of
+ * holding a slot at rest, so the budget is spent on the words.
  *
  * Still resizable between SIDEBAR_MIN and SIDEBAR_MAX; this is only where it
  * starts.
  */
-const SIDEBAR_DEFAULT = 304;
+const SIDEBAR_DEFAULT = 288;
 const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /code is the one navigation the user cannot absorb as
@@ -94,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [collapsed, setCollapsed] = React.useState(false);
   // md–lg: the expanded panel FLOATS over the content instead of pushing it,
-  // with a soft dismiss. A 256px column in a 900px window leaves a transcript
+  // with a soft dismiss. A 288px column in a 900px window leaves a transcript
   // narrower than a phone; the rail stays in flow and the full panel becomes
   // an overlay you summon and dismiss.
   const [narrow, setNarrow] = React.useState(false);
@@ -216,20 +212,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       /*
        * A STORED VALUE EQUAL TO A PREVIOUS DEFAULT MEANS "I NEVER CHOSE".
        *
-       * This width is persisted, so the moment it is written once — and it is
-       * written on first paint — raising SIDEBAR_DEFAULT does nothing for
-       * anybody who has already opened Juno. The column would stay at 256 for
-       * every existing reader while the code, the screenshots and the commit
-       * message all said 304. That is the worst kind of change: one that is
-       * real in the repository and invisible in the product.
+       * This width is persisted, so the moment it is written once, changing
+       * SIDEBAR_DEFAULT does nothing for anybody who has already opened Juno:
+       * the column would stay at the old default for every existing reader
+       * while the code and the screenshots said otherwise. That is the worst
+       * kind of change: one that is real in the repository and invisible in
+       * the product.
        *
-       * So a stored value that is exactly one of the widths this app used to
-       * DEFAULT to is treated as unset, and the new default wins. A width the
-       * reader actually dragged to is any other number, and it is kept — which
-       * is why this is a list of former defaults rather than a version bump on
-       * the key, which would have thrown away deliberate choices too.
+       * So a stored value that is exactly one of the widths this app has
+       * DEFAULTED to is treated as unset, and the current default wins. A width
+       * the reader actually dragged to is any other number, and it is kept,
+       * which is why this is a list of defaults rather than a version bump on
+       * the key, which would have thrown away deliberate choices too. 288 is
+       * both a former and the current default; listing it is harmless.
        */
-      const FORMER_DEFAULTS = [256, 288];
+      const FORMER_DEFAULTS = [256, 288, 304];
       const chosen = Number.isFinite(stored) && stored > 0 && !FORMER_DEFAULTS.includes(stored);
       if (chosen) applyWidth(clampWidth(stored));
     } catch {
@@ -411,7 +408,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    *
    * `floating` drops the moment the overlay is dismissed, and what follows is
    * the frame's 220ms fold. Positioned by `floating`, the panel went back into
-   * the row for the whole of that fold: a 304px column in the flow for a
+   * the row for the whole of that fold: a 288px column in the flow for a
    * quarter of a second, shoving the transcript right and letting it back. So
    * the frame keeps its floating position and elevation until the fold lands
    * (the width's own `transitionend`; at once where nothing transitions).
@@ -519,8 +516,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             move). It is the one sanctioned width animation in the product
             (tailwind.config.ts names "sidebar width" beside the curve), and it
             stays the SHORT rung on purpose: `<main>` re-flows on every frame
-            of it, so the panel is kept off the 360ms layout spring its rows
-            ride. Dropped while dragging so resize follows the pointer 1:1,
+            of it. The rows inside ride this same 220ms curve
+            (`layoutTransition` in app-sidebar.tsx), so the glyphs land on the
+            frame the edge does. Dropped while dragging so resize follows
+            the pointer 1:1,
             for the commit of a keyboard or double-click resize (`snapWidth`),
             before the page has settled (see `frameLive`), and under reduced
             motion, where a panel that slides is travel. */}
@@ -592,22 +591,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             popover ground it lands on (see the note in sheet.tsx).
 
             THE ROW STATES ARE RE-BASED, not just the accent. Hover and selection
-            are separate colours now (globals.css), and both are authored against
-            a panel at 8.8% — on the sheet's 16.5% popover ground they would land
-            4.7 and 8.7 points too low, i.e. hover BELOW its own ground and
-            selection barely above it. Each is re-stated at the same distance
-            from THIS ground that it keeps from the panel:
+            are separate fills (globals.css), both authored against a panel at
+            8.8%; on the sheet's 16.5% popover ground they would land below
+            their own ground or barely above it. Each is re-stated at a
+            distance from THIS ground:
 
               ground     16.5%   (the popover, not --sidebar)
               hover      21.0%   +4.5
-              selected   25.0%   +8.5
-              its edge   34.0%   +9.0 from the fill it bounds
+              selected   24.0%   +7.5
+
+            Selected stops at 24%: the open account row sets its plan line in
+            `--muted-foreground`, which measures 4.53:1 there and fell to 4.34
+            at the 25% this used to be. The row draws no edge, so
+            `--sidebar-selected-border` is not re-based.
 
             `--sidebar-accent` keeps its own re-basing for the same reason it
             always had one: the product switch's track draws with it directly. */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetContent
-            className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_25%] dark:[--sidebar-selected-border:48_7%_34%] md:hidden"
+            className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] dark:[--sidebar-hover:48_5%_21%] dark:[--sidebar-selected:48_6%_24%] md:hidden"
             title="Conversations"
           >
             <AppSidebar product={product} />

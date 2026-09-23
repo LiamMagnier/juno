@@ -5,7 +5,7 @@
  *
  * The web draws every glyph through `src/components/ui/icons.tsx`: Phosphor
  * geometry (MIT) on its 256-unit grid at the house `regular` weight, the `bold`
- * cut at 13px and under, and `fill` for an "on" state — plus four marks drawn
+ * cut at 13px and under, and `fill` for an "on" state — plus five marks drawn
  * for Juno (`juno-glyphs.tsx`, whose geometry is `juno-glyph-paths.ts`).
  * `src/lib/app-icons.ts` decides which drawing each concept wears. This script
  * ships those very drawings, read out of the installed `@phosphor-icons/react`
@@ -22,8 +22,8 @@
  * - `ph.<name>` — lowercase, hyphen-free Phosphor names — with a `.bold` twin
  *   for every glyph (the cut `JunoIconView` draws at 13pt and under, as the web
  *   does at 13px) and a `.fill` twin where an "on" state needs one.
- * - `juno.chat`, `juno.code`, `juno.design`, `juno.send`, `juno.ghost` (the
- *   private-chat ghost), with the same twins.
+ * - `juno.chat`, `juno.code`, `juno.design`, `juno.library`, `juno.send`,
+ *   `juno.ghost` (the private-chat ghost), with the same twins.
  *
  * THE BOX. The 256 grid is set at 16/14 of the symbol's point size: the web's
  * house pairing is a 16px glyph beside 14px text (`size-4` in `text-sm`), so a
@@ -75,7 +75,6 @@ const swiftIcons = join(root, "native/Packages/JunoNativeKit/Sources/JunoDesignS
 const PHOSPHOR = {
   // AppIcons — the destinations.
   TreeStructure: "Workflow",
-  Books: "LibraryBig",
   Stack: "Layers3",
   Folder: "Folder",
   FolderOpen: "FolderOpen",
@@ -140,7 +139,8 @@ const PHOSPHOR = {
 
   // SettingsIcons — the settings rail.
   UserGear: "UserPen",
-  Cpu: "Cpu",
+  // A model is a thing you pick off a shelf, not a processor (app-icons.ts).
+  Cube: "Cube",
   Database: "Database",
   User: "User",
   CreditCard: "CreditCard",
@@ -177,7 +177,7 @@ const PHOSPHOR = {
   ClockCounterClockwise: "History",
   SidebarSimple: "PanelLeft",
   DotsThreeVertical: null,
-  CaretUpDown: null,
+  CaretUpDown: "ChevronsUpDown",
   ArrowsLeftRight: null,
 
   // Objects, people and state.
@@ -272,6 +272,7 @@ const JUNO = {
   "juno.chat": { drawing: (w) => junoGlyphDrawing("chat", w), cuts: ["regular", "bold", "fill"] },
   "juno.code": { drawing: (w) => junoGlyphDrawing("code", w), cuts: ["regular", "bold", "fill"] },
   "juno.design": { drawing: (w) => junoGlyphDrawing("design", w), cuts: ["regular", "bold", "fill"] },
+  "juno.library": { drawing: (w) => junoGlyphDrawing("library", w), cuts: ["regular", "bold", "fill"] },
   // The web's Send `fill` is the bold drawing again, so there is nothing to add.
   "juno.send": { drawing: (w) => junoGlyphDrawing("send", w), cuts: ["regular", "bold"] },
   "juno.ghost": { drawing: (w) => junoGhostDrawing(w), cuts: ["regular", "bold", "fill"] },
@@ -374,13 +375,19 @@ function readSwiftSymbols() {
 // Juno's marks: outlined once, committed, verified by hash
 // ---------------------------------------------------------------------------
 
+/** A drawing's elements in paint order, with each group (`g`, a part the web
+ *  moves as one) replaced by its children: a symbol has no moving parts. */
+function flatten(elements) {
+  return elements.flatMap((element) => (element.tag === "g" ? flatten(element.children ?? []) : [element]));
+}
+
 /** A drawing with every element's paint resolved against the root `<svg>`
  *  (`fill="none"`, a stroke at `line`), in the shape the outliner reads. */
 function outlineJob(name, drawing) {
   return {
     name,
     viewBox: drawing.viewBox,
-    elements: drawing.elements.map(({ tag, attrs, knockout }) => {
+    elements: flatten(drawing.elements).map(({ tag, attrs, knockout }) => {
       const fill = attrs.fill != null && attrs.fill !== "none";
       const stroked = attrs.stroke == null || attrs.stroke !== "none";
       const geometry =
@@ -541,6 +548,7 @@ const JUNO_EXPORTS = {
   JunoChatGlyph: "juno.chat",
   JunoCodeGlyph: "juno.code",
   JunoDesignGlyph: "juno.design",
+  JunoLibraryGlyph: "juno.library",
   JunoSendGlyph: "juno.send",
 };
 

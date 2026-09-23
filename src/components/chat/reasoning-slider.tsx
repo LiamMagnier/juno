@@ -107,7 +107,7 @@ export function ReasoningSlider({
           the word it names, and every surface that mounts the slider gets it
           for free instead of only that one. */}
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-micro text-muted-foreground/60">Thinking</span>
+        <span className="text-caption font-medium text-muted-foreground">Thinking</span>
         {/* Keyed on the rung, so the word cross-fades in as the knob lands
             rather than being replaced in one frame (§2.2.7). */}
         <span
@@ -167,13 +167,20 @@ export function ReasoningSlider({
             It rides a full-width carriage that TRANSLATES, for the same reason
             as the fill: `left` is a layout property and must not animate. The
             carriage is the track's width, so `head`'s percentages mean the
-            same thing here as they did as a `left`. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
-          style={{ transform: `translateX(${head})` }}
-        >
-          <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60 bg-knob" />
+            same thing here as they did as a `left`.
+
+            The carriage sits in a clipping frame of the track's own size. Slid
+            right, its empty remainder reached past the control by up to a
+            track's width; inside a popover that is harmless, but on any
+            in-flow surface it widened the page and gave it a sideways scroll.
+            The knob itself never leaves the frame, so nothing visible is cut. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="absolute inset-0 transition-transform duration-slow ease-out-soft motion-reduce:transition-none"
+            style={{ transform: `translateX(${head})` }}
+          >
+            <div className="absolute left-0 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/60 bg-knob" />
+          </div>
         </div>
 
         <input

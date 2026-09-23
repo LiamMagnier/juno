@@ -1,10 +1,11 @@
 /**
- * Juno's own drawings — the four marks the product is recognised by.
+ * Juno's own drawings — the five marks the product is recognised by.
  *
- * Everything else in `icons.tsx` is Phosphor geometry. These four are drawn for
+ * Everything else in `icons.tsx` is Phosphor geometry. These five are drawn for
  * Juno because they are the ones a reader sees on every screen and associates
- * with the product itself: the three places (Chat, Code, Design) and the one
- * verb (send). They borrow the two motifs of the Juno mark (`public/juno-mark.png`):
+ * with the product itself: the places (Chat, Code, Design, Library) and the one
+ * verb (send). All but Library borrow the two motifs of the Juno mark
+ * (`public/juno-mark.png`):
  *
  * - the OPEN RING that ends in a DOT — the bubble in the logo is a ring that
  *   stops short at the top right, with a ball terminal beside the gap;
@@ -14,7 +15,10 @@
  * two chevrons, where `</>` puts a slash: code that Juno writes. Design is two
  * primitives stacked like cut paper — the circle stops short of the square in
  * front of it instead of crossing it, so the mark stays quiet at 16px. Send is
- * an arrow whose head has the spark's concave flanks.
+ * an arrow whose head has the spark's concave flanks. Library is two volumes on
+ * a shelf, one leaning toward the other, with one band each; it was drawn to be
+ * legible where Phosphor's Books hatched into grey, and a spark or a ball on a
+ * spine read as a label rather than as Juno, so it keeps only the grid and line.
  *
  * THE GRID IS PHOSPHOR'S, so these sit in a row of Phosphor glyphs without
  * looking borrowed: a 256-unit box, a 16-unit line at `regular` (1px at 16px),
@@ -24,14 +28,17 @@
  * of its own, for the selected state.
  *
  * IN USE through `icons.tsx`: `JunoChat` (AppIcons.home / .conversation),
- * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design) and `Send` (every
- * send action). Never import this file from a call site: a mark that bypasses
- * `glyph()` loses the optical weight choice, aria and hover articulation.
+ * `JunoCode` (AppIcons.code), `JunoDesign` (AppIcons.design), `JunoLibrary`
+ * (AppIcons.library) and `Send` (every send action). Never import this file
+ * from a call site: a mark that bypasses `glyph()` loses the optical weight
+ * choice, aria and hover articulation.
  *
  * MOTION. The moving part of each drawing carries `juno-part juno-part--*`, and
  * globals.css moves just that part when the control around the mark is hovered
  * (the `parts` articulation): the ball terminal pops out of the gap, the spark
- * twinkles a quarter turn, the circle slides back from the square.
+ * twinkles a quarter turn, the circle slides back from the square, the leaning
+ * volume straightens and lifts. A part never carries a `transform` attribute:
+ * its CSS `rotate` would re-pivot it, so any turn is baked into the path.
  *
  * THE GEOMETRY LIVES IN `juno-glyph-paths.ts`, as data, so the native apps
  * draw the very same marks: `scripts/generate-native-icons.mjs` reads it and
@@ -59,9 +66,19 @@ export type JunoGlyphProps = ComponentPropsWithoutRef<"svg"> & {
   mirrored?: boolean;
 };
 
-/** One element of a drawing, with its articulating part named for globals.css. */
-function renderElement({ tag: Tag, attrs, part }: JunoGlyphElement, index: number) {
-  return <Tag key={index} className={part ? `juno-part juno-part--${part}` : undefined} {...attrs} />;
+/** One element of a drawing, with its articulating part named for globals.css.
+ *  A group (`g`) renders its children inside it, so a part drawn in two strokes
+ *  moves as one about the group's box. */
+function renderElement({ tag: Tag, attrs, part, children }: JunoGlyphElement, index: number) {
+  const className = part ? `juno-part juno-part--${part}` : undefined;
+  if (children) {
+    return (
+      <Tag key={index} className={className} {...attrs}>
+        {children.map(renderElement)}
+      </Tag>
+    );
+  }
+  return <Tag key={index} className={className} {...attrs} />;
 }
 
 function defineGlyph(name: string, glyph: JunoGlyphName) {
@@ -107,6 +124,10 @@ export const JunoCodeGlyph = defineGlyph("JunoCodeGlyph", "code");
 /** Design — a square in front of a circle, stacked like cut paper: the circle
  *  stops short of the square instead of crossing it. */
 export const JunoDesignGlyph = defineGlyph("JunoDesignGlyph", "design");
+
+/** Library — two volumes on a shelf, the right one leaning toward the left,
+ *  one head band each. Its `fill` is both volumes solid, each band a slot. */
+export const JunoLibraryGlyph = defineGlyph("JunoLibraryGlyph", "library");
 
 /** Send — an up arrow whose head has the spark's concave flanks. */
 export const JunoSendGlyph = defineGlyph("JunoSendGlyph", "send");

@@ -92,11 +92,12 @@ test("only the first plan write is gated, and the clock stops while it waits", (
   assert.match(review.slice(0, 2_000), /this\.budget\.start\(\)/);
 });
 
-test("the dispatcher, the executor and the composer read one rule", () => {
-  for (const file of [
-    "../scripts/work-runner.ts",
-    "../src/components/work/clarify/run-disclosure.tsx",
-  ]) {
+// The composer used to read the rule too, to tell somebody arming a task that
+// it would stop at its plan. The task toggle is gone (the model starts tasks
+// itself, src/lib/chat/task-tool.ts), and the plan gate is shown on the run
+// when it happens, so the runner is the one place left that must read it.
+test("the dispatcher and the executor read one rule", () => {
+  for (const file of ["../scripts/work-runner.ts"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.match(source, /confirmPlanBeforeActing\(\{/, file);
   }

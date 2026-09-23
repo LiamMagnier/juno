@@ -156,6 +156,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["WorkHost", "userId"],
   ["WorkCommand", "userId"],
   ["WorkSkill", "userId"],
+  // The repository a group of skills was installed from. Every call site
+  // (src/lib/skills/store.ts, src/app/api/skills/**, the work skills routes)
+  // already filters on userId, so guarding it is a tripwire, not a change.
+  ["WorkSkillSource", "userId"],
   ["WorkSchedule", "userId"],
   ["WorkTrigger", "userId"],
   ["WorkAuditEvent", "userId"],

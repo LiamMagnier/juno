@@ -40,8 +40,8 @@ public actor AgentOrchestrator {
         public var systemPrompt: String
 
         public init(
-            maximumIterations: Int = 40,
-            maximumToolResultBytes: Int = 512 * 1_024,
+            maximumIterations: Int = 200,
+            maximumToolResultBytes: Int = 128 * 1_024,
             maximumToolImageBytes: Int = 8 * 1_024 * 1_024,
             maximumToolImages: Int = 4,
             contextWindowTokens: Int? = nil,
@@ -300,7 +300,11 @@ public actor AgentOrchestrator {
     private func prepare() async throws {
         if !restored {
             restored = true
-            conversation = await store.loadConversation(sessionID: sessionID)
+            // Sessions saved before the integrity pass existed may carry an
+            // unanswered call; repairing on load is what un-bricks them.
+            conversation = ConversationIntegrity.repaired(
+                await store.loadConversation(sessionID: sessionID)
+            )
             let events = await store.events(for: sessionID)
             let applied = Set(events.compactMap { event -> String? in
                 guard case let .userInstructionApplied(value) = event.payload else {
@@ -412,6 +416,18 @@ public actor AgentOrchestrator {
 
             var turnText = ""
             var turnReasoningSummary = ""
+            // The turn's model-authored content in stream order: reasoning
+            // blocks, text segments and tool calls. Adaptive thinking may put a
+            // reasoning block between two tool calls, and Anthropic checks
+            // that it comes back where it was.
+            var turnItems: [ModelMessage] = []
+            var pendingSegment = ""
+            func closeSegment() {
+                if !pendingSegment.isEmpty {
+                    turnItems.append(.assistant(pendingSegment))
+                    pendingSegment = ""
+                }
+            }
             var toolCalls: [(id: String, name: String, input: JSONValue, extraContent: JSONValue?)] = []
             var stopReason: ModelStopReason?
             lastLiveTextEmit = .distantPast
@@ -419,6 +435,10 @@ public actor AgentOrchestrator {
 
             var modelRetriesLeft = 1
             var fallbackAttempted = false
+
+            // Every request goes out valid, whatever path left the history in
+            // its current shape.
+            conversation = ConversationIntegrity.repaired(conversation)
 
             while true {
                 let request = ModelTurnRequest(
@@ -437,6 +457,8 @@ public actor AgentOrchestrator {
                 )
                 turnText = ""
                 turnReasoningSummary = ""
+                turnItems.removeAll()
+                pendingSegment = ""
                 toolCalls.removeAll()
                 stopReason = nil
 
@@ -446,7 +468,14 @@ public actor AgentOrchestrator {
                         switch event {
                         case let .textDelta(delta):
                             turnText += delta
+                            pendingSegment += delta
                             emitLiveText(turnText)
+                        case let .thinkingBlock(text, signature):
+                            closeSegment()
+                            turnItems.append(.assistantThinking(text: text, signature: signature))
+                        case let .redactedThinking(data):
+                            closeSegment()
+                            turnItems.append(.assistantRedactedThinking(data: data))
                         case let .reasoningSummary(summary):
                             // Providers stream reasoning summaries as token-sized
                             // deltas. Keep those private to the active turn and
@@ -457,9 +486,15 @@ public actor AgentOrchestrator {
                                 emitLiveText(turnReasoningSummary)
                             }
                         case let .toolCallRequested(id, name, input):
+                            closeSegment()
                             toolCalls.append((id, name, input, nil))
+                            turnItems.append(.toolCall(id: id, name: name, input: input))
                         case let .toolCallRequestedWithExtra(id, name, input, extra):
+                            closeSegment()
                             toolCalls.append((id, name, input, extra))
+                            turnItems.append(
+                                .toolCallWithExtra(id: id, name: name, input: input, extraContent: extra)
+                            )
                         case let .usage(inputTokens, outputTokens):
                             // Replaced, not accumulated: `inputTokens` is the whole
                             // billed prompt for this turn, so the newest report *is*
@@ -484,6 +519,22 @@ public actor AgentOrchestrator {
                     let errorDesc = shortDescription(error)
 
                     // Typed error classification — prefer structured errors over string matching.
+                    if case let .planLimitReached(message) = error as? AgentModelClientError {
+                        _ = try? await store.appendEvent(
+                            sessionID: sessionID,
+                            payload: .errorOccurred(ErrorEvent(message: message, isRecoverable: true))
+                        )
+                        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                        await finish(
+                            status: .failed,
+                            summary: message,
+                            filesChanged: filesChanged.count,
+                            testsPassed: testsPassed,
+                            startedAt: startedAt
+                        )
+                        return
+                    }
+
                     let isOverload: Bool
                     let isQuotaExhausted: Bool
                     if let clientError = error as? AgentModelClientError {
@@ -505,7 +556,7 @@ public actor AgentOrchestrator {
                                 || m.contains("timed out")
                                 || m.contains("timeout")
                                 || m.contains("rate limit")
-                        case .unauthorized, .invalidResponse:
+                        case .unauthorized, .invalidResponse, .planLimitReached:
                             isOverload = false
                             isQuotaExhausted = false
                         }
@@ -604,9 +655,13 @@ public actor AgentOrchestrator {
                 )
             }
 
+            closeSegment()
+            // The model's content goes into history now, minus its tool calls:
+            // those are added only once the batch is committed to running, so
+            // a steer that discards the proposal leaves no call unanswered.
+            conversation.append(contentsOf: turnItems.filter { $0.toolCallID == nil })
             if !turnText.isEmpty {
                 lastAssistantText = turnText
-                conversation.append(.assistant(turnText))
                 _ = try? await store.appendEvent(
                     sessionID: sessionID,
                     payload: .assistantMessage(AssistantMessageEvent(text: turnText))
@@ -724,41 +779,42 @@ public actor AgentOrchestrator {
                 return
             }
 
-            for call in toolCalls {
-                if let extra = call.extraContent {
-                    conversation.append(.toolCallWithExtra(id: call.id, name: call.name, input: call.input, extraContent: extra))
-                } else {
-                    conversation.append(.toolCall(id: call.id, name: call.name, input: call.input))
-                }
-            }
+            // Replace the turn's non-call items with the full ordered turn, so
+            // a reasoning block that fell between two calls keeps its place.
+            conversation.removeLast(turnItems.filter { $0.toolCallID == nil }.count)
+            conversation.append(contentsOf: turnItems)
 
             let scheduledCalls = toolCalls
             var terminalGoalLifecycle: GoalLifecycle?
-            var steeringInterruptedTools = false
 
             let executionResults = await toolScheduler.execute(
                 calls: scheduledCalls,
+                // Only *asks* whether to stop between waves. Applying the steer
+                // here used to append the reader's message between the calls
+                // and their results, which every provider rejects.
                 shouldInterrupt: { [weak self, store, sessionID] in
                     guard let self else { return true }
                     if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
                        lifecycle != .active {
                         return true
                     }
-                    return await self.applyPendingInstructions(includeQueued: false)
+                    return await self.hasPendingSteer
                 },
-                executor: { [registry, permissions, lifecycleHooks, store, sessionID, configuration] (id, name, input) in
-                    await ToolScheduler.executeCall(
-                        id: id,
-                        name: name,
-                        input: input,
-                        sessionID: sessionID,
-                        registry: registry,
-                        permissions: permissions,
-                        lifecycleHooks: lifecycleHooks,
-                        store: store,
-                        maximumToolImages: configuration.maximumToolImages,
-                        maximumToolImageBytes: configuration.maximumToolImageBytes
-                    )
+                // Every call goes through `executeToolCall`, the one dispatch
+                // path `scripts/check-approval-dispatch.mjs` pins behind the
+                // hook → authorize → execute order. The actor is reentrant at
+                // the await inside it, so a wave still runs concurrently.
+                executor: { [weak self] (id, name, input) in
+                    guard let self else {
+                        return ToolScheduler.ExecutionResult(
+                            callID: id,
+                            toolName: name,
+                            input: input,
+                            content: ConversationIntegrity.notExecutedMessage,
+                            isError: true
+                        )
+                    }
+                    return await self.executeToolCall((id, name, input))
                 }
             )
 
@@ -778,36 +834,45 @@ public actor AgentOrchestrator {
                         )
                     }
                 }
-                let bounded = OutputLimiter.apply(
-                    OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
-                    to: execution.content
-                )
+                let bounded = boundedToolResult(execution)
                 if execution.images.isEmpty {
                     conversation.append(
-                        .toolResult(id: execution.callID, content: bounded.text, isError: execution.isError)
+                        .toolResult(id: execution.callID, content: bounded, isError: execution.isError)
                     )
                 } else {
                     conversation.append(
                         .toolResultWithImages(
                             id: execution.callID,
-                            content: bounded.text,
+                            content: bounded,
                             isError: execution.isError,
                             images: execution.images
                         )
                     )
                 }
-                if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
-                   lifecycle != .active
-                {
-                    // A model-authored pause, block, or completion is an
-                    // execution boundary, not merely metadata. Do not execute
-                    // later tool calls from the same model response or begin
-                    // another iteration after the goal has stopped.
-                    terminalGoalLifecycle = lifecycle
-                    break
-                }
             }
 
+            // A model-authored pause, block, or completion — or the reader's —
+            // is an execution boundary, not merely metadata: no later wave ran
+            // (the scheduler's `shouldInterrupt` saw it) and no further
+            // iteration begins. It is read once every result is recorded, not
+            // between them. Everything in `executionResults` already ran, and
+            // stopping partway through recording told the model that calls
+            // which had written files or run commands were never executed, so
+            // a resumed session repeated them.
+            if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
+               lifecycle != .active
+            {
+                terminalGoalLifecycle = lifecycle
+            }
+
+            // Answer every call the batch did not reach before anything else
+            // enters the history.
+            conversation.append(
+                contentsOf: ConversationIntegrity.skippedResults(
+                    for: scheduledCalls.map(\.id),
+                    executed: Set(executionResults.map(\.callID))
+                )
+            )
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
             if let terminalGoalLifecycle {
                 let status: SessionStatus =
@@ -833,11 +898,35 @@ public actor AgentOrchestrator {
                 return
             }
 
-            if executionResults.count < scheduledCalls.count {
-                steeringInterruptedTools = true
-            }
-            if steeringInterruptedTools { continue }
+            // A steer that arrived during the batch is applied at the next
+            // boundary: the top of the loop, now that every call is answered.
         }
+    }
+
+    private var hasPendingSteer: Bool {
+        pendingInstructions.contains { $0.event.kind == .steer }
+    }
+
+    /// A tool result within the configured cap.
+    ///
+    /// Command output keeps both ends, because the error a build prints last
+    /// is the part that matters. A read cannot be cut that way: its header
+    /// vouches for the lines and the fingerprint of what follows, so a cut
+    /// through the middle would hand over a base_sha256 for a file the model
+    /// never saw whole. read_file bounds itself well under the cap; when a
+    /// lower cap still has to cut one, it is cut head-first with the header
+    /// rewritten to match.
+    private func boundedToolResult(_ execution: ToolScheduler.ExecutionResult) -> String {
+        if execution.toolName == "read_file" {
+            return ReadFileTool.bounded(
+                execution.content,
+                maximumBytes: configuration.maximumToolResultBytes
+            )
+        }
+        return OutputLimiter.applyKeepingEnds(
+            OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
+            to: execution.content
+        ).text
     }
 
     /// Moves accepted instructions into model context in their durable event
@@ -971,7 +1060,6 @@ public actor AgentOrchestrator {
         )
     }
 
-
     private func finish(
         status: SessionStatus,
         summary: String,
@@ -983,7 +1071,7 @@ public actor AgentOrchestrator {
         // in-memory history on every terminal path as well as successful model
         // turns, so a transport failure or cancellation cannot resend a stale
         // screenshot when this orchestrator is reused.
-        conversation = conversation.map(\.persistenceSafe)
+        conversation = ConversationIntegrity.repaired(conversation.map(\.persistenceSafe))
         emitLiveText("", force: true)
         _ = try? await store.appendEvent(
             sessionID: sessionID,
@@ -999,16 +1087,6 @@ public actor AgentOrchestrator {
         try? await store.setStatus(id: sessionID, status: status)
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
         await lifecycleHooks?.sessionStopped(sessionID: sessionID, status: status)
-    }
-
-    private func deniedReason(from error: Error) -> String {
-        if case let ToolError.denied(reason) = error {
-            return reason
-        }
-        if case let ToolError.invalidInput(message) = error {
-            return message
-        }
-        return shortDescription(error)
     }
 
     private func shortDescription(_ error: Error) -> String {

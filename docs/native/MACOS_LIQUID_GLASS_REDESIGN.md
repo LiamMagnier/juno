@@ -840,7 +840,7 @@ A native `Menu`. Three groups separated by `Divider()`, with no section titles. 
 |---|---|---|---|
 | 1 | Add Files or Photos… | `ph.paperclip` | Button, `.keyboardShortcut("u")` so it shows ⌘U |
 | 1 | Take a Screenshot | `ph.scan` | Button, ⇧⌘U (existing `DesktopScreenshotCapture`) |
-| 1 | Add from Library… | `ph.books` | Button |
+| 1 | Add from Library… | `juno.library` | Button |
 | 2 | Add to Project ▸ | `ph.folder` | No Project, then the projects with a checkmark, Divider, New Project… (draft only) |
 | 2 | Connectors ▸ | `ph.plug` | `Toggle` rows labelled with the `JunoConnectorMarks` logo and name; a disabled "Loading…" row; Divider; "Manage Connections… (2 of 5 on)". The cap of 5 is kept. |
 | 3 | Use a Skill ▸ *(Phase 4)* | `ph.scroll` | `Picker(.inline)` of skills (name, plus the description on a second line); "Loading…" while loading; Divider; Manage Skills…. Sends `skillSlug`. |
@@ -1174,7 +1174,7 @@ When a conversation opens, and when reachability returns, call `/api/chat/stream
 | General | `ph.slidershorizontal` | Theme tiles; accent swatches plus a custom `ColorPicker`; text size `Slider`; interface language. Mac-only: About, Check for Updates, Diagnostics. |
 | Personalization | `ph.usergear` | Response style tiles; custom instructions; response language; "What Juno calls you" |
 | Memory | `ph.notepencil` | Reference saved memories; learn from past chats in the background; background processing; sensitive subjects; "Manage memories…" (opens the Memory page) |
-| Models | `ph.cpu` | Default model; reasoning effort; Fast mode and Web search as **synced** settings, replacing `@AppStorage` (`DesktopComposer.swift:60`); Favorites |
+| Models | `ph.cube` | Default model; reasoning effort; Fast mode and Web search as **synced** settings, replacing `@AppStorage` (`DesktopComposer.swift:60`); Favorites |
 | Connectors | `ph.plug` | A "Connected apps" `Section` (logo, name, status, "Use in chats" toggle, Disconnect) plus "Browse Connectors…". This replaces the embedded `DesktopConnectionsScreen` (`DesktopSettingsScreen.swift:139-147`). |
 | Voice | `ph.microphone` | Voice tiles with preview play/stop; dictation Pickers (Transcription, Voice mode) |
 | Data & privacy | `ph.database` | Export JSON / Juno package / CSV; Import history (`.fileImporter`, progress shown in the row); Shared links; Delete all conversations (confirmation dialog) |
@@ -1420,12 +1420,12 @@ Old accessors become deprecated aliases with fix-its.
 
 | Concept (web export) | Mac symbol | Where |
 |---|---|---|
-| JunoChat / JunoCode / JunoDesign | `juno.chat(.fill)` / `juno.code(.fill)` / `juno.design` | Product switch, Auto mark, menu-bar extra; Code chip; Design row |
+| JunoChat / JunoCode / JunoDesign / JunoLibrary | `juno.chat(.fill)` / `juno.code(.fill)` / `juno.design` / `juno.library` | Product switch, Auto mark, menu-bar extra; Code chip; Design row; Library |
 | Send | `juno.send.bold` | Send face |
 | Private ghost | `juno.ghost(.fill)` | Private toggle |
 | Plus | `ph.plus` | New chat, `+`, New Project |
 | MagnifyingGlass | `ph.magnifyingglass` | Search button, panel, find |
-| Books / Folder / FolderOpen / Stack | `ph.books` / `ph.folder` / `ph.folderopen` / `ph.stack` | Library, Projects, Artifacts |
+| Folder / FolderOpen / Stack | `ph.folder` / `ph.folderopen` / `ph.stack` | Projects, Artifacts |
 | DotsThree | `ph.dotsthree` | More, row/card/message overflow |
 | Robot / Plug / Scroll / TreeStructure / ShieldCheck | `ph.robot` / `ph.plug` / `ph.scroll` / `ph.treestructure` / `ph.shieldcheck` | Assistants, Connections, Skills, Automations/Task/Plan, Permissions |
 | Archive / BoxArrowUp | `ph.archive` / `ph.boxarrowup` | Archive, Restore |
@@ -1443,7 +1443,7 @@ Old accessors become deprecated aliases with fix-its.
 | CaretDown / Up / Right / ArrowDown / ArrowUpRight | `ph.caret*.bold` / `ph.arrowdown` / `ph.arrowupright` | Chips, pager, Scroll to latest, external links |
 | Info / Warning / WarningCircle / CheckCircle / CloudSlash | `ph.info` / `ph.warning` / `ph.warningcircle` / `ph.checkcircle` / `ph.cloudslash` | Notices, toasts, sync mark |
 | HandPalm / DownloadSimple / Laptop / EyeSlash | `ph.handpalm` / `ph.downloadsimple` / `ph.laptop` / `ph.eyeslash` | How Often It Asks, update row, This Mac, private in lists |
-| SlidersHorizontal / UserGear / Cpu / Database / User / CreditCard | `ph.slidershorizontal` / `ph.usergear` / `ph.cpu` / `ph.database` / `ph.user` / `ph.creditcard` | Settings rail |
+| SlidersHorizontal / UserGear / Cube / Database / User / CreditCard | `ph.slidershorizontal` / `ph.usergear` / `ph.cube` / `ph.database` / `ph.user` / `ph.creditcard` | Settings rail |
 | CircleNotch | — (`ProgressView`) | Busy |
 
 ### 8.7 Gates

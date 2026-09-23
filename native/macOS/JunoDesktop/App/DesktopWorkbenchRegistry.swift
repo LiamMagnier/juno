@@ -49,6 +49,13 @@ final class DesktopWorkbenchRegistry {
     func register(workbench: WorkbenchModel?, codeModel: NativeCodeModel?) {
         self.workbench = workbench
         self.codeModel = codeModel
+        // The run monitor follows the workbench for as long as it exists, not
+        // a window: its notifications and its keep-awake assertion matter
+        // most while Chat is showing or the window is closed. The workbench's
+        // shutdown hands it an empty list, which releases the assertion.
+        workbench?.sessionsObserver = { sessions in
+            StudioRunMonitor.shared.observe(sessions)
+        }
     }
 
     func request(_ kind: Request.Kind) {

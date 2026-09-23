@@ -125,19 +125,24 @@ export function chatSkillGrantLayer(capabilities: ChatSkillCapabilities): WorkSk
 /**
  * Why a chat turn did not apply the skill it was asked for.
  *
- * The Work refusals, plus two that only chat can produce. `blocked` is a skill
+ * The Work refusals, plus three that only chat can produce. `blocked` is a skill
  * whose current version the scanner refused: Work reaches that state by
  * clamping `enabled` on write, which a later PATCH can undo, so chat checks the
  * version it is about to read rather than trusting a column written earlier.
  * `consent_required` is a version whose permission surface changed and has not
  * been re-approved — chat has no consent press, so it sends the reader to the
- * skill's page instead of silently running the older surface.
+ * skill's page instead of silently running the older surface. `unscanned` is a
+ * version with no verdict this build recognises: the loader scans a legacy
+ * `pending` row before it gets here (as the Work runner does), so this is a
+ * status written by something newer, and an unknown verdict is not a clear one.
  */
-export type ChatSkillRefusal = SkillSelectionRefusal | "blocked" | "consent_required";
+export type ChatSkillRefusal = SkillSelectionRefusal | "blocked" | "consent_required" | "unscanned";
 
 export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
   unknown_slug: "That skill does not exist on this account.",
-  disabled: "That skill is switched off. Turn it back on from its page to use it.",
+  // `disabled` is also a skill whose source is switched off: the candidate's
+  // `enabled` is the pair, so the sentence names both switches.
+  disabled: "That skill is switched off, or the source it came from is. Turn it back on in Skills to use it.",
   auto_select_disabled: "That skill is not set to be chosen automatically.",
   untrusted: "That skill has not been vouched for, so Juno will not reach for it on its own.",
   other_project: "That skill is filed in a different project.",
@@ -148,6 +153,7 @@ export const CHAT_SKILL_REFUSAL_MESSAGES: Record<ChatSkillRefusal, string> = {
     "Juno's scanner refused this skill's current version, so it will not be applied to a message. Open the skill to see what it found.",
   consent_required:
     "This skill's current version asks for more than the one you approved. Open the skill and review what changed before using it.",
+  unscanned: "Juno could not confirm this skill's current version is safe to use, so it was not applied. Open the skill to check it.",
 };
 
 /** The version a chat turn pinned, with the two columns that can refuse it. */
@@ -224,7 +230,7 @@ function withheldSentence(resolved: ResolvedSkillPermissions): string | null {
  * Applies a skill to a chat turn, or explains why it did not.
  *
  * Order matters and is not arbitrary. Selection comes first, because a slug
- * nobody has is not a security question. Then the two version-level refusals,
+ * nobody has is not a security question. Then the version-level refusals,
  * because a blocked or unapproved version must not reach the prompt even though
  * the head row said `enabled`. Only then is the permission intersection run and
  * the block built — so nothing below the refusals can ever have produced text.
@@ -251,6 +257,9 @@ export function applyChatSkill(input: {
   // is reported as the absence it is.
   if (!row) return { applied: false, reason: "no_candidate" };
   if (row.securityStatus === "blocked") return { applied: false, reason: "blocked" };
+  if (row.securityStatus !== "clear" && row.securityStatus !== "warning") {
+    return { applied: false, reason: "unscanned" };
+  }
   if (row.requiresConsent) return { applied: false, reason: "consent_required" };
 
   const resolved = resolveSkillPermissions({

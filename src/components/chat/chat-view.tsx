@@ -38,6 +38,14 @@ const CanvasPanel = nextDynamic(
   () => import("@/components/canvas/canvas-panel").then((m) => m.CanvasPanel),
   { ssr: false },
 );
+/*
+ * The document viewer, on the same terms: pdf.js alone is 1.6 MB, and a
+ * conversation nobody opens a file in should never fetch a byte of it.
+ */
+const DocumentViewer = nextDynamic(
+  () => import("@/components/documents/document-viewer").then((m) => m.DocumentViewer),
+  { ssr: false },
+);
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { SPLIT_MIN_WIDTH, THOUGHT_DEFAULT_WIDTH, canvasWidthBounds, splitEngaged, thoughtWidthBounds } from "@/components/chat/split-layout";
 import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
@@ -46,15 +54,8 @@ import { useConversationWork } from "@/components/chat/use-conversation-work";
 import { WorkRunPanel } from "@/components/chat/work-run-panel";
 import { SessionOutputs } from "@/components/chat/session-outputs";
 import { PendingSteers } from "@/components/work/steering/pending-steers";
-import { delegatedComposerPlaceholder, delegationAttemptKey } from "@/lib/work/delegation";
-import {
-  WORK_SYNC_EVENT,
-  createWorkSession,
-  startWorkRun,
-  workIdempotencyKey,
-} from "@/components/work/work-transport";
-import { describeFailure } from "@/components/work/composer-home/start-attempt";
-import type { DelegateInput } from "@/components/chat/composer";
+import { delegatedComposerPlaceholder } from "@/lib/work/delegation";
+import { WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { ShareDialog } from "@/components/share/share-dialog";
 const RealtimeVoice = nextDynamic(
@@ -69,8 +70,10 @@ import { cleanForSpeech, stripMemoryTags } from "@/lib/message-content";
 import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { VOICE_ATTACHMENT_LIMIT } from "@/lib/voice-attachment-context";
 import { cn } from "@/lib/utils";
-import type { ComposerQuote } from "@/lib/quote-context";
-import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
+import { serializeQuote, type ComposerQuote, type DocumentQuote } from "@/lib/quote-context";
+import { fileExtension } from "@/lib/documents/viewer-kind";
+import type { DocumentAsk } from "@/components/documents/types";
+import type { ClientArtifact, ClientAttachment, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
 
 interface ChatViewProps {
@@ -206,6 +209,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [composerQuote, setComposerQuote] = React.useState<ComposerQuote | null>(null);
   // Holds the last artifact while the canvas plays its slide-out exit.
   const [closingArtifact, setClosingArtifact] = React.useState<ClientArtifact | null>(null);
+  // The file open in the side viewer — by id, derived below from the
+  // transcript exactly as `openArtifact` is from the artifacts, so anything
+  // that replaces the transcript closes it for free.
+  const [openDocumentId, setOpenDocumentId] = React.useState<string | null>(null);
+  const [closingDocument, setClosingDocument] = React.useState<ClientAttachment | null>(null);
   const [fullscreen, setFullscreen] = React.useState(false);
   // The docked thought panel: which message's run is open, and the column its
   // panel is portalled into. Only the ID is lifted — the run model and its one
@@ -327,6 +335,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [projectMeta, setProjectMeta] = React.useState<{ id: string; name: string } | null>(null);
   const localGenerationSeenRef = React.useRef(false);
   const scheduleAutoTitleRef = React.useRef<(phase: AutoTitlePhase, delay?: number) => void>(() => {});
+  // The task hook is created below the chat hook (it follows the conversation
+  // id the chat hook learns), so the stream reaches it through a ref.
+  const adoptWorkRef = React.useRef<(session: ClientWorkSession) => void>(() => {});
 
   React.useEffect(() => {
     setActiveConversationId(conversationId);
@@ -398,6 +409,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         }
       }
     },
+    onWorkStarted: (session) => {
+      // The model started a task from this turn. Drawn at once rather than on
+      // the next discovery poll, and every other Work surface (the sidebar's
+      // list, an open task page) is told to refetch.
+      adoptWorkRef.current(session);
+      window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+    },
     onMemoryUpdated: () => {
       setMemoryFlash(true);
       setMemoryLeaving(false);
@@ -438,16 +456,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const researchSteering = research.steering;
 
   /**
-   * The delegated task attached to this conversation, on exactly the same
-   * terms: one hook, one cursor, two readers — the panel in the transcript and
-   * the composer at the bottom. Never in incognito, which writes no rows for a
+   * The task the model started from this conversation, on exactly the same
+   * terms: one hook, one cursor, two readers (the panel in the transcript and
+   * the composer at the bottom). Never in incognito, which writes no rows for a
    * `WorkSession.conversationId` to point at.
    */
   const work = useConversationWork(privateMode ? null : currentConversationId);
   const workSteering = work.steering;
-  // Destructured so the dispatch below depends on the one stable callback
-  // rather than on the whole hook result, which is a fresh object every render.
-  const adoptWorkSession = work.adopt;
+  adoptWorkRef.current = work.adopt;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
   // message is a non-empty assistant reply. Flipping this false while a new send
@@ -780,7 +796,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         try {
           sessionStorage.setItem(FORK_STORAGE_KEY, JSON.stringify(payload));
         } catch {
-          toast.error("Couldn’t fork — the transcript is too large to carry over.");
+          toast.error("Couldn’t fork. The transcript is too large to carry over.");
           return;
         }
         router.push("/chat");
@@ -856,6 +872,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     () => chat.artifacts.find((a) => a.id === openArtifactId) ?? null,
     [chat.artifacts, openArtifactId]
   );
+
+  // Every file in the transcript, once each, in the order it arrived — the
+  // viewer's switcher, and where the open file is looked up.
+  const conversationFiles = React.useMemo(() => {
+    const seen = new Set<string>();
+    const out: ClientAttachment[] = [];
+    for (const m of chat.messages) {
+      for (const a of m.attachments) {
+        if (seen.has(a.id)) continue;
+        seen.add(a.id);
+        out.push(a);
+      }
+    }
+    return out;
+  }, [chat.messages]);
+  const openDocument = React.useMemo(
+    () => conversationFiles.find((a) => a.id === openDocumentId) ?? null,
+    [conversationFiles, openDocumentId]
+  );
+  /** A panel holds the right column: the canvas or a file. */
+  const sidePanelOpen = !!openArtifact || !!openDocument;
 
   // ?artifact= deep link (library → "open in its conversation"): open the named
   // canvas once per identifier. Keyed by identifier, not a boolean — a client
@@ -949,6 +986,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // asked for one thing; they should see one thing move.
       setThoughtOpenId(null);
       setClosingThoughtId(null);
+      setOpenDocumentId(null);
+      setClosingDocument(null);
     }
   };
 
@@ -960,10 +999,61 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // an updater twice under StrictMode, and a setState in one runs twice too.
       setClosingThoughtId(id ? null : thoughtOpenId);
       setThoughtOpenId(id);
-      if (id) closeArtifact();
+      if (id) {
+        closeArtifact();
+        setOpenDocumentId(null);
+        setClosingDocument(null);
+      }
     },
     [closeArtifact, thoughtOpenId]
   );
+
+  /*
+   * A FILE OPENS IN THE CANVAS'S COLUMN — the same COEXISTENCE RULE as above,
+   * with the file as a third party to it. Opening one closes the canvas and the
+   * thought dock without an exit (one thing moves); opening either of them
+   * closes the file. Stable (refs, not state, in the body) because it rides
+   * every MessageItem, whose memo it must not break.
+   */
+  const openDocumentRef = React.useRef<ClientAttachment | null>(null);
+  openDocumentRef.current = openDocument;
+  const openAttachment = React.useCallback((attachment: ClientAttachment) => {
+    if (voiceOpenRef.current && !splitEngaged(layoutRef.current)) {
+      toast.error("End voice mode before opening a file on this screen, so the microphone controls stay visible.");
+      return;
+    }
+    setOpenDocumentId(attachment.id);
+    setClosingDocument(null);
+    setOpenArtifactId(null);
+    setClosingArtifact(null);
+    setThoughtOpenId(null);
+    setClosingThoughtId(null);
+    // A canvas left fullscreen is not a request to read this file fullscreen.
+    setFullscreen(false);
+  }, []);
+  // Switching files inside the viewer keeps everything else as it is.
+  const selectDocument = React.useCallback((attachment: ClientAttachment) => setOpenDocumentId(attachment.id), []);
+  // An id that no longer names a file here (another conversation, a reset)
+  // is dropped rather than left to match something later.
+  React.useEffect(() => {
+    if (openDocumentId && !openDocument && conversationFiles.length > 0) setOpenDocumentId(null);
+  }, [openDocumentId, openDocument, conversationFiles.length]);
+
+  const closeDocument = React.useCallback(() => {
+    setClosingDocument(openDocumentRef.current);
+    setOpenDocumentId(null);
+    setFullscreen(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (openDocument) {
+      setClosingDocument(null);
+      return;
+    }
+    if (!closingDocument) return;
+    const t = window.setTimeout(() => setClosingDocument(null), 200);
+    return () => window.clearTimeout(t);
+  }, [openDocument, closingDocument]);
 
   // Clears on a 180ms timer: --dur-exit is 160ms, plus a frame.
   React.useEffect(() => {
@@ -1061,7 +1151,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     resetWidth: (containerWidth) => Math.round(containerWidth * 0.46),
     ssrWidth: CANVAS_SSR_WIDTH,
     applies: () => splitEngaged(layoutRef.current),
-    active: !!openArtifact && !fullscreen,
+    active: sidePanelOpen && !fullscreen,
     // The canvas is the one pane with a legitimate "must be huge" case — it
     // holds documents being edited — so a drag past the max asks the shell for
     // the sidebar's width rather than simply refusing.
@@ -1098,7 +1188,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // difference. A different question from the drag-time one above: this one
   // fires with no pointer anywhere near the handle.
   React.useEffect(() => {
-    if (!openArtifact || fullscreen) return;
+    if (!sidePanelOpen || fullscreen) return;
     const availableWidth = layoutRef.current?.getBoundingClientRect().width;
     if (!availableWidth || availableWidth >= SPLIT_MIN_WIDTH) return;
     window.dispatchEvent(new CustomEvent("juno:collapse-sidebar"));
@@ -1107,7 +1197,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // render (its width changes on every pointer move), so depending on the
     // whole thing would re-run this on each of them — i.e. fire
     // `juno:collapse-sidebar` on repeat while a narrow layout stayed narrow.
-  }, [fullscreen, openArtifact, reclampCanvas]);
+  }, [fullscreen, sidePanelOpen, reclampCanvas]);
 
   // A canvas selection lands in the composer as a quote chip. Below the split
   // the canvas covers the chat, so close it to bring the composer back into view.
@@ -1117,6 +1207,48 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       if (!splitEngaged(layoutRef.current)) closeArtifact();
     },
     [closeArtifact]
+  );
+
+  /*
+   * ASKING ABOUT PART OF A FILE — the viewer's selection, into the composer.
+   *
+   * A passage becomes a quote chip, exactly as a canvas selection does. An
+   * area is two things: the quote (which file, which page, where on it) and
+   * the crop itself, which goes onto the composer's attachment row as an
+   * ordinary image upload — so the person sees what they are sending, can
+   * remove it, and the model receives a picture it can actually read.
+   * "Explain" is the one stock question, sent at once rather than typed.
+   */
+  const handleDocumentAsk = React.useCallback(
+    (attachment: ClientAttachment, ask: DocumentAsk) => {
+      const quote: DocumentQuote = {
+        source: "document",
+        attachmentId: attachment.id,
+        title: attachment.fileName,
+        kind: ask.kind,
+        text: ask.text,
+        ...(ask.location ? { location: ask.location } : {}),
+        ...(ask.kind === "area" ? { region: ask.region } : {}),
+        mode: "ask",
+      };
+      const coversChat = !splitEngaged(layoutRef.current);
+      if (ask.kind === "text" && ask.intent === "explain") {
+        void sendFromComposerRef.current(serializeQuote(quote, "Explain this passage in plain terms."), []);
+        if (coversChat) closeDocument();
+        return;
+      }
+      if (ask.kind === "area") {
+        // sanitizeFileName keeps [A-Za-z0-9._ -], so the name is built from those.
+        const ext = fileExtension(attachment.fileName);
+        const stem = (ext ? attachment.fileName.slice(0, -(ext.length + 1)) : attachment.fileName).slice(0, 60);
+        const where = ask.location?.page != null ? ` p${ask.location.page}` : "";
+        const file = new File([ask.image], `${stem}${where} area.png`, { type: "image/png" });
+        window.dispatchEvent(new CustomEvent("juno:composer-add-files", { detail: [file] }));
+      }
+      setComposerQuote(quote);
+      if (coversChat) closeDocument();
+    },
+    [closeDocument]
   );
 
   const handleArtifactUpdated = (updated: ClientArtifact) => {
@@ -1357,6 +1489,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // the browser's is the only one that searches the code on screen. This bar
       // would search the chat transcript instead — the wrong content entirely.
       if (target?.closest("[data-code-surface]")) return;
+      // The document viewer has a find bar of its own, over the file.
+      if (target?.closest("[data-document-viewer]")) return;
       // A modal is open: the bar renders behind the overlay, so the keystroke
       // would look like it did nothing while still killing native find.
       if (document.querySelector('[role="dialog"][data-state="open"]')) return;
@@ -1409,7 +1543,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         // reader, who would otherwise take the answer for a reading of it.
         if (result.pendingFiles?.length) {
           toast.warning(
-            `${listFileNames(result.pendingFiles)} ${result.pendingFiles.length === 1 ? "is" : "are"} still being indexed — Juno answered without the text.`
+            `${listFileNames(result.pendingFiles)} ${result.pendingFiles.length === 1 ? "is" : "are"} still being indexed, so Juno answered without the text.`
           );
         }
         if (result.unavailableFiles?.length) {
@@ -1428,282 +1562,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
     [chat, hasMessages, realtimeVoice, voiceOpen, voiceSaveError]
   );
-
-  /*
-   * One press of "start this as a task", and what it costs when it half works.
-   *
-   * Four things have to happen, and the ORDER is the whole design:
-   *
-   *   1. A conversation to hang the run on. A task started from a blank chat has
-   *      no row to point `WorkSession.conversationId` at yet.
-   *   2. The reader's sentence, persisted as a USER turn, so the transcript
-   *      shows what was asked. It is the same append the native clients push
-   *      their finished turns through.
-   *   3. `POST /api/work/sessions` — the draft, with the conversation on it.
-   *   4. `POST /sessions/[id]/runs` — the attempt.
-   *
-   * The turn is written BEFORE anything is dispatched because of how the two
-   * failures differ. A create that fails after the turn landed leaves the
-   * reader's words in their own chat with a sentence saying nothing started —
-   * recoverable by pressing the button again, and nothing has been spent. A
-   * dispatch that succeeded while the turn failed would leave a run spending a
-   * budget inside a conversation that shows no sign of having asked for it,
-   * which is the failure nobody can act on.
-   *
-   * NO ACKNOWLEDGEMENT TURN IS WRITTEN. Deep research persists one because its
-   * dispatch happens inside a streaming chat turn that has to say something;
-   * here the panel IS Juno's side of the exchange, and an application-authored
-   * "I'll get on it" directly above a live panel narrating what it is doing
-   * would be the product speaking twice about one thing.
-   *
-   * The choreography is `dispatchDelegation`; `delegate` below it is the one
-   * thing that must be true around the WHOLE of it — one dispatch at a time —
-   * and is kept separate so that guard cannot be escaped by an early return
-   * added to the middle of the sequence later.
-   */
-  const delegateAttemptRef = React.useRef<{
-    /** `delegationAttemptKey` over everything the create carries. */
-    inputs: string;
-    /**
-     * The id the USER turn is appended under, minted once per attempt.
-     *
-     * A fresh one on every press is the same as having none: the append route
-     * dedupes on (conversationId, clientId), and a refused dispatch deliberately
-     * keeps the draft in the box, so pressing the button again is the expected
-     * path rather than an exotic one. A random id there writes the reader's
-     * sentence into their own transcript once per press.
-     */
-    clientId: string;
-    /** Set once the turn is persisted, so a retry does not append it twice. */
-    messageId: string | null;
-    sessionKey: string;
-    runKey: string;
-    session: ClientWorkSession | null;
-  } | null>(null);
-
-  /*
-   * A dispatch in flight, held twice on purpose.
-   *
-   * The ref is what a press is tested against and the state is what dims the
-   * composer, because the two are true at different moments: React has not
-   * re-rendered with `delegating` set by the time a second Enter arrives, and
-   * this window is up to four sequential round trips long. A second entry inside
-   * it mints its own idempotency keys and creates a SECOND WorkSession with a
-   * SECOND run — two run ceilings spent on one sentence, two USER turns in the
-   * transcript, and two panels competing for one conversation, of which the
-   * discovery poll then follows exactly one. `WorkComposer.submitting` guards
-   * the identical window on the other surface.
-   */
-  const delegatingRef = React.useRef(false);
-  const [delegating, setDelegating] = React.useState(false);
-
-  const dispatchDelegation = React.useCallback(
-    async (input: DelegateInput): Promise<boolean> => {
-      const attachmentIds = input.attachments.map((attachment) => attachment.id);
-      // The same first-message handoff a send arms (see the choreography block
-      // above): delegating from an empty chat replaces the greeting with a
-      // transcript exactly as a first message does, and without this the
-      // greeting would vanish in one frame instead of handing over.
-      if (!hasMessages) handoffArmedAtRef.current = Date.now();
-
-      let id = currentConversationId;
-      if (!id) {
-        try {
-          const response = await fetch("/api/conversations", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind: "chat", model }),
-          });
-          const data = (await response.json().catch(() => ({}))) as {
-            conversation?: ClientConversation;
-          };
-          if (!response.ok || !data.conversation) throw new Error("conversation");
-          id = data.conversation.id;
-          upsertConversation(data.conversation);
-          createdIdRef.current = id;
-          setActiveConversationId(id);
-          if (typeof window !== "undefined") {
-            window.history.replaceState(null, "", `/chat/${id}`);
-            window.__junoSoftRoutePath = `/chat/${id}`;
-          }
-        } catch {
-          toast.error("Couldn’t start a chat for this task, so nothing was queued.");
-          return false;
-        }
-      }
-
-      /*
-       * A fresh attempt whenever anything the dispatch carries changed, and the
-       * SAME one when it did not. A press that created the draft and then failed
-       * to dispatch must land on that same draft next time — `POST /sessions`
-       * replays an existing id for a repeated key — or every refused start
-       * leaves another orphan draft in the reader's list.
-       *
-       * Keyed on `delegationAttemptKey` rather than on the goal, because the
-       * create carries far more than the sentence and every one of those can be
-       * changed from the "+" menu without touching a character of it. The sharp
-       * case is the approval mode: refused, switch "How often it asks", press
-       * again, and a goal-keyed attempt would reuse the draft created under the
-       * old policy while the pill and the disclosure line both state the new one.
-       *
-       * Decided before the append, because the attempt is what owns the turn's
-       * client id as well as the two idempotency keys.
-       */
-      let attempt = delegateAttemptRef.current;
-      const inputsKey = delegationAttemptKey({
-        goal: input.goal,
-        permissionPolicy: input.permissionPolicy,
-        connectorIds: input.connectorIds,
-        attachmentIds,
-        projectId: activeProjectId,
-        model,
-        reasoningEffort,
-      });
-      if (attempt === null || attempt.inputs !== inputsKey) {
-        attempt = {
-          inputs: inputsKey,
-          clientId: `task-${crypto.randomUUID()}`,
-          messageId: null,
-          sessionKey: workIdempotencyKey(),
-          runKey: workIdempotencyKey(),
-          session: null,
-        };
-        delegateAttemptRef.current = attempt;
-      }
-
-      // Skipped outright once this attempt's turn has landed: the route would
-      // dedupe the re-append on the client id anyway, but the optimistic push
-      // below is local and would draw the sentence a second time regardless.
-      if (attempt.messageId === null) {
-        try {
-          const response = await fetch(`/api/conversations/${id}/messages`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              turns: [
-                {
-                  // The attempt's client id, so a retried append lands on the row
-                  // the first press created rather than writing the sentence
-                  // twice. It is stable for exactly as long as the inputs are.
-                  clientId: attempt.clientId,
-                  role: "USER",
-                  content: input.goal,
-                  ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-                },
-              ],
-            }),
-          });
-          const data = (await response.json().catch(() => ({}))) as {
-            messages?: Array<{ id: string; content: string; createdAt: string }>;
-          };
-          const persisted = data.messages?.[0];
-          if (!response.ok || !persisted) throw new Error("append");
-          attempt.messageId = persisted.id;
-          chat.setMessages((current) => [
-            ...current,
-            {
-              id: persisted.id,
-              role: "USER",
-              content: persisted.content,
-              createdAt: persisted.createdAt,
-              conversationId: id ?? undefined,
-              // The files the composer just claimed onto this turn. Drawn from
-              // what was sent rather than left empty until the next reload: they
-              // are part of what was asked, and a turn that shows none reads as
-              // a task that was given none.
-              attachments: input.attachments,
-            },
-          ]);
-        } catch {
-          toast.error("Couldn’t save your message, so nothing was started. Try again.");
-          return false;
-        }
-      }
-
-      let session = attempt.session;
-      if (session === null) {
-        const created = await createWorkSession({
-          goal: input.goal,
-          conversationId: id,
-          requestedTarget: "automatic",
-          preferredHostId: null,
-          projectId: activeProjectId,
-          model,
-          reasoningEffort,
-          permissionPolicy: input.permissionPolicy,
-          attachmentIds,
-          // Sent even when empty, because empty is an answer: this task reaches
-          // no connected app. Absent would mean a client with no control for it.
-          connectorIds: input.connectorIds,
-          idempotencyKey: attempt.sessionKey,
-        });
-        if (created.kind !== "ok") {
-          toast.error(
-            created.kind === "blocked"
-              ? created.explanation
-              : describeFailure(created, "save").message
-          );
-          return false;
-        }
-        session = created.value;
-        attempt.session = session;
-      }
-
-      // No `requiredCapabilities`: the server infers them from the goal it was
-      // given. Sending a list derived in this bundle would look like agreement
-      // and act like an override.
-      const started = await startWorkRun(session.id, {
-        origin: "manual",
-        requestedTarget: "automatic",
-        model,
-        reasoningEffort,
-        idempotencyKey: attempt.runKey,
-      });
-      if (started.kind !== "ok") {
-        toast.error(
-          started.kind === "blocked"
-            ? started.explanation
-            : describeFailure(started, "start").message
-        );
-        return false;
-      }
-
-      // Shown immediately rather than four seconds later, when the discovery
-      // poll would have found it: this is the one moment the reader is most
-      // certain something should have happened.
-      adoptWorkSession(session);
-      delegateAttemptRef.current = null;
-      window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-      return true;
-    },
-    [
-      activeProjectId,
-      chat,
-      currentConversationId,
-      hasMessages,
-      model,
-      reasoningEffort,
-      setActiveConversationId,
-      upsertConversation,
-      adoptWorkSession,
-    ]
-  );
-
-  const delegate = React.useCallback(
-    async (input: DelegateInput): Promise<boolean> => {
-      if (privateMode) return false;
-      if (delegatingRef.current) return false;
-      delegatingRef.current = true;
-      setDelegating(true);
-      try {
-        return await dispatchDelegation(input);
-      } finally {
-        delegatingRef.current = false;
-        setDelegating(false);
-      }
-    },
-    [privateMode, dispatchDelegation]
-  );
+  // For callbacks declared above this one (the document viewer's Explain),
+  // which must stay stable while this identity changes with the chat hook.
+  const sendFromComposerRef = React.useRef(sendFromComposer);
+  sendFromComposerRef.current = sendFromComposer;
 
   const openVoice = React.useCallback(() => {
     if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
@@ -1936,10 +1798,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // reading "Stop" over a live stream as an offer to cancel a
             // twenty-minute task nobody mentioned is the more expensive misread.
             workSteering && !chat.isBusy
-            ? // A delegated run is not this conversation's generation, so there
-              // is no stream to tear down beside it — Stop ends the attempt, the
-              // way it already ends a research run.
-              workSteering.stop
+            ? // A task is not this conversation's generation, so there is no
+              // stream to tear down beside it: Stop ends the attempt, the way
+              // it already ends a research run.
+              () => void workSteering.stop()
             : chat.stop
       }
       steering={
@@ -1977,8 +1839,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               }
             : null
       }
-      onDelegate={privateMode ? undefined : delegate}
-      delegating={delegating}
       pendingClarification={chat.pendingClarification}
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
@@ -2018,7 +1878,21 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       }
       selectedProjectId={activeProjectId}
       onPickProject={handlePickProject}
-      hideDisclaimer={true}
+      // One element serves both places the composer stands; the landing frame
+      // matches the dock's width, so the first send moves it without resizing.
+      frame={hasMessages && handoff !== "leaving" ? "dock" : "landing"}
+      // The line under the dock. What is different about this chat outranks
+      // the standing notice, which is hidden on phones, where the dock has no
+      // room to spare (the slot keeps its height either way).
+      footnote={
+        forkedFrom ? (
+          <p className="py-1">This branch isn’t saved. It continues from the fork point with full context.</p>
+        ) : privateMode ? (
+          <p className="py-1">Incognito chats are not saved or added to memory.</p>
+        ) : (
+          <p className="hidden sm:block">Juno can make mistakes. Check important info.</p>
+        )
+      }
     />
   );
 
@@ -2037,7 +1911,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       className={cn(
         "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
         privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
-        (openArtifact || thoughtOpenId) && "hidden"
+        (sidePanelOpen || thoughtOpenId) && "hidden"
       )}
     >
       {/* What this chat made, and what it used — see session-outputs.tsx. It
@@ -2051,6 +1925,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           artifacts={chat.artifacts}
           messages={chat.messages}
           onOpenArtifact={(identifier) => openArtifactByIdentifier(identifier)}
+          onOpenAttachment={openAttachment}
         />
       )}
 
@@ -2121,7 +1996,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       <div
         className={cn(
           "relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-          (openArtifact || thoughtOpenId) && "hidden @[50rem]/split:flex"
+          (sidePanelOpen || thoughtOpenId) && "hidden @[50rem]/split:flex"
         )}
       >
         {/* The column's header band: the conversation's title at the left
@@ -2132,7 +2007,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             this band does not exist. The Chat ⇄ Work switcher that used to sit
             centred here moved into the sidebar's product switch. */}
         {/* In incognito the band would be a title that is not a title
-            ("Private chat") beside an invisible cluster, above the incognito
+            ("Incognito chat") beside an invisible cluster, above the incognito
             header that already names the mode. Drop it entirely. */}
         {topActionsSlotOwner && !privateMode && (
           <div
@@ -2318,12 +2193,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     // at the colour's 120ms, to a deeper scale than any other
                     // control in the header.
                     className="pressable pointer-events-auto relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground coarse:size-11 motion-reduce:transition-none motion-reduce:active:scale-100"
-                    aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
+                    aria-label={forkedFrom ? "Discard branch" : "Leave incognito"}
                   >
                     <ActionIcons.dismiss className="size-4" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave private chat"}</TooltipContent>
+                <TooltipContent>{forkedFrom ? "Discard branch" : "Leave incognito"}</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -2405,8 +2280,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 speakingId={speakingId}
                 privateMode={privateMode}
                 onImageEdit={chat.sendImageEdit}
+                onOpenAttachment={privateMode ? undefined : openAttachment}
                 currentModelId={model}
-                conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
+                conversationTitle={privateMode ? "Incognito chat" : headerTitle || undefined}
                 // The header band above draws the visible h1 from md up,
                 // except in incognito, where the band is dropped — and only
                 // once it has a title. On the first send the messages exist
@@ -2442,13 +2318,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 {voiceSaveNotice}
                 {composer}
               </div>
-              {(forkedFrom || privateMode) && (
-                <p className="shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground">
-                  {forkedFrom
-                    ? "This branch isn't saved — it continues from the fork point with full context."
-                    : "Incognito chats are not saved or added to memory."}
-                </p>
-              )}
             </div>
           ) : (
             // Empty / greeting view. overflow-x-clip so the composer aura, which
@@ -2529,7 +2398,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                         showStarterChips ? "opacity-100" : "pointer-events-none opacity-0"
                       )}
                     >
-                      <StarterChips />
+                      <StarterChips className="mt-3" />
                     </div>
                   </div>
                 </div>
@@ -2667,6 +2536,45 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             onQuote={handleQuote}
             shareable={!privateMode}
+          />
+        </div>
+      )}
+
+      {/* A file — the canvas's column, sizing, handle and motion, verbatim:
+          the two are one slot with two occupants (see openAttachment). */}
+      {(openDocument ?? closingDocument) && (
+        <div
+          style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
+          className={cn(
+            "relative z-40 size-full bg-background @[50rem]/split:w-[var(--juno-canvas-width)] @[50rem]/split:min-w-[420px] @[50rem]/split:shrink-0 @[50rem]/split:border-l",
+            canvas.resizing && "select-none transition-none",
+            openDocument
+              ? !canvas.resizing && "duration-base ease-drawer motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-reduce:animate-in motion-reduce:fade-in"
+              : "pointer-events-none absolute inset-y-0 right-0 duration-exit ease-in animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
+            openDocument && !fullscreen && "@[50rem]/split:relative"
+          )}
+        >
+          {openDocument && !fullscreen && (
+            <button
+              type="button"
+              {...canvas.separatorProps}
+              aria-label="Resize file viewer"
+              title="Drag to resize. Arrow keys adjust, Home resets."
+              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors before:duration-fast before:ease-out-soft motion-reduce:before:transition-none @[50rem]/split:flex @[50rem]/split:hover:bg-primary/10 @[50rem]/split:hover:before:bg-primary/40"
+            >
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+                <GripVertical className="size-3.5" />
+              </span>
+            </button>
+          )}
+          <DocumentViewer
+            attachment={(openDocument ?? closingDocument)!}
+            files={conversationFiles}
+            onSelectFile={selectDocument}
+            onClose={closeDocument}
+            onAsk={privateMode ? undefined : handleDocumentAsk}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen((f) => !f)}
           />
         </div>
       )}

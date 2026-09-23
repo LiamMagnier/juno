@@ -34,7 +34,7 @@ export default async function CodeCustomizePage() {
       <AppPageHeader
         eyebrow="Code"
         heading="Customize"
-        lede="The repositories, Macs and machine your runs use — and what each of them lets a run do."
+        lede="The repositories, Macs and machine your runs use, and what each of them lets a run do."
       />
       <CodeCustomize />
     </AppPage>

@@ -103,6 +103,10 @@ const runRoot =
 const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
 
 module.exports = {
+  // Every app here is named juno-*. deploy.sh treats that prefix as this
+  // file's namespace: it verifies exactly the apps a release declares, and
+  // deletes any juno-* app the release does not — so an app removed here stops
+  // on the next deploy, and one a rolled-back release added stops with it.
   apps: [
     {
       name: "juno-backend",
@@ -152,10 +156,9 @@ module.exports = {
     // later" and juno-work-scheduler below is the one that survived; it adopts
     // every remaining ScheduledTask into a WorkSchedule and switches the legacy
     // row off in the same transaction, so no fire is dropped and none is run
-    // twice. Removing the app from this file does not stop a process already
-    // running on the host — on the release that drops it, run
-    // `pm2 delete juno-scheduler && pm2 save` once. A stale one is harmless in
-    // the meantime: every task it could claim has been switched off.
+    // twice. A juno-scheduler still running on a host is deleted by the next
+    // deploy (see the note on `apps`), and was harmless until then: every task
+    // it could claim has been switched off.
     {
       // Cloud Work executor: claims queued cloud runs every 5s and drives the
       // agent runtime (scripts/work-runner.ts). Loads the repo .env itself.

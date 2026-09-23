@@ -75,7 +75,7 @@ export function SubmitDialog({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Couldn’t submit.");
-      toast.success("Request submitted — thanks!");
+      toast.success("Request submitted. Thank you.");
       onOpenChange(false);
       onCreated(data.id);
     } catch (err) {
@@ -100,7 +100,7 @@ export function SubmitDialog({
               id="fr-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Short and specific — e.g. “Export a chat as Markdown”"
+              placeholder="Short and specific, like “Export a chat as Markdown”"
               maxLength={120}
               autoFocus
             />
@@ -116,7 +116,7 @@ export function SubmitDialog({
               className="rounded-field border border-border/70 bg-secondary p-3 motion-safe:animate-fade-in"
             >
               <p className="mb-2 font-mono text-caption text-muted-foreground">
-                Similar requests — vote instead?
+                Similar requests you can vote for instead
               </p>
               <ul className="space-y-1">
                 {similar.map((s) => (

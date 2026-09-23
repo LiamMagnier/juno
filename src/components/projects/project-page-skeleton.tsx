@@ -27,10 +27,13 @@ import { staggerDelay } from "@/lib/motion";
 export function ProjectPageSkeleton() {
   return (
     <>
-      <AppPageHeaderSkeleton headingWidth="w-72" actions />
+      {/* `nav`: the project header opens with its back link and the
+          "Project" eyebrow (project-workspace-header.tsx). */}
+      <AppPageHeaderSkeleton nav headingWidth="w-72" actions />
 
-      {/* Tab row */}
-      <Skeleton className="h-9 w-[26rem] max-w-full rounded-menu" />
+      {/* Tab row: Overview, Sources and Settings, the three every project
+          has. Tasks and Code join only once they hold something. */}
+      <Skeleton className="h-9 w-[17rem] max-w-full rounded-menu" />
 
       {/* The composer sits in the LEFT column and the rail's top edge is level
           with it, exactly as the loaded page draws them — so the placeholder

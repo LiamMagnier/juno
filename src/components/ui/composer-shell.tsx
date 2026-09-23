@@ -118,6 +118,31 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
   );
 });
 
+/**
+ * THE COMPOSER'S HEIGHT AT REST, for the skeletons that stand in for it.
+ *
+ * An empty composer is three stacked boxes, and every one of them is declared
+ * in this file:
+ *
+ *   field      `min-h-[3.25rem]` in COMPOSER_FIELD_METRICS            52
+ *   controls   `pt-0.5` + the tallest control on the row + `pb-2.5`   44
+ *              (the row's controls are 32px, 44px on a coarse pointer, so 56 there)
+ *   edge       `.composer-surface`'s 1px hairline, top and bottom       2
+ *                                                                      98  (110 coarse)
+ *
+ * The chat skeletons (`app/(app)/chat/loading.tsx` and `[id]/loading.tsx`)
+ * take their placeholder from here instead of writing a number of their own.
+ * The number they used to write was 68px, a composer from an older layout,
+ * so every chat load jumped 30px at the moment the real one arrived.
+ * `tests/composer-rest-height.test.ts` adds the metrics back up from this
+ * file's source, so changing the field or the row without changing this fails
+ * there rather than on screen.
+ */
+export const COMPOSER_REST_HEIGHT = { pointer: 98, coarse: 110 } as const;
+
+/** The same two heights as classes. Tailwind reads classes from source text, so they are written out. */
+export const composerRestHeightClass = "h-[98px] coarse:h-[110px]";
+
 /* ————————————————————————————————————————————————————————————————————————
  * Shared recipes
  * ———————————————————————————————————————————————————————————————————— */
@@ -150,10 +175,14 @@ const COMPOSER_FIELD_METRICS =
  * The textarea, directly on the surface: transparent, 16px inline padding
  * (the same inset the `+` glyph hangs off), `text-base` because iOS Safari
  * zooms into anything smaller.
+ *
+ * The placeholder is the full muted ink. At `/80` it measured 3.58:1 on the
+ * card, under the 4.5:1 its 16px text needs, and "Ask Juno" is the one
+ * instruction on an empty page.
  */
 export const composerFieldClass = cn(
   COMPOSER_FIELD_METRICS,
-  "resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground/80 disabled:opacity-60",
+  "resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60",
 );
 
 /**
@@ -683,9 +712,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
           // it (ICONS_AND_MOTION.md §2.2, rule 3).
           "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full",
           face === "voice"
-            ? // Quiet, and reaching the accent only on hover — enough to say it
-              // is live without competing with the send circle it becomes.
-              "bg-secondary text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+            ? // Quiet, and one tonal step deeper under the pointer: the hover
+              // fill, then the selected fill while held (FLAT_UI.md §3.1).
+              // It used to hover at `bg-secondary/70`, which in the light
+              // theme is lighter than its own rest fill, so the disc paled as
+              // the pointer reached it.
+              "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground active:bg-selected"
             : "bg-primary text-primary-foreground hover:bg-primary/90",
           "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
           // 44px under a coarse pointer, the touch minimum; 32px on a mouse.
@@ -833,14 +865,14 @@ export function ComposerAttachmentTile({
       sizes="64px"
     />
   ) : (
-    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-caption font-medium text-muted-foreground/70">
+    <span className="grid size-16 shrink-0 place-items-center bg-card font-mono text-caption font-medium text-muted-foreground">
       {extension}
     </span>
   );
 
   return (
     <div
-      title={status ? `${upload.fileName} — ${status}` : upload.fileName}
+      title={status ? `${upload.fileName} (${status})` : upload.fileName}
       className={cn(
         // `rounded-control`: the same rung as every chip on the row below, so
         // the tiles and the controls read as one family of objects.

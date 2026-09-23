@@ -1,205 +1,166 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence } from "framer-motion";
-import { ArrowRight, CalendarClock, EyeOff, MessagesSquare } from "@/components/ui/icons";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { RollingNumber } from "@/components/ui/micro";
+import { ArrowRight, CalendarClock, EyeOff, type IconComponent } from "@/components/ui/icons";
+import { Collapse } from "@/components/ui/collapse";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
-import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { EntryRow } from "@/components/memory/entry-row";
-import type { Memory } from "@/components/memory/memory-model";
 import { memoryCategoryLabel } from "@/lib/memory-categories";
 import { buildMemoryRecap, recapIsEmpty, type RecapPeriod } from "@/lib/memory-recap";
-import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import type { Memory } from "@/components/memory/memory-model";
+import { relativeTime } from "@/components/memory/memory-time";
 
 /*
  * The recap: what changed in what Juno knows, over a period you choose.
  *
- * Built as a review, not a report — see src/lib/memory-recap.ts. The month's
- * new beliefs come first and each is a full row, correctable in place, because
- * the moment a person is most likely to notice "that's not true" is when the
- * thing is shown to them next to the week it was learned.
+ * It was a peer of the list (a third tab beside Topics and All facts), with
+ * four stat tiles in large mono numerals and every section in its own card.
+ * It is a report, not a way of browsing, so it lives in the activity sheet
+ * now: one line of counts in words, then the sections as headings over
+ * hairline rows. Correcting a fact happens in the list, where the fact lives;
+ * this says what happened to it.
  *
- * MOTION. Changing the period keeps the stat tiles mounted, so their numbers
- * ROLL from the old count to the new one — the counts are the thing that
- * changed, and a number that travels says "more than last week" in a way a
- * number that is replaced does not. The lists below are keyed on the period
- * and re-enter, section by section at the base stagger, because they are
- * genuinely different content rather than the same content moving.
+ * Changing the period re-renders the sections as one piece (a fade, keyed on
+ * the period), because they are different content rather than the same
+ * content moving.
  */
 
-const PERIOD_LABEL: Record<RecapPeriod, string> = { 7: "week", 30: "month", 90: "three months" };
-const LEARNED_PREVIEW = 8;
-
-interface RecapViewProps {
-  memories: Memory[];
-  busyIds: ReadonlySet<string>;
-  paused: boolean;
-  /** The page's search, applied to every list here too. */
-  query: string;
-  onEdit: (id: string, content: string) => Promise<boolean>;
-  onForget: (memory: Memory) => void;
-  onDelete: (memory: Memory) => void;
+export interface RecapExtras {
+  themes: string[];
+  conversations: number;
 }
 
-export function RecapView({ memories, busyIds, paused, query, onEdit, onForget, onDelete }: RecapViewProps) {
+/** The server half of the recap: chat themes and the chat count, which need the transcripts. */
+export async function fetchRecapExtras(days: RecapPeriod): Promise<RecapExtras> {
+  const res = await fetch(`/api/memory/recap?days=${days}`);
+  if (!res.ok) throw new Error();
+  const data = (await res.json()) as { themes?: string[]; conversations?: number };
+  return { themes: data.themes ?? [], conversations: data.conversations ?? 0 };
+}
+
+const LEARNED_PREVIEW = 6;
+
+export function RecapView({
+  memories,
+  loadExtras = fetchRecapExtras,
+}: {
+  /** Every row in scope, suppressions included: "let go of" is dated by the block-list. */
+  memories: Memory[];
+  /** Injectable for the dev gallery; the page uses the real route. */
+  loadExtras?: (days: RecapPeriod) => Promise<RecapExtras>;
+}) {
   const [days, setDays] = React.useState<RecapPeriod>(30);
-  const [themes, setThemes] = React.useState<string[] | null>(null);
-  const [conversations, setConversations] = React.useState<number>(0);
+  const [extras, setExtras] = React.useState<RecapExtras | null>(null);
   const [showAllLearned, setShowAllLearned] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
-    setThemes(null);
+    setExtras(null);
     setShowAllLearned(false);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/memory/recap?days=${days}`);
-        if (!res.ok) throw new Error();
-        const data = (await res.json()) as { themes?: string[]; conversations?: number };
-        if (cancelled) return;
-        setThemes(data.themes ?? []);
-        setConversations(data.conversations ?? 0);
-      } catch {
+    loadExtras(days).then(
+      (next) => {
+        if (!cancelled) setExtras(next);
+      },
+      () => {
         // Themes are the one part that needs the server; without them the
-        // recap is still a recap, so an empty list rather than an error.
-        if (!cancelled) setThemes([]);
+        // recap is still a recap.
+        if (!cancelled) setExtras({ themes: [], conversations: 0 });
       }
-    })();
+    );
     return () => {
       cancelled = true;
     };
-  }, [days]);
+  }, [days, loadExtras]);
 
   const recap = React.useMemo(() => buildMemoryRecap(memories, { days }), [memories, days]);
-
-  const needle = query.trim().toLowerCase();
-  const matches = React.useCallback(
-    (...texts: (string | null | undefined)[]) => !needle || texts.some((t) => t?.toLowerCase().includes(needle)),
-    [needle]
-  );
-  const learned = recap.learned.filter((row) => matches(row.content, memoryCategoryLabel(row.category)));
-  const replaced = recap.replaced.filter(({ before, after }) => matches(before.content, after?.content));
-  const conflicting = recap.conflicting.filter((row) => matches(row.content));
-  const forgotten = recap.forgotten.filter((row) => matches(row.content));
-  const expired = recap.expired.filter((row) => matches(row.content));
-  const leanedOn = recap.leanedOn.filter((row) => matches(row.content));
-  const shownThemes = (themes ?? []).filter((theme) => matches(theme));
-
-  const byId = React.useMemo(() => new Map(memories.map((m) => [m.id, m])), [memories]);
-  const learnedRows = learned.map((row) => byId.get(row.id)).filter((m): m is Memory => !!m);
-  const visibleLearned = showAllLearned ? learnedRows : learnedRows.slice(0, LEARNED_PREVIEW);
-
-  const empty =
-    themes !== null &&
-    recapIsEmpty(
-      { ...recap, learned, replaced, conflicting, forgotten, expired, leanedOn },
-      shownThemes
-    );
-
-  let section = 0;
-  const nextDelay = () => staggerDelay(section++, "base");
+  const themes = extras?.themes ?? [];
+  const empty = extras !== null && recapIsEmpty(recap, themes);
+  const learnedFirst = recap.learned.slice(0, LEARNED_PREVIEW);
+  const learnedRest = recap.learned.slice(LEARNED_PREVIEW);
+  const changed = recap.replaced.length + recap.conflicting.length;
+  const letGo = recap.forgotten.length + recap.expired.length;
 
   return (
-    <section aria-labelledby="memory-recap-heading" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="memory-recap-heading" className="font-sans text-heading">
-          Your last {PERIOD_LABEL[days]}
-        </h2>
-        <SegmentedControl<`${RecapPeriod}`>
-          value={`${days}`}
-          onChange={(value) => setDays(Number(value) as RecapPeriod)}
-          ariaLabel="Recap period"
-          options={[
-            { value: "7", label: "7 days" },
-            { value: "30", label: "30 days" },
-            { value: "90", label: "90 days" },
-          ]}
-        />
-      </div>
+    <div className="space-y-5">
+      <SegmentedControl<`${RecapPeriod}`>
+        value={`${days}`}
+        onChange={(value) => setDays(Number(value) as RecapPeriod)}
+        ariaLabel="Recap period"
+        className="w-full"
+        options={[
+          { value: "7", label: "7 days" },
+          { value: "30", label: "30 days" },
+          { value: "90", label: "90 days" },
+        ]}
+      />
 
-      {/* Mounted across period changes on purpose — see the header. */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <RecapStat label="Learned" value={learned.length} tone="primary" />
-        <RecapStat label="Changed" value={replaced.length + conflicting.length} />
-        <RecapStat label="Let go" value={forgotten.length + expired.length} />
-        <RecapStat label="Chats" value={conversations} />
-      </div>
+      <div key={days} className="space-y-6 motion-safe:animate-fade-in">
+        {/* The four counts as one line of words, not four tiles of numerals:
+            they introduce the sections below, they are not the point. */}
+        <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-ui">
+          <Tally label="learned" value={recap.learned.length} />
+          <Tally label="changed" value={changed} />
+          <Tally label="let go" value={letGo} />
+          {extras !== null && <Tally label="chats" value={extras.conversations} />}
+        </dl>
 
-      <div key={days} className="space-y-4 motion-safe:animate-fade-in">
         {empty ? (
-          <EmptyState
-            size="panel"
-            icon={CalendarClock}
-            title={needle ? "Nothing in this period matches" : `A quiet ${PERIOD_LABEL[days]}`}
-            description={
-              needle
-                ? "Clear the search, or try a longer period."
-                : "Juno didn’t learn, change or use anything in this stretch. Try a longer period."
-            }
-          />
+          <p className="py-6 text-center text-ui text-muted-foreground">
+            Juno didn’t learn, change or use anything in this stretch. Try a longer period.
+          </p>
         ) : (
           <>
-            {learnedRows.length > 0 && (
-              <RecapSection title="What Juno learned" style={nextDelay()}>
-                <div className="flex flex-wrap gap-1.5 px-4 pb-3">
-                  {recap.learnedByCategory.map(({ category, count }) => (
-                    <Badge key={category ?? "none"} variant="soft" className="gap-1.5">
-                      {memoryCategoryLabel(category)}
-                      <span className="font-mono tabular-nums opacity-80">{count}</span>
-                    </Badge>
+            {recap.learned.length > 0 && (
+              <RecapSection title="What Juno learned">
+                <ul className="divide-y divide-border/70">
+                  {learnedFirst.map((row) => (
+                    <RecapLine key={row.id} text={row.content} meta={memoryCategoryLabel(row.category)} when={row.createdAt} />
                   ))}
-                </div>
-                <ul className="divide-y divide-border/50 border-t border-border/50">
-                  <AnimatePresence initial={false}>
-                    {visibleLearned.map((memory) => (
-                      <EntryRow
-                        key={memory.id}
-                        memory={memory}
-                        busy={busyIds.has(memory.id)}
-                        paused={paused}
-                        onEdit={onEdit}
-                        onForget={onForget}
-                        onDelete={onDelete}
-                      />
-                    ))}
-                  </AnimatePresence>
                 </ul>
-                {learnedRows.length > LEARNED_PREVIEW && (
-                  <div className="border-t border-border/50 px-4 py-2">
-                    <Button variant="ghost" size="sm" onClick={() => setShowAllLearned((open) => !open)}>
-                      {showAllLearned ? "Show fewer" : `Show all ${learnedRows.length}`}
-                    </Button>
-                  </div>
+                {learnedRest.length > 0 && (
+                  <>
+                    <Collapse open={showAllLearned}>
+                      <ul className="divide-y divide-border/70 border-t border-border/70">
+                        {learnedRest.map((row) => (
+                          <RecapLine key={row.id} text={row.content} meta={memoryCategoryLabel(row.category)} when={row.createdAt} />
+                        ))}
+                      </ul>
+                    </Collapse>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllLearned((open) => !open)}
+                      aria-expanded={showAllLearned}
+                      className="mt-1 rounded-control py-1 text-ui text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+                    >
+                      {showAllLearned ? (
+                        <span>Show fewer</span>
+                      ) : (
+                        <>
+                          <span>Show all</span> <span className="tabular-nums">{recap.learned.length}</span>
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
               </RecapSection>
             )}
 
-            {(replaced.length > 0 || conflicting.length > 0) && (
-              <RecapSection title="What changed" style={nextDelay()}>
-                <ul className="divide-y divide-border/50 border-t border-border/50">
-                  {replaced.map(({ before, after }) => (
-                    <li key={before.id} className="px-4 py-3">
-                      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-ui">
-                        <span className="text-muted-foreground line-through decoration-muted-foreground/50">
-                          {before.content}
-                        </span>
-                        <ArrowRight className="size-3.5 shrink-0 self-center text-muted-foreground" aria-hidden="true" />
-                        <span className="sr-only">replaced by</span>
-                        <span className="text-foreground/90">{after?.content}</span>
-                      </p>
-                      {before.reason && <p className="mt-1 text-caption italic text-muted-foreground/80">{before.reason}</p>}
+            {changed > 0 && (
+              <RecapSection title="What changed">
+                <ul className="divide-y divide-border/70">
+                  {recap.replaced.map(({ before, after }) => (
+                    <li key={before.id} className="py-2.5 text-ui">
+                      <span className="text-muted-foreground line-through decoration-muted-foreground/40">{before.content}</span>
+                      <ArrowRight className="mx-1.5 inline size-3.5 align-[-2px] text-muted-foreground" aria-hidden="true" />
+                      <span className="sr-only">replaced by</span>
+                      <span className="text-foreground">{after?.content}</span>
                     </li>
                   ))}
-                  {conflicting.map((row) => (
-                    <li key={row.id} className="px-4 py-3">
+                  {recap.conflicting.map((row) => (
+                    <li key={row.id} className="py-2.5">
                       <p className="text-ui text-muted-foreground">{row.content}</p>
-                      <p className="mt-1 text-caption italic text-muted-foreground/80">
+                      <p className="mt-0.5 text-caption text-muted-foreground">
                         {row.reason ?? "It clashed with something you told Juno, so it isn’t used."}
                       </p>
                     </li>
@@ -208,62 +169,38 @@ export function RecapView({ memories, busyIds, paused, query, onEdit, onForget, 
               </RecapSection>
             )}
 
-            {(forgotten.length > 0 || expired.length > 0) && (
-              <RecapSection title="What Juno let go of" style={nextDelay()}>
-                <ul className="divide-y divide-border/50 border-t border-border/50">
-                  {forgotten.map((row) => (
-                    <li key={row.id} className="flex items-start gap-2.5 px-4 py-3 text-ui">
-                      <EyeOff className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                      <span className="min-w-0 flex-1">
-                        <span className="text-foreground/90">{row.content}</span>
-                        <span className="mt-0.5 block text-caption text-muted-foreground">
-                          You asked Juno to forget this · {timeAgo(row.createdAt)}
-                        </span>
-                      </span>
-                    </li>
+            {letGo > 0 && (
+              <RecapSection title="What Juno let go of">
+                <ul className="divide-y divide-border/70">
+                  {recap.forgotten.map((row) => (
+                    <RecapLine key={row.id} icon={EyeOff} text={row.content} meta="You asked Juno to forget this" when={row.createdAt} />
                   ))}
-                  {expired.map((row) => (
-                    <li key={row.id} className="flex items-start gap-2.5 px-4 py-3 text-ui">
-                      <CalendarClock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                      <span className="min-w-0 flex-1">
-                        <span className="text-foreground/90">{row.content}</span>
-                        <span className="mt-0.5 block text-caption text-muted-foreground">
-                          Only true for a while, and that while has passed
-                        </span>
-                      </span>
-                    </li>
+                  {recap.expired.map((row) => (
+                    <RecapLine key={row.id} icon={CalendarClock} text={row.content} meta="Only true for a while" />
                   ))}
                 </ul>
               </RecapSection>
             )}
 
-            {themes === null ? (
-              <Skeleton className="h-28 w-full rounded-card" aria-hidden="true" />
+            {extras === null ? (
+              <Skeleton className="h-24 w-full rounded-card" aria-hidden="true" />
             ) : (
-              shownThemes.length > 0 && (
-                <RecapSection title="What you talked about" style={nextDelay()}>
-                  <ul className="space-y-1.5 border-t border-border/50 px-4 py-3">
-                    {shownThemes.map((theme) => (
-                      <li key={theme} className="flex items-start gap-2.5 text-ui text-foreground/90">
-                        <MessagesSquare className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        <span className="min-w-0">{theme}</span>
-                      </li>
+              themes.length > 0 && (
+                <RecapSection title="What you talked about">
+                  <ul className="list-disc space-y-1 pl-5 text-ui text-foreground marker:text-muted-foreground">
+                    {themes.map((theme) => (
+                      <li key={theme}>{theme}</li>
                     ))}
                   </ul>
                 </RecapSection>
               )
             )}
 
-            {leanedOn.length > 0 && (
-              <RecapSection title="What Juno leaned on" style={nextDelay()}>
-                <ul className="divide-y divide-border/50 border-t border-border/50">
-                  {leanedOn.map((row) => (
-                    <li key={row.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-2.5">
-                      <span className="min-w-0 text-ui text-foreground/90">{row.content}</span>
-                      <span className="shrink-0 font-mono text-caption text-muted-foreground">
-                        used {timeAgo(row.lastUsedAt ?? row.createdAt)}
-                      </span>
-                    </li>
+            {recap.leanedOn.length > 0 && (
+              <RecapSection title="What Juno leaned on">
+                <ul className="divide-y divide-border/70">
+                  {recap.leanedOn.map((row) => (
+                    <RecapLine key={row.id} text={row.content} meta="Last used" when={row.lastUsedAt ?? row.createdAt} />
                   ))}
                 </ul>
               </RecapSection>
@@ -271,42 +208,56 @@ export function RecapView({ memories, busyIds, paused, query, onEdit, onForget, 
           </>
         )}
       </div>
-    </section>
-  );
-}
-
-function RecapStat({ label, value, tone = "muted" }: { label: string; value: number; tone?: "primary" | "muted" }) {
-  return (
-    <div className="rounded-card border border-border/60 bg-card px-4 py-3 surface-raised">
-      <p
-        className={cn(
-          "font-mono text-title tabular-nums leading-none",
-          tone === "primary" ? "text-foreground" : "text-muted-foreground"
-        )}
-      >
-        <RollingNumber value={value} />
-      </p>
-      <p className="mt-1.5 font-mono text-micro uppercase tracking-wide text-muted-foreground/70">{label}</p>
     </div>
   );
 }
 
-function RecapSection({
-  title,
-  style,
-  children,
-}: {
-  title: string;
-  style: React.CSSProperties;
-  children: React.ReactNode;
-}) {
+function Tally({ label, value }: { label: string; value: number }) {
+  // The term comes first in the markup, as a definition list requires, and
+  // second on screen, where the number leads: "12 learned".
   return (
-    <section
-      style={style}
-      className="overflow-hidden rounded-panel border border-border/60 bg-card motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-    >
-      <h3 className="px-4 pb-2 pt-4 font-sans text-ui font-medium text-foreground">{title}</h3>
+    <div className="flex items-baseline gap-1.5">
+      <dt className="order-last text-muted-foreground">{label}</dt>
+      <dd className="font-medium tabular-nums text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function RecapSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="pb-1 text-ui font-medium text-foreground">{title}</h3>
       {children}
     </section>
+  );
+}
+
+function RecapLine({
+  text,
+  meta,
+  when,
+  icon: Icon,
+}: {
+  text: string;
+  meta: string;
+  when?: string | null;
+  icon?: IconComponent;
+}) {
+  return (
+    <li className={cn("flex items-start gap-2.5 py-2.5", !Icon && "block")}>
+      {Icon && <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+      <span className="block min-w-0">
+        <span className="block text-ui text-foreground">{text}</span>
+        <span className="mt-0.5 block text-caption text-muted-foreground">
+          {meta}
+          {when && (
+            <>
+              <span aria-hidden="true"> · </span>
+              {relativeTime(when)}
+            </>
+          )}
+        </span>
+      </span>
+    </li>
   );
 }

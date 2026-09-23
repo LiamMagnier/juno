@@ -873,7 +873,9 @@ jobs:
           VM_HOST: ${{ secrets.VM_HOST }}
           PROD_ENV: ${{ secrets.PROD_ENV }}
           GITHUB_SHA: ${{ github.sha }}
-          RUN_ID: ${{ github.run_id }}
+          # Per attempt: a re-run must not share an upload directory or a
+          # source stage with an attempt that may still be finishing on the VM.
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           archive="juno-${GITHUB_SHA}.tar.gz"
@@ -881,6 +883,7 @@ jobs:
           build_artifact="juno-${GITHUB_SHA}.build.tar.gz"
           build_checksum="${build_artifact}.sha256"
           remote_env="juno-${RUN_ID}.env"
+          upload_dir="/tmp/juno-upload-${RUN_ID}"
           umask 077
           git rev-parse --verify "$GITHUB_SHA^{commit}" >/dev/null
           git archive --format=tar "$GITHUB_SHA" | gzip -1 > "$archive"
@@ -890,39 +893,35 @@ jobs:
           test "$archive_sha" = "$GITHUB_SHA"
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
-          # Free disk space on the VM before transferring artifacts
+          # Free disk space on the VM before transferring artifacts, under the
+          # lock deploy.sh holds for a whole release transaction, and create
+          # this run's own upload directory there. It is refused, with the
+          # holder named, while another deploy is running; see the script.
           ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "$VM_USER@$VM_HOST" "bash -s" <<'PREFLIGHT'
-          set -euo pipefail
-          rm -f /tmp/juno-*.tar.gz /tmp/juno-*.sha256 /tmp/juno-*.env 2>/dev/null || true
-          if [ -d "$HOME/juno/releases" ]; then
-            find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
-            current_target="$(readlink -f "$HOME/juno/current" 2>/dev/null || true)"
-            prev_target="$(readlink -f "$HOME/juno/previous" 2>/dev/null || true)"
-            for dir in $(find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort); do
-              real_dir="$(cd "$dir" 2>/dev/null && pwd -P || echo "$dir")"
-              if [ "$real_dir" != "$current_target" ] && [ "$real_dir" != "$prev_target" ]; then
-                echo "Pruning older release to free disk: $dir"
-                rm -rf -- "$dir" || true
-              fi
-            done
+            "$VM_USER@$VM_HOST" "UPLOAD_DIR='$upload_dir' bash -s" < deploy/vm-preflight.sh \
+            || { echo "::error::The VM preflight did not complete, so nothing was uploaded; its reason is above."; exit 1; }
+          if ! scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:$upload_dir/"; then
+            # Removed now, not an hour from now when a preflight finds it abandoned.
+            ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
+              "$VM_USER@$VM_HOST" "rm -rf -- '$upload_dir'" || true
+            echo "::error::Uploading the release to the VM failed."
+            exit 1
           fi
-          PREFLIGHT
-          scp -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
           ssh -i $RUNNER_TEMP/deploy-ssh/id_deploy -o UserKnownHostsFile="$RUNNER_TEMP/deploy-ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='$GITHUB_WORKSPACE' bash -s" <<'REMOTE'
+            "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' UPLOAD_DIR='$upload_dir' JUNO_BUILD_ROOT='$GITHUB_WORKSPACE' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"
-          ARCHIVE="/tmp/juno-${GITHUB_SHA}.tar.gz"
-          ARCHIVE_CHECKSUM="/tmp/juno-${GITHUB_SHA}.tar.gz.sha256"
-          BUILD_ARTIFACT="/tmp/juno-${GITHUB_SHA}.build.tar.gz"
-          BUILD_CHECKSUM="/tmp/juno-${GITHUB_SHA}.build.tar.gz.sha256"
-          REMOTE_ENV="/tmp/juno-${RUN_ID}.env"
+          ARCHIVE="$UPLOAD_DIR/juno-${GITHUB_SHA}.tar.gz"
+          ARCHIVE_CHECKSUM="$UPLOAD_DIR/juno-${GITHUB_SHA}.tar.gz.sha256"
+          BUILD_ARTIFACT="$UPLOAD_DIR/juno-${GITHUB_SHA}.build.tar.gz"
+          BUILD_CHECKSUM="$UPLOAD_DIR/juno-${GITHUB_SHA}.build.tar.gz.sha256"
+          REMOTE_ENV="$UPLOAD_DIR/juno-${RUN_ID}.env"
           INCOMING_ENV="$LIVE_ROOT/.env.incoming-${RUN_ID}"
           SOURCE_STAGE="$HOME/.juno-source-${RUN_ID}"
           cleanup() {
-            rm -f -- "$ARCHIVE" "$ARCHIVE_CHECKSUM" "$BUILD_ARTIFACT" "$BUILD_CHECKSUM" "$REMOTE_ENV" "$INCOMING_ENV"
+            rm -rf -- "$UPLOAD_DIR"
+            rm -f -- "$INCOMING_ENV"
             if [ -d "$SOURCE_STAGE" ]; then
               rm -rf -- "$SOURCE_STAGE"
             fi

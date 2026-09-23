@@ -34,6 +34,17 @@ public struct DelegateTaskTool: CodeTool {
     /// delegation remains read-only, even if the model asks for writes.
     private let executionFactory: SubagentExecutionFactory?
     private let fallbackResolver: (any ModelFallbackResolver)?
+    /// The delegating session's standing permission rules, read as each
+    /// child starts.
+    ///
+    /// A child gets its own coordinator, and one created bare has no rules at
+    /// all: a `Read(.env)` deny that refused the parent's read did not stop a
+    /// read-only child the model asked to "read .env and report it", and the
+    /// child's answer carried the secret back. Every child now takes the
+    /// parent's whole current set. Deny beats ask beats allow, so the allow
+    /// rules that come with it weaken nothing, and every deny and ask rule
+    /// binds read-only and write-capable children alike.
+    private let parentRules: (@Sendable () async -> PermissionRuleSet)?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -64,7 +75,8 @@ public struct DelegateTaskTool: CodeTool {
         parentSystemPrompt: String,
         executionFactory: SubagentExecutionFactory? = nil,
         controls: SubagentControlRegistry? = nil,
-        fallbackResolver: (any ModelFallbackResolver)? = nil
+        fallbackResolver: (any ModelFallbackResolver)? = nil,
+        parentRules: (@Sendable () async -> PermissionRuleSet)? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -77,6 +89,7 @@ public struct DelegateTaskTool: CodeTool {
         self.executionFactory = executionFactory
         self.controls = controls
         self.fallbackResolver = fallbackResolver
+        self.parentRules = parentRules
     }
 
     public let name = "delegate_task"
@@ -149,7 +162,13 @@ public struct DelegateTaskTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    /// A write-capable child is a write, and the parent's mode decides it
+    /// like any other: an Ask-before-changes session is asked, a read-only one
+    /// refuses. Investigation stays a read.
+    public func assessRisk(input: JSONValue) -> ActionRisk {
+        let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
+        return specs.contains { $0.mode == .workspaceWrite } ? .write : .read
+    }
 
     public func summary(input: JSONValue) -> String {
         let specs = (try? Self.specs(from: input, toolCallID: "")) ?? []
@@ -419,6 +438,9 @@ public struct DelegateTaskTool: CodeTool {
             sessionID: child.id,
             mode: environment.permissionMode
         )
+        if let parentRules {
+            await permissions.setRules(await parentRules())
+        }
         let childInstruction: String
         switch spec.mode {
         case .readOnly:
@@ -456,6 +478,24 @@ public struct DelegateTaskTool: CodeTool {
         await orchestrator.observeUsage { input, output in
             Task { await usage.record(input: input, output: output) }
         }
+        let approvalRelay = relayApprovalState(
+            of: permissions,
+            spec,
+            toolCallID: toolCallID,
+            parentSessionID: parentSessionID,
+            childSessionID: child.id,
+            startedAt: startedAt
+        )
+        let approvalObserver = await permissions.addObserver { update in
+            approvalRelay.continuation.yield(update)
+        }
+        // Stopped before any terminal update is written, so a late "back to
+        // work" can never land on top of how the agent actually ended.
+        func endApprovalRelay() async {
+            await permissions.removeObserver(approvalObserver)
+            approvalRelay.continuation.finish()
+            await approvalRelay.task.value
+        }
 
         do {
             // Stop has to be able to reach the child, and the child needs an
@@ -492,6 +532,7 @@ public struct DelegateTaskTool: CodeTool {
             let message = "The sub-agent could not start: \(error)"
             try? await store.setStatus(id: child.id, status: .failed)
             await orchestrator.release()
+            await endApprovalRelay()
             await publish(
                 spec,
                 toolCallID: toolCallID,
@@ -506,6 +547,7 @@ public struct DelegateTaskTool: CodeTool {
             return Outcome(index: index, title: spec.title, status: .failed, answer: message)
         }
         await orchestrator.release()
+        await endApprovalRelay()
         await controls?.unregister(childSessionID: child.id)
 
         var finalizationError: String?
@@ -554,6 +596,49 @@ public struct DelegateTaskTool: CodeTool {
     }
 
     // MARK: - Publishing
+
+    /// Publishes the child's approval state into the parent transcript as it
+    /// changes: waiting for the reader while a request is open, working again
+    /// once none is.
+    ///
+    /// The runtime used to publish only queued, preparing, running and the
+    /// outcome, so a write-capable child that asked before `npm test` never
+    /// showed as needing the reader. Its row polled for requests only while
+    /// the status said it was waiting, which it never did; nothing answered
+    /// the request, and the child, the parent's `delegate_task` and the
+    /// session all sat on "Working" until Stop.
+    ///
+    /// Updates go through one stream and one consumer, so they are written in
+    /// the order they happened, and each reads the pending list afresh, so the
+    /// last one written is the current state.
+    private func relayApprovalState(
+        of permissions: PermissionCoordinator,
+        _ spec: Spec,
+        toolCallID: String,
+        parentSessionID: CodeSessionID,
+        childSessionID: CodeSessionID,
+        startedAt: Date
+    ) -> (continuation: AsyncStream<PermissionCoordinator.ApprovalUpdate>.Continuation, task: Task<Void, Never>) {
+        let (stream, continuation) = AsyncStream<PermissionCoordinator.ApprovalUpdate>.makeStream()
+        let task = Task {
+            var waiting = false
+            for await _ in stream {
+                let nowWaiting = await !permissions.pendingApprovals.isEmpty
+                guard nowWaiting != waiting else { continue }
+                waiting = nowWaiting
+                await publish(
+                    spec,
+                    toolCallID: toolCallID,
+                    parentSessionID: parentSessionID,
+                    childSessionID: childSessionID,
+                    status: waiting ? .waitingForApproval : .running,
+                    currentActivity: waiting ? "Waiting for your approval" : "Working",
+                    startedAt: startedAt
+                )
+            }
+        }
+        return (continuation, task)
+    }
 
     private func publish(
         _ spec: Spec,

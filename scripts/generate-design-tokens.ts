@@ -281,9 +281,16 @@ const typeRungs: TypeRung[] = Object.entries(rawFontSize).map(([name, value]) =>
   } else {
     throw new Error(`fontSize "${name}" is neither a rem size nor a rem clamp: ${size}`);
   }
-  const lineHeight = meta.lineHeight === undefined ? NaN : Number(meta.lineHeight);
+  // Unitless, as CSS means it: a multiple of the size. A fixed rung may also
+  // state its line in rem (`nav`: 14px on a 20px line, because every use sits
+  // centred in a fixed-height row); at its one size that is one multiple, so it
+  // is projected as that. A fluid rung's rem line would be a different multiple
+  // at every width, which the native ladder cannot say, so it stays an error.
+  const remLine = meta.lineHeight === undefined ? null : REM.exec(meta.lineHeight);
+  let lineHeight = meta.lineHeight === undefined ? NaN : Number(meta.lineHeight);
+  if (remLine) lineHeight = fixed ? Math.round(((Number(remLine[1]) * 16) / minSize) * 1e6) / 1e6 : NaN;
   if (!Number.isFinite(lineHeight)) {
-    throw new Error(`fontSize "${name}" has no unitless lineHeight: ${meta.lineHeight}`);
+    throw new Error(`fontSize "${name}" has no unitless lineHeight (or rem, on a fixed size): ${meta.lineHeight}`);
   }
   let tracking = 0;
   if (meta.letterSpacing !== undefined) {

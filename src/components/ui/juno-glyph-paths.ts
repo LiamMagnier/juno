@@ -24,7 +24,7 @@
 export type JunoGlyphWeight = "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
 
 /** The part of a drawing that articulates on hover (`globals.css`). */
-export type JunoGlyphPart = "ball" | "spark" | "disc";
+export type JunoGlyphPart = "ball" | "spark" | "disc" | "volume";
 
 /**
  * One SVG element of a drawing. `attrs` carries React's camelCase attribute
@@ -32,11 +32,17 @@ export type JunoGlyphPart = "ball" | "spark" | "disc";
  * the element; the native pipeline converts them. Paint the element does not
  * set is inherited from the root `<svg>`: `fill="none"`, a `currentColor`
  * stroke at the drawing's `line`, round caps and joins.
+ *
+ * A `g` is a group of `children` that moves as one part: the web renders the
+ * `<g>` around them (so a part drawn in two strokes turns about one box), and
+ * the native pipeline flattens it, since a symbol has no moving parts.
  */
 export type JunoGlyphElement = {
-  tag: "path" | "circle" | "rect";
+  tag: "path" | "circle" | "rect" | "g";
   attrs: Record<string, string | number>;
   part?: JunoGlyphPart;
+  /** A `g`'s elements, in paint order. */
+  children?: JunoGlyphElement[];
   /**
    * Native only: cut this element out of everything drawn before it rather
    * than painting it. The web never renders a knockout element (its only use
@@ -130,13 +136,95 @@ export function discArc(line: number, clearance = 20) {
 }
 
 // ---------------------------------------------------------------------------
+// Library — two volumes on a shelf, the right one leaning toward the left, one
+// head band each. Phosphor's Books carried six bands across two volumes, which
+// at 18px aliased into a grey hatch; one band is enough to say "spine".
+// ---------------------------------------------------------------------------
+
+export type Point = [number, number];
+export type Volume = { x: number; y: number; w: number; h: number; r: number };
+
+/** `[x, y]` turned `deg` about `pivot` (negative leans the top to the left), as "x,y". */
+function turn([x, y]: Point, deg: number, [cx, cy]: Point): string {
+  const t = (deg * Math.PI) / 180;
+  const dx = x - cx;
+  const dy = y - cy;
+  return `${r2(cx + dx * Math.cos(t) - dy * Math.sin(t))},${r2(cy + dx * Math.sin(t) + dy * Math.cos(t))}`;
+}
+
+/** A rounded rect as a path, turned about `pivot`. The lean is baked into the
+ *  coordinates rather than set with a `transform` attribute because the volume
+ *  is a moving part: its CSS `rotate` would re-pivot an attribute transform.
+ *  Circular arcs survive a rotation, so only their end points turn. */
+export function volumePath({ x, y, w, h, r }: Volume, deg = 0, pivot: Point = [x, y + h]): string {
+  const p = (px: number, py: number) => turn([px, py], deg, pivot);
+  return (
+    `M${p(x + r, y)} L${p(x + w - r, y)} A${r},${r} 0 0 1 ${p(x + w, y + r)} ` +
+    `L${p(x + w, y + h - r)} A${r},${r} 0 0 1 ${p(x + w - r, y + h)} ` +
+    `L${p(x + r, y + h)} A${r},${r} 0 0 1 ${p(x, y + h - r)} ` +
+    `L${p(x, y + r)} A${r},${r} 0 0 1 ${p(x + r, y)} Z`
+  );
+}
+
+export function bandPath({ x, w }: Volume, y: number, deg = 0, pivot: Point = [0, 0]): string {
+  return `M${turn([x, y], deg, pivot)} L${turn([x + w, y], deg, pivot)}`;
+}
+
+/** The volume a stroke of the regular line paints, as one outline. */
+const grown = ({ x, y, w, h, r }: Volume, d = JUNO_LINE.regular / 2): Volume => ({
+  x: x - d,
+  y: y - d,
+  w: w + 2 * d,
+  h: h + 2 * d,
+  r: r + d,
+});
+
+/** The fill weight's volume: solid, with the band as a slot one house line
+ *  tall that stops short of both edges. A band cut clean across split each
+ *  volume into a round head over a body, and at 16px the pair read as two
+ *  pictogram figures rather than two books. The slot sits wholly inside the
+ *  volume, so `evenodd` makes it a hole and nothing else. */
+export function solidVolumePath(v: Volume, band: number, deg = 0, pivot: Point = [v.x, v.y + v.h]): string {
+  const solid = grown(v);
+  const inset = 12;
+  const slot: Volume = {
+    x: solid.x + inset,
+    y: band - JUNO_LINE.regular / 2,
+    w: solid.w - 2 * inset,
+    h: JUNO_LINE.regular,
+    r: JUNO_LINE.regular / 2,
+  };
+  return `${volumePath(solid, deg, pivot)} ${volumePath(slot, deg, pivot)}`;
+}
+
+export const LEAN = -13;
+export const UPRIGHT_BAND = 88;
+export const LEANING_BAND = 110;
+
+/** Both volumes at a line weight. A heavier line would close the gap between
+ *  them, so the upright steps left and the leaning volume steps right and slims
+ *  by the difference: the clear gap is 18 units at every weight (1.1px at 16px),
+ *  and the bold cut still lands inside the 24–232 live area. The upright's
+ *  verticals, top, foot and band sit on the 16px pixel grid at `regular`.
+ *  Corners are tighter than Design's square (10 against 24): a rounder volume
+ *  read as a capsule or a battery at 48px, a squarer one as a book. */
+export function shelf(line: number) {
+  const k = line - JUNO_LINE.regular;
+  const upright: Volume = { x: 40 - k / 2, y: 40, w: 64, h: 176, r: 10 };
+  const leaning: Volume = { x: 170 + k / 2, y: 66, w: 54 - k, h: 150, r: 10 };
+  // The leaning volume stands on its foot's inner corner, on the upright's shelf line.
+  const pivot: Point = [leaning.x, leaning.y + leaning.h];
+  return { upright, leaning, pivot };
+}
+
+// ---------------------------------------------------------------------------
 // Send — an up arrow whose head has the spark's concave flanks.
 // ---------------------------------------------------------------------------
 
 export const SEND = "M128,212 V52 M60,116 Q108,92 128,52 Q148,92 196,116";
 
 // ---------------------------------------------------------------------------
-// The four drawings, per weight. `draw` takes the line the weight sets; `drawFill`
+// The five drawings, per weight. `draw` takes the line the weight sets; `drawFill`
 // is the solid drawing for the selected state.
 // ---------------------------------------------------------------------------
 
@@ -147,7 +235,7 @@ type GlyphDefinition = {
 
 const SQUARE_RECT = { x: SQUARE.x, y: SQUARE.y, width: SQUARE.size, height: SQUARE.size, rx: SQUARE.rx };
 
-export type JunoGlyphName = "chat" | "code" | "design" | "send";
+export type JunoGlyphName = "chat" | "code" | "design" | "library" | "send";
 
 export const JUNO_GLYPHS: Record<JunoGlyphName, GlyphDefinition> = {
   chat: {
@@ -201,6 +289,46 @@ export const JUNO_GLYPHS: Record<JunoGlyphName, GlyphDefinition> = {
             d: `M${a.right},${a.yAtRight} A${DISC.r},${DISC.r} 0 1 0 ${a.xAtTop},${a.top} L${a.right},${a.top} Z`,
             fill: "currentColor",
             strokeWidth: 8,
+          },
+        },
+      ];
+    },
+  },
+  library: {
+    draw: (line): JunoGlyphElement[] => {
+      const { upright, leaning, pivot } = shelf(line);
+      return [
+        { tag: "path", attrs: { d: volumePath(upright) } },
+        { tag: "path", attrs: { d: bandPath(upright, UPRIGHT_BAND) } },
+        {
+          tag: "g",
+          part: "volume",
+          attrs: {},
+          children: [
+            { tag: "path", attrs: { d: volumePath(leaning, LEAN, pivot) } },
+            { tag: "path", attrs: { d: bandPath(leaning, LEANING_BAND, LEAN, pivot) } },
+          ],
+        },
+      ];
+    },
+    // Selected: both volumes solid, each with its band as a slot. The grown
+    // leaning volume still turns about the regular one's foot, so it leans from
+    // the same corner as the line drawing.
+    drawFill: (): JunoGlyphElement[] => {
+      const { upright, leaning, pivot } = shelf(JUNO_LINE.regular);
+      return [
+        {
+          tag: "path",
+          attrs: { d: solidVolumePath(upright, UPRIGHT_BAND), fill: "currentColor", fillRule: "evenodd", stroke: "none" },
+        },
+        {
+          tag: "path",
+          part: "volume",
+          attrs: {
+            d: solidVolumePath(leaning, LEANING_BAND, LEAN, pivot),
+            fill: "currentColor",
+            fillRule: "evenodd",
+            stroke: "none",
           },
         },
       ];

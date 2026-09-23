@@ -158,7 +158,18 @@ public final class WorkbenchModel {
     }
 
     public private(set) var workspaces: [WorkspaceRecord] = []
-    public private(set) var sessions: [CodeSession] = []
+    public private(set) var sessions: [CodeSession] = [] {
+        didSet { sessionsObserver?(sessions) }
+    }
+    /// Told every change to the session list, for the lifetime of the
+    /// workbench rather than of any window: the app hands it to
+    /// `StudioRunMonitor`, whose keep-awake assertion and "finished" and
+    /// "needs you" notifications matter most when no Code window is showing.
+    /// Handed the current list when set, and an empty one at shutdown.
+    @ObservationIgnored
+    public var sessionsObserver: (@MainActor ([CodeSession]) -> Void)? {
+        didSet { sessionsObserver?(sessions) }
+    }
     public var selectedSessionID: CodeSessionID?
     public var sessionSearchText = ""
     public private(set) var lastError: String?
@@ -414,7 +425,25 @@ public final class WorkbenchModel {
         }
     }
 
+    /// Forgets a project: its folder grant and its open context. Its sessions
+    /// stay in the history.
+    ///
+    /// Its runs are stopped and its live controllers let go of first. Removing
+    /// only the record left a running session working in the folder Juno had
+    /// just said it forgot, and a cached controller that could keep acting
+    /// there; without the record, reopening one of those sessions finds no
+    /// folder to act in, which is what removal promises.
     public func removeWorkspace(id: WorkspaceID) async {
+        for session in sessions where session.workspaceID == id {
+            guard let controller = controllers.removeValue(forKey: session.id) else { continue }
+            await controller.stop()
+            await controller.detach()
+        }
+        if let selectedSessionID,
+           sessions.first(where: { $0.id == selectedSessionID })?.workspaceID == id
+        {
+            self.selectedSessionID = nil
+        }
         try? await workspaceDirectory.remove(id: id)
         contexts.removeValue(forKey: id)
         workspaces = await workspaceDirectory.allWorkspaces()
@@ -460,8 +489,11 @@ public final class WorkbenchModel {
             if let context, context.record.descriptor.isGitRepository {
                 branch = try? await context.git.status().branch
                 if isolatedWorktree {
+                    let prefix = CodeSettingsStore()
+                        .resolved(projectRoot: context.access.rootURL)
+                        .branchPrefix
                     let worktree = try await context.worktrees.create(
-                        branch: Self.worktreeBranchName(base: branch)
+                        branch: Self.worktreeBranchName(base: branch, prefix: prefix)
                     )
                     executionRootPath = worktree.rootPath
                     branch = worktree.branch
@@ -485,13 +517,13 @@ public final class WorkbenchModel {
 
     /// `juno/<base>-<stamp>`: recognisable as Juno's, unique per session, and
     /// safe for `git worktree add`.
-    static func worktreeBranchName(base: String?, now: Date = Date()) -> String {
+    static func worktreeBranchName(base: String?, prefix: String = "juno/", now: Date = Date()) -> String {
         let stamp = Int(now.timeIntervalSince1970) % 1_000_000
         let cleaned = (base ?? "task")
             .lowercased()
             .map { $0.isLetter || $0.isNumber ? $0 : "-" }
         let slug = String(cleaned).split(separator: "-").joined(separator: "-")
-        return "juno/\(slug.isEmpty ? "task" : String(slug.prefix(24)))-\(stamp)"
+        return "\(prefix)\(slug.isEmpty ? "task" : String(slug.prefix(24)))-\(stamp)"
     }
 
     /// Lines added, lines removed and files touched over a session's whole
@@ -661,6 +693,10 @@ public final class WorkbenchModel {
         }
         contexts.removeAll()
         selectedSessionID = nil
+        // Nothing of this account is running any more: whoever watches the
+        // list lets go of the Mac's keep-awake assertion now.
+        sessionsObserver?([])
+        sessionsObserver = nil
     }
 
     public func renameSession(id: CodeSessionID, title: String) async {

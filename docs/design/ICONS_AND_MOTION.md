@@ -18,7 +18,7 @@ names are Juno's (`ChevronDown`, `Loader2`, `Settings`, …). The drawings are
 Phosphor's 256-unit grid at designed weights.
 
 - Take an icon as a prop with `icon: IconComponent` (from the same module).
-- Four glyphs are Juno's own drawings rather than Phosphor's (§1.4). They
+- Five glyphs are Juno's own drawings rather than Phosphor's (§1.4). They
   come through the same module; never import `juno-glyphs.tsx` directly.
 - The shared registries in `src/lib/app-icons.ts` (`AppIcons`, `CodeIcons`,
   `ComposerIcons`, `StatusIcons`, `ActionIcons`, `DesignIcons`,
@@ -69,9 +69,9 @@ never under `prefers-reduced-motion`.
 | `spin` | configuration, appearance | settings gear, sun |
 | `cw` / `ccw` | run again, go back | refresh, repeat, rotate-ccw |
 | `tilt` | a tool picked up | search, pencils, pin, mic, link, key, wrench, thumbs |
-| `lift` | an object picked up | copy, trash, archive, folder, stacks, library |
+| `lift` | an object picked up | copy, trash, archive, folder, stacks |
 | `pop` | a mark you set | star, sparkle, bookmark, play, zap |
-| `parts` | one part of a Juno mark moves, not the whole glyph | JunoChat, JunoCode, JunoDesign |
+| `parts` | one part of a Juno mark moves, not the whole glyph | JunoChat, JunoCode, JunoDesign, JunoLibrary |
 
 Carets, spinners and status marks carry none. If a gesture is wrong in context
 (for example an arrow that is a label rather than an action), pass
@@ -80,15 +80,19 @@ button or link, add `data-icon-trigger` so its icon plays.
 
 `parts` is the one articulation that does not move the whole glyph. Juno's
 marks are drawn with their moving part as a separate element
-(`juno-part juno-part--ball`, `--spark`, `--disc`), and the same trigger rule
-that plays the other gestures sets `--icon-on: 1` on the svg, which the part
-reads: Chat's ball terminal pops out of the ring's gap (a message leaving),
-Code's spark turns a quarter and swells (it is four-fold, so it lands where it
-started), Design's circle slides back from the square in front of it (two
-layers parting). Offsets are in the drawing's own 256-unit space. Under
-reduced motion `--icon-on` stays 0 and nothing moves. A new Juno mark that
-articulates gets a `juno-part--*` class and one rule beside the others in the
-`svg.icon` section of `globals.css`.
+(`juno-part juno-part--ball`, `--spark`, `--disc`, `--volume`), and the same
+trigger rule that plays the other gestures sets `--icon-on: 1` on the svg,
+which the part reads: Chat's ball terminal pops out of the ring's gap (a
+message leaving), Code's spark turns a quarter and swells (it is four-fold, so
+it lands where it started), Design's circle slides back from the square in
+front of it (two layers parting), Library's leaning volume straightens six
+degrees and lifts a pixel (a book taken off the shelf). Offsets are in the
+drawing's own 256-unit space. Under reduced motion `--icon-on` stays 0 and
+nothing moves. A new Juno mark that articulates gets a `juno-part--*` class
+and one rule beside the others in the `svg.icon` section of `globals.css`. A
+moving part never carries an SVG `transform` attribute: the part's CSS
+`rotate` and `transform-origin` would re-pivot it, so a lean or a turn is baked
+into the path coordinates (`volumePath` in `juno-glyphs.tsx`).
 
 A glyph that turns to show a state (a plus rotating to an x while its menu is
 open) passes `motion="none"`, so the hover turn does not add to the open
@@ -96,7 +100,7 @@ rotation. The Code and Work composers' `+` buttons are the example.
 
 **The sidebar.** Gestures belong to the glyph, not to the place it is drawn.
 A sidebar destination moves the way its glyph moves everywhere (the plus
-turns, the gear turns, the library lifts, the Juno marks move their part), and
+turns, the gear turns, the artifact stack lifts, the Juno marks move their part), and
 `SidebarMotionIcon` (`src/components/app/sidebar-motion-icon.tsx`) never
 assigns a gesture. It only silences a default that is wrong in a navigation
 column: the folder and projects marks (their gesture is the closed-to-open
@@ -106,14 +110,16 @@ are not a place) and a conversation (a document, not a destination). A new
 destination gets its gesture from `icons.tsx` or not at all.
 
 ### 1.4 Juno's own marks
-`JunoChat`, `JunoCode`, `JunoDesign` and `Send` are drawn for Juno in
-`src/components/ui/juno-glyphs.tsx` and exported through `icons.tsx` like
-every other glyph, so they get the optical weight choice, aria and hover
-articulation from `glyph()`. They are the three places the product is known
-by and its one verb, the marks a reader sees on every screen, so they carry
-the two motifs of the Juno logo (`public/juno-mark.png`): the **open ring**
-that stops short with a **ball terminal** beside the gap, and the
-**four-point spark** with concave sides.
+`JunoChat`, `JunoCode`, `JunoDesign`, `JunoLibrary` and `Send` are drawn for
+Juno in `src/components/ui/juno-glyphs.tsx` and exported through `icons.tsx`
+like every other glyph, so they get the optical weight choice, aria and hover
+articulation from `glyph()`. They are the places the product is known by and
+its one verb, the marks a reader sees on every screen. Chat, Code, Design and
+Send carry the two motifs of the Juno logo (`public/juno-mark.png`): the
+**open ring** that stops short with a **ball terminal** beside the gap, and
+the **four-point spark** with concave sides. Library does not: a spark or a
+ball on a book spine read as a label, not as Juno, and the mark was drawn to
+fix legibility, so it keeps only the grid, the line and the rounded corners.
 
 - `JunoChat` (`AppIcons.home`, `AppIcons.conversation`): the logo's bubble as
   a line, a ring open at the top right with the ball in the gap and the tail
@@ -124,6 +130,14 @@ that stops short with a **ball terminal** beside the gap, and the
 - `JunoDesign` (`AppIcons.design`): a square in front of a circle, stacked
   like cut paper. The circle stops short of the square instead of crossing
   it, so the mark stays quiet at 16px.
+- `JunoLibrary` (`AppIcons.library`): two volumes on a shelf, the right one
+  leaning toward the left, one head band each. It replaced Phosphor's `Books`,
+  whose six bands aliased into a grey hatch at 18px and whose leaning volume
+  ran into the upright. The gap between the volumes is the same 18 units at
+  every weight (the volumes step apart as the line gets heavier). The `fill`
+  weight cuts each band as a slot that stops short of the edges: cut clean
+  across, a solid volume became a head over a body, and the pair read as two
+  pictogram figures at 16px.
 - `Send`: an up arrow whose head has the spark's concave flanks. Every "send
   this" in the product draws it.
 

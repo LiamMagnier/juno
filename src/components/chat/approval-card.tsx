@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChevronRight, Clock } from "@/components/ui/icons";
-import { StatusIcons } from "@/lib/app-icons";
+import { AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Collapse } from "@/components/ui/collapse";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,7 @@ const RISK_COPY: Record<ActionRiskClass, { label: string; detail: string }> = {
   },
   reversible_write: {
     label: "Reversible change",
-    detail: "This changes something that can be put back — a label, a folder, a draft.",
+    detail: "This changes something that can be put back, like a label, a folder or a draft.",
   },
   external_write: {
     label: "Leaves Juno",
@@ -91,6 +91,58 @@ const DECISION_COPY: Record<ActionApprovalDecision, string> = {
   allow_scope: "Allowed. Juno will not ask again before this action on this connector.",
   deny: "Denied. Juno will not carry out the action.",
 };
+
+/*
+ * The same card, when the question is whether to start a background task.
+ *
+ * The chat model's `start_task` (src/lib/chat/task-tool.ts) asks through the
+ * ordinary broker when the estimate is high or the turn carries outside
+ * content, and the connector copy above would misdescribe it: nothing "leaves
+ * Juno", and "the arguments" are a brief. So a task gets its own words, its
+ * title as the headline, the estimate, and the brief in prose rather than as a
+ * key/value dump. What is bound and answered is unchanged: the same receipt,
+ * the same digest, the same decision endpoint.
+ *
+ * Recognised by connector id and tool name together, the test
+ * `isTaskApproval` makes. Repeated here rather than imported because
+ * task-tool.ts reaches the server through dynamic imports that must stay out of
+ * the client bundle; tests/chat-task-tool.test.ts pins the two literals.
+ */
+function isTaskHandoff(approval: Pick<ClientActionApproval, "connectorId" | "toolName">): boolean {
+  return approval.connectorId === "juno_work" && approval.toolName === "start_task";
+}
+
+const TASK_CARD_COPY = {
+  description:
+    "Juno works on this on its own and reports back in this chat. It asks before risky steps, and you can stop it at any time.",
+  untrusted:
+    "This chat includes content Juno read from outside it, such as a web page, a file or a connected app. Check that the brief below is what you asked for before you start it.",
+  footnote: "Unanswered, this expires and the task does not start.",
+};
+
+const TASK_STATUS_COPY: Record<ActionReceiptStatus, string> = {
+  pending: "Waiting for your answer.",
+  allowed: "Allowed. Starting the task.",
+  denied: "Not started.",
+  executing: "Starting the task.",
+  executed: "Started. The task reports back in this chat.",
+  failed: "The task could not be started.",
+  expired: "This expired before it was answered, so the task did not start.",
+  superseded: "This was cancelled before it was answered, so the task did not start.",
+  blocked: "Your permissions blocked this, so the task did not start.",
+};
+
+const TASK_DECISION_COPY: Record<ActionApprovalDecision, string> = {
+  allow_once: "Starting the task.",
+  allow_scope: "Starting the task.",
+  deny: "Not started.",
+};
+
+/** A string field of the receipt's redacted detail, or null. */
+function detailText(detail: Record<string, unknown>, key: string): string | null {
+  const value = detail[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
 
 /*
  * Sentences that get appended to another sentence.
@@ -164,7 +216,7 @@ const REFUSAL_COPY: Record<RefusalCode, { message: string; terminal: boolean }> 
     terminal: true,
   },
   unreachable: {
-    message: "Juno could not reach the server to record your answer. The request is still waiting — try again.",
+    message: "Juno could not reach the server to record your answer. The request is still waiting, so try again.",
     terminal: false,
   },
 };
@@ -261,7 +313,13 @@ export function ApprovalCard({
   // Presentation only: whether the argument list is unfolded. It used to be a
   // native <details>, whose open state the browser kept and which gives no
   // height to animate, so the list cut in and out under its caret.
-  const [detailOpen, setDetailOpen] = React.useState(false);
+  //
+  // Open from the start for a task raised by a turn that read outside content:
+  // the warning asks the reader to check the brief, and the brief is the whole
+  // of what they are approving, so it should not take a second press to see.
+  const [detailOpen, setDetailOpen] = React.useState(
+    () => isTaskHandoff(approval) && approval.derivedFromUntrusted && approval.status === "pending"
+  );
   // The server's answer replaces the streamed one once there is one, so the
   // status line and the pills reflect the receipt rather than what the chunk
   // said several seconds ago.
@@ -281,6 +339,14 @@ export function ApprovalCard({
 
   const risk = RISK_COPY[current.riskClass] ?? RISK_COPY.unknown;
   const detailRows = Object.entries(current.detail);
+  // A task handoff reads its headline, estimate and brief out of the same
+  // redacted detail the connector variant lists, so both show what was bound.
+  const task = isTaskHandoff(current);
+  const taskTitle = task ? detailText(current.detail, "title") : null;
+  const taskEstimate = task ? detailText(current.detail, "estimate") : null;
+  const taskBrief = task ? detailText(current.detail, "goal") : null;
+  const statusCopy = task ? TASK_STATUS_COPY : STATUS_COPY;
+  const decisionCopy = task ? TASK_DECISION_COPY : DECISION_COPY;
 
   const decide = React.useCallback(
     async (decision: ActionApprovalDecision) => {
@@ -309,8 +375,8 @@ export function ApprovalCard({
           kind: "done",
           message:
             body?.replay === true
-              ? `${DECISION_COPY[decision]} ${REPLAY_COPY.message}`
-              : DECISION_COPY[decision],
+              ? `${decisionCopy[decision]} ${REPLAY_COPY.message}`
+              : decisionCopy[decision],
         });
         if (updated) onDecided?.(updated);
         return;
@@ -350,7 +416,7 @@ export function ApprovalCard({
         terminal: false,
       });
     },
-    [current.id, current.receiptDigest, onDecided]
+    [current.id, current.receiptDigest, decisionCopy, onDecided]
   );
 
   // Named `resultText`, not `resultMessage`: the i18n extractor treats any
@@ -361,9 +427,9 @@ export function ApprovalCard({
     outcome.kind === "done" || outcome.kind === "refused"
       ? outcome.message
       : expired && current.status === "pending"
-        ? STATUS_COPY.expired
+        ? statusCopy.expired
         : !answerable && current.status !== "pending"
-          ? STATUS_COPY[current.status]
+          ? statusCopy[current.status]
           : "";
   // Hoisted for the same reason: an `outcome.kind === "idle"` guard written
   // inline as a JSX child is read by the extractor as UI text.
@@ -399,25 +465,43 @@ export function ApprovalCard({
       )}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <StatusIcons.security
-          className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
-          aria-hidden="true"
-        />
+        {task ? (
+          <AppIcons.work
+            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
+            aria-hidden="true"
+          />
+        ) : (
+          <StatusIcons.security
+            className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
+            aria-hidden="true"
+          />
+        )}
         <p id={labelId} className={cn("text-caption font-semibold", answerable ? "text-warning-foreground" : "text-muted-foreground")}>
-          {answerable ? "Juno needs your approval" : "Approval request"}
+          {task
+            ? answerable
+              ? "Start a background task?"
+              : "Background task"
+            : answerable
+              ? "Juno needs your approval"
+              : "Approval request"}
         </p>
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-caption font-medium",
-            current.riskClass === "read_only"
-              ? "border-border/70 text-muted-foreground"
-              : current.riskClass === "reversible_write"
-                ? "border-source/40 text-source"
-                : "border-warning/50 text-warning-foreground"
-          )}
-        >
-          {risk.label}
-        </span>
+        {/* A task has no connector risk to rank: what it may do once running is
+            governed by its own approval mode, and the estimate below is what
+            this answer actually commits. */}
+        {!task && (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-caption font-medium",
+              current.riskClass === "read_only"
+                ? "border-border/70 text-muted-foreground"
+                : current.riskClass === "reversible_write"
+                  ? "border-source/40 text-source"
+                  : "border-warning/50 text-warning-foreground"
+            )}
+          >
+            {risk.label}
+          </span>
+        )}
         {answerable && remaining !== null && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
             <Clock className="size-3" aria-hidden="true" />
@@ -438,25 +522,44 @@ export function ApprovalCard({
       </header>
 
       <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-ui")}>
-        {current.preview}
+        {task && taskTitle ? taskTitle : current.preview}
       </p>
-      <p className="mt-1 font-mono text-micro text-muted-foreground">
-        {current.connectorLabel} · {current.toolName}
-      </p>
+      {task ? (
+        taskEstimate && (
+          <p className="mt-1 text-label tabular-nums text-muted-foreground">
+            Estimated cost <span className="text-foreground">{taskEstimate}</span>
+          </p>
+        )
+      ) : (
+        <p className="mt-1 font-mono text-micro text-muted-foreground">
+          {current.connectorLabel} · {current.toolName}
+        </p>
+      )}
       {/* 13px here, 12px on the secondary rank below. Those used to be 13 and
           12.5 — the only fractional type size in the product, a half-pixel that
           lands off the device grid and reads as a rendering artefact rather than
           a rank. A 1px step is the smallest one anybody can actually see. */}
-      <p className="mt-2 text-ui leading-relaxed text-muted-foreground">{risk.detail}</p>
+      {/* A task's description is a promise about what starting it means, so it
+          is shown while the question is open and drops once it is answered;
+          the status line below says what became of it. */}
+      {(!task || answerable) && (
+        <p className="mt-2 text-ui leading-relaxed text-muted-foreground">
+          {task ? TASK_CARD_COPY.description : risk.detail}
+        </p>
+      )}
 
       {current.derivedFromUntrusted && (
         <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
           <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-          <p className="text-label leading-relaxed text-warning-foreground">
-            The model wrote these arguments from content it read — a web page, a file, or output from
-            another connector. That content can contain text written to steer what gets sent. Check the
-            values below are what you meant before you allow it.
-          </p>
+          {task ? (
+            <p className="text-label leading-relaxed text-warning-foreground">{TASK_CARD_COPY.untrusted}</p>
+          ) : (
+            <p className="text-label leading-relaxed text-warning-foreground">
+              The model wrote these arguments from content it read: a web page, a file, or output from
+              another connector. That content can contain text written to steer what gets sent. Check the
+              values below are what you meant before you allow it.
+            </p>
+          )}
         </div>
       )}
 
@@ -498,14 +601,21 @@ export function ApprovalCard({
             )}
             aria-hidden="true"
           />
-          Exactly what will be sent
+          {task ? "What the task will be told" : "Exactly what will be sent"}
         </button>
         {/* Folds on the grid rows with the caret instead of cutting in under
             it. The hairline and padding are inside the clip, so they fold too;
             nothing is mounted while closed. */}
         <Collapse open={detailOpen}>
           <div id={detailId} className="border-t border-border/50 px-3 py-2.5">
-            {detailRows.length === 0 ? (
+            {/* The brief is prose the model wrote for the task, so it is read as
+                prose. It is the `goal` argument verbatim, which is what the
+                receipt bound; the title and estimate are shown above. */}
+            {task && taskBrief ? (
+              <p className="whitespace-pre-wrap break-words text-label leading-relaxed text-foreground">
+                {taskBrief}
+              </p>
+            ) : detailRows.length === 0 ? (
               <p className="text-label leading-relaxed text-muted-foreground">
                 This call sends no arguments.
               </p>
@@ -513,7 +623,7 @@ export function ApprovalCard({
               <dl className="space-y-1.5">
                 {detailRows.map(([key, value]) => (
                   <div key={key} className="flex flex-col gap-0.5 @[24rem]:flex-row @[24rem]:gap-2">
-                    <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 @[24rem]:w-28">{key}</dt>
+                    <dt className="shrink-0 font-mono text-micro text-muted-foreground @[24rem]:w-28">{key}</dt>
                     <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
                       {formatDetailValue(value)}
                     </dd>
@@ -536,10 +646,10 @@ export function ApprovalCard({
             onClick={() => decide("deny")}
             className="h-11 px-4"
           >
-            Don’t allow
+            {task ? "Don’t start" : "Don’t allow"}
           </Button>
           <Button disabled={sending} onClick={() => decide("allow_once")} className="h-11 px-4">
-            Allow once
+            {task ? "Start task" : "Allow once"}
           </Button>
           {/* Offered only where the store will honour it. `canAllowScope` is
               true for reversible writes alone, so a standing permission is never
@@ -574,7 +684,7 @@ export function ApprovalCard({
       {answerable && !sending && untouched && (
         <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="size-3" aria-hidden="true" />
-          Unanswered, this expires and Juno stops rather than acting on it.
+          {task ? TASK_CARD_COPY.footnote : "Unanswered, this expires and Juno stops rather than acting on it."}
         </p>
       )}
     </section>

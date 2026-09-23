@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Camera, Loader2 } from "@/components/ui/icons";
-import { ActionIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,11 +20,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
-import { TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
+import { useSaveStates } from "@/components/settings/save-status";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
+import { openSettings } from "@/components/settings/settings-sections";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
-import { UsageActivity, UsageDetail, UsageStats, useProfileUsage } from "@/components/settings/usage-overview";
 import { AccountSecuritySection } from "@/components/auth/account-security";
 import { IconSwap } from "@/components/ui/icon-swap";
 import { PLANS } from "@/lib/plans";
@@ -36,24 +36,24 @@ function initials(name: string | null, email: string | null) {
 }
 
 /**
- * Who you are to Juno, and what you have done with it.
+ * Who you are to Juno, how you sign in, what it may email you, and how to
+ * leave.
  *
- * The portrait, the name and the address you sign in with come first; then
- * the account's own numbers — this month against the plan, the last thirty
- * days, the streak — and a year of activity as a graph, because "how much do
- * I use this and when" is the question people open this page to answer. The
- * ways in and out (password, this session), the emails Juno may send, and,
- * last and alone, deletion follow.
+ * The profile says the email once. It used to appear three times on this one
+ * section (the page header's lede, under the name, and beside the Change
+ * button in Sign-in). The name is shown, not edited: it is edited in one
+ * place, Personalization, where it is what Juno calls you. The usage
+ * dashboard that sat here moved to Plan & usage, beside the budget it spends.
  */
 export function AccountSection() {
   const router = useRouter();
   const { user, quota, settings, features } = useApp();
   const save = useSettingsSave();
+  const saves = useSaveStates();
   const plan = PLANS[quota.plan];
   const email = user.email ?? "";
-  const usage = useProfileUsage();
 
-  // Portrait upload — the same flow the profile page used to own.
+  // Portrait upload.
   const [avatar, setAvatar] = React.useState<string | null>(user.image ?? null);
   const [uploading, setUploading] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -69,35 +69,13 @@ export function AccountSection() {
       toast.success("Profile picture updated.");
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn’t update picture.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t update the picture.");
     } finally {
       setUploading(false);
     }
   };
 
-  // Name — saved on blur, with a voice.
-  const [name, setName] = React.useState(user.name ?? "");
-  const [nameState, setNameState] = React.useState<TileSaveState>("idle");
-  const nameTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  React.useEffect(() => () => clearTimeout(nameTimer.current), []);
-  const saveName = async () => {
-    const value = name.trim();
-    if (value === (user.name ?? "")) return;
-    clearTimeout(nameTimer.current);
-    setNameState("saving");
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: value }),
-    });
-    setNameState(res.ok ? "saved" : "failed");
-    if (res.ok) {
-      router.refresh();
-      nameTimer.current = setTimeout(() => setNameState("idle"), 4000);
-    }
-  };
-
-  // Deletion — guarded by typing the address, posting to the rate-limited route.
+  // Deletion: guarded by typing the address, posting to the rate-limited route.
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [confirm, setConfirm] = React.useState("");
   const [deleting, setDeleting] = React.useState(false);
@@ -123,42 +101,46 @@ export function AccountSection() {
 
   return (
     <>
-      <SettingsGroup title="Profile">
+      <SettingsGroup>
         <div className="flex items-center gap-4 py-4">
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            // `.pressable`: the portrait is a 64px control, not a surface, so
-            // it dips under the finger like every other control does.
-            className="pressable group relative shrink-0 rounded-full disabled:cursor-default motion-reduce:active:scale-100"
-            aria-label="Change profile picture"
-            title="Change profile picture"
-          >
-            <Avatar size="xl">
-              {avatar && (
-                <AvatarImage
-                  src={avatar}
-                  alt=""
-                  {...(requiresViewerCredentials(avatar) ? { referrerPolicy: "no-referrer" } : {})}
-                />
-              )}
-              <AvatarFallback className="text-body">{initials(user.name, user.email)}</AvatarFallback>
-            </Avatar>
-            <span
-              className={cn(
-                "absolute inset-0 flex items-center justify-center rounded-full bg-foreground/60 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
-                uploading && "opacity-100"
-              )}
-              aria-hidden="true"
-            >
-              <IconSwap
-                swapped={uploading}
-                from={<Camera className="size-4" />}
-                to={<Loader2 className={cn("size-4", uploading && "motion-safe:animate-spin")} />}
-              />
-            </span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                // `.pressable`: the portrait is a control, not a surface, so
+                // it dips under the finger like every other control does.
+                className="pressable group relative shrink-0 rounded-full disabled:cursor-default motion-reduce:active:scale-100"
+                aria-label="Change profile picture"
+              >
+                <Avatar size="lg" className="coarse:size-14">
+                  {avatar && (
+                    <AvatarImage
+                      src={avatar}
+                      alt=""
+                      {...(requiresViewerCredentials(avatar) ? { referrerPolicy: "no-referrer" } : {})}
+                    />
+                  )}
+                  <AvatarFallback className="font-sans text-ui">{initials(user.name, user.email)}</AvatarFallback>
+                </Avatar>
+                <span
+                  className={cn(
+                    "absolute inset-0 flex items-center justify-center rounded-full bg-foreground/60 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
+                    uploading && "opacity-100"
+                  )}
+                  aria-hidden="true"
+                >
+                  <IconSwap
+                    swapped={uploading}
+                    from={<Camera className="size-4" />}
+                    to={<Loader2 className={cn("size-4", uploading && "motion-safe:animate-spin")} />}
+                  />
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Change picture</TooltipContent>
+          </Tooltip>
           <input
             ref={fileRef}
             type="file"
@@ -171,97 +153,71 @@ export function AccountSection() {
             }}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-body-lg font-semibold text-foreground">{user.name || "You"}</p>
-              <Badge variant="secondary">{plan.name}</Badge>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-body font-semibold text-foreground">{user.name || "You"}</p>
+              <Badge variant="secondary" className="font-sans" translate="no">
+                {plan.name}
+              </Badge>
             </div>
-            <p className="mt-0.5 truncate text-body text-muted-foreground">{email}</p>
+            <p className="truncate text-ui text-muted-foreground" translate="no">
+              {email}
+            </p>
           </div>
-        </div>
-
-        <SettingRow
-          label="Name"
-          htmlFor="account-name"
-          description="Shown in the sidebar and on anything you share."
-          control={
-            <div className="flex items-center gap-2">
-              <TileSaveStatus state={nameState} failedMessage="Couldn’t save." />
-              <Input
-                id="account-name"
-                value={name}
-                maxLength={80}
-                placeholder="Your name"
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => void saveName()}
-                className="w-56"
-              />
-            </div>
-          }
-        />
-      </SettingsGroup>
-
-      <SettingsGroup title="Usage" description="What this account has spent and done, from the same ledger billing reads.">
-        <div className="py-4">
-          <UsageStats {...usage} />
+          <Button variant="outline" size="sm" onClick={() => openSettings("personalization")}>
+            Change name
+          </Button>
         </div>
       </SettingsGroup>
 
-      <SettingsGroup title="Activity" description="Every day you used Juno in the last year. Darker means more.">
-        <div className="py-4">
-          <UsageActivity data={usage.data} loading={usage.loading} />
-        </div>
-        <UsageDetail data={usage.data} loading={usage.loading} />
-      </SettingsGroup>
-
-      {/* The whole sign-in group — two-step verification, password, email
-          address, sessions — lives with the sign-in form in
-          components/auth, because it is the other half of the same flow. */}
+      {/* Two-step verification, password, email address and sessions live
+          with the sign-in form in components/auth: the same flow, read
+          together. */}
       <AccountSecuritySection email={email} />
 
-      <SettingsGroup title="Email notifications" description="What Juno may send to your inbox.">
+      <SettingsGroup
+        title="Email notifications"
+        description={features.email ? undefined : "Email isn’t set up on this server yet. Your choices are kept for when it is."}
+      >
         <SettingRow
           label="Budget alerts"
           htmlFor="email-budget"
-          description="Email me at 80% of my monthly budget."
+          description="An email when you reach 80% of your monthly budget."
+          status={saves.status("emailBudgetAlerts")}
           control={
             <Switch
               id="email-budget"
               checked={settings.emailBudgetAlerts}
-              onCheckedChange={(v) => void save({ emailBudgetAlerts: v })}
+              onCheckedChange={(emailBudgetAlerts) =>
+                void saves.track("emailBudgetAlerts", () => save({ emailBudgetAlerts }))
+              }
             />
           }
         />
         <SettingRow
           label="Weekly digest"
           htmlFor="email-digest"
-          description="Usage recap every Monday."
+          description="A recap of your usage every Monday."
+          status={saves.status("emailWeeklyDigest")}
           control={
             <Switch
               id="email-digest"
               checked={settings.emailWeeklyDigest}
-              onCheckedChange={(v) => void save({ emailWeeklyDigest: v })}
+              onCheckedChange={(emailWeeklyDigest) =>
+                void saves.track("emailWeeklyDigest", () => save({ emailWeeklyDigest }))
+              }
             />
           }
         />
-        {!features.email && (
-          <p className="py-3 text-ui text-muted-foreground">
-            Email delivery isn&apos;t configured yet — your preferences are saved and take effect once it is.
-          </p>
-        )}
       </SettingsGroup>
 
-      {/* "Delete", not "Danger zone": settings-sections.ts rules a danger zone
-          out on the grounds that a heading whose only content is destruction
-          reads as a dare, and Data & privacy already names its destructive
-          group this way with this lede. Two destructive groups, one voice. */}
-      <SettingsGroup title="Delete" description="Irreversible. This removes data permanently.">
+      <SettingsGroup tone="destructive">
         <SettingRow
           label="Delete account"
           tone="destructive"
-          description="Chats, memories, files and your subscription — everything, immediately. Export first if you want a copy."
+          description="Chats, memories, files and your subscription, all at once. Export first if you want a copy."
           control={
             <Button variant="destructive-outline" size="sm" onClick={() => setDeleteOpen(true)}>
-              <ActionIcons.delete className="size-4" /> Delete account…
+              Delete account
             </Button>
           }
         />
@@ -279,13 +235,13 @@ export function AccountSection() {
           <DialogHeader>
             <DialogTitle>Delete this account?</DialogTitle>
             <DialogDescription>
-              This deletes your account and everything in it — conversations, memories, uploaded files, and your
-              subscription. It takes effect immediately, and nothing can be recovered afterwards.
+              Your account and everything in it are deleted: conversations, memories, files and your subscription.
+              It happens at once, and nothing can be recovered.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="delete-confirm-email" className="text-muted-foreground">
-              Type <span className="font-mono text-foreground">{email}</span> to confirm
+              Type <span className="text-foreground" translate="no">{email}</span> to confirm
             </Label>
             <Input
               id="delete-confirm-email"
@@ -298,7 +254,7 @@ export function AccountSection() {
               disabled={deleting}
             />
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter>
             <Button
               variant="ghost"
               onClick={() => {
@@ -309,19 +265,8 @@ export function AccountSection() {
             >
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              disabled={!match || deleting}
-              aria-busy={deleting}
-              onClick={() => void deleteAccount()}
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> Deleting…
-                </>
-              ) : (
-                "Delete permanently"
-              )}
+            <Button variant="destructive" disabled={!match} loading={deleting} onClick={() => void deleteAccount()}>
+              Delete permanently
             </Button>
           </DialogFooter>
         </DialogContent>

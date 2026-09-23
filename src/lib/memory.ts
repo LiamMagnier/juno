@@ -1364,6 +1364,11 @@ export async function backfillMemories(opts: {
 }): Promise<{ processedConversations: number; created: number; remaining: number }> {
   const batch = (await pendingBackfill(opts.userId)).slice(0, opts.maxConversations ?? 2);
   let created = 0;
+  // Only conversations actually read count. The page's "Learn from past chats"
+  // loop stops when a batch processes nothing, which is its only signal that no
+  // model is answering; reporting the batch size instead kept it POSTing up to
+  // its 40-batch cap against a dead provider.
+  let processed = 0;
   for (const conversationId of batch) {
     const res = await extractConversationMemory({
       userId: opts.userId,
@@ -1373,9 +1378,10 @@ export async function backfillMemories(opts: {
     });
     created += res.created;
     if (res.chunksProcessed === 0 && !res.done) break; // model unavailable — stop the batch
+    processed++;
   }
   const remaining = (await pendingBackfill(opts.userId)).length;
-  return { processedConversations: batch.length, created, remaining };
+  return { processedConversations: processed, created, remaining };
 }
 
 // ---------------------------------------------------------------------------

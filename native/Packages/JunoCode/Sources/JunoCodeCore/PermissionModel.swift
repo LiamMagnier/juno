@@ -10,6 +10,25 @@ public enum PermissionMode: String, Codable, CaseIterable, Sendable {
     case workspaceWrite
     /// Most actions proceed; critical actions always require approval.
     case fullAccess
+
+    /// Ordered by how much the mode lets through without asking.
+    public var authorityRank: Int {
+        switch self {
+        case .readOnly: 0
+        case .askBeforeChanges: 1
+        case .workspaceWrite: 2
+        case .fullAccess: 3
+        }
+    }
+
+    /// This mode, lowered to `ceiling` if it would exceed it.
+    ///
+    /// Anything acting on the reader's behalf without the reader in front of
+    /// it — a sub-agent, a queued device task — gets at most the authority of
+    /// whoever started it.
+    public func capped(at ceiling: PermissionMode) -> PermissionMode {
+        authorityRank <= ceiling.authorityRank ? self : ceiling
+    }
 }
 
 /// Risk classification attached to every proposed tool action.
@@ -179,6 +198,10 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
     public let approvalPolicy: ApprovalPolicy
     public let requestedAt: Date
     public let expiresAt: Date
+    /// The rule "Always allow" would save, shown on the prompt so the reader
+    /// knows exactly how wide a yes they are giving. Nil when the action can
+    /// only be approved once — a destructive one.
+    public let suggestedRule: PermissionRule?
 
     public init(
         id: String = UUID().uuidString.lowercased(),
@@ -189,7 +212,8 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         risk: ActionRisk,
         approvalPolicy: ApprovalPolicy = .byRisk,
         requestedAt: Date,
-        expiresAt: Date
+        expiresAt: Date,
+        suggestedRule: PermissionRule? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -200,6 +224,7 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         self.approvalPolicy = approvalPolicy
         self.requestedAt = requestedAt
         self.expiresAt = expiresAt
+        self.suggestedRule = suggestedRule
     }
 
     public func authorizes(digest: String, at date: Date) -> Bool {

@@ -1,103 +1,73 @@
 import { cn } from "@/lib/utils";
 import { PROVIDERS, type Provider } from "@/lib/providers";
+import { PROVIDER_MARKS, markTransform } from "@/components/brand/provider-marks";
 
-const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
-  anthropic: {
-    light: "/provider-logos/light/anthropic.png",
-    dark: "/provider-logos/dark/anthropic.png",
-  },
-  openai: {
-    light: "/provider-logos/light/openai.png",
-    dark: "/provider-logos/dark/openai.png",
-  },
-  google: {
-    light: "/provider-logos/light/google.png",
-    dark: "/provider-logos/dark/google.png",
-  },
-  meta: {
-    light: "/provider-logos/light/meta.png",
-    dark: "/provider-logos/dark/meta.png",
-  },
-  zhipu: {
-    light: "/provider-logos/light/zhipu.png",
-    dark: "/provider-logos/dark/zhipu.png",
-  },
-  moonshot: {
-    light: "/provider-logos/light/moonshot.png",
-    dark: "/provider-logos/dark/moonshot.png",
-  },
-  deepseek: {
-    light: "/provider-logos/light/deepseek.png",
-    dark: "/provider-logos/dark/deepseek.png",
-  },
-  mistral: {
-    light: "/provider-logos/light/mistral.png",
-    dark: "/provider-logos/dark/mistral.png",
-  },
-  xai: {
-    light: "/provider-logos/light/xai.png",
-    dark: "/provider-logos/dark/xai.png",
-  },
-  seedance: {
-    light: "/provider-logos/light/seedance.png",
-    dark: "/provider-logos/dark/seedance.png",
-  },
-  minimax: {
-    light: "/provider-logos/light/minimax.png",
-    dark: "/provider-logos/dark/minimax.png",
-  },
-  mimo: {
-    light: "/provider-logos/light/mimo.png",
-    dark: "/provider-logos/dark/mimo.png",
-  },
-  qwen: {
-    light: "/provider-logos/light/qwen.png",
-    dark: "/provider-logos/dark/qwen.png",
-  },
-  longcat: {
-    light: "/provider-logos/light/longcat.png",
-    dark: "/provider-logos/dark/longcat.png",
-  },
-};
-
-export function providerLogoSrc(provider: Provider, theme: "light" | "dark" = "light"): string {
-  return LOGO_SRC[provider]?.[theme] ?? LOGO_SRC.openai[theme];
-}
-
+/**
+ * A model lab's mark: the vector drawing in `currentColor`, with nothing
+ * around it.
+ *
+ * BARE BY DEFAULT. Almost every call site draws the mark beside the model or
+ * lab name (a chip, a picker row, the composer's model button), where a tile
+ * is a box inside a box: it was a hairline square with 24% corners inside a
+ * pill, and its card fill fought the chip's own hover and selected fills. The
+ * bare mark takes the ink of the text next to it, so it dims and lights with
+ * its row the way every other glyph does. Size it with a `size-*` class.
+ *
+ * `tile` is for the few places the mark stands on its own as an object: a lab
+ * avatar in a list, an announcement's hero. It gives the mark a quiet muted
+ * well at the logo radius (24%, one shape at every size) with the glyph at 60%
+ * of the box, so the tile is sized by the same `size-*` class.
+ *
+ * NAMING. The mark is `aria-hidden` unless a `label` is passed: next to the
+ * visible name it would be read twice, and the old two-image version lost its
+ * name in dark mode anyway (the named light image was `display: none`). Pass
+ * `label` where the mark is the only thing that says which lab it is.
+ */
 export function ProviderLogo({
   provider,
   className,
   label,
+  tile = false,
 }: {
   provider: Provider;
   className?: string;
   label?: string;
+  /** Draw the mark on its own muted tile, for standalone uses. */
+  tile?: boolean;
 }) {
-  const src = LOGO_SRC[provider] ?? LOGO_SRC.openai;
-  const alt = label ?? PROVIDERS[provider]?.label ?? provider;
+  const mark = PROVIDER_MARKS[provider] ?? PROVIDER_MARKS.openai;
+  const named = label !== undefined;
+  const a11y = named
+    ? { role: "img" as const, "aria-label": label || PROVIDERS[provider]?.label || provider }
+    : { "aria-hidden": true as const };
 
+  const svg = (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      fillRule="evenodd"
+      focusable="false"
+      className={cn(tile ? "size-[60%]" : cn("size-4 shrink-0", className))}
+      {...(tile ? { "aria-hidden": true as const } : a11y)}
+    >
+      <g transform={markTransform(mark)}>
+        {mark.paths.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
+      </g>
+    </svg>
+  );
+
+  if (!tile) return svg;
   return (
     <span
       className={cn(
-        // `rounded-logo` (24%) is a PERCENTAGE so one value is one shape at every
-        // size, and it is owned here rather than passed in: call sites had drifted
-        // to 24%, 28% and 32%, so the same provider mark rendered three different
-        // corner treatments depending on which screen you were looking at.
-        //
-        // Flat, per docs/design/FLAT_UI.md: the card fill and a hairline, nothing
-        // else. It used to carry `shadow-pop` plus, on dark, a 1px lit inset rim,
-        // both written for the old true-black ground, where the tile otherwise
-        // had no edge at all. The dark ground is warm charcoal now and the card
-        // rung sits above it, so the hairline holds the edge by itself, and the
-        // flat retune retired both the contact shadow on chips and the sheen rim.
-        // The light edge is up from /55 to /80 to take over the definition the
-        // shadow was lending it; dark takes the full token.
-        "inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/80 bg-card dark:border-border",
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-logo bg-muted text-foreground",
         className
       )}
+      {...a11y}
     >
-      <img src={src.light} alt={alt} className="size-full object-contain p-[12%] dark:hidden" draggable={false} loading="lazy" />
-      <img src={src.dark} alt="" className="hidden size-full object-contain p-[12%] dark:block" draggable={false} loading="lazy" />
+      {svg}
     </span>
   );
 }

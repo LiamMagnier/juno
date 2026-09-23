@@ -1455,8 +1455,8 @@ export function hostOfflinePolicyOf(value: string): WorkHostOfflinePolicy {
  * Unlike the four above, this one reads a column that decides what a run may do
  * without asking, so the fallback is the only one available: a value this build
  * cannot read must not be resolved into more permission than the narrowest.
- * `src/app/api/work/sessions/[id]/runs/route.ts` holds an equivalent private
- * copy; the two must not disagree about that fallback.
+ * `policyOf` in src/lib/work/dispatch.ts holds an equivalent private copy;
+ * the two must not disagree about that fallback.
  */
 export function permissionPolicyOf(value: string): WorkPermissionPolicy {
   return narrow(WORK_PERMISSION_POLICIES, value, "conservative");

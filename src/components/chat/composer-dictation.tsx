@@ -437,7 +437,7 @@ export function ComposerDictation({
       ? "Transcribing"
       : recognitionLost
         ? serverStt
-          ? "Recording — text arrives when you finish"
+          ? "Recording (text arrives when you finish)"
           : "Live text stopped"
         : "Listening";
 

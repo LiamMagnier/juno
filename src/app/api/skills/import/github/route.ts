@@ -3,7 +3,8 @@
  *
  * TWO STEPS, ONE ROUTE. A body with no `paths` is a PREVIEW: it walks the
  * repository and returns what it found — each skill's name, its description,
- * what else its folder holds, which of its declarations Juno cannot carry.
+ * what else its folder holds, which of its declarations Juno cannot carry, and
+ * what the security scan makes of it.
  * A body with `paths` IMPORTS those. The split is not ceremony: a repository is
  * the unit of distribution here (see `docs/skills-audit.md` §1.4), so an import
  * is frequently a choice among twenty, and a reader who has not seen the
@@ -15,6 +16,13 @@
  * document worth tampering with. `commit` is carried from the preview so the
  * import reads the exact bytes that were shown, rather than whatever the branch
  * points at by the time somebody presses the button.
+ *
+ * ONE SOURCE PER REPOSITORY. Every skill an import installs points at one
+ * `WorkSkillSource`, which is what the library groups by and what is later
+ * switched off, checked for updates and removed as a unit. The preview marks a
+ * skill already installed from the same repository, and a skill whose slash
+ * name is taken along with a free one to use instead; `renames` carries the
+ * reader's choice back. An import still never overwrites anything.
  *
  * EVERY IMPORT LANDS UNTRUSTED. `origin: "imported"` is passed as a constant,
  * not read from the body, and `trustForOrigin` turns it into `untrusted` — so
@@ -31,31 +39,43 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
-import { decryptSecret } from "@/lib/crypto";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { createSkillWithFirstVersion } from "@/lib/skills/store";
+import {
+  createSkillWithFirstVersion,
+  githubTokenFor,
+  removeSourceIfEmpty,
+  sourceForImport,
+  takenSkillSlugs,
+} from "@/lib/skills/store";
 import {
   MAX_DISCOVERED_SKILLS,
   GITHUB_IMPORT_REFUSAL_MESSAGES,
   discoverGithubSkills,
   parseGithubSkillSource,
-  provenanceRecord,
+  type GithubDiscovery,
   type GithubSkillCandidate,
 } from "@/lib/skills/github";
-import { SKILL_MD_REFUSAL_MESSAGES, titleFromSkillName } from "@/lib/skills/skill-md";
 import {
-  MAX_REQUESTED_TOOLS,
-  SKILL_CAPABILITY_NAME_PATTERN,
-  emptySkillContract,
-  normalizeSkillSlug,
-  serializeSkill,
-} from "@/lib/work/skills";
+  chooseImportSource,
+  discoverySourceKey,
+  githubSkillContract,
+  importSecurityStatus,
+  partitionTools,
+  serializeLibrarySkill,
+  serializeSkillSource,
+  suggestSkillSlug,
+} from "@/lib/skills/sources";
+import type { LibrarySkill } from "@/lib/skills/library-contract";
+import { SKILL_MD_REFUSAL_MESSAGES, titleFromSkillName } from "@/lib/skills/skill-md";
+import { MAX_SKILL_NAME_CHARS, normalizeSkillSlug } from "@/lib/work/skills";
 
 export const runtime = "nodejs";
 
 /** Walks are outbound requests against somebody else's rate limit as well as ours. */
 const PREVIEW_LIMIT_PER_HOUR = 40;
 const IMPORT_LIMIT_PER_HOUR = 20;
+
+const pathSchema = z.string().trim().min(1).max(500);
 
 const bodySchema = z.object({
   /** `owner/repo`, a repo URL, or a `tree`/`blob` URL. */
@@ -66,7 +86,7 @@ const bodySchema = z.object({
    * Capped at what one walk can return, so a body cannot ask this route to
    * import more skills than a walk could ever have shown the reader.
    */
-  paths: z.array(z.string().trim().min(1).max(500)).max(MAX_DISCOVERED_SKILLS).optional(),
+  paths: z.array(pathSchema).max(MAX_DISCOVERED_SKILLS).optional(),
   /** The commit the preview read. Pins the import to the same bytes. */
   commit: z
     .string()
@@ -75,55 +95,26 @@ const bodySchema = z.object({
     .optional(),
   /** Where the imported skills are filed. Absent or null is the account level. */
   projectId: z.string().cuid().nullable().optional(),
+  /**
+   * A slash name per path, for skills whose own name is already taken. Without
+   * one such a skill is skipped; the preview suggests one for each.
+   */
+  renames: z
+    .record(pathSchema, z.string().trim().min(1).max(MAX_SKILL_NAME_CHARS))
+    .refine((value) => Object.keys(value).length <= MAX_DISCOVERED_SKILLS)
+    .optional(),
 });
 
-/**
- * The user's GitHub token, when they have connected the account.
- *
- * Optional throughout. Unauthenticated GitHub allows 60 requests an hour per
- * IP, which one walk of a large repository can spend on its own, so a
- * connected account is the difference between "this works" and "this works
- * until somebody else on this deployment tries it". A user who has not
- * connected one still gets public repositories, and `rate_limited` says what
- * would fix it rather than reporting a generic failure.
- */
-async function githubTokenFor(userId: string): Promise<string | null> {
-  try {
-    const row = await prisma.connection.findUnique({
-      where: { userId_provider: { userId, provider: "github" } },
-      select: { accessToken: true },
-    });
-    if (!row?.accessToken) return null;
-    return decryptSecret(row.accessToken);
-  } catch {
-    // A connection that cannot be decrypted is a connection this import does
-    // not have. Failing the whole request over it would turn a broken row into
-    // "GitHub is down".
-    return null;
-  }
+interface PreviewNotes {
+  /** A skill of this repository was already installed from this path. */
+  installed: boolean;
+  /** Its slash name is held by another skill (or by an earlier row of this preview). */
+  slugTaken: boolean;
+  /** A free name to install it under instead, when its own is taken. */
+  suggestedSlug: string | null;
 }
 
-/**
- * Splits a skill's `allowed-tools` into what Juno can store and what it cannot.
- *
- * Claude Code writes argument patterns — `Bash(git add *)` — and Juno matches
- * capability names by exact string equality, so a pattern stored here could
- * only ever match nothing. Dropped, counted, and reported in the preview:
- * refusing the whole skill over a field the specification marks experimental
- * would reject most of what is on GitHub, and storing the pattern would put a
- * declaration in the column that is guaranteed never to resolve.
- */
-function partitionTools(names: readonly string[]): { carried: string[]; dropped: string[] } {
-  const carried: string[] = [];
-  const dropped: string[] = [];
-  for (const name of names) {
-    if (carried.length < MAX_REQUESTED_TOOLS && SKILL_CAPABILITY_NAME_PATTERN.test(name)) carried.push(name);
-    else dropped.push(name);
-  }
-  return { carried, dropped };
-}
-
-function previewOf(candidate: GithubSkillCandidate) {
+function previewOf(candidate: GithubSkillCandidate, notes: PreviewNotes) {
   const tools = partitionTools(candidate.skill.allowedTools);
   return {
     path: candidate.path,
@@ -144,8 +135,69 @@ function previewOf(candidate: GithubSkillCandidate) {
     /** Files beside the SKILL.md. Listed, never fetched, never executed. */
     companionFiles: candidate.companionFiles,
     url: candidate.provenance.url,
+    /**
+     * The scanner's verdict on this file as it would be installed, so the
+     * dialog leaves a blocked skill unticked. Advisory: the import scans again
+     * when it writes, and that verdict is the one the row keeps.
+     */
+    securityStatus: importSecurityStatus(candidate),
+    ...notes,
   };
 }
+
+/**
+ * What the library already holds of this repository: the paths installed from
+ * it (through any of its sources) and the slugs taken across the account.
+ */
+async function libraryStateFor(userId: string, discovery: GithubDiscovery) {
+  const key = discoverySourceKey(discovery);
+  const [installedRows, taken, sources] = await Promise.all([
+    prisma.workSkill.findMany({
+      where: { userId, deletedAt: null, kind: "skill", source: { is: { userId, key } } },
+      select: { sourcePath: true },
+    }),
+    takenSkillSlugs(userId),
+    prisma.workSkillSource.findMany({ where: { userId, key } }),
+  ]);
+  const installed = new Set(
+    installedRows.map((row) => row.sourcePath).filter((path): path is string => !!path)
+  );
+  return { key, installed, taken, sources };
+}
+
+/**
+ * Marks each skill of a preview: already installed, or its name taken and a
+ * name to use instead. Walked in path order with the names claimed so far, so
+ * two skills of one repository that share a name (and the suggestions made for
+ * them) never collide with each other either.
+ */
+function annotate(
+  candidates: readonly GithubSkillCandidate[],
+  repo: string,
+  installed: ReadonlySet<string>,
+  taken: ReadonlySet<string>
+): Map<string, PreviewNotes> {
+  const claimed = new Set(taken);
+  const notes = new Map<string, PreviewNotes>();
+  for (const candidate of candidates) {
+    if (installed.has(candidate.path)) {
+      notes.set(candidate.path, { installed: true, slugTaken: false, suggestedSlug: null });
+      continue;
+    }
+    const slug = normalizeSkillSlug(candidate.skill.name);
+    if (slug && claimed.has(slug)) {
+      const suggestedSlug = suggestSkillSlug(repo, slug, claimed);
+      if (suggestedSlug) claimed.add(suggestedSlug);
+      notes.set(candidate.path, { installed: false, slugTaken: true, suggestedSlug });
+      continue;
+    }
+    if (slug) claimed.add(slug);
+    notes.set(candidate.path, { installed: false, slugTaken: false, suggestedSlug: null });
+  }
+  return notes;
+}
+
+type SkipReason = "installed" | "slug_taken" | "invalid_slug";
 
 export async function POST(req: Request) {
   const { user, error } = await requireUser();
@@ -154,6 +206,7 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const { source: raw, paths, commit, projectId } = parsed.data;
+  const renames = parsed.data.renames ?? {};
   const importing = paths !== undefined && paths.length > 0;
 
   const limit = await rateLimit({
@@ -192,13 +245,10 @@ export async function POST(req: Request) {
   }
 
   const token = await githubTokenFor(user.id);
-  const result = await discoverGithubSkills(
-    { fetch, token },
-    // Pinning to the commit the preview read: a branch that moved between the
-    // two steps would otherwise import instructions nobody was shown. The path
-    // is kept so a `blob` source still resolves to its one file.
-    commit ? { ...source, ref: commit } : source
-  );
+  // Pinned to the commit the preview read: a branch that moved between the two
+  // steps would otherwise import instructions nobody was shown. The ref is
+  // still resolved, so the source records the branch it tracks and not a SHA.
+  const result = await discoverGithubSkills({ fetch, token }, source, commit ? { commit } : {});
 
   if (!result.ok) {
     return NextResponse.json(
@@ -213,8 +263,17 @@ export async function POST(req: Request) {
     reason: problem.reason,
     message: SKILL_MD_REFUSAL_MESSAGES[problem.reason],
   }));
+  const library = await libraryStateFor(user.id, discovery);
 
   if (!importing) {
+    const notes = annotate(discovery.candidates, discovery.repo, library.installed, library.taken);
+    // The source these would join, when one is installed already, so the
+    // preview can say "adds to" rather than implying a second copy.
+    const joins = chooseImportSource(library.sources, {
+      key: library.key,
+      path: discovery.scope,
+      ref: discovery.ref,
+    });
     return NextResponse.json({
       repository: {
         owner: discovery.owner,
@@ -223,12 +282,15 @@ export async function POST(req: Request) {
         commit: discovery.commit,
         url: `https://github.com/${discovery.owner}/${discovery.repo}/tree/${discovery.commit}`,
       },
-      skills: discovery.candidates.map(previewOf),
+      skills: discovery.candidates.map((candidate) => previewOf(candidate, notes.get(candidate.path)!)),
       problems,
       // True when the walk found more than one page's worth. The client says so
-      // rather than presenting 25 of 60 as the whole repository.
+      // rather than presenting 100 of 160 as the whole repository, and `total`
+      // (every SKILL.md in scope, read or not) is the 160 it says.
       more: discovery.more,
+      total: discovery.paths.length,
       connected: token !== null,
+      source: joins ? serializeSkillSource(joins) : null,
     });
   }
 
@@ -245,36 +307,39 @@ export async function POST(req: Request) {
     );
   }
 
-  const imported: ReturnType<typeof serializeSkill>[] = [];
-  const skipped: { path: string; slug: string; reason: "slug_taken" | "invalid_slug"; message: string }[] = [];
+  // Every skill of one import lands in one source: the repository, or the
+  // folder the link was scoped to, or an installed source that already covers
+  // it. Made before the skills because each of them points at it.
+  const target = await sourceForImport(user.id, discovery);
+
+  const imported: LibrarySkill[] = [];
+  const skipped: { path: string; slug: string; reason: SkipReason; message: string }[] = [];
   let blockedCount = 0;
 
   for (const candidate of chosen) {
-    const slug = normalizeSkillSlug(candidate.skill.name);
-    if (!slug) {
+    if (library.installed.has(candidate.path)) {
       skipped.push({
         path: candidate.path,
         slug: candidate.skill.name,
-        reason: "invalid_slug",
-        message: "Juno could not turn that skill's name into something you can type after a slash.",
+        reason: "installed",
+        message: "This skill is already installed from this repository. Check the source for updates instead.",
       });
       continue;
     }
 
-    const tools = partitionTools(candidate.skill.allowedTools);
-    const contract = emptySkillContract();
-    contract.provenance = {
-      ...provenanceRecord(candidate.provenance),
-      // The author's own `metadata:` keys ride along under a prefix of their
-      // own, so a skill declaring `metadata: {version: 2}` cannot overwrite the
-      // record of where it came from.
-      ...Object.fromEntries(
-        Object.entries(candidate.skill.metadata).map(([key, value]) => [`skill.${key}`, value])
-      ),
-      ...(candidate.skill.license ? { "skill.license": candidate.skill.license } : {}),
-      ...(candidate.skill.compatibility ? { "skill.compatibility": candidate.skill.compatibility } : {}),
-    };
+    const rename = renames[candidate.path];
+    const slug = normalizeSkillSlug(rename ?? candidate.skill.name);
+    if (!slug) {
+      skipped.push({
+        path: candidate.path,
+        slug: rename ?? candidate.skill.name,
+        reason: "invalid_slug",
+        message: "Juno could not turn that name into something you can type after a slash.",
+      });
+      continue;
+    }
 
+    const { contract, requestedTools } = githubSkillContract(candidate);
     const created = await createSkillWithFirstVersion({
       userId: user.id,
       slug,
@@ -283,10 +348,12 @@ export async function POST(req: Request) {
       instructions: candidate.skill.instructions,
       projectId: projectId ?? null,
       contract,
-      requestedTools: tools.carried,
+      requestedTools,
       // A constant. Never from the body — see this file's header.
       origin: "imported",
       autoSelect: false,
+      sourceId: target.source.id,
+      sourcePath: candidate.path,
     });
 
     if (!created.ok) {
@@ -294,12 +361,19 @@ export async function POST(req: Request) {
         path: candidate.path,
         slug,
         reason: "slug_taken",
-        message: `You already have a skill called /${slug}. Rename or delete that one first — an import never overwrites a skill you already have.`,
+        message: `You already have a skill called /${slug}. Install this one under another name. An import never overwrites a skill you already have.`,
       });
       continue;
     }
     if (created.blocked) blockedCount++;
-    imported.push(serializeSkill(created.skill));
+    imported.push(serializeLibrarySkill({ ...created.skill, requiresConsent: created.version.requiresConsent }));
+  }
+
+  // A source made for this import and then left empty (every skill skipped)
+  // is a folder with nothing in it. It goes rather than lingering in the list.
+  let kept = true;
+  if (target.created && imported.length === 0) {
+    kept = !(await removeSourceIfEmpty(user.id, target.source.id));
   }
 
   await recordWorkAudit({
@@ -324,6 +398,8 @@ export async function POST(req: Request) {
       /** How many landed switched off because the scanner refused them. */
       blocked: blockedCount,
       repository: { owner: discovery.owner, repo: discovery.repo, ref: discovery.ref, commit: discovery.commit },
+      /** The source they were installed into, or null when nothing was. */
+      source: kept ? serializeSkillSource(target.source) : null,
     },
     { status: 201 }
   );

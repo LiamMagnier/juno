@@ -239,6 +239,10 @@ async function recoverOrCreateReceipt(input: {
   const { request } = input;
   const connectorVersion = request.connectorVersion ?? "unknown";
   const preview = actionPreview({
+    // The id, not the label, is what lets a Juno-owned action (a start_task
+    // approval) describe itself; the stored preview is what push notifications
+    // and the approvals list read.
+    connectorId: request.connectorId,
     connectorLabel: request.connectorLabel,
     toolName: request.toolName,
     riskClass: input.riskClass,

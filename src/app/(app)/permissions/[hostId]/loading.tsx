@@ -15,7 +15,7 @@ export default function HostPermissionsLoading() {
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="reading" role="status" aria-label="Loading Mac">
-      <AppPageHeaderSkeleton headingWidth="w-56" actions />
+      <AppPageHeaderSkeleton nav headingWidth="w-56" actions />
       <WorkRowSkeletons count={4} height={64} className="space-y-3" />
     </AppPage>
   );
