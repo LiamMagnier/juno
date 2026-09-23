@@ -129,6 +129,10 @@ struct DesktopTranscript: View {
     /// Opens the Activity panel on a reply's run — by message, and on a call
     /// when one is given.
     var openActivity: ((String, String?) -> Void)? = nil
+    /// Opens the Research panel on a run, by id.
+    var openResearch: ((String) -> Void)? = nil
+    /// "Research this": sends a question as a Research request.
+    var researchThis: ((String) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
     /// Where the transcript is scrolled. It starts at the newest turn and
@@ -154,6 +158,10 @@ struct DesktopTranscript: View {
     /// transcript is only ever built with local turns in it at the handoff —
     /// and those are the turns that rise, a beat after the greeting leaves.
     @State private var localAnimateFrom = 0
+    /// The phases the announcer has spoken for the live run, and when it last
+    /// spoke one.
+    @State private var announcedPhases = Set<String>()
+    @State private var lastPhaseAnnouncementAt = Date.distantPast
 
     /// The web's `max-w-3xl` reading column. See ``DesktopChatMeasure``.
     static let readingWidth: CGFloat = DesktopChatMeasure.reading
@@ -195,6 +203,19 @@ struct DesktopTranscript: View {
                         .modifier(DesktopMessageRise(rises: index >= animateFrom))
                         .environment(\.junoFindHighlight, find?.highlight(for: message.id))
                         .id(message.id)
+                    // A research run follows the question it answers.
+                    if message.role == .user {
+                        ForEach(researchRuns.filter { $0.userMessageID == message.id }) { run in
+                            researchRow(run)
+                        }
+                    }
+                }
+
+                // Runs whose question is not on screen follow the transcript.
+                ForEach(researchRuns.filter { run in
+                    !model.selectedMessages.contains { $0.id == run.userMessageID && $0.role == .user }
+                }) { run in
+                    researchRow(run)
                 }
 
                 // A private chat's turns, or a first turn on its way to
@@ -360,13 +381,29 @@ struct DesktopTranscript: View {
         // "Response complete, N words." on the edge from writing to done —
         // the web's announcer.
         .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
+            announcedPhases = []
             guard wasGenerating, !isGenerating,
                 let last = model.selectedMessages.last, last.role == .assistant,
                 last.errorDescription == nil
             else { return }
             let words = NativeMessageContent.plainText(of: last.content)
                 .split(whereSeparator: \.isWhitespace).count
-            Self.announce("Response complete, \(words) \(words == 1 ? "word" : "words").")
+            // The summary's words first (SPEC §7.12), then the web's line.
+            let view = NativeRunView.build(activity: last.activity, reasoning: last.reasoning, sources: last.sources)
+            let summary = NativeToolPresentation.summaryLine(view, workedMs: view.timing.workedMs, sourceCount: last.sources.count)
+                .text.replacingOccurrences(of: " · ", with: ", ")
+            let lead = view.hasContent(sourceCount: last.sources.count) && !summary.isEmpty ? "\(summary). " : ""
+            Self.announce("\(lead)Response complete, \(words) \(words == 1 ? "word" : "words").")
+        }
+        // The run's phase boundaries, spoken once each and at least three
+        // seconds apart; waiting for an approval jumps the queue (SPEC §7.12).
+        .onChange(of: livePhaseAnnouncement) { _, announcement in
+            guard let announcement, !announcedPhases.contains(announcement.key) else { return }
+            let now = Date()
+            guard announcement.urgent || now.timeIntervalSince(lastPhaseAnnouncementAt) >= 3 else { return }
+            announcedPhases.insert(announcement.key)
+            lastPhaseAnnouncementAt = now
+            Self.announce(announcement.text)
         }
         .onDisappear { speechPlayback.stop() }
     }
@@ -391,6 +428,81 @@ struct DesktopTranscript: View {
             return nil
         }
         return error
+    }
+
+    // MARK: The announcer
+
+    struct PhaseAnnouncement: Equatable {
+        let key: String
+        let text: String
+        let urgent: Bool
+    }
+
+    /// What the live run is doing, in the announcer's words: "Thinking",
+    /// "Searching the web", "Reading sources", a tool's running phrase, and
+    /// "Waiting for your approval…".
+    private var livePhaseAnnouncement: PhaseAnnouncement? {
+        guard let live = model.selectedMessages.last, live.role == .assistant, live.isPending else { return nil }
+        let view = NativeRunView.build(activity: live.activity, reasoning: live.reasoning, sources: live.sources)
+        let phase = NativeRunPhase.derive(
+            view: view, live: true, failed: false, finishReason: nil,
+            answerStarted: live.answerStartedAt != nil,
+            awaitingApproval: false
+        )
+        switch phase {
+        case .thinking: return PhaseAnnouncement(key: "thinking", text: "Thinking", urgent: false)
+        case .searching: return PhaseAnnouncement(key: "searching", text: "Searching the web", urgent: false)
+        case .reading: return PhaseAnnouncement(key: "reading", text: "Reading sources", urgent: false)
+        case .tool:
+            guard let call = view.calls.last(where: \.status.isActive) else { return nil }
+            return PhaseAnnouncement(key: "tool:\(call.callID)", text: NativeToolPresentation.runningLine(call).text, urgent: false)
+        case .waiting:
+            return PhaseAnnouncement(
+                key: "waiting:\(view.pendingApprovalIDs.joined())",
+                text: "Waiting for your approval. The approval is below the answer.",
+                urgent: true
+            )
+        default:
+            return nil
+        }
+    }
+
+    // MARK: Research
+
+    /// This conversation's background research runs (SPEC §9.11.3).
+    private var researchRuns: [NativeResearchRun] {
+        guard showsStoreState else { return [] }
+        // A run first seen finished is its completion message: no row.
+        return model.researchRuns(for: model.selectedConversationID).filter(\.seenLive)
+    }
+
+    /// The newest live run owns the loop — only while no chat run works
+    /// (SPEC §7.9.1, priority 4).
+    private var loopingResearchRunID: String? {
+        guard !model.isGenerating else { return nil }
+        return researchRuns.last { $0.phase.isWorking }?.id
+    }
+
+    @ViewBuilder
+    private func researchRow(_ run: NativeResearchRun) -> some View {
+        if run.phase == .awaitingStart, let conversationID = model.selectedConversationID {
+            DesktopResearchPlanCard(
+                run: run,
+                atTail: model.selectedMessages.last?.id == run.userMessageID || run.userMessageID == nil,
+                busy: model.researchBusyRunIDs.contains(run.id),
+                error: model.researchErrors[run.id],
+                start: { Task { await model.decideResearchPlan(runID: run.id, start: true, conversationID: conversationID) } },
+                cancel: { Task { await model.decideResearchPlan(runID: run.id, start: false, conversationID: conversationID) } }
+            )
+            .id("research:\(run.id)")
+        } else {
+            DesktopResearchRow(
+                run: run,
+                ownsLoop: loopingResearchRunID == run.id,
+                open: { openResearch?(run.id) }
+            )
+            .id("research:\(run.id)")
+        }
     }
 
     private func approvalCard(_ approval: NativeChatApproval) -> some View {
@@ -487,6 +599,10 @@ struct DesktopTranscript: View {
         }
         if message.role == .assistant, let openActivity {
             actions.openActivity = { callID in openActivity(message.id, callID) }
+        }
+        if message.role == .assistant {
+            actions.openResearch = openResearch
+            if isNewest { actions.researchThis = researchThis }
         }
         if isNewest, message.role == .assistant, message.errorDescription != nil,
             model.canRetrySelectedConversation

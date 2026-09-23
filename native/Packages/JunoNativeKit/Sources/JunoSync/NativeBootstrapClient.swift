@@ -44,19 +44,32 @@ public struct NativeBootstrapCheckpoint: Equatable, Sendable {
     public let compactionFloorCursor: String
     public let modelManifestVersion: String
     public let minimumClientVersions: [String: String]
+    /// The chat grammar features the server understands — bootstrap's
+    /// `chat.clientFeatures` (Tool calls & research SPEC §2.2 addendum). Nil
+    /// on an older server, which speaks profile 1 only. Not a gate: the Mac
+    /// always sends its features, and a server that does not know them strips
+    /// them; this tells the UI, for one, that research hands off.
+    public let chatClientFeatures: [String]?
 
     public init(
         profile: NativeAccountProfile,
         currentChangeCursor: String,
         compactionFloorCursor: String,
         modelManifestVersion: String,
-        minimumClientVersions: [String: String]
+        minimumClientVersions: [String: String],
+        chatClientFeatures: [String]? = nil
     ) {
         self.profile = profile
         self.currentChangeCursor = currentChangeCursor
         self.compactionFloorCursor = compactionFloorCursor
         self.modelManifestVersion = modelManifestVersion
         self.minimumClientVersions = minimumClientVersions
+        self.chatClientFeatures = chatClientFeatures
+    }
+
+    /// Whether a Research request becomes a background run with a hand-off.
+    public var researchHandsOff: Bool {
+        chatClientFeatures?.contains("research_background") == true
     }
 }
 
@@ -134,7 +147,13 @@ public struct NativeBootstrapClient: Sendable {
             currentChangeCursor: wire.currentChangeCursor,
             compactionFloorCursor: wire.compactionFloorCursor,
             modelManifestVersion: manifestVersion,
-            minimumClientVersions: wire.minimumClientVersions
+            minimumClientVersions: wire.minimumClientVersions,
+            chatClientFeatures: wire.chat?.clientFeatures.map { features in
+                // Bounded and de-duplicated; unknown names kept (a newer
+                // server's features are still its features).
+                var seen = Set<String>()
+                return features.prefix(16).filter { !$0.isEmpty && $0.count <= 64 && seen.insert($0).inserted }
+            }
         )
     }
 
@@ -163,4 +182,27 @@ private struct BootstrapWireResponse: Decodable {
     let modelManifestVersion: String
     let contractVersion: String
     let minimumClientVersions: [String: String]
+    /// Optional and lossy: an older server has no `chat` key, and a
+    /// malformed one must not fail the bootstrap.
+    let chat: Chat?
+
+    struct Chat: Decodable {
+        let clientFeatures: [String]?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case profile, currentChangeCursor, compactionFloorCursor, modelManifestVersion, contractVersion,
+             minimumClientVersions, chat
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decode(Profile.self, forKey: .profile)
+        currentChangeCursor = try container.decode(String.self, forKey: .currentChangeCursor)
+        compactionFloorCursor = try container.decode(String.self, forKey: .compactionFloorCursor)
+        modelManifestVersion = try container.decode(String.self, forKey: .modelManifestVersion)
+        contractVersion = try container.decode(String.self, forKey: .contractVersion)
+        minimumClientVersions = try container.decode([String: String].self, forKey: .minimumClientVersions)
+        chat = try? container.decodeIfPresent(Chat.self, forKey: .chat)
+    }
 }

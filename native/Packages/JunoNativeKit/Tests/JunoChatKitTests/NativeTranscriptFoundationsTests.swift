@@ -155,7 +155,7 @@ final class NativeTranscriptFoundationsTests: XCTestCase {
         var completed = false
         for try await event in events {
             switch event {
-            case .textDelta(let delta): text += delta
+            case .textDelta(let delta, _, _): text += delta
             case .resume: resume = event
             case .completed: completed = true
             default: break

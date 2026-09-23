@@ -151,16 +151,16 @@ final class NativeRunTimelineTests: XCTestCase {
         )
     }
 
-    /// The web's rungs, verbatim, and a provider headline over "Thinking".
+    /// "Thinking", a provider headline over it, and the escalation rungs as
+    /// captions inside the line — never replacing the label (SPEC §7.10).
     func testTheThinkingLadder() {
         let plain = NativeRunView.build(activity: [], reasoning: "Working it out.")
         XCTAssertEqual(NativeToolPresentation.liveLabel(phase: .thinking, view: plain, elapsed: 4, recovering: false), "Thinking")
+        XCTAssertEqual(NativeToolPresentation.liveLabel(phase: .thinking, view: plain, elapsed: 130, recovering: false), "Thinking")
+        XCTAssertEqual(NativeRunPacing.escalation(working: 130), 1)
+        XCTAssertEqual(NativeRunPacing.escalation(working: 700), 2)
         XCTAssertEqual(
-            NativeToolPresentation.liveLabel(phase: .thinking, view: plain, elapsed: 130, recovering: false),
-            "Still thinking. This can take a few minutes."
-        )
-        XCTAssertEqual(
-            NativeToolPresentation.liveLabel(phase: .thinking, view: plain, elapsed: 700, recovering: false),
+            NativeToolPresentation.caption(stalledFor: nil, escalation: 2)?.text,
             "Still working. You can leave; the answer will be here."
         )
         XCTAssertEqual(NativeToolPresentation.liveLabel(phase: .thinking, view: plain, elapsed: 4, recovering: true), "Reconnecting…")
@@ -170,35 +170,127 @@ final class NativeRunTimelineTests: XCTestCase {
 
     // MARK: Words
 
+    /// SPEC §7.6.2: "Thought for" when the run reasoned or ran any call,
+    /// "Answered in" when neither; at most two facts, in order.
     func testTheSummaryLineGrammar() {
         let thought = NativeRunView.build(activity: [], reasoning: "Hmm.")
-        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: 12_400), "Thought for 12s")
-        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: 64_000), "Thought for 1m 4s")
-        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: nil), "Thought process")
-        XCTAssertEqual(NativeToolPresentation.summaryFacts(thought, sourceCount: 5), ["5 sources"])
+        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: 12_400)?.text, "Thought for 12s")
+        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: 64_000)?.text, "Thought for 1m 4s")
+        XCTAssertEqual(NativeToolPresentation.summaryLead(thought, workedMs: nil)?.text, "Thought process")
+        XCTAssertEqual(NativeToolPresentation.summaryFacts(thought, sourceCount: 5).map(\.text), ["5 sources"])
 
         let worked = NativeRunView.build(
             activity: [event("t", .tool, "Using Linear", tool: NativeToolDetail(server: "Linear", name: "linear__x", status: "ok"))],
             reasoning: nil
         )
-        XCTAssertEqual(NativeToolPresentation.summaryLead(worked, workedMs: 3_000), "Worked for 3s")
-        XCTAssertEqual(NativeToolPresentation.summaryFacts(worked, sourceCount: 1), ["1 source", "used Linear"])
+        XCTAssertEqual(NativeToolPresentation.summaryLead(worked, workedMs: 3_000)?.text, "Thought for 3s", "DECISIONS wins: never \"Worked for\"")
+        XCTAssertEqual(NativeToolPresentation.summaryFacts(worked, sourceCount: 1).map(\.text), ["1 source", "used Linear"])
+
+        let answered = NativeRunView.build(activity: [], reasoning: nil)
+        XCTAssertEqual(NativeToolPresentation.summaryLead(answered, workedMs: 2_000)?.text, "Answered in 2s")
+
+        let code = NativeRunView.build(activity: [
+            event("r1", .tool, "Using Run code", seq: 1, call: NativeToolCall(callID: "r1", tool: "run_code", status: .succeeded)),
+            event("s1", .search, "Searching the web", seq: 2, call: NativeToolCall(callID: "s1", tool: "web_search", status: .succeeded)),
+        ], reasoning: nil)
+        XCTAssertEqual(
+            NativeToolPresentation.summaryLine(code, workedMs: 12_000, sourceCount: 5).text,
+            "Thought for 12s · 5 sources · ran code",
+            "the DECISIONS example, exactly"
+        )
+        XCTAssertEqual(NativeToolPresentation.summaryFacts(code, sourceCount: 0).map(\.text), ["ran code", "1 search"])
     }
 
+    /// SPEC §7.6's table, §7.6.1's failure phrases and the figures.
     func testToolPhrasesAndFailures() {
         let search = NativeToolCall(callID: "a", tool: "web_search", status: .running, web: NativeToolCall.Web(query: "rust async runtimes compared in depth for servers"))
-        XCTAssertEqual(NativeToolPresentation.running(search), "Searching the web for \u{201C}rust async runtimes compared in depth f…\u{201D}")
+        XCTAssertEqual(NativeToolPresentation.runningLine(search).text, "Searching the web for \u{201C}rust async runtimes compared in depth f…\u{201D}")
         var done = search
         done.status = .succeeded
         XCTAssertTrue(NativeToolPresentation.phrase(done).hasPrefix("Searched the web for"))
 
-        let timeout = NativeToolCall(callID: "b", tool: "web_fetch", status: .failed, timeoutMs: 20_000, errorCode: "timeout")
-        XCTAssertEqual(NativeToolPresentation.phrase(timeout), "Timed out after 20s")
-        let denied = NativeToolCall(callID: "c", tool: "mcp", connectorLabel: "GitHub", status: .denied)
-        XCTAssertEqual(NativeToolPresentation.phrase(denied), "You declined this")
+        let timeout = NativeToolCall(callID: "b", tool: "web_fetch", status: .failed, timeoutMs: 20_000, args: ["domain": "nature.com"], errorCode: "timeout")
+        XCTAssertEqual(NativeToolPresentation.phrase(timeout), "Couldn't open nature.com · Timed out after 20s")
+        let denied = NativeToolCall(callID: "c", tool: "mcp", connectorLabel: "GitHub", toolTitle: "Create issue", status: .denied)
+        XCTAssertEqual(NativeToolPresentation.phrase(denied), "GitHub · Create issue · You declined this")
+        XCTAssertFalse(NativeToolPresentation.readsAsFailure(denied), "a denial is never a failure")
+        let running = NativeToolCall(callID: "c2", tool: "mcp", connectorLabel: "GitHub", toolTitle: "Create issue", status: .running)
+        XCTAssertEqual(NativeToolPresentation.phrase(running), "GitHub · Create issue")
+        var used = running
+        used.status = .succeeded
+        XCTAssertEqual(NativeToolPresentation.phrase(used), "Used GitHub")
+
         let code = NativeToolCall(callID: "d", tool: "run_code", status: .succeeded, figure: NativeToolCall.Figure(kind: "files", n: 2))
         XCTAssertEqual(NativeToolPresentation.figure(code), "2 files created")
+        let exit = NativeToolCall(callID: "e", tool: "run_code", status: .succeeded, figure: NativeToolCall.Figure(kind: "exit", value: "0"))
+        XCTAssertEqual(NativeToolPresentation.figure(exit), "Exit code 0")
+        let chars = NativeToolCall(callID: "f", tool: "web_fetch", status: .succeeded, figure: NativeToolCall.Figure(kind: "chars", n: 12_480))
+        XCTAssertEqual(NativeToolPresentation.figure(chars), "\(12_480.formatted()) characters")
+        let calc = NativeToolCall(callID: "g", tool: "calculate", status: .succeeded, figure: NativeToolCall.Figure(kind: "value", value: "42"))
+        XCTAssertEqual(NativeToolPresentation.figure(calc), "Result 42")
+        let pages = NativeToolCall(callID: "h", tool: "read_document", status: .running, args: ["action": "read", "file": "Annual report 2025 final version.pdf", "pages": "3–7"])
+        XCTAssertEqual(NativeToolPresentation.phrase(pages), "Reading Annual report 2…inal version.pdf · Pages 3–7")
+        let task = NativeToolCall(callID: "i", tool: "start_task", status: .succeeded, args: ["title": "Draft the brief"])
+        XCTAssertEqual(NativeToolPresentation.phrase(task), "Started a task \u{201C}Draft the brief\u{201D}")
         XCTAssertEqual(NativeToolPresentation.clock(seconds: 64), "1:04")
         XCTAssertEqual(NativeToolPresentation.clock(seconds: 9), "9s")
+    }
+
+    /// Every notice code has words, and only the five must-act codes count as
+    /// warnings.
+    func testNoticeCopy() {
+        let codes = [
+            "model_changed", "skill_not_applied", "connector_unavailable", "usage_limit", "stall",
+            "finish_length", "finish_sensitive", "tool_budget", "web_off_lockdown", "provenance_refused",
+            "hostile_content", "search_degraded", "research_skipped", "private_tools_limited", "tools_capped",
+        ]
+        for code in codes {
+            let line = NativeToolPresentation.noticeLine(NativeRunNotice(code: code), title: "LEGACY", detail: nil).text
+            XCTAssertFalse(line.isEmpty, code)
+            XCTAssertFalse(line.contains("LEGACY"), "\(code) must not fall back to the English title")
+        }
+        XCTAssertEqual(
+            NativeToolPresentation.noticeLine(
+                NativeRunNotice(code: "connector_unavailable", params: ["connector": "GitHub", "reason": "auth_expired"]),
+                title: "", detail: nil
+            ).text,
+            "GitHub couldn't connect · Sign in again in Settings"
+        )
+        XCTAssertEqual(
+            NativeToolPresentation.noticeLine(NativeRunNotice(code: "tool_budget", params: ["steps": "10"]), title: "", detail: nil).text,
+            "Stopped using tools after 10 steps"
+        )
+        XCTAssertEqual(NativeRunNotice.mustActCodes, ["finish_length", "usage_limit", "connector_unavailable", "hostile_content", "research_skipped"])
+        XCTAssertEqual(NativeToolPresentation.noticeLine(NativeRunNotice(code: "unheard_of"), title: "Old words", detail: nil).text, "Old words")
+    }
+
+    /// The live line coalesces reads and searches started together, waits
+    /// with the approval, and settles to the summary.
+    func testLiveLines() {
+        let start = Date(timeIntervalSince1970: 0)
+        let reads = NativeRunView.build(activity: [
+            event("r1", .visit, "Visited source", seq: 1, call: NativeToolCall(callID: "r1", tool: "web_fetch", status: .running, startedAt: start, args: ["domain": "a.com"])),
+            event("r2", .visit, "Visited source", seq: 2, call: NativeToolCall(callID: "r2", tool: "web_fetch", status: .running, startedAt: start.addingTimeInterval(0.4), args: ["domain": "b.com"])),
+        ], reasoning: nil)
+        XCTAssertEqual(NativeToolPresentation.liveLabel(phase: .reading, view: reads, elapsed: 2, recovering: false), "Reading 2 sources")
+        XCTAssertEqual(NativeToolPresentation.liveLabel(phase: .waiting, view: reads, elapsed: 2, recovering: false), "Waiting for your approval")
+        XCTAssertEqual(NativeToolPresentation.stoppedLine(workedMs: 12_000).text, "Stopped after 12s")
+        XCTAssertEqual(NativeToolPresentation.failedRunLine(workedMs: 12_000).text, "Couldn't finish · 12s")
+        XCTAssertEqual(NativeToolPresentation.caption(stalledFor: 31, escalation: 0)?.text, "No response for 31s")
+        XCTAssertEqual(NativeToolPresentation.caption(stalledFor: nil, escalation: 1)?.text, "Still thinking. This can take a few minutes.")
+    }
+
+    /// The pacer: a label stays, changes are spaced, the newest wins, and the
+    /// settled phases skip the wait.
+    func testTheLabelPacer() {
+        var pacer = NativeRunLabelPacer()
+        let t0 = Date(timeIntervalSince1970: 0)
+        XCTAssertTrue(pacer.offer(phase: .thinking, subject: "", now: t0))
+        XCTAssertFalse(pacer.offer(phase: .searching, subject: "c1", now: t0.addingTimeInterval(0.3)))
+        XCTAssertEqual(pacer.nextCheck(phase: .searching, subject: "c1"), t0.addingTimeInterval(0.7))
+        XCTAssertTrue(pacer.offer(phase: .reading, subject: "c2", now: t0.addingTimeInterval(0.8)), "the newest phase wins")
+        XCTAssertFalse(pacer.offer(phase: .reading, subject: "c3", now: t0.addingTimeInterval(1.5)), "a new subject waits 1.5s")
+        XCTAssertTrue(pacer.offer(phase: .reading, subject: "c3", now: t0.addingTimeInterval(2.4)))
+        XCTAssertTrue(pacer.offer(phase: .answering, subject: "", now: t0.addingTimeInterval(2.5)), "settling skips the dwell")
     }
 }

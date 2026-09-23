@@ -80,6 +80,8 @@ public final class NativeCompareModel {
 
     public private(set) var panes: [Pane]
     public private(set) var runs: [String: Run] = [:]
+    /// Each pane's live reducer (``NativeTurnStream``).
+    private var streams: [String: NativeTurnStream] = [:]
     /// True between pressing Stop and the last pane settling. The button is
     /// disabled through it, because a second Stop does nothing and a control that
     /// does nothing reads as broken.
@@ -234,6 +236,7 @@ public final class NativeCompareModel {
         starting.status = .submitting
         starting.startedAt = Date()
         runs[paneID] = starting
+        streams[paneID] = nil
 
         let request = NativeChatPrivateGenerationRequest(
             modelID: modelID,
@@ -310,6 +313,16 @@ public final class NativeCompareModel {
         guard tokens[paneID] == token, var run = runs[paneID] else { return false }
         switch event {
         case .activity(let activity):
+            // A round the server marks as commentary leaves the pane's answer.
+            if var stream = streams[paneID], activity.commentary != nil {
+                stream.apply(event)
+                streams[paneID] = stream
+                run.content = stream.answer
+            } else if activity.seq != nil || activity.call != nil {
+                var stream = streams[paneID] ?? NativeTurnStream(holdsProvisionalText: false)
+                stream.apply(event)
+                streams[paneID] = stream
+            }
             switch activity.kind {
             case .reasoning:
                 if run.status != .writing { run.status = .thinking }
@@ -318,12 +331,18 @@ public final class NativeCompareModel {
             default:
                 if run.status == .submitting { run.status = .thinking }
             }
-        case .reasoningDelta(let text):
+        case .reasoningDelta:
             if run.status != .writing { run.status = .thinking }
-            run.reasoning += text
-        case .textDelta(let text):
+            var stream = streams[paneID] ?? NativeTurnStream(holdsProvisionalText: false)
+            stream.apply(event)
+            streams[paneID] = stream
+            run.reasoning = stream.reasoning
+        case .textDelta:
             run.status = .writing
-            run.content += text
+            var stream = streams[paneID] ?? NativeTurnStream(holdsProvisionalText: false)
+            stream.apply(event)
+            streams[paneID] = stream
+            run.content = stream.answer
         case .completed(let message):
             run.status = .done
             if !message.content.isEmpty { run.content = message.content }

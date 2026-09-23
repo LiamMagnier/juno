@@ -81,12 +81,13 @@ public struct NativeMemoryReceipt: Equatable, Sendable, Identifiable {
     }
 }
 
-/// A typed tool call, updated in place under one id — the rework's
+/// A typed tool call, updated in place under one `callId` — the rework's
 /// `ToolCallRecord` (Tool calls & research SPEC §2.4). Decoded when the server
-/// sends it; today's server sends none, and ``NativeRunView`` builds the same
-/// shape from the legacy rows instead.
+/// sends it; a profile-1 server sends none, and ``NativeRunView`` builds the
+/// same shape from the legacy rows instead.
 public struct NativeToolCall: Equatable, Sendable {
-    public enum Status: String, Equatable, Sendable {
+    /// The eight `ToolCallStatus` values (SPEC §2.5).
+    public enum Status: String, Equatable, Sendable, CaseIterable {
         case queued
         case awaitingApproval = "awaiting_approval"
         case running, succeeded, failed, denied, expired, cancelled
@@ -102,6 +103,9 @@ public struct NativeToolCall: Equatable, Sendable {
             case .queued, .awaitingApproval, .running: false
             }
         }
+
+        /// Still working: queued or running (an approval wait is not work).
+        public var isActive: Bool { self == .queued || self == .running }
     }
 
     public struct Figure: Equatable, Sendable {
@@ -118,49 +122,101 @@ public struct NativeToolCall: Equatable, Sendable {
         }
     }
 
+    /// `ToolCallApproval`: the receipt as of the call's end (INV-18).
+    public struct Approval: Equatable, Sendable {
+        public let id: String
+        /// One of the nine receipt statuses; a stored non-terminal one reads
+        /// back as `expired`.
+        public let status: String
+        public let riskClass: String?
+        public let decision: String?
+        public let decidedAt: Date?
+        public let expiresAt: Date?
+
+        public init(
+            id: String,
+            status: String,
+            riskClass: String? = nil,
+            decision: String? = nil,
+            decidedAt: Date? = nil,
+            expiresAt: Date? = nil
+        ) {
+            self.id = id
+            self.status = status
+            self.riskClass = riskClass
+            self.decision = decision
+            self.decidedAt = decidedAt
+            self.expiresAt = expiresAt
+        }
+    }
+
+    /// `ToolWebDetail`: what a search or a page read found.
     public struct Web: Equatable, Sendable {
         public struct Result: Equatable, Sendable {
+            /// The number the model was given for it, when results were numbered.
+            public let n: Int?
             public let title: String
             public let url: String
-            public init(title: String, url: String) {
+            public init(n: Int? = nil, title: String, url: String) {
+                self.n = n
                 self.title = title
                 self.url = url
             }
         }
 
         public let query: String?
+        public let engine: String?
         public let results: [Result]
         public let requestedURL: String?
         public let finalURL: String?
+        /// `html`, `pdf`, `text`, `json` or `xml`.
+        public let contentType: String?
         public let pages: Int?
         public let chars: Int?
+        public let totalChars: Int?
+        public let links: [String]
+        /// `suspicious` or `hostile`: the page tried to instruct the assistant.
+        public let injection: String?
 
         public init(
             query: String? = nil,
+            engine: String? = nil,
             results: [Result] = [],
             requestedURL: String? = nil,
             finalURL: String? = nil,
+            contentType: String? = nil,
             pages: Int? = nil,
-            chars: Int? = nil
+            chars: Int? = nil,
+            totalChars: Int? = nil,
+            links: [String] = [],
+            injection: String? = nil
         ) {
             self.query = query
+            self.engine = engine
             self.results = results
             self.requestedURL = requestedURL
             self.finalURL = finalURL
+            self.contentType = contentType
             self.pages = pages
             self.chars = chars
+            self.totalChars = totalChars
+            self.links = links
+            self.injection = injection
         }
     }
 
     public let callID: String
+    public let providerCallID: String?
     /// The canonical tool id: `web_search`, `web_fetch`, `run_code`, `mcp`, …
     public let tool: String
     /// `juno`, `connector` or `provider`.
     public let origin: String
-    /// The English human title — for legacy consumers only; phrases come from
+    /// The English human title — never shown (INV-28); phrases come from
     /// ``NativeToolPresentation``.
     public let title: String
+    public let connectorID: String?
     public let connectorLabel: String?
+    /// A connector's own tool title, verbatim (third-party text).
     public let toolTitle: String?
     public var status: Status
     public let round: Int
@@ -173,15 +229,23 @@ public struct NativeToolCall: Equatable, Sendable {
     public let args: [String: String]
     public let figure: Figure?
     public let errorCode: String?
-    /// The approval receipt's status as of the call's end.
-    public let approvalStatus: String?
+    /// One line, shown verbatim under the failure phrase (third-party text).
+    public let errorDetail: String?
+    public let approval: Approval?
     public let web: Web?
+    /// Served from the turn's duplicate cache.
+    public let cached: Bool
+
+    /// The approval receipt's status as of the call's end.
+    public var approvalStatus: String? { approval?.status }
 
     public init(
         callID: String,
+        providerCallID: String? = nil,
         tool: String,
         origin: String = "juno",
         title: String = "",
+        connectorID: String? = nil,
         connectorLabel: String? = nil,
         toolTitle: String? = nil,
         status: Status,
@@ -194,13 +258,17 @@ public struct NativeToolCall: Equatable, Sendable {
         args: [String: String] = [:],
         figure: Figure? = nil,
         errorCode: String? = nil,
-        approvalStatus: String? = nil,
-        web: Web? = nil
+        errorDetail: String? = nil,
+        approval: Approval? = nil,
+        web: Web? = nil,
+        cached: Bool = false
     ) {
         self.callID = callID
+        self.providerCallID = providerCallID
         self.tool = tool
         self.origin = origin
         self.title = title
+        self.connectorID = connectorID
         self.connectorLabel = connectorLabel
         self.toolTitle = toolTitle
         self.status = status
@@ -213,8 +281,10 @@ public struct NativeToolCall: Equatable, Sendable {
         self.args = args
         self.figure = figure
         self.errorCode = errorCode
-        self.approvalStatus = approvalStatus
+        self.errorDetail = errorDetail
+        self.approval = approval
         self.web = web
+        self.cached = cached
     }
 }
 
@@ -223,7 +293,9 @@ public struct NativeToolCall: Equatable, Sendable {
 public struct NativeRunCommentary: Equatable, Sendable {
     public let round: Int
     public let text: String
-    /// True when it streamed into the answer area live.
+    /// True when it streamed into the answer area live; false when the
+    /// provider declared it commentary up front. Only inline commentary shows
+    /// above the answer at rest (SPEC §7.5).
     public let inline: Bool
 
     public init(round: Int, text: String, inline: Bool) {
@@ -247,8 +319,15 @@ public struct NativeReasoningSegment: Equatable, Sendable {
     }
 }
 
-/// A typed notice (`RunNotice`), by code.
+/// A typed notice (`RunNotice`), by code. The code is authoritative; the
+/// legacy title never shows on a typed notice (SPEC §7.6).
 public struct NativeRunNotice: Equatable, Sendable {
+    /// The five codes a reader must act on — the only ones the server sends
+    /// as `kind: "warning"` (SPEC §2.4).
+    public static let mustActCodes: Set<String> = [
+        "finish_length", "usage_limit", "connector_unavailable", "hostile_content", "research_skipped",
+    ]
+
     public let code: String
     public let params: [String: String]
 
@@ -256,33 +335,102 @@ public struct NativeRunNotice: Equatable, Sendable {
         self.code = code
         self.params = params
     }
+
+    public var isMustAct: Bool { Self.mustActCodes.contains(code) }
+}
+
+/// A typed turn fact (`RunFact`), for the Activity panel's Details.
+public enum NativeRunFact: Equatable, Sendable {
+    public struct Connector: Equatable, Sendable {
+        public let id: String
+        public let label: String
+        /// Ready connectors: how many tools they brought.
+        public let tools: Int?
+        /// Failed connectors: `auth_expired`, `unreachable`, `misconfigured`,
+        /// `timeout` or `not_linked`.
+        public let reason: String?
+
+        public init(id: String, label: String, tools: Int? = nil, reason: String? = nil) {
+            self.id = id
+            self.label = label
+            self.tools = tools
+            self.reason = reason
+        }
+    }
+
+    public struct Research: Equatable, Sendable {
+        public let runID: String
+        public let title: String
+        public let workedMs: Int
+        public let cited: Int
+        public let read: Int
+        public let pages: Int
+        public let leadModel: String
+        /// `completed` or `partially_completed`.
+        public let state: String
+
+        public init(
+            runID: String, title: String, workedMs: Int, cited: Int, read: Int, pages: Int, leadModel: String,
+            state: String
+        ) {
+            self.runID = runID
+            self.title = title
+            self.workedMs = workedMs
+            self.cited = cited
+            self.read = read
+            self.pages = pages
+            self.leadModel = leadModel
+            self.state = state
+        }
+    }
+
+    case model(modelID: String, provider: String, label: String, routed: Bool)
+    case effort(effort: String, auto: Bool)
+    case context(historyMessages: Int, attachments: Int, projectFiles: Int)
+    case tools(offered: [String], nativeSearch: Bool, roundBudget: Int)
+    case connectors(ready: [Connector], failed: [Connector])
+    case memory
+    case research(Research)
 }
 
 // MARK: - The run view
 
 /// A turn's run — its thinking, tool calls and notices in the order they
-/// happened — as the transcript's run block and the Activity panel read it.
+/// happened — as the transcript's run block and the Activity panel read it
+/// (SPEC §7.2, `RunView`).
 ///
-/// Built from the message's activity by ``build(activity:reasoning:reasoningParts:sources:)``:
-/// typed when the server sent `seq` on its events (the rework's timeline), and
-/// otherwise by the legacy adapter (SPEC §7.7), which reads today's rows —
-/// the only place titles are matched.
+/// Built from the message's activity by
+/// ``build(activity:reasoning:reasoningParts:sources:)``: typed when the
+/// server sent `seq` on its events (the timeline grammar), and otherwise by the
+/// legacy adapter (SPEC §7.7), which reads profile-1 rows — the only place a
+/// title is matched (INV-28).
 public struct NativeRunView: Equatable, Sendable {
     public enum Item: Equatable, Sendable, Identifiable {
         case reasoning(id: String, text: String)
-        case commentary(id: String, text: String)
+        case commentary(id: String, text: String, inline: Bool)
         case tool(id: String, call: NativeToolCall, detail: NativeToolDetail?)
-        case notice(id: String, title: String, detail: String?)
+        /// A typed notice carries its code; a legacy warning only its words.
+        case notice(id: String, notice: NativeRunNotice?, title: String, detail: String?)
 
         public var id: String {
             switch self {
-            case .reasoning(let id, _), .commentary(let id, _), .tool(let id, _, _), .notice(let id, _, _): id
+            case .reasoning(let id, _), .commentary(let id, _, _), .tool(let id, _, _), .notice(let id, _, _, _): id
             }
         }
 
         public var call: NativeToolCall? {
             if case .tool(_, let call, _) = self { return call }
             return nil
+        }
+
+        public var isReasoning: Bool {
+            if case .reasoning = self { return true }
+            return false
+        }
+
+        public var isCommentary: Bool {
+            if case .commentary = self { return true }
+            return false
         }
     }
 
@@ -294,30 +442,70 @@ public struct NativeRunView: Equatable, Sendable {
         public var connectorsUsed: [String] = []
         public var filesRead: [String] = []
         public var failedTools = 0
+        /// Notices a reader must act on (the must-act codes, or a legacy
+        /// warning row).
         public var warnings = 0
+
+        public init() {}
     }
 
     public struct Timing: Equatable, Sendable {
         public var startedAt: Date?
         public var firstAnswerAt: Date?
         public var endedAt: Date?
+        /// Tool time after the first answer token (a tool that re-entered a
+        /// working phase), as the union of those calls' intervals.
+        public var postAnswerToolMs: Int = 0
 
-        /// The honest working time: to the first answer token, or to the end
-        /// when there was none. Nil when a timestamp is missing — no figure is
-        /// invented for it.
+        public init(startedAt: Date? = nil, firstAnswerAt: Date? = nil, endedAt: Date? = nil) {
+            self.startedAt = startedAt
+            self.firstAnswerAt = firstAnswerAt
+            self.endedAt = endedAt
+        }
+
+        /// The honest working time (SPEC §7.2): to the first answer token, or
+        /// to the end when there was none, plus tool time after the answer
+        /// started. Nil when a timestamp is missing — no figure is invented.
         public var workedMs: Int? {
             guard let startedAt, let until = firstAnswerAt ?? endedAt, until >= startedAt else { return nil }
-            return Int((until.timeIntervalSince(startedAt) * 1_000).rounded())
+            return Int((until.timeIntervalSince(startedAt) * 1_000).rounded()) + postAnswerToolMs
         }
     }
 
-    /// The turn's facts, for the Details view.
+    /// The turn's facts, for the Details view. Typed facts win; the legacy
+    /// rows' words fill in on a profile-1 turn.
     public struct Facts: Equatable, Sendable {
+        public struct ContextCounts: Equatable, Sendable {
+            public let historyMessages: Int
+            public let attachments: Int
+            public let projectFiles: Int
+        }
+
+        /// The model's display name.
         public var model: String?
+        public var modelProvider: String?
+        public var modelRouted = false
+        /// The effort rung's wire value (`high`), or a legacy row's words.
         public var effort: String?
+        public var effortAuto = false
+        /// A legacy context row's detail ("3 messages").
         public var context: String?
+        public var contextCounts: ContextCounts?
+        /// Canonical tool ids the turn offered.
+        public var toolsOffered: [String] = []
+        public var connectorsReady: [NativeRunFact.Connector] = []
+        public var connectorsFailed: [NativeRunFact.Connector] = []
+        /// A legacy "Connected tools ready" row's detail.
         public var connectors: String?
         public var memory: [NativeMemoryReceipt] = []
+        public var research: NativeRunFact.Research?
+
+        public init() {}
+
+        public var isEmpty: Bool {
+            model == nil && effort == nil && context == nil && contextCounts == nil && toolsOffered.isEmpty
+                && connectorsReady.isEmpty && connectorsFailed.isEmpty && connectors == nil && memory.isEmpty
+        }
     }
 
     public var typed: Bool
@@ -333,11 +521,20 @@ public struct NativeRunView: Equatable, Sendable {
         items.filter { if case .notice = $0 { return true } else { return false } }
     }
 
+    /// Inline commentary, for the region above the answer at rest.
+    public var inlineCommentary: [String] {
+        items.compactMap { if case .commentary(_, let text, true) = $0 { return text } else { return nil } }
+    }
+
+    /// The approval receipts calls are waiting on.
+    public var pendingApprovalIDs: [String] {
+        calls.filter { $0.status == .awaitingApproval }.compactMap { $0.approval?.id }
+    }
+
     /// Whether a settled turn has anything to show: a trivial answer renders
     /// no run block at all.
     public func hasContent(sourceCount: Int) -> Bool {
-        hasReasoning || !calls.isEmpty || counts.warnings > 0 || sourceCount > 0
-            || items.contains { if case .commentary = $0 { return true } else { return false } }
+        hasReasoning || !calls.isEmpty || !notices.isEmpty || sourceCount > 0 || items.contains(where: \.isCommentary)
     }
 
     // MARK: Building
@@ -353,7 +550,7 @@ public struct NativeRunView: Equatable, Sendable {
             ? buildTyped(activity: activity, reasoning: reasoning)
             : buildLegacy(activity: activity, reasoning: reasoning, reasoningParts: reasoningParts)
         view.facts = facts(from: activity)
-        view.timing = timing(from: activity)
+        view.timing = timing(from: activity, calls: view.calls)
         view.counts = counts(items: view.items, sources: sources)
         return view
     }
@@ -374,17 +571,21 @@ public struct NativeRunView: Equatable, Sendable {
                 if !text.isEmpty { items.append(.reasoning(id: event.id, text: text)) }
             } else if let commentary = event.commentary {
                 let text = commentary.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty { items.append(.commentary(id: event.id, text: text)) }
+                if !text.isEmpty { items.append(.commentary(id: event.id, text: text, inline: commentary.inline)) }
             } else if let call = event.call {
                 items.append(.tool(id: event.id, call: call, detail: event.tool))
+            } else if let notice = event.notice {
+                items.append(.notice(id: event.id, notice: notice, title: event.title, detail: event.detail))
             } else if event.kind == .warning {
-                items.append(.notice(id: event.id, title: event.title, detail: event.detail))
+                items.append(.notice(id: event.id, notice: nil, title: event.title, detail: event.detail))
             }
+            // Provider-search `visit` rows without a call feed the sources only.
         }
         // A reasoning string with no segments (an older provider path) still
         // reads, first.
-        let hasSegments = items.contains { if case .reasoning = $0 { return true } else { return false } }
-        if !hasSegments, let text = reasoning?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        if !items.contains(where: \.isReasoning), let text = reasoning?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !text.isEmpty
+        {
             items.insert(.reasoning(id: "reasoning", text: text), at: 0)
         }
         return NativeRunView(
@@ -393,14 +594,14 @@ public struct NativeRunView: Equatable, Sendable {
             counts: Counts(),
             timing: Timing(),
             facts: Facts(),
-            hasReasoning: items.contains { if case .reasoning = $0 { return true } else { return false } }
+            hasReasoning: items.contains(where: \.isReasoning)
         )
     }
 
     /// The legacy adapter (SPEC §7.7): array order; the reasoning first (one
     /// item per part when the parts are known); connector rows that carry their
-    /// detail become calls; the task hand-off's rows become `start_task`; deep
-    /// research's "Searching the web" rows become searches; warnings become
+    /// detail become calls; the task hand-off's rows become `start_task`;
+    /// "Searching the web" rows become provider searches; warnings become
     /// notices. Approval-request rows are dropped — their outcome is unknown —
     /// and visits only feed the sources.
     private static func buildLegacy(
@@ -430,7 +631,8 @@ public struct NativeRunView: Equatable, Sendable {
                     items.append(.tool(id: event.id, call: NativeToolCall(
                         callID: event.id, tool: "start_task", origin: "juno", title: event.title,
                         status: status, index: index, startedAt: event.createdAt,
-                        args: event.detail.map { ["title": $0] } ?? [:]
+                        args: event.detail.map { ["title": $0] } ?? [:],
+                        errorCode: status == .failed ? "tool_error" : nil
                     ), detail: event.tool))
                     index += 1
                 } else if event.title.hasPrefix("Using "), let detail = event.tool {
@@ -455,7 +657,7 @@ public struct NativeRunView: Equatable, Sendable {
                         index: index,
                         startedAt: event.createdAt,
                         durationMs: detail.durationMs,
-                        errorCode: status == .failed ? "tool_error" : nil
+                        errorCode: status == .failed ? "tool_error" : (status == .cancelled ? "cancelled" : nil)
                     ), detail: detail))
                     index += 1
                 }
@@ -473,7 +675,7 @@ public struct NativeRunView: Equatable, Sendable {
                 ), detail: nil))
                 index += 1
             case .warning:
-                items.append(.notice(id: event.id, title: event.title, detail: event.detail))
+                items.append(.notice(id: event.id, notice: nil, title: event.title, detail: event.detail))
             default:
                 continue
             }
@@ -484,11 +686,11 @@ public struct NativeRunView: Equatable, Sendable {
             counts: Counts(),
             timing: Timing(),
             facts: Facts(),
-            hasReasoning: items.contains { if case .reasoning = $0 { return true } else { return false } }
+            hasReasoning: items.contains(where: \.isReasoning)
         )
     }
 
-    /// A Juno tool's id from the function name the model called.
+    /// A Juno tool's id from the function name the model called (INV-23).
     static func canonicalToolID(_ name: String) -> String {
         switch name {
         case "code_interpreter": "run_code"
@@ -507,11 +709,36 @@ public struct NativeRunView: Equatable, Sendable {
     private static func facts(from activity: [NativeChatActivity]) -> Facts {
         var facts = Facts()
         for event in activity {
+            if let fact = event.fact {
+                switch fact {
+                case .model(_, let provider, let label, let routed):
+                    facts.model = label
+                    facts.modelProvider = provider
+                    facts.modelRouted = routed
+                case .effort(let effort, let auto):
+                    facts.effort = effort
+                    facts.effortAuto = auto
+                case .context(let history, let attachments, let projectFiles):
+                    facts.contextCounts = Facts.ContextCounts(
+                        historyMessages: history, attachments: attachments, projectFiles: projectFiles
+                    )
+                case .tools(let offered, _, _):
+                    facts.toolsOffered = offered
+                case .connectors(let ready, let failed):
+                    facts.connectorsReady = ready
+                    facts.connectorsFailed = failed
+                case .memory:
+                    if !event.memory.isEmpty { facts.memory = event.memory }
+                case .research(let research):
+                    facts.research = research
+                }
+                continue
+            }
             switch event.kind {
             case .model where event.title == "Selected model":
-                facts.model = event.detail
+                if facts.model == nil { facts.model = event.detail }
             case .reasoning where event.title == "Reasoning mode enabled" || event.title == "Auto thinking":
-                facts.effort = event.detail
+                if facts.effort == nil { facts.effort = event.detail }
             case .context:
                 if !event.memory.isEmpty {
                     facts.memory = event.memory
@@ -521,17 +748,37 @@ public struct NativeRunView: Equatable, Sendable {
             case .tool where event.title == "Connected tools ready":
                 facts.connectors = event.detail
             default:
-                continue
+                if !event.memory.isEmpty { facts.memory = event.memory }
             }
         }
         return facts
     }
 
-    private static func timing(from activity: [NativeChatActivity]) -> Timing {
+    private static func timing(from activity: [NativeChatActivity], calls: [NativeToolCall]) -> Timing {
         var timing = Timing()
         timing.startedAt = activity.compactMap(\.createdAt).min()
         timing.firstAnswerAt = activity.first { $0.kind == .write }?.createdAt
         timing.endedAt = activity.last { $0.kind == .done }?.createdAt
+        if let answered = timing.firstAnswerAt {
+            // The union of tool intervals that start after the first answer
+            // token: re-entered work the clock counted.
+            let intervals = calls.compactMap { call -> (Date, Date)? in
+                guard let start = call.startedAt, start > answered, let end = call.endedAt, end > start else { return nil }
+                return (start, end)
+            }.sorted { $0.0 < $1.0 }
+            var total: TimeInterval = 0
+            var current: (Date, Date)?
+            for interval in intervals {
+                if let open = current, interval.0 <= open.1 {
+                    current = (open.0, max(open.1, interval.1))
+                } else {
+                    if let open = current { total += open.1.timeIntervalSince(open.0) }
+                    current = interval
+                }
+            }
+            if let open = current { total += open.1.timeIntervalSince(open.0) }
+            timing.postAnswerToolMs = Int((total * 1_000).rounded())
+        }
         return timing
     }
 
@@ -550,15 +797,17 @@ public struct NativeRunView: Equatable, Sendable {
                 case "web_fetch":
                     if call.status == .succeeded, let final = call.web?.finalURL { urls.insert(final) }
                 case "read_document":
-                    if let file = call.args["file"] ?? call.args["fileName"] { counts.filesRead.append(file) }
+                    if let file = call.args["file"] ?? call.args["fileName"], !counts.filesRead.contains(file) {
+                        counts.filesRead.append(file)
+                    }
                 case "mcp":
                     if let label = call.connectorLabel, !connectors.contains(label) { connectors.append(label) }
                 default:
                     break
                 }
                 if call.status == .failed { counts.failedTools += 1 }
-            case .notice:
-                counts.warnings += 1
+            case .notice(_, let notice, _, _):
+                if notice?.isMustAct ?? true { counts.warnings += 1 }
             case .reasoning, .commentary:
                 break
             }
@@ -572,13 +821,13 @@ public struct NativeRunView: Equatable, Sendable {
 // MARK: - Phase
 
 /// What a run is doing now — the rework's `derivePhase` (SPEC §7.3), first
-/// match wins.
+/// match wins. Chat never shows `writing`: that word belongs to Research.
 public enum NativeRunPhase: Equatable, Sendable {
     case queued, thinking, searching, reading, tool, waiting, answering, done, stopped, failed
 
     /// - Parameters:
     ///   - live: the turn is still streaming.
-    ///   - answerStarted: answer text has arrived and no tool started since.
+    ///   - answerStarted: answer text has been released to the answer area.
     ///   - awaitingApproval: an approval card is open on this turn.
     public static func derive(
         view: NativeRunView,
@@ -595,313 +844,131 @@ public enum NativeRunPhase: Equatable, Sendable {
         }
         let calls = view.calls
         if awaitingApproval || calls.contains(where: { $0.status == .awaitingApproval }) { return .waiting }
-        if let active = calls.last(where: { $0.status == .running || $0.status == .queued }) {
-            switch active.tool {
-            case "web_search", "provider_web_search", "provider_x_search", "search_chats": return .searching
-            case "web_fetch", "read_document", "inspect_image": return .reading
-            default: return .tool
-            }
+        if let active = calls.last(where: { $0.status.isActive }) {
+            return phase(of: active)
         }
         if answerStarted { return .answering }
         return view.hasReasoning ? .thinking : .queued
     }
 
+    /// The working phase a running call puts the run in (rule 3).
+    public static func phase(of call: NativeToolCall) -> NativeRunPhase {
+        switch call.tool {
+        case "web_search", "provider_web_search", "provider_x_search", "search_chats": .searching
+        case "web_fetch", "read_document", "inspect_image": .reading
+        default: .tool
+        }
+    }
+
+    /// Working: the glyph loops and the clock runs.
     public var isWorking: Bool {
         switch self {
         case .queued, .thinking, .searching, .reading, .tool: true
         case .waiting, .answering, .done, .stopped, .failed: false
         }
     }
+
+    /// The line is its summary: answering, done, stopped or failed.
+    public var isSettled: Bool {
+        switch self {
+        case .answering, .done, .stopped, .failed: true
+        case .queued, .thinking, .searching, .reading, .tool, .waiting: false
+        }
+    }
+
+    /// Phases that skip the pacer's dwell (SPEC §7.3).
+    public var skipsDwell: Bool {
+        switch self {
+        case .waiting, .answering, .done, .stopped, .failed: true
+        case .queued, .thinking, .searching, .reading, .tool: false
+        }
+    }
 }
 
-// MARK: - Words
+/// The run's live-line timing states (SPEC §7.3): calm after 20s of work,
+/// stalled after 30s of silence, and the two escalation captions.
+public struct NativeRunPacing: Equatable, Sendable {
+    public static let glyphDelay: TimeInterval = 0.15
+    public static let showDelay: TimeInterval = 0.4
+    public static let minVisible: TimeInterval = 0.6
+    public static let dwell: TimeInterval = 0.7
+    public static let sameSubjectSwap: TimeInterval = 1.5
+    public static let timerAfter: TimeInterval = 3
+    public static let calmAfter: TimeInterval = 20
+    public static let stalledAfter: TimeInterval = 30
+    public static let escalateAfter: TimeInterval = 120
+    public static let escalateAgainAfter: TimeInterval = 600
 
-/// The run's words: tool phrases (SPEC §7.6), failure phrases (§7.6.1), the
-/// summary line (§7.6.2) and the live copy. One place, so the transcript's
-/// line and the Activity panel can never word the same call two ways.
-public enum NativeToolPresentation {
-    public static func running(_ call: NativeToolCall) -> String {
-        switch call.tool {
-        case "web_search", "provider_web_search":
-            if let query = query(call) { return "Searching the web for \(quoted(query))" }
-            return "Searching the web"
-        case "provider_x_search":
-            if let query = query(call) { return "Searching X for \(quoted(query))" }
-            return "Searching X"
-        case "web_fetch":
-            if let domain = domain(call) { return "Reading \(domain)" }
-            return "Reading a page"
-        case "read_document":
-            if let file = file(call) { return "Reading \(middleTruncated(file))" }
-            return "Reading a document"
-        case "inspect_image":
-            if let file = file(call) { return "Looking closer at \(middleTruncated(file))" }
-            return "Looking closer at an image"
-        case "run_code": return "Running code"
-        case "search_chats":
-            if let query = query(call) { return "Searching your chats for \(quoted(query))" }
-            return "Searching your chats"
-        case "current_time": return "Checking the time"
-        case "calculate": return "Calculating"
-        case "start_task": return "Handing this to a task"
-        case "suggest_research": return "Suggested research"
-        case "mcp":
-            let connector = call.connectorLabel ?? "Connector"
-            if let title = call.toolTitle { return "\(connector): \(title)" }
-            return "Using \(connector)"
-        default:
-            return call.title.isEmpty ? "Using a tool" : call.title
-        }
+    /// Whether the run has gone calm: 20s of continuous work.
+    public static func calm(working: TimeInterval, stalled: Bool) -> Bool {
+        stalled || working >= calmAfter
     }
 
-    public static func done(_ call: NativeToolCall) -> String {
-        switch call.tool {
-        case "web_search", "provider_web_search":
-            if let query = query(call) { return "Searched the web for \(quoted(query))" }
-            return "Searched the web"
-        case "provider_x_search":
-            if let query = query(call) { return "Searched X for \(quoted(query))" }
-            return "Searched X"
-        case "web_fetch":
-            if let domain = domain(call) { return "Read \(domain)" }
-            return "Read a page"
-        case "read_document":
-            if let file = file(call) { return "Read \(middleTruncated(file))" }
-            return "Read a document"
-        case "inspect_image":
-            if let file = file(call) { return "Looked closer at \(middleTruncated(file))" }
-            return "Looked closer at an image"
-        case "run_code": return "Ran code"
-        case "search_chats": return "Searched your chats"
-        case "current_time": return "Checked the time"
-        case "calculate": return "Calculated"
-        case "start_task":
-            if let title = call.args["title"] { return "Started a task: \(quoted(title))" }
-            return "Started a task"
-        case "suggest_research": return "Suggested research"
-        case "mcp": return "Used \(call.connectorLabel ?? "a connector")"
-        default:
-            return call.title.isEmpty ? "Used a tool" : call.title
-        }
-    }
-
-    /// The failure phrase, by `error.code`. A denial is never a failure.
-    public static func failed(_ call: NativeToolCall) -> String {
-        switch call.status {
-        case .denied: return "You declined this"
-        case .expired: return "Approval expired"
-        case .cancelled: return "Cancelled"
-        default: break
-        }
-        switch call.errorCode {
-        case "timeout":
-            if let ms = call.timeoutMs ?? call.durationMs { return "Timed out after \(duration(ms: ms))" }
-            return "Timed out"
-        case "invalid_args": return "The model sent arguments this tool can't use"
-        case "denied": return "You declined this"
-        case "expired": return "Approval expired"
-        case "blocked": return "Blocked by your settings"
-        case "cancelled": return "Cancelled"
-        case "url_not_in_prior_context": return "Didn't open a link that wasn't in this conversation"
-        case "url_not_allowed": return "This address can't be opened"
-        case "url_not_accessible":
-            if let domain = domain(call) { return "Couldn't open \(domain)" }
-            return "Couldn't open the page"
-        case "unsupported_content_type": return "Can't read this kind of file"
-        case "too_large": return "Too large to read"
-        case "needs_browser": return "Needs a browser"
-        case "rate_limited": return "Reading limit reached"
-        case "no_results": return "No results"
-        default: return "Failed"
-        }
-    }
-
-    /// The call's phrase for its current status.
-    public static func phrase(_ call: NativeToolCall) -> String {
-        switch call.status {
-        case .queued, .running, .awaitingApproval: running(call)
-        case .succeeded: done(call)
-        case .failed, .denied, .expired, .cancelled: failed(call)
-        }
-    }
-
-    /// "10 results", "3 pages", "= 42" — never invented.
-    public static func figure(_ call: NativeToolCall) -> String? {
-        guard let figure = call.figure else { return nil }
-        switch figure.kind {
-        case "results": return figure.n.map { plural($0, "result") }
-        case "pages": return figure.n.map { plural($0, "page") }
-        case "chars":
-            return figure.n.map { n in
-                n >= 1_000 ? "\(Int((Double(n) / 1_000).rounded()))k characters" : plural(n, "character")
-            }
-        case "files": return figure.n.map { $0 == 1 ? "1 file created" : "\($0) files created" }
-        case "matches": return figure.n.map { $0 == 1 ? "1 match" : "\($0) matches" }
-        case "chats": return figure.n.map { plural($0, "chat") }
-        case "items": return figure.n.map { plural($0, "item") }
-        case "value": return figure.value.map { call.tool == "calculate" ? "= \($0)" : $0 }
-        case "exit": return figure.value.map { "exit \($0)" }
-        default: return nil
-        }
-    }
-
-    /// The glyph a call's row wears, as a `JunoIcon` raw name.
-    public static func iconName(_ call: NativeToolCall) -> String {
-        switch call.tool {
-        case "web_search", "provider_web_search", "provider_x_search": "search"
-        case "web_fetch": "web"
-        case "read_document": "file"
-        case "inspect_image": "image"
-        case "run_code": "terminal"
-        case "search_chats": "message"
-        case "current_time": "clock"
-        case "calculate": "equal"
-        case "start_task": "work"
-        case "suggest_research": "research"
-        case "mcp": "connectors"
-        default: "tools"
-        }
-    }
-
-    // MARK: Summary
-
-    /// The settled line's lead (SPEC §7.6.2): "Thought for 12s" when the run
-    /// only reasoned, "Worked for 12s" when a tool ran, "Answered in 12s"
-    /// otherwise. Without a measured duration it invents none: a run that
-    /// reasoned says "Thought process", and anything else has no lead — its
-    /// facts ("6 sources") are the line.
-    public static func summaryLead(_ view: NativeRunView, workedMs: Int?) -> String? {
-        guard let workedMs else { return view.hasReasoning ? "Thought process" : nil }
-        let time = duration(ms: workedMs)
-        if !view.calls.isEmpty { return "Worked for \(time)" }
-        if view.hasReasoning { return "Thought for \(time)" }
-        return "Answered in \(time)"
-    }
-
-    /// At most two facts, non-zero only, in the SPEC's order.
-    public static func summaryFacts(_ view: NativeRunView, sourceCount: Int) -> [String] {
-        var facts: [String] = []
-        let counts = view.counts
-        let sources = max(sourceCount, counts.sources)
-        if sources > 0 { facts.append(plural(sources, "source")) }
-        if counts.codeRuns == 1 { facts.append("ran code") }
-        if counts.codeRuns > 1 { facts.append("ran code \(counts.codeRuns) times") }
-        if sources == 0, counts.searches > 0 { facts.append(counts.searches == 1 ? "1 search" : "\(counts.searches) searches") }
-        if let first = counts.connectorsUsed.first {
-            facts.append(counts.connectorsUsed.count > 1 ? "used \(first) and \(counts.connectorsUsed.count - 1) more" : "used \(first)")
-        }
-        if let file = counts.filesRead.first { facts.append("read \(middleTruncated(file))") }
-        if counts.filesCreated > 0 {
-            facts.append(counts.filesCreated == 1 ? "1 file created" : "\(counts.filesCreated) files created")
-        }
-        return Array(facts.prefix(2))
-    }
-
-    // MARK: Live copy
-
-    /// The live line's words for a phase.
-    ///
-    /// The thinking rungs are the web's own (`message-item.tsx`
-    /// `StreamStatus`, verbatim): "Thinking", then after two minutes of it
-    /// "Still thinking. This can take a few minutes.", then after ten "Still
-    /// working. You can leave; the answer will be here." A provider's own
-    /// headline for the reasoning in progress wins over "Thinking" when it
-    /// has one.
-    public static func liveLabel(
+    /// Stalled: a working phase other than waiting, 30s without a frame, and
+    /// no call running within its own timeout (a long `run_code` sends
+    /// nothing and is not a stall).
+    public static func stalled(
         phase: NativeRunPhase,
         view: NativeRunView,
-        elapsed: TimeInterval,
-        recovering: Bool
-    ) -> String {
-        if recovering { return "Reconnecting…" }
-        switch phase {
-        case .waiting:
-            return "Waiting for your approval"
-        case .searching, .reading, .tool:
-            let active = view.calls.filter { $0.status == .running || $0.status == .queued }
-            if phase == .reading, active.count > 1 { return "Reading \(active.count) sources" }
-            if phase == .searching, active.count > 1 { return "Searching \(active.count) queries" }
-            if let call = active.last { return running(call) }
-            return "Thinking"
-        case .queued, .thinking:
-            if elapsed >= 600 { return "Still working. You can leave; the answer will be here." }
-            if elapsed >= 120 { return "Still thinking. This can take a few minutes." }
-            if let headline = latestHeadline(view) { return headline }
-            return "Thinking"
-        case .answering, .done:
-            return summaryLead(view, workedMs: view.timing.workedMs) ?? "Done"
-        case .stopped:
-            if let ms = view.timing.workedMs { return "Stopped after \(duration(ms: ms))" }
-            return "Stopped"
-        case .failed:
-            if let ms = view.timing.workedMs { return "Couldn't finish after \(duration(ms: ms))" }
-            return "Couldn't finish"
+        lastEventAt: Date?,
+        now: Date
+    ) -> Bool {
+        guard phase.isWorking, let lastEventAt, now.timeIntervalSince(lastEventAt) >= stalledAfter else { return false }
+        let runningWithinTimeout = view.calls.contains { call in
+            guard call.status == .running else { return false }
+            guard let timeout = call.timeoutMs, let started = call.startedAt else { return true }
+            return now.timeIntervalSince(started) * 1_000 < Double(timeout)
         }
+        return !runningWithinTimeout
     }
 
-    /// A provider's summary heading — `**Weighing the options**` on a line of
-    /// its own — at the head of the latest reasoning item.
-    public static func latestHeadline(_ view: NativeRunView) -> String? {
-        let reasoning = view.items.reversed().first { if case .reasoning = $0 { return true } else { return false } }
-        guard case .reasoning(_, let text)? = reasoning else { return nil }
-        for line in text.components(separatedBy: "\n").reversed() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("**"), trimmed.hasSuffix("**"), trimmed.count >= 7 else { continue }
-            let inner = String(trimmed.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces)
-            if (3...80).contains(inner.count), !inner.contains("**") { return inner }
+    /// 0, 1 after two minutes of work, 2 after ten.
+    public static func escalation(working: TimeInterval) -> Int {
+        if working >= escalateAgainAfter { return 2 }
+        if working >= escalateAfter { return 1 }
+        return 0
+    }
+}
+
+/// The live label's pacer (SPEC §7.3): a shown label stays at least 600ms,
+/// changes are at least 700ms apart and the newest phase wins; a new subject
+/// in the same phase swaps only after 1.5s; waiting and the settled phases
+/// skip the dwell. Pure: the view asks it what to show and when to ask again.
+public struct NativeRunLabelPacer: Equatable, Sendable {
+    public struct Shown: Equatable, Sendable {
+        public let phase: NativeRunPhase
+        public let subject: String
+        public let at: Date
+    }
+
+    public private(set) var shown: Shown?
+
+    public init() {}
+
+    /// Offers the derived phase and subject at `now`. Returns true when the
+    /// shown label changed; `nextCheck` says when a held change may land.
+    @discardableResult
+    public mutating func offer(phase: NativeRunPhase, subject: String, now: Date) -> Bool {
+        guard let current = shown else {
+            shown = Shown(phase: phase, subject: subject, at: now)
+            return true
         }
-        return nil
+        if current.phase == phase, current.subject == subject { return false }
+        let since = now.timeIntervalSince(current.at)
+        if phase.skipsDwell || since >= Self.minimumGap(from: current, to: phase) {
+            shown = Shown(phase: phase, subject: subject, at: now)
+            return true
+        }
+        return false
     }
 
-    // MARK: Formatting
-
-    /// "12s", "1m 4s" — the SPEC's narrow duration.
-    public static func duration(ms: Int) -> String {
-        let seconds = max(0, Int((Double(ms) / 1_000).rounded()))
-        if seconds < 60 { return "\(max(seconds, 1))s" }
-        let minutes = seconds / 60
-        let rest = seconds % 60
-        if minutes < 60 { return rest == 0 ? "\(minutes)m" : "\(minutes)m \(rest)s" }
-        return "\(minutes / 60)h \(minutes % 60)m"
+    /// When a change offered now, and held, could be shown.
+    public func nextCheck(phase: NativeRunPhase, subject: String) -> Date? {
+        guard let current = shown, current.phase != phase || current.subject != subject else { return nil }
+        return current.at.addingTimeInterval(Self.minimumGap(from: current, to: phase))
     }
 
-    /// The live clock: "12s" under a minute, "1:04" from there (D-6).
-    public static func clock(seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds)s" }
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-
-    public static func plural(_ n: Int, _ noun: String) -> String {
-        n == 1 ? "1 \(noun)" : "\(n) \(noun)s"
-    }
-
-    /// A query in curly quotes, cut at 40 characters.
-    static func quoted(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cut = trimmed.count > 40 ? String(trimmed.prefix(39)) + "…" : trimmed
-        return "\u{201C}\(cut)\u{201D}"
-    }
-
-    static func middleTruncated(_ text: String, limit: Int = 32) -> String {
-        guard text.count > limit else { return text }
-        let head = (limit - 1) / 2
-        let tail = limit - 1 - head
-        return String(text.prefix(head)) + "…" + String(text.suffix(tail))
-    }
-
-    static func query(_ call: NativeToolCall) -> String? {
-        let value = call.web?.query ?? call.args["query"] ?? call.args["q"]
-        return value.flatMap { $0.isEmpty ? nil : $0 }
-    }
-
-    static func file(_ call: NativeToolCall) -> String? {
-        call.args["file"] ?? call.args["fileName"] ?? call.args["name"]
-    }
-
-    static func domain(_ call: NativeToolCall) -> String? {
-        let raw = call.web?.finalURL ?? call.web?.requestedURL ?? call.args["url"] ?? call.args["domain"]
-        guard let raw else { return nil }
-        guard let host = URL(string: raw)?.host() else { return raw }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    private static func minimumGap(from current: Shown, to phase: NativeRunPhase) -> TimeInterval {
+        current.phase == phase ? NativeRunPacing.sameSubjectSwap : max(NativeRunPacing.dwell, NativeRunPacing.minVisible)
     }
 }

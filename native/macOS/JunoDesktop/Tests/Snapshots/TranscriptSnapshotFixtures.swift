@@ -29,7 +29,7 @@ struct TranscriptFixture {
 /// names as test arguments; everything that builds a view is.
 enum TranscriptSnapshotFixtures {
     static var all: [TranscriptFixture] {
-        replyActions + userTurns + media + artifacts + visuals + prose + notes + activity + stageFour
+        replyActions + userTurns + media + artifacts + visuals + prose + notes + activity + stageFour + stageFourB
     }
 
     // MARK: 1. Reply actions
@@ -586,7 +586,11 @@ enum TranscriptSnapshotFixtures {
         if newest, message.role == .assistant { actions.regenerate = { _ in } }
         if continues { actions.continueResponse = {} }
         if retries { actions.retry = {} }
-        if message.role == .assistant { actions.openActivity = { _ in } }
+        if message.role == .assistant {
+            actions.openActivity = { _ in }
+            actions.openResearch = { _ in }
+            if newest { actions.researchThis = { _ in } }
+        }
         if unsent { actions.retrySend = {} }
         if message.role == .user { actions.editMessage = { _ in } }
         return DesktopMessageRow(

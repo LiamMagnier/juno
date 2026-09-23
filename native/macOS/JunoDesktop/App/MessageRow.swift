@@ -101,6 +101,7 @@ struct DesktopMessageRow: View {
     @Environment(\.junoArtifactResolver) private var artifactResolver
     /// ⌘F's highlight for this message.
     @Environment(\.junoFindHighlight) private var findHighlight
+    @Environment(\.junoActivityPanelMessageID) private var activityPanelMessageID
     /// The pointer is over the turn: the web's `group-hover`.
     @State private var hovered = false
     /// Copy just happened; the copy mark is a check for two seconds.
@@ -582,13 +583,25 @@ struct DesktopMessageRow: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 if !isVoice {
-                    DesktopRunBlock(
-                        message: shown,
-                        live: shown.isPending,
-                        recovering: isRecovering,
-                        awaitingApproval: approvals.approvals.contains(where: \.isPending),
-                        openPanel: actions.openActivity
-                    )
+                    if isLiveInChatResearch {
+                        // A research turn a profile-1 server answers in the
+                        // chat: one research row while it works (SPEC §9.11.3).
+                        DesktopResearchRow(
+                            run: NativeResearchRun.inChat(message: shown, live: true),
+                            ownsLoop: activityPanelMessageID != shown.id,
+                            open: { actions.openResearch?("message:\(shown.id)") }
+                        )
+                    } else {
+                        DesktopRunBlock(
+                            message: shown,
+                            live: shown.isPending,
+                            recovering: isRecovering,
+                            awaitingApproval: approvals.approvals.contains(where: \.isPending),
+                            ownsLoop: activityPanelMessageID != shown.id,
+                            openPanel: actions.openActivity,
+                            openResearch: actions.openResearch
+                        )
+                    }
                 }
 
                 // Above the answer: the turn is blocked on this, so it sits
@@ -609,6 +622,10 @@ struct DesktopMessageRow: View {
                     DesktopTurnError(message: error, retry: showsRetry ? actions.retry : nil)
                 } else if !parts.isEmpty || !shown.attachments.isEmpty {
                     answerBody
+                }
+
+                if let question = suggestedResearch, let researchThis = actions.researchThis, !shown.isPending {
+                    DesktopResearchThisChip(question: question) { researchThis(question) }
                 }
 
                 if let note = noteSentence {
@@ -643,6 +660,24 @@ struct DesktopMessageRow: View {
         } message: { _ in
             Text(artifactCount == 1 ? "Its 1 artifact will be replaced." : "Its \(artifactCount) artifacts will be replaced.")
         }
+    }
+
+    /// A live research turn answered in the chat, whose report has not
+    /// started: the research row stands where the run block would.
+    private var isLiveInChatResearch: Bool {
+        guard shown.isPending, shown.answerStartedAt == nil, shown.mediaProgress == nil else { return false }
+        if NativeResearchRun.isInChatResearch(activity: shown.activity) { return true }
+        // Asked for, and no sign yet of a server that hands research off or
+        // refused it: a timeline server's rows carry `seq` from the first one.
+        return shown.researchRequested && !shown.activity.contains { $0.seq != nil || $0.notice?.code == "research_skipped" }
+    }
+
+    /// The question a `suggest_research` call left under this answer — the
+    /// newest one wins (SPEC §3.8.9).
+    private var suggestedResearch: String? {
+        shown.activity.last { $0.call?.tool == "suggest_research" && $0.call?.status == .succeeded }?
+            .call?.args["question"]
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
     }
 
     /// The words, the files it produced and the artifacts it wrote — in the

@@ -835,3 +835,7 @@ Key facts:
   - Also read `chat.clientFeatures` from bootstrap, adding it to `BootstrapWireResponse` in `NativeBootstrapClient.swift` as an optional field. It isn't a gate; the UI uses it to know research handoff is available.
   - Add the `chat` key to `contracts/openapi/juno-native-v1.yaml` when the contract is regenerated.
   - The bootstrap decoders are synthesized `Decodable`, so an unknown top-level key is already tolerated. Checked on 2026-09-23.
+
+### Update: built (stage 4b)
+
+Everything in the update above is built on `mac/liquid-glass-chat` — the spec's "Phase 2 errata", stage 4b, lists it and the handoff lists what is still open (the capabilities JSON, plan editing and steering, research spend, runtime checks against a server that speaks the timeline).

@@ -103,24 +103,28 @@ struct ChatComposerTests {
     @Test
     func marksFollowTheWebOrder() {
         let marks = ChatComposerMark.marks(
-            researchDepth: .deep,
+            research: true,
             webSearch: true,
             connectors: [(id: "github", label: "GitHub")],
             documentCount: 3
         )
         #expect(marks.map(\.id) == ["research", "web", "connector:github", "documents"])
-        #expect(marks[0].label == "Deep research")
-        #expect(marks[0].detail == "Deep")
+        // One feature, no levels: "Research", no depth detail (SPEC §9.9).
+        #expect(marks[0].label == "Research")
+        #expect(marks[0].detail == nil)
+        #expect(marks[0].help == "Research on")
+        #expect(marks[0].removeLabel == "Turn off Research")
+        #expect(marks.allSatisfy { !($0.help.contains("Deep") || $0.label.contains("Deep")) })
         #expect(marks[2].glyph == .connector("github"))
         #expect(marks.allSatisfy { !$0.label.localizedCaseInsensitiveContains("memory") })
-        #expect(ChatComposerMark.marks(researchDepth: nil, webSearch: false, connectors: [], documentCount: nil).isEmpty)
+        #expect(ChatComposerMark.marks(research: false, webSearch: false, connectors: [], documentCount: nil).isEmpty)
     }
 
     /// Two, then one mark standing for the rest, which names them all.
     @Test
     func marksStopAtTwoAndCountTheRest() {
         let marks = ChatComposerMark.marks(
-            researchDepth: .standard,
+            research: true,
             webSearch: true,
             connectors: [(id: "github", label: "GitHub"), (id: "notion", label: "Notion")],
             documentCount: nil

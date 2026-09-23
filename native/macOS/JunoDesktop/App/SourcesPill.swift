@@ -133,25 +133,38 @@ struct SourceFaviconStack: View {
     var overlap: CGFloat = 6
     var ring: Color = .junoCard
     var limit = 3
+    /// A "+N" after the logos when more sites stand behind them (the run
+    /// line's stack, SPEC §7.5).
+    var showsMore = false
 
-    private var cluster: [NativeChatSource] {
+    /// Distinct sites, in the order they first appeared — never reshuffled
+    /// when later ones arrive.
+    private var sites: [NativeChatSource] {
         var seen = Set<String>()
         var result: [NativeChatSource] = []
         for source in sources where seen.insert(SourceHost.name(source.url)).inserted {
             result.append(source)
-            if result.count == limit { break }
         }
         return result
     }
 
     var body: some View {
-        let items = cluster
-        HStack(spacing: -overlap) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, source in
-                SourceFavicon(url: source.url, size: size)
-                    .padding(1.5)
-                    .background(Circle().fill(ring))
-                    .zIndex(Double(items.count - index))
+        let all = sites
+        let items = Array(all.prefix(limit))
+        HStack(spacing: JunoSpace.hairline) {
+            HStack(spacing: -overlap) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, source in
+                    SourceFavicon(url: source.url, size: size)
+                        .padding(1.5)
+                        .background(Circle().fill(ring))
+                        .zIndex(Double(items.count - index))
+                }
+            }
+            if showsMore, all.count > items.count {
+                Text("+\(all.count - items.count)")
+                    .junoFont(size: 11, relativeTo: .caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.junoSecondaryInk)
             }
         }
         .accessibilityHidden(true)

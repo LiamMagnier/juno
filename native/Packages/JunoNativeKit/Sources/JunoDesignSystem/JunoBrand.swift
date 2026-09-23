@@ -198,6 +198,9 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// the Juno Code mark ``code`` wears).
     case cube, listDashes, listPlus, cornerDownRight, video, externalLink, codeBrackets
 
+    /// The run's tool rows: `calculate` and `search_chats` (SPEC §3.1).
+    case calculator, chats
+
     /// The generated symbol this case wears, without a cut suffix: `ph.<name>`
     /// for Phosphor's drawings, `juno.<name>` for Juno's own.
     ///
@@ -405,6 +408,8 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         case .video: "ph.videocamera"
         case .externalLink: "ph.arrowsquareout"
         case .codeBrackets: "ph.code"
+        case .calculator: "ph.calculator"
+        case .chats: "ph.chats"
         }
     }
 

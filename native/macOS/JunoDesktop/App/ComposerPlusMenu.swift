@@ -41,9 +41,9 @@ struct ComposerPlusMenuModel {
     var manageConnections: (() -> Void)?
 
     // Group 3 — armed for this message.
-    /// Nil hides Deep Research (private mode).
+    /// Nil hides Research (private mode). One feature, no levels (Tool calls
+    /// & research SPEC §9.9).
     var deepResearch: Binding<Bool>?
-    var researchDepth: NativeResearchEffort
     /// Nil hides Web Search, Memory and My Documents (the call's short menu).
     var webSearch: Binding<Bool>?
     var webSearchAvailable: Bool
@@ -191,12 +191,7 @@ struct ComposerPlusMenu: View {
             if let deepResearch = menu.deepResearch {
                 Toggle(isOn: deepResearch) {
                     Label {
-                        Text("Deep Research")
-                        // Only while it is on, as on the web: a depth on an off
-                        // row reads as the state rather than as what it would be.
-                        if deepResearch.wrappedValue {
-                            Text(menu.researchDepth.label)
-                        }
+                        Text("Research")
                     } icon: {
                         Image(JunoIcon.research.assetName)
                     }
@@ -329,25 +324,26 @@ struct ChatComposerMark: Identifiable, Equatable {
     static let overflowID = "more"
 
     /// The marks for what is armed, in the web's order: Task · Skill (both
-    /// later phases) → Deep research · {depth} → Web search → each connector
-    /// under its own logo → My documents. Memory never gets a mark: it is an
-    /// account setting true of every message, and a mark that is always lit
-    /// teaches the reader to stop reading the row.
+    /// later phases) → Research → Web search → each connector under its own
+    /// logo → My documents. Memory never gets a mark: it is an account setting
+    /// true of every message, and a mark that is always lit teaches the reader
+    /// to stop reading the row. Research has no levels and so no detail
+    /// (SPEC §9.9).
     static func marks(
-        researchDepth: NativeResearchEffort?,
+        research: Bool,
         webSearch: Bool,
         connectors: [(id: String, label: String)],
         documentCount: Int?
     ) -> [ChatComposerMark] {
         var marks: [ChatComposerMark] = []
-        if let researchDepth {
+        if research {
             marks.append(ChatComposerMark(
                 id: researchID,
                 glyph: .icon(.research),
-                label: "Deep research",
-                detail: researchDepth.label,
-                help: "\(researchDepth.summary). Depth follows your model and thinking effort.",
-                removeLabel: "Turn off deep research"
+                label: "Research",
+                detail: nil,
+                help: "Research on",
+                removeLabel: "Turn off Research"
             ))
         }
         if webSearch {
@@ -410,7 +406,7 @@ struct ChatComposerMark: Identifiable, Equatable {
 /// coral (§0.4, §5.5).
 ///
 /// The label is the `+` menu itself, reopened where the reader is looking —
-/// clicking "Deep research" is how you get to the switch that turns it off. A
+/// clicking "Research" is how you get to the switch that turns it off. A
 /// hover reveals the ✕ that disarms it directly; VoiceOver gets the same as a
 /// named action, because a control that appears only under a pointer is not
 /// one a screen reader can find.

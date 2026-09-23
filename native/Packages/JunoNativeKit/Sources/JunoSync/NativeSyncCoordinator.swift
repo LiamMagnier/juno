@@ -80,6 +80,9 @@ public actor NativeSyncCoordinator<Repository: AccountScopedRepository> {
     private let baselineInstaller: NativeBootstrapBaselineInstaller<Repository>
     private let pageApplier: CursorPageApplier<Repository>
     private let maximumTransactionAttempts: Int
+    /// The last bootstrap's `chat.clientFeatures` — nil before a bootstrap, and
+    /// on a server that predates it (profile 1 only).
+    public private(set) var chatClientFeatures: [String]?
 
     public init(
         repository: Repository,
@@ -103,6 +106,7 @@ public actor NativeSyncCoordinator<Repository: AccountScopedRepository> {
     @discardableResult
     public func bootstrap(for accountID: AccountID) async throws -> String {
         let checkpoint = try await bootstrapClient.fetch(for: accountID)
+        chatClientFeatures = checkpoint.chatClientFeatures
         var references: [NativeEntityReference] = []
         var after: String?
         var seenCursors = Set<String>()

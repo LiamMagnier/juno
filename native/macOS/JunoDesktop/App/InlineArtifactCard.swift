@@ -113,6 +113,27 @@ struct DesktopInlineArtifactCard: View {
         return min(max(viewportHeight * 0.44, 240), 360)
     }
 
+    /// The body's height once the page has reported its own: the page's
+    /// content on its mat — within 120pt and ``bodyHeight`` — so a short page
+    /// never sits over a band of empty sheet. The same height holds for every
+    /// view, so switching to Code never makes the card jump.
+    private var fittedBodyHeight: CGFloat {
+        guard hasPreview, !isDesign, !isMarkdown, runtimeInfo.mode == .web,
+            let height = runtime.contentHeight, let pageWidth = runtime.contentWidth, pageWidth > 0, width > 0
+        else { return bodyHeight }
+        // The sheet sits on an 8pt mat inside the card's 1pt edge; a page
+        // laid out at another width (an offscreen still) scales to this one.
+        let sheetWidth = max(1, width - 2 * JunoSpace.snug - 2)
+        let fitted = CGFloat(height) * sheetWidth / CGFloat(pageWidth) + 2 * JunoSpace.snug + 2
+        return min(max(fitted.rounded(.up), 120), bodyHeight)
+    }
+
+    /// The page's own ground under the sheet — white when it paints none.
+    private var sheetGround: Color {
+        guard let color = runtime.pageBackground, color.alpha > 0.99 else { return .white }
+        return Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: 1)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -330,13 +351,14 @@ struct DesktopInlineArtifactCard: View {
             // switch: the card never jumps, the content trades places.
             .id(view)
             .transition(.opacity)
-            .frame(height: bodyHeight)
+            .frame(height: fittedBodyHeight)
             .frame(maxWidth: .infinity)
             .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: view)
         } else if card.isStreaming {
             VStack(spacing: JunoSpace.cozy) {
-                JunoThinkingMatrix()
-                    .foregroundStyle(Color.junoSecondaryInk)
+                // The run signature's tool pattern, small, in the muted ink
+                // (SPEC §7.13) — the matrix and its coral dot are gone.
+                JunoRunSignature(phase: .tool, size: .small)
                 VStack(spacing: 2) {
                     Text("Writing artifact")
                         .junoType(.heading)
@@ -370,7 +392,7 @@ struct DesktopInlineArtifactCard: View {
                 language: card.language,
                 runtime: runtime
             )
-            .modifier(ArtifactPreviewSheet(ground: runtimeInfo.mode == .console ? InlineArtifactCard.terminalGround : .white))
+            .modifier(ArtifactPreviewSheet(ground: runtimeInfo.mode == .console ? InlineArtifactCard.terminalGround : sheetGround))
         }
     }
 }

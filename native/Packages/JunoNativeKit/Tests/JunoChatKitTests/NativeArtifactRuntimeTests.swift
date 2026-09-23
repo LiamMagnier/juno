@@ -220,6 +220,33 @@ final class ArtifactRuntimeBridgeTests: XCTestCase {
         XCTAssertNil(ArtifactRuntimeMessage.decode("juno:status"))
     }
 
+    /// The height channel: a page reports its content height, the width it
+    /// was laid out at, and its ground — validated, and a transparent or
+    /// malformed colour is no colour.
+    @MainActor
+    func testTheHeightChannel() {
+        XCTAssertEqual(
+            ArtifactRuntimeMessage.decode(["type": "juno:size", "height": 212, "width": 720, "background": "rgb(11, 11, 14)"]),
+            .size(height: 212, width: 720, background: ArtifactRuntimeColor(red: 11 / 255, green: 11 / 255, blue: 14 / 255))
+        )
+        XCTAssertNil(ArtifactRuntimeMessage.decode(["type": "juno:size", "height": 212]), "no width, no size")
+        XCTAssertNil(ArtifactRuntimeMessage.decode(["type": "juno:size", "height": -4, "width": 720]))
+        guard case .size(_, _, let background)? = ArtifactRuntimeMessage.decode(
+            ["type": "juno:size", "height": 90, "width": 400, "background": "url(javascript:alert(1))"]
+        ) else { return XCTFail("a bad colour costs the colour, not the size") }
+        XCTAssertNil(background)
+        XCTAssertEqual(ArtifactRuntimeColor(css: "rgba(250, 249, 246, 0.5)")?.alpha, 0.5)
+        XCTAssertNil(ArtifactRuntimeColor(css: "rgb(300, 0, 0)"))
+
+        let model = ArtifactRuntimeModel()
+        model.apply(.size(height: 212, width: 720, background: nil))
+        XCTAssertEqual(model.contentHeight, 212)
+        XCTAssertEqual(model.contentWidth, 720)
+        model.reset()
+        XCTAssertNil(model.contentHeight)
+        XCTAssertTrue(NativeArtifactRuntimeDocument.build(kind: .html, content: "<p>Hi</p>", language: nil).contains("juno:size"))
+    }
+
     @MainActor
     func testConsoleIsCappedAsTheWebCapsIt() {
         let model = ArtifactRuntimeModel()

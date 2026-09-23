@@ -265,6 +265,12 @@ const PHOSPHOR = {
   VideoCamera: "Video",
   ArrowSquareOut: "ExternalLink",
   Code: "Code2",
+
+  // The run's tool rows (the Tool calls & research rework, SPEC §3.1's
+  // ToolIconKind): `calculate` and `search_chats` wear Phosphor's own
+  // drawings for those concepts.
+  Calculator: null,
+  Chats: null,
 };
 
 /** Glyphs with a `.fill` twin: the "on" drawings §8.6 asks for — a pinned row,

@@ -66,6 +66,8 @@ public final class NativePrivateChatModel {
 
     private let client: any NativePrivateChatSending
     private var accountID: AccountID?
+    /// The live turn's reducer (``NativeTurnStream``).
+    private var stream = NativeTurnStream(holdsProvisionalText: false)
     private var generation: Task<Void, Never>?
 
     public init(client: any NativePrivateChatSending) {
@@ -128,6 +130,7 @@ public final class NativePrivateChatModel {
         turns.append(assistant)
         phase = .streaming
         lastErrorDescription = nil
+        stream = NativeTurnStream(holdsProvisionalText: false)
 
         // The history sent is every turn EXCEPT the empty assistant placeholder we
         // just appended for the UI to stream into — sending a blank assistant turn
@@ -179,10 +182,14 @@ public final class NativePrivateChatModel {
     private func apply(_ event: NativeChatServerEvent, to assistantID: String) {
         guard let index = turns.firstIndex(where: { $0.id == assistantID }) else { return }
         switch event {
-        case .textDelta(let text):
-            turns[index].content.append(text)
-        case .reasoningDelta(let text):
-            turns[index].reasoning = (turns[index].reasoning ?? "") + text
+        case .textDelta, .activity:
+            // Both grammars, through the one reducer: a timeline round the
+            // server marks as commentary leaves the answer.
+            stream.apply(event)
+            turns[index].content = stream.answer
+        case .reasoningDelta:
+            stream.apply(event)
+            turns[index].reasoning = stream.reasoning.isEmpty ? nil : stream.reasoning
         case .completed(let message):
             // The server's own final text wins over the accumulated deltas, exactly
             // as the persisted path does — a reconnect can duplicate a delta.

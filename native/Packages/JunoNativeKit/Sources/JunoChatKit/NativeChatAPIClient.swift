@@ -257,12 +257,22 @@ public struct NativeChatSource: Equatable, Sendable {
     /// `[3]` is text, and drawing it as a citation would point at an arbitrary,
     /// wrong source. Absent on older rows, which degrades to plain text.
     public let cited: Bool
+    /// Where it came from — `juno_search`, `juno_fetch`, `provider_search`,
+    /// `provider_grounding` or `research` (the rework's `ChatSourceOrigin`).
+    /// Additive and optional; an unknown value is dropped, and a source
+    /// without one reads as a provider search (SPEC §8.3.2).
+    public let origin: String?
 
-    public init(title: String, url: URL, snippet: String, cited: Bool = false) {
+    public static let knownOrigins: Set<String> = [
+        "juno_search", "juno_fetch", "provider_search", "provider_grounding", "research",
+    ]
+
+    public init(title: String, url: URL, snippet: String, cited: Bool = false, origin: String? = nil) {
         self.title = title
         self.url = url
         self.snippet = snippet
         self.cited = cited
+        self.origin = origin.flatMap { Self.knownOrigins.contains($0) ? $0 : nil }
     }
 }
 
@@ -474,6 +484,7 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
     public var segment: NativeReasoningSegment?
     public var commentary: NativeRunCommentary?
     public var notice: NativeRunNotice?
+    public var fact: NativeRunFact?
     /// The redacted arguments and result of one connector call.
     public var tool: NativeToolDetail?
     /// The saved facts about the reader this turn used.
@@ -492,6 +503,7 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
         segment: NativeReasoningSegment? = nil,
         commentary: NativeRunCommentary? = nil,
         notice: NativeRunNotice? = nil,
+        fact: NativeRunFact? = nil,
         tool: NativeToolDetail? = nil,
         memory: [NativeMemoryReceipt] = []
     ) {
@@ -507,6 +519,7 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
         self.segment = segment
         self.commentary = commentary
         self.notice = notice
+        self.fact = fact
         self.tool = tool
         self.memory = memory
     }
@@ -520,8 +533,13 @@ public enum NativeChatServerEvent: Equatable, Sendable {
         generationID: String?
     )
     case title(conversationID: String, title: String)
-    case textDelta(String)
-    case reasoningDelta(String)
+    /// Answer-channel text. On the timeline grammar it carries the model step
+    /// it belongs to and, when the provider declares one, its phase
+    /// (`commentary` or `answer`); a profile-1 frame carries neither.
+    case textDelta(String, round: Int? = nil, phase: NativeDeltaPhase? = nil)
+    /// Reasoning text, with the provider's part ordinal when it declares parts
+    /// and, on the timeline grammar, its round.
+    case reasoningDelta(String, part: Int? = nil, round: Int? = nil)
     case sources([NativeChatSource])
     case activity(NativeChatActivity)
     /// A connector action is blocked until the person answers. This is not a
@@ -543,11 +561,35 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// the generation is over but its end is not in the log. Neither is
     /// terminal: the stream carries on (or has already ended) around it.
     case resume(available: Bool?, refetch: Bool?)
+    /// The chat request became a background research run (`research_background`
+    /// only). Terminal: no `done` follows and no assistant row is written; the
+    /// client follows the run instead (SPEC §2.3 rule 6, §9.6.1).
+    case handoff(NativeResearchHandoff)
     /// The SSE `id:` of the frame just delivered: the generation's frame
     /// sequence number, which a reconnect resumes after
     /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
     case sequence(Int)
     case ping
+}
+
+/// A text delta's provider-declared phase (the timeline grammar's
+/// `delta.phase`).
+public enum NativeDeltaPhase: String, Equatable, Sendable {
+    /// A preamble the model wrote while working.
+    case commentary
+    /// The final answer (OpenAI Responses `final_answer`).
+    case answer
+}
+
+/// A chat request that became a background research run.
+public struct NativeResearchHandoff: Equatable, Sendable {
+    public let runID: String
+    public let userMessageID: String?
+
+    public init(runID: String, userMessageID: String?) {
+        self.runID = runID
+        self.userMessageID = userMessageID
+    }
 }
 
 /// How far a media generation has got.
@@ -1130,7 +1172,10 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             privateMode: true,
             privateHistory: request.history,
             fastMode: request.fastMode ? true : nil,
-            proMode: request.proMode ? true : nil
+            proMode: request.proMode ? true : nil,
+            clientFeatures: NativeChatClientFeatures.declared,
+            timeZone: NativeChatClientFeatures.timeZone,
+            locale: NativeChatClientFeatures.locale
         )
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
@@ -1155,7 +1200,10 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             connectors: request.connectors.isEmpty ? nil : request.connectors,
             fastMode: request.fastMode ? true : nil,
             proMode: request.proMode ? true : nil,
-            regenerateInstruction: request.regenerateInstruction
+            regenerateInstruction: request.regenerateInstruction,
+            clientFeatures: NativeChatClientFeatures.declared,
+            timeZone: NativeChatClientFeatures.timeZone,
+            locale: NativeChatClientFeatures.locale
         )
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
@@ -1363,7 +1411,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     ///   `progress` frame does not name it — the server is answering a request
     ///   whose model already fixed it — so it is carried in rather than guessed.
     ///   Irrelevant on `/api/chat`, which never sends a progress frame.
-    private func decodeEvent(
+    func decodeEvent(
         _ payload: Data,
         mediaModality: NativeMediaProgress.Modality = .image
     ) throws -> NativeChatServerEvent {
@@ -1409,12 +1457,31 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             guard let text = envelope.text,
                 text.utf8.count <= 64 * 1_024
             else { throw NativeChatAPIError.malformedResponse }
-            return .textDelta(text)
+            // `round` and `phase` ride only the timeline grammar; an unknown
+            // phase is treated as undeclared rather than failing the text.
+            return .textDelta(
+                text,
+                round: envelope.round.flatMap { $0 >= 0 ? $0 : nil },
+                phase: envelope.phase.flatMap(NativeDeltaPhase.init(rawValue:))
+            )
         case "reasoning":
             guard let text = envelope.text,
                 text.utf8.count <= 64 * 1_024
             else { throw NativeChatAPIError.malformedResponse }
-            return .reasoningDelta(text)
+            return .reasoningDelta(
+                text,
+                part: envelope.part.flatMap { $0 >= 0 ? $0 : nil },
+                round: envelope.round.flatMap { $0 >= 0 ? $0 : nil }
+            )
+        case "handoff":
+            guard envelope.to == "research",
+                let runID = envelope.runId,
+                validText(runID, maximum: 256)
+            else { throw NativeChatAPIError.malformedResponse }
+            return .handoff(NativeResearchHandoff(
+                runID: runID,
+                userMessageID: envelope.userMessageId.flatMap { validText($0, maximum: 256) ? $0 : nil }
+            ))
         case "sources":
             guard let sources = envelope.sources, sources.count <= 100 else {
                 throw NativeChatAPIError.malformedResponse
@@ -1496,7 +1563,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// type is skipped as a ``NativeChatServerEvent/ping``.
     private static let decodedFrameTypes: Set<String> = [
         "meta", "title", "delta", "reasoning", "sources", "done", "error",
-        "activity", "approval", "progress", "resume", "ping",
+        "activity", "approval", "progress", "resume", "handoff", "ping",
     ]
 
     /// One `done`-frame attachment, or nil when it is not one this client can
@@ -1567,7 +1634,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             scheme == "https" || scheme == "http",
             url.host != nil
         else { throw NativeChatAPIError.malformedResponse }
-        return NativeChatSource(title: wire.title, url: url, snippet: wire.snippet, cited: wire.cited == true)
+        return NativeChatSource(title: wire.title, url: url, snippet: wire.snippet, cited: wire.cited == true, origin: wire.origin)
     }
 
     private func decodeApproval(_ wire: ApprovalWire) throws -> NativeChatApproval {
@@ -1700,10 +1767,11 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     }
 }
 
-private extension NativeChatServerEvent {
+extension NativeChatServerEvent {
+    /// `done`, `error` and `handoff` end a stream (SPEC §2.3 rule 6).
     var isTerminal: Bool {
         switch self {
-        case .completed, .failed: true
+        case .completed, .failed, .handoff: true
         default: false
         }
     }
@@ -1857,6 +1925,33 @@ private struct GenerationRequestWire: Encodable {
     /// Omitted when nil, like the flags above: the route only reads it on a
     /// regenerate, and a plain turn's body stays byte-identical.
     let regenerateInstruction: String?
+    /// The grammar this client renders (the rework's `clientFeatures`), with
+    /// the zone and locale `current_time` and research read. Always sent: the
+    /// route's schema is NOT strict (`chatBodySchema` is a plain `z.object`,
+    /// checked 2026-09-23), so a server that predates them strips all three
+    /// and answers in profile 1, which this client also reads.
+    let clientFeatures: [String]
+    let timeZone: String?
+    let locale: String?
+}
+
+/// What the Mac tells `/api/chat` it renders (Tool calls & research SPEC
+/// §2.2): the typed timeline, resume frames, background research with its
+/// hand-off, the "Research this" suggestion, and numbered citations.
+public enum NativeChatClientFeatures {
+    public static let declared = ["timeline", "resume", "research_background", "suggest_research", "citations"]
+
+    /// The IANA zone, e.g. "Europe/Paris".
+    public static var timeZone: String? {
+        let identifier = TimeZone.current.identifier
+        return identifier.isEmpty || identifier.count > 64 ? nil : identifier
+    }
+
+    /// The UI locale as BCP-47, e.g. "en-GB".
+    public static var locale: String? {
+        let identifier = Locale.current.identifier(.bcp47)
+        return identifier.isEmpty || identifier.count > 35 ? nil : identifier
+    }
 }
 /// The private branch's body. `conversationId` and `regenerate` are ABSENT rather
 /// than nil-encoded: the server rejects `regenerate` outright in this mode, and an
@@ -1873,6 +1968,10 @@ private struct PrivateGenerationRequestWire: Encodable {
     /// would make the identical toggle behave differently in incognito.
     let fastMode: Bool?
     let proMode: Bool?
+    /// As on the saved branch: always sent, stripped by an older server.
+    let clientFeatures: [String]
+    let timeZone: String?
+    let locale: String?
 }
 private struct CancelRequestWire: Encodable { let generationId: String }
 private struct ActiveGenerationWire: Decodable { let generationId: String }
@@ -1883,8 +1982,9 @@ struct ChatSourceWire: Decodable {
     let url: String
     let snippet: String
     let cited: Bool?
+    let origin: String?
 
-    private enum CodingKeys: String, CodingKey { case title, url, snippet, cited }
+    private enum CodingKeys: String, CodingKey { case title, url, snippet, cited, origin }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1893,6 +1993,7 @@ struct ChatSourceWire: Decodable {
         // Provider grounding can arrive with no snippet at all.
         snippet = (try? container.decodeIfPresent(String.self, forKey: .snippet)) ?? ""
         cited = try? container.decodeIfPresent(Bool.self, forKey: .cited)
+        origin = try? container.decodeIfPresent(String.self, forKey: .origin)
     }
 }
 
@@ -2072,11 +2173,18 @@ private struct EventEnvelopeWire: Decodable {
     /// `resume` frames only.
     let available: Bool?
     let refetch: Bool?
+    /// `delta` and `reasoning` on the timeline grammar.
+    let round: Int?
+    let phase: String?
+    let part: Int?
+    /// `handoff` frames only.
+    let to: String?
+    let runId: String?
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
              sources, message, event, approval, error, finishReason, stage, pct,
-             artifacts, available, refetch
+             artifacts, available, refetch, round, phase, part, to, runId
     }
 
     init(from decoder: any Decoder) throws {
@@ -2103,6 +2211,12 @@ private struct EventEnvelopeWire: Decodable {
         artifacts = try? container.decodeIfPresent(LossyList<ChatArtifactWire>.self, forKey: .artifacts)
         available = try? container.decodeIfPresent(Bool.self, forKey: .available)
         refetch = try? container.decodeIfPresent(Bool.self, forKey: .refetch)
+        // Lossy: a key the timeline grammar adds must never cost the text.
+        round = try? container.decodeIfPresent(Int.self, forKey: .round)
+        phase = try? container.decodeIfPresent(String.self, forKey: .phase)
+        part = try? container.decodeIfPresent(Int.self, forKey: .part)
+        to = try? container.decodeIfPresent(String.self, forKey: .to)
+        runId = try? container.decodeIfPresent(String.self, forKey: .runId)
     }
 }
 

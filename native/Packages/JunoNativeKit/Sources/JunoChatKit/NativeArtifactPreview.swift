@@ -109,10 +109,15 @@ public struct NativeArtifactPreview: View {
         let document = NativeArtifactRuntimeDocument.build(kind: kind, content: content, language: language)
         #if os(macOS)
         if let still = webPreviewStill?(document) {
-            Image(nsImage: still)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Exactly the proposed size, the still pinned to its top: a card
+            // that sizes itself to the page crops the still rather than
+            // being pushed open by it.
+            Color.clear
+                .overlay(alignment: .top) {
+                    Image(nsImage: still)
+                        .resizable()
+                        .scaledToFill()
+                }
                 .clipped()
                 .task(id: document) {
                     guard let runtime, let stills = webPreviewStill else { return }
@@ -138,10 +143,12 @@ public struct NativeArtifactPreview: View {
         )
         #if os(macOS)
         if let still = webPreviewStill?(document) {
-            Image(nsImage: still)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            Color.clear
+                .overlay(alignment: .top) {
+                    Image(nsImage: still)
+                        .resizable()
+                        .scaledToFill()
+                }
                 .clipped()
         } else {
             NativeArtifactWebPreview(

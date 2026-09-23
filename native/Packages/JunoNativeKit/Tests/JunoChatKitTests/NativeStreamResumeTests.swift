@@ -138,6 +138,118 @@ final class NativeStreamResumeTests: XCTestCase {
 
     // MARK: Harness
 
+    // MARK: Research hand-off (Tool calls & research SPEC §9.6.1)
+
+    /// A Research request on a server that runs research in the background
+    /// ends with `handoff`, not `done`: no answer row, no error, the
+    /// placeholder gone, and the run followed by its id.
+    func testAHandoffBecomesAResearchRun() async throws {
+        let streamer = ResumeStreamer(bodies: [
+            "/api/chat": """
+            id: 1
+            data: {"type":"meta","conversationId":"conv_12345678","userMessageId":null,"title":"Research","generationId":null}
+
+            id: 2
+            data: {"type":"handoff","to":"research","runId":"run_abc123","userMessageId":"msg-appended"}
+
+
+            """,
+        ])
+        let run = #"""
+        {"run":{"id":"run_abc123","conversationId":"conv_12345678","goal":"Swift 6 adoption","state":"investigating","stage":"research",
+        "title":"Swift 6 adoption","phase":"searching","phaseDetail":{"query":"swift 6 strict concurrency"},
+        "plan":{"approach":"Look at package indexes and surveys.","objectives":[]},
+        "questions":[{"id":"q1","question":"How many packages build in Swift 6 mode?","status":"searching"},{"id":"q2","question":"What slows migration?","status":"pending"}],
+        "counts":{"found":12,"read":4,"cited":0,"searches":3,"pages":4},"workingMs":42000,"assistantMessageId":null,
+        "leadModel":{"id":"anthropic:claude-opus","label":"Claude Opus"},"latestFindings":[],
+        "sources":[{"id":"s1","url":"https://swiftpackageindex.com/ready-for-swift-6","title":"Ready for Swift 6","read":true},{"id":"s2","url":"https://www.swift.org/blog/","title":"Swift.org","read":false}],
+        "steering":[],"estimate":{"minutesUpTo":12,"pagesUpTo":150},"revising":false,"finishRequested":false,
+        "createdAt":"2026-09-23T10:00:00.000Z","finishedAt":null,"live":true},
+        "events":[{"seq":1,"kind":"plan_confirmed","payload":{"by":"user"},"createdAt":"2026-09-23T10:00:05.000Z"},
+        {"seq":2,"kind":"query_issued","payload":{"query":"swift 6 strict concurrency"},"createdAt":"2026-09-23T10:00:06.000Z"},
+        {"seq":3,"kind":"source_read","payload":{"url":"https://swiftpackageindex.com/ready-for-swift-6"},"createdAt":"2026-09-23T10:00:08.000Z"}],
+        "lastSeq":3,"maxSeq":3}
+        """#
+        let (model, _) = try await makeModel(
+            streamer: streamer,
+            responses: ["/api/research/run_abc123": Data(run.utf8)]
+        )
+        XCTAssertTrue(model.sendMessage(
+            conversationID: conversationID,
+            prompt: "Research Swift 6 adoption",
+            modelID: "openai:gpt-5",
+            reasoningEffort: nil,
+            deepResearch: true
+        ))
+        try await waitUntilIdle(model)
+
+        XCTAssertNil(model.chatErrorDescription)
+        XCTAssertFalse(model.selectedMessages.contains { $0.role == .assistant }, "a hand-off writes no answer")
+        let handed = try XCTUnwrap(model.researchRuns(for: conversationID).first)
+        XCTAssertEqual(handed.id, "run_abc123")
+        XCTAssertEqual(handed.userMessageID, "msg-appended")
+        XCTAssertEqual(handed.phase, .planning)
+
+        await model.refreshResearchRun(id: "run_abc123", conversationID: conversationID)
+        let followed = try XCTUnwrap(model.researchRun(id: "run_abc123"))
+        XCTAssertEqual(followed.phase, .searching)
+        XCTAssertEqual(followed.phaseLine.text, "Searching for \u{201C}swift 6 strict concurrency\u{201D}")
+        XCTAssertEqual(followed.userMessageID, "msg-appended", "the question it answers survives a poll")
+        XCTAssertEqual(followed.counts.read, 4)
+        XCTAssertEqual(followed.shownSourceCount, 4)
+        XCTAssertEqual(followed.questions.map(\.status), ["searching", "pending"])
+        XCTAssertEqual(NativeResearchRun.questionStatus("searching"), "In progress")
+        XCTAssertEqual(followed.steps.map(\.line.text), [
+            "Read swiftpackageindex.com",
+            "Searching for \u{201C}swift 6 strict concurrency\u{201D}",
+            "Research started",
+        ])
+        XCTAssertEqual(followed.lastSeq, 3)
+        XCTAssertEqual(followed.estimateLine?.text, "About 12 min · Reads up to ~150 pages")
+        XCTAssertEqual(followed.leadModel, "Claude Opus")
+        XCTAssertEqual(followed.workingTime(at: followed.fetchedAt), 42)
+    }
+
+    /// An older server's run view has no phase: it is read from the state.
+    func testAnOlderRunViewIsReadFromItsState() {
+        XCTAssertEqual(NativeResearchRun.Phase(state: "awaiting_plan_confirmation"), .awaitingStart)
+        XCTAssertEqual(NativeResearchRun.Phase(state: "investigating", latestEventKind: "source_read"), .reading)
+        XCTAssertEqual(NativeResearchRun.Phase(state: "synthesizing"), .writing)
+        XCTAssertEqual(NativeResearchRun.Phase(state: "partially_completed"), .done)
+        XCTAssertEqual(NativeResearchRun.Phase(state: "cancelled"), .stopped)
+        XCTAssertEqual(NativeResearchRun.Phase(state: "something_new"), .failed)
+    }
+
+    /// Research a profile-1 server answers in the chat reads as a run: its
+    /// searches, its reads, and the report as it is written.
+    func testInChatResearchReadsAsARun() {
+        let start = Date(timeIntervalSince1970: 0)
+        var message = NativeChatMessage(
+            id: "local-assistant-1", conversationID: conversationID, clientID: nil, role: .assistant,
+            content: "", reasoning: nil, model: nil, createdAt: start, revision: 0, isPending: true,
+            activity: [
+                NativeChatActivity(id: "c", kind: .context, title: "Research corpus ready", detail: nil, url: nil),
+                NativeChatActivity(id: "s", kind: .search, title: "Searching the web", detail: "swift 6 adoption", url: nil),
+                NativeChatActivity(id: "v", kind: .visit, title: "Reading source", detail: "Swift.org", url: "https://www.swift.org/blog/"),
+            ],
+            runStartedAt: start
+        )
+        XCTAssertTrue(NativeResearchRun.isInChatResearch(activity: message.activity))
+        var run = NativeResearchRun.inChat(message: message, live: true, now: start.addingTimeInterval(30))
+        XCTAssertEqual(run.phase, .reading)
+        XCTAssertEqual(run.phaseLine.text, "Reading swift.org")
+        XCTAssertEqual(run.counts.searches, 1)
+        XCTAssertEqual(run.counts.read, 1)
+        XCTAssertEqual(run.steps.map(\.line.text), ["Read swift.org", "Searching for \u{201C}swift 6 adoption\u{201D}"])
+        message.answerStartedAt = start.addingTimeInterval(40)
+        run = NativeResearchRun.inChat(message: message, live: true)
+        XCTAssertEqual(run.phase, .writing)
+        XCTAssertEqual(run.phaseLine.text, "Writing the report")
+        XCTAssertFalse(NativeResearchRun.isInChatResearch(activity: [
+            NativeChatActivity(id: "w", kind: .write, title: "Writing the answer", detail: nil, url: nil),
+        ]))
+    }
+
     private func waitUntilIdle(_ model: NativeConversationModel<InMemoryTransactionalStore>) async throws {
         let deadline = Date().addingTimeInterval(10)
         while model.isGenerating, Date() < deadline {

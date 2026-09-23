@@ -63,6 +63,15 @@ The shared checkout at `/Users/liammagnier/Developer/project/juno` belongs to ot
    - a design is drawn on a desk tone with a frame edge, so a white frame no longer vanishes into the white sheet
    - harness: capsules draw without the `render(in:)` end ticks; `FinalSnapshotTests` (`JUNO_FINAL_SNAPSHOT_DIR`) renders window compositions over the preview world, the composer's glass as its Reduce Transparency recipe (`junoSnapshotOpaqueGlass`) and the sidebar on `--sidebar`
 
+10. **Phase 2 stage 4b, the tools rework's final design** (the commit after `ff906c12`; spec "Phase 2 errata", stage 4b; register 40–42), against `juno-tools` `docs/chat-rework/SPEC.md` at `f1badf26`:
+   - the Mac always sends `clientFeatures` (all five), `timeZone` and `locale`, and decodes **both** grammars through one stream reducer (`NativeTurnStream`: the store, the private chat and Compare) — rounds, declared and held commentary, the terminal `handoff`, the whole `ToolCallRecord`, `segment`, `commentary`, `fact`, `notice`, `sources[].origin`; tests feed recorded profile-1 bytes and hand-built timeline bytes through the real client and the reducer (`NativeTurnStreamTests`)
+   - `NativeToolPresentation` mirrors SPEC §3.8 / §7.6 (phrases with argument nodes, failure phrases, notices, connector failures, the summary grammar: "Thought for" whenever the run reasoned or ran a call)
+   - the run block per SPEC §7 (Concept A signature on the SPEC's keyframes, the sweep, pacing, the peek with still rings, inline commentary, stall and escalation captions, one loop owner, warning as the only failure ink) and the Activity panel per §8 (`DesktopPanelShell`; Timeline / Sources / Details with Forget)
+   - Research without levels, the research row and plan card in the transcript, the Research panel in the dock (one of canvas / Activity / Research at a time), research followed by polling `/api/research/{id}`, research answered in the chat shown the same way, "Research this"
+   - bootstrap `chat.clientFeatures`; `juno-native-v1.yaml` gains `chat` and the §2.13 documentation
+   - the inline HTML card sizes its preview to the page (`juno:size`) and fills with the page's ground: no white band
+   - snapshots in `/tmp/juno-glass-snapshots/stage4b/transcript/`
+
 Every stage above built and passed at its commit:
 - Mac build, JunoDesktopTests (175) and the iOS build
 - the JunoNativeKit and JunoCode package tests
@@ -76,7 +85,7 @@ Every stage above built and passed at its commit:
    - Xcode projects: `native/Scripts/generate-projects.sh`
 2. *(done — stage 2, above)*
 3. *(done — stage 3, above)*
-4. *(done — stage 4, above)*. When the tools session's `SPEC.md` is final, swap `JunoRunSignature` / the run line for its exact spec, and start sending `clientFeatures: ["timeline", "resume"]` once the server ships the typed timeline (the Mac already decodes it).
+4. *(done — stage 4 and stage 4b, above)*. The Mac speaks the final SPEC's grammar and always declares it; nothing waits on the server shipping it.
 5. *(done — Phase 2 review, above; the final snapshot set is in `/tmp/juno-glass-snapshots/final/`, the transcript suite under `final/transcript/`)*.
 6. **Phase 5, Work merged into Chat** (spec §11 Phase 5; runs before 3 and 4, per the errata). Covers `conversationID` on work sessions, "Do This as a Task", run cards, the Needs-you fold, notifications, and deleting `DesktopWorkWorkspace`.
 7. **Phase 3:** popovers, menus, sheets and Settings. This includes the ⌘K panel, the share popover, the toast host and the menu bar.
@@ -140,9 +149,7 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - No element inspector or "View last good version" in the canvas yet (the web has both).
 - **Stage 4 runtime checks not done** (screen control is off): scrolling up mid-stream stopping the follow and showing Scroll to latest (and its glass, which the offscreen harness cannot draw), ⌘F / ⌘G from the menu with a real transcript, a citation popover opening at the click, a favicon arriving, a follow-up chip sending, killing the network mid-stream and watching `after=seq` resume, reopening the app mid-answer, the Activity panel following a reply as its id changes, and an approval card's buttons.
 - **Stage 4 follow-ups:**
-  - **The rework's final spec.** `SPEC.md` had no reviews when the stage ran; the run UI follows `DECISIONS.md` and the draft, behind `JunoRunSignature`. The tools session will message when it is final. `clientFeatures` is not sent yet.
-  - **Toasts.** A failed action on a reply shows the error box for six seconds until the toast host (Phase 3).
-  - **Memory used** is listed in the Activity panel without the web's Forget.
+  - **Toasts.** A failed action on a reply shows the error box for six seconds until the toast host (Phase 3). Forget in the Activity panel has no Undo toast yet for the same reason.
   - **Citations** draw the number without the source's logo (a `Text` run cannot hold an image that arrives later); the logo is in the popover.
   - **Offscreen stroke artifact** — fixed in the harness (Phase 2 review): `CALayer.render(in:)` drew continuous-corner capsules with a tick at each end; the renderer draws those layers with circular corners before photographing.
   - **New copy** is not in `Localizable.xcstrings`.
@@ -150,6 +157,12 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - React, TypeScript and Python previews and Tailwind-styled pages (brief §5.6) — the runtimes must be bundled (downloading needs the owner's permission) or the network opened (needs sign-off).
   - The version pager is unit-tested (client, decoding, the page's view) and drawn at rest (`reply-actions-versions`); stepping back through it against the live server is a runtime check still to do.
   - The sidebar's glass, the toolbar and the composer's glass are not in any offscreen picture; the final set says what stands in for each.
-  - **The brief's "tools SPEC is final" update** (`0f7d7e13`, `31b26ef0`, landed while the review ran) is not built: always sending `clientFeatures` / `timeZone` / `locale`, decoding both grammars (the `handoff` frame, `ToolCallRecord`'s full field set, `fact`, `origin` on sources, the five warning notice codes), the Swift presentation-copy table for canonical tool ids (SPEC §3.8), and `chat.clientFeatures` on bootstrap. It is the next Stage 4 follow-up, against `juno-tools` `SPEC.md` at `f1badf26`.
+  - *(built in stage 4b)* the brief's "tools SPEC is final" update.
+- **Stage 4b runtime checks not done** (screen control is off; the server does not ship the timeline grammar yet): a real timeline stream (held text, a commentary round leaving the answer, a record re-sent in place), a real `handoff` and the run's polling, Start / Cancel on a real plan, Pause / Finish now / Cancel on a real run, "Research this" sending, Forget from the panel, an approval answered from the panel's row, the page-sized artifact card with a live web view, VoiceOver hearing the phase announcements.
+- **Stage 4b follow-ups:**
+  - `contracts/capabilities` does not yet gain `chatClientFeatures` / `toolCallStatuses` (SPEC §2.13): that JSON also feeds the web's `effective-capabilities.ts`, so it waits for the rework's merge rather than moving the web's contract from this branch.
+  - The plan card has no question editing, clarification answers, "Update plan", or the "Notify me" line; the composer has no "Ask Juno | Guide the research" switch and no `/steer` (SPEC §9.7); the Research panel's Details shows no spend (the SPEC wants EUR in the plan currency, which needs a conversion the Mac does not have). Completed runs arrive through sync; there is no `juno:research-finished` watcher or notification yet (Phase 5 owns notifications).
+  - Bootstrap's `chat.clientFeatures` is read and kept on the sync coordinator but nothing in the UI branches on it yet (the hand-off frame itself says research ran in the background).
+  - The run line's facts and counts are SF with tabular numerals rather than the SPEC's mono caption (register 40).
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.

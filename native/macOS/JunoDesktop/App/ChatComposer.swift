@@ -256,6 +256,9 @@ struct ChatComposerRequest: Equatable {
         /// message, with the composer's current model and tools — the web's
         /// `sendFromComposer`.
         case send(String)
+        /// "Research this" (the `suggest_research` chip): **send** this as a
+        /// Research request (Tool calls & research SPEC §3.8.9, §9.10).
+        case research(String)
     }
 
     let id = UUID()
@@ -931,14 +934,6 @@ struct ChatComposer: View {
         )
     }
 
-    private var researchDepth: NativeResearchEffort {
-        NativeResearchEffort.derived(
-            priceClass: selectedModel?.pricing?.priceClass,
-            reasoningEffort: reasoningEffort,
-            proMode: proMode
-        )
-    }
-
     private var researchAvailable: Bool {
         !isPrivate && (selectedModel?.modality ?? "chat") == "chat"
     }
@@ -949,7 +944,7 @@ struct ChatComposer: View {
 
     private var marks: [ChatComposerMark] {
         ChatComposerMark.marks(
-            researchDepth: deepResearch && researchAvailable ? researchDepth : nil,
+            research: deepResearch && researchAvailable,
             webSearch: webSearch && webSearchAvailable,
             connectors: isPrivate || voiceActive ? [] : connectedConnectors
                 .filter { selectedConnectors.contains($0.id) }
@@ -1128,6 +1123,13 @@ struct ChatComposer: View {
                 // reader wrote is replaced.
                 guard draftIsEmpty else { return }
                 prompt = text
+                submit()
+            case .research(let question):
+                // "Research this": the question, sent as Research — only over
+                // an empty draft, like a follow-up.
+                guard draftIsEmpty, researchAvailable else { return }
+                deepResearch = true
+                prompt = question
                 submit()
             }
         }
@@ -1352,7 +1354,7 @@ struct ChatComposer: View {
     private var armedMarks: some View {
         let split = ChatComposerMark.visible(marks)
         // ONE mark always keeps its words: a lone telescope says nothing where
-        // "Deep research" says all of it. Two or more drop to glyphs on a
+        // "Research" says all of it. Two or more drop to glyphs on a
         // narrow composer.
         let showsLabels = marks.count == 1
             || composerWidth == 0
@@ -1413,7 +1415,6 @@ struct ChatComposer: View {
             selectedConnectors: $selectedConnectors,
             manageConnections: manageConnections,
             deepResearch: researchAvailable ? $deepResearch : nil,
-            researchDepth: researchDepth,
             // A private turn carries only its words: the private route takes
             // no web search and no local documents, so the rows are absent
             // rather than on and ignored.
@@ -1913,7 +1914,7 @@ struct ChatComposer: View {
         }
     }
 
-    /// Clears what a turn took with it. Deep research is per-send, on purpose:
+    /// Clears what a turn took with it. Research is per-send, on purpose:
     /// "I meant this one to be research" must not become "every message is".
     private func clearDraft() {
         prompt = ""

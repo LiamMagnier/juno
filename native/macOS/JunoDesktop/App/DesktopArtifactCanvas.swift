@@ -306,25 +306,31 @@ enum DesktopDockPanel: TrailingDockPanel {
     case canvas(DesktopChatArtifact)
     /// A reply's run, by message id, opened on a call when one is given.
     case activity(messageID: String, focusCallID: String?)
+    /// A research run, by id — `message:<id>` for research a profile-1 server
+    /// answered inside the chat.
+    case research(runID: String)
 
     var id: String {
         switch self {
         case .canvas(let artifact): "canvas:\(artifact.id)"
         case .activity(let messageID, _): "activity:\(messageID)"
+        case .research(let runID): "research:\(runID)"
         }
     }
 
+    /// Activity and Research are one right-column shell (SPEC §8.5), so they
+    /// keep one width.
     var widthKey: String {
         switch self {
         case .canvas: "dock.canvas.width"
-        case .activity: "dock.activity.width"
+        case .activity, .research: "dock.activity.width"
         }
     }
 
     var artifact: DesktopChatArtifact? {
         switch self {
         case .canvas(let artifact): artifact
-        case .activity: nil
+        case .activity, .research: nil
         }
     }
 }

@@ -339,6 +339,40 @@ public enum NativeArtifactRuntimeDocument {
     </script>
     """
 
+    /// The page's content height and ground, forwarded as `juno:size` — the
+    /// height channel the Phase 2 brief's addendum allows — so an inline card
+    /// sizes its preview to the page and fills what is left with the page's
+    /// own background, never a white band under a short page. The height is
+    /// the bottom of the body's content, not the viewport's; the ground is the
+    /// first opaque background of `body`, then `html`.
+    static let sizeReporter = """
+    <script>
+    (function(){
+      function opaque(c){return c&&c!=='transparent'&&!/rgba\\([^)]*,\\s*0\\)$/.test(c);}
+      function measure(){
+        try{
+          var b=document.body,d=document.documentElement;if(!b)return;
+          var h=0,k=b.children;
+          for(var i=0;i<k.length;i++){var r=k[i].getBoundingClientRect();if(r.bottom>h)h=r.bottom;}
+          var cs=getComputedStyle(b);
+          h+=(parseFloat(cs.paddingBottom)||0)+(parseFloat(cs.marginBottom)||0)+(window.scrollY||0);
+          if(!k.length)h=b.scrollHeight;
+          var bg=null,bc=cs.backgroundColor,dc=getComputedStyle(d).backgroundColor;
+          if(opaque(bc))bg=bc;else if(opaque(dc))bg=dc;
+          __junoPost({type:'juno:size',height:Math.ceil(h),width:d.clientWidth,background:bg});
+        }catch(e){}
+      }
+      var queued=false;
+      function schedule(){if(queued)return;queued=true;requestAnimationFrame(function(){queued=false;measure();});}
+      window.addEventListener('load',function(){measure();setTimeout(measure,250);});
+      document.addEventListener('DOMContentLoaded',function(){
+        schedule();
+        try{new ResizeObserver(schedule).observe(document.body);}catch(e){}
+      });
+    })();
+    </script>
+    """
+
     // MARK: Composition
 
     /// The policy first — after the charset declaration when there is one,
@@ -362,7 +396,7 @@ public enum NativeArtifactRuntimeDocument {
     /// bridge before `</head>`. The web also injects a link bridge and an
     /// element inspector; the Mac leaves both out (see the type's note).
     static func withChrome(_ document: String, statusLite includeStatus: Bool = false) -> String {
-        let chrome = sandboxShim + (includeStatus ? statusLite : "") + consoleBridge
+        let chrome = sandboxShim + (includeStatus ? statusLite : "") + consoleBridge + sizeReporter
         let withPolicy = insertPolicy(document)
         guard let head = withPolicy.range(of: "</head>") else { return chrome + withPolicy }
         var out = withPolicy
@@ -850,6 +884,9 @@ public enum NativeArtifactRuntimeDocument {
 public enum ArtifactRuntimeMessage: Equatable, Sendable {
     case status(ArtifactRuntimeStatus, detail: String?)
     case console(ArtifactRuntimeLevel, String)
+    /// The page's content height, the width it was laid out at, and its
+    /// ground — the height channel.
+    case size(height: Double, width: Double, background: ArtifactRuntimeColor?)
 
     /// Decodes a `WKScriptMessage` body. The sender is artifact code, so every
     /// field is re-checked here rather than trusted: an unknown type is
@@ -866,9 +903,49 @@ public enum ArtifactRuntimeMessage: Equatable, Sendable {
             let level = ArtifactRuntimeLevel(rawValue: object["level"] as? String ?? "") ?? .log
             let text = object["text"].map { $0 as? String ?? String(describing: $0) } ?? ""
             return .console(level, text)
+        case "juno:size":
+            guard let height = (object["height"] as? NSNumber)?.doubleValue, height.isFinite, height >= 0,
+                let width = (object["width"] as? NSNumber)?.doubleValue, width.isFinite, width > 0
+            else { return nil }
+            return .size(
+                height: min(height, 20_000),
+                width: min(width, 20_000),
+                background: (object["background"] as? String).flatMap(ArtifactRuntimeColor.init(css:))
+            )
         default:
             return nil
         }
+    }
+}
+
+/// A page's CSS background, as the page's computed style reports it:
+/// `rgb(r, g, b)` or `rgba(r, g, b, a)`.
+public struct ArtifactRuntimeColor: Equatable, Sendable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let alpha: Double
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    public init?(css: String) {
+        let trimmed = css.trimmingCharacters(in: .whitespaces).lowercased()
+        guard trimmed.count <= 64, trimmed.hasPrefix("rgb"), let open = trimmed.firstIndex(of: "("),
+            let close = trimmed.lastIndex(of: ")"), open < close
+        else { return nil }
+        let parts = trimmed[trimmed.index(after: open)..<close]
+            .split(whereSeparator: { $0 == "," || $0 == " " || $0 == "/" })
+            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 3 || parts.count == 4, parts.prefix(3).allSatisfy({ (0...255).contains($0) }) else { return nil }
+        red = parts[0] / 255
+        green = parts[1] / 255
+        blue = parts[2] / 255
+        alpha = parts.count == 4 ? min(max(parts[3], 0), 1) : 1
     }
 }
 
@@ -906,6 +983,12 @@ public final class ArtifactRuntimeModel {
     public private(set) var detail: String?
     public private(set) var entries: [Entry] = []
     public private(set) var errorCount = 0
+    /// The page's content height, and the width it was laid out at — nil
+    /// until the page has reported them.
+    public private(set) var contentHeight: Double?
+    public private(set) var contentWidth: Double?
+    /// The page's own ground, when it paints one.
+    public private(set) var pageBackground: ArtifactRuntimeColor?
     private var nextID = 0
 
     public init() {}
@@ -915,6 +998,9 @@ public final class ArtifactRuntimeModel {
         detail = nil
         entries = []
         errorCount = 0
+        contentHeight = nil
+        contentWidth = nil
+        pageBackground = nil
     }
 
     public func apply(_ message: ArtifactRuntimeMessage) {
@@ -924,6 +1010,10 @@ public final class ArtifactRuntimeModel {
             self.detail = detail
         case .console(let level, let text):
             append(level: level, text: text)
+        case .size(let height, let width, let background):
+            if contentHeight != height { contentHeight = height }
+            if contentWidth != width { contentWidth = width }
+            if pageBackground != background { pageBackground = background }
         }
     }
 

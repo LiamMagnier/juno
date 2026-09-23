@@ -299,8 +299,8 @@ paths:
         '200':
           description: >-
             Progressive chat events. The JSON payload of each data frame matches
-            ChatSSEEvent (meta, activity, delta, reasoning, sources, ping,
-            done or error).
+            ChatSSEEvent (meta, title, activity, approval, delta, reasoning,
+            sources, resume, ping, then done, error or handoff).
           content:
             text/event-stream:
               schema:
@@ -1498,6 +1498,19 @@ components:
         currentChangeCursor: { type: string }
         compactionFloorCursor: { type: string }
         modelManifestVersion: { type: string }
+        chat:
+          type: object
+          description: >-
+            Optional. The chat grammar features this server understands (the
+            same names clients declare in `clientFeatures`). Absent on older
+            servers, which speak only the frozen profile-1 grammar. Not a gate:
+            chatBodySchema strips unknown request keys, so native clients always
+            send their features and decode whichever grammar comes back.
+          additionalProperties: true
+          properties:
+            clientFeatures:
+              type: array
+              items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations] }
     AccountChange:
       type: object
       additionalProperties: false
@@ -1609,6 +1622,25 @@ components:
         reasoningEffort: { type: string, enum: [minimal, low, medium, high, xhigh, max] }
         generationId: { type: string, minLength: 8, maxLength: 120 }
         client: { const: app }
+        deepResearch: { type: boolean, description: Research this message. Omitted when off. }
+        webSearch: { type: boolean }
+        canvasEnabled: { type: boolean, description: Legacy; the server default is on, so only false is sent. }
+        connectors: { type: array, items: { type: string } }
+        fastMode: { type: boolean }
+        proMode: { type: boolean }
+        regenerateInstruction: { type: string, minLength: 1, maxLength: 400 }
+        clientFeatures:
+          type: array
+          description: >-
+            The grammar this client renders. Lenient: unknown names are dropped
+            and an older server strips the key. `timeline` opts into typed run
+            records and round/phase keys; `resume` into resume frames;
+            `research_background` into background research and the handoff
+            frame; `suggest_research` into the "Research this" tool;
+            `citations` into numbered [n] citations.
+          items: { type: string, enum: [timeline, resume, research_background, suggest_research, citations] }
+        timeZone: { type: string, maxLength: 64, description: IANA time zone. }
+        locale: { type: string, maxLength: 35, description: BCP-47 UI locale. }
     ChatSource:
       type: object
       additionalProperties: true
@@ -1617,6 +1649,8 @@ components:
         title: { type: string }
         url: { type: string, format: uri }
         snippet: { type: string }
+        cited: { type: boolean }
+        origin: { type: string, enum: [juno_search, juno_fetch, provider_search, provider_grounding, research] }
     ChatMessage:
       type: object
       additionalProperties: true
@@ -1633,14 +1667,65 @@ components:
     ChatSSEEvent:
       oneOf:
         - { $ref: '#/components/schemas/ChatMetaEvent' }
+        - { $ref: '#/components/schemas/ChatTitleEvent' }
         - { $ref: '#/components/schemas/ChatActivityEvent' }
+        - { $ref: '#/components/schemas/ChatApprovalEvent' }
         - { $ref: '#/components/schemas/ChatDeltaEvent' }
         - { $ref: '#/components/schemas/ChatReasoningEvent' }
         - { $ref: '#/components/schemas/ChatSourcesEvent' }
+        - { $ref: '#/components/schemas/ChatProgressEvent' }
+        - { $ref: '#/components/schemas/ChatResumeEvent' }
+        - { $ref: '#/components/schemas/ChatHandoffEvent' }
         - { $ref: '#/components/schemas/ChatPingEvent' }
         - { $ref: '#/components/schemas/ChatDoneEvent' }
         - { $ref: '#/components/schemas/ChatErrorEvent' }
       discriminator: { propertyName: type }
+    ChatTitleEvent:
+      type: object
+      additionalProperties: true
+      required: [type, conversationId, title]
+      properties:
+        type: { const: title }
+        conversationId: { type: string }
+        title: { type: string }
+    ChatApprovalEvent:
+      type: object
+      additionalProperties: true
+      required: [type, approval]
+      properties:
+        type: { const: approval }
+        approval: { type: object, additionalProperties: true }
+    ChatProgressEvent:
+      type: object
+      additionalProperties: true
+      required: [type]
+      description: /api/generate only.
+      properties:
+        type: { const: progress }
+        stage: { type: string }
+        pct: { type: number }
+    ChatResumeEvent:
+      type: object
+      additionalProperties: true
+      required: [type]
+      description: Sent only to clients that declared the `resume` feature.
+      properties:
+        type: { const: resume }
+        available: { type: boolean }
+        refetch: { type: boolean }
+    ChatHandoffEvent:
+      type: object
+      additionalProperties: true
+      required: [type, to, runId, userMessageId]
+      description: >-
+        Terminal. Sent only to clients that declared `research_background`: the
+        chat request became a background research run, no `done` follows and
+        no assistant row is written; follow the run at /api/research/{runId}.
+      properties:
+        type: { const: handoff }
+        to: { const: research }
+        runId: { type: string }
+        userMessageId: { type: [string, 'null'] }
     ChatMetaEvent:
       type: object
       additionalProperties: true
@@ -1659,22 +1744,32 @@ components:
       required: [type, event]
       properties:
         type: { const: activity }
-        event: { type: object, additionalProperties: true }
+        event:
+          type: object
+          additionalProperties: true
+          description: >-
+            ClientActivityEvent. Always id, kind, title; the timeline grammar adds
+            seq, round, call (ToolCallRecord, re-sent in place by callId, status
+            one of queued awaiting_approval running succeeded failed denied
+            expired cancelled), segment, commentary, fact and notice.
     ChatDeltaEvent:
       type: object
-      additionalProperties: false
+      additionalProperties: true
       required: [type, text]
       properties:
         type: { const: delta }
         text: { type: string }
+        round: { type: integer, minimum: 0, description: Timeline grammar only. }
+        phase: { type: string, enum: [commentary, answer], description: Timeline grammar only. }
     ChatReasoningEvent:
       type: object
-      additionalProperties: false
+      additionalProperties: true
       required: [type, text]
       properties:
         type: { const: reasoning }
         text: { type: string }
         part: { type: integer, minimum: 0 }
+        round: { type: integer, minimum: 0, description: Timeline grammar only. }
     ChatSourcesEvent:
       type: object
       additionalProperties: false

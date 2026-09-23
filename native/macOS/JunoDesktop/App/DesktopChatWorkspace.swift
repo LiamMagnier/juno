@@ -911,6 +911,10 @@ struct DesktopConversationView: View {
     /// closed. The canvas and the panel share the dock: opening one closes
     /// the other.
     @State private var openActivity: DesktopActivityTarget?
+    /// The research run the Research panel shows (`message:<id>` for research
+    /// answered in the chat), or nil. It shares the dock with the canvas and
+    /// Activity: the newest opener wins (SPEC §8.5).
+    @State private var openResearch: String?
     /// ⌘F in this conversation.
     @State private var find = TranscriptFindModel()
     /// Sources' logos, fetched once per site for this window.
@@ -980,7 +984,14 @@ struct DesktopConversationView: View {
             .onChange(of: model.selectedConversationID) { _, _ in
                 openArtifact = nil
                 openActivity = nil
+                openResearch = nil
                 find.close()
+            }
+            // The conversation's research runs, followed while it is open —
+            // and again whenever a hand-off adds one.
+            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? ""):\(openResearchRunKey)") {
+                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                await model.followResearch(conversationID: conversationID)
             }
             .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
                 await model.refreshChatApprovals(
@@ -1036,12 +1047,13 @@ struct DesktopConversationView: View {
             // the conversation column, and the call also lights the whole column
             // with its own field. Starting one dismisses the other.
             .onChange(of: voiceSession?.id) { _, started in
-                guard started != nil, openArtifact != nil || openActivity != nil else { return }
+                guard started != nil, openArtifact != nil || openActivity != nil || openResearch != nil else { return }
                 withAnimation(
                     JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
                 ) {
                     openArtifact = nil
                     openActivity = nil
+                    openResearch = nil
                 }
             }
             .alert(
@@ -1228,13 +1240,24 @@ struct DesktopConversationView: View {
                         live: message.isPending,
                         recovering: message.isPending && model.chatPhase == .reconnecting,
                         focusCallID: focusCallID,
+                        approvals: panelApprovals(for: message),
+                        contextWindow: message.model.flatMap { model.model(withID: $0)?.contextWindowTokens },
+                        seedDraft: { text in composerRequest = ChatComposerRequest(kind: .seed(text)) },
+                        forgetMemory: configuration.memorySettingsModel.map { memory in
+                            { id in await memory.deleteMemory(id: id) }
+                        },
                         close: closeActivity
                     )
                 }
+            case .research(let runID):
+                researchPanel(runID)
             }
         } content: {
             chatColumn
         }
+        .environment(\.junoActivityPanelMessageID, openActivity.flatMap { target in
+            findableMessages.first { $0.id == target.messageID && $0.isPending }?.id
+        })
         .environment(\.junoArtifactResolver, artifactResolver)
         .environment(\.junoTranscriptViewportHeight, columnHeight)
         .environment(\.junoFavicons, favicons)
@@ -1264,7 +1287,69 @@ struct DesktopConversationView: View {
                 stored: artifactResolver.artifact(for: open.reference) ?? open.stored
             ))
         }
-        return openActivity.map { .activity(messageID: $0.messageID, focusCallID: $0.focusCallID) }
+        if let openActivity {
+            return .activity(messageID: openActivity.messageID, focusCallID: openActivity.focusCallID)
+        }
+        return openResearch.map { .research(runID: $0) }
+    }
+
+    /// The runs still to follow in this conversation, as a key: a hand-off
+    /// changes it, which restarts the follower.
+    private var openResearchRunKey: String {
+        model.researchRuns(for: model.selectedConversationID)
+            .filter { !$0.phase.isTerminal }
+            .map(\.id)
+            .joined(separator: ",")
+    }
+
+    /// The Research panel on a run: a background run from the store, or a
+    /// research turn a profile-1 server answered in the chat, read from its
+    /// rows.
+    @ViewBuilder
+    private func researchPanel(_ runID: String) -> some View {
+        if runID.hasPrefix("message:") {
+            let messageID = String(runID.dropFirst("message:".count))
+            if let message = findableMessages.first(where: { $0.id == messageID }) {
+                DesktopResearchPanel(
+                    run: NativeResearchRun.inChat(message: message, live: message.isPending),
+                    inChat: true,
+                    close: closeResearch
+                )
+            }
+        } else if model.researchRun(id: runID) == nil, let conversationID = model.selectedConversationID {
+            // A completion message's run, not followed this session: read it.
+            Color.clear
+                .task(id: runID) { await model.refreshResearchRun(id: runID, conversationID: conversationID) }
+        } else if let run = model.researchRun(id: runID), let conversationID = model.selectedConversationID {
+            DesktopResearchPanel(
+                run: run,
+                busy: model.researchBusyRunIDs.contains(runID),
+                error: model.researchErrors[runID],
+                control: { action in
+                    Task { await model.controlResearch(runID: runID, action: action, conversationID: conversationID) }
+                },
+                close: closeResearch
+            )
+        }
+    }
+
+    /// The approvals the Activity panel can answer from a pending call's row:
+    /// the newest reply's, as its row has them.
+    private func panelApprovals(for message: NativeChatMessage) -> MessageRowApprovals {
+        guard privateChat == nil, let conversationID = model.selectedConversationID,
+            message.id == model.selectedMessages.last?.id
+        else { return MessageRowApprovals() }
+        let approvals = model.chatApprovals(for: conversationID).filter(\.isPending)
+        guard !approvals.isEmpty else { return MessageRowApprovals() }
+        return MessageRowApprovals(
+            approvals: approvals,
+            inFlightID: model.chatApprovalInFlightID,
+            error: { model.chatApprovalError(for: $0) },
+            canAllowScope: { model.canAllowChatApprovalScope($0) },
+            decide: { approval, decision in
+                Task { await model.decideChatApproval(approval, decision: decision) }
+            }
+        )
     }
 
     /// This conversation's stored artifacts, by identifier — the web's
@@ -1394,7 +1479,11 @@ struct DesktopConversationView: View {
                     quote: { text in composerRequest = ChatComposerRequest(kind: .quote(text)) },
                     editLastRequest: editLastRequest,
                     find: find,
-                    openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) }
+                    openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) },
+                    openResearch: { runID in openResearchPanel(runID) },
+                    researchThis: privateChat == nil
+                        ? { question in composerRequest = ChatComposerRequest(kind: .research(question)) }
+                        : nil
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
             }
@@ -1481,6 +1570,7 @@ struct DesktopConversationView: View {
     private func open(artifact: NativeMessageContent.ArtifactReference) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openActivity = nil
+            openResearch = nil
             openArtifact = DesktopChatArtifact(
                 reference: artifact,
                 stored: artifactResolver.artifact(for: artifact)
@@ -1492,7 +1582,23 @@ struct DesktopConversationView: View {
     private func openActivityPanel(messageID: String, callID: String?) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = nil
+            openResearch = nil
             openActivity = DesktopActivityTarget(messageID: messageID, focusCallID: callID)
+        }
+    }
+
+    /// The Research panel on a run — the newest opener wins the dock.
+    private func openResearchPanel(_ runID: String) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = nil
+            openActivity = nil
+            openResearch = runID
+        }
+    }
+
+    private func closeResearch() {
+        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+            openResearch = nil
         }
     }
 

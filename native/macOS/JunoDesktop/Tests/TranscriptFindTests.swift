@@ -78,6 +78,21 @@ struct TranscriptFindTests {
         ))
         #expect(uncited.cited.isEmpty, "a bracket means nothing without a numbered corpus")
         #expect(uncited.read.count == 4)
+
+        // A search result nothing opened or cited was only found (SPEC §8.3.2).
+        let searched = DesktopSourceSplit(message: message(
+            "c",
+            .assistant,
+            "Up [1].",
+            sources: [
+                NativeChatSource(title: "Cited", url: URL(string: "https://a.dev")!, snippet: "", cited: true, origin: "juno_search"),
+                NativeChatSource(title: "Found", url: URL(string: "https://b.dev")!, snippet: "", cited: true, origin: "juno_search"),
+                NativeChatSource(title: "Read", url: URL(string: "https://c.dev")!, snippet: "", cited: false, origin: "juno_fetch"),
+            ]
+        ))
+        #expect(searched.cited.map(\.number) == [1])
+        #expect(searched.read.map(\.number) == [3])
+        #expect(searched.found.map(\.number) == [2])
     }
 
     @Test

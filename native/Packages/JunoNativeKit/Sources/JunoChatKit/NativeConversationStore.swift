@@ -133,6 +133,16 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// line; a settled run is timed from its activity's own timestamps.
     public var runStartedAt: Date?
     public var answerStartedAt: Date?
+    /// Client-transient, while the answer streams: text the stream reducer
+    /// already knows was commentary but whose `commentary` activity event has
+    /// not arrived (``NativeTurnStream/liveCommentary``), and when the last
+    /// frame arrived — what the run line's "No response for" is measured from.
+    public var liveCommentary: [NativeRunCommentary]
+    public var lastEventAt: Date?
+    /// Client-transient: the reader asked for Research on this turn. A
+    /// profile-1 server answers it in the chat, and the transcript shows the
+    /// research row while it works.
+    public var researchRequested: Bool
     /// How many earlier versions the server keeps of this answer (regenerate,
     /// edit and resend). Metadata only; from the thread.
     public var versionCount: Int
@@ -163,6 +173,9 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         reasoningParts: [String]? = nil,
         runStartedAt: Date? = nil,
         answerStartedAt: Date? = nil,
+        liveCommentary: [NativeRunCommentary] = [],
+        lastEventAt: Date? = nil,
+        researchRequested: Bool = false,
         versionCount: Int = 0
     ) {
         self.id = id
@@ -190,6 +203,9 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.reasoningParts = reasoningParts
         self.runStartedAt = runStartedAt
         self.answerStartedAt = answerStartedAt
+        self.liveCommentary = liveCommentary
+        self.lastEventAt = lastEventAt
+        self.researchRequested = researchRequested
         self.versionCount = versionCount
     }
 
@@ -227,6 +243,7 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         // sends none, and then the live ones stand.
         if !message.activity.isEmpty { activity = message.activity }
         if let parts = message.reasoningParts { reasoningParts = parts }
+        liveCommentary = []
     }
 
     /// This message with the details the synced row lacks laid over it —
@@ -1085,6 +1102,143 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             ?? researchActivity.last { $0.kind == .warning }?.title
     }
 
+    // MARK: Research runs
+
+    /// The background research runs each conversation holds, oldest first:
+    /// the runs a chat handed off to (the `handoff` frame) and the live ones
+    /// the server lists for the conversation (SPEC §9.6, §9.11.3).
+    public private(set) var researchRunsByConversation: [String: [NativeResearchRun]] = [:]
+    /// Why a research control or a plan decision failed, by run.
+    public private(set) var researchErrors: [String: String] = [:]
+    /// Runs with a control request in flight.
+    public private(set) var researchBusyRunIDs = Set<String>()
+
+    public func researchRuns(for conversationID: String?) -> [NativeResearchRun] {
+        guard let conversationID else { return [] }
+        return researchRunsByConversation[conversationID] ?? []
+    }
+
+    public func researchRun(id: String) -> NativeResearchRun? {
+        for runs in researchRunsByConversation.values {
+            if let run = runs.first(where: { $0.id == id }) { return run }
+        }
+        return nil
+    }
+
+    /// Puts a run in the conversation's list, or replaces it in place.
+    public func upsertResearchRun(_ run: NativeResearchRun, conversationID: String) {
+        var runs = researchRunsByConversation[conversationID] ?? []
+        if let index = runs.firstIndex(where: { $0.id == run.id }) {
+            var merged = run
+            if merged.userMessageID == nil { merged.userMessageID = runs[index].userMessageID }
+            merged.seenLive = runs[index].seenLive || !run.phase.isTerminal
+            runs[index] = merged
+        } else {
+            var added = run
+            added.seenLive = run.seenLive || !run.phase.isTerminal
+            runs.append(added)
+        }
+        researchRunsByConversation[conversationID] = runs
+    }
+
+    private func adoptResearchHandoff(
+        _ handoff: NativeResearchHandoff,
+        conversationID: String,
+        userMessageID: String?
+    ) {
+        upsertResearchRun(
+            NativeResearchRun(
+                id: handoff.runID,
+                conversationID: conversationID,
+                userMessageID: userMessageID,
+                phase: .planning
+            ),
+            conversationID: conversationID
+        )
+    }
+
+    /// Follows a conversation's research runs while it is open: reads the
+    /// runs the server lists for it once, then polls each run that is not
+    /// finished — every 2.5s while one works, every 8s while all wait on the
+    /// reader or are paused — until the task is cancelled (the conversation
+    /// closes) or nothing is left to follow. A run that finishes brings its
+    /// completion message in through sync.
+    public func followResearch(conversationID: String) async {
+        guard let chatClient, let accountID, !conversationID.isEmpty else { return }
+        if let summaries = try? await chatClient.researchRuns(conversationID: conversationID, for: accountID),
+            self.accountID == accountID
+        {
+            // Background runs only (they carry a server-derived phase): a
+            // profile-1 run answered inside its own chat turn. A live one is
+            // followed; a finished one is already its completion message.
+            for summary in summaries.reversed() where summary.phase != nil && summary.live {
+                if researchRun(id: summary.id) == nil {
+                    upsertResearchRun(
+                        NativeResearchRun(id: summary.id, conversationID: conversationID, state: summary.state, phase: summary.phase ?? .planning),
+                        conversationID: conversationID
+                    )
+                }
+            }
+        }
+        while !Task.isCancelled, self.accountID == accountID {
+            let open = researchRuns(for: conversationID).filter { !$0.phase.isTerminal }
+            guard !open.isEmpty else { return }
+            var working = false
+            for run in open {
+                guard !Task.isCancelled else { return }
+                await refreshResearchRun(id: run.id, conversationID: conversationID)
+                if let fresh = researchRun(id: run.id) {
+                    working = working || fresh.phase.isWorking
+                    if fresh.phase.isTerminal { await researchRunFinished(conversationID: conversationID) }
+                }
+            }
+            try? await Task.sleep(for: .seconds(working ? 2.5 : 8))
+        }
+    }
+
+    public func refreshResearchRun(id: String, conversationID: String) async {
+        guard let chatClient, let accountID else { return }
+        let previous = researchRun(id: id)
+        guard let fresh = try? await chatClient.researchRun(
+            id: id, after: previous?.lastSeq ?? 0, previous: previous, for: accountID
+        ), self.accountID == accountID else { return }
+        upsertResearchRun(fresh, conversationID: conversationID)
+    }
+
+    private func researchRunFinished(conversationID: String) async {
+        await syncModel.refresh()
+        await reload()
+        scheduleHydration(conversationID: conversationID)
+    }
+
+    /// Pause, resume, finish now or cancel a run.
+    public func controlResearch(runID: String, action: NativeResearchControl, conversationID: String) async {
+        guard let chatClient, let accountID else { return }
+        researchBusyRunIDs.insert(runID)
+        defer { researchBusyRunIDs.remove(runID) }
+        do {
+            try await chatClient.controlResearch(id: runID, action: action, for: accountID)
+            researchErrors[runID] = nil
+        } catch {
+            researchErrors[runID] = NativeFailureMessage.presentable(error)
+        }
+        await refreshResearchRun(id: runID, conversationID: conversationID)
+    }
+
+    /// Starts a planned run as planned, or cancels it at the plan.
+    public func decideResearchPlan(runID: String, start: Bool, conversationID: String) async {
+        guard let chatClient, let accountID else { return }
+        researchBusyRunIDs.insert(runID)
+        defer { researchBusyRunIDs.remove(runID) }
+        do {
+            try await chatClient.decideResearchPlan(id: runID, confirm: start, for: accountID)
+            researchErrors[runID] = nil
+        } catch {
+            researchErrors[runID] = NativeFailureMessage.presentable(error)
+        }
+        await refreshResearchRun(id: runID, conversationID: conversationID)
+    }
+
     /// Details the synced rows lack, by message id: the `done` frame's until
     /// the thread's arrive (``hydrateThread(conversationID:)``). Laid over the
     /// rows in ``visibleMessages(for:)``.
@@ -1105,18 +1259,69 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         updateTransientAssistant(for: conversationID) { $0.mediaProgress = progress }
     }
 
-    /// Writes a step into the pending answer. The server re-sends an entry
-    /// when it gains a detail — a call's result, a finished status — so it is
-    /// replaced in place rather than appended as a near-duplicate.
-    private func recordActivity(_ activity: NativeChatActivity, conversationID: String) {
-        guard activeChatConversationID == conversationID else { return }
+    /// The live turn's reducer, per conversation: every answer-shaping frame
+    /// goes through it, in either grammar (``NativeTurnStream``), and the
+    /// pending row is written from what it holds.
+    @ObservationIgnored private var turnStreams: [String: NativeTurnStream] = [:]
+    @ObservationIgnored private var heldTextReleases: [String: (deadline: Date, task: Task<Void, Never>)] = [:]
+
+    private func applyTurnFrame(_ event: NativeChatServerEvent, conversationID: String) {
+        var stream = turnStreams[conversationID] ?? NativeTurnStream()
+        stream.apply(event, now: Date())
+        if case .failed = event { stream.finish() }
+        turnStreams[conversationID] = stream
+        writeTurn(stream, conversationID: conversationID)
+        scheduleHeldTextRelease(conversationID: conversationID)
+    }
+
+    private func writeTurn(_ stream: NativeTurnStream, conversationID: String) {
         updateTransientAssistant(for: conversationID) { message in
-            if let index = message.activity.firstIndex(where: { $0.id == activity.id }) {
-                message.activity[index] = activity
-            } else {
-                message.activity.append(activity)
+            let answer = stream.answer
+            if message.content != answer { message.content = answer }
+            let reasoning = stream.reasoning.isEmpty ? nil : stream.reasoning
+            if message.reasoning != reasoning { message.reasoning = reasoning }
+            if !stream.reasoningParts.isEmpty, message.reasoningParts != stream.reasoningParts {
+                message.reasoningParts = stream.reasoningParts
             }
+            if message.activity != stream.activity { message.activity = stream.activity }
+            if message.sources != stream.sources { message.sources = stream.sources }
+            let commentary = stream.liveCommentary
+            if message.liveCommentary != commentary { message.liveCommentary = commentary }
+            if let started = stream.answerStartedAt, message.answerStartedAt == nil { message.answerStartedAt = started }
+            message.lastEventAt = stream.lastEventAt
         }
+    }
+
+    /// Held text is released as answer text 600ms after it arrived when
+    /// nothing decided it first (SPEC §7.3).
+    private func scheduleHeldTextRelease(conversationID: String) {
+        guard let deadline = turnStreams[conversationID]?.holdDeadline else {
+            heldTextReleases[conversationID]?.task.cancel()
+            heldTextReleases[conversationID] = nil
+            return
+        }
+        if let scheduled = heldTextReleases[conversationID], scheduled.deadline == deadline { return }
+        heldTextReleases[conversationID]?.task.cancel()
+        let task = Task { @MainActor [weak self] in
+            let wait = deadline.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard !Task.isCancelled, let self, var stream = self.turnStreams[conversationID] else { return }
+            stream.releaseHeldText(now: Date())
+            self.turnStreams[conversationID] = stream
+            self.heldTextReleases[conversationID] = nil
+            self.writeTurn(stream, conversationID: conversationID)
+            if stream.answerStartedAt != nil, self.chatPhase == .reasoning || self.chatPhase == .submitting {
+                self.chatPhase = .streaming
+            }
+            self.scheduleHeldTextRelease(conversationID: conversationID)
+        }
+        heldTextReleases[conversationID] = (deadline, task)
+    }
+
+    private func endTurnStream(conversationID: String) {
+        heldTextReleases[conversationID]?.task.cancel()
+        heldTextReleases[conversationID] = nil
+        turnStreams[conversationID] = nil
     }
 
     private struct RetryContext: Sendable {
@@ -2372,16 +2577,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     throw NativeChatAPIError.malformedResponse
                 }
                 updateTitle(title, conversationID: conversationID)
-            case .textDelta(let text):
-                appendAssistantText(text, conversationID: context.conversationID)
-                chatPhase = .streaming
-            case .reasoningDelta(let text):
-                appendAssistantReasoning(text, conversationID: context.conversationID)
+            case .textDelta:
+                applyTurnFrame(event, conversationID: context.conversationID)
+                if turnStreams[context.conversationID]?.answerStartedAt != nil { chatPhase = .streaming }
+            case .reasoningDelta:
+                applyTurnFrame(event, conversationID: context.conversationID)
                 if chatPhase == .submitting { chatPhase = .reasoning }
-            case .sources(let sources):
-                updateAssistantSources(sources, conversationID: context.conversationID)
-            case .activity(let activity):
-                recordActivity(activity, conversationID: context.conversationID)
+            case .sources, .activity:
+                applyTurnFrame(event, conversationID: context.conversationID)
             case .approval(let approval):
                 guard approval.conversationID == nil
                     || approval.conversationID == context.conversationID
@@ -2395,14 +2598,30 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 updateMediaProgress(progress, conversationID: context.conversationID)
                 chatPhase = .streaming
             case .completed(let message):
+                endTurnStream(conversationID: context.conversationID)
                 completeAssistant(message, conversationID: context.conversationID)
                 retryContexts.removeValue(forKey: context.conversationID)
                 return .terminal
             case .failed(let message, let reason, _, _):
+                // Whatever the hold was keeping back was answer text.
+                applyTurnFrame(event, conversationID: context.conversationID)
+                endTurnStream(conversationID: context.conversationID)
                 failAssistant(
                     message,
                     reason: reason,
                     context: context
+                )
+                return .terminal
+            case .handoff(let handoff):
+                // The turn became a research run: no answer is written, so the
+                // placeholder goes, and the run's row takes its place.
+                endTurnStream(conversationID: context.conversationID)
+                removeTransientAssistant(for: context.conversationID)
+                retryContexts.removeValue(forKey: context.conversationID)
+                adoptResearchHandoff(
+                    handoff,
+                    conversationID: context.conversationID,
+                    userMessageID: handoff.userMessageID ?? context.userMessageID
                 )
                 return .terminal
             case .resume(let available, let refetch):
@@ -2825,28 +3044,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             createdAt: max(Date(), context.userCreatedAt.addingTimeInterval(0.001)),
             revision: 0,
             isPending: true,
-            runStartedAt: Date()
+            runStartedAt: Date(),
+            researchRequested: context.deepResearch
         ))
-    }
-
-    private func appendAssistantText(_ text: String, conversationID: String) {
-        updateTransientAssistant(for: conversationID) {
-            $0.content.append(text)
-            if $0.answerStartedAt == nil, !text.isEmpty { $0.answerStartedAt = Date() }
-        }
-    }
-
-    private func appendAssistantReasoning(_ text: String, conversationID: String) {
-        updateTransientAssistant(for: conversationID) {
-            $0.reasoning = ($0.reasoning ?? "") + text
-        }
-    }
-
-    private func updateAssistantSources(
-        _ sources: [NativeChatSource],
-        conversationID: String
-    ) {
-        updateTransientAssistant(for: conversationID) { $0.sources = sources }
+        endTurnStream(conversationID: context.conversationID)
+        turnStreams[context.conversationID] = NativeTurnStream()
     }
 
     private func mergeChatApprovals(

@@ -50,6 +50,12 @@ struct MessageRowActions {
     /// Opens the Activity panel on this reply's run, on a call when one is
     /// given.
     var openActivity: ((String?) -> Void)? = nil
+    /// Opens the Research panel on a run, by id — `message:<id>` for a
+    /// research turn a profile-1 server answers inside the chat.
+    var openResearch: ((String) -> Void)? = nil
+    /// "Research this", the chip `suggest_research` puts under an answer:
+    /// sends its question as a Research request.
+    var researchThis: ((String) -> Void)? = nil
     /// Retry Send, under a question that never reached the server.
     var retrySend: (() -> Void)? = nil
     var stepBranch: ((Int) -> Void)? = nil

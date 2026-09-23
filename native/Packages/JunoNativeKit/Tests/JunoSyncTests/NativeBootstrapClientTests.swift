@@ -26,6 +26,34 @@ final class NativeBootstrapClientTests: XCTestCase {
         XCTAssertEqual(requests[0].1, accountID)
     }
 
+    /// `chat.clientFeatures` (Tool calls & research SPEC §2.2 addendum): read
+    /// when present, nil on an older server, and a malformed one never fails
+    /// the bootstrap.
+    func testChatClientFeaturesAreOptional() async throws {
+        let accountID = try AccountID("acct_one")
+        let plain = try await NativeBootstrapClient(sender: BootstrapSender(response: response(body: validBody)))
+            .fetch(for: accountID)
+        XCTAssertNil(plain.chatClientFeatures)
+        XCTAssertFalse(plain.researchHandsOff)
+
+        let advertised = validBody.replacingOccurrences(
+            of: #""announcements":[]"#,
+            with: #""announcements":[],"chat":{"clientFeatures":["timeline","resume","research_background","suggest_research","citations"]}"#
+        )
+        let checkpoint = try await NativeBootstrapClient(sender: BootstrapSender(response: response(body: advertised)))
+            .fetch(for: accountID)
+        XCTAssertEqual(checkpoint.chatClientFeatures, ["timeline", "resume", "research_background", "suggest_research", "citations"])
+        XCTAssertTrue(checkpoint.researchHandsOff)
+
+        let malformed = validBody.replacingOccurrences(
+            of: #""announcements":[]"#,
+            with: #""announcements":[],"chat":{"clientFeatures":"timeline"}"#
+        )
+        let tolerated = try await NativeBootstrapClient(sender: BootstrapSender(response: response(body: malformed)))
+            .fetch(for: accountID)
+        XCTAssertNil(tolerated.chatClientFeatures)
+    }
+
     func testFetchRejectsAnotherAccountAndContractVersion() async throws {
         let accountID = try AccountID("acct_one")
         let anotherAccount = validBody.replacingOccurrences(
