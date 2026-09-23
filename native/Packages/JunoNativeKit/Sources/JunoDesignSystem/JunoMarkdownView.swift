@@ -51,17 +51,52 @@ public struct JunoMarkdownText: View {
         return blocks.count - 1
     }
 
+    @Environment(\.junoProseStyle) private var style
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.junoFindHighlight) private var find
+    @Environment(\.junoCitationCount) private var citations
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: Self.blockSpacing) {
+        switch style {
+        case .standard:
+            VStack(alignment: .leading, spacing: Self.blockSpacing) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                    JunoMarkdownBlockView(block: block, caret: index == caretIndex)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The rendered blocks are decorative structure around text the reader
+            // already hears; VoiceOver reads the source once instead of announcing
+            // every container.
+            .accessibilityElement(children: .contain)
+        case .reading:
+            readingBody
+        }
+    }
+
+    /// `.prose-juno`: the reading rung, the 0.85em rhythm, and no caret — the
+    /// transcript fades the tail of a reply being written instead
+    /// (``SwiftUI/View/junoStreamingTail(_:)``).
+    private var readingBody: some View {
+        let bases = findBases
+        return VStack(alignment: .leading, spacing: JunoProseMetrics.blockGap * textScale) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                JunoMarkdownBlockView(block: block, caret: index == caretIndex)
+                JunoReadingBlockView(block: block, isFirst: index == 0)
+                    .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // The rendered blocks are decorative structure around text the reader
-        // already hears; VoiceOver reads the source once instead of announcing
-        // every container.
         .accessibilityElement(children: .contain)
+    }
+
+    /// Where each block's matches start within this run.
+    private var findBases: [Int] {
+        guard let find, find.isActive else { return [] }
+        var running = 0
+        return blocks.map { block in
+            defer { running += JunoFindText.count(of: find.query, inBlock: block, citations: citations) }
+            return running
+        }
     }
 }
 
@@ -166,6 +201,164 @@ private struct JunoMarkdownBlockView: View {
     }
 }
 
+/// One block in the reading style (``JunoProseStyle/reading``).
+private struct JunoReadingBlockView: View {
+    let block: JunoMarkdownBlock
+    /// The first block takes no heading lead: the web's rhythm is `* + *`.
+    let isFirst: Bool
+
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.junoFindHighlight) private var find
+    @Environment(\.junoCitationCount) private var citations
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        switch block {
+        case .paragraph(let text):
+            JunoInlineText(text)
+                .junoType(.reading)
+                .junoInk()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: JunoProseMetrics.measure(scale: textScale), alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+        case .heading(let level, let text):
+            JunoInlineText(text, baseSize: JunoProseMetrics.headingSize(level: level))
+                .junoType(JunoProseMetrics.headingType(level: level))
+                .junoInk()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: JunoProseMetrics.measure(scale: textScale), alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, isFirst ? 0 : JunoProseMetrics.headingExtraLead(level: level) * textScale)
+                .accessibilityAddTraits(.isHeader)
+
+        case .code(let language, let source, let isClosed):
+            if JunoVisualMarkup.isVisualFence(info: language) {
+                JunoVisualBlockView(source: source, streaming: !isClosed)
+            } else if isClosed, JunoMermaidMarkup.isMermaidFence(info: language) {
+                MermaidDiagramView(source: source)
+            } else if JunoMermaidMarkup.isMermaidFence(info: language) {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    JunoProseCodeBlock(language: language, source: source)
+                    Text("Diagram renders when complete…")
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.junoSecondaryInk)
+                        .padding(.horizontal, JunoSpace.hairline)
+                }
+            } else if isClosed,
+                let chart = JunoChartMarkup.data(fenceInfo: language, source: source)
+            {
+                InlineChartRenderer(chart)
+            } else {
+                JunoProseCodeBlock(language: language, source: source)
+            }
+
+        case .math(let latex, _):
+            JunoDisplayMath(latex: latex)
+
+        case .list(let ordered, let start, let items):
+            JunoReadingList(ordered: ordered, start: start, items: items)
+
+        case .table(let header, let rows):
+            JunoProseTable(header: header, rows: rows)
+
+        case .quote(let text):
+            // `border-left: 3px solid var(--border); padding-left: 1em` in the
+            // secondary ink.
+            HStack(alignment: .top, spacing: JunoProseMetrics.quoteInset * textScale) {
+                Rectangle()
+                    .fill(Color.junoBorder.opacity(JunoHairline.opacity(increaseContrast: contrast == .increased)))
+                    .frame(width: JunoProseMetrics.quoteBar)
+                    .accessibilityHidden(true)
+                JunoInlineText(text)
+                    .junoType(.reading)
+                    .foregroundStyle(Color.junoSecondaryInk)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: JunoProseMetrics.measure(scale: textScale), alignment: .leading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+        case .thematicBreak:
+            Rectangle()
+                .fill(Color.junoBorder.opacity(JunoHairline.opacity(increaseContrast: contrast == .increased)))
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// A list in the reading style: 1.4em of indent to the text, 0.2em between
+/// items, the marker in the secondary ink on the text's own first line.
+private struct JunoReadingList: View {
+    let ordered: Bool
+    let start: Int
+    let items: [JunoMarkdownBlock.Item]
+
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.junoFindHighlight) private var find
+    @Environment(\.junoCitationCount) private var citations
+
+    var body: some View {
+        let bases = findBases
+        VStack(alignment: .leading, spacing: JunoProseMetrics.listItemGap * textScale) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    marker(index: index, item: item)
+                        .frame(width: JunoProseMetrics.listIndent * textScale, alignment: .leading)
+                        .accessibilityHidden(item.isChecked == nil)
+                    JunoInlineText(item.text)
+                        .junoType(.reading)
+                        .junoInk()
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: JunoProseMetrics.measure(scale: textScale), alignment: .leading)
+                        .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
+                }
+                .padding(.leading, Double(item.depth) * JunoProseMetrics.listIndent * textScale)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var findBases: [Int] {
+        guard let find, find.isActive else { return [] }
+        var running = 0
+        return items.map { item in
+            defer {
+                running += JunoFindText.count(
+                    of: find.query,
+                    in: JunoFindText.inlineText(item.text, citations: citations)
+                )
+            }
+            return running
+        }
+    }
+
+    @ViewBuilder
+    private func marker(index: Int, item: JunoMarkdownBlock.Item) -> some View {
+        if let isChecked = item.isChecked {
+            JunoIconView(isChecked ? .squareCheck : .square, size: 15)
+                .foregroundStyle(Color.junoSecondaryInk)
+                .accessibilityLabel(isChecked ? "Done" : "Not done")
+        } else if ordered {
+            Text("\(start + index).")
+                .junoType(.reading)
+                .monospacedDigit()
+                .foregroundStyle(Color.junoSecondaryInk)
+        } else {
+            // `list-style: disc`, and the printed ladder beneath it.
+            Text(item.depth == 0 ? "•" : (item.depth == 1 ? "◦" : "▪"))
+                .junoType(.reading)
+                .foregroundStyle(Color.junoSecondaryInk)
+        }
+    }
+}
+
 /// Inline Markdown (bold, italic, `code`, links) and inline maths, with a
 /// plain-text fallback.
 ///
@@ -205,26 +398,97 @@ public struct JunoStreamingCursor: View {
 }
 
 struct JunoInlineText: View {
-    private let attributed: AttributedString
+    private let source: String
     private let caret: Bool
+    /// The size inline code and citations are measured against: the run's own
+    /// text size in the reading style (`0.875em` of it, `0.72em` of it).
+    private let baseSize: CGFloat
 
-    init(_ source: String, caret: Bool = false) {
-        attributed = .junoInline(source)
+    @Environment(\.junoProseStyle) private var style
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.junoFindHighlight) private var find
+    @Environment(\.junoCitationCount) private var citations
+    @Environment(\.junoCitationPopover) private var citationPopover
+
+    init(_ source: String, caret: Bool = false, baseSize: CGFloat = JunoProseMetrics.bodySize) {
+        self.source = source
         self.caret = caret
+        self.baseSize = baseSize
     }
 
     var body: some View {
-        if caret {
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(attributed)
-                JunoStreamingCursor()
-                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 3 }
-            }
-            .tint(Color.junoAccent)
-        } else {
-            Text(attributed)
+        switch style {
+        case .standard:
+            let attributed = AttributedString.junoInline(source)
+            if caret {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(attributed)
+                    JunoStreamingCursor()
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 3 }
+                }
                 .tint(Color.junoAccent)
+            } else {
+                Text(attributed)
+                    .tint(Color.junoAccent)
+            }
+        case .reading:
+            let attributed = JunoFindText.highlighted(
+                JunoProseInline.styled(source, baseSize: baseSize, scale: textScale, citations: citations),
+                with: find
+            )
+            if citations > 0, let citationPopover {
+                JunoCitedText(attributed: attributed, popover: citationPopover)
+            } else {
+                Text(attributed)
+                    .tint(Color.junoAccentInk)
+            }
         }
+    }
+}
+
+/// A run with citations in it: a click on a chip opens its source's popover,
+/// anchored where the chip was clicked.
+///
+/// `Text` cannot say where one of its runs is drawn, so the anchor is the
+/// pointer: the run tracks where the pointer is over it, and the popover opens
+/// at that point when the chip's `juno-cite://n` link is followed.
+private struct JunoCitedText: View {
+    let attributed: AttributedString
+    let popover: JunoCitationPopover
+
+    @State private var pointer: CGPoint = .zero
+    @State private var size: CGSize = .zero
+    @State private var open: Int?
+
+    var body: some View {
+        Text(attributed)
+            .tint(Color.junoAccentInk)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                if case .active(let location) = phase { pointer = location }
+            }
+            .environment(\.openURL, OpenURLAction { url in
+                guard let number = JunoProseInline.citationNumber(url) else { return .systemAction }
+                open = number
+                return .handled
+            })
+            .popover(
+                isPresented: Binding(get: { open != nil }, set: { if !$0 { open = nil } }),
+                attachmentAnchor: .point(anchor),
+                arrowEdge: .top
+            ) {
+                if let open {
+                    popover.content(open)
+                }
+            }
+    }
+
+    private var anchor: UnitPoint {
+        guard size.width > 0, size.height > 0 else { return .center }
+        return UnitPoint(
+            x: min(max(pointer.x / size.width, 0), 1),
+            y: min(max(pointer.y / size.height, 0), 1)
+        )
     }
 }
 

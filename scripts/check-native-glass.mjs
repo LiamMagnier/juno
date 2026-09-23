@@ -52,15 +52,18 @@ const EXEMPT = new Set([
 ]);
 
 /*
- * The five places Juno draws glass of its own (§0.1, §8.7). Matched by file
- * name rather than path so a site can move between the design system and the
- * app without editing this list — and so a sixth file cannot join it by
- * living in the right directory.
+ * The places Juno draws glass of its own (§0.1, §8.7): the five chrome sites,
+ * plus the transcript's Scroll to latest circle, which the Phase 2 brief
+ * (§1, §6.7) allow-lists beside the find bar. Matched by file name rather than
+ * path so a site can move between the design system and the app without
+ * editing this list — and so another file cannot join it by living in the
+ * right directory.
  */
 const GLASS_SITES = new Set([
   "JunoComposerShell.swift",
   "DesktopSearchPanel.swift",
   "DesktopFindBar.swift",
+  "ScrollToLatestButton.swift",
   "JunoToastHost.swift",
   "DesktopQuickEntry.swift",
 ]);

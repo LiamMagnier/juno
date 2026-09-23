@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoPreviewSupport
 import SwiftUI
@@ -28,7 +29,7 @@ struct TranscriptFixture {
 /// names as test arguments; everything that builds a view is.
 enum TranscriptSnapshotFixtures {
     static var all: [TranscriptFixture] {
-        replyActions + userTurns + media + artifacts + visuals + prose + notes + activity
+        replyActions + userTurns + media + artifacts + visuals + prose + notes + activity + stageFour
     }
 
     // MARK: 1. Reply actions
@@ -322,8 +323,30 @@ enum TranscriptSnapshotFixtures {
             TranscriptFixture(name: "code-block", stage: 4) {
                 AnyView(column { row(codeReply, newest: true) })
             },
+            TranscriptFixture(name: "code-block-long", stage: 4) {
+                AnyView(column { row(longCodeReply, newest: true) })
+            },
             TranscriptFixture(name: "table", stage: 4) {
                 AnyView(column { row(tableReply, newest: true) })
+            },
+            TranscriptFixture(name: "table-wide", stage: 4) {
+                AnyView(column { row(wideTableReply, newest: true) })
+            },
+            TranscriptFixture(name: "prose", stage: 4) {
+                AnyView(column {
+                    row(question)
+                    row(proseReply, newest: true)
+                })
+            },
+            TranscriptFixture(name: "prose-streaming", stage: 4) {
+                AnyView(column {
+                    row(proseReply.with {
+                        $0.isPending = true
+                        $0.content = String($0.content.prefix(620))
+                        $0.runStartedAt = Date().addingTimeInterval(-9)
+                        $0.answerStartedAt = Date().addingTimeInterval(-3)
+                    }, newest: true, generating: true)
+                })
             },
             TranscriptFixture(name: "sources-pill", stage: 4) {
                 AnyView(column { row(sourcedReply, newest: true) })
@@ -332,6 +355,9 @@ enum TranscriptSnapshotFixtures {
                 AnyView(column {
                     DesktopMessageSources(sources: sourcedReply.sources, startsExpanded: true)
                 })
+            },
+            TranscriptFixture(name: "citations", stage: 4) {
+                AnyView(column { row(citedReply, newest: true) })
             },
         ]
     }
@@ -349,18 +375,24 @@ enum TranscriptSnapshotFixtures {
                             $0.errorDescription = "The model provider is overloaded. Try again in a moment."
                             $0.finishReason = .error
                         },
-                        newest: true
-                    )
-                    // Where the transcript draws the store's error today; it
-                    // moves into the turn in stage 4.
-                    DesktopChatError(
-                        message: "The model provider is overloaded. Try again in a moment.",
-                        canRetry: true,
-                        retry: {}
+                        newest: true,
+                        retries: true
                     )
                 })
             },
-            TranscriptFixture(name: "finish-note", stage: 1) {
+            TranscriptFixture(name: "error-note-partial", stage: 4) {
+                AnyView(column {
+                    row(
+                        shortReply.with {
+                            $0.errorDescription = "The stream was interrupted. The partial answer was preserved."
+                            $0.finishReason = .networkError
+                        },
+                        newest: true,
+                        continues: true
+                    )
+                })
+            },
+            TranscriptFixture(name: "finish-note", stage: 4) {
                 AnyView(column {
                     row(
                         reply.with { $0.finishReason = .length },
@@ -369,27 +401,109 @@ enum TranscriptSnapshotFixtures {
                     )
                 })
             },
+            TranscriptFixture(name: "finish-note-stopped", stage: 4) {
+                AnyView(column {
+                    row(shortReply.with { $0.finishReason = .userStopped }, newest: true)
+                })
+            },
         ]
     }
 
-    // MARK: 13. Activity (stage 4 extras)
+    // MARK: 13. Activity
 
     static var activity: [TranscriptFixture] {
         [
             TranscriptFixture(name: "activity-live", stage: 4) {
                 AnyView(column {
                     row(question)
-                    row(placeholder(nil), newest: true, generating: true)
+                    row(placeholder(nil).with {
+                        $0.model = "anthropic:claude-sonnet-4-6"
+                        $0.runStartedAt = Date().addingTimeInterval(-14)
+                        $0.reasoning = "The reader wants the parts of a README that matter for a package. Start with what it does and how to add it, then the smallest example that compiles."
+                    }, newest: true, generating: true)
+                })
+            },
+            TranscriptFixture(name: "activity-live-tools", stage: 4) {
+                AnyView(column {
+                    row(researchQuestion)
+                    row(liveToolsReply, newest: true, generating: true)
                 })
             },
             TranscriptFixture(name: "activity-settled", stage: 4) {
                 AnyView(column {
+                    row(settledReply, newest: true)
+                })
+            },
+            TranscriptFixture(name: "activity-expanded", stage: 4) {
+                AnyView(column {
+                    row(settledToolReply, newest: true)
+                }
+                .environment(\.junoSnapshotRunExpanded, true))
+            },
+            TranscriptFixture(name: "activity-panel", stage: 4) {
+                AnyView(
+                    DesktopActivityPanel(message: settledToolReply, live: false, close: {})
+                        .frame(width: 480, height: 640)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, JunoSpace.section)
+                )
+            },
+            TranscriptFixture(name: "activity-panel-call", stage: 4) {
+                AnyView(
+                    DesktopActivityPanel(message: settledToolReply, live: false, focusCallID: "act-linear", close: {})
+                        .frame(width: 480, height: 640)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, JunoSpace.section)
+                )
+            },
+        ]
+    }
+
+    // MARK: Stage 4: approvals, follow-ups, find
+
+    static var stageFour: [TranscriptFixture] {
+        [
+            TranscriptFixture(name: "approval-card", stage: 4) {
+                AnyView(column {
+                    row(question.with { $0.content = "File a Linear issue for the flaky login test." })
                     row(
-                        reply.with {
-                            $0.reasoning = "The reader wants the parts of a README that matter for a package.\n\nStart with what it does and how to add it, then the smallest example."
+                        placeholder(nil).with {
+                            $0.model = "anthropic:claude-sonnet-4-6"
+                            $0.runStartedAt = Date().addingTimeInterval(-6)
                         },
-                        newest: true
+                        newest: true,
+                        generating: true,
+                        approvals: MessageRowApprovals(approvals: [pendingApproval])
                     )
+                })
+            },
+            TranscriptFixture(name: "follow-ups", stage: 4) {
+                AnyView(column {
+                    row(shortReply, newest: true)
+                    DesktopFollowUpChips(
+                        conversationID: "conv-1",
+                        replyID: shortReply.id,
+                        accountID: try! AccountID("account-under-test"),
+                        client: nil,
+                        ready: true,
+                        draftIsEmpty: true,
+                        send: { _ in },
+                        preset: [
+                            "Show me a README template for a Swift package",
+                            "What should the Installation section say for a package with platform requirements?",
+                            "How long should a README be?",
+                        ]
+                    )
+                })
+            },
+            TranscriptFixture(name: "find-highlight", stage: 4) {
+                AnyView(column {
+                    row(question)
+                        .environment(\.junoFindHighlight, JunoFindHighlight(query: "readme", current: nil))
+                    row(reply, newest: true)
+                        .environment(\.junoFindHighlight, JunoFindHighlight(query: "readme", current: 0))
+                    row(codeReply)
+                        .environment(\.junoFindHighlight, JunoFindHighlight(query: "entry", current: 2))
                 })
             },
         ]
@@ -423,6 +537,9 @@ enum TranscriptSnapshotFixtures {
         .environment(\.junoSnapshotArtifactView, artifactView)
         .environment(\.junoWebPreviewStill, SnapshotStillCache.shared.webStills)
         .environment(\.junoMermaidStill, SnapshotStillCache.shared.mermaidStills)
+        // The accent the detail column tints with (`ChatDetail`): the one
+        // prominent button a surface has wears it, as in the app.
+        .junoAccentTint()
     }
 
     /// A row with every action a saved turn has, each doing nothing.
@@ -433,7 +550,9 @@ enum TranscriptSnapshotFixtures {
         branch: NativeMessageBranchPosition? = nil,
         unsent: Bool = false,
         continues: Bool = false,
-        generating: Bool = false
+        generating: Bool = false,
+        retries: Bool = false,
+        approvals: MessageRowApprovals = MessageRowApprovals()
     ) -> some View {
         var actions = MessageRowActions()
         actions.copy = {}
@@ -448,6 +567,8 @@ enum TranscriptSnapshotFixtures {
         actions.stepBranch = { _ in }
         if newest, message.role == .assistant { actions.regenerate = { _ in } }
         if continues { actions.continueResponse = {} }
+        if retries { actions.retry = {} }
+        if message.role == .assistant { actions.openActivity = { _ in } }
         if unsent { actions.retrySend = {} }
         if message.role == .user { actions.editMessage = { _ in } }
         return DesktopMessageRow(
@@ -460,7 +581,8 @@ enum TranscriptSnapshotFixtures {
             actions: actions,
             branchPosition: branch,
             isGenerating: generating,
-            isUnsent: unsent
+            isUnsent: unsent,
+            approvals: approvals
         )
     }
 
@@ -893,6 +1015,186 @@ enum TranscriptSnapshotFixtures {
             ("Strict concurrency", "https://www.hackingwithswift.com/swift/6.0/concurrency"),
         ].map { NativeChatSource(title: $0.0, url: URL(string: $0.1)!, snippet: "") }
     }
+
+    /// Twenty-six lines, so the gutter shows and the block scrolls inside
+    /// itself past 520pt.
+    static let longCodeReply = message(
+        "a-code-long",
+        .assistant,
+        "The whole parser:\n\n```python\n" + (1...30).map { index in
+            index % 7 == 0
+                ? "    # step \(index): keep the offset for the next token"
+                : "    tokens.append(Token(kind=\"word\", start=\(index * 4), text=source[\(index * 4):\(index * 4 + 3)]))"
+        }.joined(separator: "\n") + "\n```",
+        model: "anthropic:claude-sonnet-4-6"
+    )
+
+    /// Fourteen columns: wider than the measure even at their floors, so the
+    /// table scrolls sideways instead of squeezing. (`table` shows the other
+    /// case: a long column wrapping so the table fits.)
+    static let wideTableReply = message(
+        "a-table-wide",
+        .assistant,
+        """
+        Monthly signups by region:
+
+        | Region | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec | Total for the year |
+        | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+        | North America and the Caribbean | 1,204 | 1,388 | 1,512 | 1,690 | 1,733 | 1,902 | 1,944 | 2,011 | 2,080 | 2,151 | 2,190 | 2,304 | 22,109 |
+        | Europe, the Middle East and Africa | 988 | 1,041 | 1,137 | 1,254 | 1,301 | 1,399 | 1,420 | 1,466 | 1,532 | 1,588 | 1,610 | 1,702 | 16,438 |
+        | Asia and the Pacific | 1,512 | 1,603 | 1,788 | 1,905 | 2,044 | 2,230 | 2,301 | 2,388 | 2,450 | 2,512 | 2,601 | 2,733 | 26,067 |
+        """,
+        model: "anthropic:claude-sonnet-4-6"
+    )
+
+    static let proseReply = message(
+        "a-prose",
+        .assistant,
+        """
+        # Writing a README that gets read
+
+        A README is the front door of a package. Most visitors decide within a few seconds whether it fits their project, so the first screen has to answer that question on its own. The rest of the document is reference, and it should read like one.
+
+        ## What goes first
+
+        Lead with **one sentence** that names the problem, then show the smallest complete example. Keep `import` lines in it: a snippet that does not compile teaches the reader to distrust the rest. Link to the [Swift Package Index](https://swiftpackageindex.com) page when there is one.
+
+        ### The sections, in order
+
+        1. What it does, in a sentence.
+        2. How to add it — the exact `Package.swift` line.
+        3. The smallest example that runs.
+           - Keep it under twenty lines.
+           - Show the output.
+
+        > Documentation is a product, not a chore. The README is the part of it everybody reads.
+
+        ---
+
+        Everything after that is detail: configuration, the full API, and the changelog.
+        """,
+        model: "anthropic:claude-sonnet-4-6"
+    )
+
+    /// A research answer written from a numbered corpus: its `[n]` are
+    /// citations, drawn as chips.
+    static let citedReply = message(
+        "a-cited",
+        .assistant,
+        "Swift 6 turned data-race safety from warnings into errors [1], and the migration guide recommends enabling it one module at a time [2]. Most of the top packages had adopted it within a year [4].",
+        model: "anthropic:claude-sonnet-4-6"
+    ).with {
+        $0.sources = sourcedReply.sources.map {
+            NativeChatSource(title: $0.title, url: $0.url, snippet: "Complete concurrency checking is on by default in the Swift 6 language mode.", cited: true)
+        }
+    }
+
+    static let researchQuestion = message("q-research", .user, "How widely has Swift 6's strict concurrency been adopted?")
+
+    static let runStart = Date().addingTimeInterval(-18)
+
+    static func activityEvent(
+        _ id: String,
+        _ kind: NativeChatActivity.Kind,
+        _ title: String,
+        detail: String? = nil,
+        url: String? = nil,
+        at offset: TimeInterval,
+        seq: Int? = nil,
+        call: NativeToolCall? = nil,
+        tool: NativeToolDetail? = nil
+    ) -> NativeChatActivity {
+        NativeChatActivity(
+            id: id, kind: kind, title: title, detail: detail, url: url,
+            createdAt: createdAt.addingTimeInterval(offset), seq: seq, call: call, tool: tool
+        )
+    }
+
+    /// A live run on the rework's typed timeline: a search that finished, a
+    /// page being read, and the reasoning between them.
+    static let liveToolsReply = placeholder(nil).with {
+        $0.id = "a-live-tools"
+        $0.model = "anthropic:claude-sonnet-4-6"
+        $0.runStartedAt = Date().addingTimeInterval(-18)
+        $0.reasoning = "**Checking adoption numbers**\n\nThe Swift Package Index tracks which packages build cleanly in Swift 6 mode."
+        $0.activity = [
+            activityEvent("act-search", .search, "Searching the web", detail: "swift 6 strict concurrency adoption", at: 1, seq: 1, call: NativeToolCall(
+                callID: "call-search", tool: "web_search", status: .succeeded, round: 0,
+                figure: NativeToolCall.Figure(kind: "results", n: 8),
+                web: NativeToolCall.Web(query: "swift 6 strict concurrency adoption")
+            )),
+            activityEvent("act-fetch", .visit, "Visited source", at: 4, seq: 2, call: NativeToolCall(
+                callID: "call-fetch", tool: "web_fetch", status: .running, round: 1,
+                web: NativeToolCall.Web(requestedURL: "https://swiftpackageindex.com/ready-for-swift-6")
+            )),
+        ]
+        $0.sources = Array(sourcedReply.sources.prefix(3))
+    }
+
+    /// A settled run from today's server: timestamps on its rows, reasoning,
+    /// and six sources — "Thought for 12s · 6 sources".
+    static let settledReply = sourcedReply.with {
+        $0.id = "a-settled"
+        $0.reasoning = "**Weighing the sources**\n\nThe release post gives the date; the migration guide and the package index give the adoption picture."
+        $0.activity = [
+            activityEvent("s-context", .context, "Reading the conversation context", detail: "3 messages", at: 0),
+            activityEvent("s-model", .model, "Selected model", detail: "Anthropic · Claude Sonnet 4.6", at: 0.1),
+            activityEvent("s-effort", .reasoning, "Reasoning mode enabled", detail: "High effort", at: 0.1),
+            activityEvent("s-write", .write, "Writing the answer", detail: "Streaming response text", at: 12.4),
+            activityEvent("s-done", .done, "Finished response", detail: "6 sources", at: 19),
+        ]
+    }
+
+    /// The same run with a connector call and a warning, from today's rows:
+    /// "Worked for 12s · 6 sources · used Linear".
+    static let settledToolReply = settledReply.with {
+        $0.id = "a-settled-tools"
+        $0.activity.insert(
+            activityEvent(
+                "act-linear", .tool, "Using Linear", detail: "linear__search_issues", at: 5,
+                tool: NativeToolDetail(
+                    server: "Linear",
+                    name: "linear__search_issues",
+                    args: "{\n  \"query\": \"swift 6 migration\",\n  \"limit\": 5\n}",
+                    result: "[\n  { \"id\": \"ENG-412\", \"title\": \"Enable strict concurrency in Core\" },\n  { \"id\": \"ENG-388\", \"title\": \"Audit Sendable conformances\" }\n]",
+                    status: "ok",
+                    durationMs: 842
+                )
+            ),
+            at: 3
+        )
+        $0.activity.insert(
+            activityEvent("act-warning", .warning, "Connector unavailable", detail: "GitHub could not be reached, so its tools were left out.", at: 0.2),
+            at: 3
+        )
+    }
+
+    static let pendingApproval = NativeChatApproval(
+        id: "appr-1",
+        surface: "chat",
+        sessionID: "juno-native-1",
+        conversationID: "conv-1",
+        connectorID: "linear",
+        connectorLabel: "Linear",
+        toolName: "linear__create_issue",
+        action: "create_issue",
+        riskClass: .externalWrite,
+        preview: "Create the issue “Login test fails on CI” in the Mobile team",
+        detail: [
+            "team": .string("Mobile"),
+            "title": .string("Login test fails on CI"),
+            "priority": .number(2),
+        ],
+        receiptDigest: "digest",
+        status: .pending,
+        decision: nil,
+        canAllowScope: false,
+        derivedFromUntrusted: false,
+        expiresAt: Date().addingTimeInterval(4 * 60 + 12),
+        decidedAt: nil,
+        completedAt: nil,
+        createdAt: Date()
+    )
 }
 
 extension NativeChatMessage {

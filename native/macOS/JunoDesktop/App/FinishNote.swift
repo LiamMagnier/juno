@@ -3,76 +3,149 @@ import JunoChatKit
 import JunoDesignSystem
 import SwiftUI
 
-struct DesktopChatError: View {
-    let message: String
-    let canRetry: Bool
-    let retry: () -> Void
-
-    var body: some View {
-        GroupBox {
-            HStack(alignment: .top, spacing: JunoSpace.snug) {
-            JunoIconView(.triangleAlert, size: 16)
-                .foregroundStyle(Color.junoDanger)
-            Text(message)
-                .font(.callout)
-                .textSelection(.enabled)
-            Spacer(minLength: JunoSpace.snug)
-            if canRetry {
-                Button("Retry", action: retry)
-                    .contentShape(.rect)
-            }
-            }
+/// Why a reply ended short of its end, in the web's words (`message-item.tsx`,
+/// verbatim). Nil for an answer that simply finished.
+enum DesktopFinishCopy {
+    static func sentence(for reason: NativeChatFinishReason?) -> String? {
+        switch reason {
+        case .length: "The model stopped at its token limit."
+        case .networkError: "The stream was interrupted. The partial answer was preserved."
+        case .userStopped: "Stopped by user."
+        case .toolCalls: "The model requested tools, but no tool flow is enabled for this request."
+        case .sensitive: "The provider stopped the response for safety reasons."
+        default: nil
         }
-        .padding(JunoSpace.cozy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // The card treatment plus a danger-coloured glyph, rather than a red wash
-        // behind the text. A tinted fill needs an opacity nobody owns and it drops
-        // the contrast of the very message the reader has to act on; the glyph and
-        // the status ramp carry the meaning without touching legibility.
-        .junoCard()
     }
 }
 
-/// The note under a reply that stopped before it finished — for now, only the
-/// row that carries **Continue**, which left the action row in Phase 2 stage 1.
+/// The note under a reply that stopped short (brief §6.5): one quiet row in
+/// the muted well — radius 12, a 70% hairline, 14 × 10 of padding — with the
+/// reason in 13pt secondary and, where the reply can be carried on, Continue.
 ///
-/// Stage 4 rewrites this into the full note (every finish reason, the error
-/// box beside it, §6.5 of the Phase 2 brief). Until then it appears only where
-/// Continue does: on the newest reply, with nothing running, that stopped at
-/// its token limit or lost its stream. The sentence is the web's, verbatim
-/// (`message-item.tsx`).
-struct DesktopFinishNote: View {
-    let reason: NativeChatFinishReason
-    let continueResponse: () -> Void
-
-    private var sentence: String {
-        switch reason {
-        case .networkError: "The stream was interrupted. The partial answer was preserved."
-        default: "The model stopped at its token limit."
-        }
-    }
+/// A partial answer that then failed keeps the failure mark and its error
+/// sentence here; a finish (token limit, stopped, interrupted) is information
+/// and wears the info mark.
+struct DesktopTurnNote: View {
+    let sentence: String
+    var isFailure = false
+    /// Present on the newest reply, with nothing running, when it stopped at
+    /// its token limit or lost its stream.
+    var continueResponse: (() -> Void)? = nil
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.close) {
-            JunoIconView(.info, size: 16)
+        HStack(alignment: .center, spacing: JunoSpace.snug) {
+            JunoIconView(isFailure ? .error : .info, size: 16)
                 .foregroundStyle(Color.junoSecondaryInk)
             Text(sentence)
                 .junoFont(size: 13, relativeTo: .callout)
                 .junoSecondaryInk()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            // Carry on from here, not "again": the refresh arrow is Retry, and
-            // this keeps the answer and writes past its end.
-            Button(action: continueResponse) {
-                Label {
-                    Text("Continue")
-                } icon: {
-                    JunoIconView(.cornerDownRight, size: 14)
+            if let continueResponse {
+                // Carry on from here, not "again": the refresh arrow is Retry,
+                // and this keeps the answer and writes past its end.
+                Button(action: continueResponse) {
+                    Label {
+                        Text("Continue")
+                    } icon: {
+                        JunoIconView(.cornerDownRight, size: 14)
+                    }
+                    .frame(minHeight: 28)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .contentShape(.rect)
+                .accessibilityIdentifier("juno.desktop.chat.message-continue")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .contentShape(.rect)
-            .accessibilityIdentifier("juno.desktop.chat.message-continue")
         }
+        .padding(.horizontal, JunoSpace.comfy)
+        .padding(.vertical, JunoSpace.close)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .fill(Color.junoMuted)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .strokeBorder(Color.junoBorder.opacity(contrast == .increased ? 1 : 0.7), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A reply that failed with nothing to show for it (brief §6.5 and §0
+/// correction 6): the destructive tone at 5% (light) or 14% (dark) under a 40%
+/// hairline, radius 12, the sentence in 13pt destructive ink beside the failure
+/// mark on its first line — and, on the newest turn with nothing running,
+/// Try Again.
+///
+/// Inside the turn, where the answer would have been, above its sources: the
+/// failure belongs to this reply, not to the bottom of the transcript.
+struct DesktopTurnError: View {
+    let message: String
+    var retry: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.close) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                JunoIconView(.error, size: 16)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in dimensions[.bottom] - 3 }
+                Text(message)
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(Color.junoDestructiveInk)
+            if let retry {
+                Button(action: retry) {
+                    Label {
+                        Text("Try again")
+                    } icon: {
+                        JunoIconView(.refresh, size: 14)
+                    }
+                    .frame(minHeight: 28)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                // Destructive-tinted, as the web's outline is: the tone of the
+                // box it sits in, never the accent.
+                .tint(Color.junoDestructiveInk)
+                .contentShape(.rect)
+                .accessibilityIdentifier("juno.desktop.chat.message-retry")
+            }
+        }
+        .padding(.horizontal, JunoSpace.comfy)
+        .padding(.vertical, JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .fill(Color.junoDestructive.opacity(colorScheme == .dark ? 0.14 : 0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.field, style: .continuous)
+                .strokeBorder(Color.junoDestructive.opacity(0.4), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A failure of something the reader did to a reply — a rating that did not
+/// save, Read Aloud that could not start — until the window's toast host
+/// lands (Phase 3, spec §7.7). The failure's own box, at the foot of the
+/// transcript, and gone again after a few seconds.
+struct DesktopActionFailure: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        DesktopTurnError(message: message)
+            .task(id: message) {
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                dismiss()
+            }
     }
 }

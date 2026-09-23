@@ -88,6 +88,10 @@ struct DesktopMessageRow: View {
     /// A new value opens this message's editor, as its Edit action does. Set
     /// only on the last message you sent, by ↑ in the composer.
     var editRequest: UUID? = nil
+    /// The approval cards this reply is blocked on — above its answer.
+    var approvals = MessageRowApprovals()
+    /// The stream behind this pending reply dropped and is being picked up.
+    var isRecovering = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.junoSnapshotHover) private var snapshotHover
@@ -95,6 +99,8 @@ struct DesktopMessageRow: View {
     @Environment(\.junoMeasure) private var measure
     /// The stored rows behind the artifacts this reply mentions.
     @Environment(\.junoArtifactResolver) private var artifactResolver
+    /// ⌘F's highlight for this message.
+    @Environment(\.junoFindHighlight) private var findHighlight
     /// The pointer is over the turn: the web's `group-hover`.
     @State private var hovered = false
     /// Copy just happened; the copy mark is a check for two seconds.
@@ -118,23 +124,38 @@ struct DesktopMessageRow: View {
         case editor, editButton
     }
 
-    private var displayContent: String {
-        message.sources.isEmpty
-            ? message.content
-            : NativeMessageContent.strippingTrailingSourcesSection(message.content)
+    private var parts: [NativeMessageContent.Part] {
+        Self.parts(of: message)
     }
 
-    private var parts: [NativeMessageContent.Part] {
-        NativeMessageContent.parts(of: displayContent)
+    /// A reply's parts as the row draws them: its words without the trailing
+    /// "Sources" section the sources pill replaces, split around artifacts.
+    static func parts(of message: NativeChatMessage) -> [NativeMessageContent.Part] {
+        NativeMessageContent.parts(
+            of: message.sources.isEmpty
+                ? message.content
+                : NativeMessageContent.strippingTrailingSourcesSection(message.content)
+        )
+    }
+
+    /// The prose runs of a reply, in order — what ⌘F searches.
+    static func textParts(of message: NativeChatMessage) -> [String] {
+        parts(of: message).compactMap { part in
+            if case .text(let text) = part { return text }
+            return nil
+        }
+    }
+
+    /// How many of the reply's sources a `[n]` in it may point at: all of
+    /// them when the model was handed them as a numbered corpus, otherwise
+    /// none — the web's rule, so a bracket never resolves to an arbitrary,
+    /// wrong source.
+    static func citationCount(of message: NativeChatMessage) -> Int {
+        message.sources.contains(where: \.cited) ? message.sources.count : 0
     }
 
     private var plainText: String {
         NativeMessageContent.plainText(of: message.content)
-    }
-
-    private var reasoningLines: [String]? {
-        guard let reasoning = message.reasoning, !reasoning.isEmpty else { return nil }
-        return JunoAIcssReasoningLines.lines(text: reasoning)
     }
 
     private var isLongPrompt: Bool {
@@ -226,7 +247,7 @@ struct DesktopMessageRow: View {
     /// `px-4 py-2.5`, `bg-secondary`, and nothing else. A reading surface that
     /// wears a hairline or casts a shadow is a card.
     private var userBubble: some View {
-        Text(plainText)
+        Text(JunoFindText.highlighted(plainText, with: findHighlight))
             .junoType(.reading)
             .junoInk()
             .textSelection(.enabled)
@@ -480,76 +501,52 @@ struct DesktopMessageRow: View {
 
     // MARK: The reply
 
+    /// The reply, top to bottom (spec §6.3 as the rework orders it): the run,
+    /// any approval it is blocked on, the answer — or the error in its place —,
+    /// the note on how it ended, its sources, and its actions.
     private var assistantTurn: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                if let lines = reasoningLines, !lines.isEmpty {
-                    JunoAIcssReasoningStream(
-                        lines: lines,
-                        streaming: message.isPending,
-                        duration: nil,
-                        showsHeader: !message.isPending
+                if !isVoice {
+                    DesktopRunBlock(
+                        message: message,
+                        live: message.isPending,
+                        recovering: isRecovering,
+                        awaitingApproval: approvals.approvals.contains(where: \.isPending),
+                        openPanel: actions.openActivity
                     )
-                    .frame(maxWidth: 520, alignment: .leading)
+                }
+
+                // Above the answer: the turn is blocked on this, so it sits
+                // where the reader's eye already is.
+                ForEach(approvals.approvals) { approval in
+                    DesktopApprovalCard(
+                        approval: approval,
+                        isBusy: approvals.inFlightID == approval.id,
+                        errorMessage: approvals.error(approval.id),
+                        canAllowScope: approvals.canAllowScope(approval),
+                        decide: { decision in approvals.decide(approval, decision) }
+                    )
                 }
 
                 if let progress = message.mediaProgress, message.errorDescription == nil {
                     NativeMediaGenerationView(progress: progress)
-                } else if message.content.isEmpty, message.isPending, message.attachments.isEmpty {
-                    HStack(spacing: 10) {
-                        JunoThinkingMatrix()
-                        JunoAIcssThinkingLabel("Thinking about your request", size: 15)
-                    }
-                    .frame(minHeight: 22)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Thinking about your request")
-                    .accessibilityAddTraits(.updatesFrequently)
+                } else if let error = standaloneError {
+                    DesktopTurnError(message: error, retry: showsRetry ? actions.retry : nil)
                 } else if !parts.isEmpty || !message.attachments.isEmpty {
-                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        // The web's order: documents it produced, then the
-                        // pictures and clips, then the words.
-                        if !message.attachments.isEmpty {
-                            AssistantAttachments(
-                                attachments: message.attachments,
-                                canEditImages: !isPrivate && !isGenerating
-                            )
-                        }
-                        if !parts.isEmpty {
-                            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                                    switch part {
-                                    case .text(let text):
-                                        JunoLessonText(text, streaming: message.isPending)
-                                    case .artifact(let artifact):
-                                        let card = artifactResolver.card(
-                                            for: artifact,
-                                            messageID: message.id,
-                                            messageIsPending: message.isPending
-                                        )
-                                        DesktopInlineArtifactCard(
-                                            card: card,
-                                            open: card.isStreaming ? nil : { actions.openArtifact(artifact) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    answerBody
+                }
+
+                if let note = noteSentence {
+                    DesktopTurnNote(
+                        sentence: note,
+                        isFailure: message.errorDescription != nil,
+                        continueResponse: showsContinue ? actions.continueResponse : nil
+                    )
                 }
 
                 if !message.sources.isEmpty {
                     DesktopMessageSources(sources: message.sources)
-                }
-
-                if let error = message.errorDescription {
-                    Text(error)
-                        .junoFont(size: 13, relativeTo: .callout)
-                        .foregroundStyle(Color.junoDestructiveInk)
-                        .textSelection(.enabled)
-                }
-
-                if let continueResponse = actions.continueResponse, showsContinue {
-                    DesktopFinishNote(reason: message.finishReason ?? .length, continueResponse: continueResponse)
                 }
             }
 
@@ -572,6 +569,94 @@ struct DesktopMessageRow: View {
         } message: { _ in
             Text(artifactCount == 1 ? "Its 1 artifact will be replaced." : "Its \(artifactCount) artifacts will be replaced.")
         }
+    }
+
+    /// The words, the files it produced and the artifacts it wrote — in the
+    /// reading style, with the tail fading while it is written.
+    private var answerBody: some View {
+        let citations = Self.citationCount(of: message)
+        let bases = partFindBases(citations: citations)
+        return VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            // The web's order: documents it produced, then the pictures and
+            // clips, then the words.
+            if !message.attachments.isEmpty {
+                AssistantAttachments(
+                    attachments: message.attachments,
+                    canEditImages: !isPrivate && !isGenerating
+                )
+            }
+            if !parts.isEmpty {
+                VStack(alignment: .leading, spacing: JunoProseMetrics.blockGap) {
+                    ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                        switch part {
+                        case .text(let text):
+                            JunoLessonText(text, streaming: message.isPending)
+                                .environment(\.junoFindHighlight, findHighlight?.shifted(by: bases.indices.contains(index) ? bases[index] : 0))
+                        case .artifact(let artifact):
+                            let card = artifactResolver.card(
+                                for: artifact,
+                                messageID: message.id,
+                                messageIsPending: message.isPending
+                            )
+                            DesktopInlineArtifactCard(
+                                card: card,
+                                open: card.isStreaming ? nil : { actions.openArtifact(artifact) }
+                            )
+                        }
+                    }
+                }
+                .junoStreamingTail(message.isPending && message.content.count > JunoProseMetrics.tailFadeCharacters)
+            }
+        }
+        .environment(\.junoProseStyle, .reading)
+        .environment(\.junoCitationCount, citations)
+        .environment(\.junoCitationPopover, citations > 0 ? citationPopover : nil)
+    }
+
+    /// Where each prose part's find matches start within the reply.
+    private func partFindBases(citations: Int) -> [Int] {
+        guard let findHighlight, findHighlight.isActive else { return [] }
+        var running = 0
+        return parts.map { part in
+            defer {
+                if case .text(let text) = part {
+                    running += JunoFindText.count(of: findHighlight.query, inLesson: text, citations: citations)
+                }
+            }
+            return running
+        }
+    }
+
+    /// A citation's source, by its number.
+    private var citationPopover: JunoCitationPopover {
+        let sources = message.sources
+        return JunoCitationPopover { number in
+            guard sources.indices.contains(number - 1) else { return AnyView(EmptyView()) }
+            return AnyView(SourceCitationPopover(source: sources[number - 1], number: number))
+        }
+    }
+
+    /// A reply that failed with nothing to show for it: the error takes the
+    /// answer's place. With a partial answer, the failure is its note instead.
+    private var standaloneError: String? {
+        guard let error = message.errorDescription, message.mediaProgress == nil else { return nil }
+        let hasPartial = hasTextContent && message.content != error
+        return hasPartial || !message.attachments.isEmpty ? nil : error
+    }
+
+    /// Try Again, on the newest reply with nothing running.
+    private var showsRetry: Bool {
+        isNewest && !isGenerating && actions.retry != nil
+    }
+
+    /// The note under the answer: a partial answer's failure, or why it ended
+    /// short of its end.
+    private var noteSentence: String? {
+        guard !message.isPending, message.mediaProgress == nil else { return nil }
+        if let error = message.errorDescription {
+            return standaloneError == nil ? error : nil
+        }
+        return DesktopFinishCopy.sentence(for: message.finishReason)
     }
 
     /// The artifacts this reply wrote. Regenerating a reply deletes them on
@@ -751,6 +836,15 @@ struct DesktopMessageRow: View {
             copiedNow = false
         }
     }
+}
+
+/// The approval cards a reply is blocked on, and what answering one does.
+struct MessageRowApprovals {
+    var approvals: [NativeChatApproval] = []
+    var inFlightID: String? = nil
+    var error: (String) -> String? = { _ in nil }
+    var canAllowScope: (NativeChatApproval) -> Bool = { $0.canAllowScope }
+    var decide: (NativeChatApproval, NativeChatApprovalDecision) -> Void = { _, _ in }
 }
 
 /// A ghost text button: no fill at rest, the neutral hover fill under the

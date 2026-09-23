@@ -46,6 +46,16 @@ The shared checkout at `/Users/liammagnier/Developer/project/juno` belongs to ot
    - Mermaid 11.12.3 bundled and registered; the figure restyled; `juno-visual` fences drawn (`JunoVisualBlock.swift`)
    - REACT → `ph.code`, DESIGN → `juno.design`; `DesignNode.cornerSmoothing` kept through a save
 
+8. **Phase 2 stage 4, the rest of the transcript** (the commit after `2b1049c5`; spec "Phase 2 errata" §6.4–§6.15, register 30–38). The Tool calls & research rework's decisions (`juno-tools`, `docs/chat-rework/DECISIONS.md`; `SPEC.md` still a draft) win over the brief for the run, the panel and the sources, as its addendum says:
+   - the reading style (`JunoProseStyle.reading`, 16/1.7, 75ch, demoted headings, inline code on `--muted`, the streaming tail fade instead of the caret), the code card (one selectable `Text`, `JunoSyntaxHighlighter`, gutter from 8 lines, 520 cap) and the card table with browser-like columns — the standard style (phone, Code, library) is untouched
+   - the run block above each answer (`DesktopRunBlock`: `JunoRunSignature`, the web's status rungs, the two-slot peek, the settled summary, the inline timeline) and the Activity panel as `TrailingDock`'s second case (Timeline / Sources / Details)
+   - per-message activity, the `done` frame's run, and thread hydration (`GET /api/conversations/{id}`) so sources and the run survive a reload; the rework's typed payloads decoded additively, today's rows through the legacy adapter
+   - the sources pill (own-origin favicons, letters offscreen) and `[n]` citation chips with a popover when the corpus is `cited`
+   - finish notes and the error box inside the turn, no `GroupBox` left in the transcript
+   - follow-ups as opaque chips above the composer that send on click; scrolling that follows only at the bottom, with the Scroll to latest glass circle; ⌘F / ⌘G / ⇧⌘G find with neutral highlights
+   - stream resume (`/api/chat/stream/{id}?after=seq`, and `/active` on open and on reconnect)
+   - the Mac approval card above the answer, refusal first, nothing on `.defaultAction`
+
 Every stage above built and passed at its commit:
 - Mac build, JunoDesktopTests (175) and the iOS build
 - the JunoNativeKit and JunoCode package tests
@@ -59,17 +69,7 @@ Every stage above built and passed at its commit:
    - Xcode projects: `native/Scripts/generate-projects.sh`
 2. *(done — stage 2, above)*
 3. *(done — stage 3, above)*
-4. **Phase 2 stage 4, the rest of the transcript** (brief §6):
-   - prose at 16/1.7
-   - code and tables
-   - the activity row and Thought panel (the Thought panel is the second `DesktopDockPanel` case in `TrailingDock`)
-   - the sources pill and citations
-   - finish notes and errors
-   - follow-ups as opaque chips
-   - scrolling and Scroll to latest
-   - ⌘F find
-   - stream resume
-   - approvals
+4. *(done — stage 4, above)*. When the tools session's `SPEC.md` is final, swap `JunoRunSignature` / the run line for its exact spec, and start sending `clientFeatures: ["timeline", "resume"]` once the server ships the typed timeline (the Mac already decodes it).
 5. **Phase 2 review**, plus the final snapshot set in `/tmp/juno-glass-snapshots/final/`.
 6. **Phase 5, Work merged into Chat** (spec §11 Phase 5; runs before 3 and 4, per the errata). Covers `conversationID` on work sessions, "Do This as a Task", run cards, the Needs-you fold, notifications, and deleting `DesktopWorkWorkspace`.
 7. **Phase 3:** popovers, menus, sheets and Settings. This includes the ⌘K panel, the share popover, the toast host and the menu bar.
@@ -132,5 +132,14 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - The hosted design editor's own problems from the audit are untouched: the stale bundle, the missing primitive CSS, the indigo host tokens, the embedded layout, Export and the Image tool (mac-design-4 to -8, -11 to -13).
   - Mermaid was taken from an unmodified local copy of the upstream `dist/mermaid.min.js` (provenance and hash in `Resources/ArtifactRuntime/README.md`); replace it with the npm tarball's file when it is next updated.
   - No element inspector or "View last good version" in the canvas yet (the web has both).
+- **Stage 4 runtime checks not done** (screen control is off): scrolling up mid-stream stopping the follow and showing Scroll to latest (and its glass, which the offscreen harness cannot draw), ⌘F / ⌘G from the menu with a real transcript, a citation popover opening at the click, a favicon arriving, a follow-up chip sending, killing the network mid-stream and watching `after=seq` resume, reopening the app mid-answer, the Activity panel following a reply as its id changes, and an approval card's buttons.
+- **Stage 4 follow-ups:**
+  - **The rework's final spec.** `SPEC.md` had no reviews when the stage ran; the run UI follows `DECISIONS.md` and the draft, behind `JunoRunSignature`. The tools session will message when it is final. `clientFeatures` is not sent yet.
+  - **The version pager** still pages branches only: the thread's `versions` are now decoded (`versionCount`) but paging an answer's earlier versions (`GET /api/messages/{id}/versions`) is not built.
+  - **Toasts.** A failed action on a reply shows the error box for six seconds until the toast host (Phase 3).
+  - **Memory used** is listed in the Activity panel without the web's Forget.
+  - **Citations** draw the number without the source's logo (a `Text` run cannot hold an image that arrives later); the logo is in the popover.
+  - **Offscreen stroke artifact.** `cacheDisplay` draws a stroked capsule with a short vertical tick at each end (reproduced with a bare `Capsule().strokeBorder` outside the app); the sources pill, chips and risk pill in the snapshots show it. It is the harness, not the app.
+  - **New copy** is not in `Localizable.xcstrings`.
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.

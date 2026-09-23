@@ -294,6 +294,130 @@ final class NativeChatAPIClientTests: XCTestCase {
         )
     }
 
+    /// A run's rows carry their typed payloads when the server sends them,
+    /// the done frame carries the persisted run and the reasoning's parts, a
+    /// source keeps `cited`, and every SSE `id:` becomes the sequence a
+    /// reconnect resumes after.
+    func testTheRunAndItsSequenceNumbersSurviveTheWire() async throws {
+        let body = """
+        id: 1
+        data: {"type":"activity","event":{"id":"act-1","kind":"search","title":"Searching the web","detail":"swift 6","createdAt":"2026-09-23T10:00:00.000Z","seq":1,"round":0,"call":{"v":1,"callId":"call-1","tool":"web_search","origin":"juno","title":"Web search","status":"succeeded","round":0,"index":0,"startedAt":"2026-09-23T10:00:00.000Z","args":{"query":"swift 6","limit":5},"figure":{"kind":"results","n":8},"web":{"query":"swift 6","results":[{"title":"Swift 6","url":"https://swift.org"}]}}}}
+
+        id: 2
+        data: {"type":"activity","event":{"id":"act-2","kind":"tool","title":"Using Linear","detail":"linear__search","createdAt":"2026-09-23T10:00:02.000Z","tool":{"server":"Linear","name":"linear__search","args":"{}","result":"[]","status":"ok","durationMs":812.4},"call":{"callId":"broken"}}}
+
+        id: 3
+        data: {"type":"sources","sources":[{"title":"Swift 6","url":"https://swift.org","snippet":"x","cited":true}]}
+
+        id: 4
+        data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Done [1]","reasoning":"ab","reasoningParts":["a","b"],"model":"openai:gpt-5","createdAt":"2026-09-23T10:00:09.000Z","sources":[{"title":"Swift 6","url":"https://swift.org","snippet":"x","cited":true}],"activity":[{"id":"act-1","kind":"search","title":"Searching the web","createdAt":"2026-09-23T10:00:00.000Z"},{"id":"act-9","kind":"artifact","title":"Artifact verified","createdAt":"2026-09-23T10:00:08.000Z"},{"kind":"broken"}]},"finishReason":"stop"}
+
+        """
+        let streamer = ChatQueueStreamer(responses: [streamResponse(body)])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        let stream = try await client.generationEvents(
+            NativeChatGenerationRequest(
+                conversationID: "conv_12345678",
+                modelID: "openai:gpt-5",
+                reasoningEffort: nil,
+                generationID: "juno-native-generation-1"
+            ),
+            for: accountID
+        )
+        var events: [NativeChatServerEvent] = []
+        for try await event in stream { events.append(event) }
+
+        let sequences = events.compactMap { event -> Int? in
+            if case .sequence(let number) = event { return number }
+            return nil
+        }
+        XCTAssertEqual(sequences, [1, 2, 3, 4])
+
+        guard case .activity(let search) = events[0] else { return XCTFail("expected the search row") }
+        XCTAssertEqual(search.seq, 1)
+        XCTAssertEqual(search.call?.tool, "web_search")
+        XCTAssertEqual(search.call?.status, .succeeded)
+        XCTAssertEqual(search.call?.args["limit"], "5")
+        XCTAssertEqual(search.call?.figure?.n, 8)
+        XCTAssertEqual(search.call?.web?.results.first?.url, "https://swift.org")
+        XCTAssertNotNil(search.createdAt)
+
+        guard case .activity(let tool) = events[2] else { return XCTFail("expected the tool row") }
+        XCTAssertNil(tool.call, "a call record this build cannot read costs only itself")
+        XCTAssertEqual(tool.tool?.durationMs, 812)
+        XCTAssertEqual(tool.tool?.status, "ok")
+
+        guard case .sources(let sources) = events[4] else { return XCTFail("expected sources") }
+        XCTAssertEqual(sources.first?.cited, true)
+
+        guard case .completed(let done) = events[6] else { return XCTFail("expected done") }
+        XCTAssertEqual(done.reasoningParts, ["a", "b"])
+        XCTAssertEqual(done.activity.map(\.id), ["act-1", "act-9"])
+        XCTAssertEqual(done.activity.last?.kind, .artifact)
+        XCTAssertEqual(done.sources.first?.cited, true)
+    }
+
+    /// Resuming: which generation is still running, and its frames after the
+    /// last one handled.
+    func testTheResumeRoutes() async throws {
+        let sender = ChatQueueSender(responses: [
+            response(#"{"generationId":"juno-native-running-1"}"#),
+            response(#"{"error":"Not found"}"#, statusCode: 404),
+        ])
+        let streamer = ChatQueueStreamer(responses: [streamResponse("""
+        id: 8
+        data: {"type":"delta","text":" there"}
+
+        id: 9
+        data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Hello there","reasoning":null,"model":"openai:gpt-5","createdAt":"2026-09-23T10:00:09.000Z","sources":[]},"finishReason":"stop"}
+
+        """)])
+        let client = NativeChatAPIClient(sender: sender, streamer: streamer)
+
+        let running = try await client.activeGeneration(conversationID: "conv_12345678", for: accountID)
+        XCTAssertEqual(running, "juno-native-running-1")
+        let none = try await client.activeGeneration(conversationID: "conv_12345678", for: accountID)
+        XCTAssertNil(none)
+        let asked = await sender.requests
+        XCTAssertEqual(asked.first?.path, "/api/chat/stream/active")
+        XCTAssertEqual(asked.first?.queryItems, [URLQueryItem(name: "conversationId", value: "conv_12345678")])
+
+        let stream = try await client.resumeEvents(generationID: "juno-native-running-1", after: 7, for: accountID)
+        var events: [NativeChatServerEvent] = []
+        for try await event in stream { events.append(event) }
+        XCTAssertEqual(events.first, .textDelta(" there"))
+        XCTAssertTrue(events.contains(.sequence(9)))
+        let streamed = await streamer.requests
+        XCTAssertEqual(streamed.first?.path, "/api/chat/stream/juno-native-running-1")
+        XCTAssertEqual(streamed.first?.method, .get)
+        XCTAssertEqual(streamed.first?.queryItems, [URLQueryItem(name: "after", value: "7")])
+    }
+
+    /// The thread lays what sync lacks — sources, the run, reasoning parts,
+    /// versions — over the synced rows, lossily.
+    func testTheThreadReadsWhatSyncLacks() async throws {
+        let sender = ChatQueueSender(responses: [response(#"""
+        {"conversation":{"id":"conv_12345678"},"messages":[
+          {"id":"msg-1","role":"USER","content":"Hi"},
+          {"id":"msg-2","role":"ASSISTANT","content":"Hello [1]","sources":[{"title":"Swift","url":"https://swift.org","snippet":"","cited":true},{"title":"Bad","url":"javascript:alert(1)","snippet":""}],"activity":[{"id":"a1","kind":"write","title":"Writing the answer","createdAt":"2026-09-23T10:00:03.000Z"}],"reasoningParts":["one"],"versions":[{"id":"v1","model":null,"createdAt":"2026-09-23T09:00:00.000Z"}]},
+          {"role":"broken"}
+        ],"artifacts":[{"id":"art-1","identifier":"card","type":"HTML","title":"Card","language":null,"currentVersion":1,"content":"<p>x</p>","versions":[],"messageId":"msg-2","createdAt":"2026-09-23T10:00:00.000Z","updatedAt":"2026-09-23T10:00:00.000Z"}]}
+        """#)])
+        let client = NativeChatAPIClient(sender: sender, streamer: EmptyChatStreamer())
+        let thread = try await client.conversationThread(conversationID: "conv_12345678", for: accountID)
+
+        XCTAssertEqual(thread.messages.map(\.id), ["msg-1", "msg-2"])
+        let answer = try XCTUnwrap(thread.messages.last)
+        XCTAssertEqual(answer.sources.map(\.url.absoluteString), ["https://swift.org"])
+        XCTAssertEqual(answer.sources.first?.cited, true)
+        XCTAssertEqual(answer.activity.first?.kind, .write)
+        XCTAssertEqual(answer.reasoningParts, ["one"])
+        XCTAssertEqual(answer.versionCount, 1)
+        XCTAssertEqual(thread.artifacts.map(\.identifier), ["card"])
+        let asked = await sender.requests
+        XCTAssertEqual(asked.first?.path, "/api/conversations/conv_12345678")
+    }
+
     private func streamResponse(_ body: String, statusCode: Int = 200)
         -> HTTPByteStreamResponse
     {

@@ -42,6 +42,11 @@ struct MessageRowActions {
     var copyLink: (() -> Void)? = nil
     /// Continue, from the finish note of a reply that stopped part-way.
     var continueResponse: (() -> Void)? = nil
+    /// Try Again, from the error box of the newest reply that failed.
+    var retry: (() -> Void)? = nil
+    /// Opens the Activity panel on this reply's run, on a call when one is
+    /// given.
+    var openActivity: ((String?) -> Void)? = nil
     /// Retry Send, under a question that never reached the server.
     var retrySend: (() -> Void)? = nil
     var stepBranch: ((Int) -> Void)? = nil

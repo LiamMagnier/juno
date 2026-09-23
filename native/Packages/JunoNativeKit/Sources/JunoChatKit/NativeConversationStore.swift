@@ -121,6 +121,21 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// message that has none, and on a streamed placeholder until the server's
     /// row replaces it.
     public var attachments: [NativeChatAttachment]
+    /// The run behind this answer — its activity rows in emission order — and
+    /// its reasoning's parts. Written live into the pending row, carried by
+    /// the `done` frame, and laid back over the synced row from the thread
+    /// (``NativeConversationModel/hydrateThread(conversationID:)``), since the
+    /// sync entity does not carry them.
+    public var activity: [NativeChatActivity]
+    public var reasoningParts: [String]?
+    /// When this client sent the request this answer is for, and when its
+    /// first answer token arrived. Client-transient timing for the live run
+    /// line; a settled run is timed from its activity's own timestamps.
+    public var runStartedAt: Date?
+    public var answerStartedAt: Date?
+    /// How many earlier versions the server keeps of this answer (regenerate,
+    /// edit and resend). Metadata only; from the thread.
+    public var versionCount: Int
 
     public init(
         id: String,
@@ -143,7 +158,12 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         cacheWriteTokens: Int? = nil,
         feedback: NativeChatFeedback? = nil,
         mediaProgress: NativeMediaProgress? = nil,
-        attachments: [NativeChatAttachment] = []
+        attachments: [NativeChatAttachment] = [],
+        activity: [NativeChatActivity] = [],
+        reasoningParts: [String]? = nil,
+        runStartedAt: Date? = nil,
+        answerStartedAt: Date? = nil,
+        versionCount: Int = 0
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -166,6 +186,11 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.mediaProgress = mediaProgress
         self.feedback = feedback
         self.attachments = attachments
+        self.activity = activity
+        self.reasoningParts = reasoningParts
+        self.runStartedAt = runStartedAt
+        self.answerStartedAt = answerStartedAt
+        self.versionCount = versionCount
     }
 
     /// The pictures on this message, in the order they were attached.
@@ -197,7 +222,35 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         completionTokens = message.completionTokens
         cacheReadTokens = message.cacheReadTokens
         cacheWriteTokens = message.cacheWriteTokens
+        // The persisted run wins over the rows collected live: it is the same
+        // rows, with the server's final statuses on them. An older server
+        // sends none, and then the live ones stand.
+        if !message.activity.isEmpty { activity = message.activity }
+        if let parts = message.reasoningParts { reasoningParts = parts }
     }
+
+    /// This message with the details the synced row lacks laid over it —
+    /// only where it has none of its own.
+    func overlaid(with details: NativeMessageDetails) -> NativeChatMessage {
+        var message = self
+        if message.sources.isEmpty { message.sources = details.sources }
+        if message.activity.isEmpty { message.activity = details.activity }
+        if message.reasoningParts == nil { message.reasoningParts = details.reasoningParts }
+        if message.versionCount == 0 { message.versionCount = details.versionCount }
+        return message
+    }
+}
+
+/// What a message carries that its synced row does not: its sources, its run
+/// and its reasoning's parts. Kept by message id, from the `done` frame and
+/// from the thread.
+struct NativeMessageDetails: Equatable, Sendable {
+    var sources: [NativeChatSource]
+    var activity: [NativeChatActivity]
+    var reasoningParts: [String]?
+    var versionCount: Int = 0
+
+    var isEmpty: Bool { sources.isEmpty && activity.isEmpty && reasoningParts == nil && versionCount == 0 }
 }
 
 public struct NativeConversationSnapshot: Equatable, Sendable {
@@ -1012,10 +1065,17 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     ///
     /// Deep research runs PLAN → SEARCH → READ for tens of seconds before a
     /// single token of the report arrives, so without these the screen is an
-    /// empty bubble and a spinner for the whole prep phase. Cleared when a new
-    /// generation starts, because last turn's search steps above this turn's
-    /// answer would be actively misleading.
-    public private(set) var researchActivity: [NativeChatActivity] = []
+    /// empty bubble and a spinner for the whole prep phase. They live on the
+    /// pending answer itself (``NativeChatMessage/activity``), where the run
+    /// block reads them; this is that row's, for the surfaces that describe the
+    /// run in flight from outside the transcript (Search, the phone's
+    /// composer).
+    public var researchActivity: [NativeChatActivity] {
+        guard let conversationID = activeChatConversationID,
+            let pending = transientMessagesByConversation[conversationID]?.last(where: { $0.role == .assistant })
+        else { return [] }
+        return pending.activity
+    }
 
     /// The warning the server emits when research degrades to a plain answer.
     /// Surfaced separately because it changes what the answer *is* — a reader
@@ -1024,6 +1084,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         researchActivity.last { $0.kind == .warning }?.detail
             ?? researchActivity.last { $0.kind == .warning }?.title
     }
+
+    /// Details the synced rows lack, by message id: the `done` frame's until
+    /// the thread's arrive (``hydrateThread(conversationID:)``). Laid over the
+    /// rows in ``visibleMessages(for:)``.
+    private var messageDetails: [String: NativeMessageDetails] = [:]
+    /// The debounced thread read after a turn finishes.
+    @ObservationIgnored private var hydrationTask: Task<Void, Never>?
+    /// Conversations whose thread read is in flight, so opening one twice does
+    /// not fetch it twice.
+    @ObservationIgnored private var hydratingConversationIDs = Set<String>()
 
     /// Live generation progress on the pending assistant row.
     ///
@@ -1035,14 +1105,17 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         updateTransientAssistant(for: conversationID) { $0.mediaProgress = progress }
     }
 
+    /// Writes a step into the pending answer. The server re-sends an entry
+    /// when it gains a detail — a call's result, a finished status — so it is
+    /// replaced in place rather than appended as a near-duplicate.
     private func recordActivity(_ activity: NativeChatActivity, conversationID: String) {
         guard activeChatConversationID == conversationID else { return }
-        // The server re-sends an entry when it gains a detail, so replace in
-        // place rather than appending a near-duplicate step.
-        if let index = researchActivity.firstIndex(where: { $0.id == activity.id }) {
-            researchActivity[index] = activity
-        } else {
-            researchActivity.append(activity)
+        updateTransientAssistant(for: conversationID) { message in
+            if let index = message.activity.firstIndex(where: { $0.id == activity.id }) {
+                message.activity[index] = activity
+            } else {
+                message.activity.append(activity)
+            }
         }
     }
 
@@ -1161,6 +1234,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         regeneratingAssistantIDs = [:]
         transientMessagesByConversation = [:]
         rememberedAttachments = [:]
+        messageDetails = [:]
+        hydrationTask?.cancel()
+        hydrationTask = nil
+        resumeUnavailable = false
         retryContexts = [:]
         chatApprovalsByConversation = [:]
         chatApprovalInFlightID = nil
@@ -1799,7 +1876,6 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 ? attachments.filter { attachmentIDs.contains($0.id) } : []
         )
         retryContexts.removeValue(forKey: conversationID)
-        researchActivity = []
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = .appending
@@ -1901,7 +1977,6 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             edit: edit
         )
         retryContexts.removeValue(forKey: conversationID)
-        researchActivity = []
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = .submitting
@@ -2091,6 +2166,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     ) async {
         guard let chatClient, accountID == initialContext.accountID else { return }
         var context = initialContext
+        // The generation this run is, once it has one, and the last frame of
+        // it this client has handled — what a reconnect resumes after.
+        var generationID: String?
+        var lastSequence = 0
+        resumeUnavailable = false
         do {
             if needsAppend {
                 chatPhase = .appending
@@ -2114,8 +2194,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 guard accountID == context.accountID else { return }
             }
 
-            let generationID = "juno-native-\(UUID().uuidString.lowercased())"
-            activeGenerationID = generationID
+            let newGenerationID = "juno-native-\(UUID().uuidString.lowercased())"
+            generationID = newGenerationID
+            activeGenerationID = newGenerationID
             chatPhase = .submitting
             // WHICH ENDPOINT. An image or video model is not a chat model and
             // `/api/chat` cannot run one — which is why the picker's Image and
@@ -2149,7 +2230,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         conversationID: context.conversationID,
                         modelID: context.modelID,
                         reasoningEffort: context.reasoningEffort,
-                        generationID: generationID,
+                        generationID: newGenerationID,
                         deepResearch: context.deepResearch,
                         webSearch: context.webSearch,
                         canvasEnabled: context.canvasEnabled,
@@ -2161,110 +2242,23 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     for: context.accountID
                 )
             }
-            var terminal = false
-            for try await event in events {
-                try Task.checkCancellation()
-                guard accountID == context.accountID,
-                    activeGenerationID == generationID
-                else { return }
-                switch event {
-                case .metadata(let conversationID, let userMessageID, let title, let serverGenerationID):
-                    guard conversationID == context.conversationID,
-                        serverGenerationID == nil || serverGenerationID == generationID
-                    else { throw NativeChatAPIError.malformedResponse }
-                    updateTitle(title, conversationID: conversationID)
-                    // `/api/generate` wrote the question itself: the pending
-                    // turn takes the id the server gave it, as the web's does
-                    // on `meta`, so the stored row replaces it rather than
-                    // appearing beside it.
-                    if context.userMessageID == nil, !needsAppend, let userMessageID,
-                        !userMessageID.isEmpty
-                    {
-                        context.userMessageID = userMessageID
-                        adoptServerQuestion(
-                            id: userMessageID,
-                            clientID: context.clientID,
-                            conversationID: conversationID
-                        )
-                    }
-                case .title(let conversationID, let title):
-                    guard conversationID == context.conversationID else {
-                        throw NativeChatAPIError.malformedResponse
-                    }
-                    updateTitle(title, conversationID: conversationID)
-                case .textDelta(let text):
-                    appendAssistantText(text, conversationID: context.conversationID)
-                    chatPhase = .streaming
-                case .reasoningDelta(let text):
-                    appendAssistantReasoning(text, conversationID: context.conversationID)
-                    if chatPhase == .submitting { chatPhase = .reasoning }
-                case .sources(let sources):
-                    updateAssistantSources(sources, conversationID: context.conversationID)
-                case .activity(let activity):
-                    recordActivity(activity, conversationID: context.conversationID)
-                case .approval(let approval):
-                    guard approval.conversationID == nil
-                        || approval.conversationID == context.conversationID
-                    else { throw NativeChatAPIError.malformedResponse }
-                    upsertChatApproval(approval, conversationID: context.conversationID)
-                case .mediaProgress(let progress):
-                    // The one stage that is not a stage: `uploading` is Juno
-                    // storing the finished file, so the picture already exists and
-                    // the canvas should stop pretending to be making it. Every
-                    // other stage keeps the placeholder alive.
-                    updateMediaProgress(progress, conversationID: context.conversationID)
-                    chatPhase = .streaming
-                case .completed(let message):
-                    completeAssistant(message, conversationID: context.conversationID)
-                    retryContexts.removeValue(forKey: context.conversationID)
-                    terminal = true
-                case .failed(let message, let reason, _, _):
-                    failAssistant(
-                        message,
-                        reason: reason,
-                        context: context
-                    )
-                    terminal = true
-                case .resume:
-                    // Bookkeeping for a reconnect this client does not make
-                    // yet (Phase 2, stage 4). Not terminal: the answer keeps
-                    // streaming around it.
-                    break
-                case .ping:
-                    break
-                }
-                if terminal { break }
-            }
-            guard terminal else {
-                throw NativeChatAPIError.streamEndedWithoutTerminalEvent
-            }
-            activeGenerationID = nil
-            generationTask = nil
-            activeChatConversationID = nil
-            if chatPhase != .failed { chatPhase = .idle }
-            await syncModel.refresh()
-            await reload()
-            // The regenerated row is the stored one again: the reload has
-            // brought back its new content under the same id.
-            regeneratingAssistantIDs.removeValue(forKey: context.conversationID)
-            // The refining pass, after the reload so the answer it names the chat
-            // from is actually in `visibleMessages`. The first-user pass ran when
-            // the question was sent; this is the one that renames "Sidebar
-            // question" to what the exchange turned out to be about, and it is
-            // what the web's `completed` phase does. No-ops on a chat the reader
-            // has named themselves.
-            if chatPhase != .failed {
-                await generateTitleIfNeeded(
-                    conversationID: context.conversationID,
-                    phase: .completed
-                )
-                // After the reload, for the same reason the title pass is: the
-                // turn the extractor reads has to actually be in
-                // `visibleMessages`. Before this call there was no moment in the
-                // whole client at which anything looked at a finished
-                // conversation, which is why `MemoryExtractionEngine` had no
-                // caller at all.
-                announceFinishedTurn(conversationID: context.conversationID)
+            switch try await consume(
+                events,
+                context: &context,
+                needsAppend: needsAppend,
+                generationID: newGenerationID,
+                lastSequence: &lastSequence
+            ) {
+            case .terminal:
+                await finishGeneration(context)
+            case .abandoned:
+                return
+            case .refetch:
+                // Over, with its end missing from the log: the persisted
+                // answer is where it went.
+                chatPhase = .reconnecting
+                retryContexts[context.conversationID] = context
+                await recoverPersistedGeneration(context)
             }
         } catch is CancellationError {
             return
@@ -2275,6 +2269,25 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     .streamEndedWithoutTerminalEvent.localizedDescription
                 chatPhase = .reconnecting
                 retryContexts[context.conversationID] = context
+                // The stream dropped: pick it up where it stopped, through
+                // the same handling, before falling back to waiting for the
+                // saved answer to sync.
+                if let generationID {
+                    switch await resumeDroppedGeneration(
+                        &context,
+                        generationID: generationID,
+                        needsAppend: needsAppend,
+                        lastSequence: &lastSequence
+                    ) {
+                    case .completed:
+                        await finishGeneration(context)
+                        return
+                    case .abandoned:
+                        return
+                    case .unavailable:
+                        break
+                    }
+                }
                 await recoverPersistedGeneration(context)
             } else {
                 failAssistant(
@@ -2288,6 +2301,290 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 await syncModel.refresh()
                 await reload()
             }
+        }
+    }
+
+    private enum StreamOutcome {
+        /// `done` or `error` arrived.
+        case terminal
+        /// The account or the generation changed underneath the stream.
+        case abandoned
+        /// The resume route says the generation is over but its end is not in
+        /// the log: load the conversation instead.
+        case refetch
+    }
+
+    private enum ResumeOutcome {
+        case completed
+        case abandoned
+        /// No frames to resume from — a 404, a `refetch`, a log that stopped
+        /// (`resume{available:false}`), or no reconnect within the budget.
+        case unavailable
+    }
+
+    /// Whether this generation's frame log stopped (`resume{available:false}`),
+    /// so a reconnect would find nothing to replay.
+    @ObservationIgnored private var resumeUnavailable = false
+
+    /// Feeds a stream's frames through the turn's handling — the original
+    /// request's, and a resumed one's (`/api/chat/stream/{id}?after=seq`)
+    /// alike, so a reconnect is invisible to the transcript. This is the
+    /// reducer the stream actually runs through.
+    private func consume(
+        _ events: AsyncThrowingStream<NativeChatServerEvent, any Error>,
+        context: inout RetryContext,
+        needsAppend: Bool,
+        generationID: String,
+        lastSequence: inout Int
+    ) async throws -> StreamOutcome {
+        for try await event in events {
+            try Task.checkCancellation()
+            guard accountID == context.accountID,
+                activeGenerationID == generationID
+            else { return .abandoned }
+            // Frames are flowing again: the reconnect is over.
+            if chatPhase == .reconnecting, event.carriesTurn {
+                chatPhase = .submitting
+                chatErrorDescription = nil
+            }
+            switch event {
+            case .metadata(let conversationID, let userMessageID, let title, let serverGenerationID):
+                guard conversationID == context.conversationID,
+                    serverGenerationID == nil || serverGenerationID == generationID
+                else { throw NativeChatAPIError.malformedResponse }
+                updateTitle(title, conversationID: conversationID)
+                // `/api/generate` wrote the question itself: the pending
+                // turn takes the id the server gave it, as the web's does
+                // on `meta`, so the stored row replaces it rather than
+                // appearing beside it.
+                if context.userMessageID == nil, !needsAppend, let userMessageID,
+                    !userMessageID.isEmpty
+                {
+                    context.userMessageID = userMessageID
+                    adoptServerQuestion(
+                        id: userMessageID,
+                        clientID: context.clientID,
+                        conversationID: conversationID
+                    )
+                }
+            case .title(let conversationID, let title):
+                guard conversationID == context.conversationID else {
+                    throw NativeChatAPIError.malformedResponse
+                }
+                updateTitle(title, conversationID: conversationID)
+            case .textDelta(let text):
+                appendAssistantText(text, conversationID: context.conversationID)
+                chatPhase = .streaming
+            case .reasoningDelta(let text):
+                appendAssistantReasoning(text, conversationID: context.conversationID)
+                if chatPhase == .submitting { chatPhase = .reasoning }
+            case .sources(let sources):
+                updateAssistantSources(sources, conversationID: context.conversationID)
+            case .activity(let activity):
+                recordActivity(activity, conversationID: context.conversationID)
+            case .approval(let approval):
+                guard approval.conversationID == nil
+                    || approval.conversationID == context.conversationID
+                else { throw NativeChatAPIError.malformedResponse }
+                upsertChatApproval(approval, conversationID: context.conversationID)
+            case .mediaProgress(let progress):
+                // The one stage that is not a stage: `uploading` is Juno
+                // storing the finished file, so the picture already exists and
+                // the canvas should stop pretending to be making it. Every
+                // other stage keeps the placeholder alive.
+                updateMediaProgress(progress, conversationID: context.conversationID)
+                chatPhase = .streaming
+            case .completed(let message):
+                completeAssistant(message, conversationID: context.conversationID)
+                retryContexts.removeValue(forKey: context.conversationID)
+                return .terminal
+            case .failed(let message, let reason, _, _):
+                failAssistant(
+                    message,
+                    reason: reason,
+                    context: context
+                )
+                return .terminal
+            case .resume(let available, let refetch):
+                // Not terminal: the answer keeps streaming around it. A log
+                // that stopped means a reconnect would find nothing.
+                if available == false { resumeUnavailable = true }
+                if refetch == true { return .refetch }
+            case .sequence(let sequence):
+                lastSequence = max(lastSequence, sequence)
+            case .ping:
+                break
+            }
+        }
+        throw NativeChatAPIError.streamEndedWithoutTerminalEvent
+    }
+
+    /// Picks a dropped stream up after its last handled frame, retrying on a
+    /// widening interval while the network comes back. The "Reconnecting…"
+    /// rung shows meanwhile (``chatPhase`` is `.reconnecting`).
+    private func resumeDroppedGeneration(
+        _ context: inout RetryContext,
+        generationID: String,
+        needsAppend: Bool,
+        lastSequence: inout Int
+    ) async -> ResumeOutcome {
+        guard let chatClient else { return .unavailable }
+        for delay in [0.5, 1, 2, 4, 8, 15] as [Double] {
+            guard !resumeUnavailable else { return .unavailable }
+            guard !Task.isCancelled, accountID == context.accountID,
+                activeGenerationID == generationID
+            else { return .abandoned }
+            do {
+                let events = try await chatClient.resumeEvents(
+                    generationID: generationID,
+                    after: lastSequence,
+                    for: context.accountID
+                )
+                switch try await consume(
+                    events,
+                    context: &context,
+                    needsAppend: needsAppend,
+                    generationID: generationID,
+                    lastSequence: &lastSequence
+                ) {
+                case .terminal: return .completed
+                case .abandoned: return .abandoned
+                case .refetch: return .unavailable
+                }
+            } catch is CancellationError {
+                return .abandoned
+            } catch let error as NativeChatAPIError {
+                // Unknown, foreign or swept: nothing to resume.
+                if case .server(let status, _, _, _) = error, (400...499).contains(status), status != 408,
+                    status != 429
+                {
+                    return .unavailable
+                }
+                guard shouldRecover(error) else { return .unavailable }
+            } catch {
+                // The network is still down; try again.
+            }
+            chatPhase = .reconnecting
+            try? await Task.sleep(for: .seconds(delay))
+        }
+        return .unavailable
+    }
+
+    /// What a finished generation does, however its stream reached the end.
+    private func finishGeneration(_ context: RetryContext) async {
+        activeGenerationID = nil
+        generationTask = nil
+        activeChatConversationID = nil
+        if chatPhase != .failed {
+            chatPhase = .idle
+            chatErrorDescription = nil
+        }
+        await syncModel.refresh()
+        await reload()
+        // The regenerated row is the stored one again: the reload has
+        // brought back its new content under the same id.
+        regeneratingAssistantIDs.removeValue(forKey: context.conversationID)
+        // The refining pass, after the reload so the answer it names the chat
+        // from is actually in `visibleMessages`. The first-user pass ran when
+        // the question was sent; this is the one that renames "Sidebar
+        // question" to what the exchange turned out to be about, and it is
+        // what the web's `completed` phase does. No-ops on a chat the reader
+        // has named themselves.
+        if chatPhase != .failed {
+            await generateTitleIfNeeded(
+                conversationID: context.conversationID,
+                phase: .completed
+            )
+            // After the reload, for the same reason the title pass is: the
+            // turn the extractor reads has to actually be in
+            // `visibleMessages`. Before this call there was no moment in the
+            // whole client at which anything looked at a finished
+            // conversation, which is why `MemoryExtractionEngine` had no
+            // caller at all.
+            announceFinishedTurn(conversationID: context.conversationID)
+        }
+        scheduleHydration(conversationID: context.conversationID)
+    }
+
+    /// Follows a generation already running for a conversation that this
+    /// client is not streaming — the app reopened mid-answer, or the network
+    /// dropped before a stream existed here — the web's
+    /// `GET /api/chat/stream/active`, then its frames from the start.
+    ///
+    /// Only where the transcript ends on a settled question, so the answer
+    /// being written has a place to appear and nothing already on screen is
+    /// its old version. Call it when a conversation opens and when the
+    /// network returns.
+    public func resumeActiveGeneration(conversationID: String) async {
+        guard !chatPhase.isActive, activeGenerationID == nil, let chatClient, let accountID,
+            let conversation = conversations.first(where: { $0.id == conversationID }),
+            !conversation.isPending,
+            let question = visibleMessages(for: conversationID).last,
+            question.role == .user, !question.isPending
+        else { return }
+        guard let generationID = try? await chatClient.activeGeneration(
+            conversationID: conversationID,
+            for: accountID
+        ) else { return }
+        // Anything could have started while the question was in flight.
+        guard self.accountID == accountID, !chatPhase.isActive, activeGenerationID == nil,
+            visibleMessages(for: conversationID).last?.id == question.id
+        else { return }
+        let context = RetryContext(
+            accountID: accountID,
+            conversationID: conversationID,
+            clientID: question.clientID ?? UUID().uuidString.lowercased(),
+            prompt: question.content,
+            modelID: conversation.model,
+            reasoningEffort: nil,
+            attachmentIDs: [],
+            deepResearch: false,
+            webSearch: false,
+            canvasEnabled: nil,
+            connectors: [],
+            fastMode: false,
+            proMode: false,
+            branchPlacement: nil,
+            userMessageID: question.id,
+            userCreatedAt: question.createdAt
+        )
+        chatErrorDescription = nil
+        activeChatConversationID = conversationID
+        activeGenerationID = generationID
+        resumeUnavailable = false
+        chatPhase = .reconnecting
+        appendAssistantPlaceholder(for: context)
+        generationTask?.cancel()
+        generationTask = Task { @MainActor [weak self] in
+            await self?.followActiveGeneration(context, generationID: generationID)
+        }
+    }
+
+    private func followActiveGeneration(_ initialContext: RetryContext, generationID: String) async {
+        var context = initialContext
+        var lastSequence = 0
+        switch await resumeDroppedGeneration(
+            &context,
+            generationID: generationID,
+            needsAppend: false,
+            lastSequence: &lastSequence
+        ) {
+        case .completed:
+            await finishGeneration(context)
+        case .abandoned:
+            return
+        case .unavailable:
+            // It ended between the two calls, or its log is gone: the saved
+            // answer is where it went, and this placeholder was never a turn.
+            guard accountID == context.accountID, activeGenerationID == generationID else { return }
+            removeTransientAssistant(for: context.conversationID)
+            activeGenerationID = nil
+            generationTask = nil
+            activeChatConversationID = nil
+            chatPhase = .idle
+            await syncModel.refresh()
+            await reload()
+            scheduleHydration(conversationID: context.conversationID)
         }
     }
 
@@ -2310,6 +2607,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 activeChatConversationID = nil
                 chatErrorDescription = nil
                 chatPhase = .idle
+                // Its sources and run are on the thread, not the synced row.
+                scheduleHydration(conversationID: context.conversationID)
                 return
             }
             do {
@@ -2380,7 +2679,71 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             didStreamArtifacts?(message.artifacts, conversationID)
         }
         updateTransientAssistant(for: conversationID) { $0.complete(with: message) }
+        // The sources and the run, kept for the stored row the next reload
+        // brings — which has neither — until the thread's copy arrives.
+        if let finished = transientMessagesByConversation[conversationID]?.last(where: { $0.role == .assistant }),
+            !message.id.isEmpty
+        {
+            rememberDetails(
+                NativeMessageDetails(
+                    sources: finished.sources,
+                    activity: finished.activity,
+                    reasoningParts: finished.reasoningParts
+                ),
+                for: message.id
+            )
+        }
         keepAnswerAfterItsQuestion(conversationID: conversationID)
+    }
+
+    private func rememberDetails(_ details: NativeMessageDetails, for messageID: String) {
+        guard !details.isEmpty else { return }
+        messageDetails[messageID] = details
+    }
+
+    /// Lays the conversation's thread over its synced rows: each message's
+    /// sources (with `cited`), run and reasoning parts, and the artifacts,
+    /// which go to the artifact store as the `done` frame's do.
+    ///
+    /// Run when a conversation opens and, debounced, after each reply
+    /// finishes. It is what keeps a reply's sources and run on screen after a
+    /// reload — the sync entity does not carry them.
+    public func hydrateThread(conversationID: String) async {
+        guard let chatClient, let accountID, !conversationID.isEmpty,
+            !hydratingConversationIDs.contains(conversationID)
+        else { return }
+        hydratingConversationIDs.insert(conversationID)
+        defer { hydratingConversationIDs.remove(conversationID) }
+        guard let thread = try? await chatClient.conversationThread(conversationID: conversationID, for: accountID),
+            self.accountID == accountID
+        else { return }
+        var details = messageDetails
+        for message in thread.messages {
+            let incoming = NativeMessageDetails(
+                sources: message.sources,
+                activity: message.activity,
+                reasoningParts: message.reasoningParts,
+                versionCount: message.versionCount
+            )
+            guard !incoming.isEmpty else { continue }
+            details[message.id] = incoming
+        }
+        if details != messageDetails { messageDetails = details }
+        if !thread.artifacts.isEmpty {
+            didStreamArtifacts?(thread.artifacts, conversationID)
+        }
+    }
+
+    /// The thread read after a reply lands, once the server has written what
+    /// the reply wrote — a beat after `done`, and once however many replies
+    /// land together.
+    private func scheduleHydration(conversationID: String) {
+        hydrationTask?.cancel()
+        hydrationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1_500))
+            guard !Task.isCancelled else { return }
+            await self?.hydrateThread(conversationID: conversationID)
+        }
     }
 
     /// The finished answer takes the server's clock; a question `/api/generate`
@@ -2446,12 +2809,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             model: context.modelID,
             createdAt: max(Date(), context.userCreatedAt.addingTimeInterval(0.001)),
             revision: 0,
-            isPending: true
+            isPending: true,
+            runStartedAt: Date()
         ))
     }
 
     private func appendAssistantText(_ text: String, conversationID: String) {
-        updateTransientAssistant(for: conversationID) { $0.content.append(text) }
+        updateTransientAssistant(for: conversationID) {
+            $0.content.append(text)
+            if $0.answerStartedAt == nil, !text.isEmpty { $0.answerStartedAt = Date() }
+        }
     }
 
     private func appendAssistantReasoning(_ text: String, conversationID: String) {
@@ -2810,6 +3177,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         {
             result.append(transient)
         }
+        // What the synced rows lack — sources, the run — from the `done` frame
+        // or the thread, by id.
+        if !messageDetails.isEmpty {
+            result = result.map { message in
+                messageDetails[message.id].map(message.overlaid(with:)) ?? message
+            }
+        }
         return result.sorted {
             $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt
         }
@@ -3055,4 +3429,15 @@ private struct MessageWire: Decodable {
     let completionTokens: Int?
     let feedback: String?
     let createdAt: String
+}
+
+private extension NativeChatServerEvent {
+    /// A frame about the answer itself — not bookkeeping — which is what
+    /// proves a reconnect has picked the stream back up.
+    var carriesTurn: Bool {
+        switch self {
+        case .ping, .sequence, .resume: false
+        default: true
+        }
+    }
 }

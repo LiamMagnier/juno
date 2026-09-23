@@ -18,6 +18,8 @@ struct DesktopDestinationView: View {
     @Binding var requestedProjectID: String?
     /// ⌘U and drops, on their way to the chat route's composer.
     @Binding var composerRequest: ChatComposerRequest?
+    /// ⌘F, ⌘G and ⇧⌘G, on their way to the chat route's find bar.
+    @Binding var findCommand: DesktopFindCommand?
     /// The draft is private: nothing is saved, synced or remembered. The chat
     /// route then sends to the in-memory private chat instead of the store.
     var isPrivateChat = false
@@ -58,6 +60,7 @@ struct DesktopDestinationView: View {
                 draftProjectID: $draftProjectID,
                 draftPrompt: $draftPrompt,
                 composerRequest: $composerRequest,
+                findCommand: $findCommand,
                 openDestination: { destination = $0 },
                 privateChat: isPrivateChat ? configuration.privateChatModel : nil,
                 callActiveChanged: callActiveChanged,

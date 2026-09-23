@@ -462,6 +462,11 @@ public enum JunoMotion {
         public static let statusBreathe: TimeInterval = 2.8
         /// `skeleton-breathe`: a loading placeholder's rise and settle.
         public static let skeletonBreathe: TimeInterval = 1.8
+        /// `--loop`: the run signature and its label's shimmer — every loop in
+        /// the run family is a multiple of the 1.2s `--loop-beat`.
+        public static let run: TimeInterval = 2.4
+        /// `--loop-calm`: the run after 20s of continuous work, at half pace.
+        public static let runCalm: TimeInterval = 4.8
     }
 
     /// One of the ``Loop`` periods as a running breathe: half the period out on

@@ -141,6 +141,9 @@ struct DesktopChatWorkspace: View {
     /// ⌘U from the menu bar, or a file dropped on the chat column, on its way
     /// to the composer — which owns the importer and the attachment rules.
     @State private var composerRequest: ChatComposerRequest?
+    /// ⌘F, ⌘G and ⇧⌘G from the menu bar, on their way to the conversation
+    /// column's find bar.
+    @State private var findCommand: DesktopFindCommand?
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -356,6 +359,7 @@ struct DesktopChatWorkspace: View {
             draftPrompt: $draftPrompt,
             requestedProjectID: $requestedProjectID,
             composerRequest: $composerRequest,
+            findCommand: $findCommand,
             isPrivateChat: isPrivateChat,
             callActiveChanged: { isInCall = $0 },
             shareConversation: replyShare,
@@ -677,6 +681,14 @@ struct DesktopChatWorkspace: View {
                 attachFiles = { composerRequest = ChatComposerRequest(kind: .chooseFiles) }
             }
         }
+        // Find in this conversation: wherever a conversation is on screen —
+        // a saved one, or a private chat with turns in it.
+        var findInConversation: ((DesktopFindCommand.Kind) -> Void)?
+        if currentDestination == .chat,
+            model.selectedConversationID != nil || (isPrivateChat && configuration.privateChatModel?.isEmpty == false)
+        {
+            findInConversation = { kind in findCommand = DesktopFindCommand(kind: kind) }
+        }
         return DesktopWorkspaceActions(
             newItem: beginDraft,
             newChat: beginDraft,
@@ -684,7 +696,8 @@ struct DesktopChatWorkspace: View {
             switchProduct: { product = $0 },
             currentProduct: product,
             attachScreenshot: screenshot,
-            attachFiles: attachFiles
+            attachFiles: attachFiles,
+            findInConversation: findInConversation
         )
     }
 
@@ -742,6 +755,12 @@ struct DesktopChatWorkspace: View {
         }
         consumeUnscopedChatRequest()
     }
+}
+
+/// The reply the Activity panel is open on, and the call it was opened at.
+struct DesktopActivityTarget: Equatable {
+    var messageID: String
+    var focusCallID: String?
 }
 
 /// A request for the New Project sheet. The conversation, when there is one,
@@ -853,6 +872,8 @@ struct DesktopConversationView: View {
     /// ⌘U from the menu bar, and the drops this column accepts, for the
     /// composer to act on.
     @Binding var composerRequest: ChatComposerRequest?
+    /// ⌘F, ⌘G and ⇧⌘G, for the find bar.
+    @Binding var findCommand: DesktopFindCommand?
     /// Moves the window to another destination — the `+` menu's Manage
     /// Connections… goes to the Connections page.
     let openDestination: (DesktopDestination) -> Void
@@ -886,6 +907,16 @@ struct DesktopConversationView: View {
     /// made the sheet this replaces a presentation whose presenter could vanish
     /// underneath it. The row now only says "open this".
     @State private var openArtifact: DesktopChatArtifact?
+    /// The reply whose run the Activity panel shows, or nil when it is
+    /// closed. The canvas and the panel share the dock: opening one closes
+    /// the other.
+    @State private var openActivity: DesktopActivityTarget?
+    /// ⌘F in this conversation.
+    @State private var find = TranscriptFindModel()
+    /// Sources' logos, fetched once per site for this window.
+    @State private var favicons = SourceFaviconLoader()
+    /// Whether the composer's draft is empty, for the follow-up chips.
+    @State private var draftIsEmpty = true
     /// The conversation column's own size: its height is what a draft's
     /// composer group is centred in (§4.1), and its width is what the
     /// greeting's size is fluid against (§4.2).
@@ -948,12 +979,51 @@ struct DesktopConversationView: View {
             // would be describing a reply that is no longer on screen.
             .onChange(of: model.selectedConversationID) { _, _ in
                 openArtifact = nil
+                openActivity = nil
+                find.close()
             }
             .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
                 await model.refreshChatApprovals(
                     conversationID: model.selectedConversationID,
                     includeRecent: true
                 )
+                // What sync does not carry — each reply's sources and run —
+                // and a generation still running that this Mac is not
+                // streaming (reopened mid-answer).
+                guard privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                await model.hydrateThread(conversationID: conversationID)
+                await model.resumeActiveGeneration(conversationID: conversationID)
+            }
+            // The network is back: pick up a generation that kept running.
+            .onChange(of: isOnline) { _, online in
+                guard online, privateChat == nil, let conversationID = model.selectedConversationID else { return }
+                Task { await model.resumeActiveGeneration(conversationID: conversationID) }
+            }
+            // A reply's id changes when it lands (the placeholder's becomes
+            // the server's): the Activity panel follows it rather than closing.
+            .onChange(of: model.selectedMessages.map(\.id)) { _, ids in
+                guard let target = openActivity, !ids.contains(target.messageID) else { return }
+                if target.messageID.hasPrefix("local-"),
+                    let landed = model.selectedMessages.last(where: { $0.role == .assistant })
+                {
+                    openActivity = DesktopActivityTarget(messageID: landed.id, focusCallID: target.focusCallID)
+                } else {
+                    openActivity = nil
+                }
+            }
+            .onChange(of: findCommand?.id) { _, _ in
+                guard let command = findCommand else { return }
+                findCommand = nil
+                switch command.kind {
+                case .open: find.open()
+                case .next: find.isOpen ? find.next() : find.open()
+                case .previous: find.isOpen ? find.previous() : find.open()
+                }
+                find.update(messages: findableMessages)
+            }
+            .onChange(of: find.query) { _, _ in find.recount() }
+            .onChange(of: model.selectedMessages) { _, _ in
+                if find.isOpen { find.update(messages: findableMessages) }
             }
             // The budget moves when a turn finishes, so the plan is read when
             // the column appears and again as each reply ends.
@@ -966,11 +1036,12 @@ struct DesktopConversationView: View {
             // the conversation column, and the call also lights the whole column
             // with its own field. Starting one dismisses the other.
             .onChange(of: voiceSession?.id) { _, started in
-                guard started != nil, openArtifact != nil else { return }
+                guard started != nil, openArtifact != nil || openActivity != nil else { return }
                 withAnimation(
                     JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
                 ) {
                     openArtifact = nil
+                    openActivity = nil
                 }
             }
             .alert(
@@ -1150,24 +1221,50 @@ struct DesktopConversationView: View {
                     },
                     save: saveArtifact
                 )
+            case .activity(let messageID, let focusCallID):
+                if let message = findableMessages.first(where: { $0.id == messageID }) {
+                    DesktopActivityPanel(
+                        message: message,
+                        live: message.isPending,
+                        recovering: message.isPending && model.chatPhase == .reconnecting,
+                        focusCallID: focusCallID,
+                        close: closeActivity
+                    )
+                }
             }
         } content: {
             chatColumn
         }
         .environment(\.junoArtifactResolver, artifactResolver)
         .environment(\.junoTranscriptViewportHeight, columnHeight)
+        .environment(\.junoFavicons, favicons)
+    }
+
+    /// Every turn on screen, store and local, in order: what the find bar and
+    /// the Activity panel look messages up in.
+    private var findableMessages: [NativeChatMessage] {
+        model.selectedMessages + localMessages
+    }
+
+    /// Whether the account can reach the server: no offline banner.
+    private var isOnline: Bool {
+        DesktopOfflineState.resolve(
+            connectivity: configuration.authModel.connectivity,
+            syncPhase: configuration.syncModel?.phase
+        ) == nil
     }
 
     /// The panel the dock shows: the open artifact, with the stored row behind
     /// it as the artifact store has it *now* — so a revision a later reply
     /// wrote, a sync, or the canvas's own Save is what the canvas shows.
     private var dockPanel: DesktopDockPanel? {
-        openArtifact.map { open in
-            .canvas(DesktopChatArtifact(
+        if let open = openArtifact {
+            return .canvas(DesktopChatArtifact(
                 reference: open.reference,
                 stored: artifactResolver.artifact(for: open.reference) ?? open.stored
             ))
         }
+        return openActivity.map { .activity(messageID: $0.messageID, focusCallID: $0.focusCallID) }
     }
 
     /// This conversation's stored artifacts, by identifier — the web's
@@ -1287,8 +1384,6 @@ struct DesktopConversationView: View {
                     showsStoreState: privateChat == nil && model.selectedConversationID != nil,
                     voiceMessages: voiceMessages,
                     messageActions: configuration.messageActionsClient,
-                    followUpClient: configuration.followUpClient,
-                    draftPrompt: $draftPrompt,
                     accountID: session.profile.id,
                     syncModel: configuration.syncModel,
                     openArtifact: open(artifact:),
@@ -1297,12 +1392,32 @@ struct DesktopConversationView: View {
                     // private, and the web offers no fork there either.
                     forkPrivately: privateChat == nil ? forkPrivately : nil,
                     quote: { text in composerRequest = ChatComposerRequest(kind: .quote(text)) },
-                    editLastRequest: editLastRequest
+                    editLastRequest: editLastRequest,
+                    find: find,
+                    openActivity: { messageID, callID in openActivityPanel(messageID: messageID, callID: callID) }
                 )
                 .environment(\.junoTranscriptMediaActions, mediaActions)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // ⌘F: a glass capsule over the top of the column (§6.14).
+        .safeAreaBar(edge: .top, spacing: 0) {
+            if find.isOpen, !isDraft {
+                DesktopFindBar(
+                    query: $find.query,
+                    current: find.current,
+                    total: find.matches.count,
+                    next: find.next,
+                    previous: find.previous,
+                    done: find.close,
+                    focusRequest: find.focusRequest
+                )
+                .padding(.top, JunoSpace.snug)
+                .padding(.horizontal, DesktopChatMeasure.gutter)
+                .frame(maxWidth: .infinity)
+                .transition(.opacity)
+            }
+        }
         .safeAreaBar(edge: .bottom, spacing: 0) {
             ChatComposerDock(
                 lift: composerLift,
@@ -1322,7 +1437,10 @@ struct DesktopConversationView: View {
                 )
                 .padding(.bottom, JunoSpace.region)
             } composer: {
-                composer
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    followUps
+                    composer
+                }
             } footer: {
                 // Not in a private chat: incognito carries its own two-line
                 // header, and a row of suggestions under it would be asking
@@ -1362,10 +1480,25 @@ struct DesktopConversationView: View {
 
     private func open(artifact: NativeMessageContent.ArtifactReference) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openActivity = nil
             openArtifact = DesktopChatArtifact(
                 reference: artifact,
                 stored: artifactResolver.artifact(for: artifact)
             )
+        }
+    }
+
+    /// The Activity panel on a reply's run — the newest opener wins the dock.
+    private func openActivityPanel(messageID: String, callID: String?) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = nil
+            openActivity = DesktopActivityTarget(messageID: messageID, focusCallID: callID)
+        }
+    }
+
+    private func closeActivity() {
+        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+            openActivity = nil
         }
     }
 
@@ -1483,6 +1616,27 @@ struct DesktopConversationView: View {
         Task { await started.controller.start(provider: initialProvider) }
     }
 
+    /// What to ask next, above the composer (§6.12): only under a settled
+    /// answer in a saved chat, and only while the draft is empty.
+    @ViewBuilder
+    private var followUps: some View {
+        if privateChat == nil, !isDraft, let conversationID = model.selectedConversationID {
+            let last = model.selectedMessages.last
+            DesktopFollowUpChips(
+                conversationID: conversationID,
+                replyID: last?.id,
+                accountID: session.profile.id,
+                client: configuration.followUpClient,
+                ready: !model.isGenerating && voiceSession == nil
+                    && last?.role == .assistant && last?.isPending == false
+                    && last?.errorDescription == nil
+                    && !(last?.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
+                draftIsEmpty: draftIsEmpty,
+                send: { text in composerRequest = ChatComposerRequest(kind: .send(text)) }
+            )
+        }
+    }
+
     private var composer: some View {
         ChatComposer(
             model: model,
@@ -1506,7 +1660,8 @@ struct DesktopConversationView: View {
                 ? nil : { openDestination(.connections) },
             // Settings › Plan & billing until the Upgrade sheet lands
             // (Phase 3): the one place in the app that can change a plan.
-            openUpgrade: { DesktopSettingsRouter.open(.billing, using: openSettings) }
+            openUpgrade: { DesktopSettingsRouter.open(.billing, using: openSettings) },
+            draftIsEmptyChanged: { draftIsEmpty = $0 }
         )
         // The call is drawn inside the composer's own shell (§5.8): announced
         // here, it turns the controls row into the call bar.

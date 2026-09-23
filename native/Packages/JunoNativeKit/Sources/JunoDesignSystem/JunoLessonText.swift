@@ -31,8 +31,17 @@ public struct JunoLessonText: View {
         self.streaming = streaming
     }
 
+    @Environment(\.junoProseStyle) private var style
+    @Environment(\.junoTextScale) private var textScale
+    @Environment(\.junoFindHighlight) private var find
+    @Environment(\.junoCitationCount) private var citations
+
     public var body: some View {
-        VStack(alignment: .leading, spacing: JunoMarkdownText.blockSpacing) {
+        let bases = findBases
+        VStack(
+            alignment: .leading,
+            spacing: style == .reading ? JunoProseMetrics.blockGap * textScale : JunoMarkdownText.blockSpacing
+        ) {
             ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
                 switch segment {
                 case .markdown(let text):
@@ -41,12 +50,27 @@ public struct JunoLessonText: View {
                     // finished lesson, which says the wrong thing about where
                     // the writing is happening.
                     JunoMarkdownText(text, streaming: streaming && index == lastMarkdownIndex)
+                        .environment(\.junoFindHighlight, find?.shifted(by: bases[safe: index] ?? 0))
                 case .block(let parsed):
                     JunoLearningBlockView(parsed: parsed, messageStreaming: streaming)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Where each prose run's find matches start within the reply.
+    private var findBases: [Int] {
+        guard let find, find.isActive else { return [] }
+        var running = 0
+        return segments.map { segment in
+            defer {
+                if case .markdown(let text) = segment {
+                    running += JunoFindText.count(of: find.query, inMarkdown: text, citations: citations)
+                }
+            }
+            return running
+        }
     }
 
     private var lastMarkdownIndex: Int? {

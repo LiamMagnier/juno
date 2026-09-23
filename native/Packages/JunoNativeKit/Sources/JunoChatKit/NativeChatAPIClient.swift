@@ -251,11 +251,18 @@ public struct NativeChatSource: Equatable, Sendable {
     public let title: String
     public let url: URL
     public let snippet: String
+    /// True only when the model was handed this source as a numbered corpus
+    /// and told to cite it as `[n]` — the web's `ClientSource.cited`. Only then
+    /// does a bracket in the answer mean this source; on every other path a
+    /// `[3]` is text, and drawing it as a citation would point at an arbitrary,
+    /// wrong source. Absent on older rows, which degrades to plain text.
+    public let cited: Bool
 
-    public init(title: String, url: URL, snippet: String) {
+    public init(title: String, url: URL, snippet: String, cited: Bool = false) {
         self.title = title
         self.url = url
         self.snippet = snippet
+        self.cited = cited
     }
 }
 
@@ -317,6 +324,11 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     /// carries them. The transcript reads them from the artifact store once
     /// they merge there; until then this is the only copy on the device.
     public let artifacts: [NativeStreamedArtifact]
+    /// The run as the server persisted it — every activity row, in emission
+    /// order — and the reasoning's parts. What the run block and the Activity
+    /// panel read once the reply is done.
+    public let activity: [NativeChatActivity]
+    public let reasoningParts: [String]?
 
     /// The share of this turn's input that was served from cache, or nil when
     /// the split is unknown. Guards the divide: a turn with no prompt tokens
@@ -340,7 +352,9 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         cacheReadTokens: Int? = nil,
         cacheWriteTokens: Int? = nil,
         attachments: [NativeChatAttachment] = [],
-        artifacts: [NativeStreamedArtifact] = []
+        artifacts: [NativeStreamedArtifact] = [],
+        activity: [NativeChatActivity] = [],
+        reasoningParts: [String]? = nil
     ) {
         self.id = id
         self.content = content
@@ -356,6 +370,8 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         self.cacheWriteTokens = cacheWriteTokens
         self.attachments = attachments
         self.artifacts = artifacts
+        self.activity = activity
+        self.reasoningParts = reasoningParts
     }
 }
 
@@ -434,6 +450,8 @@ public struct NativeStreamedArtifact: Equatable, Sendable, Identifiable {
 public struct NativeChatActivity: Equatable, Sendable, Identifiable {
     public enum Kind: String, Equatable, Sendable {
         case context, model, reasoning, search, visit, write, usage, done, warning, tool
+        /// The artifact verification receipt.
+        case artifact
         /// A kind this build does not know. Kept rather than dropped so a
         /// server that adds one does not make the step vanish from the screen.
         case unknown
@@ -444,13 +462,53 @@ public struct NativeChatActivity: Equatable, Sendable, Identifiable {
     public let title: String
     public let detail: String?
     public let url: String?
+    /// When the server emitted it. What the run's honest timing is measured
+    /// from (`Thought for 12s`), so it is never guessed when absent.
+    public var createdAt: Date?
+    /// The rework's typed timeline (Tool calls & research SPEC §2.4). All
+    /// optional and additive: today's server sends none of them, and a row
+    /// without them is read by the legacy adapter in ``NativeRunView``.
+    public var seq: Int?
+    public var round: Int?
+    public var call: NativeToolCall?
+    public var segment: NativeReasoningSegment?
+    public var commentary: NativeRunCommentary?
+    public var notice: NativeRunNotice?
+    /// The redacted arguments and result of one connector call.
+    public var tool: NativeToolDetail?
+    /// The saved facts about the reader this turn used.
+    public var memory: [NativeMemoryReceipt]
 
-    public init(id: String, kind: Kind, title: String, detail: String?, url: String?) {
+    public init(
+        id: String,
+        kind: Kind,
+        title: String,
+        detail: String?,
+        url: String?,
+        createdAt: Date? = nil,
+        seq: Int? = nil,
+        round: Int? = nil,
+        call: NativeToolCall? = nil,
+        segment: NativeReasoningSegment? = nil,
+        commentary: NativeRunCommentary? = nil,
+        notice: NativeRunNotice? = nil,
+        tool: NativeToolDetail? = nil,
+        memory: [NativeMemoryReceipt] = []
+    ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.detail = detail
         self.url = url
+        self.createdAt = createdAt
+        self.seq = seq
+        self.round = round
+        self.call = call
+        self.segment = segment
+        self.commentary = commentary
+        self.notice = notice
+        self.tool = tool
+        self.memory = memory
     }
 }
 
@@ -485,6 +543,10 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     /// the generation is over but its end is not in the log. Neither is
     /// terminal: the stream carries on (or has already ended) around it.
     case resume(available: Bool?, refetch: Bool?)
+    /// The SSE `id:` of the frame just delivered: the generation's frame
+    /// sequence number, which a reconnect resumes after
+    /// (`/api/chat/stream/{id}?after=seq`). Not a frame of its own.
+    case sequence(Int)
     case ping
 }
 
@@ -787,7 +849,7 @@ extension NativeAuthRuntime: NativeChatRequestSending {}
 /// never re-POSTed automatically, so reconnect cannot duplicate or double-bill
 /// a generation that continues on the server.
 public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
-    private let sender: any NativeAuthenticatedRequestSending
+    let sender: any NativeAuthenticatedRequestSending
     private let streamer: any NativeAuthenticatedByteStreaming
 
     public init(
@@ -1159,22 +1221,31 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// event kind the normal path learns to handle later.
     private func streamEvents(
         path: String = "/api/chat",
+        method: HTTPMethod = .post,
+        queryItems: [URLQueryItem] = [],
         mediaModality: NativeMediaProgress.Modality = .image,
-        body: Data,
+        body: Data?,
         for accountID: AccountID
     ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
-        let response = try await streamer.stream(
-            try NativeBearerRequest(
+        let request: NativeBearerRequest
+        if let body {
+            request = try NativeBearerRequest(
                 path: path,
-                method: .post,
+                method: method,
                 headers: try HTTPHeaders([
                     "Accept": "text/event-stream",
                     "Content-Type": "application/json",
                 ]),
                 body: body
-            ),
-            for: accountID
-        )
+            )
+        } else {
+            request = try NativeBearerRequest(
+                path: path,
+                queryItems: queryItems,
+                headers: try HTTPHeaders(["Accept": "text/event-stream"])
+            )
+        }
+        let response = try await streamer.stream(request, for: accountID)
         guard (200...299).contains(response.statusCode) else {
             throw try await serverError(response)
         }
@@ -1187,17 +1258,22 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 do {
                     var parser = ChatSSEParser()
                     var terminal = false
+                    // A frame's SSE `id:` is its sequence number in the
+                    // generation's log; it follows the frame it names, so a
+                    // reader that records it has processed that frame.
+                    func deliver(_ frame: ChatSSEFrame) throws {
+                        let event = try decodeEvent(frame.payload, mediaModality: mediaModality)
+                        continuation.yield(event)
+                        if let sequence = frame.id { continuation.yield(.sequence(sequence)) }
+                        if event.isTerminal { terminal = true }
+                    }
                     for try await byte in response.bytes {
-                        for payload in try parser.consume(byte) {
-                            let event = try decodeEvent(payload, mediaModality: mediaModality)
-                            continuation.yield(event)
-                            if event.isTerminal { terminal = true }
+                        for frame in try parser.consume(byte) {
+                            try deliver(frame)
                         }
                     }
-                    for payload in try parser.finish() {
-                        let event = try decodeEvent(payload, mediaModality: mediaModality)
-                        continuation.yield(event)
-                        if event.isTerminal { terminal = true }
+                    for frame in try parser.finish() {
+                        try deliver(frame)
                     }
                     guard terminal else {
                         throw NativeChatAPIError.streamEndedWithoutTerminalEvent
@@ -1209,6 +1285,55 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             }
             continuation.onTermination = { @Sendable _ in relay.cancel() }
         }
+    }
+
+    // MARK: Resuming a stream
+
+    /// The generation still running for a conversation, if any — the web's
+    /// `GET /api/chat/stream/active`. Nil on a 404, which is also the answer
+    /// for a generation whose process has died.
+    public func activeGeneration(
+        conversationID: String,
+        for accountID: AccountID
+    ) async throws -> String? {
+        try requireIdentifier(conversationID)
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/chat/stream/active",
+                queryItems: [URLQueryItem(name: "conversationId", value: conversationID)]
+            ),
+            for: accountID
+        )
+        if response.statusCode == 404 { return nil }
+        guard (200...299).contains(response.statusCode) else {
+            throw serverError(response)
+        }
+        guard let wire = try? JSONDecoder().decode(ActiveGenerationWire.self, from: response.body),
+            validText(wire.generationId, maximum: 120)
+        else { throw NativeChatAPIError.malformedResponse }
+        return wire.generationId
+    }
+
+    /// A dropped generation's frames after `after`, then the live tail —
+    /// `GET /api/chat/stream/{generationId}?after={seq}`. The same frames the
+    /// original stream carried, under the same sequence numbers, so they go
+    /// through the same handling. A 404 (unknown, foreign, private or swept)
+    /// throws ``NativeChatAPIError/server(statusCode:code:message:retryable:)``
+    /// with status 404; a generation that is over with no end in the log sends
+    /// one `resume` frame with `refetch: true`.
+    public func resumeEvents(
+        generationID: String,
+        after sequence: Int,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
+        try requireIdentifier(generationID)
+        return try await streamEvents(
+            path: "/api/chat/stream/\(generationID)",
+            method: .get,
+            queryItems: [URLQueryItem(name: "after", value: String(max(0, sequence)))],
+            body: nil,
+            for: accountID
+        )
     }
 
     public func cancelGeneration(
@@ -1319,7 +1444,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 cacheReadTokens: message.cacheReadTokens,
                 cacheWriteTokens: message.cacheWriteTokens,
                 attachments: (message.attachments?.elements ?? []).compactMap(decodeAttachment),
-                artifacts: (envelope.artifacts?.elements ?? []).compactMap(decodeArtifact)
+                artifacts: (envelope.artifacts?.elements ?? []).compactMap(decodeArtifact),
+                activity: (message.activity?.elements ?? []).compactMap { $0.activity(parseDate: parseDate) },
+                reasoningParts: message.reasoningParts
             ))
         case "error":
             guard let message = envelope.messageText ?? envelope.error,
@@ -1334,14 +1461,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 userMessageID: envelope.userMessageId
             )
         case "activity":
-            guard let event = envelope.event else { return .ping }
-            return .activity(NativeChatActivity(
-                id: event.id,
-                kind: NativeChatActivity.Kind(rawValue: event.kind) ?? .unknown,
-                title: event.title,
-                detail: event.detail,
-                url: event.url
-            ))
+            guard let event = envelope.event?.activity(parseDate: parseDate) else { return .ping }
+            return .activity(event)
         case "approval":
             guard let approval = envelope.approval else {
                 throw NativeChatAPIError.malformedResponse
@@ -1405,7 +1526,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
 
     /// One `done`-frame artifact, or nil when it is malformed. Lossy for the
     /// same reason as ``decodeAttachment(_:)``.
-    private func decodeArtifact(_ wire: ArtifactWire) -> NativeStreamedArtifact? {
+    func decodeArtifact(_ wire: ChatArtifactWire) -> NativeStreamedArtifact? {
         guard validText(wire.id, maximum: 256),
             validText(wire.identifier, maximum: 256),
             validText(wire.type, maximum: 40),
@@ -1438,7 +1559,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         )
     }
 
-    private func decodeSource(_ wire: SourceWire) throws -> NativeChatSource {
+    func decodeSource(_ wire: ChatSourceWire) throws -> NativeChatSource {
         guard validText(wire.title, maximum: 2_000),
             wire.snippet.utf8.count <= 32 * 1_024,
             let url = URL(string: wire.url),
@@ -1446,7 +1567,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             scheme == "https" || scheme == "http",
             url.host != nil
         else { throw NativeChatAPIError.malformedResponse }
-        return NativeChatSource(title: wire.title, url: url, snippet: wire.snippet)
+        return NativeChatSource(title: wire.title, url: url, snippet: wire.snippet, cited: wire.cited == true)
     }
 
     private func decodeApproval(_ wire: ApprovalWire) throws -> NativeChatApproval {
@@ -1504,7 +1625,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         )
     }
 
-    private func serverError(_ response: HTTPResponse) -> NativeChatAPIError {
+    func serverError(_ response: HTTPResponse) -> NativeChatAPIError {
         let body = try? JSONDecoder().decode(ServerErrorWire.self, from: response.body)
         let message = body?.message ?? body?.error ?? HTTPURLResponse.localizedString(
             forStatusCode: response.statusCode
@@ -1539,7 +1660,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         ))
     }
 
-    private func requireIdentifier(_ value: String) throws {
+    func requireIdentifier(_ value: String) throws {
         guard validText(value, maximum: 256), value.utf8.allSatisfy({ byte in
             switch byte {
             case 45, 46, 47, 48...57, 58, 64, 65...90, 95, 97...122: true
@@ -1548,7 +1669,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         }) else { throw NativeChatAPIError.invalidIdentifier(value) }
     }
 
-    private func validText(_ value: String, maximum: Int) -> Bool {
+    func validText(_ value: String, maximum: Int) -> Bool {
         !value.isEmpty && value.utf8.count <= maximum
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
@@ -1556,14 +1677,14 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     /// Optional descriptive copy: absent, blank, or over-long all collapse to
     /// nil. These fields decorate the UI rather than drive it, so an oversized
     /// one is dropped instead of failing the whole manifest.
-    private func nonEmpty(_ value: String?, maximum: Int) -> String? {
+    func nonEmpty(_ value: String?, maximum: Int) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard validText(trimmed, maximum: maximum) else { return nil }
         return trimmed
     }
 
-    private func parseDate(_ value: String) -> Date? {
+    func parseDate(_ value: String) -> Date? {
         let precise = ISO8601DateFormatter()
         precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let value = precise.date(from: value) { return value }
@@ -1754,12 +1875,25 @@ private struct PrivateGenerationRequestWire: Encodable {
     let proMode: Bool?
 }
 private struct CancelRequestWire: Encodable { let generationId: String }
+private struct ActiveGenerationWire: Decodable { let generationId: String }
 private struct CancelResponseWire: Decodable { let ok: Bool; let cancelled: Bool }
 
-private struct SourceWire: Decodable {
+struct ChatSourceWire: Decodable {
     let title: String
     let url: String
     let snippet: String
+    let cited: Bool?
+
+    private enum CodingKeys: String, CodingKey { case title, url, snippet, cited }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        url = try container.decode(String.self, forKey: .url)
+        // Provider grounding can arrive with no snippet at all.
+        snippet = (try? container.decodeIfPresent(String.self, forKey: .snippet)) ?? ""
+        cited = try? container.decodeIfPresent(Bool.self, forKey: .cited)
+    }
 }
 
 private struct ApprovalWire: Decodable {
@@ -1802,7 +1936,7 @@ private struct ApprovalDecisionResponseWire: Decodable {
 /// whole decode. For the parts of a frame that decorate the answer — its
 /// files, its artifacts — where one bad entry must not cost the reader the
 /// answer itself.
-private struct LossyList<Element: Decodable>: Decodable {
+struct LossyList<Element: Decodable>: Decodable {
     let elements: [Element]
 
     init(from decoder: any Decoder) throws {
@@ -1840,7 +1974,7 @@ private struct AttachmentWire: Decodable {
 }
 
 /// The web's `ClientArtifact`.
-private struct ArtifactWire: Decodable {
+struct ChatArtifactWire: Decodable {
     struct VersionWire: Decodable {
         let version: Int
         let content: String
@@ -1867,13 +2001,7 @@ private struct FrameTypeWire: Decodable {
 }
 
 private struct EventEnvelopeWire: Decodable {
-    struct ActivityWire: Decodable {
-        let id: String
-        let kind: String
-        let title: String
-        let detail: String?
-        let url: String?
-    }
+    typealias ActivityWire = NativeActivityWire
     struct Message: Decodable {
         let id: String
         let role: String
@@ -1881,7 +2009,7 @@ private struct EventEnvelopeWire: Decodable {
         let reasoning: String?
         let model: String?
         let createdAt: String
-        let sources: [SourceWire]?
+        let sources: [ChatSourceWire]?
         let finishReason: String?
         let promptTokens: Int?
         let completionTokens: Int?
@@ -1893,11 +2021,14 @@ private struct EventEnvelopeWire: Decodable {
         /// Lossy, so one malformed file entry cannot fail the whole message —
         /// which would fail the `done` frame, and with it the answer.
         let attachments: LossyList<AttachmentWire>?
+        /// The run as persisted, lossy for the same reason.
+        let activity: LossyList<NativeActivityWire>?
+        let reasoningParts: [String]?
 
         private enum CodingKeys: String, CodingKey {
             case id, role, content, reasoning, model, createdAt, sources, finishReason,
                  promptTokens, completionTokens, costUsd, cacheReadTokens, cacheWriteTokens,
-                 attachments
+                 attachments, activity, reasoningParts
         }
 
         init(from decoder: any Decoder) throws {
@@ -1908,7 +2039,7 @@ private struct EventEnvelopeWire: Decodable {
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
             model = try container.decodeIfPresent(String.self, forKey: .model)
             createdAt = try container.decode(String.self, forKey: .createdAt)
-            sources = try container.decodeIfPresent([SourceWire].self, forKey: .sources)
+            sources = try container.decodeIfPresent([ChatSourceWire].self, forKey: .sources)
             finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
             promptTokens = try container.decodeIfPresent(Int.self, forKey: .promptTokens)
             completionTokens = try container.decodeIfPresent(Int.self, forKey: .completionTokens)
@@ -1916,6 +2047,8 @@ private struct EventEnvelopeWire: Decodable {
             cacheReadTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadTokens)
             cacheWriteTokens = try container.decodeIfPresent(Int.self, forKey: .cacheWriteTokens)
             attachments = try? container.decodeIfPresent(LossyList<AttachmentWire>.self, forKey: .attachments)
+            activity = try? container.decodeIfPresent(LossyList<NativeActivityWire>.self, forKey: .activity)
+            reasoningParts = try? container.decodeIfPresent([String].self, forKey: .reasoningParts)
         }
     }
     let type: String
@@ -1924,7 +2057,7 @@ private struct EventEnvelopeWire: Decodable {
     let title: String?
     let generationId: String?
     let text: String?
-    let sources: [SourceWire]?
+    let sources: [ChatSourceWire]?
     let message: Message?
     let messageText: String?
     let event: ActivityWire?
@@ -1935,7 +2068,7 @@ private struct EventEnvelopeWire: Decodable {
     let stage: String?
     let pct: Double?
     /// `done` frames only. Lossy, like the message's attachments.
-    let artifacts: LossyList<ArtifactWire>?
+    let artifacts: LossyList<ChatArtifactWire>?
     /// `resume` frames only.
     let available: Bool?
     let refetch: Bool?
@@ -1958,7 +2091,7 @@ private struct EventEnvelopeWire: Decodable {
         // The server sends a fraction on some providers and a percentage on
         // others; both are tolerated and neither is invented when absent.
         pct = try container.decodeIfPresent(Double.self, forKey: .pct)
-        sources = try container.decodeIfPresent([SourceWire].self, forKey: .sources)
+        sources = try container.decodeIfPresent([ChatSourceWire].self, forKey: .sources)
         message = try? container.decodeIfPresent(Message.self, forKey: .message)
         messageText = try? container.decodeIfPresent(String.self, forKey: .message)
         // Tolerant on purpose: an activity payload this build cannot read must
@@ -1967,7 +2100,7 @@ private struct EventEnvelopeWire: Decodable {
         approval = try? container.decodeIfPresent(ApprovalWire.self, forKey: .approval)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
-        artifacts = try? container.decodeIfPresent(LossyList<ArtifactWire>.self, forKey: .artifacts)
+        artifacts = try? container.decodeIfPresent(LossyList<ChatArtifactWire>.self, forKey: .artifacts)
         available = try? container.decodeIfPresent(Bool.self, forKey: .available)
         refetch = try? container.decodeIfPresent(Bool.self, forKey: .refetch)
     }
@@ -2002,7 +2135,13 @@ private struct ServerErrorWire: Decodable {
     }
 }
 
-private struct ChatSSEParser {
+/// One dispatched SSE event: its data, and its `id:` when it had one.
+struct ChatSSEFrame {
+    let payload: Data
+    let id: Int?
+}
+
+struct ChatSSEParser {
     // A done frame repeats the authoritative final message after the deltas.
     // Leave bounded JSON overhead above the 4 MiB message-content ceiling.
     private static let maximumLineBytes = 5 * 1_024 * 1_024
@@ -2010,8 +2149,10 @@ private struct ChatSSEParser {
     private var line = Data()
     private var dataLines: [Data] = []
     private var eventBytes = 0
+    /// The `id:` seen for the event being assembled.
+    private var pendingID: Int?
 
-    mutating func consume(_ byte: UInt8) throws -> [Data] {
+    mutating func consume(_ byte: UInt8) throws -> [ChatSSEFrame] {
         guard byte == 0x0A else {
             guard line.count < Self.maximumLineBytes else {
                 throw NativeChatAPIError.eventLineTooLarge
@@ -2022,25 +2163,34 @@ private struct ChatSSEParser {
         return try finishLine()
     }
 
-    mutating func finish() throws -> [Data] {
-        var events: [Data] = []
+    mutating func finish() throws -> [ChatSSEFrame] {
+        var events: [ChatSSEFrame] = []
         if !line.isEmpty { events.append(contentsOf: try finishLine()) }
         if !dataLines.isEmpty { events.append(try dispatch()) }
         return events
     }
 
-    private mutating func finishLine() throws -> [Data] {
+    private mutating func finishLine() throws -> [ChatSSEFrame] {
         if line.last == 0x0D { line.removeLast() }
         defer { line.removeAll(keepingCapacity: true) }
         if line.isEmpty {
-            return dataLines.isEmpty ? [] : [try dispatch()]
+            if dataLines.isEmpty {
+                // An event with an id and no data dispatches nothing.
+                pendingID = nil
+                return []
+            }
+            return [try dispatch()]
         }
         if line.first == 0x3A { return [] }
         let separator = line.firstIndex(of: 0x3A)
         let field = separator.map { line[..<$0] } ?? line[...]
-        guard field.elementsEqual(Data("data".utf8)) else { return [] }
         var value = separator.map { Data(line[line.index(after: $0)...]) } ?? Data()
         if value.first == 0x20 { value.removeFirst() }
+        if field.elementsEqual(Data("id".utf8)) {
+            pendingID = String(data: value, encoding: .utf8).flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            return []
+        }
+        guard field.elementsEqual(Data("data".utf8)) else { return [] }
         eventBytes += value.count
         guard eventBytes <= Self.maximumEventBytes else {
             throw NativeChatAPIError.eventPayloadTooLarge
@@ -2049,7 +2199,7 @@ private struct ChatSSEParser {
         return []
     }
 
-    private mutating func dispatch() throws -> Data {
+    private mutating func dispatch() throws -> ChatSSEFrame {
         guard !dataLines.isEmpty else { throw NativeChatAPIError.malformedResponse }
         var payload = Data()
         for (index, value) in dataLines.enumerated() {
@@ -2058,7 +2208,9 @@ private struct ChatSSEParser {
         }
         dataLines.removeAll(keepingCapacity: true)
         eventBytes = 0
+        let id = pendingID
+        pendingID = nil
         guard !payload.isEmpty else { throw NativeChatAPIError.malformedResponse }
-        return payload
+        return ChatSSEFrame(payload: payload, id: id)
     }
 }

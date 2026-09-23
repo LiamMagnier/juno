@@ -294,33 +294,37 @@ enum DesktopArtifactKindLabel {
 
 /// One panel the trailing dock holds. The dock shows one at a time; each
 /// remembers its own width.
-///
-/// Canvas today. The Thought panel (spec §6.6, brief §6.3) is the second, and
-/// arrives with Stage 4 as another case of ``DesktopDockPanel``.
 protocol TrailingDockPanel: Identifiable, Equatable {
     /// The defaults key this panel's width is kept under: `dock.canvas.width`.
     var widthKey: String { get }
 }
 
-/// What the conversation column docks beside its transcript.
+/// What the conversation column docks beside its transcript: an artifact's
+/// canvas, or a reply's Activity panel (the rework's name for the brief's
+/// Thought panel) — never both.
 enum DesktopDockPanel: TrailingDockPanel {
     case canvas(DesktopChatArtifact)
+    /// A reply's run, by message id, opened on a call when one is given.
+    case activity(messageID: String, focusCallID: String?)
 
     var id: String {
         switch self {
         case .canvas(let artifact): "canvas:\(artifact.id)"
+        case .activity(let messageID, _): "activity:\(messageID)"
         }
     }
 
     var widthKey: String {
         switch self {
         case .canvas: "dock.canvas.width"
+        case .activity: "dock.activity.width"
         }
     }
 
     var artifact: DesktopChatArtifact? {
         switch self {
         case .canvas(let artifact): artifact
+        case .activity: nil
         }
     }
 }

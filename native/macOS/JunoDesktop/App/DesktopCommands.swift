@@ -25,6 +25,9 @@ struct DesktopWorkspaceActions {
     var attachScreenshot: (() -> Void)? = nil
     /// ⌘U: the composer's file picker. Nil wherever no composer is showing.
     var attachFiles: (() -> Void)? = nil
+    /// ⌘F, ⌘G and ⇧⌘G: find in the conversation on screen. Nil wherever
+    /// there is none, which disables the three items.
+    var findInConversation: ((DesktopFindCommand.Kind) -> Void)? = nil
 }
 
 /// What the menu bar can do to the focused *window*, whichever product it is
@@ -189,6 +192,29 @@ struct JunoDesktopCommands: Commands {
                     DesktopQuickEntryController.shared.toggle()
                 }
                 .keyboardShortcut(" ", modifiers: [.option])
+            }
+        }
+
+        // Edit › Find in Conversation ⌘F · Find Next ⌘G · Find Previous ⇧⌘G
+        // (§6.14). Disabled — and so not claiming the keys — wherever no
+        // conversation is on screen.
+        CommandGroup(after: .pasteboard) {
+            Section {
+                Button("Find in Conversation…") {
+                    actions?.findInConversation?(.open)
+                }
+                .keyboardShortcut("f", modifiers: [.command])
+                .disabled(actions?.findInConversation == nil)
+                Button("Find Next") {
+                    actions?.findInConversation?(.next)
+                }
+                .keyboardShortcut("g", modifiers: [.command])
+                .disabled(actions?.findInConversation == nil)
+                Button("Find Previous") {
+                    actions?.findInConversation?(.previous)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(actions?.findInConversation == nil)
             }
         }
 

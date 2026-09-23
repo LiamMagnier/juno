@@ -88,12 +88,6 @@ struct DesktopTranscript: View {
     /// have to decide when to take them out again.
     let voiceMessages: [NativeChatMessage]
     let messageActions: NativeMessageActionsClient?
-    /// Suggests what to ask next, under a finished reply.
-    let followUpClient: NativeFollowUpClient?
-    /// Picking a suggestion seeds the composer through the same binding the
-    /// sidebar's "start from this" already uses, rather than a second path into
-    /// the same text field.
-    @Binding var draftPrompt: String?
     let accountID: AccountID
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     /// Asks the conversation column to dock the canvas. A row cannot own that
@@ -112,8 +106,24 @@ struct DesktopTranscript: View {
     /// the composer's empty field (§5.9). The row owns its editor; this only
     /// says "now".
     var editLastRequest: UUID? = nil
+    /// ⌘F: what is found, and which match is current.
+    var find: TranscriptFindModel? = nil
+    /// Opens the Activity panel on a reply's run — by message, and on a call
+    /// when one is given.
+    var openActivity: ((String, String?) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
+    /// Where the transcript is scrolled. It starts at the newest turn and
+    /// follows the stream only while the reader is there (spec §6.13).
+    @State private var position = ScrollPosition(edge: .bottom)
+    /// The reader is within 24pt of the end.
+    @State private var atBottom = true
+    /// New content keeps the view at the end: true until the reader scrolls
+    /// away, and again when they come back or send.
+    @State private var follows = true
+    /// The reader's hand is on the scroll view, so a change of position is
+    /// theirs rather than the stream's.
+    @State private var userScrolling = false
     @State private var speechPlayback = DesktopSpeechPlayback()
     /// The reply a Branch ▸ Into a New Saved Chat is on its way from.
     @State private var branchingMessageID: String?
@@ -157,172 +167,246 @@ struct DesktopTranscript: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // The web's reading column, metric for metric: `max-w-3xl`
-                // (768pt) at `space-y-6` (24pt) — see `message-list.tsx`.
-                LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
-                    ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
-                        index, message in
-                        storeRow(message)
-                            .modifier(DesktopMessageRise(rises: index >= animateFrom))
-                            .id(message.id)
-                    }
-
-                    // A private chat's turns, or a first turn on its way to
-                    // the store. Those present when the transcript is built are
-                    // the handoff's (§10.1), and rise a beat after it starts.
-                    ForEach(Array(localMessages.enumerated()), id: \.element.id) { index, message in
-                        localRow(message, isNewest: localTurnsArePrivate && message.id == localMessages.last?.id
-                            && message.role == .assistant)
-                            .modifier(
-                                DesktopMessageRise(
-                                    rises: index >= localAnimateFrom,
-                                    delay: localAnimateFrom == 0 ? DesktopChoreography.firstTurnBeat : 0
-                                )
-                            )
-                            .id(message.id)
-                    }
-
-                    if let localError {
-                        DesktopChatError(message: localError, canRetry: false, retry: {})
-                    }
-
-                    // Connector approvals are not prose and must stay above the
-                    // pending answer they block. The receipt is recovered from
-                    // `/api/approvals` as well as from the live stream, so this
-                    // card remains answerable after a cold launch or a missed
-                    // SSE frame.
-                    if showsStoreState, let conversationID = model.selectedConversationID {
-                        ForEach(model.chatApprovals(for: conversationID)) { approval in
-                            NativeChatApprovalCard(
-                                approval: approval,
-                                isBusy: model.chatApprovalInFlightID == approval.id,
-                                errorMessage: model.chatApprovalError(for: approval.id),
-                                canAllowScope: model.canAllowChatApprovalScope(approval),
-                                decide: { decision in
-                                    Task {
-                                        await model.decideChatApproval(approval, decision: decision)
-                                    }
-                                }
-                            )
-                            .frame(maxWidth: Self.readingWidth, alignment: .leading)
-                        }
-                    }
-
-                    // The call, in the transcript it belongs to. Same rows, same
-                    // reading column, appended after the persisted turns — the
-                    // web's arrangement, and the reason it has no transcript
-                    // pane: a spoken conversation is the conversation, not a
-                    // second view of one.
-                    ForEach(voiceMessages) { message in
-                        DesktopMessageRow(
-                            message: message,
-                            isVoice: true,
-                            isNewest: false,
-                            modelDisplayName: nil,
-                            switchableModels: [],
-                            // A spoken turn has no row anywhere until the call
-                            // is hung up and filed: nothing to act on yet.
-                            actions: MessageRowActions(),
-                            branchPosition: nil,
-                            isGenerating: model.isGenerating
-                        )
-                        // A line the recognizer has not finalized is a
-                        // hypothesis it is still rewriting several times a
-                        // second, and it is frequently wrong. Dimmed, it reads
-                        // as something being heard; at full strength it reads as
-                        // something that was said.
-                        .opacity(message.isPending ? 0.55 : 1)
+        ScrollView {
+            // The web's reading column, metric for metric: `max-w-3xl`
+            // (768pt) at `space-y-6` (24pt) — see `message-list.tsx`.
+            LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
+                ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
+                    index, message in
+                    storeRow(message)
+                        .modifier(DesktopMessageRise(rises: index >= animateFrom))
+                        .environment(\.junoFindHighlight, find?.highlight(for: message.id))
                         .id(message.id)
-                    }
+                }
 
-                    if showsStoreState, model.isGenerating, !model.researchActivity.isEmpty {
-                        DesktopResearchActivity(items: model.researchActivity)
-                    }
-
-                    // Under the last reply, once it has settled. Inside the stack
-                    // so it scrolls with the transcript rather than floating over
-                    // it, and clamped to the reading column like everything else.
-                    if showsStoreState, let conversationID = model.selectedConversationID {
-                        NativeFollowUpStrip(
-                            conversationID: conversationID,
-                            accountID: accountID,
-                            client: followUpClient,
-                            ready: !model.isGenerating
-                                && model.selectedMessages.last?.role == .assistant,
-                            onPick: { draftPrompt = $0 }
+                // A private chat's turns, or a first turn on its way to
+                // the store. Those present when the transcript is built are
+                // the handoff's (§10.1), and rise a beat after it starts.
+                ForEach(Array(localMessages.enumerated()), id: \.element.id) { index, message in
+                    localRow(message, isNewest: localTurnsArePrivate && message.id == localMessages.last?.id
+                        && message.role == .assistant)
+                        .modifier(
+                            DesktopMessageRise(
+                                rises: index >= localAnimateFrom,
+                                delay: localAnimateFrom == 0 ? DesktopChoreography.firstTurnBeat : 0
+                            )
                         )
-                        .frame(maxWidth: Self.readingWidth, alignment: .leading)
-                    }
+                        .environment(\.junoFindHighlight, find?.highlight(for: message.id))
+                        .id(message.id)
+                }
 
-                    if showsStoreState, let error = model.chatErrorDescription {
-                        DesktopChatError(
-                            message: error,
-                            canRetry: model.canRetrySelectedConversation,
-                            retry: {
-                                guard let id = model.selectedConversationID else { return }
-                                model.retryLastMessage(conversationID: id)
-                            }
-                        )
-                    }
+                // A private chat's failure, where its reply would have been.
+                if let localError {
+                    DesktopTurnError(message: localError)
+                }
 
-                    if let actionError {
-                        DesktopChatError(
-                            message: actionError,
-                            canRetry: false,
-                            retry: {}
-                        )
+                // Approvals are drawn inside the reply they block. One
+                // recovered from `/api/approvals` with no reply on screen to
+                // hold it yet — a cold launch mid-wait — waits here, still
+                // answerable.
+                if showsStoreState, newestReplyID == nil, let conversationID = model.selectedConversationID {
+                    ForEach(model.chatApprovals(for: conversationID).filter(\.isPending)) { approval in
+                        approvalCard(approval)
                     }
+                }
 
-                    Color.clear
-                        .frame(height: 1)
-                        .id("transcript-bottom")
+                // The call, in the transcript it belongs to. Same rows, same
+                // reading column, appended after the persisted turns — the
+                // web's arrangement, and the reason it has no transcript
+                // pane: a spoken conversation is the conversation, not a
+                // second view of one.
+                ForEach(voiceMessages) { message in
+                    DesktopMessageRow(
+                        message: message,
+                        isVoice: true,
+                        isNewest: false,
+                        modelDisplayName: nil,
+                        switchableModels: [],
+                        // A spoken turn has no row anywhere until the call
+                        // is hung up and filed: nothing to act on yet.
+                        actions: MessageRowActions(),
+                        branchPosition: nil,
+                        isGenerating: model.isGenerating
+                    )
+                    // A line the recognizer has not finalized is a
+                    // hypothesis it is still rewriting several times a
+                    // second, and it is frequently wrong. Dimmed, it reads
+                    // as something being heard; at full strength it reads as
+                    // something that was said.
+                    .opacity(message.isPending ? 0.55 : 1)
+                    .id(message.id)
                 }
-                .modifier(TranscriptColumn())
-                .padding(.vertical, JunoSpace.section)
-            }
-            // `initial: true` so a conversation opens at its latest turn even when
-            // the messages were already in hand — which is the case every time the
-            // canvas takes the whole column on a narrow window and gives it back.
-            .onChange(of: model.selectedMessages, initial: true) { previous, current in
-                noteMessages(from: previous.count, to: current.count)
-                // Animated only when a turn actually arrived. The other two cases
-                // are the transcript being drawn for the first time and a reply
-                // growing token by token — travelling from a position the reader
-                // never saw reads as the page moving on its own, and an animated
-                // scroll restarted several times a second never arrives anywhere.
-                guard current.count != previous.count else {
-                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                    return
+
+                // A failure no reply is carrying — rare now that the store
+                // writes its error onto the reply it ended.
+                if showsStoreState, let error = orphanedError {
+                    DesktopTurnError(
+                        message: error,
+                        retry: model.canRetrySelectedConversation ? {
+                            guard let id = model.selectedConversationID else { return }
+                            model.retryLastMessage(conversationID: id)
+                        } : nil
+                    )
                 }
-                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+
+                if let actionError {
+                    DesktopActionFailure(message: actionError) { self.actionError = nil }
                 }
             }
-            // Unanimated, unlike a sent message: a partial transcript lands
-            // several times a second, and an animated scroll restarted that
-            // often never arrives anywhere.
-            .onChange(of: voiceMessages) { _, _ in
-                proxy.scrollTo("transcript-bottom", anchor: .bottom)
-            }
-            // A private turn arriving, or a private reply growing: the same
-            // two cases as the store's messages above.
-            .onChange(of: localMessages) { previous, current in
-                if current.count != previous.count {
-                    localAnimateFrom = current.count < previous.count ? current.count : previous.count
-                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                    }
-                } else {
-                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
-                }
-            }
-            .onChange(of: model.chatPhase) { _, _ in
-                proxy.scrollTo("transcript-bottom", anchor: .bottom)
-            }
-            .onDisappear { speechPlayback.stop() }
+            .scrollTargetLayout()
+            .modifier(TranscriptColumn())
+            .padding(.bottom, JunoSpace.section)
         }
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .contentMargins(.top, JunoSpace.section, for: .scrollContent)
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            Self.isAtBottom(geometry)
+        } action: { _, isAtBottom in
+            atBottom = isAtBottom
+            if userScrolling { follows = isAtBottom }
+        }
+        // The stream growing the reply: kept in view only while following.
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
+            guard follows, !userScrolling, new > old else { return }
+            position.scrollTo(edge: .bottom)
+        }
+        .onScrollPhaseChange { _, phase in
+            switch phase {
+            case .tracking, .interacting, .decelerating:
+                userScrolling = true
+            case .idle, .animating:
+                if userScrolling { follows = atBottom }
+                userScrolling = false
+            @unknown default:
+                userScrolling = false
+            }
+        }
+        .overlay(alignment: .bottom) {
+            ScrollToLatestButton(isShown: !atBottom && !model.selectedMessages.isEmpty) {
+                follows = true
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+            .padding(.bottom, 12)
+            .animation(JunoMotion.reduced(JunoMotion.base, when: reduceMotion, tier: .tint), value: atBottom)
+        }
+        .onChange(of: model.selectedMessages, initial: true) { previous, current in
+            noteMessages(from: previous.count, to: current.count)
+            // A turn arriving is the reader's own send, or its reply's
+            // placeholder: back to the end, animated. Tokens growing a reply
+            // are the geometry handler's.
+            guard current.count != previous.count else { return }
+            follows = true
+            // History landing — a conversation opening, a sync catching up —
+            // is placed at its end at once; travelling through it from a
+            // position the reader never saw reads as the page moving on its
+            // own. Only a turn arriving is animated.
+            if previous.isEmpty || current.count - previous.count > 2 {
+                position.scrollTo(edge: .bottom)
+            } else {
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+        }
+        .onChange(of: model.selectedConversationID) { _, _ in
+            follows = true
+            position.scrollTo(edge: .bottom)
+        }
+        // A partial spoken line lands several times a second: unanimated.
+        .onChange(of: voiceMessages) { _, _ in
+            guard follows else { return }
+            position.scrollTo(edge: .bottom)
+        }
+        // A private turn arriving, or a private reply growing.
+        .onChange(of: localMessages) { previous, current in
+            if current.count != previous.count {
+                localAnimateFrom = current.count < previous.count ? current.count : previous.count
+                follows = true
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+        }
+        // ⌘F's current match, brought into view.
+        .onChange(of: find?.currentMatch) { _, match in
+            guard let match else { return }
+            follows = false
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                position.scrollTo(id: match.messageID, anchor: .center)
+            }
+        }
+        // "Response complete, N words." on the edge from writing to done —
+        // the web's announcer.
+        .onChange(of: model.isGenerating) { wasGenerating, isGenerating in
+            guard wasGenerating, !isGenerating,
+                let last = model.selectedMessages.last, last.role == .assistant,
+                last.errorDescription == nil
+            else { return }
+            let words = NativeMessageContent.plainText(of: last.content)
+                .split(whereSeparator: \.isWhitespace).count
+            Self.announce("Response complete, \(words) \(words == 1 ? "word" : "words").")
+        }
+        .onDisappear { speechPlayback.stop() }
+    }
+
+    /// Within 24pt of the end of the content, above the composer's inset.
+    static func isAtBottom(_ geometry: ScrollGeometry) -> Bool {
+        let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height - geometry.contentInsets.bottom
+        return visibleBottom >= geometry.contentSize.height - 24
+    }
+
+    /// The store's error, when no reply on screen carries it and it is not a
+    /// reconnect in progress (whose own line says so).
+    private var orphanedError: String? {
+        guard let error = model.chatErrorDescription, model.chatPhase != .reconnecting,
+            !model.isGenerating
+        else { return nil }
+        let messages = model.selectedMessages
+        if messages.contains(where: { $0.errorDescription != nil }) { return nil }
+        if let lastUser = messages.last(where: { $0.role == .user }),
+            model.isUnsentMessage(lastUser.id, in: lastUser.conversationID)
+        {
+            return nil
+        }
+        return error
+    }
+
+    private func approvalCard(_ approval: NativeChatApproval) -> some View {
+        DesktopApprovalCard(
+            approval: approval,
+            isBusy: model.chatApprovalInFlightID == approval.id,
+            errorMessage: model.chatApprovalError(for: approval.id),
+            canAllowScope: model.canAllowChatApprovalScope(approval),
+            decide: { decision in
+                Task { await model.decideChatApproval(approval, decision: decision) }
+            }
+        )
+    }
+
+    /// The approvals a reply is blocked on: every pending one, and those
+    /// raised since its question — the ones that belong to this turn.
+    private func approvals(for message: NativeChatMessage) -> MessageRowApprovals {
+        guard showsStoreState, message.id == newestReplyID,
+            let conversationID = model.selectedConversationID
+        else { return MessageRowApprovals() }
+        let asked = model.selectedMessages.last(where: { $0.role == .user })?.createdAt ?? .distantPast
+        let approvals = model.chatApprovals(for: conversationID).filter {
+            $0.isPending || $0.createdAt >= asked
+        }
+        guard !approvals.isEmpty else { return MessageRowApprovals() }
+        return MessageRowApprovals(
+            approvals: approvals,
+            inFlightID: model.chatApprovalInFlightID,
+            error: { model.chatApprovalError(for: $0) },
+            canAllowScope: { model.canAllowChatApprovalScope($0) },
+            decide: { approval, decision in
+                Task { await model.decideChatApproval(approval, decision: decision) }
+            }
+        )
     }
 
     // MARK: Rows
@@ -341,7 +425,9 @@ struct DesktopTranscript: View {
             isSpeaking: speechPlayback.playingMessageID == message.id,
             isBranching: branchingMessageID == message.id,
             isUnsent: model.isUnsentMessage(message.id, in: message.conversationID),
-            editRequest: message.id == lastUserMessageID ? editLastRequest : nil
+            editRequest: message.id == lastUserMessageID ? editLastRequest : nil,
+            approvals: approvals(for: message),
+            isRecovering: message.isPending && model.chatPhase == .reconnecting
         )
     }
 
@@ -379,6 +465,17 @@ struct DesktopTranscript: View {
             if saved {
                 actions.setFeedback = { setFeedback($0, for: message) }
                 actions.branch = { branch(from: message) }
+            }
+        }
+        if message.role == .assistant, let openActivity {
+            actions.openActivity = { callID in openActivity(message.id, callID) }
+        }
+        if isNewest, message.role == .assistant, message.errorDescription != nil,
+            model.canRetrySelectedConversation
+        {
+            actions.retry = {
+                guard let conversationID = model.selectedConversationID else { return }
+                model.retryLastMessage(conversationID: conversationID)
             }
         }
         if isNewest, message.role == .assistant {

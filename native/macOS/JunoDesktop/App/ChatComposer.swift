@@ -252,6 +252,10 @@ struct ChatComposerRequest: Equatable {
         /// A reply's Quote in Composer: the reply, quoted — see
         /// ``ChatComposerRequest/quoted(_:)`` — seeded like a starter chip.
         case quote(String)
+        /// A follow-up chip (§6.12): **send** this, as the reader's next
+        /// message, with the composer's current model and tools — the web's
+        /// `sendFromComposer`.
+        case send(String)
     }
 
     let id = UUID()
@@ -682,6 +686,9 @@ struct ChatComposer: View {
     var manageConnections: (() -> Void)? = nil
     /// The quota line's link. Nil draws the sentence alone.
     var openUpgrade: (() -> Void)? = nil
+    /// Hears whether the draft is empty — nothing typed, nothing attached —
+    /// for the follow-up chips above it, which show only then.
+    var draftIsEmptyChanged: ((Bool) -> Void)? = nil
 
     @State private var prompt = ""
     /// Empty only until the first ``configureSelection()`` on appear, which
@@ -1116,7 +1123,16 @@ struct ChatComposer: View {
                 seed(opening)
             case .quote(let text):
                 seed(ChatComposerRequest.quoted(text))
+            case .send(let text):
+                // Only ever offered over an empty draft, so nothing the
+                // reader wrote is replaced.
+                guard draftIsEmpty else { return }
+                prompt = text
+                submit()
             }
+        }
+        .onChange(of: draftIsEmpty, initial: true) { _, isEmpty in
+            draftIsEmptyChanged?(isEmpty)
         }
     }
 
