@@ -166,3 +166,63 @@ Resuming it with `resumeFromRunId: "wf_ced229b0-4b1"` replays the finished merge
   - The run line's facts and counts are SF with tabular numerals rather than the SPEC's mono caption (register 40).
 - **Gap under the user bubble.** It is about 60pt. That matches the web, which reserves the hover-action row, so it is kept for parity. The owner may prefer it tighter.
 - **Code-owned leftovers.** Code's own header strip still has a second sidebar toggle, and `DesktopCodeAccountFooter` hard-codes "Pro". They belong to the Code session.
+
+---
+
+## Update: paused again, 2026-09-23 evening (the owner's usage limit)
+
+**Committed since the first pause** (all on `mac/liquid-glass-chat`, unpushed, working tree clean):
+
+- `58d12b79` — merge of `origin/main` at `d0997af2` (Juno Code 1.6.0, build 87).
+- `1ca63efb` — stage 2: files and pictures inline.
+  - user image and PDF tiles
+  - generated images and video
+  - Excel and PowerPoint cards with Quick Look
+- `2b1049c5` — stage 3: artifacts, designs and diagrams inline.
+  - the WKWebView runtime
+  - Preview/Code/Open, into the canvas dock
+  - designs loaded from the stored row (fixes X-11)
+- `0f5281cd` — stage 4: the rest of the transcript.
+  - prose, code and tables
+  - sources and citations
+  - notes and errors
+  - follow-ups
+  - scrolling, ⌘F and stream resume
+  - approvals
+- `ff906c12` — Phase 2 review.
+  - neutral outline buttons
+  - the version pager
+  - the column gutter
+  - final snapshots in `/tmp/juno-glass-snapshots/final/`
+- `39a35eba` — stage 4b: the tools rework's final design (`juno-tools/docs/chat-rework/SPEC.md` §2, §7, §8).
+  - `clientFeatures`, `timeZone` and `locale` sent on every request
+  - one reducer (`NativeTurnStream`) that reads both the production and the timeline grammar
+  - the §3.8 copy table
+  - the run block with the Concept A glyph and the fold to "Thought for 12s · … ›"
+  - the Activity panel (Timeline / Sources / Details)
+  - Research with no levels (row, Research panel, "Research this" chip)
+  - the HTML preview's white band fixed
+
+**Stopped mid-run:** workflow `juno-mac-glass-phase5`, run `wf_6d6ce0b7-180`.
+- The script is at `~/.claude/projects/-Users-liammagnier-Developer-project-juno/a645690b-6552-4335-aa0f-8149e2f4596b/workflows/scripts/juno-mac-glass-phase5-wf_6d6ce0b7-180.js`.
+- Already finished and cached: stage 4b and the four Phase 5 research readers (web work, web research, Mac work, Mac shell).
+- Interrupted: the Phase 5 brief writer (`brief5`). It had written nothing.
+- **To resume in this session:** `Workflow({scriptPath, resumeFromRunId: "wf_6d6ce0b7-180"})`. The finished agents replay from cache, and the brief, stages A–D and the review then run.
+- **From a new session:** the research reports are in the run's `journal.jsonl` under `~/.claude/projects/…/subagents/workflows/wf_6d6ce0b7-180/`.
+
+**Next after Phase 5:**
+1. Phase 3: popovers, menus, sheets and Settings.
+2. Phase 4: pages.
+3. Phase 6: sync tooling.
+4. Merge `main` again, then ship as 1.7.0 (build 88).
+
+**Waiting on the owner:**
+1. Permission to download and bundle the browser runtimes that React, TypeScript and Tailwind artifact previews need: React 18 UMD, @babel/standalone and the Tailwind browser build, from jsDelivr. Until then those previews show code only.
+2. Permission to download `Newsreader24pt-Italic.ttf` from Google Fonts, so the greeting's italic matches the web.
+3. Whether the server should stop hard-deleting a reply's artifacts on regenerate (`src/app/api/chat/route.ts:2566-2574`); the web is affected too.
+
+**Peer work to re-read on resume:**
+- `wip/artifacts-design-audit` has moved past `8d4def72`: it adds `03-COMPETITIVE-AUDIT.md`, `04-MERGE-PLAN.md` and an updated `HANDOFF.md`. The Mac findings in `02-AUDIT-MAC.md` are unchanged.
+- The tools rework's `SPEC.md` is final at `f1badf26`.
+
+**Preview build for the owner:** `/tmp/jg-preview3-dd/Build/Products/Stable/Juno.app`, built from `ff906c12` (Phase 2).
