@@ -804,3 +804,28 @@ These come from branch `wip/artifacts-design-audit` at `8d4def72`: `docs/design/
    - scripts actually executing
 
    Verify that with a test that renders a scripted artifact and reads back a value its script wrote.
+
+### Update: the tools SPEC is final (`juno-tools` `docs/chat-rework/SPEC.md`, commit `f1badf26`)
+
+Stage 4 builds against this spec, read-only. Read:
+- **§2** — the wire; field names are final.
+- **§2.13** — the native mirror checklist.
+- **§7** — the run UI: the phase model, the Concept A phase-typed matrix glyph on a 2.4 s loop, compositor shimmer, a 2-slot peek, and the summary line.
+- **§8** — the Activity panel: Timeline, Sources and Details.
+- **the Review log at the end** — every rename.
+
+Where it conflicts with the 2026-09-23 decisions above (e.g. "single signature" versus "Concept A matrix glyph"), SPEC.md wins.
+
+Key facts:
+- **Opt-in.** A request that carries `clientFeatures: ["timeline","resume","research_background","suggest_research","citations"]` plus `timeZone` and `locale` gets the new grammar. Without `timeline`, the server keeps the frozen "profile 1" grammar.
+  - The Mac must decode **both** grammars, because production does not ship the new server yet.
+  - Before sending `clientFeatures`, confirm in `src/lib/chat/request.ts` on main that unknown request keys are stripped rather than rejected. If they are rejected, send the keys only once the server advertises support, e.g. in bootstrap.
+- **One new frame type, `handoff`.** It is sent only to clients that declared `research_background`.
+- **New activity-event fields:** `seq`, `round`, `call: ToolCallRecord`, `segment`, `commentary`, `fact: RunFact` and `notice: RunNotice`.
+- **`ToolCallRecord` fields:** `v`, `callId`, `providerCallId`, `tool` (the canonical id), `origin`, `title`, `connectorId`, `connectorLabel`, `toolTitle`, `status`, `round`, `index`, `startedAt`, `endedAt`, `durationMs`, `timeoutMs`, `args`, `figure`, `error{code, detail}`, `approval`, `web` and `cached`.
+  - It is updated in place, keyed by `callId`.
+  - `status` is one of: queued, awaiting_approval, running, succeeded, failed, denied, expired, cancelled.
+- **Deltas** carry `round` and `phase` ("commentary" or "answer") only when the client declared `timeline`. Commentary goes to the timeline, never into the answer.
+- **Sources** gain `origin`.
+- **Notices.** Only five codes have kind "warning": finish_length, usage_limit, connector_unavailable, hostile_content and research_skipped. All other codes have kind "context".
+- **Presentation copy** for each canonical tool id lives on the client (SPEC §3.8). Mirror that table in Swift and never display the English `title`.
