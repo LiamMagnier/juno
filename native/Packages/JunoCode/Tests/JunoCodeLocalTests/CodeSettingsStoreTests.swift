@@ -243,8 +243,10 @@ final class CodeSettingsStoreTests: XCTestCase {
         // puts the rest of what they say in force.
         try write(Self.allowsScreenInput, to: .project)
         try write(Self.allowsScreenInput, to: .local)
-        try store.approve(.project, projectRoot: project)
-        try store.approve(.local, projectRoot: project)
+        for scope in [CodeSettingsStore.Scope.project, .local] {
+            let shown = store.snapshot(scope, projectRoot: project)
+            XCTAssertTrue(try store.approve(scope, projectRoot: project, expectedDigest: shown.digest))
+        }
 
         let rules = store.resolved(projectRoot: project).rules
         for name in ComputerUseToolName.input {
