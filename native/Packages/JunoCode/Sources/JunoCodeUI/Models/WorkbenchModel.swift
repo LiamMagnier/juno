@@ -241,7 +241,19 @@ public final class WorkbenchModel {
     private let workspaceDirectory: WorkspaceDirectory
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
     private var controllers: [CodeSessionID: SessionController] = [:]
+    /// The sessions opened most recently, newest last. See
+    /// `retainTranscripts(opening:)`.
+    private var recentlyOpened: [CodeSessionID] = []
     private var storeObserver: UUID?
+    /// True once `bootstrap()` has read the workspaces and sessions.
+    ///
+    /// Before that `sessions` is empty because nothing has been read, not
+    /// because there is nothing. The Code view bootstraps when it appears, but
+    /// Remote runs from launch, and a Mac that relaunched onto Chat used to
+    /// tell the relay every session it had listed was gone.
+    public private(set) var hasLoaded = false
+    /// The read in flight, shared by everyone who asks while it runs.
+    private var bootstrapping: Task<Void, Never>?
     #if DEBUG
     /// True only for the local `--juno-code-ui-preview` harness, which seeds
     /// in-memory fixtures and must not read the on-disk session store.
@@ -322,6 +334,29 @@ public final class WorkbenchModel {
     // MARK: - Bootstrap
 
     public func bootstrap() async {
+        // The Code view appearing while Remote loads the same model is two
+        // callers at once. They share one read: two interleaved reads would
+        // each find no store observer and attach one.
+        if let bootstrapping {
+            await bootstrapping.value
+            return
+        }
+        let read = Task { await performBootstrap() }
+        bootstrapping = read
+        await read.value
+        bootstrapping = nil
+    }
+
+    /// Reads the workspaces and sessions unless that has already happened.
+    ///
+    /// For callers that need the model's contents but not a refresh — Remote,
+    /// which may be answering a phone before anyone has opened Juno Code.
+    public func loadIfNeeded() async {
+        guard !hasLoaded else { return }
+        await bootstrap()
+    }
+
+    private func performBootstrap() async {
         #if DEBUG
         // The preview harness seeds fixtures in memory; never read the store.
         if isPreview { return }
@@ -335,6 +370,7 @@ public final class WorkbenchModel {
         }
         workspaces = await workspaceDirectory.allWorkspaces()
         sessions = await sessionStore.allSessions()
+        hasLoaded = true
         if selectedSessionID == nil {
             selectedSessionID = visibleSessions.first?.id
         }
@@ -352,6 +388,7 @@ public final class WorkbenchModel {
         case let .sessionRemoved(id):
             sessions.removeAll { $0.id == id }
             controllers.removeValue(forKey: id)
+            recentlyOpened.removeAll { $0 == id }
             if selectedSessionID == id {
                 // Never a sub-agent: falling back onto a delegated session would
                 // put the window on a transcript with no sidebar row to leave it
@@ -435,6 +472,9 @@ public final class WorkbenchModel {
     /// folder to act in, which is what removal promises.
     public func removeWorkspace(id: WorkspaceID) async {
         for session in sessions where session.workspaceID == id {
+            // Out of the retained set too, so a controller let go of here does
+            // not hold one of its slots.
+            recentlyOpened.removeAll { $0 == session.id }
             guard let controller = controllers.removeValue(forKey: session.id) else { continue }
             await controller.stop()
             await controller.detach()
@@ -472,11 +512,19 @@ public final class WorkbenchModel {
     /// - Parameter isolatedWorktree: create a Git worktree beside the checkout
     ///   and root the session in it, so its edits never touch the branch the
     ///   reader has open. Ignored for a folder that is not a repository.
+    /// - Parameter sessionID: the id to open it under, when it was chosen
+    ///   elsewhere — a session a phone asked for keeps the id the phone
+    ///   already shows.
+    /// - Parameter select: whether the window moves to it. A session started
+    ///   from another device must not pull the reader at this Mac away from
+    ///   what they are looking at.
     @discardableResult
     public func createSession(
         workspaceID: WorkspaceID?,
         configuration: AgentConfiguration,
-        isolatedWorktree: Bool = false
+        isolatedWorktree: Bool = false,
+        sessionID: CodeSessionID? = nil,
+        select: Bool = true
     ) async -> CodeSession? {
         var context: WorkspaceContext?
         if let workspaceID {
@@ -500,6 +548,7 @@ public final class WorkbenchModel {
                 }
             }
             let session = try await sessionStore.createSession(
+                id: sessionID ?? CodeSessionID(),
                 workspaceID: workspaceID,
                 executionRootPath: executionRootPath,
                 workspaceName: context?.record.descriptor.displayName,
@@ -507,7 +556,7 @@ public final class WorkbenchModel {
                 configuration: configuration,
                 gitBranch: branch
             )
-            selectedSessionID = session.id
+            if select { selectedSessionID = session.id }
             return session
         } catch {
             lastError = "Could not create the session: \(error)"
@@ -527,12 +576,10 @@ public final class WorkbenchModel {
     }
 
     /// Lines added, lines removed and files touched over a session's whole
-    /// record, for the sessions column's finished rows.
+    /// record, for a row that wants to say how much a session changed.
     ///
-    /// Read from the transcript on demand and cached against the session's
-    /// `updatedAt`, so a column of two hundred sessions costs one event read per
-    /// row the reader actually scrolls to, and none for a row that has not
-    /// changed since it was last read.
+    /// Read from the store's transcript summary, so a column of two hundred
+    /// sessions costs no transcript reads at all.
     public struct DiffStat: Equatable, Sendable {
         public let added: Int
         public let removed: Int
@@ -540,43 +587,57 @@ public final class WorkbenchModel {
         public var isEmpty: Bool { files == 0 }
     }
 
-    private var diffStats: [CodeSessionID: (updatedAt: Date, stat: DiffStat)] = [:]
-
     public func diffStat(for sessionID: CodeSessionID) async -> DiffStat? {
-        guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
-        if let cached = diffStats[sessionID], cached.updatedAt == session.updatedAt {
-            return cached.stat
-        }
-        let events: [SessionEvent]
+        guard sessions.contains(where: { $0.id == sessionID }) else { return nil }
         #if DEBUG
+        // Preview fixtures never reach the store; their transcript is the
+        // fixture controller's.
         if isPreview {
-            events = previewController(for: sessionID)?.events ?? []
-        } else {
-            events = await sessionStore.events(for: sessionID)
-        }
-        #else
-        events = await sessionStore.events(for: sessionID)
-        #endif
-        var added = 0
-        var removed = 0
-        var files: Set<String> = []
-        for event in events {
-            if case let .fileChanged(change) = event.payload {
-                added += change.linesAdded
-                removed += change.linesRemoved
-                files.insert(change.path.value)
+            var added = 0
+            var removed = 0
+            var files: Set<String> = []
+            for event in previewController(for: sessionID)?.events ?? [] {
+                if case let .fileChanged(change) = event.payload {
+                    added += change.linesAdded
+                    removed += change.linesRemoved
+                    files.insert(change.path.value)
+                }
             }
+            return DiffStat(added: added, removed: removed, files: files.count)
         }
-        let stat = DiffStat(added: added, removed: removed, files: files.count)
-        diffStats[sessionID] = (session.updatedAt, stat)
-        return stat
+        #endif
+        guard let summary = await sessionStore.transcriptSummary(for: sessionID) else {
+            return nil
+        }
+        return DiffStat(
+            added: summary.linesAdded,
+            removed: summary.linesRemoved,
+            files: summary.filesChanged
+        )
+    }
+
+    /// How many events a session's transcript holds, without constructing or
+    /// attaching a presentation controller — read from the transcript summary,
+    /// so it cannot decode every transcript on the Mac to count them either.
+    public func eventCount(for sessionID: CodeSessionID) async -> Int {
+        await sessionStore.transcriptSummary(for: sessionID)?.eventCount ?? 0
     }
 
     /// Returns the durable transcript sequence without constructing or attaching
     /// a presentation controller. Hosts use this for inventory summaries, so a
-    /// CLI session listing cannot wake screen capture or other UI-only work.
-    public func eventCount(for sessionID: CodeSessionID) async -> Int {
-        await sessionStore.events(for: sessionID).count
+    /// CLI session listing cannot wake screen capture or other UI-only work,
+    /// and it is read from the transcript summary rather than the transcript.
+    ///
+    /// The last event's protocol (one-based) sequence, not the number of
+    /// events: a rewound transcript is numbered on from where it was, so it
+    /// holds fewer events than the sequence it has reached, and a client
+    /// comparing this with its cursor must see the newer number.
+    public func lastEventSequence(for sessionID: CodeSessionID) async -> Int {
+        guard let last = await sessionStore.transcriptSummary(for: sessionID)?.lastSequence else {
+            return 0
+        }
+        // The protocol numbers from one: see CodeSessionStoreProtocolAdapter.
+        return last + 1
     }
 
     /// The live controller for a session, created on first use.
@@ -598,8 +659,10 @@ public final class WorkbenchModel {
             // update. Every second visit to a session was dead.
             //
             // `attach()` guards on `storeObserver == nil`, so this is free when the
-            // controller is already attached and a full re-read when it is not.
+            // controller is already attached and a full re-read when it is not;
+            // while another caller's attach is still reading, it waits for it.
             await existing.attach()
+            retainTranscripts(opening: sessionID)
             return existing
         }
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
@@ -660,7 +723,40 @@ public final class WorkbenchModel {
         controllers[sessionID] = controller
         await controller.attach()
         await controller.reconcileModelCapabilities()
+        retainTranscripts(opening: sessionID)
         return controller
+    }
+
+    /// How many recently opened sessions keep their decoded transcript while
+    /// the reader is elsewhere.
+    static let retainedTranscriptCount = 3
+
+    /// Keeps the transcripts of the sessions opened last and lets go of the
+    /// rest.
+    ///
+    /// Controllers are cached for the life of the model — a draft, a review
+    /// comment or a running turn must survive the reader looking elsewhere —
+    /// and each held its whole decoded transcript for as long, so visiting a
+    /// hundred long sessions kept a hundred transcripts in memory. A detached
+    /// controller re-reads its transcript from the store when it is attached
+    /// again, so the copy it holds serves nobody once it is off screen.
+    ///
+    /// More than one is kept because "off screen" lags "detached": the window
+    /// detaches the session it is leaving before the next one has loaded and
+    /// goes on drawing it until then, while the remote bridge or a device run
+    /// may open sessions of their own in the meantime. Releasing the outgoing
+    /// session there would blank its thread in the middle of the switch.
+    private func retainTranscripts(opening sessionID: CodeSessionID) {
+        recentlyOpened.removeAll { $0 == sessionID }
+        recentlyOpened.append(sessionID)
+        if recentlyOpened.count > Self.retainedTranscriptCount {
+            recentlyOpened.removeFirst(recentlyOpened.count - Self.retainedTranscriptCount)
+        }
+        for (id, controller) in controllers where !recentlyOpened.contains(id) {
+            // A no-op for a controller that is still attached: whatever is
+            // showing it keeps what it shows.
+            controller.releaseTranscript()
+        }
     }
 
     /// Replaces the signed-in account's model manifest and immediately revokes
@@ -683,14 +779,21 @@ public final class WorkbenchModel {
     public func shutdown() async {
         let currentControllers = Array(controllers.values)
         controllers.removeAll()
+        recentlyOpened.removeAll()
         for controller in currentControllers {
             await controller.stop()
+            // The workbench is discarded when the reader signs out, which is
+            // the moment Claude Code's `SessionEnd` calls `logout`.
+            await controller.endHookSession(reason: "logout")
             await controller.detach()
         }
         if let storeObserver {
             await sessionStore.removeObserver(storeObserver)
             self.storeObserver = nil
         }
+        // Stopping appends the runs' last events; writing their summaries now
+        // spares the next launch catching them up from the transcripts.
+        await sessionStore.saveTranscriptSummaries()
         contexts.removeAll()
         selectedSessionID = nil
         // Nothing of this account is running any more: whoever watches the
@@ -734,17 +837,22 @@ public final class WorkbenchModel {
         }
     }
 
-    /// Stops one session, removes its checkpoints and erases its record.
+    /// Stops one session, removes its checkpoints — per file and per turn — and
+    /// erases its record.
     private func discard(_ session: CodeSession) async throws {
         let controller = controllers[session.id]
         if let controller {
             await controller.stop()
+            // Before the record is erased, so the `transcript_path` a
+            // `SessionEnd` hook is given still points at the transcript.
+            await controller.endHookSession(reason: "other")
         }
         // A projectless session never took a checkpoint — checkpoints are
         // snapshots of a working tree — so there is nothing to remove.
         if let workspaceID = session.workspaceID {
             if let context = contexts[workspaceID] {
                 try await context.checkpoints.removeCheckpoints(for: session.id)
+                try await context.turnCheckpoints.removeSession(session.id)
             } else {
                 try CheckpointStore.removePersistedCheckpoints(
                     for: session.id,
@@ -752,11 +860,19 @@ public final class WorkbenchModel {
                         .appendingPathComponent("checkpoints")
                         .appendingPathComponent(workspaceID.value)
                 )
+                try TurnCheckpointStore.removePersisted(
+                    sessionID: session.id,
+                    directoryURL: WorkspaceContext.turnCheckpointDirectory(
+                        storageRoot: dependencies.storageRootURL,
+                        workspaceID: workspaceID
+                    )
+                )
             }
         }
         try await sessionStore.deleteSession(id: session.id)
         await controller?.detach()
         controllers.removeValue(forKey: session.id)
+        recentlyOpened.removeAll { $0 == session.id }
     }
 
     // MARK: - Derived lists

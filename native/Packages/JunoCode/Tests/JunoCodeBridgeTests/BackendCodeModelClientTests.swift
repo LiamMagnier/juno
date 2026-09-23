@@ -215,6 +215,55 @@ final class BackendCodeModelClientTests: XCTestCase {
         }
     }
 
+    /// The compaction summary asks for a short reply; each wire protocol has
+    /// to carry that ceiling, and none may exceed the client's own.
+    func testARequestsOutputCeilingReachesEveryWireProtocol() async throws {
+        let cases: [(modelID: String, key: String)] = [
+            ("anthropic:claude-sonnet-5", "max_tokens"),
+            ("google:gemini-3.5-pro", "max_tokens"),
+            ("openai:gpt-5.3-codex", "max_output_tokens"),
+        ]
+        for (modelID, key) in cases {
+            for (asked, expected) in [(2_000, 2_000), (500_000, 64_000)] {
+                let streamer = FakeByteStreamer(canned: .init(body: Data()))
+                let client = BackendCodeModelClient(streamer: streamer, accountID: accountID, maxTokens: 64_000)
+                _ = await collect(
+                    client,
+                    ModelTurnRequest(
+                        sessionID: CodeSessionID(),
+                        systemPrompt: "Summarise.",
+                        messages: [.user("The conversation.")],
+                        tools: [],
+                        modelID: modelID,
+                        reasoningEffort: nil,
+                        maximumOutputTokens: asked
+                    )
+                )
+                let body = try XCTUnwrap(streamer.lastRequest?.body, modelID)
+                let json = try JSONDecoder().decode(JSONValue.self, from: body)
+                XCTAssertEqual(json[key]?.numberValue, Double(expected), "\(modelID) asked \(asked)")
+            }
+        }
+
+        // Nil leaves the client's own ceiling alone.
+        let streamer = FakeByteStreamer(canned: .init(body: Data()))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID, maxTokens: 64_000)
+        _ = await collect(
+            client,
+            ModelTurnRequest(
+                sessionID: CodeSessionID(),
+                systemPrompt: "You are Juno Code.",
+                messages: [.user("Hello")],
+                tools: [],
+                modelID: "anthropic:claude-sonnet-5",
+                reasoningEffort: nil
+            )
+        )
+        let body = try XCTUnwrap(streamer.lastRequest?.body)
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        XCTAssertEqual(json["max_tokens"]?.numberValue, 64_000)
+    }
+
     func testRequestBodyIsAnthropicShaped() async throws {
         let sse = """
         data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}

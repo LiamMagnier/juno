@@ -289,9 +289,10 @@ public final class SessionController {
         let computerUseActive: Bool
         /// Rebuilds the system prompt after a durable goal transition.
         let goalUpdatedAt: Date?
-        /// Rebuilds the orchestrator when the user enables or disables
-        /// repository hooks. Permission mode itself remains live through the
-        /// coordinator; the hook adapter reads it dynamically.
+        /// Rebuilds the orchestrator when the hooks that would run change: one
+        /// allowed or switched off in Settings, or a settings file edited.
+        /// Permission mode itself remains live through the coordinator; the
+        /// hook adapter reads it dynamically.
         let hookPolicyFingerprint: String
         /// The workspace-authored agent shaping the system prompt, if any.
         let customAgentID: String?
@@ -335,6 +336,34 @@ public final class SessionController {
             allowsNetwork: resolved.allowsNetwork,
             writablePaths: resolved.writablePaths
         )
+        // Hooks are settings too: re-read with the rest, so a hook allowed in
+        // Settings or added to a file applies to the next run, not the next
+        // launch.
+        if let context = live.context {
+            reloadHooks(from: context)
+        }
+    }
+
+    /// Reads the hooks and the reader's trust decision from disk.
+    private func reloadHooks(from context: WorkspaceContext) {
+        hookDiscoveryResult = HookDiscovery(
+            access: context.access,
+            userSettingsDirectory: context.userSettingsDirectory
+        ).discover()
+        hookPolicy = context.hookPolicyStore.load(
+            permissionMode: session.configuration.behavior == .code
+                ? session.configuration.permissionMode
+                : .readOnly
+        )
+    }
+
+    /// The hooks the next Code run will use: those the policy admits, less any
+    /// the reader switched off.
+    var activeHooks: [HookDefinition] {
+        let disabled = CodeDefaults.shared.disabledHooks
+        return hookDiscoveryResult.hooks.filter {
+            hookPolicy.admits($0) && !disabled.contains($0.id)
+        }
     }
 
     /// What goes in `<user_instructions>`, which the model is told the reader
@@ -404,9 +433,12 @@ public final class SessionController {
     public private(set) var interactiveTerminalState: InteractiveTerminalState = .idle
     public private(set) var interactiveTerminalCommand: String?
     public var interactiveTerminal: [TerminalLine] { interactiveTerminalLog.lines }
-    /// Checkpoints recorded for this session. Per file, never per run — there is
-    /// no run-level snapshot to count.
+    /// Per-file checkpoints recorded for this session. Turn snapshots, which
+    /// back a rewind, live in the turn store and are not counted here.
     public private(set) var checkpointCount = 0
+    /// Bumped by every rewind that put a prompt back in the composer, so the
+    /// view holding the composer can hand it focus.
+    public private(set) var rewindGeneration = 0
     public private(set) var gitStatus: GitStatusSummary?
     public private(set) var gitHistory: [GitCommitInfo] = []
     public private(set) var managedWorktrees: [ManagedWorktree] = []
@@ -427,6 +459,9 @@ public final class SessionController {
     /// Whether `gh pr create` is in flight.
     public private(set) var isCreatingPullRequest = false
     public private(set) var hookPolicy = HookExecutionPolicy.denyAll
+    /// What this session's hooks remember across orchestrators: whether it
+    /// has started, whether it has ended, whether anything has happened since.
+    private let hookLedger = HookSessionLedger()
     public private(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
     /// and empty whenever nothing is streaming. Never persisted: the
@@ -471,6 +506,15 @@ public final class SessionController {
     public internal(set) var contextTokens: Int?
     /// The last turn's completion size, for the same reason.
     public internal(set) var lastOutputTokens: Int?
+    /// Every model call made for this session since it was opened — agent
+    /// turns and compaction summaries alike — as the provider billed them.
+    /// Held in memory, like the two figures above.
+    public internal(set) var sessionUsage = ModelUsageTotals()
+    /// True while the conversation is being compacted: a `/compact` the
+    /// reader asked for, or the model writing a summary mid-run.
+    public var isCompacting: Bool { isCompactingOnRequest || isWritingCompactionSummary }
+    private var isCompactingOnRequest = false
+    private var isWritingCompactionSummary = false
     public private(set) var computerUseActive = false
     public private(set) var computerUseScreenPermission: ComputerUsePermissionState =
         .notDetermined
@@ -478,7 +522,21 @@ public final class SessionController {
         ComputerUsePermissionState = .notDetermined
     public private(set) var computerUseDisplayBounds: CGRect?
     public private(set) var computerUseJournal: [ComputerUseJournalEntry] = []
-    public private(set) var computerUseScreenshot: Data?
+    /// The last screenshot the agent took, from the coordinator's own record.
+    /// Nothing in the window takes one of its own: the banner calls this what
+    /// Juno saw, so it may only ever be an image the model was sent. Memory
+    /// only, and gone the moment screen control stops.
+    public private(set) var computerUseLatestCapture: ComputerUseCapture?
+    /// The reader asked to start screen control and macOS had not granted
+    /// what it needs.
+    ///
+    /// A flag rather than an error string, because the answer is not a
+    /// sentence at the foot of the thread — it is a System Settings pane, and
+    /// which one changes as the reader grants them. The notice reads the live
+    /// grants every time it draws; this only remembers that someone is waiting
+    /// on them. It is cleared by a successful start, by dismissing the notice,
+    /// and by leaving the session.
+    public private(set) var computerUseStartBlocked = false
     public private(set) var acceptedHunks: Set<String> = []
 
     /// Review state for this session — which file is open, unified or side-by-side,
@@ -492,6 +550,13 @@ public final class SessionController {
     public let review = ReviewModel()
 
     private var storeObserver: UUID?
+    /// The `attach()` under way, which a second caller waits for rather than
+    /// starting another alongside it.
+    private var attaching: Task<Void, Never>?
+    /// This session's events the store delivered while `attach()` was reading
+    /// the transcript, held back until the read is installed; nil at any other
+    /// time. See `restore(_:)`.
+    private var eventsDeliveredWhileRestoring: [SessionEvent]?
 
     /// Whether this controller is currently observing the session store.
     ///
@@ -540,9 +605,10 @@ public final class SessionController {
         "This conversation has no project. Open one to \(action)."
     }
 
-    private static func hookPolicyFingerprint(_ policy: HookExecutionPolicy) -> String {
-        let ids = policy.allowedHookIDs.sorted().joined(separator: ",")
-        return "\(policy.allowUntrustedHooks ? "trusted" : "off"):\(ids)"
+    /// The hooks that would run, with the one setting their identity leaves
+    /// out: a changed timeout is the same hook, run differently.
+    private static func hookPolicyFingerprint(_ hooks: [HookDefinition]) -> String {
+        hooks.map { "\($0.id)@\($0.timeoutSeconds)" }.joined(separator: ",")
     }
 
     /// The reader's Settings switches, as one string the contract can compare.
@@ -640,7 +706,7 @@ public final class SessionController {
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
             computerUseActive: computerUseActive,
             goalUpdatedAt: session.goal?.updatedAt,
-            hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy),
+            hookPolicyFingerprint: Self.hookPolicyFingerprint(activeHooks),
             customAgentID: session.configuration.customAgentID,
             extensionsFingerprint: Self.extensionsFingerprint(),
             settingsFingerprint: settingsFingerprint
@@ -650,9 +716,12 @@ public final class SessionController {
         }
         // Never swap an orchestrator out mid-run: it owns the run task and the
         // approval observer for the turn in flight, and the replacement would
-        // know about neither.
-        if let orchestrator, await orchestrator.isRunning {
-            return orchestrator
+        // know about neither. Nor mid-compaction: the replacement would load
+        // the history the fold is about to overwrite.
+        if let orchestrator {
+            let running = await orchestrator.isRunning
+            let compacting = await orchestrator.isCompacting
+            if running || compacting { return orchestrator }
         }
         await orchestrator?.release()
         let next = await makeOrchestrator(contract, live: live)
@@ -665,6 +734,16 @@ public final class SessionController {
             Task { @MainActor [weak self] in
                 if let context { self?.contextTokens = context }
                 if let output { self?.lastOutputTokens = output }
+            }
+        }
+        await next.observeCallUsage { [weak self] usage in
+            Task { @MainActor [weak self] in
+                self?.sessionUsage.record(usage)
+            }
+        }
+        await next.observeCompaction { [weak self] writing in
+            Task { @MainActor [weak self] in
+                self?.isWritingCompactionSummary = writing
             }
         }
         orchestrator = next
@@ -692,6 +771,11 @@ public final class SessionController {
             systemPrompt += goalSystemPrompt
         }
         systemPrompt += extensionsSystemPrompt(customAgentID: contract.customAgentID)
+        // Hooks run in Code only. Plan and Ask promise that nothing executes,
+        // and a hook is a command.
+        let lifecycleHooks = contract.behavior == .code
+            ? makeHookAdapter(context: context, live: live)
+            : nil
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
@@ -778,7 +862,8 @@ public final class SessionController {
                 // "Always allow" or a settings edit mid-session carries over.
                 parentRules: { [permissions = live.permissions] in
                     await permissions.permissionRules
-                }
+                },
+                lifecycleHooks: lifecycleHooks
             ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -808,29 +893,6 @@ public final class SessionController {
                 )
             )
         }
-        let disabledHooks = CodeDefaults.shared.disabledHooks
-        let activeHooks = hookDiscoveryResult.hooks.filter {
-            hookPolicy.allowedHookIDs.contains($0.id) && !disabledHooks.contains($0.id)
-        }
-        let lifecycleHooks: (any AgentLifecycleHooks)?
-        if contract.behavior == .code,
-           !activeHooks.isEmpty,
-           hookPolicy.allowUntrustedHooks
-        {
-            let permissions = live.permissions
-            lifecycleHooks = WorkspaceAgentHooks(
-                definitions: activeHooks,
-                executor: context.executor,
-                permissions: permissions,
-                allowUntrustedHooks: true,
-                currentPermissionMode: { await permissions.permissionMode },
-                didRun: { hookID in
-                    Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
-                }
-            )
-        } else {
-            lifecycleHooks = nil
-        }
         return AgentOrchestrator(
             sessionID: sessionID,
             model: live.modelClient,
@@ -847,8 +909,55 @@ public final class SessionController {
             lifecycleHooks: lifecycleHooks,
             // Opt-in: a different lab's model answering under the reader's
             // chosen one is a surprise unless they asked for it.
-            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil
+            fallbackResolver: settings.modelFallback ? live.fallbackResolver : nil,
+            // In every mode, not only Code: an Ask turn changes no files, but
+            // it is still a turn a later rewind has to count past.
+            turnCheckpoints: context.turnCheckpoints
         )
+    }
+
+    /// The hook adapter for a Code run, or nil when no hook would run.
+    private func makeHookAdapter(context: WorkspaceContext, live: Live) -> WorkspaceAgentHooks? {
+        let definitions = activeHooks
+        guard !definitions.isEmpty else { return nil }
+        let permissions = live.permissions
+        let store = live.store
+        return WorkspaceAgentHooks(
+            definitions: definitions,
+            executor: context.executor,
+            permissions: permissions,
+            policy: hookPolicy,
+            projectDirectory: context.access.rootURL.path,
+            ledger: hookLedger,
+            currentPermissionMode: { await permissions.permissionMode },
+            transcriptPath: { store.transcriptURL(for: $0)?.path },
+            recordActivity: { sessionID, notices in
+                for notice in notices {
+                    _ = try? await store.appendEvent(sessionID: sessionID, payload: .hookActivity(notice))
+                }
+            },
+            didRun: { hookID in
+                Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
+            }
+        )
+    }
+
+    /// Runs `SessionEnd` hooks for a session that is going away: deleted, or
+    /// the reader signed out. Only a session whose start hooks ran ends, and
+    /// only once.
+    ///
+    /// The adapter is built afresh rather than kept from the last run, so a
+    /// hook the reader has since switched off or stopped trusting stays off.
+    ///
+    /// - Parameter reason: Claude Code's vocabulary — `logout`, `clear`,
+    ///   `other`.
+    public func endHookSession(reason: String) async {
+        guard let live, let context = live.context,
+              session.configuration.behavior == .code
+        else { return }
+        reloadHooks(from: context)
+        await makeHookAdapter(context: context, live: live)?
+            .sessionEnded(sessionID: sessionID, reason: reason)
     }
 
     private func orchestratorConfiguration(
@@ -1011,9 +1120,33 @@ public final class SessionController {
         )) ?? []
     }
 
+    /// Working, or handing a message over: its hooks may still be deciding
+    /// whether it is sent, before any run exists to mark the session.
     public var isRunning: Bool {
-        session.status.isActive
+        session.status.isActive || isSubmitting
     }
+
+    /// True while ``send()`` is handing a message to the agent, from the
+    /// moment it is taken until its run has started or it has been turned
+    /// away. The prompt's hooks run in between and can take minutes; a second
+    /// send in that window used to start a second run on the same
+    /// conversation.
+    public private(set) var isSubmitting = false
+
+    /// True while ``rewind(to:restoring:force:)`` is cutting the session
+    /// back, from its checks to the reloaded transcript.
+    ///
+    /// A rewind reads the whole transcript twice and restores files between,
+    /// and until this existed nothing held the session meanwhile: a prompt
+    /// from the phone could start a run on the orchestrator the rewind was
+    /// about to let go of, whose history still held the turns being cut. The
+    /// run then saved them back over the rewound conversation, and Stop could
+    /// no longer reach it. A message, a `/compact` and a second rewind are all
+    /// refused until it is done.
+    ///
+    /// Not part of ``isRunning``: nothing is running, and the rewind's own
+    /// panel reads that to offer Stop.
+    public private(set) var isRewinding = false
 
     public var elapsedSeconds: Double? {
         guard let runStartedAt, session.status.isActive else { return nil }
@@ -1034,44 +1167,105 @@ public final class SessionController {
 
     // MARK: - Lifecycle
 
-    /// Loads the persisted transcript and wires live observation. Idempotent.
+    /// Loads the persisted transcript and wires live observation. Idempotent,
+    /// and a call made while another is still loading waits for that one: the
+    /// window and the remote bridge can open the same session at once, and
+    /// each is handed a controller it will read the transcript from.
     /// A preview controller is already fully seeded, so this is a no-op there.
     public func attach() async {
         guard let live else { return }
+        if let attaching {
+            await attaching.value
+            return
+        }
         guard storeObserver == nil else { return }
+        let restoring = Task { await self.restore(live) }
+        attaching = restoring
+        await restoring.value
+    }
+
+    private func restore(_ live: Live) async {
         let sessionID = self.sessionID
+        // Observe before reading, so nothing appended in between goes unseen,
+        // and hold back what arrives until the read is installed. The store
+        // reads a transcript off its actor, so appends carry on while it does
+        // — a turn still streaming in this session keeps writing — and their
+        // notifications reach the main actor before the read does. Applied as
+        // they came they would be overwritten by the read, which stops at the
+        // length the transcript had when it began: a reply, a finished tool
+        // call or a changed file gone from the thread until the next visit,
+        // and a sequence a thin client following these events would skip.
+        eventsDeliveredWhileRestoring = []
         storeObserver = await live.store.addObserver { [weak self] update in
             Task { @MainActor [weak self] in
                 self?.apply(update, own: sessionID)
             }
         }
         let restored = await live.store.events(for: sessionID)
+        let delivered = eventsDeliveredWhileRestoring ?? []
+        eventsDeliveredWhileRestoring = nil
         events = restored
         rebuildTerminal()
         subagentIndex.rebuild(from: events)
         rebuildDerivedState()
+        // What was appended between observing and reading is in both; the
+        // rest came after the read and is applied as though it arrived now.
+        let restoredIDs = Set(restored.map(\.id))
+        for event in delivered where !restoredIDs.contains(event.id) {
+            events.append(event)
+            integrate(event)
+        }
         if let current = try? await live.store.session(id: sessionID) {
             session = current
         }
         pendingApprovals = await live.permissions.pendingApprovals
         await refreshWorkspacePanels()
         await refreshComputerUse()
+        // Cleared here rather than by the caller once it resumes, so a detach
+        // and a fresh attach queued ahead of that resumption start a new load
+        // instead of waiting on this finished one.
+        attaching = nil
     }
 
     public func detach() async {
         guard let live else { return }
         await live.context?.computerUse.deactivate(sessionID: sessionID)
         computerUseActive = false
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
+        computerUseStartBlocked = false
         if let token = storeObserver {
             await live.store.removeObserver(token)
             storeObserver = nil
         }
     }
 
+    /// Lets go of the decoded transcript while nothing is showing it.
+    ///
+    /// Only a detached controller lets go, and it loses nothing by it: its
+    /// events stopped following the store when it detached, and `attach()`
+    /// reads the whole record again rather than trusting them. What survives is
+    /// what the transcript cannot rebuild — the draft, attachments, review
+    /// state and pending approvals. A preview controller has no store to read
+    /// back from, so it keeps its fixture.
+    public func releaseTranscript() {
+        guard live != nil, storeObserver == nil, attaching == nil, !events.isEmpty else { return }
+        events = []
+        rebuildTerminal()
+        subagentIndex.rebuild(from: events)
+        rebuildDerivedState()
+    }
+
     // MARK: - Agent actions
 
     public func send() async {
+        // The draft stays in the composer until it is delivered, so a second
+        // ↩ while its hooks decide finds it still there. It is the same
+        // message; sending it again would be a second turn.
+        guard !isSubmitting else { return }
+        guard !isRewinding else {
+            transientError = RewindCopy.inProgress
+            return
+        }
         let prompt = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         // An attachment on its own is a message. "Look at this" with a screenshot
         // and no sentence is a normal thing to send, and refusing it would make the
@@ -1099,6 +1293,8 @@ public final class SessionController {
             #endif
             return
         }
+        isSubmitting = true
+        defer { isSubmitting = false }
         let modelPrompt = await explicitFileContextPrompt(
             visiblePrompt: prompt,
             live: live
@@ -1119,6 +1315,10 @@ public final class SessionController {
             transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
+        } catch OrchestratorError.promptBlocked, OrchestratorError.stoppedBeforeSending {
+            // The thread already says which hook refused it and why, or the
+            // reader pressed Stop while the hooks ran. The draft stays in the
+            // composer, since nothing was sent.
         } catch {
             transientError = wasActive
                 ? "Could not deliver the instruction: \(error)"
@@ -1132,23 +1332,49 @@ public final class SessionController {
     /// Everything it sends arrives as an argument, so a caller other than the
     /// composer, such as a redirect typed into an approval, never reads or
     /// clears the reader's draft, its images or its file references.
+    ///
+    /// - Parameter accepted: told once the agent has taken the message, before
+    ///   its hooks run; see `AgentOrchestrator.submit`.
     private func deliver(
         prompt: String,
         modelPrompt: String,
         images: [ModelImage],
         kind: UserInstructionKind,
-        live: Live
+        live: Live,
+        accepted: (@Sendable () -> Void)? = nil
     ) async throws {
+        // Every entry point refuses during a rewind in its own words; this is
+        // the backstop for one that did not ask, such as a redirect typed
+        // into a stale approval.
+        guard !isRewinding else { throw RewindInProgress() }
         if session.status.isActive {
             let current = await currentOrchestrator(live)
             switch kind {
             case .steer:
-                try await current.steer(prompt: prompt, modelPrompt: modelPrompt, images: images)
+                try await current.steer(
+                    prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+                )
             case .queue:
-                try await current.queue(prompt: prompt, modelPrompt: modelPrompt, images: images)
+                try await current.queue(
+                    prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+                )
             }
             return
         }
+        try await startTurn(
+            prompt: prompt, modelPrompt: modelPrompt, images: images, live: live, accepted: accepted
+        )
+    }
+
+    /// Starts a turn: the turn's contract, then the prompt.
+    private func startTurn(
+        prompt: String,
+        modelPrompt: String,
+        images: [ModelImage],
+        live: Live,
+        accepted: (@Sendable () -> Void)? = nil
+    ) async throws {
+        guard !isRewinding else { throw RewindInProgress() }
         liveAssistantText = ""
         let configuration = session.configuration
         // Written before the prompt, so the transcript reads contract-then-turn
@@ -1165,8 +1391,201 @@ public final class SessionController {
                 )
             )
         )
-        try await currentOrchestrator(live).submit(prompt: prompt, modelPrompt: modelPrompt, images: images)
+        try await currentOrchestrator(live).submit(
+            prompt: prompt, modelPrompt: modelPrompt, images: images, accepted: accepted
+        )
         runStartedAt = Date()
+    }
+
+    /// A message turned away because a rewind holds the session.
+    private struct RewindInProgress: LocalizedError {
+        var errorDescription: String? { RewindCopy.inProgress }
+    }
+
+    /// Why a prompt from another device was not delivered.
+    public struct RemotePromptRefusal: LocalizedError, Equatable, Sendable {
+        public let message: String
+        public var errorDescription: String? { message }
+    }
+
+    /// A prompt from another device the session has taken, whose hooks may
+    /// still be deciding whether it is sent.
+    ///
+    /// Returned by ``deliverRemotePrompt(_:as:)`` as soon as the agent has
+    /// the prompt in hand. What becomes of it after that is settled here: a
+    /// caller that has to know whether a turn started — a queued task that
+    /// reports its own outcome — reads it; the relay does not, since the
+    /// thread it uploads already says which hook refused the prompt and why.
+    @MainActor
+    public final class RemotePromptDelivery {
+        /// Why the prompt was turned away after it was taken — a hook
+        /// blocked it, or the session was stopped while its hooks ran — or
+        /// nil while it is on its way and once it has been sent.
+        public private(set) var refusal: RemotePromptRefusal?
+        /// False while the prompt's hooks are still deciding.
+        public private(set) var isSettled = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        init() {}
+
+        func settle(_ refusal: RemotePromptRefusal?) {
+            guard !isSettled else { return }
+            self.refusal = refusal
+            isSettled = true
+            let waiting = waiters
+            waiters.removeAll()
+            waiting.forEach { $0.resume() }
+        }
+
+        /// Waits until the prompt has been sent or turned away, and says
+        /// which: nil when it was sent.
+        public func outcome() async -> RemotePromptRefusal? {
+            if !isSettled {
+                await withCheckedContinuation { waiters.append($0) }
+            }
+            return refusal
+        }
+    }
+
+    /// Delivers a prompt that arrived from another device, leaving the
+    /// composer alone.
+    ///
+    /// Remote used to write into `composerText` and press Send. That replaced
+    /// whatever the reader at the Mac was drafting, sent their pending
+    /// attachments and `@file` references along with a message they never
+    /// wrote, and reported success when the send had failed. This takes the
+    /// same path as `send()` — `deliver`, so the same turn contract, the same
+    /// orchestrator, the same hooks and approvals — with nothing of the local
+    /// draft, and throws when the prompt was not taken.
+    ///
+    /// It returns once the agent has the prompt in hand, before the prompt's
+    /// hooks have decided on it. The relay runs one command at a time and
+    /// claims the next only once this returns, and the next is often what
+    /// the hooks are waiting for: a hook that needs approval raises it on the
+    /// phone, whose answer — or Stop — arrives as another command. Waiting
+    /// for the hooks here left every command for this Mac stuck until someone
+    /// answered at the desk. What the hooks then decide is on the returned
+    /// ``RemotePromptDelivery``, and in the thread.
+    ///
+    /// It holds the session while it hands the prompt over, as `send()` does,
+    /// until the hooks have decided: they run before any run exists, and
+    /// until one does nothing else would mark the session as taken.
+    ///
+    /// - Parameter instruction: how to deliver it while a run is active; nil
+    ///   follows the reader's own choice for follow-ups.
+    @discardableResult
+    public func deliverRemotePrompt(
+        _ text: String,
+        as instruction: UserInstructionKind? = nil
+    ) async throws -> RemotePromptDelivery {
+        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else {
+            throw RemotePromptRefusal(message: "The message was empty.")
+        }
+        if let lifecycle = session.goal?.lifecycle, lifecycle == .paused || lifecycle == .blocked {
+            throw RemotePromptRefusal(
+                message: lifecycle == .paused
+                    ? "This session's goal is paused. Resume it on the Mac before sending another turn."
+                    : "This session's goal is blocked. Resolve or resume it on the Mac first."
+            )
+        }
+        guard let live else {
+            throw RemotePromptRefusal(message: "This session cannot run on this Mac right now.")
+        }
+        guard !isRewinding else { throw Self.remoteRefusal(for: RewindInProgress()) }
+        guard !isSubmitting else {
+            throw RemotePromptRefusal(message: "The agent is already running in this session.")
+        }
+        isSubmitting = true
+        let delivery = RemotePromptDelivery()
+        // Yielded when the agent takes the prompt, finished when the handover
+        // ends however it ends; whichever comes first ends the wait below.
+        let (taken, signal) = AsyncStream<Void>.makeStream()
+        let handover = Task { [weak self] in
+            defer { signal.finish() }
+            guard let self else {
+                delivery.settle(RemotePromptRefusal(message: "This session was closed on the Mac."))
+                return
+            }
+            defer { self.isSubmitting = false }
+            do {
+                try await self.handOverRemotePrompt(
+                    prompt,
+                    as: instruction,
+                    live: live,
+                    accepted: { signal.yield() }
+                )
+                delivery.settle(nil)
+            } catch {
+                delivery.settle(Self.remoteRefusal(for: error))
+            }
+        }
+        remoteHandover = handover
+        for await _ in taken { break }
+        // Turned away before the agent took it: the phone is told why.
+        if let refusal = delivery.refusal {
+            throw refusal
+        }
+        return delivery
+    }
+
+    /// The handover of a prompt from another device, while its hooks decide.
+    private var remoteHandover: Task<Void, Never>?
+
+    /// Waits until the last prompt from another device has been sent or
+    /// turned away. Test and shutdown support, like ``awaitCurrentRun()``.
+    func awaitRemoteHandover() async {
+        await remoteHandover?.value
+    }
+
+    private func handOverRemotePrompt(
+        _ prompt: String,
+        as instruction: UserInstructionKind?,
+        live: Live,
+        accepted: @escaping @Sendable () -> Void
+    ) async throws {
+        if session.status.isActive {
+            do {
+                try await deliver(
+                    prompt: prompt,
+                    modelPrompt: prompt,
+                    images: [],
+                    kind: instruction ?? activeInstructionKind,
+                    live: live,
+                    accepted: accepted
+                )
+                return
+            } catch OrchestratorError.sessionNotRunning {
+                // The run finished between the check and the delivery; the
+                // prompt starts the next turn instead of being lost — the
+                // phone may already have been told it was taken. Not when
+                // the run ended because it was stopped: Stop cancels this
+                // handover, and a steer must not come back after it as a
+                // turn of its own.
+                guard !Task.isCancelled else { throw OrchestratorError.stoppedBeforeSending }
+            }
+        }
+        try await startTurn(prompt: prompt, modelPrompt: prompt, images: [], live: live, accepted: accepted)
+    }
+
+    /// What the phone is told about a prompt that did not go.
+    private static func remoteRefusal(for error: any Error) -> RemotePromptRefusal {
+        switch error {
+        case let refusal as RemotePromptRefusal:
+            refusal
+        case OrchestratorError.sessionAlreadyRunning:
+            RemotePromptRefusal(message: "The agent is already running in this session.")
+        case let OrchestratorError.promptBlocked(reason):
+            RemotePromptRefusal(message: "A hook on the Mac stopped this message: \(reason)")
+        case OrchestratorError.stoppedBeforeSending:
+            RemotePromptRefusal(message: "The session was stopped on the Mac before this message was sent.")
+        case is RewindInProgress:
+            RemotePromptRefusal(
+                message: "This session is being rewound on the Mac. Send the message again once it has finished."
+            )
+        default:
+            RemotePromptRefusal(message: "The message could not be delivered on the Mac: \(error.localizedDescription)")
+        }
     }
 
     /// Resubmits the most recent user prompt as a new turn.
@@ -1232,6 +1651,11 @@ public final class SessionController {
             #endif
             return
         }
+        // A prompt from another device may still be with its hooks, and a
+        // steer's hooks run in the handover's task, not in any run Stop
+        // reaches. Cancelling the handover kills their processes, and the
+        // prompt is turned away rather than delivered after the Stop.
+        remoteHandover?.cancel()
         await orchestrator?.stop()
         liveAssistantText = ""
     }
@@ -1351,7 +1775,7 @@ public final class SessionController {
         )
         if behavior != .code {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.behavior = behavior
@@ -1362,6 +1786,21 @@ public final class SessionController {
         if behavior != .code {
             await refreshComputerUse()
         }
+    }
+
+    /// The reader's Start Screen Control, from the session menu or the
+    /// notice: allows it for this session, then starts it. Both halves are the
+    /// same gesture, so the session's switch is never turned on by anything
+    /// but the reader asking for screen control.
+    public func startComputerUse() async {
+        if let reason = computerUseUnavailableReason {
+            transientError = reason
+            return
+        }
+        if !session.configuration.computerUseEnabled {
+            await setComputerUseEnabled(true)
+        }
+        await activateComputerUse()
     }
 
     /// Called only from the visible Computer Use control. This is the explicit
@@ -1381,23 +1820,39 @@ public final class SessionController {
                 userConsented: true
             )
             computerUseActive = true
+            computerUseStartBlocked = false
             transientError = nil
-        } catch ComputerUseError.screenCapturePermissionMissing {
-            transientError =
-                "Screen Recording permission is required. Enable Juno in System Settings › Privacy & Security."
-        } catch ComputerUseError.accessibilityPermissionMissing {
-            transientError =
-                "Accessibility permission is required. Enable Juno in System Settings › Privacy & Security."
+        } catch let error as ComputerUseError where error.missingPermission != nil {
+            // Not a transient error. That line sits at the foot of the thread,
+            // often out of view, and cannot open the pane that fixes it, which
+            // is how a missing grant used to read as Start doing nothing. The
+            // notice at the top of the session names every grant still
+            // missing and opens each pane in turn.
+            computerUseStartBlocked = true
         } catch {
-            transientError = "Computer Use could not start: \(error)"
+            transientError = "Screen control could not start: \(error)"
         }
         await refreshComputerUse()
+    }
+
+    /// The reader closed the notice without granting anything.
+    public func dismissComputerUsePermissionNotice() {
+        computerUseStartBlocked = false
+    }
+
+    /// Both grants as last read, for the notice and anything else that has to
+    /// say which System Settings pane comes next.
+    public var computerUsePermissions: ComputerUsePermissionStatus {
+        ComputerUsePermissionStatus(
+            screenRecording: computerUseScreenPermission,
+            accessibility: computerUseAccessibilityPermission
+        )
     }
 
     public func stopComputerUse() async {
         guard let context = live?.context else { return }
         await context.computerUse.emergencyStop()
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
         await refreshComputerUse()
     }
 
@@ -1416,27 +1871,10 @@ public final class SessionController {
         }
         if !enabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.computerUseEnabled = enabled
-        }
-        await refreshComputerUse()
-    }
-
-    /// Captures through the coordinator so active-session checks, rate limits,
-    /// journaling, and the emergency-stop boundary are never bypassed.
-    public func captureComputerUseScreenshot() async {
-        guard let context = live?.context else { return }
-        do {
-            let captures = try await context.computerUse.perform(
-                .screenshot,
-                sessionID: sessionID
-            )
-            computerUseScreenshot = captures.after
-            transientError = nil
-        } catch {
-            transientError = "Screen capture failed: \(error)"
         }
         await refreshComputerUse()
     }
@@ -1449,6 +1887,9 @@ public final class SessionController {
         computerUseAccessibilityPermission = snapshot.accessibilityPermission
         computerUseDisplayBounds = snapshot.displayBounds
         computerUseJournal = snapshot.journal.filter { $0.sessionID == sessionID }
+        computerUseLatestCapture = snapshot.latestCapture?.sessionID == sessionID
+            ? snapshot.latestCapture
+            : nil
     }
 
     public func approve(_ approvalID: String) async {
@@ -1488,7 +1929,9 @@ public final class SessionController {
     /// every later session in this project.
     ///
     /// The rule goes to `.juno/settings.local.json`: it is this reader's trust,
-    /// not the team's, and it stays out of Git. It is also applied to the live
+    /// not the team's, and it stays out of Git. A rule for screen input goes
+    /// to `~/.juno/settings.json` instead, the only file that may hold one
+    /// (`CodeSettingsStore.alwaysAllowScope`). It is also applied to the live
     /// coordinator first, so a second identical call in the same batch does
     /// not ask again while the file is being written.
     public func approveAlways(_ approvalID: String) async {
@@ -1515,21 +1958,42 @@ public final class SessionController {
     /// the redirect, then cleared them and its file references from the draft;
     /// and when delivery failed, the "send it again" message pointed at a
     /// composer already restored to the draft, with the redirect gone.
+    ///
+    /// The redirect is handed over before the decline, not after. Answering
+    /// the call is what lets the run reach its next boundary, where a steer is
+    /// applied, and accepting a steer now waits on its prompt hooks: sent
+    /// second, it could lose that race, so the model's next request carried
+    /// the refusal without the reader's instruction and acted on its own
+    /// idea of what to do instead. Accepted first, it waits for the declined
+    /// call's answer and goes out beside it.
     public func deny(_ approvalID: String, redirect: String) async {
         let text = redirect.trimmingCharacters(in: .whitespacesAndNewlines)
-        await deny(approvalID)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            await deny(approvalID)
+            return
+        }
         guard let live else {
+            await deny(approvalID)
             #if DEBUG
             previewInstruction(text, kind: .steer)
             #endif
             return
         }
+        var failure: String?
         do {
             try await deliver(prompt: text, modelPrompt: text, images: [], kind: .steer, live: live)
+        } catch OrchestratorError.promptBlocked {
+            // A prompt hook vets a redirect like any steer. Its row in the
+            // thread says why; the text is kept here to be revised.
+            failure = "Declined. A hook stopped this from reaching Juno: “\(text)”."
         } catch {
             // Kept where the reader can see it and send it again.
-            transientError = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+            failure = "Declined, but this did not reach Juno: “\(text)”. Send it from the composer."
+        }
+        // Declined whatever became of the redirect: the reader said no.
+        await deny(approvalID)
+        if let failure {
+            transientError = failure
         }
     }
 
@@ -1577,7 +2041,7 @@ public final class SessionController {
         let supportsVision = live.modelSupportsVision(modelID)
         if !supportsVision, session.configuration.computerUseEnabled {
             await live.context?.computerUse.deactivate(sessionID: sessionID)
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.modelID = modelID
@@ -1602,12 +2066,12 @@ public final class SessionController {
         guard let live else {
             session.configuration.computerUseEnabled = false
             computerUseActive = false
-            computerUseScreenshot = nil
+            computerUseLatestCapture = nil
             return
         }
 
         await live.context?.computerUse.deactivate(sessionID: sessionID)
-        computerUseScreenshot = nil
+        computerUseLatestCapture = nil
         do {
             session = try await live.store.updateSession(id: sessionID) { session in
                 session.configuration.computerUseEnabled = false
@@ -1981,6 +2445,250 @@ public final class SessionController {
         return .restored
     }
 
+    // MARK: - Rewind
+
+    /// The reader's messages a rewind can return to, oldest first: every
+    /// prompt, and every steered or queued message a run took in.
+    public var rewindTurns: [ConversationTurn] {
+        ConversationRewind.turns(in: events)
+    }
+
+    /// Says why `/rewind` did nothing, when it could not open.
+    public func explainRewindUnavailable() {
+        transientError = isRunning
+            ? RewindCopy.running
+            : isCompacting ? RewindCopy.compacting
+            : isRewinding ? RewindCopy.inProgress : "There is nothing to rewind to yet."
+    }
+
+    /// How many files each turn changed, by turn, for the rewind picker. What
+    /// the turn itself did, not what a rewind to it would undo.
+    public func rewindFileCounts() async -> [String: Int] {
+        guard let context = live?.context else { return [:] }
+        let turns = await context.turnCheckpoints.turns(for: sessionID)
+        return Dictionary(
+            turns.map { ($0.id, $0.files.count) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// What rewinding to `turnID` would do, for the confirmation: which files
+    /// would change, which of them someone edited since, and which of the
+    /// three choices cannot be made and why.
+    public func rewindPreview(for turnID: String) async -> RewindPreview? {
+        guard let turn = rewindTurns.first(where: { $0.id == turnID }) else { return nil }
+        guard let live else {
+            return RewindPreview(
+                turn: turn,
+                files: [],
+                codeUnavailable: RewindCopy.preview,
+                conversationUnavailable: RewindCopy.preview
+            )
+        }
+        var conversationUnavailable: String?
+        do {
+            _ = try await live.store.conversationRewindPlan(sessionID: sessionID, to: turnID)
+        } catch {
+            conversationUnavailable = RewindCopy.message(for: error)
+        }
+        var files: [TurnRestoreFile] = []
+        var codeUnavailable: String?
+        if let context = live.context {
+            do {
+                files = try await context.turnCheckpoints.preview(
+                    sessionID: sessionID,
+                    toTurn: turnID
+                )
+            } catch {
+                codeUnavailable = RewindCopy.message(for: error)
+            }
+        } else {
+            codeUnavailable = RewindCopy.noProject
+        }
+        return RewindPreview(
+            turn: turn,
+            files: files,
+            codeUnavailable: codeUnavailable,
+            conversationUnavailable: conversationUnavailable
+        )
+    }
+
+    /// Rewinds the session to just before one of the reader's messages.
+    ///
+    /// Code: every file touched in that turn or a later one goes back to how
+    /// it was before the turn — created files removed, deleted ones recreated.
+    /// Conversation: the model's history and the transcript both end just
+    /// before the message, and the message goes back into the composer to be
+    /// edited and sent again.
+    ///
+    /// Refused while a run is active, since the run owns the history it is
+    /// appending to, and it holds the session until it is done (see
+    /// ``isRewinding``). A file edited outside Juno since it wrote it is never
+    /// overwritten on the first attempt: the result is `.diverged`, and
+    /// `force` is the reader's second, explicit answer — the same shape as
+    /// Restore Anyway on a single file.
+    @discardableResult
+    public func rewind(
+        to turnID: String,
+        restoring scope: RewindScope,
+        force: Bool = false
+    ) async -> RewindOutcome {
+        guard let live else { return .failed(message: RewindCopy.preview) }
+        guard !isRewinding else { return .failed(message: RewindCopy.inProgress) }
+        // `isRunning`, not the recorded status alone: a message whose hooks
+        // are still deciding — typed here or sent from the phone — has no
+        // run yet, and the one it is about to start would append to the
+        // history this cuts.
+        if isRunning {
+            return .failed(message: RewindCopy.running)
+        }
+        // Nor while a `/compact` between runs is folding the history: the
+        // fold saves its result over the conversation when it lands, and
+        // records a compaction in the transcript, so it would undo the cut
+        // or fold turns the reader just removed.
+        if isCompacting {
+            return .failed(message: RewindCopy.compacting)
+        }
+        // Taken before the first suspension, so nothing starts between these
+        // checks and the cut: every await below — two whole-transcript reads
+        // and the file restore — is a window a phone's prompt used to fit in.
+        isRewinding = true
+        defer { isRewinding = false }
+        // The recorded status trails the run by a hop.
+        if let orchestrator, await orchestrator.isRunning {
+            return .failed(message: RewindCopy.running)
+        }
+        if let orchestrator, await orchestrator.isCompacting {
+            return .failed(message: RewindCopy.compacting)
+        }
+        // Checked before a file moves: code and conversation together must not
+        // restore the files and only then find the conversation cannot follow.
+        if scope.restoresConversation {
+            do {
+                _ = try await live.store.conversationRewindPlan(sessionID: sessionID, to: turnID)
+            } catch {
+                return .failed(message: RewindCopy.message(for: error))
+            }
+        }
+
+        var restored: [WorkspacePath] = []
+        if scope.restoresCode {
+            guard let context = live.context else {
+                return .failed(message: RewindCopy.noProject)
+            }
+            do {
+                restored = try await context.turnCheckpoints.restore(
+                    sessionID: sessionID,
+                    toTurn: turnID,
+                    force: force
+                )
+            } catch let TurnCheckpointError.diverged(paths) {
+                return .diverged(paths: paths)
+            } catch {
+                return .failed(message: RewindCopy.message(for: error))
+            }
+        }
+
+        if scope.restoresConversation {
+            func conversationNotRewound(_ reason: String) -> RewindOutcome {
+                let message = restored.isEmpty
+                    ? "Could not rewind the conversation. \(reason)"
+                    : "Restored \(restored.count == 1 ? "1 file" : "\(restored.count) files"), but the conversation could not be rewound. \(reason)"
+                transientError = message
+                return .failed(message: message)
+            }
+            // Asked once more, last thing before the cut. Nothing this
+            // controller does can start a run while the rewind holds the
+            // session, but the orchestrator is what would save its own
+            // history over the cut, so it is not taken on trust.
+            if let orchestrator, await orchestrator.isRunning {
+                return conversationNotRewound(RewindCopy.running)
+            }
+            do {
+                let plan = try await live.store.rewindConversation(sessionID: sessionID, to: turnID)
+                if scope.restoresCode {
+                    // Their files are restored and their rows are gone; nothing
+                    // is left to rewind them by.
+                    await live.context?.turnCheckpoints.forgetTurns(sessionID: sessionID, from: turnID)
+                }
+                await reloadAfterRewind(live)
+                // Put back for editing. A draft already in the composer stays,
+                // after it: a rewind must not throw away what the reader typed.
+                let draft = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                composerText = draft.isEmpty ? plan.turn.text : plan.turn.text + "\n\n" + composerText
+                rewindGeneration += 1
+            } catch {
+                return conversationNotRewound(RewindCopy.message(for: error))
+            }
+        }
+
+        for path in restored {
+            await refreshTrackedLineStats(for: path.value)
+        }
+        await refreshWorkspacePanels()
+        transientError = nil
+        return .rewound(restoredPaths: restored.map(\.value))
+    }
+
+    /// Waits for the run in flight, if any, to finish. Test and shutdown
+    /// support, like the orchestrator's own `awaitCompletion`.
+    func awaitCurrentRun() async {
+        await orchestrator?.awaitCompletion()
+    }
+
+    /// Re-reads the session after its records were cut back.
+    ///
+    /// The orchestrator is let go rather than told: it holds the history it
+    /// last saw in memory, and the replacement built on the next send loads
+    /// the rewound one from the store.
+    ///
+    /// Never one with a run in flight, though the rewind's hold should make
+    /// that impossible. Let go mid-run, it would carry on unseen: Stop could
+    /// no longer reach it, its approvals would go unrecorded, and a second
+    /// run would start beside it on the next send. It is kept for Stop, and
+    /// its contract forgotten, so the next send replaces it once it is done.
+    private func reloadAfterRewind(_ live: Live) async {
+        if let orchestrator, await orchestrator.isRunning {
+            orchestratorContract = nil
+        } else {
+            await orchestrator?.release()
+            orchestrator = nil
+            orchestratorContract = nil
+        }
+        liveAssistantText = ""
+        // The next request reports the new size; the old number describes a
+        // history that no longer exists.
+        contextTokens = nil
+        lastOutputTokens = nil
+        runStartedAt = nil
+        // Read the way attach() reads, holding back what the store delivers
+        // meanwhile: the transcript is read off the store's actor, and an
+        // event appended during the read would reach this controller first
+        // and then be overwritten by it. An attach still under way owns that
+        // buffer, so it finishes first.
+        if let attaching {
+            await attaching.value
+        }
+        eventsDeliveredWhileRestoring = []
+        let reloaded = await live.store.events(for: sessionID)
+        let delivered = eventsDeliveredWhileRestoring ?? []
+        eventsDeliveredWhileRestoring = nil
+        events = reloaded
+        lastTestRun = nil
+        lastTestRunToolCallID = nil
+        rebuildTerminal()
+        subagentIndex.rebuild(from: events)
+        rebuildDerivedState()
+        let reloadedIDs = Set(reloaded.map(\.id))
+        for event in delivered where !reloadedIDs.contains(event.id) {
+            events.append(event)
+            integrate(event)
+        }
+        if let current = try? await live.store.session(id: sessionID) {
+            session = current
+        }
+    }
+
     /// Recomputes one tracked file's counts and review state from disk. A
     /// checkpoint restore rewrites the file outside the mutation path, so the
     /// counts aggregated from `fileChanged` events no longer describe it.
@@ -2065,37 +2773,26 @@ public final class SessionController {
         }
     }
 
+    /// Hooks the policy lets run, the reader's own included.
     public var enabledHookCount: Int {
-        hookDiscoveryResult.hooks.filter { hookPolicy.allowedHookIDs.contains($0.id) }.count
+        hookDiscoveryResult.hooks.filter { hookPolicy.admits($0) }.count
     }
 
     public var hooksAreEnabled: Bool {
-        hookPolicy.allowUntrustedHooks && enabledHookCount > 0
+        enabledHookCount > 0
     }
 
-    /// Trusts or revokes every currently discovered workspace hook. The trust
+    /// Trusts or revokes every currently discovered repository hook. The trust
     /// decision is private-storage state; the repository cannot enable itself
-    /// by changing `.claude/settings.json` or `.juno/hooks.json`.
+    /// by changing `.claude/settings.json` or `.juno/settings.json`.
     public func setHooksEnabled(_ enabled: Bool) async {
         guard let context = live?.context else {
             transientError = Self.noProjectMessage("change hook trust")
             return
         }
-        if hookDiscoveryResult.hooks.isEmpty {
-            await refreshWorkspacePanels()
-        }
-        let next = HookExecutionPolicy(
-            allowedHookIDs: enabled
-                ? Set(hookDiscoveryResult.hooks.map(\.id))
-                : [],
-            permissionMode: session.configuration.behavior == .code
-                ? session.configuration.permissionMode
-                : .readOnly,
-            allowUntrustedHooks: enabled
-        )
+        reloadHooks(from: context)
         do {
-            try context.hookPolicyStore.save(next)
-            hookPolicy = next
+            hookPolicy = try context.setRepositoryHooksAllowed(enabled, discovered: hookDiscoveryResult)
             if let orchestrator, await !orchestrator.isRunning {
                 await orchestrator.release()
                 self.orchestrator = nil
@@ -2117,14 +2814,9 @@ public final class SessionController {
         guard let context = live?.context else { return }
         testSuggestions = await context.tests.detectSuggestions()
         instructionFiles = await context.instructionFiles()
-        hookDiscoveryResult = HookDiscovery(access: context.access).discover()
+        reloadHooks(from: context)
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
         customAgents = CustomAgentDiscovery(access: context.access).discover()
-        hookPolicy = context.hookPolicyStore.load(
-            permissionMode: session.configuration.behavior == .code
-                ? session.configuration.permissionMode
-                : .readOnly
-        )
         mcpConfigurationError = context.mcpConfigurationError
         if let registry = context.mcpRegistry {
             mcpServerConfigurations = await registry.serverConfigurations()
@@ -2911,35 +3603,56 @@ public final class SessionController {
 
     // MARK: - Compaction
 
-    /// `/compact`: folds older turns into a bounded summary now.
+    /// `/compact [focus]`: folds older turns into a summary now.
     ///
+    /// The session's model writes the summary, told to give `focus` priority
+    /// when the reader typed one; the structural notes stand in if it cannot.
     /// Refused mid-run — the orchestrator owns the conversation while it is
     /// appending to it — and explained when there is nothing to fold, so the
     /// command never silently does nothing.
-    public func compactConversation() async {
+    public func compactConversation(focus: String? = nil) async {
         transientError = nil
+        let focus = focus?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let live else {
             #if DEBUG
             appendPreviewEvent(
                 .compaction(
                     CompactionEvent(
-                        summary: "Older turns were folded into a summary.",
+                        summary: """
+                            **Requests and intent.** Fold the two spacing scales into one.
+
+                            **Current work.** Both files read from the shared scale.
+                            """,
                         beforeMessageCount: max(2, events.count),
                         afterMessageCount: 2,
                         beforeTokens: contextTokens,
-                        requestedByUser: true
+                        requestedByUser: true,
+                        summarySource: .model,
+                        focus: focus?.isEmpty == false ? focus : nil
                     )
                 )
             )
             #endif
             return
         }
-        guard !session.status.isActive else {
+        // `isRunning`, not the recorded status alone: a prompt whose hooks are
+        // still deciding has no run yet, and the orchestrator refuses to fold
+        // a history that prompt is about to join.
+        guard !isRunning else {
             transientError = "Juno is still working. Compaction happens between turns; try again once this one ends."
             return
         }
+        // The fold saves over the conversation a rewind is cutting, and would
+        // fold back the turns it removes.
+        guard !isRewinding else {
+            transientError = RewindCopy.inProgress
+            return
+        }
+        guard !isCompacting else { return }
+        isCompactingOnRequest = true
+        defer { isCompactingOnRequest = false }
         let orchestrator = await currentOrchestrator(live)
-        if await orchestrator.compactNow() == nil {
+        if await orchestrator.compactNow(focus: focus) == nil {
             transientError = "There is not enough conversation to compact yet."
         }
     }
@@ -3038,6 +3751,10 @@ public final class SessionController {
                 runStartedAt = nil
             }
         case let .eventAppended(event) where event.sessionID == sessionID:
+            guard eventsDeliveredWhileRestoring == nil else {
+                eventsDeliveredWhileRestoring?.append(event)
+                return
+            }
             events.append(event)
             integrate(event)
         // A sub-agent's own step. It belongs to a different session's transcript
@@ -3063,6 +3780,13 @@ public final class SessionController {
         case let .toolCompleted(completed):
             if openToolCallID == completed.toolCallID {
                 openToolCallID = nil
+            }
+            // Nothing pushes the coordinator's state into the window, and the
+            // agent's own screen actions are tool calls. Re-reading as each
+            // call finishes keeps the capture the reader sees in step with the
+            // machine, without polling while nothing is happening.
+            if computerUseActive {
+                Task { @MainActor [weak self] in await self?.refreshComputerUse() }
             }
         case let .toolOutput(output):
             appendTerminalChunk(

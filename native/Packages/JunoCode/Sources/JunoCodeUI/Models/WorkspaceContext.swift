@@ -9,6 +9,10 @@ public final class WorkspaceContext: Sendable {
     public let record: WorkspaceRecord
     public let access: WorkspaceAccess
     public let checkpoints: CheckpointStore
+    /// What each of the reader's turns changed, for rewinding to one of them.
+    /// Fed only by the agent's file tools; `files` below stays the reader's
+    /// own, uncaptured path to the disk.
+    public let turnCheckpoints: TurnCheckpointStore
     public let files: FileOperationService
     public let index: WorkspaceIndexService
     public let executor: CommandExecutionService
@@ -33,6 +37,10 @@ public final class WorkspaceContext: Sendable {
     /// Discovered during context construction so hooks are available to the
     /// first agent turn even when the reader never opens the Repository pane.
     public let hookDiscoveryResult: HookDiscoveryResult
+    /// The folder of the reader's own `settings.json`, whose hooks run in every
+    /// project. Nil leaves them out, for a test that must not pick up the
+    /// hooks of whoever runs it.
+    public let userSettingsDirectory: URL?
     /// Optional authenticated web search, shared with isolated sub-agent
     /// contexts as a read-only capability.
     public let webSearch: (any CodeWebSearching)?
@@ -43,12 +51,14 @@ public final class WorkspaceContext: Sendable {
         access: WorkspaceAccess,
         storageRoot: URL,
         additionalWritablePaths: [String] = [],
-        webSearch: (any CodeWebSearching)? = nil
+        webSearch: (any CodeWebSearching)? = nil,
+        userSettingsDirectory: URL? = CodeSettingsStore.defaultUserDirectory
     ) {
         self.record = record
         self.access = access
         self.storageRoot = storageRoot
         self.webSearch = webSearch
+        self.userSettingsDirectory = userSettingsDirectory
         self.hookPolicyStore = HookPolicyStore(
             storageRoot: storageRoot,
             workspaceID: record.id
@@ -57,7 +67,10 @@ public final class WorkspaceContext: Sendable {
             storageRoot: storageRoot,
             workspaceID: record.id
         )
-        self.hookDiscoveryResult = HookDiscovery(access: access).discover()
+        self.hookDiscoveryResult = HookDiscovery(
+            access: access,
+            userSettingsDirectory: userSettingsDirectory
+        ).discover()
         let checkpoints = CheckpointStore(
             directoryURL: storageRoot
                 .appendingPathComponent("checkpoints")
@@ -65,6 +78,11 @@ public final class WorkspaceContext: Sendable {
             access: access
         )
         self.checkpoints = checkpoints
+        let turnCheckpoints = TurnCheckpointStore(
+            directoryURL: Self.turnCheckpointDirectory(storageRoot: storageRoot, workspaceID: record.id),
+            access: access
+        )
+        self.turnCheckpoints = turnCheckpoints
         let files = FileOperationService(access: access, checkpoints: checkpoints)
         self.files = files
         let index = WorkspaceIndexService(access: access)
@@ -115,7 +133,9 @@ public final class WorkspaceContext: Sendable {
         let computerUse = ComputerUseCoordinator(driver: SystemComputerUseDriver())
         self.computerUse = computerUse
         self.registry = ToolRegistry.standard(
-            files: files,
+            // The agent's writes, and only the agent's, are snapshotted into
+            // the turn that made them.
+            files: TurnCapturingFileOperations(base: files, turns: turnCheckpoints),
             index: index,
             executor: executor,
             git: git,
@@ -136,6 +156,14 @@ public final class WorkspaceContext: Sendable {
         )
     }
 
+    /// Where a workspace's turn checkpoints live, so a session can be deleted
+    /// with its snapshots even when its folder can no longer be opened.
+    public static func turnCheckpointDirectory(storageRoot: URL, workspaceID: WorkspaceID) -> URL {
+        storageRoot
+            .appendingPathComponent("turn-checkpoints", isDirectory: true)
+            .appendingPathComponent(workspaceID.value, isDirectory: true)
+    }
+
     /// Discovers only reader-approved MCP declarations when a Code orchestrator
     /// is built. Each resulting tool still passes Juno's normal call approval.
     public func mcpTools(excludingServers disabled: Set<String> = []) async -> [any CodeTool] {
@@ -154,6 +182,28 @@ public final class WorkspaceContext: Sendable {
         if !allowed {
             try? await mcpRegistry?.disconnect(serverID: server.name)
         }
+    }
+
+    /// Allows or revokes this project's hooks, as the reader decided.
+    ///
+    /// Allowing records the IDs of exactly the repository hooks discovered
+    /// now. An ID is a digest of the entry — its file, event, matcher and
+    /// command — so an entry added or edited later, by a collaborator or by
+    /// the agent, is a new hook that waits to be allowed. What the command
+    /// runs is not in the digest: a script can change under an unchanged
+    /// entry. That is why an allowed hook still asks before each run wherever
+    /// the permission mode asks before a command (`HookExecutionPolicy`).
+    @discardableResult
+    public func setRepositoryHooksAllowed(
+        _ allowed: Bool,
+        discovered: HookDiscoveryResult
+    ) throws -> HookExecutionPolicy {
+        let policy = HookExecutionPolicy(
+            allowedHookIDs: allowed ? Set(discovered.repositoryHooks.map(\.id)) : [],
+            allowUntrustedHooks: allowed
+        )
+        try hookPolicyStore.save(policy)
+        return policy
     }
 
     /// Builds a short-lived context rooted in a Juno-created worktree. The
@@ -193,7 +243,8 @@ public final class WorkspaceContext: Sendable {
             additionalWritablePaths: [
                 access.rootURL.appendingPathComponent(".git").path,
             ],
-            webSearch: webSearch
+            webSearch: webSearch,
+            userSettingsDirectory: userSettingsDirectory
         )
     }
 

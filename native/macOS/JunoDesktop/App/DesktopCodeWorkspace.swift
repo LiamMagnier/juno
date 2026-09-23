@@ -473,22 +473,9 @@ struct DesktopCodeWorkspace: View {
             }
         }
         .overlay(alignment: .top) {
-            if controller.computerUseActive {
-                HStack(spacing: JunoSpace.snug) {
-                    Circle().fill(Studio.Ink.danger).frame(width: 7, height: 7)
-                    Text("Juno is controlling the screen")
-                        .font(Studio.Font.label)
-                    Button("Stop") { Task { await controller.stopComputerUse() } }
-                        .buttonStyle(StudioSecondaryButtonStyle())
-                        .accessibilityIdentifier("juno.code.computer-use.stop")
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug)
-                .background(Capsule().fill(Studio.Surface.raised))
-                .overlay(Capsule().strokeBorder(Studio.Surface.hairline))
-                .padding(.top, JunoSpace.snug)
-                .transition(.junoOverlay)
-            }
+            // The stop while screen control runs, and the missing macOS grant
+            // with its System Settings link when a start could not happen.
+            StudioScreenControlBanner(controller: controller)
         }
     }
 
@@ -538,7 +525,8 @@ struct DesktopCodeWorkspace: View {
                 Button("Compact Context") {
                     Task { await controller?.compactConversation() }
                 }
-                .disabled(controller == nil)
+                // As `/compact`: between runs only, and once at a time.
+                .disabled(controller == nil || controller?.isRunning == true || controller?.isCompacting == true)
                 Divider()
                 Button(controller?.computerUseActive == true ? "Stop Screen Control" : "Start Screen Control",
                        action: toggleComputerUse)
@@ -611,7 +599,7 @@ struct DesktopCodeWorkspace: View {
             if controller.pullRequestUnavailableReason == nil {
                 items.append(CodePaletteItem(id: "action.pull-request", kind: .action, title: "Create pull request…", icon: .pulls))
             }
-            if controller.session.status.isActive {
+            if controller.isRunning || controller.isCompacting {
                 items.append(CodePaletteItem(id: "action.stop", kind: .action, title: "Stop", icon: .stop, shortcut: "⌘."))
             }
             for mode in StudioMode.ladder {
@@ -713,8 +701,14 @@ struct DesktopCodeWorkspace: View {
     }
 
     /// Whether the thing on screen is running and can be told to stop.
+    ///
+    /// For a local session that is more than the recorded status: a prompt
+    /// whose hooks are still deciding has no run yet (`isRunning` covers
+    /// it), and a `/compact` between runs waits on the model. The composer
+    /// offers Stop in both, and Command-period, which is the only other way to
+    /// reach it, has to as well.
     private var isStoppable: Bool {
-        if let controller { return controller.session.status.isActive }
+        if let controller { return controller.isRunning || controller.isCompacting }
         if let selectedTask { return selectedTask.status.isActive }
         if selectedRemote != nil { return selectedRemoteSummary?.isRunning == true }
         return false
@@ -796,10 +790,7 @@ struct DesktopCodeWorkspace: View {
             if controller.computerUseActive {
                 await controller.stopComputerUse()
             } else {
-                if !controller.session.configuration.computerUseEnabled {
-                    await controller.setComputerUseEnabled(true)
-                }
-                await controller.activateComputerUse()
+                await controller.startComputerUse()
             }
         }
     }

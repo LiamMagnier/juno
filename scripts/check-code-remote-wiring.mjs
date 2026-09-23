@@ -93,6 +93,20 @@ const remoteBrowser = read(
 const remoteClient = read(
   "native/Packages/JunoNativeKit/Sources/JunoCodeKit/NativeCodeRemoteClient.swift",
 );
+// The return path. The Mac claimed and acknowledged commands for months while
+// uploading nothing, so a phone's transcript of its own Mac stayed empty; these
+// pin the one uploader, its composition on the Mac, and the field spellings the
+// phone actually sends.
+const desktopHost = read("native/macOS/JunoDesktop/App/DesktopCodeHost.swift");
+const remoteBridge = read(
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchRemoteBridge.swift",
+);
+const remoteAdapter = read(
+  "native/Packages/JunoCode/Sources/JunoCodeBridge/RemoteCommandAdapter.swift",
+);
+const remoteUploader = read(
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkbenchRemoteUploader.swift",
+);
 
 const required = [
   // The live start path, end to end: one entry point that chooses a target,
@@ -126,6 +140,24 @@ const required = [
   [remoteClient, "public func eventStream("],
   [remoteBrowser, "public func respondToApproval("],
   [remoteBrowser, "public func send("],
+  // Uploads: the list and each session's events, from the Mac, while hosting is on.
+  [remoteClient, "public func putSessions("],
+  [remoteClient, "public func postEvents("],
+  [desktopHost, "CodeRemoteSessionSync("],
+  // Each uploader follows the store through an observation it owns and ends,
+  // and starts only after the previous one has finished ending.
+  [desktopHost, "WorkbenchRemoteUploader("],
+  [remoteUploader, "bridge.startRelayObservation"],
+  [remoteUploader, "bridge.stopRelayObservation(observation)"],
+  [remoteUploader, "await previous?.value"],
+  [remoteBridge, "CodeRemoteSyncSource"],
+  // The phone is shown what this Mac has, never an unread workbench as empty.
+  [remoteBridge, "await model.loadIfNeeded()"],
+  [remoteBridge, "CodeRelayEventProjection.relayEvents("],
+  // A phone's create_session and a remote prompt that leaves the draft alone.
+  [remoteAdapter, '"workspaceKey"'],
+  [remoteAdapter, '"prompt"'],
+  [remoteBridge, "deliverRemotePrompt("],
 ];
 
 const unmet = required.filter(([source, fragment]) => !source.includes(fragment));

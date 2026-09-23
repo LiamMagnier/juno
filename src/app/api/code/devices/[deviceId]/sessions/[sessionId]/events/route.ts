@@ -4,8 +4,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import {
+  MAX_EVENT_BATCH_BYTES,
   SESSION_EVENT_KINDS,
-  deriveSessionStatusFields,
+  appendedStatusFields,
+  checkSessionEventBatch,
+  chunkEventFrames,
   planSessionEventAppend,
   serializeSessionEvent,
 } from "@/lib/code-remote-sessions";
@@ -28,19 +31,35 @@ async function ownedSession(deviceId: string, sessionId: string, userId: string)
 
 /// Host append. Sequence is host-assigned and monotone; the compound unique key
 /// makes reconnect/replay idempotent. A gap is rejected instead of silently
-/// producing a transcript that looks complete.
+/// producing a transcript that looks complete, and names the sequence the host
+/// must resume from. Size is bounded per request and per event, and a batch
+/// that repeats a sequence is refused whole rather than half-stored.
 export async function POST(req: Request, { params }: { params: Promise<{ deviceId: string; sessionId: string }> }) {
   const { user, error } = await requireUser();
   if (!user) return error;
   const { deviceId, sessionId } = await params;
   const session = await ownedSession(deviceId, sessionId, user.id);
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
-  const parsed = postSchema.safeParse(await req.json().catch(() => null));
+  const raw = await req.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_EVENT_BATCH_BYTES) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+  const parsed = postSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  const check = checkSessionEventBatch(parsed.data.events);
+  if (!check.ok) return NextResponse.json({ error: check.error, seq: check.seq }, { status: check.status });
   const plan = planSessionEventAppend(session.lastEventSequence, parsed.data.events);
   if (!plan.ok) return NextResponse.json({ error: plan.error, expectedSeq: plan.expectedSeq }, { status: 409 });
   if (plan.accepted.length) {
-    const statusFields = deriveSessionStatusFields(plan.status);
+    // The host's list is the authority on what a session is doing now; a
+    // status from the journal overrides it only if it is newer.
+    const statusFields = appendedStatusFields(plan, session.sessionUpdatedAt);
     await prisma.$transaction(async (tx) => {
       await tx.codeRemoteSessionEvent.createMany({
         data: plan.accepted.map((event) => ({
@@ -55,8 +74,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
         })),
         skipDuplicates: true,
       });
-      await tx.codeRemoteSession.update({
-        where: { id: session.id, userId: user.id },
+      // Only ever forward: two appends racing from the same stale read both
+      // plan from it, and the later commit must not pull the high-water mark
+      // back below what the earlier one stored.
+      await tx.codeRemoteSession.updateMany({
+        where: { id: session.id, userId: user.id, lastEventSequence: { lt: plan.lastSeq } },
         data: {
           lastEventSequence: plan.lastSeq,
           syncedAt: new Date(),
@@ -110,7 +132,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ deviceId
           });
           if (events.length) {
             cursor = events[events.length - 1].seq;
-            send({ type: "events", events: events.map(serializeSessionEvent), lastSeq: cursor });
+            // Several bounded frames rather than one line per page: each
+            // frame's `lastSeq` is its own last event, which is what the
+            // client checks a frame against.
+            for (const frame of chunkEventFrames(events.map(serializeSessionEvent))) {
+              send({ type: "events", events: frame, lastSeq: frame[frame.length - 1].seq });
+            }
             lastHeartbeat = Date.now();
           } else if (Date.now() - lastHeartbeat > 15_000) {
             controller.enqueue(encoder.encode(`: heartbeat ${cursor}\n\n`));

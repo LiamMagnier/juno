@@ -6,9 +6,17 @@ import JunoDesignSystem
 
 /// The reader's message: a quiet bubble on the trailing side, so the eye can
 /// find the turn boundaries without reading.
-struct StudioUserMessage: View {
+///
+/// `action` hangs off the bubble's leading edge and is told whether the row is
+/// hovered, so a per-message action — Rewind — can stay out of sight until it
+/// is wanted. An overlay rather than a column beside the bubble: an action
+/// nobody can see must not take width from the message.
+struct StudioUserMessage<Action: View>: View {
     let text: String
     var caption: String?
+    @ViewBuilder var action: (_ isHovered: Bool) -> Action
+
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
@@ -23,6 +31,12 @@ struct StudioUserMessage: View {
                     RoundedRectangle(cornerRadius: Studio.Radius.card + 4, style: .continuous)
                         .fill(Studio.Surface.muted)
                 )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("You: \(text)")
+                .overlay(alignment: .leading) {
+                    action(hovering)
+                        .alignmentGuide(.leading) { $0[.trailing] + JunoSpace.tight }
+                }
                 // A reader's message is a turn marker, not a column: capped
                 // so a long prompt does not read as the agent's reply.
                 .frame(maxWidth: Studio.Metrics.measure * 0.78, alignment: .trailing)
@@ -35,8 +49,15 @@ struct StudioUserMessage: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 64)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You: \(text)")
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension StudioUserMessage where Action == EmptyView {
+    init(text: String, caption: String? = nil) {
+        self.init(text: text, caption: caption) { _ in EmptyView() }
     }
 }
 
@@ -333,6 +354,72 @@ struct StudioDecisionRow: View {
     }
 }
 
+/// What a project hook did, once and quietly: "Blocked by hook
+/// .claude/hooks/guard.sh", with the hook's own reason beneath.
+///
+/// Neutral ink on purpose. A hook doing its job is not an error, and coral is
+/// kept for work in flight and for the reader being needed; even a failed
+/// hook left the run going, so it reads as a note rather than an alarm.
+struct StudioHookRow: View {
+    let event: HookActivityEvent
+
+    private var title: String {
+        switch event.outcome {
+        case .blocked:
+            event.hookEvent == "UserPromptSubmit" ? "Not sent. Blocked by hook" : "Blocked by hook"
+        case .feedback: "Note from hook"
+        case .continued: "Kept working at a hook's request"
+        case .stopped: event.hookName.isEmpty ? "Stopped" : "Stopped by hook"
+        case .failed: "Hook failed"
+        case .message: "Hook"
+        }
+    }
+
+    private var icon: JunoIcon {
+        switch event.outcome {
+        case .blocked: .circleSlash
+        case .feedback, .message: .message
+        case .continued: .rotateCcw
+        case .stopped: .circleStop
+        case .failed: .triangleAlert
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(icon, size: 11)
+                    .foregroundStyle(Studio.Ink.tertiary)
+                    .frame(width: 11)
+                Text(title)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                if !event.hookName.isEmpty {
+                    Text(event.hookName)
+                        .font(Studio.Font.mono)
+                        .foregroundStyle(Studio.Ink.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            if !event.message.isEmpty {
+                Text(event.message)
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.tertiary)
+                    .lineLimit(4)
+                    .textSelection(.enabled)
+                    .padding(.leading, 11 + JunoSpace.tight)
+            }
+        }
+        .padding(.leading, 17)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            [title, event.hookName, event.message].filter { !$0.isEmpty }.joined(separator: ": ")
+        )
+    }
+}
+
 /// The agent's plan, at its latest state.
 struct StudioPlanCard: View {
     let goal: SessionGoal
@@ -486,7 +573,104 @@ struct StudioErrorRow: View {
     }
 }
 
-/// A centred caption between two hairlines: context compacted, mode changed.
+/// Where the model's context was folded: one quiet divider, the summary
+/// behind it.
+///
+/// The thread itself loses nothing — every turn is still on screen; only what
+/// the model is sent shrank — so the summary is not something to read in
+/// passing. It is there for the moment a reader wonders what the agent still
+/// remembers, which is exactly when a run starts acting as if it forgot.
+struct StudioCompactionDivider: View {
+    let event: CompactionEvent
+    @Binding var isExpanded: Bool
+
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Button {
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: JunoSpace.cozy) {
+                    Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+                    HStack(spacing: JunoSpace.tight) {
+                        Text("Context compacted")
+                            .font(Studio.Font.meta)
+                            .foregroundStyle(hovering || isExpanded ? Studio.Ink.secondary : Studio.Ink.tertiary)
+                        JunoIconView(.chevronRight, size: 9)
+                            .foregroundStyle(Studio.Ink.tertiary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .opacity(hovering || isExpanded ? 1 : 0.55)
+                    }
+                    .fixedSize()
+                    Rectangle().fill(Studio.Surface.hairline).frame(height: 1)
+                }
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(isExpanded ? "Hide the summary" : "Show what Juno kept of the earlier conversation")
+            .accessibilityLabel("Context compacted")
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier("juno.code.transcript.compaction")
+
+            if isExpanded {
+                detail
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text(origin + " · " + event.messageCountSummary)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.tertiary)
+            if let focus = event.focus {
+                Text("Keeping: \(focus)")
+                    .font(Studio.Font.meta)
+                    .foregroundStyle(Studio.Ink.secondary)
+                    .textSelection(.enabled)
+            }
+            JunoMarkdownText(event.summary)
+                .font(Studio.Font.meta)
+                .foregroundStyle(Studio.Ink.secondary)
+                .lineSpacing(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(JunoSpace.cozy)
+        .background(
+            RoundedRectangle(cornerRadius: Studio.Radius.card, style: .continuous)
+                .strokeBorder(Studio.Surface.hairline)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.transcript.compaction.summary")
+    }
+
+    /// Who wrote the summary and why, in the reader's terms.
+    private var origin: String {
+        switch event.summarySource {
+        case .model:
+            return event.requestedByUser
+                ? "Summarised by the model at your request"
+                : "Summarised by the model as the context filled"
+        case .structural:
+            if let reason = event.fallbackReason {
+                return "Kept as notes because \(reason)"
+            }
+            return event.requestedByUser
+                ? "Kept as notes at your request"
+                : "Kept as notes as the context filled"
+        }
+    }
+}
+
+/// A centred caption between two hairlines: a mode or model change.
 struct StudioDividerCaption: View {
     let text: String
 

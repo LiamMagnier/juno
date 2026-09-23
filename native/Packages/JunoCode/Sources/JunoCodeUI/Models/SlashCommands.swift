@@ -47,10 +47,14 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
     /// a fold of the model context to perform, so it is an action the composer
     /// dispatches to the controller instead of text it hands to the reader.
     public enum Action: String, Equatable, Sendable {
-        /// Fold older turns into a bounded summary.
+        /// Fold older turns into a summary; the argument, if any, says what
+        /// the summary should keep.
         case compact
         /// Open the review pane.
         case review
+        /// Choose one of the reader's messages to go back to: `/rewind`, the
+        /// typed twin of esc esc.
+        case rewind
     }
 
     /// The verb this command performs, or nil for an ordinary saved prompt.
@@ -66,6 +70,10 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
     /// already chosen one for this turn. Nil means "leave the contract alone".
     public let behavior: AgentBehavior?
     public let source: Source
+    /// What an action takes after its name, shown beside it in the menu —
+    /// the only place a reader would learn that `/compact` accepts anything.
+    /// Nil for prompts: their argument lands in text the reader can see.
+    public let argumentHint: String?
 
     public var id: String { name }
 
@@ -75,7 +83,8 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         prompt: String,
         behavior: AgentBehavior? = nil,
         source: Source = .builtIn,
-        action: Action? = nil
+        action: Action? = nil,
+        argumentHint: String? = nil
     ) {
         self.name = name.lowercased()
         self.summary = summary
@@ -83,6 +92,7 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         self.behavior = behavior
         self.source = source
         self.action = action
+        self.argumentHint = argumentHint
     }
 
     /// The prompt with the reader's own words substituted in.
@@ -280,9 +290,16 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
         ),
         CodeSlashCommand(
             name: "compact",
-            summary: "Fold older turns into a summary to free up context",
+            summary: "Summarise older turns to free up context",
             prompt: "",
-            action: .compact
+            action: .compact,
+            argumentHint: "what to keep"
+        ),
+        CodeSlashCommand(
+            name: "rewind",
+            summary: "Go back to before one of your messages",
+            prompt: "",
+            action: .rewind
         ),
         CodeSlashCommand(
             name: "commit",
@@ -357,6 +374,27 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
 
     public func command(named name: String) -> CodeSlashCommand? {
         commands.first { $0.name == name.lowercased() }
+    }
+
+    /// The library without session verbs, for a composer that has no session
+    /// yet: `/compact` on the landing screen would have nothing to fold.
+    public func excludingActions() -> CodeSlashCommandLibrary {
+        CodeSlashCommandLibrary(commands: commands.filter { $0.action == nil })
+    }
+
+    /// The session verb the composer holds, when the reader typed one out by
+    /// name — `/compact`, or `/compact keep the API decisions` — with its
+    /// argument trimmed.
+    ///
+    /// The menu only shows while the name is being typed, so once the reader
+    /// has moved on to the argument, sending is what runs the verb. Without
+    /// this the whole line would go to the model as a message.
+    public func typedAction(in composerText: String) -> (command: CodeSlashCommand, argument: String)? {
+        guard let token = CodeSlashToken(composerText: composerText),
+              let command = command(named: token.query),
+              command.action != nil
+        else { return nil }
+        return (command, token.argument.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

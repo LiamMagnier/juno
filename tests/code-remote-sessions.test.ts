@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import {
+  MAX_EVENT_BATCH_BYTES,
+  MAX_EVENT_FRAME_BYTES,
+  MAX_EVENT_PAYLOAD_BYTES,
+  appendedStatusFields,
+  checkSessionEventBatch,
+  chunkEventFrames,
   decodeCursor,
   deriveSessionStatusFields,
   deviceIsOnline,
@@ -192,6 +200,66 @@ test("event append leaves status undefined when no status_update is present", ()
   assert.ok(plan.ok && plan.status === undefined);
 });
 
+test("event append reports when the host recorded the status it derives", () => {
+  const plan = planSessionEventAppend(0, [
+    { ...ev(1, "status_update", { status: "running" }), createdAt: "2026-09-22T10:00:00.000Z" },
+    { ...ev(2, "status_update", { status: "completed" }), createdAt: "2026-09-22T10:05:00.000Z" },
+    { ...ev(3), createdAt: "2026-09-22T10:06:00.000Z" },
+  ]);
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(plan.status, "completed");
+    assert.equal(plan.statusAt, "2026-09-22T10:05:00.000Z");
+  }
+});
+
+// A Mac lists a session waiting on the reader as awaiting_approval, and does
+// not journal that wait as a status. Its journal, uploaded after the fact,
+// ends on the run's earlier "running". That must not overwrite the list.
+test("a journal status older than the host's list does not overwrite it", () => {
+  const listedAt = new Date("2026-09-22T10:10:00.000Z");
+  const backfill = planSessionEventAppend(0, [
+    { ...ev(1, "status_update", { status: "running" }), createdAt: "2026-09-22T10:00:00.000Z" },
+    { ...ev(2, "approval_request", { requestId: "a-1" }), createdAt: "2026-09-22T10:09:59.000Z" },
+  ]);
+  assert.ok(backfill.ok);
+  if (backfill.ok) assert.equal(appendedStatusFields(backfill, listedAt), null);
+});
+
+test("a journal status newer than the host's list moves it", () => {
+  const listedAt = new Date("2026-09-22T10:10:00.000Z");
+  const live = planSessionEventAppend(4, [
+    { ...ev(5, "status_update", { status: "completed" }), createdAt: "2026-09-22T10:10:00.000Z" },
+  ]);
+  assert.ok(live.ok);
+  if (live.ok) {
+    assert.deepEqual(appendedStatusFields(live, listedAt), {
+      currentStatus: "completed",
+      isRunning: false,
+      isAwaitingApproval: false,
+    });
+  }
+});
+
+test("a journal status without a time is taken as current, as before", () => {
+  const plan = planSessionEventAppend(0, [ev(1, "status_update", { status: "running" })]);
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(appendedStatusFields(plan, new Date("2030-01-01T00:00:00.000Z"))?.currentStatus, "running");
+  }
+  assert.equal(appendedStatusFields({ status: "bogus", statusAt: undefined }, new Date(0)), null);
+  assert.equal(appendedStatusFields({ status: undefined, statusAt: undefined }, new Date(0)), null);
+});
+
+test("the events route folds status through the list-aware gate", () => {
+  const route = fs.readFileSync(
+    path.join(process.cwd(), "src/app/api/code/devices/[deviceId]/sessions/[sessionId]/events/route.ts"),
+    "utf8",
+  );
+  assert.match(route, /appendedStatusFields\(plan, session\.sessionUpdatedAt\)/);
+  assert.doesNotMatch(route, /deriveSessionStatusFields\(/, "no path folds a journal status without the gate");
+});
+
 test("status fields map running/awaiting/idle and reject unknown states", () => {
   assert.deepEqual(deriveSessionStatusFields("running"), { currentStatus: "running", isRunning: true, isAwaitingApproval: false });
   assert.deepEqual(deriveSessionStatusFields("awaiting_approval"), { currentStatus: "awaiting_approval", isRunning: false, isAwaitingApproval: true });
@@ -229,4 +297,66 @@ test("online running session detail is live", () => {
   const detail = serializeRemoteSessionDetail(session({ isRunning: true }), true);
   assert.equal(detail.stale, false);
   assert.equal(detail.live, true);
+});
+
+// ---------------------------------------------------------------------------
+// Host uploads: batch size, duplicates and frame size
+// ---------------------------------------------------------------------------
+
+test("a batch that repeats a sequence is refused whole, not reported as a gap", () => {
+  const check = checkSessionEventBatch([ev(1), ev(2), ev(2)]);
+  assert.deepEqual(check, { ok: false, status: 400, error: "duplicate_seq", seq: 2 });
+});
+
+test("an event too large to render on a phone is refused with its sequence", () => {
+  const huge = "x".repeat(MAX_EVENT_PAYLOAD_BYTES + 1);
+  const check = checkSessionEventBatch([ev(1), ev(2, "command_output", { text: huge })]);
+  assert.deepEqual(check, { ok: false, status: 413, error: "event_too_large", seq: 2 });
+});
+
+test("an ordinary batch passes the checks and then the append planner", () => {
+  const batch = [ev(5), ev(4, "user_message", { text: "hi" }), ev(6)];
+  assert.deepEqual(checkSessionEventBatch(batch), { ok: true });
+  const plan = planSessionEventAppend(3, batch);
+  assert.ok(plan.ok);
+  if (plan.ok) assert.deepEqual(plan.accepted.map((e) => e.seq), [4, 5, 6]);
+});
+
+test("a page is cut into bounded SSE frames, in order", () => {
+  const events = Array.from({ length: 30 }, (_, index) => ({
+    seq: index + 1,
+    kind: "text_delta",
+    payload: { text: "y".repeat(1_000) },
+  }));
+  const frames = chunkEventFrames(events, 8 * 1024);
+  assert.ok(frames.length > 1, "a page larger than a frame is split");
+  assert.deepEqual(frames.flat().map((e) => e.seq), events.map((e) => e.seq), "nothing is lost or reordered");
+  for (const frame of frames) {
+    assert.ok(Buffer.byteLength(JSON.stringify(frame), "utf8") <= 8 * 1024 + 64);
+  }
+});
+
+test("an event larger than a frame still travels, alone", () => {
+  const big = { seq: 1, kind: "text_delta", payload: { text: "z".repeat(20_000) } };
+  const frames = chunkEventFrames([big, { seq: 2, kind: "heartbeat", payload: {} }], 8 * 1024);
+  assert.deepEqual(frames.map((frame) => frame.map((e) => e.seq)), [[1], [2]]);
+});
+
+test("a frame fits the phone's line limit and a batch fits a hundred events", () => {
+  // CodeRemoteSSEParser.maximumLineBytes in NativeCodeRemoteClient.swift.
+  assert.ok(MAX_EVENT_FRAME_BYTES < 1024 * 1024);
+  assert.ok(MAX_EVENT_BATCH_BYTES >= 100 * 8 * 1024);
+});
+
+test("the events route bounds the body before parsing and keeps the high-water mark monotone", () => {
+  const route = fs.readFileSync(
+    path.join(process.cwd(), "src/app/api/code/devices/[deviceId]/sessions/[sessionId]/events/route.ts"),
+    "utf8",
+  );
+  const sizeCheck = route.indexOf("> MAX_EVENT_BATCH_BYTES");
+  const parse = route.indexOf("JSON.parse(raw)");
+  assert.ok(sizeCheck !== -1 && parse !== -1 && sizeCheck < parse, "size is checked before JSON is parsed");
+  assert.match(route, /checkSessionEventBatch\(parsed\.data\.events\)/);
+  assert.match(route, /lastEventSequence: \{ lt: plan\.lastSeq \}/);
+  assert.match(route, /chunkEventFrames\(/);
 });

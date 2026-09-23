@@ -11,7 +11,7 @@ public struct ComputerScreenshotTool: CodeTool {
         self.computer = computer
     }
 
-    public let name = "computer_screenshot"
+    public let name = ComputerUseToolName.screenshot
     public let description =
         "Capture the Mac display after the user has explicitly activated Computer Use."
     public var inputSchema: JSONValue {
@@ -47,7 +47,7 @@ public struct ComputerClickTool: CodeTool {
         self.computer = computer
     }
 
-    public let name = "computer_click"
+    public let name = ComputerUseToolName.click
     public let description = "Click display coordinates while Computer Use is active."
     public var inputSchema: JSONValue {
         [
@@ -88,7 +88,7 @@ public struct ComputerTypeTool: CodeTool {
         self.computer = computer
     }
 
-    public let name = "computer_type"
+    public let name = ComputerUseToolName.type
     public let description = "Type text into the focused Mac control while Computer Use is active."
     public var inputSchema: JSONValue {
         [
@@ -119,7 +119,7 @@ public struct ComputerKeyTool: CodeTool {
         self.computer = computer
     }
 
-    public let name = "computer_press_key"
+    public let name = ComputerUseToolName.pressKey
     public let description = "Press one named keyboard key while Computer Use is active."
     public var inputSchema: JSONValue {
         [
@@ -150,7 +150,7 @@ public struct ComputerScrollTool: CodeTool {
         self.computer = computer
     }
 
-    public let name = "computer_scroll"
+    public let name = ComputerUseToolName.scroll
     public let description = "Scroll at display coordinates while Computer Use is active."
     public var inputSchema: JSONValue {
         [

@@ -188,6 +188,32 @@ final class JunoUpdateFeedTests: XCTestCase {
         XCTAssertThrowsError(try JunoUpdateFeed.macOSCandidate(from: payload))
     }
 
+    /// The repository went private, so the backend now hands out the signed URL
+    /// GitHub redirects a release asset's API download to. Installed copies
+    /// cannot be changed, so this pins that the decoder they already carry
+    /// takes that shape as it is: the host passes, and the query — `%3A`, `%2B`,
+    /// `+`, a JWT's dots — reaches `URLSession` byte for byte, because a
+    /// re-encoded signature is a 403.
+    func testASignedReleaseAssetURLDecodesWithItsSignatureIntact() throws {
+        let signed = "https://release-assets.githubusercontent.com/github-production-release-asset/"
+            + "1053411839/5a1d0e2c-0000-4000-8000-000000000000?sp=r&sv=2018-11-09&sr=b&spr=https"
+            + "&se=2026-09-22T21%3A36%3A11Z&rscd=attachment%3B+filename%3DJuno-1.5.5.dmg"
+            + "&rsct=application%2Foctet-stream&sig=q0%2Bx7Yk%2Fz9%3D"
+            + "&jwt=eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3OTAwMDAwMDB9.c2ln"
+            + "&response-content-disposition=attachment%3B%20filename%3DJuno-1.5.5.dmg"
+        let digest = String(repeating: "ab", count: 32)
+        let candidate = try XCTUnwrap(
+            JunoUpdateFeed.macOSCandidate(
+                from: feed(url: signed, version: "1.5.5", size: 23_958_367, sha256: "sha256:\(digest)")
+            )
+        )
+        XCTAssertEqual(candidate.downloadURL.absoluteString, signed)
+        XCTAssertEqual(candidate.downloadURL.host(), "release-assets.githubusercontent.com")
+        XCTAssertEqual(candidate.sizeBytes, 23_958_367)
+        XCTAssertEqual(candidate.sha256, digest)
+        XCTAssertTrue(JunoUpdateFeed.isNewer(candidate.version, than: "1.5.4"))
+    }
+
     func testAFeedFromTheWrongHostIsRefusedAtDecodeTime() {
         XCTAssertThrowsError(
             try JunoUpdateFeed.macOSCandidate(from: feed(url: "https://evil.example.com/Juno.dmg"))
@@ -202,5 +228,55 @@ final class JunoUpdateFeedTests: XCTestCase {
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertEqual(query.first(where: { $0.name == "refresh" })?.value, "test-token")
         XCTAssertEqual(query.first(where: { $0.name == "channel" })?.value, "next")
+    }
+
+    // MARK: - Which stream a stable install follows
+
+    private func candidate(_ version: String) -> JunoUpdateFeed.Candidate {
+        JunoUpdateFeed.Candidate(
+            version: version,
+            downloadURL: URL(string: "https://github.com/LiamMagnier/juno/releases/download/v\(version)/Juno-\(version).dmg")!,
+            sizeBytes: nil,
+            sha256: nil
+        )
+    }
+
+    /// The trap 1.6.0 closes: a development build that is itself the newest
+    /// stable release must still see the next development release, which is
+    /// published as a prerelease. Equal to stable used to mean "never ask".
+    func testADevelopmentBuildEqualToStableStillAsksThePrereleaseStream() {
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: candidate("1.6.0"), developmentSigned: true
+        ))
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: nil, developmentSigned: true
+        ))
+    }
+
+    /// A Developer ID build stays on stable unless it is ahead of it.
+    func testADeveloperIDBuildAsksOnlyWhenAheadOfStable() {
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.5.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+        XCTAssertFalse(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.6.0", stable: nil, developmentSigned: false
+        ))
+        XCTAssertTrue(JunoUpdateFeed.asksPrereleaseStream(
+            installed: "1.7.0", stable: candidate("1.6.0"), developmentSigned: false
+        ))
+    }
+
+    /// A prerelease wins only when it is strictly newer than stable, so an old
+    /// prerelease can never displace a newer stable release.
+    func testThePrereleaseIsPreferredOnlyWhenNewer() {
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: candidate("1.6.1"))?.version, "1.6.1")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.7.0"), prerelease: candidate("1.6.1"))?.version, "1.7.0")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: candidate("1.6.0"))?.version, "1.6.0")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: nil, prerelease: candidate("1.6.1"))?.version, "1.6.1")
+        XCTAssertEqual(JunoUpdateFeed.preferred(stable: candidate("1.6.0"), prerelease: nil)?.version, "1.6.0")
+        XCTAssertNil(JunoUpdateFeed.preferred(stable: nil, prerelease: nil))
     }
 }

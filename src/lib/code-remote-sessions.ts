@@ -217,9 +217,76 @@ export function deriveSessionStatusFields(
 
 export type IncomingSessionEvent = { seq: number; kind: string; payload: Record<string, unknown>; createdAt?: string };
 
+/** One host POST. The Mac sends a hundred events at a time; a body past this
+ *  is a host bug or an abuse, and parsing it would cost more than refusing. */
+export const MAX_EVENT_BATCH_BYTES = 1024 * 1024;
+/** One event's payload. The Mac bounds what it projects (a reply, a chunk of
+ *  output) well under this; anything larger would not render on a phone and
+ *  would make every page that carries it a page nobody can load. */
+export const MAX_EVENT_PAYLOAD_BYTES = 64 * 1024;
+/** One SSE frame. A frame is a single `data:` line, and the phone's parser
+ *  refuses a line past 1 MB; frames are cut well below that. */
+export const MAX_EVENT_FRAME_BYTES = 512 * 1024;
+
+export type SessionEventBatchCheck =
+  | { ok: true }
+  | { ok: false; status: 400 | 413; error: "duplicate_seq" | "event_too_large"; seq: number };
+
+/**
+ * What the append planner cannot see: the same sequence twice in one batch
+ * (the planner would report it as a gap, which sends a host rewinding for the
+ * wrong reason) and a payload too large to store. Checked before planning, so
+ * a refused batch writes nothing.
+ */
+export function checkSessionEventBatch(events: IncomingSessionEvent[]): SessionEventBatchCheck {
+  const seen = new Set<number>();
+  for (const event of events) {
+    if (seen.has(event.seq)) return { ok: false, status: 400, error: "duplicate_seq", seq: event.seq };
+    seen.add(event.seq);
+    if (Buffer.byteLength(JSON.stringify(event.payload), "utf8") > MAX_EVENT_PAYLOAD_BYTES) {
+      return { ok: false, status: 413, error: "event_too_large", seq: event.seq };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Splits a page of serialized events into SSE frames of bounded size, in
+ * order. The stream used to send up to 500 events as one line, which the
+ * phone's parser — rightly bounded — refused as soon as a page carried a real
+ * reply. An event larger than the bound on its own still travels, alone.
+ */
+export function chunkEventFrames<T extends { seq: number }>(
+  events: T[],
+  maxBytes: number = MAX_EVENT_FRAME_BYTES,
+): T[][] {
+  const frames: T[][] = [];
+  let current: T[] = [];
+  let size = 0;
+  for (const event of events) {
+    const bytes = Buffer.byteLength(JSON.stringify(event), "utf8") + 1;
+    if (current.length && size + bytes > maxBytes) {
+      frames.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(event);
+    size += bytes;
+  }
+  if (current.length) frames.push(current);
+  return frames;
+}
+
 export type SessionEventAppendPlan =
   | { ok: false; error: "missing_events"; expectedSeq: number }
-  | { ok: true; accepted: IncomingSessionEvent[]; lastSeq: number; status: string | undefined };
+  | {
+      ok: true;
+      accepted: IncomingSessionEvent[];
+      lastSeq: number;
+      status: string | undefined;
+      /** When the host recorded that status, if it said. */
+      statusAt: string | undefined;
+    };
 
 /**
  * Deterministic host-append planner (RULE 17). Given the session's persisted
@@ -244,7 +311,29 @@ export function planSessionEventAppend(lastEventSequence: number, events: Incomi
   const lastSeq = accepted.length ? accepted[accepted.length - 1].seq : lastEventSequence;
   const statusEvent = [...accepted].reverse().find((event) => event.kind === "status_update");
   const status = typeof statusEvent?.payload.status === "string" ? statusEvent.payload.status : undefined;
-  return { ok: true, accepted, lastSeq, status };
+  return { ok: true, accepted, lastSeq, status, statusAt: statusEvent?.createdAt };
+}
+
+/**
+ * The live-state columns an accepted batch may set, or null to leave the row.
+ *
+ * The host's session list says what a session is doing as of that session's
+ * `updatedAt`, and a `status_update` is news only if it happened at or after
+ * that moment. A journal uploaded after the fact — Remote switched on mid-run,
+ * a Mac catching up after an outage — carries every status its runs passed
+ * through, and the Mac does not journal "waiting on an approval" as a status at
+ * all. Letting the last of those overwrite the list is how a session waiting on
+ * the reader showed on the phone as working. An event with no time is taken as
+ * current, as it always was.
+ */
+export function appendedStatusFields(
+  plan: { status: string | undefined; statusAt: string | undefined },
+  listedAt: Date,
+): { currentStatus: string; isRunning: boolean; isAwaitingApproval: boolean } | null {
+  const fields = deriveSessionStatusFields(plan.status);
+  if (!fields || !plan.statusAt) return fields;
+  const at = new Date(plan.statusAt).getTime();
+  return Number.isFinite(at) && at < listedAt.getTime() ? null : fields;
 }
 
 export function decodeCursor(cursor: string | null): { updatedAt: Date; id: string } | null {

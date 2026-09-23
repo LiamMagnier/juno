@@ -41,6 +41,63 @@ public protocol CodeRemoteCommandExecuting: Sendable {
     func execute(_ command: CodeRemoteCommand) async throws -> [String: JunoJSONValue]
 }
 
+/// What a host remembers about the commands it has already run.
+///
+/// The relay hands a claimed command out again when its acknowledgement does
+/// not arrive within the lease — a dropped connection, a sleeping Mac, a crash.
+/// That redelivery is what stops a command being stuck forever, and this is
+/// what stops it being run twice: a second "send this prompt" or a second
+/// commit is worse than a clear failure. A redelivered command is answered from
+/// here with the outcome it already had.
+///
+/// At most once, deliberately. A command recorded as started but never
+/// finished — the Mac stopped mid-run — is reported failed rather than
+/// retried, because whether it took effect is exactly what cannot be known.
+public actor CodeRemoteCommandLedger {
+    public enum Outcome: Codable, Equatable, Sendable {
+        case started
+        case completed([String: JunoJSONValue])
+        case failed(String)
+    }
+
+    private struct Entry: Codable {
+        let id: String
+        var outcome: Outcome
+    }
+
+    /// Enough to cover every command a lease could hand back, and small
+    /// enough to persist on every change.
+    public static let defaultCapacity = 200
+
+    private let capacity: Int
+    private let write: @Sendable (Data) -> Void
+    private var entries: [Entry]
+
+    public init(
+        capacity: Int = CodeRemoteCommandLedger.defaultCapacity,
+        read: @Sendable () -> Data? = { nil },
+        write: @escaping @Sendable (Data) -> Void = { _ in }
+    ) {
+        self.capacity = capacity
+        self.write = write
+        entries = read().flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+    }
+
+    public func outcome(for commandID: String) -> Outcome? {
+        entries.last { $0.id == commandID }?.outcome
+    }
+
+    public func record(_ outcome: Outcome, for commandID: String) {
+        if let index = entries.lastIndex(where: { $0.id == commandID }) {
+            entries[index].outcome = outcome
+        } else {
+            entries.append(Entry(id: commandID, outcome: outcome))
+            if entries.count > capacity { entries.removeFirst(entries.count - capacity) }
+        }
+        if let data = try? JSONEncoder().encode(entries) { write(data) }
+    }
+}
+
 /// Drives one Mac's participation in Remote: heartbeat, claim, execute,
 /// acknowledge.
 ///
@@ -68,9 +125,15 @@ public actor CodeRemoteHost {
     private let accountID: AccountID
     private let relay: any CodeRemoteRelaying
     private let executor: any CodeRemoteCommandExecuting
+    private let ledger: CodeRemoteCommandLedger
     private let sleep: @Sendable (Duration) async throws -> Void
     private let jitter: @Sendable () -> Double
     private var loop: Task<Void, Never>?
+
+    /// Attempts at delivering one acknowledgement before leaving it to the
+    /// relay's lease. Past this the relay hands the command back and the
+    /// ledger answers it then, so giving up here loses nothing.
+    static let acknowledgementAttempts = 3
 
     /// Base delay between reconnect attempts, doubled per attempt and capped.
     /// Every host that lost the relay at the same moment would otherwise return
@@ -85,6 +148,7 @@ public actor CodeRemoteHost {
         accountID: AccountID,
         relay: any CodeRemoteRelaying,
         executor: any CodeRemoteCommandExecuting,
+        ledger: CodeRemoteCommandLedger = CodeRemoteCommandLedger(),
         sleep: @escaping @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         },
@@ -94,6 +158,7 @@ public actor CodeRemoteHost {
         self.accountID = accountID
         self.relay = relay
         self.executor = executor
+        self.ledger = ledger
         self.sleep = sleep
         self.jitter = jitter
     }
@@ -143,6 +208,11 @@ public actor CodeRemoteHost {
                 if Task.isCancelled { return }
                 guard let command = claimed else { continue }
 
+                // One command at a time, so the executor must never wait on
+                // something a later command carries. A prompt's hooks can
+                // wait on an approval whose answer — or a Stop — is the next
+                // command, which is why a prompt is answered once the session
+                // has taken it rather than once it has been sent.
                 await handle(command)
             } catch is CancellationError {
                 return
@@ -170,26 +240,75 @@ public actor CodeRemoteHost {
     }
 
     private func handle(_ command: CodeRemoteCommand) async {
+        // A command handed out again is one whose acknowledgement never
+        // landed. Answer it with what already happened; never run it twice.
+        if let prior = await ledger.outcome(for: command.id) {
+            switch prior {
+            case .completed(let result):
+                await acknowledge(command, status: "completed", result: result, error: nil)
+            case .failed(let message):
+                await acknowledge(command, status: "failed", result: nil, error: message)
+            case .started:
+                await acknowledge(
+                    command, status: "failed", result: nil,
+                    error: "This Mac stopped while running this command, so it was not run again. "
+                        + "Check the session before sending it once more."
+                )
+            }
+            return
+        }
+
+        await ledger.record(.started, for: command.id)
         do {
             let result = try await executor.execute(command)
             executedCommandCount += 1
-            try await relay.acknowledgeCommand(
-                deviceID: deviceID, commandID: command.id,
-                status: "completed", result: result, error: nil, for: accountID
-            )
+            await ledger.record(.completed(result), for: command.id)
+            await acknowledge(command, status: "completed", result: result, error: nil)
         } catch is CancellationError {
             return
         } catch {
             // A failed command still has to be acknowledged. Leaving it claimed
-            // would strand it: the relay's CAS means no other process can pick
-            // it up, so silence here is a command that never completes and
-            // never fails.
-            try? await relay.acknowledgeCommand(
-                deviceID: deviceID, commandID: command.id,
-                status: "failed", result: nil,
-                error: error.localizedDescription, for: accountID
-            )
-            lastError = error.localizedDescription
+            // would strand it until its lease ran out, and the phone would show
+            // a command that neither completed nor failed.
+            let message = error.localizedDescription
+            await ledger.record(.failed(message), for: command.id)
+            lastError = message
+            await acknowledge(command, status: "failed", result: nil, error: message)
+        }
+    }
+
+    /// Delivers one acknowledgement, retrying a transient failure briefly.
+    ///
+    /// A refusal is final: the relay answers 409 when the command was already
+    /// settled — its lease ran out and it was failed, or a redelivery was
+    /// answered first — and repeating the same answer cannot change that.
+    private func acknowledge(
+        _ command: CodeRemoteCommand,
+        status: String,
+        result: [String: JunoJSONValue]?,
+        error: String?
+    ) async {
+        for attempt in 1...Self.acknowledgementAttempts {
+            do {
+                try await relay.acknowledgeCommand(
+                    deviceID: deviceID, commandID: command.id,
+                    status: status, result: result, error: error, for: accountID
+                )
+                return
+            } catch is CancellationError {
+                return
+            } catch let failure as CodeRemoteError where !failure.isRetryable {
+                lastError = failure.localizedDescription
+                return
+            } catch let failure {
+                lastError = failure.localizedDescription
+                guard attempt < Self.acknowledgementAttempts else { return }
+                do {
+                    try await sleep(backoffDelay(attempt: attempt))
+                } catch {
+                    return
+                }
+            }
         }
     }
 }

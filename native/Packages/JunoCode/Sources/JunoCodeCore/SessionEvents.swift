@@ -50,6 +50,41 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     /// The model context was folded down. Recorded so the transcript can say,
     /// quietly and in place, that older turns now reach the model as a summary.
     case compaction(CompactionEvent)
+    /// The reader rewound the session, and the transcript restarts here. Only
+    /// ever the first event of a transcript; see ``TranscriptRewoundEvent``.
+    case transcriptRewound(TranscriptRewoundEvent)
+    /// A project hook changed the course of the run or failed, so the thread
+    /// can say which hook it was and why.
+    case hookActivity(HookActivityEvent)
+
+    /// Whether this event replaces everything before it in the stream, so a
+    /// reader keeping its place by sequence drops what it holds and rebuilds
+    /// from here rather than treating the jump in numbering as a hole.
+    public var restartsTranscript: Bool {
+        if case .transcriptRewound = self { return true }
+        return false
+    }
+}
+
+/// The transcript was cut back to just before one of the reader's messages,
+/// and starts again from this event.
+///
+/// A rewind is the one change to a transcript that is not an append, and the
+/// sequence number is how every reader of one keeps its place: a phone, or
+/// `juno events`, asks for what came after the last sequence it saw. So a cut
+/// transcript is never numbered from zero again. It opens with this event,
+/// numbered past everything the session ever held, and the events it kept
+/// follow it, renumbered after it. Whatever cursor a reader holds, this is the
+/// next event it receives, and it says to drop what came before; a number the
+/// reader has already seen is never given to an event it would then skip.
+public struct TranscriptRewoundEvent: Hashable, Codable, Sendable {
+    /// The transcript event of the message the session was rewound to, which
+    /// is no longer in the transcript.
+    public let turnID: String
+
+    public init(turnID: String) {
+        self.turnID = turnID
+    }
 }
 
 public struct SessionCreatedEvent: Hashable, Codable, Sendable {
@@ -114,9 +149,19 @@ public struct TurnConfigurationEvent: Hashable, Codable, Sendable {
 
 public struct UserPromptEvent: Hashable, Codable, Sendable {
     public let text: String
+    /// Where this prompt's message sits in the model-facing conversation: the
+    /// number of messages that preceded it when it was sent.
+    ///
+    /// This is the rewind point. The transcript and the conversation are two
+    /// records of the same session, and only this ties a row the reader can
+    /// point at to the message a rewind has to cut before. Nil on prompts
+    /// recorded before rewind existed, which the synthesized `Codable` reads
+    /// with `decodeIfPresent`, so older transcripts still load.
+    public let conversationIndex: Int?
 
-    public init(text: String) {
+    public init(text: String, conversationIndex: Int? = nil) {
         self.text = text
+        self.conversationIndex = conversationIndex
     }
 }
 
@@ -153,9 +198,15 @@ public struct UserInstructionEvent: Hashable, Codable, Sendable, Identifiable {
 /// The event sequence is therefore also the authoritative delivery order.
 public struct UserInstructionAppliedEvent: Hashable, Codable, Sendable {
     public let instructionID: String
+    /// Where the instruction's message landed in the model-facing
+    /// conversation. Recorded here rather than on the instruction itself,
+    /// because an instruction is accepted long before it is applied and only
+    /// application fixes its place — see ``UserPromptEvent/conversationIndex``.
+    public let conversationIndex: Int?
 
-    public init(instructionID: String) {
+    public init(instructionID: String, conversationIndex: Int? = nil) {
         self.instructionID = instructionID
+        self.conversationIndex = conversationIndex
     }
 }
 
@@ -503,6 +554,16 @@ public struct ErrorEvent: Hashable, Codable, Sendable {
 /// suddenly forgets an early instruction is otherwise inexplicable — and so a
 /// `/compact` the reader asked for has something to show for itself.
 public struct CompactionEvent: Hashable, Codable, Sendable {
+    /// Who wrote the summary.
+    public enum SummarySource: String, Hashable, Codable, Sendable {
+        /// The session's own model, asked to summarise the folded turns.
+        case model
+        /// Juno's bounded role-labelled notes: the fallback whenever the model
+        /// could not be asked, did not answer in time, or answered with
+        /// something that was not a summary.
+        case structural
+    }
+
     /// The bounded summary older turns were reduced to.
     public let summary: String
     /// Model messages before and after the fold.
@@ -513,24 +574,121 @@ public struct CompactionEvent: Hashable, Codable, Sendable {
     /// Whether the reader asked for it (`/compact`) or the runtime did it on its
     /// own ahead of a provider limit.
     public let requestedByUser: Bool
+    public let summarySource: SummarySource
+    /// What the reader asked the summary to keep (`/compact keep the API
+    /// decisions`), verbatim.
+    public let focus: String?
+    /// Why the model's summary was not used, when it was asked for one and the
+    /// structural summary stood in. A sentence fragment: "it took too long".
+    public let fallbackReason: String?
+    /// What the summarising call was billed for, when one was made and the
+    /// provider reported it. Recorded here because it is the one model call
+    /// that no turn in the transcript accounts for.
+    public let summaryInputTokens: Int?
+    public let summaryOutputTokens: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case summary, beforeMessageCount, afterMessageCount, beforeTokens, requestedByUser
+        case summarySource, focus, fallbackReason, summaryInputTokens, summaryOutputTokens
+    }
 
     public init(
         summary: String,
         beforeMessageCount: Int,
         afterMessageCount: Int,
         beforeTokens: Int? = nil,
-        requestedByUser: Bool = false
+        requestedByUser: Bool = false,
+        summarySource: SummarySource = .structural,
+        focus: String? = nil,
+        fallbackReason: String? = nil,
+        summaryInputTokens: Int? = nil,
+        summaryOutputTokens: Int? = nil
     ) {
         self.summary = summary
         self.beforeMessageCount = beforeMessageCount
         self.afterMessageCount = afterMessageCount
         self.beforeTokens = beforeTokens
         self.requestedByUser = requestedByUser
+        self.summarySource = summarySource
+        self.focus = focus
+        self.fallbackReason = fallbackReason
+        self.summaryInputTokens = summaryInputTokens
+        self.summaryOutputTokens = summaryOutputTokens
+    }
+
+    /// Transcripts written before the model could summarise carry none of the
+    /// newer fields, and every summary in them was structural.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        summary = try values.decode(String.self, forKey: .summary)
+        beforeMessageCount = try values.decode(Int.self, forKey: .beforeMessageCount)
+        afterMessageCount = try values.decode(Int.self, forKey: .afterMessageCount)
+        beforeTokens = try values.decodeIfPresent(Int.self, forKey: .beforeTokens)
+        requestedByUser = try values.decodeIfPresent(Bool.self, forKey: .requestedByUser) ?? false
+        summarySource = try values.decodeIfPresent(SummarySource.self, forKey: .summarySource) ?? .structural
+        focus = try values.decodeIfPresent(String.self, forKey: .focus)
+        fallbackReason = try values.decodeIfPresent(String.self, forKey: .fallbackReason)
+        summaryInputTokens = try values.decodeIfPresent(Int.self, forKey: .summaryInputTokens)
+        summaryOutputTokens = try values.decodeIfPresent(Int.self, forKey: .summaryOutputTokens)
     }
 
     /// `12 → 5 messages`.
     public var messageCountSummary: String {
         "\(beforeMessageCount) → \(afterMessageCount) messages"
+    }
+}
+
+/// A hook did something the reader is owed an explanation for.
+///
+/// Only the moments that change what happens are recorded: a hook that
+/// blocked a tool or a prompt, told the agent something after a tool ran, kept
+/// the agent going when it meant to stop, ended the run, or failed. A hook
+/// that ran and had nothing to say leaves no trace in the thread — hooks are
+/// meant to be invisible until they matter.
+public struct HookActivityEvent: Hashable, Codable, Sendable {
+    public enum Outcome: String, Codable, CaseIterable, Sendable {
+        /// Stopped a tool call before it ran, or a prompt before it was sent.
+        case blocked
+        /// Sent the agent a note about a tool call that already ran.
+        case feedback
+        /// Asked the agent to keep working when it was about to stop.
+        case continued
+        /// Ended the run (`"continue": false`).
+        case stopped
+        /// Exited with an error or timed out. The run carried on.
+        case failed
+        /// A message the hook asked to show the reader (`systemMessage`).
+        case message
+    }
+
+    /// The lifecycle event, in the names hooks are configured with
+    /// (`PreToolUse`, `UserPromptSubmit`, `Stop`…).
+    public let hookEvent: String
+    /// A short name for the hook — its script, or the start of its command.
+    /// Empty when the runtime itself is speaking about hooks.
+    public let hookName: String
+    public let outcome: Outcome
+    /// The hook's reason, or its error output, bounded.
+    public let message: String
+    /// The tool call a `PreToolUse` or `PostToolUse` hook was about.
+    public let toolCallID: String?
+    /// What was blocked when it is not a tool call: the prompt's text.
+    public let subject: String?
+
+    public init(
+        hookEvent: String,
+        hookName: String,
+        outcome: Outcome,
+        message: String,
+        toolCallID: String? = nil,
+        subject: String? = nil
+    ) {
+        self.hookEvent = hookEvent
+        self.hookName = hookName
+        self.outcome = outcome
+        self.message = message
+        self.toolCallID = toolCallID
+        self.subject = subject
     }
 }
 

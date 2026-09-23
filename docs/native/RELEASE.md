@@ -166,12 +166,53 @@ published with `draft=false, prerelease=false` — indistinguishable from a
 production release — which is how thirty consecutive unnotarized builds became
 the website's macOS download.
 
+Who a prerelease reaches depends on the installed updater. From 1.6.0, a build
+that is not Developer ID signed always asks `?channel=next` and takes a
+prerelease that is newer than stable (`JunoUpdateFeed.asksPrereleaseStream`).
+Up to 1.5.4 the updater asked `?channel=next` only while it was *ahead* of
+stable, so an installed 1.5.4 never sees a prerelease. That is why 1.6.0, the
+release that carries the new rule, had to be promoted to a normal release by
+hand (`gh api -X PATCH repos/LiamMagnier/juno/releases/<id> -F
+prerelease=false`) and checked against the stable feed the installed apps
+query, with no `channel` parameter.
+
 Independently of that, each release now publishes a `notarized` field in its
 `Juno-<version>.release.json` manifest, written from the same flag that gates
 Developer ID signing, the notary verdict, stapling and the Gatekeeper assessment.
 `/api/downloads` reads it and fails closed: a release with no manifest, an
 unreachable one, or one written before this field existed all read as not
 notarized.
+
+### The release repository is private
+
+`LiamMagnier/juno` is private, and GitHub answers an anonymous request for its
+releases with 404 — so `/api/downloads` needs `JUNO_RELEASES_GITHUB_TOKEN` in
+`PROD_ENV`: a fine-grained token with **Contents: Read-only** on this repository
+and nothing else. Without it the feed sees no releases, `/download` says "Not
+published yet", and installed Macs are told they are current.
+
+With it, the release list and the provenance manifest are read through the API,
+and the macOS row's `url` is the signed URL GitHub redirects the asset's API
+download to, on `release-assets.githubusercontent.com`. That is the form every
+installed updater, v1.5.4 included, already accepts: HTTPS on a GitHub release
+host, the same bytes the published `size` and `sha256` describe. The row's
+`urlExpiresAt` says when it stops working. Observed on 2026-09-22, each URL
+carries two clocks: a JWT `exp` 30 minutes out for the DMG (5 for the manifest
+and checksums) and an Azure SAS `se` 43–59 minutes out. The SAS is the one
+enforced today: a URL fetched for the first time a minute after its `se` was
+refused (HTTP 618), while one fetched for the first time a minute after its JWT
+`exp` was still served. The feed believes the earlier clock anyway, so the
+answer stays safe if GitHub starts enforcing the JWT. A signed URL is reused for
+at most a minute and never with less than four minutes to run.
+
+The web pages never render a signed URL: they link to
+`/download/<platform>?version=…`, which signs a fresh one when the click
+arrives. That link has no `download` attribute. It is same-origin, so with one
+the browser would save the `/download` page as a file whenever the route
+redirects there, and the signed URL is served as an attachment with the file's
+name anyway. The final step of `release-macos.sh` accepts either the github.com
+link or a signed release-host URL, and in both cases downloads it with no
+credential and requires this build's exact bytes.
 
 ## iOS/iPadOS release
 

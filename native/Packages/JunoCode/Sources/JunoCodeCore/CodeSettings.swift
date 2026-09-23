@@ -12,7 +12,12 @@ import Foundation
 ///
 /// Every field is optional so a file says only what it means to change. Lists
 /// (permission rules) accumulate across files; everything else is decided by
-/// the closest file that sets it.
+/// the closest file that sets it, within what that file may decide: a project
+/// file widens nothing until the reader approves it and only the reader's own
+/// file raises the remote ceiling (see ``ResolvedCodeSettings``), and screen
+/// input may be allowed without asking by the reader's own file, the first,
+/// alone — a project file's rule for it is dropped even once approved
+/// (`withoutScreenInputAllowances`).
 public struct CodeSettingsFile: Codable, Equatable, Sendable {
     public var permissions: Permissions?
     /// Variables every command the agent runs receives. Never a place for
@@ -23,6 +28,14 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
     public var git: Git?
     /// Standing instructions added to every session's system prompt.
     public var instructions: String?
+    /// Hooks, in Claude Code's shape. Kept as the JSON the reader wrote:
+    /// `HookConfigurationParser` is what reads it, and holding it here is what
+    /// stops the Settings window from erasing it when it saves an unrelated
+    /// change to the same file.
+    public var hooks: JSONValue?
+    /// Claude Code's switch for turning hooks off at once. In a project's
+    /// file it reaches only that project's hooks; see `HookDiscovery`.
+    public var disableAllHooks: Bool?
 
     public init(
         permissions: Permissions? = nil,
@@ -30,7 +43,9 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         sandbox: Sandbox? = nil,
         agent: Agent? = nil,
         git: Git? = nil,
-        instructions: String? = nil
+        instructions: String? = nil,
+        hooks: JSONValue? = nil,
+        disableAllHooks: Bool? = nil
     ) {
         self.permissions = permissions
         self.env = env
@@ -38,6 +53,8 @@ public struct CodeSettingsFile: Codable, Equatable, Sendable {
         self.agent = agent
         self.git = git
         self.instructions = instructions
+        self.hooks = hooks
+        self.disableAllHooks = disableAllHooks
     }
 
     public struct Permissions: Codable, Equatable, Sendable {
@@ -170,6 +187,31 @@ extension CodeSettingsFile {
             || !(sandbox?.writablePaths ?? []).isEmpty
             || sandbox?.network == true
             || agent?.modelFallback == true
+    }
+}
+
+public extension CodeSettingsFile {
+    /// This file as a layer inside a project may apply it: without any allow
+    /// rule that would let screen control click, type, press keys or scroll
+    /// unasked.
+    ///
+    /// Screen control acts on the reader's whole Mac, not on the project, so
+    /// letting it act without asking is the reader's own decision, and
+    /// `~/.juno/settings.json` is the one file no repository can supply. Both
+    /// project files can arrive with a clone: the shared one is meant to, and
+    /// the ignore line Juno adds for `settings.local.json` keeps the reader's
+    /// own out of Git but cannot stop a repository shipping one. A rule in
+    /// either would silence every click prompt the moment the reader started
+    /// screen control, while the reader believed each click still asked.
+    ///
+    /// Ask and deny rules stay: they can only make screen control ask more.
+    var withoutScreenInputAllowances: CodeSettingsFile {
+        guard let allow = permissions?.allow, allow.contains(where: \.coversScreenInput) else {
+            return self
+        }
+        var file = self
+        file.permissions?.allow = allow.filter { !$0.coversScreenInput }
+        return file
     }
 }
 

@@ -43,7 +43,8 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(resolved.rules.deny, [PermissionRule(tool: "Read", specifier: ".env")])
         XCTAssertEqual(store.awaitingApproval(projectRoot: project), [.project])
 
-        try store.approve(.project, projectRoot: project)
+        let reviewed = store.snapshot(.project, projectRoot: project)
+        XCTAssertTrue(try store.approve(.project, projectRoot: project, expectedDigest: reviewed.digest))
         resolved = store.resolved(projectRoot: project)
         XCTAssertEqual(resolved.environment, ["FEATURE": "1"])
         XCTAssertEqual(resolved.rules.allow, [PermissionRule(tool: "Bash")])
@@ -56,6 +57,44 @@ final class CodeSettingsStoreTests: XCTestCase {
         resolved = store.resolved(projectRoot: project)
         XCTAssertEqual(resolved.environment, [:])
         XCTAssertEqual(resolved.rules.allow, [])
+    }
+
+    /// The reported hole: approving hashed whatever the file held at the
+    /// click, so a change that landed after the window read it — a `git pull`,
+    /// a checkout, an editor's sync — was approved without being seen.
+    func testAnApprovalCoversOnlyTheBytesTheReaderReviewed() throws {
+        try write(#"{"permissions":{"allow":["Bash(npm test *)"]}}"#, .project)
+        let reviewed = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(reviewed.file.permissions?.allow, [PermissionRule(tool: "Bash", specifier: "npm test *")])
+        XCTAssertTrue(store.awaitsApproval(reviewed, .project, projectRoot: project))
+
+        // The file changes while the window still shows the old version.
+        try write(#"{"permissions":{"allow":["Bash"]}}"#, .project)
+        XCTAssertFalse(try store.approve(.project, projectRoot: project, expectedDigest: reviewed.digest))
+        XCTAssertFalse(store.isApproved(.project, projectRoot: project))
+        XCTAssertEqual(store.resolved(projectRoot: project).rules.allow, [])
+        XCTAssertEqual(store.awaitingApproval(projectRoot: project), [.project])
+
+        // What the reader looks at next, they may approve.
+        let current = store.snapshot(.project, projectRoot: project)
+        XCTAssertTrue(try store.approve(.project, projectRoot: project, expectedDigest: current.digest))
+        XCTAssertEqual(store.resolved(projectRoot: project).rules.allow, [PermissionRule(tool: "Bash")])
+    }
+
+    /// The digest a snapshot carries is of the very bytes it decoded.
+    func testASnapshotsDigestIsOfWhatItShows() throws {
+        let text = #"{"env":{"FEATURE":"1"}}"#
+        try write(text, .project)
+        let snapshot = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(snapshot.digest, Digests.sha256Hex(Data(text.utf8)))
+        XCTAssertEqual(snapshot.file.env, ["FEATURE": "1"])
+        XCTAssertNil(snapshot.loadError)
+
+        try write("{ not json", .project)
+        let broken = store.snapshot(.project, projectRoot: project)
+        XCTAssertEqual(broken.digest, Digests.sha256Hex(Data("{ not json".utf8)))
+        XCTAssertNotNil(broken.loadError)
+        XCTAssertEqual(broken.file, CodeSettingsFile())
     }
 
     /// "Always allow" and the Settings window write the local file for the
@@ -133,6 +172,28 @@ final class CodeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(permissions["remoteCeiling"] as? String, "sometimes")
     }
 
+    /// The same file holds the reader's hooks, which Juno reads through
+    /// `HookConfigurationParser` rather than the settings model. "Always
+    /// allow" or a Settings toggle writing that file must leave them, and the
+    /// switch that turns them off, exactly as the reader wrote them.
+    func testAnEditKeepsTheFilesHooks() throws {
+        let url = try XCTUnwrap(store.url(for: .local, projectRoot: project))
+        let hooks = #"{"PreToolUse":[{"matcher":"Bash|Edit","hooks":[{"type":"command","command":"./.claude/hooks/guard.sh","timeout":30}]}],"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}"#
+        try write(#"{"disableAllHooks":false,"hooks":"# + hooks + #","permissions":{"deny":["Read(.env)"]}}"#, .local)
+
+        try store.addAllowRule(PermissionRule(tool: "Bash", specifier: "npm test *"), scope: .local, projectRoot: project)
+        try store.update(.local, projectRoot: project) { $0.instructions = "Be brief." }
+
+        let written = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url)).objectValue
+        XCTAssertEqual(written?["hooks"], try JSONDecoder().decode(JSONValue.self, from: Data(hooks.utf8)))
+        XCTAssertEqual(written?["disableAllHooks"], .bool(false))
+        XCTAssertEqual(written?["instructions"], .string("Be brief."))
+        XCTAssertEqual(
+            written?["permissions"]?.objectValue?["allow"],
+            .array([.string("Bash(npm test *)")])
+        )
+    }
+
     // MARK: - Keeping the personal file out of Git
 
     private var ignoreList: String {
@@ -158,6 +219,107 @@ final class CodeSettingsStoreTests: XCTestCase {
         _ = store.resolved(projectRoot: project)
         XCTAssertTrue(ignoreList.split(separator: "\n").contains("settings.local.json"))
     }
+
+    // MARK: - Screen input is the reader's own decision
+
+    private func write(_ json: String, to scope: CodeSettingsStore.Scope) throws {
+        let url = try XCTUnwrap(store.url(for: scope, projectRoot: project))
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data(json.utf8).write(to: url)
+    }
+
+    private static let allowsScreenInput = """
+    {"permissions":{"allow":["computer_click","computer_type","computer_press_key","computer_scroll",
+                             "Bash(npm test *)"]}}
+    """
+
+    func testNoFileInsideAProjectCanAllowScreenInput() throws {
+        // A repository that arrives with both project files allowing every
+        // input tool. Neither may silence the question a click asks, however
+        // the files got there — not even once the reader approves them, which
+        // puts the rest of what they say in force.
+        try write(Self.allowsScreenInput, to: .project)
+        try write(Self.allowsScreenInput, to: .local)
+        for scope in [CodeSettingsStore.Scope.project, .local] {
+            let shown = store.snapshot(scope, projectRoot: project)
+            XCTAssertTrue(try store.approve(scope, projectRoot: project, expectedDigest: shown.digest))
+        }
+
+        let rules = store.resolved(projectRoot: project).rules
+        for name in ComputerUseToolName.input {
+            XCTAssertNil(rules.evaluate(toolName: name, subject: nil), name)
+        }
+        // Everything else the files say still applies.
+        XCTAssertEqual(
+            rules.evaluate(toolName: "run_command", subject: .command("npm test --watch")),
+            .allow(PermissionRule(tool: "Bash", specifier: "npm test *"))
+        )
+    }
+
+    /// A file that asks for nothing but screen input has nothing approving it
+    /// would put in force, so it is not presented as awaiting approval.
+    func testAScreenInputRuleAloneDoesNotAwaitApproval() throws {
+        try write(#"{"permissions":{"allow":["computer_click"]}}"#, to: .project)
+        XCTAssertEqual(store.awaitingApproval(projectRoot: project), [])
+        try write(Self.allowsScreenInput, to: .project)
+        XCTAssertEqual(store.awaitingApproval(projectRoot: project), [.project])
+    }
+
+    func testAProjectMayStillAskOrRefuseScreenInput() throws {
+        try write(#"{"permissions":{"ask":["computer_click"],"deny":["computer_type"]}}"#, to: .project)
+        try write(#"{"permissions":{"allow":["computer_click","computer_type"]}}"#, to: .user)
+
+        let rules = store.resolved(projectRoot: project).rules
+        XCTAssertEqual(
+            rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            .ask(PermissionRule(tool: "computer_click"))
+        )
+        XCTAssertEqual(
+            rules.evaluate(toolName: ComputerUseToolName.type, subject: nil),
+            .deny(PermissionRule(tool: "computer_type"))
+        )
+    }
+
+    func testTheReadersOwnFileCanAllowScreenInputInEveryProject() throws {
+        try write(#"{"permissions":{"allow":["computer_click"]}}"#, to: .user)
+
+        XCTAssertEqual(
+            store.resolved(projectRoot: project).rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            .allow(PermissionRule(tool: "computer_click"))
+        )
+        XCTAssertEqual(
+            store.resolved(projectRoot: nil).rules.evaluate(toolName: ComputerUseToolName.click, subject: nil),
+            .allow(PermissionRule(tool: "computer_click"))
+        )
+    }
+
+    func testAlwaysAllowSavesScreenInputWhereItWillBeHonoured() throws {
+        // Saved to the project's personal file, an Always allow for a click
+        // would be dropped on the next run and the reader asked again, after
+        // being told the answer was remembered.
+        let click = PermissionRule(tool: ComputerUseToolName.click)
+        try store.rememberAllowRule(click, projectRoot: project)
+        XCTAssertEqual(store.load(.user, projectRoot: nil).permissions?.allow, [click])
+        XCTAssertNil(store.load(.local, projectRoot: project).permissions)
+        XCTAssertEqual(
+            store.resolved(projectRoot: project).rules.evaluate(toolName: click.tool, subject: nil),
+            .allow(click)
+        )
+
+        // Every other answer stays with the project, and out of Git.
+        let lint = PermissionRule(tool: "Bash", specifier: "npm run *")
+        try store.rememberAllowRule(lint, projectRoot: project)
+        XCTAssertEqual(store.load(.local, projectRoot: project).permissions?.allow, [lint])
+        XCTAssertEqual(store.load(.user, projectRoot: nil).permissions?.allow, [click])
+        XCTAssertTrue(ignoreList.contains("settings.local.json"))
+
+        XCTAssertEqual(CodeSettingsStore.alwaysAllowScope(for: lint, projectRoot: nil), .user)
+    }
+
+    // MARK: - Reading the branch
 
     /// The system prompt names the branch without running Git.
     func testTheBranchIsReadFromHEADWithoutRunningGit() throws {

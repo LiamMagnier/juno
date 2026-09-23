@@ -32,11 +32,12 @@ public struct StudioThreadView: View {
 
     public var body: some View {
         let items = self.items
+        let turnIDs = Set(controller.rewindTurns.map(\.id))
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                     ForEach(items) { item in
-                        row(item)
+                        row(item, rewindable: turnIDs.contains(item.id))
                             .id(item.id)
                             .transition(.opacity)
                     }
@@ -112,14 +113,25 @@ public struct StudioThreadView: View {
         )
     }
 
+    /// - Parameter rewindable: the row is one of the reader's messages that
+    ///   opened a turn. A steer or queued message the run never took in is
+    ///   not, and offers no rewind.
     @ViewBuilder
-    private func row(_ item: StudioThreadItem) -> some View {
+    private func row(_ item: StudioThreadItem, rewindable: Bool) -> some View {
         switch item {
-        case let .user(_, text):
-            StudioUserMessage(text: text)
-                .padding(.top, JunoSpace.snug)
-        case let .instruction(_, text, kind):
-            StudioUserMessage(text: text, caption: kind == .steer ? "Sent while working" : "Queued")
+        case let .user(id, text):
+            StudioUserMessage(text: text) { hovered in
+                if rewindable {
+                    StudioRewindButton(controller: controller, turnID: id, isRowHovered: hovered)
+                }
+            }
+            .padding(.top, JunoSpace.snug)
+        case let .instruction(id, text, kind):
+            StudioUserMessage(text: text, caption: kind == .steer ? "Sent while working" : "Queued") { hovered in
+                if rewindable {
+                    StudioRewindButton(controller: controller, turnID: id, isRowHovered: hovered)
+                }
+            }
         case let .assistant(_, text):
             StudioAssistantMessage(text: text)
         case let .reasoning(id, text):
@@ -147,8 +159,11 @@ public struct StudioThreadView: View {
             StudioTestsRow(run: run)
         case let .error(_, message):
             StudioErrorRow(message: message, retry: isLastError(item) ? { Task { await controller.retryLastTurn() } } : nil)
-        case let .compaction(_, event):
-            StudioDividerCaption(text: event.requestedByUser ? "Context compacted" : "Context compacted automatically")
+        case let .compaction(id, event):
+            StudioCompactionDivider(event: event, isExpanded: binding(id))
+        case let .hook(_, event):
+            StudioHookRow(event: event)
+                .accessibilityIdentifier("juno.code.transcript.hook")
         case let .modeChange(_, text):
             StudioDividerCaption(text: text)
         case let .summary(_, run, turn):
@@ -210,6 +225,12 @@ struct StudioThreadTail: View {
                 Text("Stopping…")
                     .font(Studio.Font.label)
                     .foregroundStyle(Studio.Ink.tertiary)
+            } else if controller.isCompacting {
+                // Said in its own words because it can take a while, and a run
+                // that sits on "Working" with nothing appearing looks stuck.
+                JunoShimmerText("Compacting the conversation", font: Studio.Font.label, active: true)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("juno.code.transcript.compacting")
             } else if showsWorkingLine {
                 HStack(spacing: JunoSpace.snug) {
                     JunoShimmerText(activity, font: Studio.Font.label, active: true)

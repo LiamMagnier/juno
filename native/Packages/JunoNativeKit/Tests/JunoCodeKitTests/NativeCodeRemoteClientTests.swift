@@ -165,6 +165,102 @@ final class NativeCodeRemoteClientTests: XCTestCase {
         }
     }
 
+    /// A relay page is one JSON line. A page carrying a real reply or a
+    /// command's output is far longer than 8 KB, and the parser used to refuse
+    /// exactly those — the live transcript failed when it had content.
+    func testEventStreamAcceptsAPageWithARealReplyInIt() async throws {
+        let reply = String(repeating: "A long assistant reply. ", count: 2_000)
+        let transport = StreamingRemoteTransport(body:
+            "event: events\ndata: {\"type\":\"events\",\"events\":[{\"seq\":1,\"kind\":\"text_delta\",\"payload\":{\"text\":\"\(reply)\"},\"createdAt\":\"2026-07-22T10:00:00.000Z\"}],\"lastSeq\":1}\n\n"
+        )
+        let client = NativeCodeRemoteClient(sender: transport, streamer: transport)
+
+        let stream = try await client.eventStream(
+            deviceID: "device-1", sessionID: "session-1", afterSequence: 0, for: account
+        )
+        var pages: [[CodeRemoteSessionEvent]] = []
+        for try await page in stream { pages.append(page) }
+
+        XCTAssertEqual(pages.first?.first?.payload["text"], .string(reply))
+    }
+
+    // MARK: - Host side: uploads
+
+    func testPostingEventsReturnsTheRelaysHighWaterMark() async throws {
+        let transport = RemoteTransport(responses: [json(#"{"lastSeq":57}"#)])
+        let client = NativeCodeRemoteClient(sender: transport)
+
+        let last = try await client.postEvents(
+            deviceID: "device-1", sessionID: "session-1",
+            events: [
+                CodeRemoteSessionEvent(
+                    seq: 57, kind: "text_delta", payload: ["text": .string("hi")],
+                    createdAt: Date(timeIntervalSince1970: 0)
+                )
+            ],
+            for: account
+        )
+
+        XCTAssertEqual(last, 57)
+        let requests = await transport.requests
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.path, "/api/code/devices/device-1/sessions/session-1/events")
+        let body = try JSONDecoder().decode(JunoJSONValue.self, from: XCTUnwrap(request.body))
+        guard case .object(let root) = body, case .array(let events)? = root["events"],
+            case .object(let event)? = events.first
+        else { return XCTFail("unexpected body") }
+        XCTAssertEqual(event["seq"], .number(57))
+        XCTAssertEqual(event["createdAt"], .string("1970-01-01T00:00:00.000Z"))
+    }
+
+    /// The relay refuses a gap and names the sequence it needs; that number is
+    /// what lets the host rewind instead of stalling.
+    func testAGapIsReportedWithTheSequenceTheRelayNeeds() async throws {
+        let transport = RemoteTransport(responses: [
+            json(#"{"error":"missing_events","expectedSeq":12}"#, status: 409)
+        ])
+        let client = NativeCodeRemoteClient(sender: transport)
+
+        do {
+            _ = try await client.postEvents(
+                deviceID: "device-1", sessionID: "session-1",
+                events: [CodeRemoteSessionEvent(seq: 20, kind: "error", payload: [:], createdAt: Date())],
+                for: account
+            )
+            XCTFail("a gap must throw")
+        } catch let error as CodeRemoteError {
+            XCTAssertEqual(error, .eventSequenceConflict(expectedSequence: 12))
+            XCTAssertFalse(error.isRetryable)
+        }
+    }
+
+    func testTheSessionListIsPutWithExplicitTombstones() async throws {
+        let transport = RemoteTransport(responses: [json(#"{"ok":true}"#)])
+        let client = NativeCodeRemoteClient(sender: transport)
+        let upload = CodeRemoteSessionUpload(
+            sessionID: "session-1", workspaceKey: "ws", workspaceName: "juno", title: "Fix",
+            modelID: "model", reasoningEffort: nil, permissionMode: "askBeforeChanges",
+            origin: .local, createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0), status: "idle",
+            activeBranch: nil, lastError: nil
+        )
+
+        try await client.putSessions(
+            deviceID: "device-1", listVersion: 3, sessions: [upload],
+            deletedSessionIDs: ["gone-1"], for: account
+        )
+
+        let requests = await transport.requests
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.method, .put)
+        XCTAssertEqual(request.path, "/api/code/devices/device-1/sessions")
+        let body = try JSONDecoder().decode(JunoJSONValue.self, from: XCTUnwrap(request.body))
+        guard case .object(let root) = body else { return XCTFail("unexpected body") }
+        XCTAssertEqual(root["listVersion"], .number(3))
+        XCTAssertEqual(root["deletedSessionIds"], .array([.string("gone-1")]))
+        XCTAssertEqual(root["transcriptPolicy"], .string("metadata"))
+    }
+
     // MARK: - Host side
 
     /// An idle poll returning no command is the normal case, not a failure. A

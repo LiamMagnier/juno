@@ -151,6 +151,13 @@ public final class SessionProjection {
     /// and whenever the coordinator replays its events; must agree exactly
     /// with `apply(event:)`.
     public func reduce(events: [SessionEvent]) {
+        reset()
+        for event in events {
+            apply(event: event)
+        }
+    }
+
+    private func reset() {
         executionState = .idle
         narrativeGroups = []
         lastError = nil
@@ -158,9 +165,6 @@ public final class SessionProjection {
         filesChangedPaths = []
         lastTestRun = nil
         lastProposedToolName = ""
-        for event in events {
-            apply(event: event)
-        }
     }
 
     /// When the event being applied happened. Groups close at *this* time,
@@ -183,6 +187,10 @@ public final class SessionProjection {
 
         case .userInstructionApplied, .sessionCreated, .turnConfiguration:
             break
+
+        case .transcriptRewound:
+            // The transcript starts again here; nothing before it stands.
+            reset()
 
         case .assistantMessage:
             closeActiveGroup(status: .completed)
@@ -264,6 +272,12 @@ public final class SessionProjection {
             // A fold of the model context. It is a row of its own in the
             // transcript and says nothing about what the agent is doing.
             closeActiveGroup(status: .completed)
+
+        case .hookActivity:
+            // A hook's note is its own row beside the work it was about. It
+            // leaves the group open: a blocked call is one step of the
+            // stretch it happened in, not the end of it.
+            break
 
         case let .approvalRequested(request):
             closeActiveGroup(status: .completed)

@@ -150,11 +150,91 @@ final class CodeRemoteHostTests: XCTestCase {
         XCTAssertEqual(finalState, .stopped(reason: "Signed out"))
     }
 
+    // MARK: - Redelivery
+
+    /// The relay hands a command back when its acknowledgement did not land
+    /// within the lease. Running it again would send the prompt twice; the
+    /// host answers it from what it already did instead.
+    func testARedeliveredCommandIsAnsweredWithoutRunningAgain() async throws {
+        let transport = HostTransport(script: [
+            .command(id: "c1", kind: "message"),
+            .command(id: "c1", kind: "message"),
+            .idle,
+        ])
+        let executor = RecordingExecutor()
+        let host = makeHost(transport: transport, executor: executor)
+
+        await host.activate()
+        try await settle { await transport.acknowledgements.count >= 2 }
+        await host.deactivate()
+
+        let executed = await executor.executed
+        XCTAssertEqual(executed.map(\.id), ["c1"], "a redelivery must not execute twice")
+        let acks = await transport.acknowledgements
+        XCTAssertEqual(acks.map(\.status), ["completed", "completed"])
+    }
+
+    /// A command the Mac started and never finished — it quit mid-run — may or
+    /// may not have taken effect. At most once: it is failed, not retried.
+    func testACommandInterruptedMidRunIsFailedRatherThanRunAgain() async throws {
+        let seeded = CodeRemoteCommandLedger()
+        await seeded.record(.started, for: "c1")
+        let transport = HostTransport(script: [.command(id: "c1", kind: "message"), .idle])
+        let executor = RecordingExecutor()
+        let host = makeHost(transport: transport, executor: executor, ledger: seeded)
+
+        await host.activate()
+        try await settle { await transport.acknowledgements.count >= 1 }
+        await host.deactivate()
+
+        let executed = await executor.executed
+        XCTAssertTrue(executed.isEmpty)
+        let acks = await transport.acknowledgements
+        XCTAssertEqual(acks.first?.status, "failed")
+        XCTAssertNotNil(acks.first?.error)
+    }
+
+    /// The ledger survives a relaunch, which is when an unacknowledged command
+    /// is most likely to come back.
+    func testTheLedgerPersistsAndStaysBounded() async {
+        let box = DataBox()
+        let ledger = CodeRemoteCommandLedger(
+            capacity: 3, read: { box.data }, write: { box.data = $0 }
+        )
+        for id in ["a", "b", "c", "d"] {
+            await ledger.record(.completed(["id": .string(id)]), for: id)
+        }
+
+        let reloaded = CodeRemoteCommandLedger(capacity: 3, read: { box.data })
+        let oldest = await reloaded.outcome(for: "a")
+        let newest = await reloaded.outcome(for: "d")
+        XCTAssertNil(oldest, "the oldest entry is dropped past capacity")
+        XCTAssertEqual(newest, .completed(["id": .string("d")]))
+    }
+
+    /// A lost acknowledgement is retried before the command is left to the
+    /// lease, so a brief outage does not turn into a two-minute wait.
+    func testATransientAcknowledgementFailureIsRetried() async throws {
+        let transport = HostTransport(
+            script: [.command(id: "c1", kind: "message"), .idle],
+            failingAcknowledgements: 1
+        )
+        let host = makeHost(transport: transport)
+
+        await host.activate()
+        try await settle { await transport.acknowledgements.count >= 1 }
+        await host.deactivate()
+
+        let attempts = await transport.acknowledgementAttempts
+        XCTAssertEqual(attempts, 2, "one failure, then the retry that lands")
+    }
+
     // MARK: - Helpers
 
     private func makeHost(
         transport: HostTransport,
         executor: RecordingExecutor = RecordingExecutor(),
+        ledger: CodeRemoteCommandLedger = CodeRemoteCommandLedger(),
         jitter: @escaping @Sendable () -> Double = { 1.0 }
     ) -> CodeRemoteHost {
         CodeRemoteHost(
@@ -162,6 +242,7 @@ final class CodeRemoteHostTests: XCTestCase {
             accountID: account,
             relay: NativeCodeRemoteClient(sender: transport),
             executor: executor,
+            ledger: ledger,
             // Real sleeps would make these tests slow and flaky; the backoff
             // arithmetic is asserted directly instead.
             sleep: { _ in try await Task.sleep(for: .milliseconds(1)) },
@@ -181,6 +262,17 @@ final class CodeRemoteHostTests: XCTestCase {
 }
 
 private enum ExecutorFailure: Error { case boom }
+
+/// Stands in for the app's preferences in the ledger's persistence test.
+private final class DataBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Data?
+
+    var data: Data? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
 
 private actor RecordingExecutor: CodeRemoteCommandExecuting {
     private let failure: (any Error)?
@@ -208,10 +300,15 @@ private actor HostTransport: NativeAuthenticatedRequestSending {
     }
 
     private var script: [Step]
+    private var failingAcknowledgements: Int
     private(set) var requestCount = 0
+    private(set) var acknowledgementAttempts = 0
     private(set) var acknowledgements: [Acknowledgement] = []
 
-    init(script: [Step]) { self.script = script }
+    init(script: [Step], failingAcknowledgements: Int = 0) {
+        self.script = script
+        self.failingAcknowledgements = failingAcknowledgements
+    }
 
     func send(_ request: NativeBearerRequest, for _: AccountID) async throws -> HTTPResponse {
         requestCount += 1
@@ -220,6 +317,14 @@ private actor HostTransport: NativeAuthenticatedRequestSending {
             let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
             let status = object["status"] as? String
         {
+            acknowledgementAttempts += 1
+            if failingAcknowledgements > 0 {
+                failingAcknowledgements -= 1
+                return HTTPResponse(
+                    statusCode: 503, headers: HTTPHeaders(),
+                    body: Data(#"{"error":"unavailable"}"#.utf8)
+                )
+            }
             acknowledgements.append(
                 Acknowledgement(status: status, error: object["error"] as? String)
             )

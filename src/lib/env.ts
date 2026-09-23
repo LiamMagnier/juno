@@ -45,6 +45,17 @@ export const env = {
   // "LiamMagnier/juno"; override only in a fork. If set, add to PROD_ENV.
   cloudCodeRepo: process.env.CLOUD_CODE_REPO ?? "LiamMagnier/juno",
 
+  // App downloads: a READ-ONLY GitHub token (fine-grained, Contents: read on
+  // LiamMagnier/juno) used ONLY by the release feed behind /api/downloads,
+  // /download and the Mac updater, to list releases and sign asset downloads.
+  // Optional — without it the feed reads GitHub anonymously, as it always did,
+  // which for a private repository means it sees no releases at all. Never
+  // GITHUB_DISPATCH_TOKEN: that one's actions:write exists for workflow_dispatch
+  // alone. A getter so a test can set it after import. Add to PROD_ENV.
+  get releasesGithubToken(): string | undefined {
+    return process.env.JUNO_RELEASES_GITHUB_TOKEN?.trim() || undefined;
+  },
+
   // Secret-at-rest encryption key rotation (optional). Without these, every
   // secret is sealed under a key derived from AUTH_SECRET (key id "auth"). To
   // rotate — including to decouple from AUTH_SECRET so it can itself be rotated

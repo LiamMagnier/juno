@@ -23,6 +23,9 @@ enum StudioThreadItem: Identifiable, Equatable {
     case tests(id: String, run: TestRunCompletedEvent)
     case error(id: String, message: String)
     case compaction(id: String, event: CompactionEvent)
+    /// A project hook blocked something, sent the agent back, ended the run
+    /// or failed.
+    case hook(id: String, event: HookActivityEvent)
     /// The mode changed between two turns.
     case modeChange(id: String, text: String)
     /// A run's end: how long it took and what it changed.
@@ -33,7 +36,8 @@ enum StudioThreadItem: Identifiable, Equatable {
         case let .user(id, _), let .instruction(id, _, _), let .assistant(id, _),
              let .reasoning(id, _), let .decision(id, _, _), let .plan(id, _),
              let .subagent(id, _), let .tests(id, _), let .error(id, _),
-             let .compaction(id, _), let .modeChange(id, _), let .summary(id, _, _):
+             let .compaction(id, _), let .hook(id, _), let .modeChange(id, _),
+             let .summary(id, _, _):
             id
         case let .activity(group, _):
             group.id
@@ -111,6 +115,11 @@ enum StudioThreadItems {
                  .approvalResolved, .userInstructionApplied, .toolProposed, .toolCompleted:
                 continue
 
+            // Where a rewound transcript starts. What was cut is gone, and
+            // the prompt is back in the composer; the thread says nothing.
+            case .transcriptRewound:
+                continue
+
             case let .fileChanged(change):
                 totals.files.insert(change.path.value)
                 totals.added += change.linesAdded
@@ -165,6 +174,9 @@ enum StudioThreadItems {
 
             case let .compaction(compaction):
                 items.append(.compaction(id: event.id, event: compaction))
+
+            case let .hookActivity(activity):
+                items.append(.hook(id: event.id, event: activity))
 
             case let .runCompleted(run):
                 flushReasoning(id: event.id)

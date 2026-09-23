@@ -94,6 +94,9 @@ native/**/build/
 /.build/
 DerivedData/
 *.xcresult
+# `xcodebuild -derivedDataPath "$PWD/.dd"`, the checkout-local DerivedData the
+# JunoDesktop verification runs use so parallel worktrees never share one.
+/.dd/
 
 # Generated at predev/prebuild by scripts/generate-i18n-catalog.mjs from the
 # source tree itself, byte-reproducibly. Tracking it meant every `npm run dev`

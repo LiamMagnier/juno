@@ -64,6 +64,10 @@ public final class CodeSettingsModel {
     /// Project files that ask for more than the reader has approved, and so
     /// apply only where they narrow the agent.
     public private(set) var awaitingApproval: Set<CodeSettingsScope> = []
+    /// The digest of the bytes each file held when this model last read it,
+    /// which are the bytes the window shows — and so the only ones its
+    /// Approve button may approve.
+    public private(set) var displayedDigests: [CodeSettingsScope: String] = [:]
 
     public init(store: CodeSettingsStore = CodeSettingsStore()) {
         self.store = store
@@ -77,37 +81,51 @@ public final class CodeSettingsModel {
     }
 
     public func reload() {
-        user = store.load(.user, projectRoot: nil)
-        project = projectRoot.map { store.load(.project, projectRoot: $0) } ?? CodeSettingsFile()
-        local = projectRoot.map { store.load(.local, projectRoot: $0) } ?? CodeSettingsFile()
+        // Each file is read once, and what the window shows, whether it asks
+        // for approval, and what an approval would record all come from that
+        // one read.
+        var snapshots: [CodeSettingsScope: CodeSettingsStore.Snapshot] = [:]
+        for scope in CodeSettingsScope.allCases where isAvailable(scope) {
+            snapshots[scope] = store.snapshot(scope.storeScope, projectRoot: scope == .user ? nil : projectRoot)
+        }
+        user = snapshots[.user]?.file ?? CodeSettingsFile()
+        project = snapshots[.project]?.file ?? CodeSettingsFile()
+        local = snapshots[.local]?.file ?? CodeSettingsFile()
+        displayedDigests = snapshots.compactMapValues(\.digest)
         resolved = store.resolved(projectRoot: projectRoot)
         personalInstructions = (try? String(contentsOf: store.userInstructionsURL(), encoding: .utf8)) ?? ""
-        problems = CodeSettingsStore.Scope.allCases.compactMap {
-            store.loadError($0, projectRoot: projectRoot)
-        }
-        awaitingApproval = Set(
-            store.awaitingApproval(projectRoot: projectRoot).map { scope -> CodeSettingsScope in
-                switch scope {
-                case .user: .user
-                case .project: .project
-                case .local: .local
-                }
-            }
-        )
+        problems = CodeSettingsScope.allCases.compactMap { snapshots[$0]?.loadError }
+        awaitingApproval = Set(snapshots.compactMap { scope, snapshot in
+            scope != .user && store.awaitsApproval(snapshot, scope.storeScope, projectRoot: projectRoot)
+                ? scope
+                : nil
+        })
     }
 
-    /// Puts a project file in force as it now reads: its allow rules,
+    /// Puts a project file in force as the window shows it: its allow rules,
     /// environment, folders and network access. Any later change to the file
     /// withdraws this.
+    ///
+    /// Only the bytes the window read are approved. When the file has changed
+    /// since — a `git pull`, a checkout, an editor's sync — nothing is, and the
+    /// window reloads to show the reader what the file says now.
     public func approve(_ scope: CodeSettingsScope) {
         guard let projectRoot, scope != .user else { return }
+        let approved: Bool
         do {
-            try store.approve(scope.storeScope, projectRoot: projectRoot)
+            approved = try store.approve(
+                scope.storeScope,
+                projectRoot: projectRoot,
+                expectedDigest: displayedDigests[scope]
+            )
         } catch {
             problems.append("Could not approve \(scope.detail): \(error.localizedDescription)")
             return
         }
         reload()
+        if !approved {
+            problems.append("\(scope.detail) changed since you opened it, so it was not approved. Review it again.")
+        }
     }
 
     public func file(_ scope: CodeSettingsScope) -> CodeSettingsFile {
@@ -239,13 +257,9 @@ public final class CodeSettingsModel {
         return CodeSettingsStore().resolved(projectRoot: root).remoteCeiling
     }
 
-    /// Saves an "Always allow" answer to this project's personal file, where
-    /// an allow-list belongs: it is this reader's trust, not the team's.
+    /// Saves an "Always allow" answer where the store says it belongs: this
+    /// project's personal file, or the reader's own for screen input.
     public nonisolated static func rememberAllowRule(_ rule: PermissionRule, projectRoot: URL?) throws {
-        try CodeSettingsStore().addAllowRule(
-            rule,
-            scope: projectRoot == nil ? .user : .local,
-            projectRoot: projectRoot
-        )
+        try CodeSettingsStore().rememberAllowRule(rule, projectRoot: projectRoot)
     }
 }

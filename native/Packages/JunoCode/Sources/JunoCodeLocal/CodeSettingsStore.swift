@@ -56,27 +56,49 @@ public struct CodeSettingsStore: Sendable {
         }
     }
 
+    /// One file as a single read found it: what it says, and the digest of the
+    /// exact bytes it said it with.
+    ///
+    /// Taken together on purpose. What the reader is shown and what an
+    /// approval records must be the same bytes, and two reads of a file a
+    /// `git pull` or an editor can rewrite at any moment are not guaranteed
+    /// to be.
+    public struct Snapshot: Equatable, Sendable {
+        /// The file's settings, or an empty document when it is absent or
+        /// cannot be read.
+        public let file: CodeSettingsFile
+        /// The digest of the bytes `file` came from; nil when there is no file.
+        public let digest: String?
+        /// Why a file that exists could not be read.
+        public let loadError: String?
+    }
+
+    public func snapshot(_ scope: Scope, projectRoot: URL?) -> Snapshot {
+        guard let url = url(for: scope, projectRoot: projectRoot),
+              let data = try? Data(contentsOf: url)
+        else { return Snapshot(file: CodeSettingsFile(), digest: nil, loadError: nil) }
+        let digest = Digests.sha256Hex(data)
+        do {
+            let file = try JSONDecoder().decode(CodeSettingsFile.self, from: data)
+            return Snapshot(file: file, digest: digest, loadError: nil)
+        } catch {
+            return Snapshot(
+                file: CodeSettingsFile(),
+                digest: digest,
+                loadError: "\(url.lastPathComponent) could not be read: \(error.localizedDescription)"
+            )
+        }
+    }
+
     /// One file, or an empty document when it is absent or unreadable.
     public func load(_ scope: Scope, projectRoot: URL?) -> CodeSettingsFile {
-        guard let url = url(for: scope, projectRoot: projectRoot),
-              let data = try? Data(contentsOf: url),
-              let file = try? JSONDecoder().decode(CodeSettingsFile.self, from: data)
-        else { return CodeSettingsFile() }
-        return file
+        snapshot(scope, projectRoot: projectRoot).file
     }
 
     /// Whether a file exists but could not be read — worth telling the reader
     /// rather than silently running without their rules.
     public func loadError(_ scope: Scope, projectRoot: URL?) -> String? {
-        guard let url = url(for: scope, projectRoot: projectRoot),
-              let data = try? Data(contentsOf: url)
-        else { return nil }
-        do {
-            _ = try JSONDecoder().decode(CodeSettingsFile.self, from: data)
-            return nil
-        } catch {
-            return "\(url.lastPathComponent) could not be read: \(error.localizedDescription)"
-        }
+        snapshot(scope, projectRoot: projectRoot).loadError
     }
 
     /// The reader's personal instructions file, `~/.juno/JUNO.md` or
@@ -110,11 +132,19 @@ public struct CodeSettingsStore: Sendable {
                 ensureLocalFileIsIgnored(projectRoot: projectRoot)
             }
             for (scope, origin) in [(Scope.project, CodeSettingsLayer.Origin.project), (.local, .local)] {
+                // One read for both: a file swapped between reading its
+                // settings and checking its approval would otherwise apply
+                // the new settings under the old approval.
+                let snapshot = self.snapshot(scope, projectRoot: projectRoot)
                 layers.append(
                     CodeSettingsLayer(
-                        load(scope, projectRoot: projectRoot),
+                        // Without their allow rules for screen input, which
+                        // only the reader's own file may hold: approval lets
+                        // a project file widen what the agent does in the
+                        // project, and screen control acts on the whole Mac.
+                        snapshot.file.withoutScreenInputAllowances,
                         origin: origin,
-                        isApproved: isApproved(scope, projectRoot: projectRoot)
+                        isApproved: isApproved(snapshot, scope, projectRoot: projectRoot)
                     )
                 )
             }
@@ -145,8 +175,17 @@ public struct CodeSettingsStore: Sendable {
     /// file always may; a project file only as the reader approved it, and a
     /// file that is not there asks for nothing.
     public func isApproved(_ scope: Scope, projectRoot: URL?) -> Bool {
+        isApproved(digest: digest(scope, projectRoot: projectRoot), scope, projectRoot: projectRoot)
+    }
+
+    /// Whether the file as this snapshot read it is approved.
+    public func isApproved(_ snapshot: Snapshot, _ scope: Scope, projectRoot: URL?) -> Bool {
+        isApproved(digest: snapshot.digest, scope, projectRoot: projectRoot)
+    }
+
+    private func isApproved(digest: String?, _ scope: Scope, projectRoot: URL?) -> Bool {
         guard scope != .user else { return true }
-        guard let projectRoot, let digest = digest(scope, projectRoot: projectRoot) else { return true }
+        guard let projectRoot, let digest else { return true }
         return approvals.approvedDigest(scope, projectRoot: projectRoot) == digest
     }
 
@@ -155,23 +194,39 @@ public struct CodeSettingsStore: Sendable {
     public func awaitingApproval(projectRoot: URL?) -> [Scope] {
         guard let projectRoot else { return [] }
         return [Scope.project, .local].filter { scope in
-            !isApproved(scope, projectRoot: projectRoot)
-                && load(scope, projectRoot: projectRoot).loosensAnything
+            awaitsApproval(snapshot(scope, projectRoot: projectRoot), scope, projectRoot: projectRoot)
         }
     }
 
-    /// Approves the file as it now reads. Any later change to it, by anyone,
-    /// withdraws the approval.
-    public func approve(_ scope: Scope, projectRoot: URL) throws {
-        guard scope != .user else { return }
-        try approvals.setApprovedDigest(
-            digest(scope, projectRoot: projectRoot),
-            scope,
-            projectRoot: projectRoot
-        )
+    /// Whether the file as this snapshot read it asks for something the
+    /// reader has not approved.
+    /// A screen-input allow rule is not counted: approving the file would
+    /// not put it in force.
+    public func awaitsApproval(_ snapshot: Snapshot, _ scope: Scope, projectRoot: URL?) -> Bool {
+        !isApproved(snapshot, scope, projectRoot: projectRoot)
+            && snapshot.file.withoutScreenInputAllowances.loosensAnything
     }
 
-    public func save(_ file: CodeSettingsFile, to scope: Scope, projectRoot: URL?) throws {
+    /// Approves the file, but only if it still holds the bytes the reader
+    /// was shown: `expectedDigest` is the digest of the snapshot they
+    /// reviewed. Answers false, approving nothing, when the file has changed
+    /// since.
+    ///
+    /// Hashing whatever the file held at the moment of the click approved a
+    /// `git pull`, a checkout or an editor's sync that landed after the
+    /// window read the file: bytes the reader never saw, whose allow rules,
+    /// environment and folders then applied on the next run.
+    @discardableResult
+    public func approve(_ scope: Scope, projectRoot: URL, expectedDigest: String?) throws -> Bool {
+        guard scope != .user else { return true }
+        guard digest(scope, projectRoot: projectRoot) == expectedDigest else { return false }
+        try approvals.setApprovedDigest(expectedDigest, scope, projectRoot: projectRoot)
+        return true
+    }
+
+    /// Writes `file` and answers the bytes written.
+    @discardableResult
+    public func save(_ file: CodeSettingsFile, to scope: Scope, projectRoot: URL?) throws -> Data {
         guard let url = url(for: scope, projectRoot: projectRoot) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -181,10 +236,12 @@ public struct CodeSettingsStore: Sendable {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(file).write(to: url, options: .atomic)
+        let data = try encoder.encode(file)
+        try data.write(to: url, options: .atomic)
         if scope == .local, let projectRoot {
             ensureLocalFileIsIgnored(projectRoot: projectRoot)
         }
+        return data
     }
 
     /// Read-modify-write of one file, on the reader's behalf.
@@ -210,10 +267,13 @@ public struct CodeSettingsStore: Sendable {
         guard let url = url(for: scope, projectRoot: projectRoot) else {
             throw CocoaError(.fileNoSuchFile)
         }
-        let wasApproved = isApproved(scope, projectRoot: projectRoot)
         var raw: [String: JSONValue] = [:]
         var before = CodeSettingsFile()
-        if let data = try? Data(contentsOf: url) {
+        // One read decides both what is edited and whether it was approved,
+        // so the approval cannot carry over to bytes it was never about.
+        let existing = try? Data(contentsOf: url)
+        let wasApproved = isApproved(digest: existing.map { Digests.sha256Hex($0) }, scope, projectRoot: projectRoot)
+        if let data = existing {
             do {
                 before = try JSONDecoder().decode(CodeSettingsFile.self, from: data)
                 raw = try JSONDecoder().decode(JSONValue.self, from: data).objectValue ?? [:]
@@ -232,12 +292,14 @@ public struct CodeSettingsStore: Sendable {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(JSONValue.object(merged)).write(to: url, options: .atomic)
+        let written = try encoder.encode(JSONValue.object(merged))
+        try written.write(to: url, options: .atomic)
         if scope == .local, let projectRoot {
             ensureLocalFileIsIgnored(projectRoot: projectRoot)
         }
         if wasApproved, scope != .user, let projectRoot {
-            try approve(scope, projectRoot: projectRoot)
+            // What Juno wrote, not whatever the file holds a moment later.
+            try approve(scope, projectRoot: projectRoot, expectedDigest: Digests.sha256Hex(written))
         }
     }
 
@@ -325,15 +387,35 @@ public struct CodeSettingsStore: Sendable {
             throw CocoaError(.fileNoSuchFile)
         }
         if !FileManager.default.fileExists(atPath: url.path) {
-            try save(CodeSettingsFile(), to: scope, projectRoot: projectRoot)
+            let written = try save(CodeSettingsFile(), to: scope, projectRoot: projectRoot)
             // The reader asked for it; an empty file is theirs to approve.
             if scope != .user, let projectRoot {
-                try approve(scope, projectRoot: projectRoot)
+                try approve(scope, projectRoot: projectRoot, expectedDigest: Digests.sha256Hex(written))
             }
         } else if scope == .local, let projectRoot {
             ensureLocalFileIsIgnored(projectRoot: projectRoot)
         }
         return url
+    }
+
+    /// Where an "Always allow" answer is saved. Ordinarily this project's
+    /// personal file: it is this reader's trust, not the team's. With no
+    /// project, and for screen input wherever it was given, the reader's own
+    /// file — no project file can allow screen input
+    /// (`CodeSettingsFile.withoutScreenInputAllowances`), and the screen it
+    /// acts on is the same whichever project asked.
+    public static func alwaysAllowScope(for rule: PermissionRule, projectRoot: URL?) -> Scope {
+        if rule.coversScreenInput || projectRoot == nil { return .user }
+        return .local
+    }
+
+    /// Saves an "Always allow" answer to the file `alwaysAllowScope` names.
+    public func rememberAllowRule(_ rule: PermissionRule, projectRoot: URL?) throws {
+        try addAllowRule(
+            rule,
+            scope: Self.alwaysAllowScope(for: rule, projectRoot: projectRoot),
+            projectRoot: projectRoot
+        )
     }
 
     /// `settings.local.json` is personal. A reader who commits it by accident

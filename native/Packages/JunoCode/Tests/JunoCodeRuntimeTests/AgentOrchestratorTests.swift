@@ -135,21 +135,26 @@ private actor BlockingAgentHooks: AgentLifecycleHooks {
     private(set) var afterCalls = 0
     private(set) var stopped = 0
 
-    func sessionStarted(sessionID _: CodeSessionID) async {
+    func sessionStarted(
+        sessionID _: CodeSessionID,
+        source _: AgentSessionStartSource
+    ) async -> AgentHookResponse {
         started += 1
+        return .empty
     }
 
-    func beforeTool(_: AgentToolHookInvocation) async -> AgentHookDecision {
+    func beforeTool(_: AgentToolHookInvocation) async -> AgentHookResponse {
         beforeCalls += 1
-        return .deny(reason: "The test hook blocked this tool.")
+        return AgentHookResponse(blockReason: "The test hook blocked this tool.")
     }
 
     func afterTool(
         _: AgentToolHookInvocation,
         succeeded _: Bool,
-        summary _: String
-    ) async {
+        content _: String
+    ) async -> AgentHookResponse {
         afterCalls += 1
+        return .empty
     }
 
     func sessionStopped(sessionID _: CodeSessionID, status _: SessionStatus) async {
@@ -1125,6 +1130,9 @@ final class AgentOrchestratorTests: XCTestCase {
             configuration: AgentOrchestrator.Configuration(
                 contextWindowTokens: 100,
                 maximumConversationBytes: 16_384,
+                // The structural path on its own; ModelCompactionTests covers
+                // the model-written summary and its fallbacks.
+                compactionSummary: nil,
                 systemPrompt: "sys"
             ),
             modelID: "test-model",

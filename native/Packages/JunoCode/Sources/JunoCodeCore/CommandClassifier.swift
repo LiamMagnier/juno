@@ -24,6 +24,10 @@ public struct CommandClassifier: Sendable {
     public init() {}
 
     public func classify(_ commandLine: String) -> CommandVerdict {
+        classify(commandLine, depth: 0)
+    }
+
+    private func classify(_ commandLine: String, depth: Int) -> CommandVerdict {
         let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .forbidden(reason: "Empty command.")
@@ -35,15 +39,7 @@ public struct CommandClassifier: Sendable {
             return .forbidden(reason: "Command could not be parsed safely.")
         }
         if tokens.contains(where: { $0.containsSubstitution }) {
-            // `$(…)` hides a whole second command from every rule below, so the
-            // classification has to assume the worst about what it expands to.
-            // It stays out of the `destructive` tier because the substitution
-            // itself is not an escape — `echo $(git rev-parse HEAD)` is routine —
-            // but it can never be treated as bounded.
-            return .permitted(
-                risk: .critical,
-                reason: "Command uses shell substitution."
-            )
+            return classifySubstituting(trimmed, depth: depth)
         }
 
         var worst = ActionRisk.execute
@@ -51,6 +47,44 @@ public struct CommandClassifier: Sendable {
 
         for segment in Self.segments(from: tokens) {
             switch Self.classifySegment(segment) {
+            case let .forbidden(reason):
+                return .forbidden(reason: reason)
+            case let .permitted(risk, reason):
+                if risk > worst {
+                    worst = risk
+                    worstReason = reason
+                }
+            }
+        }
+        return .permitted(risk: worst, reason: worstReason)
+    }
+
+    /// A line that runs commands from inside itself.
+    ///
+    /// `$(…)` hides a whole second command from every rule below, so the line
+    /// is never better than `critical`: what it expands to is unknown. That
+    /// floor stays out of the `destructive` tier because the substitution
+    /// itself is not an escape — `echo $(git rev-parse HEAD)` is routine.
+    ///
+    /// But a floor is not a ceiling. The inner commands are classified in
+    /// their own right, and so is the line around them with each substitution
+    /// set aside, and the worst of all of it wins. Otherwise wrapping a
+    /// program in `$(…)` — or appending a harmless one, as in
+    /// `rm -rf ~ $(true)` — was a way to take a forbidden or destructive
+    /// command down to `critical`, which Full Access runs without asking.
+    private func classifySubstituting(_ line: String, depth: Int) -> CommandVerdict {
+        guard depth < ShellSegments.maximumNesting else {
+            return .forbidden(reason: "Command nests substitutions too deeply to inspect.")
+        }
+        let scan = ShellSegments.scan(line)
+        var worst = ActionRisk.critical
+        var worstReason = "Command uses shell substitution."
+        // A body that is only whitespace, as in `$()`, runs nothing.
+        let parts = [scan.masked] + scan.bodies.filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        for part in parts {
+            switch classify(part, depth: depth + 1) {
             case let .forbidden(reason):
                 return .forbidden(reason: reason)
             case let .permitted(risk, reason):

@@ -50,12 +50,14 @@ New, because every serious agent has it:
   (`JunoCodeCore/CodeSettings.swift`, `JunoCodeLocal/CodeSettingsStore.swift`)
 - **Permission rules** — `Bash(npm run *)`, `Edit(src/**)`, `Read(.env)`,
   `WebFetch(domain:…)`, `mcp__server` — deny beats ask beats allow, chained
-  commands checked per segment, destructive actions always ask.
+  commands checked per segment, deny and ask rules also check what runs
+  inside `$(…)`, backticks and subshells, and destructive actions always ask.
   (`JunoCodeCore/PermissionRules.swift`)
 - **"Always allow"** on the approval prompt saves the exact rule it shows.
 - **Environment variables, network access and extra writable folders** per
-  scope, applied to the next command without rebuilding the workspace; build
-  and package caches are writable inside the sandbox.
+  scope, applied to the next command without rebuilding the workspace;
+  package download caches are writable inside the sandbox, and the folders
+  that hold tools' binaries and settings never are (see §5).
 - **Personal instructions** in `~/.juno/JUNO.md`; standing instructions in any
   settings file.
 - **Turn limit, compaction threshold, co-author trailer, branch prefix** as
@@ -117,19 +119,87 @@ Explore destinations (now Settings pages, or Chat's). About 15,800 lines out,
   window. Icons are blank in those renders because the icon catalog ships
   with the app, not the test bundle.
 
-## 4. Still open
+## 4. What was open, and where it landed
 
-- **Checkpoint rewind** of code *and* conversation to a turn (Claude Code's
-  Esc Esc). Per-file restore exists; turn snapshots do not.
-- **A model-written compaction summary.** The structural one is sound but
-  loses nuance on very long runs.
-- **Backend**: the agent proxy never records Code spend, and aborts after
-  240s regardless of activity (`src/app/api/agent/[...path]/route.ts`).
-- **Remote relay**: the Mac receives commands but never uploads its events,
-  so a phone watching a Mac session sees an empty transcript.
-- **Hooks** receive no JSON on stdin and cover four events; Claude-format
-  hooks that read tool input will not work.
-- **Session store scaling**: every session's events are decoded at launch.
-- **Screen-control permission UI**: the old inspector's Computer Use pane
-  (TCC status, screenshot preview) was removed with the inspector; starting
-  and stopping screen control lives in the toolbar menu and the stop banner.
+Each item was built on its own branch from the rebuild, reviewed, and merged
+onto the review fixes in `rework/integration`; each merge commit names its
+conflicts and how both sides were kept.
+
+- **Checkpoint rewind** (`rework/checkpoints`): every prompt and applied
+  steer opens a turn; the agent's file tools snapshot what they change;
+  Rewind on a message, esc esc or `/rewind` restores code, conversation or
+  both. A rewound transcript opens with a restart numbered past every
+  sequence the session used, so the store's summaries, the CLI and the
+  relay's cursors all carry on across it.
+- **A model-written compaction summary** (`rework/compaction`), with the
+  structural notes as its fallback, `/compact [what to keep]` and a divider
+  that opens onto the summary. Whichever writer runs, the reader's newest
+  folded message is quoted whole after the summary.
+- **Backend** (`rework/proxy`): the agent proxy bills every call from the
+  provider's own usage and has header, idle and ceiling deadlines instead of
+  a 240s total.
+- **Remote relay** (`rework/relay`): the Mac uploads its shared sessions'
+  lists and transcripts, claimed commands are leased, and a phone's commands
+  arrive as sent, held to the reader's remote ceiling.
+- **Hooks** (`rework/hooks`): Claude Code's events and JSON on stdin, trust
+  per repository hook, and Stop reaching a prompt's hooks.
+- **Session store scaling** (`rework/store`): launch reads session records
+  only; each transcript keeps a summary beside it.
+- **Screen-control permission UI** (`rework/screen`): the grants in Settings,
+  what the agent last saw in the banner, and screen input allowed without
+  asking only from the reader's own settings file.
+- **The release feed** (`rework/feed`) is served from the now-private
+  repository through signed asset URLs.
+
+### Where the branches met
+
+Each branch kept its own promises; the review of the integration found where
+one branch's change broke another's, fixed after the merges:
+
+- **Hooks × compaction.** A stop hook's reason is a user-role turn, and other
+  hooks' output rides at the end of the reader's turn. Neither is the
+  reader's: compaction never quotes them as the request in progress, notes
+  them apart from "User:", and shows them to the summary call as `<hook>`.
+- **Hooks × screen.** A `PreToolUse` hook's `allow` never lets screen input
+  run unasked; only the reader's own settings file can.
+- **Hooks × relay.** A phone's prompt is answered once the session takes
+  it, before its hooks decide, so an approval a hook raises can be answered
+  from the phone rather than blocking every command until someone is at the
+  Mac. Queued device tasks start the same way, and fail when a hook blocks
+  them rather than showing as running forever.
+- **Checkpoints × relay.** A rewind holds the session from its checks to the
+  reloaded transcript; nothing starts meanwhile, and a running orchestrator
+  is never let go.
+
+## 5. Security fixes (23 September)
+
+Four holes in the permission system, each fixed with a regression test:
+
+- **A substitution hid a command from the rules.** `echo $(curl …)` was one
+  segment, `echo`, so a `curl *` deny rule never matched, and Full Access ran
+  the command. The line was `critical`, and Full Access allows `critical`
+  without asking. `ShellSegments` now keeps `$(…)`, backticks, `<(…)`,
+  `>(…)` and subshells whole and returns their bodies at any depth. Deny and
+  ask rules match those bodies too. Allow patterns never vouch for such a
+  line; a bare `Bash` rule still does. The classifier grades each inner
+  command and the line around it instead of stopping at `critical`.
+  (`JunoCodeCore/PermissionRules.swift`, `CommandClassifier.swift`)
+- **Toolchain "caches" held binaries the reader runs.** `~/.bun`, `~/.yarn`
+  and `~/Library/pnpm` were writable whole, and so were `~/Library/Caches`,
+  `~/.cache`, `~/.swiftpm` and DerivedData. Only download caches stay
+  shared. Cargo, npm (which also holds `npx`'s packages), Go, node-gyp, pip
+  and XDG caches go to `~/Library/Caches/JunoCode/CommandCaches`, which only
+  sandboxed commands use. Every folder on the PATH Juno builds, `~/.deno/bin`,
+  and the tools' settings files are denied after every grant, so no later
+  allowance can reopen them. Xcode builds need a `-derivedDataPath` inside
+  the workspace. SwiftPM builds without its user-level caches.
+  Gradle, Maven and CocoaPods caches are still shared.
+  (`JunoCodeLocal/CommandSandboxProfile.swift`)
+- **Approve recorded the file as it was at the click.** It now approves only
+  the bytes the Settings window read, refuses and reloads if the file changed
+  since, and the window reloads whenever it becomes key.
+  (`JunoCodeLocal/CodeSettingsStore.swift`, `JunoCodeUI/Models/CodeSettingsModel.swift`)
+- **`web_fetch` followed redirects anywhere.** A redirect that leaves the
+  approved host, or drops to plain http, now ends the fetch and names the
+  new URL. The model's next call to that URL goes through the rules for that
+  host. (`JunoCodeRuntime/Tools/WebFetchTool.swift`)

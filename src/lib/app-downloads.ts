@@ -2,8 +2,12 @@
  * Where the desktop and mobile apps come from, and which one a visitor wants.
  *
  * Juno ships from two repositories: the Windows client is its own Tauri app in
- * `juno-windows`, and the Apple apps build out of this one. Both are public, so
- * a release asset is a plain URL and nothing here needs a token.
+ * `juno-windows`, and the Apple apps build out of this one. A public
+ * repository's release asset is a plain, permanent URL. A private one's is not:
+ * `github.com/…/releases/download/…` answers 404 to anyone without access, so
+ * the feed hands out GitHub's short-lived signed URL for the asset instead
+ * (`@/lib/download-feed`), and a page links to `/download/<platform>`, which
+ * signs a fresh one at the moment of the click.
  *
  * NOTHING IS INVENTED. A platform with no published release reports
  * `available: false` rather than linking at a guessed asset name — a download
@@ -16,8 +20,20 @@ export type DownloadPlatform = "macos" | "windows" | "ios";
 export interface AppDownload {
   platform: DownloadPlatform;
   label: string;
-  /** Absent until a release publishes an asset for this platform. */
+  /**
+   * The asset itself. Absent until a release publishes one for this platform.
+   *
+   * This is what the Mac updater downloads, and the only URL an installed copy
+   * will fetch: HTTPS on a GitHub release host (`UPDATER_DOWNLOAD_HOSTS`). For a
+   * private repository it is a signed URL that stops working at `urlExpiresAt`,
+   * so a page must not render it — see `downloadHref`.
+   */
   url: string | null;
+  /**
+   * When `url` stops working, as an ISO 8601 instant, or null when it is a
+   * permanent link. Only a signed URL has one.
+   */
+  urlExpiresAt: string | null;
   version: string | null;
   /** Bytes, when the asset reports a size. */
   size: number | null;
@@ -144,6 +160,8 @@ function rank(name: string): number {
 }
 
 export interface ReleaseAsset {
+  /** GitHub's id for the asset, which is how a private one is fetched through the API. */
+  id?: number;
   name: string;
   browser_download_url: string;
   size?: number;
@@ -264,6 +282,138 @@ export function pickAsset(
   const candidates = assets.filter((a) => assetPlatform(a.name) === platform);
   if (candidates.length === 0) return null;
   return candidates.sort((a, b) => rank(b.name) - rank(a.name))[0];
+}
+
+/**
+ * The hosts an installed Mac app will download an update from.
+ *
+ * A copy of the list in `JunoUpdateFeed.validateOrigin`
+ * (native/Packages/JunoNativeKit/Sources/JunoCore/JunoUpdateFeed.swift), held
+ * to it by a test. The copy exists because that list cannot move: every Mac
+ * already running v1.5.4 has it compiled in, so the server has to hand out a
+ * URL the list accepts rather than the other way round.
+ */
+export const UPDATER_DOWNLOAD_HOSTS = [
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+] as const;
+
+/** HTTPS on a release host or a subdomain of one: the updater's own rule, applied before it fetches a byte. */
+export function isUpdaterDownloadUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return UPDATER_DOWNLOAD_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+}
+
+function decodeBase64Url(segment: string): string {
+  // `atob` rather than Buffer so this module stays importable from the client,
+  // where the download menu reads it.
+  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+  return atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "="));
+}
+
+/**
+ * When a signed asset URL stops working, in milliseconds since the epoch, or
+ * null when it carries no expiry this can read.
+ *
+ * GitHub's signed release-asset URLs carry more than one clock, and the earliest
+ * is the one to believe. Observed for this repository's assets on 2026-09-22,
+ * at release-assets.githubusercontent.com: a `jwt` whose `exp` is 30 minutes out
+ * for the DMG and 5 for the small JSON and text assets, beside an Azure SAS `se`
+ * 43 to 59 minutes out. Only the SAS was enforced that day, since a URL first
+ * fetched after its JWT `exp` was still served, but nothing promises that stays
+ * true, so the earlier clock wins. The older objects.githubusercontent.com form
+ * was an S3 presign, `X-Amz-Date` plus `X-Amz-Expires` seconds. All three are
+ * read, and a value that does not parse is dropped rather than trusted; the
+ * caller treats "no expiry found" as the shortest lifetime GitHub was seen to
+ * issue.
+ */
+export function signedUrlExpiry(raw: string): number | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(raw).searchParams;
+  } catch {
+    return null;
+  }
+  const expiries: number[] = [];
+
+  const sasExpiry = params.get("se");
+  if (sasExpiry) expiries.push(Date.parse(sasExpiry));
+
+  const jwt = params.get("jwt");
+  const claims = jwt?.split(".")[1];
+  if (claims) {
+    try {
+      const exp = (JSON.parse(decodeBase64Url(claims)) as { exp?: unknown } | null)?.exp;
+      if (typeof exp === "number") expiries.push(exp * 1000);
+    } catch {
+      // Not a JWT this can read. The other clocks still count.
+    }
+  }
+
+  const amzDate = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(params.get("X-Amz-Date") ?? "");
+  const amzSeconds = params.get("X-Amz-Expires");
+  if (amzDate && amzSeconds && /^\d+$/.test(amzSeconds)) {
+    const [, year, month, day, hour, minute, second] = amzDate.map(Number);
+    expiries.push(Date.UTC(year, month - 1, day, hour, minute, second) + Number(amzSeconds) * 1000);
+  }
+
+  const readable = expiries.filter(Number.isFinite);
+  return readable.length > 0 ? Math.min(...readable) : null;
+}
+
+/**
+ * What a page should link a person to for this download.
+ *
+ * The asset's own URL when that is permanent. When it is signed, Juno's
+ * `/download/<platform>` route instead: a person can read a page for an hour
+ * before clicking, and a signed URL rendered into it stops working in minutes.
+ * The route signs a fresh one at the moment of the click, and carries the
+ * version so the file that arrives is the one whose checksum the page showed.
+ */
+export function downloadHref(download: AppDownload): string | null {
+  if (!download.available || !download.url) return null;
+  if (!download.urlExpiresAt) return download.url;
+  const version = download.version ? `?version=${encodeURIComponent(download.version)}` : "";
+  return `/download/${download.platform}${version}`;
+}
+
+/** The attributes of the link a page renders for a download. */
+export interface DownloadLink {
+  href: string;
+  /** Only ever on a permanent link; see `downloadLink`. */
+  download?: true;
+}
+
+/**
+ * The link a page renders for a download: `downloadHref`, plus the `download`
+ * attribute only when that href is the asset's own permanent URL.
+ *
+ * The attribute must stay off the `/download/<platform>` route. That link is
+ * same-origin, and on a same-origin link `download` makes the browser save
+ * whatever the redirects end on. When the route signs the file, that still
+ * works, because Chromium turns the cross-origin hop into a navigation. But
+ * when the route sends the reader back to `/download` (a newer release has
+ * replaced the one on screen, or signing failed), the browser saves that page
+ * as `download.html` instead of showing it. A plain navigation needs no help:
+ * GitHub signs the URL with `Content-Disposition: attachment` and the asset's
+ * file name, so the file downloads and the page stays where it was, and a
+ * redirect back to `/download` just opens the page.
+ *
+ * The permanent link keeps the attribute it always had. It points at
+ * github.com, another origin, where browsers ignore it anyway.
+ */
+export function downloadLink(download: AppDownload): DownloadLink | null {
+  const href = downloadHref(download);
+  if (!href) return null;
+  return href === download.url ? { href, download: true } : { href };
 }
 
 /**

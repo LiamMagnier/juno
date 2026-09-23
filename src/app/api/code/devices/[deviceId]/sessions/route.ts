@@ -137,7 +137,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ deviceId
   const { deviceId } = await params;
   const raw = await req.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) return NextResponse.json({ error: "Payload too large" }, { status: 413 });
-  const parsed = syncSchema.safeParse(JSON.parse(raw || "null"));
+  let body: unknown = null;
+  try {
+    body = JSON.parse(raw || "null");
+  } catch {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+  const parsed = syncSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const device = await ownedDevice(deviceId, user.id);
   if (!device) return NextResponse.json({ error: "Not found" }, { status: 404 });

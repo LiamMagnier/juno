@@ -34,6 +34,46 @@ struct CompactionEventTests {
     }
 
     @Test
+    func aModelWrittenSummaryRoundTripsWithItsFocusAndUsage() throws {
+        let event = CompactionEvent(
+            summary: "**Current work.** Wiring the lexer.",
+            beforeMessageCount: 40,
+            afterMessageCount: 7,
+            beforeTokens: 160_000,
+            requestedByUser: true,
+            summarySource: .model,
+            focus: "the lexer decisions",
+            summaryInputTokens: 52_000,
+            summaryOutputTokens: 900
+        )
+        let decoded = try JSONDecoder().decode(
+            CompactionEvent.self,
+            from: JSONEncoder().encode(event)
+        )
+        #expect(decoded == event)
+        #expect(decoded.summarySource == .model)
+        #expect(decoded.focus == "the lexer decisions")
+        #expect(decoded.summaryInputTokens == 52_000)
+    }
+
+    /// Every compaction recorded before the model could write one was
+    /// structural, and the record says so rather than failing to decode.
+    @Test
+    func anOlderRecordDecodesAsStructural() throws {
+        let json = """
+        {"summary":"Earlier conversation memory:\\n- User: hi","beforeMessageCount":9,\
+        "afterMessageCount":4,"requestedByUser":false}
+        """
+        let decoded = try JSONDecoder().decode(CompactionEvent.self, from: Data(json.utf8))
+        #expect(decoded.summarySource == .structural)
+        #expect(decoded.focus == nil)
+        #expect(decoded.fallbackReason == nil)
+        #expect(decoded.summaryInputTokens == nil)
+        #expect(decoded.beforeTokens == nil)
+        #expect(decoded.afterMessageCount == 4)
+    }
+
+    @Test
     func aConfigurationWithoutACustomAgentStillDecodes() throws {
         // The shape an older store wrote, before `customAgentID` existed.
         let json = """

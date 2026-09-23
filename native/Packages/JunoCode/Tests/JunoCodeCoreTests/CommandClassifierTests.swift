@@ -153,7 +153,7 @@ final class CommandClassifierTests: XCTestCase {
     /// hides it from the classifier entirely; changing file permissions or
     /// killing a process acts on the machine.
     func testShellEscapes() {
-        XCTAssertEqual(risk("echo $(cat /etc/passwd)"), .critical)
+        XCTAssertEqual(risk("echo $(git rev-parse HEAD)"), .critical)
         XCTAssertEqual(risk("echo `id`"), .critical)
         // Was .critical. The `rm -rf` inside the quoted string is invisible to
         // every rule in the classifier, which is the whole reason an inline
@@ -161,11 +161,49 @@ final class CommandClassifierTests: XCTestCase {
         // testInlineInterpreterProgramsEscapeTheClassifier.
         XCTAssertEqual(risk("bash -c 'rm -rf x'"), .destructive)
         XCTAssertEqual(risk("eval ls"), .critical)
-        XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .critical)
+        // Both were .critical: the substitution's own verdict was never read.
+        // See testASubstitutionIsNoBetterThanWhatItRuns.
+        XCTAssertEqual(risk("echo $(cat /etc/passwd)"), .destructive)
+        XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .destructive)
 
         XCTAssertEqual(risk("chmod +x script.sh"), .destructive)
         XCTAssertEqual(risk("kill -9 1234"), .destructive)
         XCTAssertEqual(risk("osascript -e 'tell app \"Finder\"'"), .destructive)
+    }
+
+    /// A substitution is never better than `critical`, and never better than
+    /// what it runs either. The early `critical` answer used to be final, so
+    /// wrapping a program in `$(…)`, or appending one, took a forbidden or
+    /// destructive command down to the tier Full Access runs without asking.
+    func testASubstitutionIsNoBetterThanWhatItRuns() {
+        XCTAssertTrue(isForbidden("echo $(sudo id)"))
+        XCTAssertTrue(isForbidden("x=`shutdown -h now`"))
+        XCTAssertTrue(isForbidden("echo \"$(echo $(sudo id))\""))
+        XCTAssertTrue(isForbidden("cat <(launchctl list)"))
+        // The line around the substitution counts as well.
+        XCTAssertTrue(isForbidden("rm -rf ~ $(true)"))
+        XCTAssertTrue(isForbidden("sudo ls $(pwd)"))
+
+        XCTAssertEqual(risk("echo $(ssh host cat .env)"), .destructive)
+        XCTAssertEqual(risk("echo $(bash -c 'rm -rf x')"), .destructive)
+        XCTAssertEqual(risk("x=$(chmod 777 script.sh)"), .destructive)
+        XCTAssertEqual(risk("echo $(ls; git push --force)"), .destructive)
+        XCTAssertEqual(risk("(cd sub && echo $(git push --force))"), .destructive)
+        for mode in PermissionMode.allCases where mode != .readOnly {
+            XCTAssertEqual(
+                PermissionPolicy.ruling(mode: mode, risk: .destructive),
+                .requireApproval,
+                "\(mode) must ask before a destructive command hidden in a substitution"
+            )
+        }
+
+        // Routine substitutions stay where they were.
+        XCTAssertEqual(risk("cd $(git rev-parse --show-toplevel)"), .critical)
+        XCTAssertEqual(risk("echo $()"), .critical)
+        XCTAssertEqual(risk("echo $((1 + 2))"), .critical)
+
+        let deep = String(repeating: "$(", count: 40) + "ls" + String(repeating: ")", count: 40)
+        XCTAssertTrue(isForbidden("echo " + deep), "nesting past what is inspected is refused, not guessed at")
     }
 
     func testPipelinesTakeTheWorstSegment() {

@@ -74,19 +74,25 @@ public struct StudioSettingsView: View {
     /// The host's "let other devices use this Mac" control, which lives in the
     /// app because the model behind it does.
     let remoteHosting: AnyView?
+    /// Where the screen-control grants are read from: this Mac, except in a
+    /// snapshot or test that needs a particular answer.
+    let screenControlProbe: ComputerUsePermissionProbe
 
     @State private var section: StudioSettingsSection
     @State private var scope: CodeSettingsScope = .user
     @State private var projectID: WorkspaceID?
     @Bindable private var settings = CodeSettingsModel.shared
+    @Environment(\.controlActiveState) private var controlActiveState
 
     public init(
         workbench: WorkbenchModel?,
         initialSection: StudioSettingsSection = .general,
-        remoteHosting: AnyView? = nil
+        remoteHosting: AnyView? = nil,
+        screenControlProbe: ComputerUsePermissionProbe = .system
     ) {
         self.workbench = workbench
         self.remoteHosting = remoteHosting
+        self.screenControlProbe = screenControlProbe
         _section = State(initialValue: initialSection)
     }
 
@@ -128,6 +134,13 @@ public struct StudioSettingsView: View {
             settings.selectProject(project?.access)
             if !settings.isAvailable(scope) { scope = .user }
         }
+        .onChange(of: controlActiveState) { _, state in
+            // The files change behind the window: a `git pull`, a checkout, the
+            // reader's own editor. Coming back to it shows what they say now,
+            // so an Approve button is never offered for a version the reader
+            // is not looking at.
+            if state == .key { settings.reload() }
+        }
     }
 
     private var projectPicker: some View {
@@ -166,6 +179,12 @@ public struct StudioSettingsView: View {
                     .disabled(locked)
                 if scope == .user, let remoteHosting {
                     Section("This Mac as a host") { remoteHosting }
+                }
+                // Beside the host switch, and on the same terms: macOS grants
+                // belong to this Mac, not to any settings file, so the section
+                // shows with the reader's own scope rather than a project's.
+                if scope == .user {
+                    StudioScreenControlSettings(probe: screenControlProbe)
                 }
             case .environment: StudioEnvironmentSettings(scope: scope, settings: settings).disabled(locked)
             case .instructions: StudioInstructionsSettings(settings: settings)
@@ -232,7 +251,7 @@ struct StudioScopeSection: View {
                 }
             }
         } footer: {
-            Text("Rules add up across all three. For everything else, the most specific file wins, except that a project's files can only lower the remote limit, and apply their allow rules, environment and folders only once you approve them.")
+            Text("Rules add up across all three, though only All projects can let screen control act without asking. For everything else, the most specific file wins, except that a project's files can only lower the remote limit, and apply their allow rules, environment and folders only once you approve them.")
         }
     }
 }
@@ -447,7 +466,19 @@ struct StudioRuleListSection: View {
             }
             ForEach(rules, id: \.self) { rule in
                 HStack {
-                    Text(rule.description).font(Studio.Font.mono)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rule.description).font(Studio.Font.mono)
+                        // Still listed, because it is in the file, but a
+                        // project file cannot let screen control act unasked;
+                        // saying so beats a rule that silently does nothing.
+                        if list == .allow, scope != .user, rule.coversScreenInput {
+                            Text("Not applied. Only All projects can let screen control act without asking.")
+                                .font(Studio.Font.meta)
+                                .foregroundStyle(Studio.Ink.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("juno.code.settings.rule.screen-input-ignored")
+                        }
+                    }
                     Spacer()
                     Button {
                         settings.removeRule(rule, from: list, in: scope)
@@ -864,26 +895,21 @@ struct StudioToolsSettings: View {
     }
 
     private func hooksSection(_ extensions: CodeWorkspaceExtensions) -> some View {
-        Section("Hooks") {
-            if extensions.hooks.hooks.isEmpty {
-                Text("No hooks. Add .juno/hooks.json, or hooks in .claude/settings.json.")
-                    .foregroundStyle(Studio.Ink.tertiary)
-            }
-            ForEach(extensions.hooks.hooks) { hook in
-                Toggle(isOn: Binding(
-                    get: { defaults.isHookEnabled(hook.id) },
-                    set: { defaults.setHook(hook.id, enabled: $0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(hook.event.rawValue)
-                        Text(hook.command)
-                            .font(Studio.Font.monoSmall)
-                            .foregroundStyle(Studio.Ink.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
+        StudioHooksSettings(
+            hooks: extensions.hooks,
+            policy: extensions.hookPolicy,
+            setAllowed: { setHooksAllowed($0, shown: extensions.hooks) }
+        )
+    }
+
+    /// Allows exactly the hooks the reader is looking at: if a file changed
+    /// after the page loaded, the new version is not what they approved.
+    private func setHooksAllowed(_ allowed: Bool, shown: HookDiscoveryResult) {
+        guard let workbench, let project else { return }
+        Task {
+            guard let context = await workbench.context(for: project.id) else { return }
+            _ = try? context.setRepositoryHooksAllowed(allowed, discovered: shown)
+            extensions = await CodeWorkspaceExtensions.discover(in: context)
         }
     }
 
