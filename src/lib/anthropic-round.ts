@@ -112,10 +112,19 @@ export function addAnthropicUsage(total: AnthropicRoundUsage, round: AnthropicRo
 }
 
 export interface AnthropicToolUse {
+  /** The provider's `tool_use.id`, which is what goes back as `tool_result.tool_use_id`. */
   id: string;
   name: string;
   /** The accumulated `input_json_delta` fragments, unparsed. */
   json: string;
+  /** The id the rest of the turn knows the call by (SPEC §4.3); equals `id` unless it had to be suffixed. */
+  callId: string;
+  /** The model step the call was made in. */
+  round: number;
+  /** Position among the step's client calls, 0-based. */
+  index: number;
+  /** False when the stream ended before the block closed — a response cut off mid-call. */
+  complete: boolean;
 }
 
 export interface AnthropicRoundResult {
@@ -129,16 +138,20 @@ export interface AnthropicRoundResult {
   toolUses: AnthropicToolUse[];
   stopReason: string | null;
   usage: AnthropicRoundUsage;
+  /** The model step the response ENDED in: the one the caller closes with `round_end`. */
+  round: number;
+  /** Provider searches made in that last step (the ones before it were closed here). */
+  serverTools: number;
 }
 
 /**
- * Parse streamed `input_json_delta` fragments into tool arguments.
+ * Parse streamed `input_json_delta` fragments into an argument object.
  *
- * A truncated or malformed accumulation becomes `{}` rather than throwing: the
- * approval broker classifies and previews whatever it is handed, and an empty
- * object is both honest about what arrived and safe — `classifyExternalAction`
- * reads the absence of argument tokens as LESS evidence, never as more
- * permission.
+ * Used only where an OBJECT is required whatever arrived: the `input` of a
+ * block replayed to Anthropic, and a provider search's query. A client tool's
+ * arguments are never parsed here — the raw text goes to the dispatcher, which
+ * tells the model when it is not valid JSON instead of running the tool with
+ * `{}` (RC-14).
  */
 export function safeToolInput(json: string): Record<string, unknown> {
   if (!json.trim()) return {};
@@ -150,130 +163,252 @@ export function safeToolInput(json: string): Record<string, unknown> {
   }
 }
 
+export interface ReadAnthropicRoundOptions {
+  labelFor?: (toolName: string) => string;
+  /**
+   * URLs already reported as sources this TURN, mutated here. Shared across
+   * rounds so a page cited in round one is not re-announced in round three.
+   */
+  seen: Set<string>;
+  /** The model step this response starts in (SPEC §2.9). Default 0. */
+  round?: number;
+  /** Whether this request was the tools-off final one; stamped on mid-response `round_end`s. */
+  final?: boolean;
+  /** Issues a client call's id (SPEC §4.3). Default: the provider's own id. */
+  callIdFor?: (providerCallId: string, round: number, index: number) => string;
+}
+
 /**
- * Read one round of the stream, yielding display events and returning the
+ * Read one response of the stream, yielding display events and returning the
  * structured turn.
  *
- * @param seen URLs already reported as sources this TURN, mutated here. Shared
- *        across rounds so a page cited in round one is not re-announced in
- *        round three.
+ * STEPS INSIDE ONE RESPONSE (SPEC §5.1 item 2). Claude's web search runs inside
+ * the response: it writes, searches, reads the results and writes on. The text
+ * after a search is the model resuming after a tool, which is what a new round
+ * means, so once a search's result has arrived in a step that already had text,
+ * the step is closed here with `round_end{tools: 0, serverTools}` and the text
+ * that follows belongs to the next round. Both steps' text is answer text
+ * (`tools: 0`); the answer joins them with a paragraph break rather than gluing
+ * "…let me check.The answer is…" together.
  */
 export async function* readAnthropicRound(
   stream: AsyncIterable<Anthropic.RawMessageStreamEvent>,
-  opts: { labelFor?: (toolName: string) => string; seen: Set<string> }
+  opts: ReadAnthropicRoundOptions,
 ): AsyncGenerator<LlmEvent, AnthropicRoundResult> {
   /*
    * The assistant turn, keyed by WIRE INDEX rather than by arrival order.
    *
    * Blocks reach this loop at two different moments — `redacted_thinking` and
-   * the server-tool blocks are complete at `content_block_start`, while text,
-   * thinking and tool_use are only whole at `content_block_stop` — so pushing
-   * them into a flat array as they arrive can reorder the turn whenever the
-   * two kinds interleave. Order is part of the contract Anthropic verifies on
-   * replay (a thinking block must still precede the tool_use it reasoned
-   * toward), so the index decides it, not the clock.
+   * the server-tool result blocks are complete at `content_block_start`, while
+   * text, thinking and both kinds of tool use are only whole at
+   * `content_block_stop` — so pushing them into a flat array as they arrive can
+   * reorder the turn whenever the two kinds interleave. Order is part of the
+   * contract Anthropic verifies on replay (a thinking block must still precede
+   * the tool_use it reasoned toward), so the index decides it, not the clock.
    */
   const blockByIndex = new Map<number, Anthropic.Messages.ContentBlockParam>();
   // Open blocks by wire index. Anthropic may interleave deltas for several
   // indices, so they cannot be accumulated into a single "current" block.
-  const partial = new Map<number, { block: Anthropic.Messages.ContentBlockParam; json: string }>();
+  const partial = new Map<number, OpenBlock>();
   const toolUses: AnthropicToolUse[] = [];
   const usage = emptyAnthropicUsage();
   let stopReason: string | null = null;
+
+  let round = opts.round ?? 0;
+  /** Client calls made in the current step, for their `index`. */
+  let stepCalls = 0;
+  /** Provider searches surfaced in the current step. */
+  let stepServerTools = 0;
+  /** Text was written in the current step, so a finished search closes it. */
+  let stepHasText = false;
+  /** The step each surfaced search was made in, by its `srvtoolu_…` id. */
+  const searchRound = new Map<string, number>();
+  const callIdFor = opts.callIdFor ?? ((id: string) => id);
 
   for await (const event of stream) {
     if (event.type === "message_start") {
       foldAnthropicUsage(usage, event.message.usage as RawAnthropicUsage);
     } else if (event.type === "content_block_start") {
-      const raw = event.content_block as { type?: string; id?: string; name?: string; content?: unknown };
+      const raw = event.content_block as RawStartBlock;
       if (raw.type === "text") {
-        partial.set(event.index, { block: { type: "text", text: "" }, json: "" });
+        partial.set(event.index, { kind: "text", block: { type: "text", text: "" }, json: "" });
       } else if (raw.type === "thinking") {
-        partial.set(event.index, { block: { type: "thinking", thinking: "", signature: "" }, json: "" });
-      } else if (raw.type === "redacted_thinking") {
-        // Opaque to Juno by design, and must be echoed back untouched or the
-        // replayed turn fails signature verification.
-        blockByIndex.set(event.index, event.content_block as Anthropic.Messages.ContentBlockParam);
+        partial.set(event.index, { kind: "thinking", block: { type: "thinking", thinking: "", signature: "" }, json: "" });
       } else if (raw.type === "tool_use") {
-        partial.set(event.index, {
-          block: { type: "tool_use", id: raw.id ?? "", name: raw.name ?? "", input: {} },
-          json: "",
-        });
+        const id = raw.id ?? "";
+        const name = raw.name ?? "";
+        const index = stepCalls++;
+        const callId = callIdFor(id, round, index);
+        const use: AnthropicToolUse = { id, name, json: "", callId, round, index, complete: false };
+        toolUses.push(use);
+        partial.set(event.index, { kind: "tool_use", block: { type: "tool_use", id, name, input: {} }, json: "", use });
         yield {
           type: "tool",
-          server: opts.labelFor?.(raw.name ?? "") ?? "connector",
-          name: raw.name ?? "tool",
+          server: opts.labelFor?.(name) ?? "connector",
+          name: name || "tool",
           phase: "call",
-          callId: raw.id ?? "",
+          callId,
+          ...(callId !== id && id ? { providerCallId: id } : {}),
+          round,
+          index,
           // NO `args` HERE, AND THIS IS NOT AN OVERSIGHT. `content_block_start`
           // carries the tool's id and name and nothing else: the arguments
           // arrive afterwards as `input_json_delta` fragments and are only
           // whole at `content_block_stop`. Anything read here would be `{}`.
-          // Anthropic attaches them to the RESULT event instead
-          // (anthropic.ts), which is the whole reason the wire contract lets
-          // args ride on either act. Deferring this yield until the arguments
-          // exist would cost the panel the live row — "Using Linear" would
-          // appear only after Linear had already answered.
+          // They reach the dispatcher whole, which puts them on the first
+          // `queued` act and on the result. Deferring this yield until the
+          // arguments exist would cost the panel the live row — "Using Linear"
+          // would appear only after Linear had already answered.
         };
-      } else if (raw.type === "server_tool_use" || raw.type === "web_search_tool_result") {
-        // PART OF THE ASSISTANT TURN, not just a source of URLs. These blocks
-        // were read for their citations and then dropped from `blocks`, which
-        // is the array replayed as the assistant message on the next tool
-        // round — so Claude lost its own search results between rounds and
-        // searched again, billed again at webSearchRequests each time. A
-        // `pause_turn` turn can also end ON a server_tool_use block that has
-        // not run yet, and continuing it means sending the content back
-        // unchanged.
-        blockByIndex.set(event.index, event.content_block as Anthropic.Messages.ContentBlockParam);
+      } else if (raw.type === "server_tool_use") {
+        // Streams its input like a client tool_use (RC-11): the query arrives
+        // as `input_json_delta` and is whole at `content_block_stop`. The block
+        // stays in the assistant turn either way — a `pause_turn` can end ON a
+        // search that has not run yet, and continuing it means sending it back
+        // with its real input, not the `{}` it started with.
+        partial.set(event.index, {
+          kind: "server_tool_use",
+          block: event.content_block as unknown as Anthropic.Messages.ContentBlockParam,
+          json: "",
+          startInput: raw.input,
+          // Only Claude's own top-level web search is a search the reader sees.
+          // Dynamic filtering runs code that calls tools of its own; those
+          // blocks carry a `caller` and are replayed, never surfaced.
+          surfaced: raw.name === "web_search" && !raw.caller,
+        });
+      } else if (typeof raw.type === "string") {
+        // Complete at start and opaque to Juno: `redacted_thinking` (must be
+        // echoed back untouched or the replayed turn fails signature
+        // verification), `web_search_tool_result`, and the result blocks of
+        // dynamic filtering's nested code execution. PART OF THE ASSISTANT
+        // TURN, all of them: dropping the search results from the replay made
+        // Claude search again next round, billed again each time.
+        blockByIndex.set(event.index, event.content_block as unknown as Anthropic.Messages.ContentBlockParam);
       }
+
       if (raw.type === "web_search_tool_result") {
         const content = raw.content;
-        if (Array.isArray(content)) {
-          const sources: ClientSource[] = content
-            .filter((c: { type?: string; url?: string }) => c?.type === "web_search_result" && c?.url && !opts.seen.has(c.url))
-            .map((c: { url: string; title?: string }) => {
-              opts.seen.add(c.url);
-              return { title: c.title || c.url, url: c.url, snippet: "" };
-            });
-          if (sources.length) yield { type: "sources", sources };
+        const hits = Array.isArray(content)
+          ? content.filter((c): c is { type: string; url: string; title?: string } =>
+              isRecord(c) && c.type === "web_search_result" && typeof c.url === "string" && c.url.length > 0,
+            )
+          : [];
+        const sources: ClientSource[] = hits
+          .filter((c) => !opts.seen.has(c.url))
+          .map((c) => {
+            opts.seen.add(c.url);
+            return { title: c.title || c.url, url: c.url, snippet: "" };
+          });
+        const callRound = raw.tool_use_id ? searchRound.get(raw.tool_use_id) : undefined;
+        if (raw.tool_use_id && callRound !== undefined) {
+          // A 200 carrying `web_search_tool_result_error` is how a failed server
+          // search arrives; the content is an object, not a list.
+          yield {
+            type: "server_tool",
+            phase: "result",
+            tool: "provider_web_search",
+            callId: raw.tool_use_id,
+            round: callRound,
+            results: hits.length,
+            ok: Array.isArray(content),
+          };
+        }
+        if (sources.length) yield { type: "sources", sources, origin: "provider_search" };
+        if (callRound !== undefined && callRound === round && stepHasText) {
+          yield { type: "round_end", round, tools: 0, serverTools: stepServerTools, final: !!opts.final, stop: null };
+          round += 1;
+          stepCalls = 0;
+          stepServerTools = 0;
+          stepHasText = false;
         }
       }
     } else if (event.type === "content_block_delta") {
       const open = partial.get(event.index);
       if (event.delta.type === "text_delta") {
-        if (open?.block.type === "text") open.block.text += event.delta.text;
-        yield { type: "text", text: event.delta.text };
+        if (open?.kind === "text" && open.block.type === "text") open.block.text += event.delta.text;
+        if (event.delta.text) stepHasText = true;
+        yield { type: "text", text: event.delta.text, round };
       } else if (event.delta.type === "thinking_delta") {
-        if (open?.block.type === "thinking") open.block.thinking += event.delta.thinking;
-        yield { type: "reasoning", text: event.delta.thinking };
+        if (open?.kind === "thinking" && open.block.type === "thinking") open.block.thinking += event.delta.thinking;
+        yield { type: "reasoning", text: event.delta.thinking, round };
       } else if (event.delta.type === "signature_delta") {
-        if (open?.block.type === "thinking") open.block.signature += event.delta.signature;
+        if (open?.kind === "thinking" && open.block.type === "thinking") open.block.signature += event.delta.signature;
       } else if (event.delta.type === "input_json_delta") {
         if (open) open.json += event.delta.partial_json;
       }
     } else if (event.type === "content_block_stop") {
       const open = partial.get(event.index);
-      if (open) {
-        partial.delete(event.index);
-        if (open.block.type === "tool_use") {
-          open.block.input = safeToolInput(open.json);
-          toolUses.push({ id: open.block.id, name: open.block.name, json: open.json });
+      if (!open) continue;
+      partial.delete(event.index);
+      if (open.kind === "tool_use" && open.block.type === "tool_use") {
+        open.block.input = safeToolInput(open.json);
+        open.use.json = open.json;
+        open.use.complete = true;
+      } else if (open.kind === "server_tool_use") {
+        const input = open.json.trim() ? safeToolInput(open.json) : isRecord(open.startInput) ? open.startInput : {};
+        (open.block as unknown as { input: Record<string, unknown> }).input = input;
+        const id = (open.block as unknown as { id?: string }).id;
+        if (open.surfaced && id) {
+          searchRound.set(id, round);
+          stepServerTools += 1;
+          yield {
+            type: "server_tool",
+            phase: "call",
+            tool: "provider_web_search",
+            callId: id,
+            round,
+            ...(typeof input.query === "string" ? { query: input.query } : {}),
+          };
         }
-        // A text block that opened but never received a delta is a real wire
-        // event (Claude often opens one before deciding to call a tool). It
-        // must NOT be replayed: the Messages API rejects an assistant turn
-        // containing an empty or whitespace-only text block with
-        // `400 messages: text content blocks must be non-empty`, which would
-        // fail round two of a turn that was otherwise fine.
-        if (open.block.type === "text" && !open.block.text.trim()) continue;
-        blockByIndex.set(event.index, open.block);
       }
+      // A text block that opened but never received a delta is a real wire
+      // event (Claude often opens one before deciding to call a tool). It
+      // must NOT be replayed: the Messages API rejects an assistant turn
+      // containing an empty or whitespace-only text block with
+      // `400 messages: text content blocks must be non-empty`, which would
+      // fail round two of a turn that was otherwise fine.
+      if (open.block.type === "text" && !open.block.text.trim()) continue;
+      blockByIndex.set(event.index, open.block);
     } else if (event.type === "message_delta") {
       foldAnthropicUsage(usage, event.usage as RawAnthropicUsage);
       stopReason = (event.delta as { stop_reason?: string | null }).stop_reason ?? null;
     }
   }
 
+  // A block still open here was cut off mid-stream (`max_tokens` mid-call).
+  // A client call is kept, marked incomplete, so the caller can close its row;
+  // a half-written block is never replayed.
+  for (const open of partial.values()) {
+    if (open.kind === "tool_use") open.use.json = open.json;
+  }
+
   const blocks = [...blockByIndex.entries()].sort(([a], [b]) => a - b).map(([, block]) => block);
-  return { blocks, toolUses, stopReason, usage };
+  return { blocks, toolUses, stopReason, usage, round, serverTools: stepServerTools };
+}
+
+/** The fields of a `content_block_start` block the reader looks at. */
+type RawStartBlock = {
+  type?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  content?: unknown;
+  tool_use_id?: string;
+  /** Present on blocks issued by dynamic filtering's code, not by Claude directly. */
+  caller?: unknown;
+};
+
+type OpenBlock =
+  | { kind: "text" | "thinking"; block: Anthropic.Messages.ContentBlockParam; json: string }
+  | { kind: "tool_use"; block: Anthropic.Messages.ContentBlockParam; json: string; use: AnthropicToolUse }
+  | {
+      kind: "server_tool_use";
+      block: Anthropic.Messages.ContentBlockParam;
+      json: string;
+      startInput: unknown;
+      surfaced: boolean;
+    };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

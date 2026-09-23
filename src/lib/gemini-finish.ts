@@ -126,11 +126,24 @@ export function geminiFinishNote(
   );
 }
 
+/**
+ * Gemini's two ways of ending a turn over its TOOLS rather than its text:
+ * `UNEXPECTED_TOOL_CALL` (it called a tool the request did not offer — the
+ * final request's, whose tools are off) and `TOO_MANY_TOOL_CALLS`. Both leave a
+ * turn that stopped using tools before it answered, which is what `length`
+ * (and its Continue) means; the route adds the `tool_budget` notice (SPEC §5.3
+ * item 8). `finish-reason.ts` still reads the first as a tool-call finish for
+ * every other caller.
+ */
+const TOOL_BUDGET_FINISHES = new Set(["UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"]);
+
 export function decideGeminiFinish(input: GeminiFinishInput): GeminiFinishDecision {
   const atCap = geminiAtCap(input);
 
   if (input.lastFinishReason) {
-    const reason = normalizeFinishReason(input.lastFinishReason);
+    const reason = TOOL_BUDGET_FINISHES.has(input.lastFinishReason.toUpperCase())
+      ? "length"
+      : normalizeFinishReason(input.lastFinishReason);
     return {
       raw: input.lastFinishReason,
       reason,

@@ -26,6 +26,25 @@ export function roundBudgetFor(effort: ReasoningEffort | null | undefined, voice
   }
 }
 
+/**
+ * The turn's provider-search cap: how many searches the provider may run over
+ * the whole turn (SPEC §4.1, the `web_search` row of §6.6). 3 / 6 / 10 / 16 for
+ * budgets 4 / 10 / 16 / 24; voice's 7 counts as 10.
+ *
+ * Anthropic's `max_uses` is this number on EVERY request of the turn. It bounds
+ * one request, so it cannot be the round budget (24 searches × 23 requests would
+ * be ≈ 550 searches on a `max` turn), and it must not change between requests,
+ * because a changed `tools` array invalidates preserved thinking and the tools
+ * cache. The turn-wide bound is the route's: every provider search counts, and
+ * at the cap it calls `requestFinal("searches")`.
+ */
+export function providerSearchCapFor(budget: number): number {
+  if (budget <= 4) return 3;
+  if (budget <= 10) return 6;
+  if (budget <= 16) return 10;
+  return 16;
+}
+
 export interface LoopController {
   readonly budget: number;
   readonly requests: number;

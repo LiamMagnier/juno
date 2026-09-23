@@ -28,8 +28,12 @@ export type MessageForModel = {
  * `status?`… — so no producer has to change in the same commit. The adapters
  * make the adapter-side fields required when the last one is converted, and
  * the route drops its defaults after that. Members that are new outright
- * (`round_end`, the `tool` status act, `server_tool`) have no producer yet and
- * so carry their final shape from the start.
+ * (`round_end`, the `tool` status act, `server_tool`) carry their final shape
+ * from the start.
+ *
+ * The Anthropic and Gemini adapters stamp every adapter-side field already;
+ * the Responses and compat adapters are converted separately, and the
+ * `round?`/`index?` fields tighten once they are.
  */
 
 /** Events yielded by a provider stream. */
@@ -187,17 +191,19 @@ export type LlmEvent =
       results?: number;
       /** result */
       ok?: boolean;
+      /**
+       * result, Gemini grounding only: `{ engine: "gemini", searchSuggestionsHtml }`
+       * — Google's Search Suggestions widget, which its grounding terms ask to be
+       * shown with the answer (SPEC §5.3 item 11). Carried on the provider-search
+       * record; no surface renders it yet (owner item O-2).
+       */
+      web?: ToolWebDetail;
     }
-  /**
-   * A connector action is waiting for the person to answer.
-   *
-   * Emitted by the toolset the moment a receipt enters `pending`, BEFORE the
-   * broker starts waiting on it — the stream is blocked on the answer, so an
-   * event that arrived after the wait would arrive after the deadline it exists
-   * to beat. The payload is the redacted client projection: the raw arguments
-   * that the digest is taken over never leave the server.
+  /*
+   * There is no `approval` member. An approval travels as the call's own
+   * `tool` status act (`awaiting_approval`, carrying the redacted projection),
+   * so it is ordered with the call it belongs to rather than beside it.
    */
-  | { type: "approval"; approval: ClientActionApproval }
   | {
       type: "usage";
       input?: number;

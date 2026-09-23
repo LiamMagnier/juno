@@ -1,4 +1,4 @@
-import type { GeminiContent, GeminiPart } from "@/lib/gemini-core";
+import type { GeminiContent, GeminiFunctionResponse, GeminiPart } from "@/lib/gemini-core";
 import type { ClientSource } from "@/types/chat";
 import type { LlmEvent } from "@/types/llm";
 
@@ -23,7 +23,8 @@ export interface GeminiChunkPart {
   thought?: boolean;
   /** Opaque Gemini 3 reasoning token — echoed back verbatim, never synthesised. */
   thoughtSignature?: string;
-  functionCall?: { name?: string; args?: Record<string, unknown> };
+  /** `id` is optional on Gemini's side; when present it must come back on the response (RC-13). */
+  functionCall?: { id?: string; name?: string; args?: Record<string, unknown> };
 }
 
 export interface GeminiChunk {
@@ -33,6 +34,8 @@ export interface GeminiChunk {
     groundingMetadata?: {
       groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
       searchEntryPoint?: { renderedContent?: string };
+      /** The queries Google Search actually ran for this response. */
+      webSearchQueries?: string[];
     };
   }>;
   usageMetadata?: {
@@ -53,11 +56,15 @@ export interface GeminiRoundUsage {
 }
 
 export interface GeminiRoundState {
+  /** The model step this request's text and thinking belong to (SPEC §2.9). */
+  round: number;
   /** Display events produced by this chunk, drained by the adapter in order. */
   events: LlmEvent[];
   /** The assistant turn, in wire order, ready to be replayed verbatim. */
   assistantParts: GeminiPart[];
-  functionCalls: Array<{ name: string; args: Record<string, unknown> }>;
+  functionCalls: Array<{ id?: string; name: string; args: Record<string, unknown> }>;
+  /** Grounding queries this request ran, once each, in the order first seen. */
+  webSearchQueries: string[];
   usage: GeminiRoundUsage;
   sawUsage: boolean;
   /** Any candidate or usage record at all — an empty stream is a provider fault. */
@@ -67,11 +74,13 @@ export interface GeminiRoundState {
   searchEntryPoint: string | null;
 }
 
-export function emptyGeminiRound(): GeminiRoundState {
+export function emptyGeminiRound(round = 0): GeminiRoundState {
   return {
+    round,
     events: [],
     assistantParts: [],
     functionCalls: [],
+    webSearchQueries: [],
     usage: { input: 0, output: 0, cached: 0, thoughts: 0, total: 0 },
     sawUsage: false,
     sawSignal: false,
@@ -188,13 +197,21 @@ export function applyGeminiChunk(
     if (part.functionCall?.name) {
       const name = part.functionCall.name;
       const args = part.functionCall.args ?? {};
-      state.functionCalls.push({ name, args });
-      state.assistantParts.push({ functionCall: { name, args }, ...signature });
+      // The id is kept on both sides: the call replayed in history carries it
+      // as Gemini sent it, and the response echoes it (RC-13). It used to be
+      // dropped here, which left the response unpaired on parallel calls.
+      const id = typeof part.functionCall.id === "string" && part.functionCall.id ? { id: part.functionCall.id } : {};
+      state.functionCalls.push({ ...id, name, args });
+      state.assistantParts.push({ functionCall: { ...id, name, args }, ...signature });
     } else if (part.text) {
       state.assistantParts.push(
         part.thought ? { thought: true, text: part.text, ...signature } : { text: part.text, ...signature },
       );
-      state.events.push(part.thought ? { type: "reasoning", text: part.text } : { type: "text", text: part.text });
+      state.events.push(
+        part.thought
+          ? { type: "reasoning", text: part.text, round: state.round }
+          : { type: "text", text: part.text, round: state.round },
+      );
     }
   }
 
@@ -209,6 +226,14 @@ export function applyGeminiChunk(
   // alongside grounded answers; it was parsed away and never surfaced.
   const entryPoint = grounding?.searchEntryPoint?.renderedContent;
   if (entryPoint && !state.searchEntryPoint) state.searchEntryPoint = entryPoint;
+  // Repeated on later frames of the same response, so kept once each. A query
+  // with no grounding chunk still ran — and still put outside content in front
+  // of the model, which is what taints the turn (SPEC §5.3 item 7).
+  for (const query of grounding?.webSearchQueries ?? []) {
+    if (typeof query === "string" && query.trim() && !state.webSearchQueries.includes(query)) {
+      state.webSearchQueries.push(query);
+    }
+  }
 
   if (data.usageMetadata) {
     state.sawUsage = true;
@@ -219,18 +244,21 @@ export function applyGeminiChunk(
 /**
  * Append a finished tool round to the conversation.
  *
- * The assistant turn goes back with its parts UNCHANGED — signatures included —
- * followed by one `functionResponse` per call, in call order. Both halves are
- * required: Gemini rejects a `functionResponse` whose `functionCall` is missing
- * from history, and rejects the `functionCall` if its `thoughtSignature` was
- * stripped on the way through.
+ * The assistant turn goes back with its parts UNCHANGED — signatures and call
+ * ids included — followed by one user turn of `functionResponse` parts, one per
+ * call, in call order, and nothing else. Both halves are required: Gemini
+ * rejects a `functionResponse` whose `functionCall` is missing from history,
+ * and rejects the `functionCall` if its `thoughtSignature` was stripped on the
+ * way through.
  */
 export function appendGeminiToolRound(
   contents: GeminiContent[],
   assistantParts: GeminiPart[],
-  responses: Array<{ name: string; response: Record<string, unknown> }>,
+  responses: GeminiFunctionResponse[],
   /**
-   * Pixels a tool produced, with the line that introduces them.
+   * Pixels a tool produced, with the line that introduces them — for models
+   * before Gemini 3, which take no multimodal function responses (Gemini 3
+   * carries them in `GeminiFunctionResponse.parts` instead).
    *
    * They go in a SEPARATE user turn, after the one carrying the
    * `functionResponse` parts. Gemini validates that turn against the model's
@@ -244,7 +272,14 @@ export function appendGeminiToolRound(
   contents.push({ role: "model", parts: assistantParts });
   contents.push({
     role: "user",
-    parts: responses.map((r) => ({ functionResponse: { name: r.name, response: r.response } })),
+    parts: responses.map((r) => ({
+      functionResponse: {
+        ...(r.id ? { id: r.id } : {}),
+        name: r.name,
+        response: r.response,
+        ...(r.parts?.length ? { parts: r.parts } : {}),
+      },
+    })),
   });
   if (images?.parts.length) {
     contents.push({ role: "user", parts: [{ text: images.intro }, ...images.parts] });
