@@ -1,4 +1,4 @@
-# Juno Code rework: handoff (paused 23 September 2026)
+# Juno Code rework: handoff (paused 23 September 2026, refreshed at the second pause)
 
 Paused at the user's request. No job is running: no deploy, release, build or
 workflow, and every git tree involved is clean.
@@ -57,7 +57,7 @@ workflow, and every git tree involved is clean.
      `curl -s "https://chat.liams.dev/api/downloads?refresh=$RANDOM" | jq '.downloads[0]'`
      shows version 1.6.0 with the SHA-256 and size above, `notarized:false`,
      and a githubusercontent URL.
-2. **`gh` cannot reach GitHub from this Mac.** Since about 15:20 on 23 Sept
+2. **`gh` could not reach GitHub from this Mac (resolved).** It worked again later on 23 Sept, so this was transient network trouble. Try the real `gh` first; the notes below remain for reference. Since about 15:20 on 23 Sept
    every `gh` call fails with "net/http: TLS handshake timeout". curl, openssl
    and URLSession all work.
    - Ruled out: the sandbox, the MTU, trust evaluation, a per-process filter
