@@ -1,0 +1,208 @@
+{
+ "scores": [
+  {
+   "proposal": "risk-first (proposal-risk-first.md)",
+   "criteria": [
+    {
+     "name": "time-to-value",
+     "score": 8,
+     "why": "The only plan with dates (W1 = week of 2026-09-28). R1 and R2 deliver real user wins within about 2 weeks: `7243613f` deployed, X-02, owner previews live again (X-01a), design posters instead of JSON (X-20), chat delete detaching artifacts, and truncated output never becoming current. It sees that additive M0\u2013M2 migrations are safe for installed clients, so they do not wait for native adoption. I verified that Swift ignores unknown keys and that `NativeArtifactStore.swift:142-159` fails only on an empty conversationId, an unknown kind or a body over 200k. The merged surface arrives at R11 (W11\u201315). Lost points: its own Phase 0B exit requires N1 on 95% of Mac and 90% of iPhone devices, 'all required', and that contradicts \u00a73.4 and blocks Phase 1."
+    },
+    {
+     "name": "focus",
+     "score": 7,
+     "why": "Clear refusals: no new enum values in this programme (profiles instead), no Sheet kind (D16), encryption deferred (D13), at most one visible navigation change per release, and strict expand, migrate, contract. But Phase 5 'Parity' (W18\u2013W32) is a dumping ground of about 20 backlog items: comments, grants, stepper and compare, branches, Doc, Deck, System, bridge v2, native transactions, phone edit, the motion runtime, Play and Mac document windows. Each has only a vague per-feature exit."
+    },
+    {
+     "name": "differentiation",
+     "score": 5,
+     "why": "This is the weakest story on where Juno leads. Every Juno lead over Claude and Figma (a visible version stepper and compare, branches, a comment role on every type, phone editing, Decks on the design engine, Play, Mac document windows) is deferred to the overloaded W18\u201332 phase. iPhone design editing is read-only from N1 until bridge v2, which throws away for months the one lead neither competitor has (03 \u00a71 #10). Speaker notes stored as hidden text nodes named 'Speaker notes' are a hack. What it does add: the field-preserving generic POST fixes X-14 for installed Mac and iPhone builds without a native release, which is a real Mac-native trust win."
+    },
+    {
+     "name": "cost realism",
+     "score": 7,
+     "why": "It has a release train, cohort rollouts, a measured compatibility window (95% Mac, 90% iPhone, 45 days) and flag removal dates, and it reuses the existing pieces (runtimeFor, `/api/library`, bootstrap.featureFlags, which I verified exists and is `{}`). The anchor mechanism avoids a costly null-conversationId migration until Phase 6. Lost points: 14 weeks for the Phase 5 bundle is not credible; there is no capacity or team assumption; and anchors leave a permanent query invariant (`visibleConversationWhere`) that every future Conversation query must respect."
+    },
+    {
+     "name": "decision clarity",
+     "score": 7,
+     "why": "17 decisions, each with a recommendation. The ones that change the plan are crisp: D4 profiles versus enum values, D8 detach on delete, D9 compatibility-window thresholds, D14 glass coordination. Two are missing. Nothing decides buying the separate preview domain, even though X-01a in R2 (W2) depends on it and it has lead time (the other two plans list it: faithful D15, object-first D13). Nothing records the scoped amendment to TWO_PRODUCTS \u00a72.2 for the Make picker."
+    },
+    {
+     "name": "measurability",
+     "score": 9,
+     "why": "The best of the three. It has a deletion ledger (a Postgres trigger that records `juno.delete_reason`; unexpected deletions targeted at 0 per week), and a find rate that gates the IA merge (open Artifacts, then open an item within 30 s, plus fewer than 3 'can't find my designs' reports per 1k WAU). It counts legacy route hits to know when redirects can retire, and runs `canAccess` in shadow mode with 0 mismatches for 7 days before enforcing. The compatibility window is measured from `X-Juno-Client`. Every flag names an owner, the metric that decides it and a removal date, enforced by CI. Every phase has numeric exits, except Phase 5."
+    }
+   ],
+   "total": 43,
+   "fatal_flaws": [
+    "Every differentiator sits in one overloaded, weakly gated Phase 5 (W18\u2013W32): the version stepper and compare, branches, comments, grants, phone editing, Deck, Play and Mac document windows. The plan can finish Phase 4 at parity-minus with Claude and never reach the part where Juno leads. The iPhone stays a design viewer for about 6 months or more.",
+    "Its own gates contradict each other. The Phase 0B exit requires N1 on 95% of Mac and 90% of iPhone devices, with every exit criterion required, and that blocks Phase 1's M1 and M2. Yet \u00a73.4 says those migrations are N0-safe and should not wait. As written, the fastest part of the plan stalls on App Store adoption.",
+    "X-05 and X-06 (model revisions silently overwriting hand edits and dropping design structure) keep losing data until the AI loop lands at W14\u201322. Nothing contains them in R1 or R2."
+   ]
+  },
+  {
+   "proposal": "claude-faithful (proposal-claude-faithful.md)",
+   "criteria": [
+    {
+     "name": "time-to-value",
+     "score": 4,
+     "why": "No calendar, only S to XL sizes 'for one engineer plus the model'. Phase 0 packs about 20 items, the N1 native release and a domain purchase into one gate. \u00a79.4 says the preview origin 'does not ship unless every item below is live': quotas, the legal contact, screening and admin takedown. So the #1 outage (X-01, about 4 weeks old) stays until all governance ships, even for the owner's own in-app previews, which contradicts its own 'in-app previews move first'. The owner's day one is either Phase 2 (\u00a70 item 13 and the Phase 2 header) or the end of Phase 3 (\u00a71.4 and the Phase 3 note). The document never decides, and the `artifacts.merged` flag it names is missing from the \u00a713.4 flag list."
+    },
+    {
+     "name": "focus",
+     "score": 5,
+     "why": "The 'Deliberately not copied' list is excellent, SHEET is deferred and design systems come last. But the plan is comprehensive, not focused. Phase 2 closes about 40 defect ids and 19 backlog items. Phase 3 adds reference tags in stored, encrypted message content, with a rewrite back to full bodies for old clients. It also adds a picture-in-picture size, per-type off switches, a new DOC block editor type and a Doc editor on Mac and iPhone, all on the critical path before public launch."
+    },
+    {
+     "name": "differentiation",
+     "score": 8,
+     "why": "The clearest statement of where Juno beats Claude (the \u00a71.2 table). Every type ships with versions, a stepper, restore and trash. Every type has a Commenter role. Publish (a pinned snapshot) is separate from Share (people), and the Share dialog never writes on open. A written phone contract goes beyond view-only. Mac artifacts are real documents (restorable windows, Quick Look, drag-out). Decks run on the design engine. It answers the HN complaints about opaque routing and no chat-only mode with a type word on every card and per-type off switches. It is thinner against Figma."
+    },
+    {
+     "name": "cost realism",
+     "score": 4,
+     "why": "It never adds up effort. It needs a Playwright render worker, a separate domain with wildcard certificates, a new block-editor Doc type with native block views, heads, grants, comments and notifications, transcript-reference rewriting, and new DOC and DECK enum values with read-side down-conversion. That is at least 6 months for one engineer, with nothing to warn the owner."
+    },
+    {
+     "name": "decision clarity",
+     "score": 8,
+     "why": "20 decisions, each with a recommendation, mapped back to Q1\u2013Q9 (Appendix C). D10 is especially sharp: the Output picker ships as a default-off, scoped amendment to TWO_PRODUCTS \u00a72.2, justified because choosing a format is not choosing a capability. D15 (buy the domain) and D20 (the N1 release vehicle) are concrete."
+    },
+    {
+     "name": "measurability",
+     "score": 6,
+     "why": "The \u00a712.3 telemetry budgets are good (preview success \u226598% with an alert under 95%, truncation under 2%, thread payload p95 under 1.5 MB). It proposes a DB trigger that raises on any UPDATE of `ArtifactVersion.content` as an immutability exit. But exits are engineering tests, not user outcomes. There is no find-rate or 'where did Design go' metric to gate removing the Design row, and proposal outcomes are 'Tracked; no fixed budget in v1'."
+    }
+   ],
+   "total": 35,
+   "fatal_flaws": [
+    "N3 makes `conversationId` nullable (SetNull) and moves the sync loaders to userId, but it never rewrites the change-capture trigger. I verified that `juno_change_artifact` runs `juno_record_account_change('artifact','conversation')` (prisma/migrations/20260716200000_account_change_log/migration.sql:116), which resolves the owner through Conversation. The version branch joins Artifact to Conversation (prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql:54). Detached artifacts and their versions would silently stop syncing to every device.",
+    "It down-converts DOC and DECK to MARKDOWN for clients below artifacts=2, while the generic `POST /api/artifacts/[id]` stays writable for those same builds. An old Mac or iPhone that edits the down-converted Markdown would write Markdown into a DECK or DOC row. No write-side guard is specified.",
+    "It ties the X-01 fix, even for owner-only in-app previews, to the full governance list, including the domain purchase and the legal contact. The largest user-facing outage stays open for the whole of Phase 0."
+   ]
+  },
+  {
+   "proposal": "object-first (proposal-object-first.md)",
+   "criteria": [
+    {
+     "name": "time-to-value",
+     "score": 3,
+     "why": "\u00a73.5 makes step 2 (M1, which only adds nullable columns) wait until native build N is on 95% of devices active in the last 14 days. That gate is unnecessary, because Swift decoders ignore unknown keys. Yet Phase 0 is scheduled for weeks 0\u20132, and its exit also requires N on 95% of devices. The calendar cannot be met. Ownership, trash, heads and detach all wait on App Store adoption, so 'day one at W6\u201310' is fiction."
+    },
+    {
+     "name": "focus",
+     "score": 3,
+     "why": "The least focused plan. Track E pushes the editor to Figma grade: live components, variables on every field, motion model v2, Inspect, video and GIF, AI motion variants, component states, effects parity. It adds Sheet, File and Design system kinds, per-person threads, an ArtifactProposal table and about 11 new tables. Its own risk #6 admits this is 'a year of work', yet it promises W26. The 'Hold' list (vector networks, boolean operations, multiplayer, shaders) is its only real refusal."
+    },
+    {
+     "name": "differentiation",
+     "score": 9,
+     "why": "The strongest position against both Figma and Claude. It keeps Juno's precise inspector ('do not simplify to Claude's contextual-only editing'). Per-person private threads fix Figma's public-by-default agent chat (03 \u00a78 #24) and stop grantee asks leaking the owner's context. The phone contract lifts earliest (Phase 4, W14\u201318). The Mac gets restorable document windows with a full menu bar. Every kind 'ships whole' (versions, trash, comments, poster, phone contract, native decode) before it launches."
+    },
+    {
+     "name": "cost realism",
+     "score": 3,
+     "why": "26 weeks for everything, including a parallel Figma-grade editor track, is not credible. Per-person threads, `Message.artifactScopeId` and ArtifactProposal persistence add cost before any collaborator exists. It adds five new enum values (DECK, DOC, SHEET, DESIGN_SYSTEM, FILE) and a SyncClient gate per account."
+    },
+    {
+     "name": "decision clarity",
+     "score": 8,
+     "why": "18 decisions, each with a recommendation and a 'why'. D15 (how far to take Figma-grade), D17 (encrypt bodies before grants) and D11 (drop the glass Design row) are crisp. Its \u00a74.7 amendment requests to the glass session are explicit."
+    },
+    {
+     "name": "measurability",
+     "score": 7,
+     "why": "Numeric launch thresholds: preview success \u226598%, poster failures \u22641%, validity \u226597% and render success \u226598% on the golden set, proposal failures \u22641%, zero destructive paths, 'no comment lost across 1,000 randomized version changes', and a privacy test that a grantee never receives the owner's thread. The dashboard ships before any Phase 2 flag. There are no user-outcome metrics for the IA merge (findability) or for differentiation uptake."
+    }
+   ],
+   "total": 33,
+   "fatal_flaws": [
+    "It gates even additive schema changes on 95% native adoption (\u00a73.5 step 1 is required before step 2), while Phase 0 is dated weeks 0\u20132 with the same 95% exit. The roadmap cannot be executed as written, and every fix for data loss from ownership changes waits on the App Store.",
+    "Its scope does not match its schedule: a Figma-grade editor track, five new kinds and a collaboration model in 26 weeks, which its own risk #6 calls a year of work. That is not a plan an owner can hold anyone to."
+   ]
+  }
+ ],
+ "winner": "risk-first (proposal-risk-first.md). For a strategy-and-scope lens it is the only proposal that is dated, sequenced by risk, shippable within two weeks and measured by outcomes. Its weakness, pushing Juno's differentiators late, is fixable by grafting. The other two are fixable only by rewriting their schedules.",
+ "grafts": [
+  {
+   "from": "object-first",
+   "idea": "Before any row can have a null or detached conversation, rewrite `juno_record_account_change` so the artifact and artifact_version branches resolve the owner from `Artifact.userId`. Re-create `juno_change_artifact` with the 'direct' resolver. Require a staging parity test (account change counts per account equal before and after).",
+   "why": "Verified: the trigger resolves the owner through Conversation (prisma/migrations/20260716200000_account_change_log/migration.sql:116; prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql:54). Whichever plan wins, making conversationId nullable without this silently removes artifacts from every device's sync."
+  },
+  {
+   "from": "object-first",
+   "idea": "Contain X-05 and X-06 in Phase 0. A chat re-emit that would drop a DESIGN's components, variables, motion, interactions or comments, or that overwrites a user-authored version, lands as a non-current draft with Compare.",
+   "why": "It stops the silent overwrite of hand edits 3 to 5 months before the AI edit loop, and it costs very little."
+  },
+  {
+   "from": "object-first",
+   "idea": "Create new kinds on the write side, per account. The server creates DECK or DOC rows only when every device seen for that account in 30 days reports the kinds-v2 feature. Otherwise it creates the old type. Do not down-convert on read.",
+   "why": "Down-converting on read (the claude-faithful approach) lets old clients write the down-converted body back over the typed row. Gating on the write side cannot corrupt anything."
+  },
+  {
+   "from": "object-first",
+   "idea": "Per-person private threads (ArtifactThread): when grants ship, a grantee's Ask runs in their own thread and is billed to their own plan. Keep the privacy test 'a grantee never receives text from the owner's thread'.",
+   "why": "It beats Figma's public-by-default agent chats and is the correct privacy model for grants. Defer it to the grants phase, not Phase 1."
+  },
+  {
+   "from": "object-first",
+   "idea": "The 'ships whole' checklist as each new kind's exit: versions and stepper, trash, comments, a server poster, a phone contract and native decode.",
+   "why": "It turns Claude's most-cited gap (03 \u00a78 #1) into a release gate Juno can point to."
+  },
+  {
+   "from": "object-first",
+   "idea": "A spike in week 1 on Next 15 `pushState` continuity between panel and full window, with a named fallback (`/chat/{c}?a={id}&view=full` while Copy link still yields `/a/{id}`).",
+   "why": "It removes the riskiest surface assumption before Phase 2 depends on it."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "The 'Where Juno goes further' table (\u00a71.2) and the 'Deliberately not copied' list (\u00a71.2) as a standing review checklist for every release.",
+   "why": "The winner has no differentiation spine. This makes the lead over Claude something review checks, not an aspiration."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "D10: the Output or Make picker ships optional and default-off, recorded in OPEN_DECISIONS.md as a scoped amendment to TWO_PRODUCTS \u00a72.2, on the grounds that choosing a format is not choosing a capability.",
+   "why": "The winner ships `ai.makePicker` without resolving the conflict with TWO_PRODUCTS \u00a72.2."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "A DB trigger that raises on any UPDATE of `ArtifactVersion.content`, as the exit test for immutable versions.",
+   "why": "It is cheap, cannot be bypassed, and proves fold-in-place is gone."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "Per-type off switches in Settings \u203a Capabilities, plus the type word leading every card, and 'Make this a \u2026 instead'.",
+   "why": "It answers the two loudest complaints about Claude's merge (no chat-only mode, opaque routing) at almost no cost."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "Metering rules: never meter hand edits, tweaks, restore or publish; refund refused, truncated or invalid generations and the automatic repair turn. Copy uses numbers, never meters.",
+   "why": "It is a clear commercial differentiator against Figma's credits (03 \u00a78 #27), and it is measurable."
+  },
+  {
+   "from": "claude-faithful",
+   "idea": "The written phone contract (view, Play, comment by long-press, Ask by voice, tweaks, text edits, change sharing and revoke links), identical on iPhone and phone-width web, with desktop-only items stated in one line.",
+   "why": "Phone editing is the one lead neither Claude nor Figma has (03 \u00a71 #10). The winner leaves it undefined until late."
+  },
+  {
+   "from": "risk-first",
+   "idea": "Keep: the field-preserving merge on the generic POST, the X-01a/X-01b split, anchors until the compatibility window closes, capability-projected sync via `X-Juno-Sync-Caps`, the deletion ledger, `canAccess` shadow-compare, and flags that each carry an owner, a deciding metric and a CI-enforced removal date.",
+   "why": "These are the mechanisms that make value arrive in two weeks without breaking installed clients. The final plan should not lose them in synthesis."
+  }
+ ],
+ "must_fix": [
+  "Resolve the gate contradiction. Remove 'N1 on \u226595% Mac / \u226590% iPhone' from the Phase 0B exit (it is the start of the compatibility-window clock, not a gate), so the N0-safe M1 and M2 migrations in Phase 1 are not blocked by App Store adoption, as \u00a73.4 already argues.",
+  "Break Phase 5 'Parity' (W18\u2013W32) into ordered sub-phases, each with its own date, flag and numeric user-outcome exit. Pull the version stepper, restore and compare (R-022) forward to ship with the surface (R9 to R11): the head and seal land in R7 and the Canvas already has diff and restore. The merged day one must then show Juno's versions lead, not parity-minus with Claude.",
+  "Define and date a shorter phone-editing path: field and text edits and Ask through transactions, without waiting for full bridge v2. While iPhone editing is read-only, the in-app copy states the return date. Phone editing is Juno's one lead over both competitors. Six months of read-only regression must be a decision the owner signs, not a side effect.",
+  "Add Phase-0 containment for X-05 and X-06: a chat re-emit that would drop design structure or overwrite a USER-authored version lands as a non-current draft with Compare. Otherwise hand edits keep being silently overwritten until W14\u201322.",
+  "Add owner decision D18, 'buy and configure the separate preview registrable domain with a wildcard certificate by W1'. X-01a in R2 depends on it, and none of the 17 decisions covers it.",
+  "Add owner decision D19: record the Make picker in OPEN_DECISIONS.md as a default-off, scoped amendment to TWO_PRODUCTS \u00a72.2 before `ai.makePicker` ships.",
+  "Specify the anchor lifecycle end to end: whether anchors are one per deleted chat or reused per account; that they are excluded from account export, search, project counts, 'Delete all conversations' and GDPR erasure paths; which attachments are purged when a chat becomes an anchor; and a test that fails any `prisma.conversation.findMany` without `visibleConversationWhere()`. Anchors stay until Phase 6, so this invariant carries a long cost.",
+  "Before the Phase 6 M10 contraction (nullable conversationId), rewrite `juno_record_account_change` for the artifact and artifact_version branches to resolve the owner from `Artifact.userId`, and re-create `juno_change_artifact` with the 'direct' resolver. Verified: it resolves through Conversation today (prisma/migrations/20260716200000_account_change_log/migration.sql:116; prisma/migrations/20260815180000_restore_account_delete_guard/migration.sql:54). Otherwise, the moment anchors become null, those artifacts drop out of sync on every device.",
+  "For the Doc, Deck and System profiles on N0 clients, state what an N0 Design screen does when it edits a Deck through the generic POST: whether it may delete or expose the hidden 'Speaker notes' nodes, and whether the field-preserving merge covers profile-specific node conventions. Either mark profile rows read-only for N0 or prove the round trip with a fixture test.",
+  "State capacity: how many engineers, model-assisted or not, sit behind W1\u2013W34, and give a cut list, in order, for when Phase 5 slips. Otherwise the dated calendar is decoration.",
+  "Add outcome metrics for differentiation, not just safety. Examples: share of artifacts reopened within 7 days, share of Juno edits applied without a human revert, share of designs opened on the phone, publish-to-update ratio. Capture the find-rate baseline from R1 telemetry well before R11 gates on 'find rate \u2265 baseline'.",
+  "Name one releaser and a sequence with the glass session for N1. N1 cherry-picks the glass branch's store-skip logic into main, and the glass branch must then merge N1 back; agree it through the owner (project memory: concurrent sessions share main; gate the exact tree committed), not by touching the juno-glass worktree."
+ ]
+}
